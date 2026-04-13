@@ -34,6 +34,7 @@ const schema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
+  customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
@@ -53,7 +54,7 @@ export default function QuotationNew() {
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: {
-      customerName: "", customerAddress: "", customerContact: "",
+      customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
       deliveryAddress: "", deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
       currency: "SGD",
       tax: 9,
@@ -167,8 +168,12 @@ export default function QuotationNew() {
                     <FormControl><Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Person / Email</FormLabel>
-                    <FormControl><Input placeholder="John Doe (john@example.com)" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Contact Person</FormLabel>
+                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
+                  <FormItem><FormLabel>Contact Email</FormLabel>
+                    <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </CardContent>
             </Card>

@@ -41,6 +41,7 @@ const poSchema = z.object({
   vendorName: z.string().min(1, "Vendor name is required"),
   vendorAddress: z.string().optional(),
   vendorContact: z.string().optional(),
+  vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
@@ -61,6 +62,7 @@ export default function PurchaseOrderNew() {
       vendorName: "",
       vendorAddress: "",
       vendorContact: "",
+      vendorContactEmail: "",
       deliveryAddress: "RSV Infotech Pte. Ltd.\nSingapore",
       deliveryDate: "",
       paymentTerms: "30 Days Net",
@@ -242,9 +244,22 @@ export default function PurchaseOrderNew() {
                   name="vendorContact"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person / Email</FormLabel>
+                      <FormLabel>Contact Person</FormLabel>
                       <FormControl>
-                        <Input placeholder="John Doe (john@example.com)" {...field} />
+                        <Input placeholder="John Doe" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="vendorContactEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input placeholder="john@example.com" type="email" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

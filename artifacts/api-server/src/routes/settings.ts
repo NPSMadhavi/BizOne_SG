@@ -19,10 +19,22 @@ async function ensureSettings() {
   return existing[0];
 }
 
+function formatSettings(s: typeof settingsTable.$inferSelect) {
+  return {
+    id: s.id,
+    gstRate: parseFloat(s.gstRate),
+    smtpHost: s.smtpHost || "",
+    smtpPort: s.smtpPort || "587",
+    smtpUser: s.smtpUser || "",
+    smtpFrom: s.smtpFrom || "",
+    smtpConfigured: !!(s.smtpHost && s.smtpUser && s.smtpPass),
+  };
+}
+
 router.get("/", async (req, res) => {
   try {
     const settings = await ensureSettings();
-    res.json({ id: settings.id, gstRate: parseFloat(settings.gstRate) });
+    res.json(formatSettings(settings));
   } catch (err) {
     res.status(500).json({ error: "Failed to get settings" });
   }
@@ -30,18 +42,32 @@ router.get("/", async (req, res) => {
 
 router.put("/", async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
-  const { gstRate } = req.body;
-  if (typeof gstRate !== "number" || gstRate < 0 || gstRate > 100) {
-    return res.status(400).json({ error: "Invalid GST rate" });
+
+  const { gstRate, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
+
+  const updateData: Record<string, any> = {};
+
+  if (gstRate !== undefined) {
+    if (typeof gstRate !== "number" || gstRate < 0 || gstRate > 100) {
+      return res.status(400).json({ error: "Invalid GST rate" });
+    }
+    updateData.gstRate = gstRate.toString();
   }
+
+  if (smtpHost !== undefined) updateData.smtpHost = smtpHost;
+  if (smtpPort !== undefined) updateData.smtpPort = smtpPort;
+  if (smtpUser !== undefined) updateData.smtpUser = smtpUser;
+  if (smtpPass !== undefined && smtpPass !== "") updateData.smtpPass = smtpPass;
+  if (smtpFrom !== undefined) updateData.smtpFrom = smtpFrom;
+
   try {
     const settings = await ensureSettings();
     const [updated] = await db
       .update(settingsTable)
-      .set({ gstRate: gstRate.toString() })
+      .set(updateData)
       .where(eq(settingsTable.id, settings.id))
       .returning();
-    res.json({ id: updated.id, gstRate: parseFloat(updated.gstRate) });
+    res.json(formatSettings(updated));
   } catch (err) {
     res.status(500).json({ error: "Failed to update settings" });
   }

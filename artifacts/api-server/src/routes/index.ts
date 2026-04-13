@@ -8,6 +8,7 @@ import quotationsRouter from "./quotations";
 import invoicesRouter from "./invoices";
 import deliveryOrdersRouter from "./delivery-orders";
 import settingsRouter from "./settings";
+import emailRouter from "./email";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(quotationsRouter);
 router.use(invoicesRouter);
 router.use(deliveryOrdersRouter);
 router.use("/settings", settingsRouter);
+router.use(emailRouter);
 
 export default router;

@@ -13,7 +13,10 @@ A full-stack document management application for three companies: RSV Infotech P
 - **Quotations** — full CRUD; auto-numbered QT-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
 - **Invoices** — full CRUD; auto-numbered INV-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
 - **Delivery Orders** — full CRUD; auto-numbered DO-YYYYMM-XXXX; no pricing columns; PDF generation
-- **Settings** — centralized GST rate (admin-only edit); currently 9%
+- **Settings** — centralized GST rate (admin-only edit); SMTP email config with connection status indicator
+- **Email sending** — send PO/Quotation/Invoice as PDF attachment via SMTP; pre-filled recipient, subject, body; reusable EmailSendDialog component
+- **Multi-currency** — SGD, USD, EUR, GBP, MYR, INR; `fmtMoney(currency, amount)` helper using Intl.NumberFormat in PDFs
+- **Split contact fields** — separate "Contact Person" (name) and "Contact Email" fields on all forms; shown in view pages with mailto links; pre-fills email dialog
 - **Admin Panel** — manage users (create, edit, delete); nested company + module assignment UI
 - Dashboard with stats
 - PDF generation using jsPDF + jspdf-autotable (consistent header/footer with selected company info)
@@ -54,7 +57,8 @@ Where XXXX is a 4-digit random number.
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
 - **Authentication**: express-session + bcryptjs
-- **PDF generation**: jsPDF + jspdf-autotable
+- **PDF generation**: jsPDF + jspdf-autotable (supports base64 return for email attachment)
+- **Email**: nodemailer (SMTP configured via settings table)
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 
@@ -89,7 +93,7 @@ Where XXXX is a 4-digit random number.
 - `quotations` — quotation records with JSONB items; scoped by companyId
 - `invoices` — invoice records with JSONB items; scoped by companyId
 - `deliveryOrders` — DO records with JSONB items (description, qty only — no pricing); scoped by companyId
-- `settings` — singleton row for GST rate and other config
+- `settings` — singleton row for GST rate and SMTP config (smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom)
 
 ## Session
 

@@ -9,6 +9,7 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   vendorName: text("vendor_name").notNull(),
   vendorAddress: text("vendor_address"),
   vendorContact: text("vendor_contact"),
+  vendorContactEmail: text("vendor_contact_email"),
   deliveryAddress: text("delivery_address"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),

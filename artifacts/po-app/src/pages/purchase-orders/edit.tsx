@@ -53,6 +53,7 @@ const poSchema = z.object({
   vendorName: z.string().min(1, "Vendor name is required"),
   vendorAddress: z.string().optional(),
   vendorContact: z.string().optional(),
+  vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
@@ -84,6 +85,7 @@ export default function PurchaseOrderEdit() {
       vendorName: "",
       vendorAddress: "",
       vendorContact: "",
+      vendorContactEmail: "",
       deliveryAddress: "",
       deliveryDate: "",
       paymentTerms: "30 Days Net",
@@ -101,6 +103,7 @@ export default function PurchaseOrderEdit() {
         vendorName: po.vendorName ?? "",
         vendorAddress: po.vendorAddress ?? "",
         vendorContact: po.vendorContact ?? "",
+        vendorContactEmail: (po as any).vendorContactEmail ?? "",
         deliveryAddress: po.deliveryAddress ?? "",
         deliveryDate: po.deliveryDate ?? "",
         paymentTerms: po.paymentTerms ?? "30 Days Net",
@@ -287,9 +290,22 @@ export default function PurchaseOrderEdit() {
                   name="vendorContact"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person / Email</FormLabel>
+                      <FormLabel>Contact Person</FormLabel>
                       <FormControl>
-                        <Input placeholder="John Doe (john@example.com)" {...field} />
+                        <Input placeholder="John Doe" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="vendorContactEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input placeholder="john@example.com" type="email" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -7,6 +7,7 @@ export const quotationsTable = pgTable("quotations", {
   customerName: text("customer_name").notNull(),
   customerAddress: text("customer_address"),
   customerContact: text("customer_contact"),
+  customerContactEmail: text("customer_contact_email"),
   deliveryAddress: text("delivery_address"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),

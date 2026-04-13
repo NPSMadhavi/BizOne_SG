@@ -154,7 +154,7 @@ function buildDocFooter(doc: jsPDF, docType: string) {
 
 // ── PURCHASE ORDER PDF ────────────────────────────────────────────────────────
 
-export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null) {
+export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
@@ -279,12 +279,13 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     if (totalPages > 1) doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
   }
 
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${po.poNumber}.pdf`);
 }
 
 // ── QUOTATION PDF ─────────────────────────────────────────────────────────────
 
-export async function generateQuotation_PDF(qt: Quotation, company?: Company | null) {
+export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
@@ -358,12 +359,13 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
   buildDocFooter(doc, "Quotation");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${qt.qtNumber}.pdf`);
 }
 
 // ── INVOICE PDF ───────────────────────────────────────────────────────────────
 
-export async function generateInvoice_PDF(inv: Invoice, company?: Company | null) {
+export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
@@ -437,6 +439,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
   buildDocFooter(doc, "Invoice");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${inv.invNumber}.pdf`);
 }
 

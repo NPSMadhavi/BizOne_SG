@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, User, Shield, Percent, Save } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,18 +14,30 @@ export default function Settings() {
   const { user, logout, isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
   const [gstInput, setGstInput] = useState<string>("");
-  const [editing, setEditing] = useState(false);
+  const [gstEditing, setGstEditing] = useState(false);
+
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+  const [smtpEditing, setSmtpEditing] = useState(false);
 
   const { data: settings, isLoading: settingsLoading } = useGetSettings({
-    query: {
-      queryKey: getGetSettingsQueryKey(),
-    },
+    query: { queryKey: getGetSettingsQueryKey() },
   });
 
   useEffect(() => {
-    if (settings && !editing) {
+    if (settings && !gstEditing) {
       setGstInput(String(settings.gstRate));
+    }
+    if (settings && !smtpEditing) {
+      setSmtpHost(settings.smtpHost || "");
+      setSmtpPort(settings.smtpPort || "587");
+      setSmtpUser(settings.smtpUser || "");
+      setSmtpFrom(settings.smtpFrom || "");
     }
   }, [settings]);
 
@@ -40,13 +52,38 @@ export default function Settings() {
     updateSettings.mutate({ data: { gstRate: rate } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
-        setEditing(false);
+        setGstEditing(false);
         toast({ title: "Saved", description: "GST rate updated successfully." });
       },
       onError: () => {
         toast({ title: "Error", description: "Failed to update settings.", variant: "destructive" });
       },
     });
+  };
+
+  const handleSaveSmtp = () => {
+    updateSettings.mutate(
+      {
+        data: {
+          smtpHost,
+          smtpPort,
+          smtpUser,
+          smtpFrom,
+          ...(smtpPass ? { smtpPass } : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+          setSmtpEditing(false);
+          setSmtpPass("");
+          toast({ title: "Saved", description: "Email settings updated successfully." });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to update email settings.", variant: "destructive" });
+        },
+      }
+    );
   };
 
   return (
@@ -80,15 +117,9 @@ export default function Settings() {
                     min="0"
                     max="100"
                     step="0.1"
-                    value={editing ? gstInput : (settings?.gstRate ?? 9)}
-                    onChange={(e) => {
-                      setEditing(true);
-                      setGstInput(e.target.value);
-                    }}
-                    onFocus={() => {
-                      setEditing(true);
-                      setGstInput(String(settings?.gstRate ?? 9));
-                    }}
+                    value={gstEditing ? gstInput : (settings?.gstRate ?? 9)}
+                    onChange={(e) => { setGstEditing(true); setGstInput(e.target.value); }}
+                    onFocus={() => { setGstEditing(true); setGstInput(String(settings?.gstRate ?? 9)); }}
                     disabled={!isAdmin}
                     className="pr-8"
                   />
@@ -98,7 +129,7 @@ export default function Settings() {
                   Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
                 </p>
               </div>
-              {isAdmin && editing && (
+              {isAdmin && gstEditing && (
                 <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
                   <Save className="h-4 w-4" />
                   {updateSettings.isPending ? "Saving..." : "Save"}
@@ -108,6 +139,99 @@ export default function Settings() {
           )}
           {!isAdmin && (
             <p className="text-xs text-muted-foreground">Only administrators can change the GST rate.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5 text-primary" />
+            Email (SMTP) Settings
+          </CardTitle>
+          <CardDescription>
+            Configure your outgoing mail server to enable sending documents directly from the app.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {settingsLoading ? (
+            <div className="space-y-2">
+              <div className="h-10 bg-muted animate-pulse rounded-md" />
+              <div className="h-10 bg-muted animate-pulse rounded-md" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                {settings?.smtpConfigured ? (
+                  <><CheckCircle2 className="h-4 w-4 text-emerald-600" /><span className="text-sm text-emerald-600 font-medium">Email is configured and ready</span></>
+                ) : (
+                  <><XCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Email not yet configured</span></>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtpHost">SMTP Host</Label>
+                  <Input
+                    id="smtpHost"
+                    placeholder="smtp.gmail.com"
+                    value={smtpHost}
+                    onChange={e => { setSmtpEditing(true); setSmtpHost(e.target.value); }}
+                    disabled={!isAdmin}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtpPort">SMTP Port</Label>
+                  <Input
+                    id="smtpPort"
+                    placeholder="587"
+                    value={smtpPort}
+                    onChange={e => { setSmtpEditing(true); setSmtpPort(e.target.value); }}
+                    disabled={!isAdmin}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtpUser">Username / Email</Label>
+                <Input
+                  id="smtpUser"
+                  placeholder="your@email.com"
+                  value={smtpUser}
+                  onChange={e => { setSmtpEditing(true); setSmtpUser(e.target.value); }}
+                  disabled={!isAdmin}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtpPass">Password / App Password</Label>
+                <Input
+                  id="smtpPass"
+                  type="password"
+                  placeholder={settings?.smtpConfigured ? "••••••••  (leave blank to keep current)" : "Enter password"}
+                  value={smtpPass}
+                  onChange={e => { setSmtpEditing(true); setSmtpPass(e.target.value); }}
+                  disabled={!isAdmin}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtpFrom">From Address</Label>
+                <Input
+                  id="smtpFrom"
+                  placeholder="RSV Infotech <noreply@rsvinfotech.com>"
+                  value={smtpFrom}
+                  onChange={e => { setSmtpEditing(true); setSmtpFrom(e.target.value); }}
+                  disabled={!isAdmin}
+                />
+                <p className="text-xs text-muted-foreground">The "From" name and email shown to recipients.</p>
+              </div>
+              {isAdmin && smtpEditing && (
+                <Button onClick={handleSaveSmtp} disabled={updateSettings.isPending} className="gap-2">
+                  <Save className="h-4 w-4" />
+                  {updateSettings.isPending ? "Saving..." : "Save Email Settings"}
+                </Button>
+              )}
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">Only administrators can change email settings.</p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

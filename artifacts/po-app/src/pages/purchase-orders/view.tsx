@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag } from "lucide-react";
 import { format } from "date-fns";
 import { generatePO_PDF } from "@/lib/pdf";
+import { EmailSendDialog } from "@/components/email-send-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -120,6 +121,13 @@ export default function PurchaseOrderView() {
             <Printer className="h-4 w-4" />
             Download PDF
           </Button>
+          <EmailSendDialog
+            defaultTo={(po as any).vendorContactEmail || ""}
+            defaultSubject={`Purchase Order ${po.poNumber}`}
+            defaultBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+            pdfFilename={`${po.poNumber}.pdf`}
+            generatePdf={() => generatePO_PDF(po, selectedCompany, { returnBase64: true }) as Promise<string>}
+          />
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="icon">
@@ -163,6 +171,14 @@ export default function PurchaseOrderView() {
               <div className="text-sm">
                 <span className="text-muted-foreground">Contact: </span>
                 <span className="font-medium">{po.vendorContact}</span>
+              </div>
+            )}
+            {(po as any).vendorContactEmail && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Email: </span>
+                <a href={`mailto:${(po as any).vendorContactEmail}`} className="font-medium text-primary hover:underline">
+                  {(po as any).vendorContactEmail}
+                </a>
               </div>
             )}
           </CardContent>

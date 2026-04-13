@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Printer, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { generateInvoice_PDF } from "@/lib/pdf";
+import { EmailSendDialog } from "@/components/email-send-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -76,6 +77,13 @@ export default function InvoiceView() {
           <Button variant="outline" className="gap-2" onClick={() => generateInvoice_PDF(doc, selectedCompany).catch(() => toast({ title: "Error", description: "PDF failed", variant: "destructive" }))}>
             <Printer className="h-4 w-4" />Download PDF
           </Button>
+          <EmailSendDialog
+            defaultTo={(doc as any).customerContactEmail || ""}
+            defaultSubject={`Invoice ${doc.invNumber}`}
+            defaultBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${doc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+            pdfFilename={`${doc.invNumber}.pdf`}
+            generatePdf={() => generateInvoice_PDF(doc, selectedCompany, { returnBase64: true }) as Promise<string>}
+          />
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/invoices/${id}/edit`)}>
             <Pencil className="h-4 w-4" />Edit
           </Button>
@@ -106,7 +114,20 @@ export default function InvoiceView() {
           <CardContent className="space-y-3 text-sm">
             <div><span className="font-medium text-base">{doc.customerName}</span></div>
             {doc.customerAddress && <p className="text-muted-foreground whitespace-pre-line">{doc.customerAddress}</p>}
-            {doc.customerContact && <p className="text-muted-foreground">{doc.customerContact}</p>}
+            {doc.customerContact && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Contact: </span>
+                <span>{doc.customerContact}</span>
+              </div>
+            )}
+            {(doc as any).customerContactEmail && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Email: </span>
+                <a href={`mailto:${(doc as any).customerContactEmail}`} className="text-primary hover:underline">
+                  {(doc as any).customerContactEmail}
+                </a>
+              </div>
+            )}
           </CardContent>
         </Card>
         <Card>
