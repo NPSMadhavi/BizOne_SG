@@ -137,8 +137,11 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   const finalY = (doc as any).lastAutoTable.finalY + 10;
 
   // ── Totals block ──────────────────────────────────────────────────────
-  const labelX = 148;
-  const valueX = marginRight;
+  // Table Amount column: starts at 169mm, ends at 196mm, cell padding 4mm
+  // So text right edge = 196 - 4 = 192mm
+  // Labels start at Unit Price column left text edge = 142 + 4 = 146mm
+  const labelX = 146;
+  const valueX = marginRight - 4; // 192mm — matches Amount column text right edge
 
   doc.setFontSize(9.5);
   doc.setTextColor(0, 0, 0);
@@ -146,14 +149,13 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   doc.text("Subtotal:", labelX, finalY);
   doc.text(`$${Number(po.subtotal).toFixed(2)}`, valueX, finalY, { align: "right" });
 
-  const taxRate = Number(po.tax);
   const subtotalNum = Number(po.subtotal);
-  const taxAmount = subtotalNum > 0 && taxRate > 0 ? po.totalAmount - subtotalNum : taxRate;
+  const taxAmount = Number(po.totalAmount) - subtotalNum;
 
-  doc.text(`Tax:`, labelX, finalY + 7);
-  doc.text(`$${Number(taxAmount).toFixed(2)}`, valueX, finalY + 7, { align: "right" });
+  doc.text("Tax:", labelX, finalY + 7);
+  doc.text(`$${taxAmount.toFixed(2)}`, valueX, finalY + 7, { align: "right" });
 
-  doc.setDrawColor(200, 200, 200);
+  doc.setDrawColor(180, 180, 180);
   doc.setLineWidth(0.3);
   doc.line(labelX, finalY + 10, marginRight, finalY + 10);
 
