@@ -137,6 +137,7 @@ function buildDocHeader(
 
 function buildDocFooter(doc: jsPDF, docType: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 14;
   const marginRight = pageWidth - 14;
   const pageHeight = doc.internal.pageSize.getHeight();
   const totalPages = (doc as any).internal.pages.length - 1;
@@ -152,9 +153,7 @@ function buildDocFooter(doc: jsPDF, docType: string) {
       footerY,
       { align: "center" }
     );
-    if (totalPages > 1) {
-      doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
-    }
+    doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
   }
 }
 
@@ -282,7 +281,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     doc.setPage(p);
     doc.setFontSize(7.5); doc.setFont("helvetica", "italic"); doc.setTextColor(160, 160, 160);
     doc.text("This is a computer-generated Purchase Order document and does not require a physical signature.", pageWidth / 2, footerY, { align: "center" });
-    if (totalPages > 1) doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
+    doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
   }
 
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
