@@ -453,24 +453,10 @@ export default function PurchaseOrderNew() {
                   
                   <div className="flex justify-between items-center text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Tax %</span>
-                      <FormField
-                        control={form.control}
-                        name="tax"
-                        render={({ field }) => (
-                          <FormItem className="mb-0">
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                min="0" 
-                                max="100" 
-                                className="h-7 w-16 text-right" 
-                                {...field} 
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
+                      <span className="text-muted-foreground">GST ({form.watch("tax") ?? 0}%)</span>
+                      <FormField control={form.control} name="tax" render={({ field }) => (
+                        <FormItem className="hidden"><FormControl><input type="hidden" {...field} /></FormControl></FormItem>
+                      )} />
                     </div>
                     <span className="font-medium">{formatCurrency(taxAmount)}</span>
                   </div>

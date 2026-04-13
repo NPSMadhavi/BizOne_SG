@@ -249,15 +249,10 @@ export default function InvoiceEdit() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Line Items</CardTitle>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">GST:</span>
-                  <div className="relative w-24">
-                    <FormField control={form.control} name="tax" render={({ field }) => (
-                      <FormItem><FormControl>
-                        <Input type="number" min="0" max="100" step="0.1" className="pr-6 h-8 text-sm" {...field} />
-                      </FormControl></FormItem>
-                    )} />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
-                  </div>
+                  <span className="text-sm text-muted-foreground">GST: <span className="font-medium text-foreground">{form.watch("tax") ?? 0}%</span></span>
+                  <FormField control={form.control} name="tax" render={({ field }) => (
+                    <FormItem className="hidden"><FormControl><input type="hidden" {...field} /></FormControl></FormItem>
+                  )} />
                 </div>
               </div>
             </CardHeader>
