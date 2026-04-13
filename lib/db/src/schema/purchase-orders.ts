@@ -1,0 +1,26 @@
+import { pgTable, text, serial, timestamp, integer, decimal, jsonb } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const purchaseOrdersTable = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  poNumber: text("po_number").notNull().unique(),
+  vendorName: text("vendor_name").notNull(),
+  vendorAddress: text("vendor_address"),
+  vendorContact: text("vendor_contact"),
+  deliveryAddress: text("delivery_address"),
+  deliveryDate: text("delivery_date"),
+  paymentTerms: text("payment_terms"),
+  notes: text("notes"),
+  items: jsonb("items").notNull().default([]),
+  subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
+  tax: decimal("tax", { precision: 15, scale: 2 }).notNull().default("0"),
+  totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  status: text("status").notNull().default("draft"),
+  createdBy: integer("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrdersTable).omit({ id: true, createdAt: true });
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrderRecord = typeof purchaseOrdersTable.$inferSelect;

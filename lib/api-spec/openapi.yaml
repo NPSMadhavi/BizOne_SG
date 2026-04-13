@@ -3,20 +3,25 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for RSV Infotech PO Generator
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: User management
+  - name: purchase-orders
+    description: Purchase order operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +29,225 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a user (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserBody"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/{id}:
+    put:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user (admin only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserBody"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user (admin only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /purchase-orders:
+    get:
+      operationId: listPurchaseOrders
+      tags: [purchase-orders]
+      summary: List purchase orders
+      responses:
+        "200":
+          description: List of purchase orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PurchaseOrder"
+    post:
+      operationId: createPurchaseOrder
+      tags: [purchase-orders]
+      summary: Create a purchase order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseOrderBody"
+      responses:
+        "201":
+          description: Purchase order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+
+  /purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrder
+      tags: [purchase-orders]
+      summary: Get a purchase order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+    delete:
+      operationId: deletePurchaseOrder
+      tags: [purchase-orders]
+      summary: Delete a purchase order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /purchase-orders/stats:
+    get:
+      operationId: getPurchaseOrderStats
+      tags: [purchase-orders]
+      summary: Get PO stats summary
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/POStats"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +255,166 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
+
+    LoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+
+    LoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+      required: [user]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        createdAt:
+          type: string
+      required: [id, username, role, createdAt]
+
+    CreateUserBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+      required: [username, password, role]
+
+    UpdateUserBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+
+    POItem:
+      type: object
+      properties:
+        partNumber:
+          type: string
+        description:
+          type: string
+        qty:
+          type: number
+        unitPrice:
+          type: number
+        amount:
+          type: number
+      required: [partNumber, description, qty, unitPrice, amount]
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        poNumber:
+          type: string
+        vendorName:
+          type: string
+        vendorAddress:
+          type: string
+        vendorContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/POItem"
+        subtotal:
+          type: number
+        tax:
+          type: number
+        totalAmount:
+          type: number
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        createdBy:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, poNumber, vendorName, items, subtotal, tax, totalAmount, status, createdBy, createdAt]
+
+    CreatePurchaseOrderBody:
+      type: object
+      properties:
+        vendorName:
+          type: string
+        vendorAddress:
+          type: string
+        vendorContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/POItem"
+        tax:
+          type: number
+      required: [vendorName, items]
+
+    POStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        confirmed:
+          type: integer
+        draft:
+          type: integer
+        cancelled:
+          type: integer
+        totalValue:
+          type: number
+      required: [total, confirmed, draft, cancelled, totalValue]
