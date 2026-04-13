@@ -14,6 +14,8 @@ tags:
     description: Authentication
   - name: users
     description: User management
+  - name: companies
+    description: Company management
   - name: purchase-orders
     description: Purchase order operations
   - name: quotations
@@ -94,6 +96,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/select-company:
+    post:
+      operationId: selectCompany
+      tags: [auth]
+      summary: Select active company for session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelectCompanyBody"
+      responses:
+        "200":
+          description: Company selected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "403":
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [companies]
+      summary: List all companies
+      responses:
+        "200":
+          description: List of companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Company"
 
   /users:
     get:
@@ -647,6 +689,32 @@ components:
           $ref: "#/components/schemas/User"
       required: [user]
 
+    Company:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        country:
+          type: string
+        address:
+          type: string
+        registrationNo:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+      required: [id, name, country]
+
+    SelectCompanyBody:
+      type: object
+      properties:
+        companyId:
+          type: integer
+      required: [companyId]
+
     User:
       type: object
       properties:
@@ -659,7 +727,13 @@ components:
           enum: [admin, user]
         createdAt:
           type: string
-      required: [id, username, role, createdAt]
+        companies:
+          type: array
+          items:
+            $ref: "#/components/schemas/Company"
+        selectedCompanyId:
+          type: integer
+      required: [id, username, role, createdAt, companies]
 
     CreateUserBody:
       type: object
@@ -671,6 +745,10 @@ components:
         role:
           type: string
           enum: [admin, user]
+        companyIds:
+          type: array
+          items:
+            type: integer
       required: [username, password, role]
 
     UpdateUserBody:
@@ -683,6 +761,10 @@ components:
         role:
           type: string
           enum: [admin, user]
+        companyIds:
+          type: array
+          items:
+            type: integer
 
     POItem:
       type: object

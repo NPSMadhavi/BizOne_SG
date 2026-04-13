@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
+import SelectCompany from "@/pages/select-company/index";
 import PurchaseOrderList from "@/pages/purchase-orders/list";
 import PurchaseOrderNew from "@/pages/purchase-orders/new";
 import PurchaseOrderView from "@/pages/purchase-orders/view";
@@ -29,9 +30,11 @@ import { Shell } from "@/components/layout/shell";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ component: Component, adminOnly = false }: { component: React.ComponentType, adminOnly?: boolean }) {
-  const { user, isLoading, isAdmin } = useAuth();
+  const { user, isLoading, isAdmin, selectedCompany } = useAuth();
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div></div>;
   if (!user) return <Redirect to="/login" />;
+  const hasMultipleCompanies = (user.companies?.length ?? 0) > 1;
+  if (!selectedCompany && hasMultipleCompanies) return <Redirect to="/select-company" />;
   if (adminOnly && !isAdmin) return <Redirect to="/dashboard" />;
   return <Component />;
 }
@@ -41,6 +44,7 @@ function Router() {
     <Shell>
       <Switch>
         <Route path="/login" component={Login} />
+        <Route path="/select-company" component={SelectCompany} />
         <Route path="/">{() => <Redirect to="/dashboard" />}</Route>
 
         <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} />}</Route>

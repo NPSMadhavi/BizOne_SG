@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import session from "express-session";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { seedCompanies } from "./routes/companies";
 
 const app: Express = express();
 
@@ -40,11 +41,13 @@ app.use(
     cookie: {
       secure: false,
       httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 24 * 60 * 60 * 1000,
     },
   }),
 );
 
 app.use("/api", router);
+
+seedCompanies().catch(err => logger.error({ err }, "Failed to seed companies"));
 
 export default app;

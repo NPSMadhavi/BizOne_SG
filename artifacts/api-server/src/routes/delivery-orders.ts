@@ -3,13 +3,24 @@ import { db, deliveryOrdersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 
 declare module "express-session" {
-  interface SessionData { userId?: number; }
+  interface SessionData {
+    userId?: number;
+    companyId?: number;
+  }
 }
 
 const router: IRouter = Router();
 
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return false; }
+  return true;
+}
+
+function requireCompany(req: any, res: any): boolean {
+  if (!req.session.companyId) {
+    res.status(400).json({ error: "No company selected. Please select a company first." });
+    return false;
+  }
   return true;
 }
 
@@ -30,12 +41,16 @@ function parseDoc(doc: any) {
 
 router.get("/delivery-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const docs = await db.select().from(deliveryOrdersTable).orderBy(desc(deliveryOrdersTable.createdAt));
+  const companyId = req.session.companyId;
+  const docs = companyId
+    ? await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.companyId, companyId)).orderBy(desc(deliveryOrdersTable.createdAt))
+    : await db.select().from(deliveryOrdersTable).orderBy(desc(deliveryOrdersTable.createdAt));
   res.json(docs.map(parseDoc));
 });
 
 router.post("/delivery-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
   const { customerName, customerAddress, customerContact, deliveryDate, notes, items } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
@@ -49,8 +64,8 @@ router.post("/delivery-orders", async (req, res): Promise<void> => {
   }
 
   const [doc] = await db.insert(deliveryOrdersTable).values({
-    doNumber, customerName, customerAddress, customerContact, deliveryDate,
-    notes, items, status: "draft", createdBy: req.session.userId!,
+    doNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
+    deliveryDate, notes, items, status: "draft", createdBy: req.session.userId!,
   }).returning();
   res.status(201).json(parseDoc(doc));
 });

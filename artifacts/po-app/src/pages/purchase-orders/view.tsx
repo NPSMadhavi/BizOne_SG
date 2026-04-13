@@ -8,6 +8,7 @@ import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditC
 import { format } from "date-fns";
 import { generatePO_PDF } from "@/lib/pdf";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ export default function PurchaseOrderView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: {
@@ -54,7 +56,7 @@ export default function PurchaseOrderView() {
   const handlePrint = async () => {
     if (po) {
       try {
-        await generatePO_PDF(po);
+        await generatePO_PDF(po, selectedCompany);
         toast({
           title: "Success",
           description: "PDF generated successfully.",

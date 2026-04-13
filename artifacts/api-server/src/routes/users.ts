@@ -1,12 +1,13 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, usersTable, companiesTable, userCompaniesTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import { CreateUserBody, UpdateUserBody, UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
 
 declare module "express-session" {
   interface SessionData {
     userId?: number;
+    companyId?: number;
   }
 }
 
@@ -25,17 +26,33 @@ async function requireAdmin(req: any, res: any): Promise<boolean> {
   return true;
 }
 
+async function getUserWithCompanies(userId: number) {
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) return null;
+
+  const ucRows = await db
+    .select({ company: companiesTable })
+    .from(userCompaniesTable)
+    .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
+    .where(eq(userCompaniesTable.userId, userId));
+
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    createdAt: user.createdAt.toISOString(),
+    companies: ucRows.map(r => r.company),
+    selectedCompanyId: null,
+  };
+}
+
 router.get("/users", async (req, res): Promise<void> => {
   if (!(await requireAdmin(req, res))) return;
 
-  const users = await db.select({
-    id: usersTable.id,
-    username: usersTable.username,
-    role: usersTable.role,
-    createdAt: usersTable.createdAt,
-  }).from(usersTable).orderBy(usersTable.createdAt);
+  const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
 
-  res.json(users.map(u => ({ ...u, createdAt: u.createdAt.toISOString() })));
+  const result = await Promise.all(users.map(u => getUserWithCompanies(u.id)));
+  res.json(result.filter(Boolean));
 });
 
 router.post("/users", async (req, res): Promise<void> => {
@@ -47,7 +64,7 @@ router.post("/users", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password, role } = parsed.data;
+  const { username, password, role, companyIds } = parsed.data;
 
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.username, username));
   if (existing) {
@@ -58,12 +75,14 @@ router.post("/users", async (req, res): Promise<void> => {
   const passwordHash = await bcrypt.hash(password, 12);
   const [user] = await db.insert(usersTable).values({ username, passwordHash, role }).returning();
 
-  res.status(201).json({
-    id: user.id,
-    username: user.username,
-    role: user.role,
-    createdAt: user.createdAt.toISOString(),
-  });
+  if (companyIds && companyIds.length > 0) {
+    for (const companyId of companyIds) {
+      await db.insert(userCompaniesTable).values({ userId: user.id, companyId }).onConflictDoNothing();
+    }
+  }
+
+  const result = await getUserWithCompanies(user.id);
+  res.status(201).json(result);
 });
 
 router.put("/users/:id", async (req, res): Promise<void> => {
@@ -81,29 +100,33 @@ router.put("/users/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password, role } = parsed.data;
+  const { username, password, role, companyIds } = parsed.data;
   const updates: Record<string, any> = {};
   if (username) updates.username = username;
   if (role) updates.role = role;
   if (password) updates.passwordHash = await bcrypt.hash(password, 12);
 
-  if (Object.keys(updates).length === 0) {
-    res.status(400).json({ error: "No fields to update" });
-    return;
+  if (Object.keys(updates).length > 0) {
+    const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, params.data.id)).returning();
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
   }
 
-  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, params.data.id)).returning();
-  if (!user) {
+  if (companyIds !== undefined) {
+    await db.delete(userCompaniesTable).where(eq(userCompaniesTable.userId, params.data.id));
+    for (const companyId of companyIds) {
+      await db.insert(userCompaniesTable).values({ userId: params.data.id, companyId }).onConflictDoNothing();
+    }
+  }
+
+  const result = await getUserWithCompanies(params.data.id);
+  if (!result) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-
-  res.json({
-    id: user.id,
-    username: user.username,
-    role: user.role,
-    createdAt: user.createdAt.toISOString(),
-  });
+  res.json(result);
 });
 
 router.delete("/users/:id", async (req, res): Promise<void> => {

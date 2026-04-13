@@ -28,6 +28,18 @@ export const LoginResponse = zod.object({
     username: zod.string(),
     role: zod.enum(["admin", "user"]),
     createdAt: zod.string(),
+    companies: zod.array(
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        country: zod.string(),
+        address: zod.string().optional(),
+        registrationNo: zod.string().optional(),
+        email: zod.string().optional(),
+        phone: zod.string().optional(),
+      }),
+    ),
+    selectedCompanyId: zod.number().optional(),
   }),
 });
 
@@ -46,7 +58,44 @@ export const GetMeResponse = zod.object({
   username: zod.string(),
   role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
+  companies: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      country: zod.string(),
+      address: zod.string().optional(),
+      registrationNo: zod.string().optional(),
+      email: zod.string().optional(),
+      phone: zod.string().optional(),
+    }),
+  ),
+  selectedCompanyId: zod.number().optional(),
 });
+
+/**
+ * @summary Select active company for session
+ */
+export const SelectCompanyBody = zod.object({
+  companyId: zod.number(),
+});
+
+export const SelectCompanyResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List all companies
+ */
+export const ListCompaniesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  country: zod.string(),
+  address: zod.string().optional(),
+  registrationNo: zod.string().optional(),
+  email: zod.string().optional(),
+  phone: zod.string().optional(),
+});
+export const ListCompaniesResponse = zod.array(ListCompaniesResponseItem);
 
 /**
  * @summary List all users (admin only)
@@ -56,6 +105,18 @@ export const ListUsersResponseItem = zod.object({
   username: zod.string(),
   role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
+  companies: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      country: zod.string(),
+      address: zod.string().optional(),
+      registrationNo: zod.string().optional(),
+      email: zod.string().optional(),
+      phone: zod.string().optional(),
+    }),
+  ),
+  selectedCompanyId: zod.number().optional(),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
 
@@ -66,6 +127,7 @@ export const CreateUserBody = zod.object({
   username: zod.string(),
   password: zod.string(),
   role: zod.enum(["admin", "user"]),
+  companyIds: zod.array(zod.number()).optional(),
 });
 
 /**
@@ -79,6 +141,7 @@ export const UpdateUserBody = zod.object({
   username: zod.string().optional(),
   password: zod.string().optional(),
   role: zod.enum(["admin", "user"]).optional(),
+  companyIds: zod.array(zod.number()).optional(),
 });
 
 export const UpdateUserResponse = zod.object({
@@ -86,6 +149,18 @@ export const UpdateUserResponse = zod.object({
   username: zod.string(),
   role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
+  companies: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      country: zod.string(),
+      address: zod.string().optional(),
+      registrationNo: zod.string().optional(),
+      email: zod.string().optional(),
+      phone: zod.string().optional(),
+    }),
+  ),
+  selectedCompanyId: zod.number().optional(),
 });
 
 /**

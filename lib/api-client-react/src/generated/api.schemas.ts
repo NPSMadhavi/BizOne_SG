@@ -29,15 +29,31 @@ export const UserRole = {
   user: "user",
 } as const;
 
+export interface Company {
+  id: number;
+  name: string;
+  country: string;
+  address?: string;
+  registrationNo?: string;
+  email?: string;
+  phone?: string;
+}
+
 export interface User {
   id: number;
   username: string;
   role: UserRole;
   createdAt: string;
+  companies: Company[];
+  selectedCompanyId?: number;
 }
 
 export interface LoginResponse {
   user: User;
+}
+
+export interface SelectCompanyBody {
+  companyId: number;
 }
 
 export type CreateUserBodyRole =
@@ -52,6 +68,7 @@ export interface CreateUserBody {
   username: string;
   password: string;
   role: CreateUserBodyRole;
+  companyIds?: number[];
 }
 
 export type UpdateUserBodyRole =
@@ -66,6 +83,7 @@ export interface UpdateUserBody {
   username?: string;
   password?: string;
   role?: UpdateUserBodyRole;
+  companyIds?: number[];
 }
 
 export interface POItem {

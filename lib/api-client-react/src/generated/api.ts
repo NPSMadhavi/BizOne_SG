@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  Company,
   CreateDeliveryOrderBody,
   CreateInvoiceBody,
   CreatePurchaseOrderBody,
@@ -32,6 +33,7 @@ import type {
   POStats,
   PurchaseOrder,
   Quotation,
+  SelectCompanyBody,
   Settings,
   SuccessResponse,
   UpdateDeliveryOrderBody,
@@ -349,6 +351,167 @@ export function useGetMe<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Select active company for session
+ */
+export const getSelectCompanyUrl = () => {
+  return `/api/auth/select-company`;
+};
+
+export const selectCompany = async (
+  selectCompanyBody: SelectCompanyBody,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getSelectCompanyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(selectCompanyBody),
+  });
+};
+
+export const getSelectCompanyMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectCompany>>,
+    TError,
+    { data: BodyType<SelectCompanyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof selectCompany>>,
+  TError,
+  { data: BodyType<SelectCompanyBody> },
+  TContext
+> => {
+  const mutationKey = ["selectCompany"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof selectCompany>>,
+    { data: BodyType<SelectCompanyBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return selectCompany(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SelectCompanyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof selectCompany>>
+>;
+export type SelectCompanyMutationBody = BodyType<SelectCompanyBody>;
+export type SelectCompanyMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Select active company for session
+ */
+export const useSelectCompany = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectCompany>>,
+    TError,
+    { data: BodyType<SelectCompanyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof selectCompany>>,
+  TError,
+  { data: BodyType<SelectCompanyBody> },
+  TContext
+> => {
+  return useMutation(getSelectCompanyMutationOptions(options));
+};
+
+/**
+ * @summary List all companies
+ */
+export const getListCompaniesUrl = () => {
+  return `/api/companies`;
+};
+
+export const listCompanies = async (
+  options?: RequestInit,
+): Promise<Company[]> => {
+  return customFetch<Company[]>(getListCompaniesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCompaniesQueryKey = () => {
+  return [`/api/companies`] as const;
+};
+
+export const getListCompaniesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCompanies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCompanies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCompaniesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCompanies>>> = ({
+    signal,
+  }) => listCompanies({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCompanies>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCompaniesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCompanies>>
+>;
+export type ListCompaniesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all companies
+ */
+
+export function useListCompanies<
+  TData = Awaited<ReturnType<typeof listCompanies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCompanies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCompaniesQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

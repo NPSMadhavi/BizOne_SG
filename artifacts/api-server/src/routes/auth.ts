@@ -1,16 +1,45 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, companiesTable, userCompaniesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { LoginBody } from "@workspace/api-zod";
+import { LoginBody, SelectCompanyBody } from "@workspace/api-zod";
 
 declare module "express-session" {
   interface SessionData {
     userId?: number;
+    companyId?: number;
   }
 }
 
 const router: IRouter = Router();
+
+async function getUserCompanies(userId: number) {
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) return [];
+
+  if (user.role === "admin") {
+    return await db.select().from(companiesTable);
+  }
+
+  const rows = await db
+    .select({ company: companiesTable })
+    .from(userCompaniesTable)
+    .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
+    .where(eq(userCompaniesTable.userId, userId));
+
+  return rows.map(r => r.company);
+}
+
+function formatUser(user: any, companies: any[], selectedCompanyId?: number | null) {
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
+    companies,
+    selectedCompanyId: selectedCompanyId ?? null,
+  };
+}
 
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
@@ -34,14 +63,15 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   req.session.userId = user.id;
-  res.json({
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      createdAt: user.createdAt.toISOString(),
-    },
-  });
+  req.session.companyId = undefined;
+
+  const companies = await getUserCompanies(user.id);
+
+  if (companies.length === 1) {
+    req.session.companyId = companies[0].id;
+  }
+
+  res.json({ user: formatUser(user, companies, req.session.companyId) });
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
@@ -62,12 +92,33 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({
-    id: user.id,
-    username: user.username,
-    role: user.role,
-    createdAt: user.createdAt.toISOString(),
-  });
+  const companies = await getUserCompanies(user.id);
+  res.json(formatUser(user, companies, req.session.companyId));
+});
+
+router.post("/auth/select-company", async (req, res): Promise<void> => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const parsed = SelectCompanyBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request body" });
+    return;
+  }
+
+  const { companyId } = parsed.data;
+  const companies = await getUserCompanies(req.session.userId);
+  const hasAccess = companies.some(c => c.id === companyId);
+
+  if (!hasAccess) {
+    res.status(403).json({ error: "Access denied to this company" });
+    return;
+  }
+
+  req.session.companyId = companyId;
+  res.json({ success: true });
 });
 
 export default router;

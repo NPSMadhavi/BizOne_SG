@@ -3,6 +3,7 @@ import { pgTable, text, serial, timestamp, integer, decimal, jsonb } from "drizz
 export const quotationsTable = pgTable("quotations", {
   id: serial("id").primaryKey(),
   qtNumber: text("qt_number").notNull().unique(),
+  companyId: integer("company_id").notNull().default(1),
   customerName: text("customer_name").notNull(),
   customerAddress: text("customer_address"),
   customerContact: text("customer_contact"),

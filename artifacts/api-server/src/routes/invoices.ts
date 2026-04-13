@@ -3,13 +3,24 @@ import { db, invoicesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 
 declare module "express-session" {
-  interface SessionData { userId?: number; }
+  interface SessionData {
+    userId?: number;
+    companyId?: number;
+  }
 }
 
 const router: IRouter = Router();
 
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return false; }
+  return true;
+}
+
+function requireCompany(req: any, res: any): boolean {
+  if (!req.session.companyId) {
+    res.status(400).json({ error: "No company selected. Please select a company first." });
+    return false;
+  }
   return true;
 }
 
@@ -33,7 +44,10 @@ function parseDoc(doc: any) {
 
 router.get("/invoices/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const all = await db.select().from(invoicesTable);
+  const companyId = req.session.companyId;
+  const all = companyId
+    ? await db.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId))
+    : await db.select().from(invoicesTable);
   res.json({
     total: all.length,
     confirmed: all.filter(x => x.status === "confirmed").length,
@@ -45,12 +59,16 @@ router.get("/invoices/stats", async (req, res): Promise<void> => {
 
 router.get("/invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const docs = await db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt));
+  const companyId = req.session.companyId;
+  const docs = companyId
+    ? await db.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId)).orderBy(desc(invoicesTable.createdAt))
+    : await db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt));
   res.json(docs.map(parseDoc));
 });
 
 router.post("/invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
   const { customerName, customerAddress, customerContact, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
@@ -68,8 +86,9 @@ router.post("/invoices", async (req, res): Promise<void> => {
   }
 
   const [doc] = await db.insert(invoicesTable).values({
-    invNumber, customerName, customerAddress, customerContact, deliveryAddress, deliveryDate,
-    paymentTerms, notes, items, subtotal: subtotal.toFixed(2), tax: taxAmt.toFixed(2),
+    invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
+    deliveryAddress, deliveryDate, paymentTerms, notes, items,
+    subtotal: subtotal.toFixed(2), tax: taxAmt.toFixed(2),
     totalAmount: totalAmount.toFixed(2), status: "draft", createdBy: req.session.userId!,
   }).returning();
   res.status(201).json(parseDoc(doc));

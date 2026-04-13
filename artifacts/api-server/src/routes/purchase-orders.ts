@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, purchaseOrdersTable, usersTable } from "@workspace/db";
-import { eq, count, sum, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import {
   CreatePurchaseOrderBody,
   UpdatePurchaseOrderBody,
@@ -12,6 +12,7 @@ import {
 declare module "express-session" {
   interface SessionData {
     userId?: number;
+    companyId?: number;
   }
 }
 
@@ -20,6 +21,14 @@ const router: IRouter = Router();
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) {
     res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+  return true;
+}
+
+function requireCompany(req: any, res: any): boolean {
+  if (!req.session.companyId) {
+    res.status(400).json({ error: "No company selected. Please select a company first." });
     return false;
   }
   return true;
@@ -45,8 +54,12 @@ function parsePO(po: any) {
 
 router.get("/purchase-orders/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  const companyId = req.session.companyId;
 
-  const allPOs = await db.select().from(purchaseOrdersTable);
+  const allPOs = companyId
+    ? await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.companyId, companyId))
+    : await db.select().from(purchaseOrdersTable);
+
   const total = allPOs.length;
   const confirmed = allPOs.filter(p => p.status === "confirmed").length;
   const draft = allPOs.filter(p => p.status === "draft").length;
@@ -58,13 +71,18 @@ router.get("/purchase-orders/stats", async (req, res): Promise<void> => {
 
 router.get("/purchase-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  const companyId = req.session.companyId;
 
-  const pos = await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
+  const pos = companyId
+    ? await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.companyId, companyId)).orderBy(desc(purchaseOrdersTable.createdAt))
+    : await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
+
   res.json(pos.map(parsePO));
 });
 
 router.post("/purchase-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
 
   const parsed = CreatePurchaseOrderBody.safeParse(req.body);
   if (!parsed.success) {
@@ -96,6 +114,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     .insert(purchaseOrdersTable)
     .values({
       poNumber,
+      companyId: req.session.companyId!,
       ...rest,
       items: itemsWithAmounts,
       subtotal: subtotal.toFixed(2),

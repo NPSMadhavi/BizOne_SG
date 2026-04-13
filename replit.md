@@ -2,19 +2,29 @@
 
 ## Overview
 
-A full-stack document management application for RSV Infotech Pte. Ltd. (Singapore). Built on a pnpm workspace monorepo with TypeScript. Supports Purchase Orders, Quotations, Invoices, and Delivery Orders with professional PDF generation and GST management.
+A full-stack document management application for three companies: RSV Infotech Pte. Ltd. (Singapore), Netopsys Pte. Ltd. (Singapore), and Netopsys AI Pvt. Ltd. (India). Built on a pnpm workspace monorepo with TypeScript. Supports Purchase Orders, Quotations, Invoices, and Delivery Orders with professional PDF generation, GST management, and multi-company access control.
 
 ## Features
 
-- Login system with admin and user roles
+- Login system with admin and user roles; company selector at login for multi-company users
+- **Multi-company support** — 3 seeded companies; users are assigned to one or more companies; all documents are scoped per company
 - **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking
 - **Quotations** — full CRUD; auto-numbered QT-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
 - **Invoices** — full CRUD; auto-numbered INV-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
 - **Delivery Orders** — full CRUD; auto-numbered DO-YYYYMM-XXXX; no pricing columns; PDF generation
 - **Settings** — centralized GST rate (admin-only edit); currently 9%
-- **Admin Panel** — manage users (create, edit, delete)
+- **Admin Panel** — manage users (create, edit, delete); assign company access per user
 - Dashboard with stats
-- PDF generation using jsPDF + jspdf-autotable (consistent header/footer with RSV Infotech branding)
+- PDF generation using jsPDF + jspdf-autotable (consistent header/footer with selected company info)
+- Sidebar shows current company with a switch button for multi-company users
+
+## Companies (seeded on startup)
+
+1. RSV Infotech Pte. Ltd. — Singapore (id=1)
+2. Netopsys Pte. Ltd. — Singapore (id=2)
+3. Netopsys AI Pvt. Ltd. — India (id=3)
+
+Admin users have access to all companies automatically.
 
 ## Document Numbering
 
@@ -72,8 +82,16 @@ Where XXXX is a 4-digit random number.
 ## Database Tables
 
 - `users` — user accounts (id, username, passwordHash, role)
-- `purchaseOrders` — PO records with JSONB items
-- `quotations` — quotation records with JSONB items
-- `invoices` — invoice records with JSONB items
-- `deliveryOrders` — DO records with JSONB items (description, qty only — no pricing)
+- `companies` — company records (id, name, country, address, registrationNo, email, phone)
+- `user_companies` — many-to-many join table (userId, companyId)
+- `purchaseOrders` — PO records with JSONB items; scoped by companyId
+- `quotations` — quotation records with JSONB items; scoped by companyId
+- `invoices` — invoice records with JSONB items; scoped by companyId
+- `deliveryOrders` — DO records with JSONB items (description, qty only — no pricing); scoped by companyId
 - `settings` — singleton row for GST rate and other config
+
+## Session
+
+- `express-session` stores `userId` and `companyId`
+- `POST /api/auth/select-company` sets the active company for the session
+- `GET /api/auth/me` returns the user with their companies list and selectedCompanyId

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./company";
 export * from "./createDeliveryOrderBody";
 export * from "./createInvoiceBody";
 export * from "./createPurchaseOrderBody";
@@ -29,6 +30,7 @@ export * from "./purchaseOrder";
 export * from "./purchaseOrderStatus";
 export * from "./quotation";
 export * from "./quotationStatus";
+export * from "./selectCompanyBody";
 export * from "./settings";
 export * from "./successResponse";
 export * from "./updateDeliveryOrderBody";

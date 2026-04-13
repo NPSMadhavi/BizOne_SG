@@ -5,6 +5,7 @@
  * API specification for RSV Infotech PO Generator
  * OpenAPI spec version: 0.1.0
  */
+import type { Company } from "./company";
 import type { UserRole } from "./userRole";
 
 export interface User {
@@ -12,4 +13,6 @@ export interface User {
   username: string;
   role: UserRole;
   createdAt: string;
+  companies: Company[];
+  selectedCompanyId?: number;
 }

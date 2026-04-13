@@ -11,7 +11,8 @@ import {
   FileSpreadsheet,
   Receipt,
   Truck,
-  ChevronDown,
+  Building2,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +43,37 @@ function NavItem({ href, icon: Icon, children, active }: NavItemProps) {
         {children}
       </div>
     </Link>
+  );
+}
+
+function CompanyBadge() {
+  const { selectedCompany, user } = useAuth();
+  const [, setLocation] = useLocation();
+  const hasMultiple = (user?.companies?.length ?? 0) > 1;
+
+  if (!selectedCompany) return null;
+
+  return (
+    <div className="mx-3 mb-3 px-3 py-2 rounded-lg bg-primary/5 border border-primary/15">
+      <div className="flex items-center gap-2">
+        <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-primary truncate">{selectedCompany.name}</p>
+          <p className="text-xs text-muted-foreground">{selectedCompany.country}</p>
+        </div>
+        {hasMultiple && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+            title="Switch company"
+            onClick={() => setLocation("/select-company")}
+          >
+            <RefreshCw className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -124,7 +156,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex-1 overflow-y-auto">
                 {navItems}
               </div>
-              <div className="pt-4 border-t border-border mt-auto">
+              <div className="pt-4 border-t border-border mt-auto space-y-2">
+                <CompanyBadge />
                 <div className="flex items-center justify-between px-3 py-2">
                   <div className="flex flex-col">
                     <span className="text-sm font-medium">{user.username}</span>
@@ -147,15 +180,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="flex-1 p-4 overflow-y-auto">
           {navItems}
         </div>
-        <div className="p-4 border-t border-border/50 bg-muted/10">
-          <div className="flex items-center justify-between px-2">
-            <div className="flex flex-col">
-              <span className="text-sm font-medium">{user.username}</span>
-              <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+        <div className="border-t border-border/50 bg-muted/10">
+          <CompanyBadge />
+          <div className="px-4 pb-4">
+            <div className="flex items-center justify-between px-2">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">{user.username}</span>
+                <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => logout()} title="Logout" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                <LogOut className="h-4 w-4" />
+              </Button>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => logout()} title="Logout" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-              <LogOut className="h-4 w-4" />
-            </Button>
           </div>
         </div>
       </aside>

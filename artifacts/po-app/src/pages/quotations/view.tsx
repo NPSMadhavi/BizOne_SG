@@ -8,6 +8,7 @@ import { ArrowLeft, Printer, Trash2, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -25,6 +26,7 @@ export default function QuotationView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
 
   const { data: doc, isLoading } = useGetQuotation(id, {
     query: { queryKey: getGetQuotationQueryKey(id), enabled: !!id },
@@ -74,7 +76,7 @@ export default function QuotationView() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2" onClick={() => generateQuotation_PDF(doc).catch(() => toast({ title: "Error", description: "PDF failed", variant: "destructive" }))}>
+          <Button variant="outline" className="gap-2" onClick={() => generateQuotation_PDF(doc, selectedCompany).catch(() => toast({ title: "Error", description: "PDF failed", variant: "destructive" }))}>
             <Printer className="h-4 w-4" />Download PDF
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/quotations/${id}/edit`)}>

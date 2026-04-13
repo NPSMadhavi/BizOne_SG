@@ -3,6 +3,7 @@ import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg
 export const deliveryOrdersTable = pgTable("delivery_orders", {
   id: serial("id").primaryKey(),
   doNumber: text("do_number").notNull().unique(),
+  companyId: integer("company_id").notNull().default(1),
   customerName: text("customer_name").notNull(),
   customerAddress: text("customer_address"),
   customerContact: text("customer_contact"),

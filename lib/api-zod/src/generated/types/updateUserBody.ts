@@ -11,4 +11,5 @@ export interface UpdateUserBody {
   username?: string;
   password?: string;
   role?: UpdateUserBodyRole;
+  companyIds?: number[];
 }
