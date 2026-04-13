@@ -135,8 +135,9 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   });
 
   const tableEndY = (doc as any).lastAutoTable.finalY;
+  const pageHeight = doc.internal.pageSize.getHeight(); // 297mm for A4
 
-  // ── Notes (just after the table) ──────────────────────────────────────
+  // ── Notes (just after the table, on the last page) ────────────────────
   if (po.notes) {
     const notesY = tableEndY + 8;
     doc.setFontSize(9.5);
@@ -149,13 +150,14 @@ export async function generatePO_PDF(po: PurchaseOrder) {
     doc.text(noteLines, marginLeft, notesY + 6);
   }
 
-  // ── Totals block — pinned to bottom-right of page ─────────────────────
-  // Table Amount column text right edge = 196 - 4mm cell padding = 192mm
+  // ── Totals block — always anchored to bottom of the last page ─────────
+  // Table Amount column text right edge = marginRight(196) - cellPadding(4) = 192mm
   const labelX = 146;
   const valueX = marginRight - 4; // 192mm — flush with Amount column
 
-  // Pin totals block to a fixed Y near the bottom (above footer)
-  const totalsY = 250;
+  // Totals block height: subtotal(0) + tax(+7) + separator(+10) + total(+17) = ~20mm
+  // Footer sits at pageHeight - 12. Totals block ends at pageHeight - 15.
+  const totalsY = pageHeight - 47; // dynamically bottom of last page
 
   doc.setFontSize(9.5);
   doc.setTextColor(0, 0, 0);
@@ -179,16 +181,24 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   doc.text("Total Amount:", labelX, totalsY + 17);
   doc.text(`$${Number(po.totalAmount).toFixed(2)}`, valueX, totalsY + 17, { align: "right" });
 
-  // ── Footer ────────────────────────────────────────────────────────────
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(160, 160, 160);
-  doc.text(
-    "This is a computer-generated Purchase Order document and does not require a physical signature.",
-    pageWidth / 2,
-    285,
-    { align: "center" }
-  );
+  // ── Footer — on every page ────────────────────────────────────────────
+  const totalPages = (doc as any).internal.pages.length - 1;
+  const footerY = pageHeight - 12;
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(160, 160, 160);
+    doc.text(
+      "This is a computer-generated Purchase Order document and does not require a physical signature.",
+      pageWidth / 2,
+      footerY,
+      { align: "center" }
+    );
+    if (totalPages > 1) {
+      doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
+    }
+  }
 
   doc.save(`${po.poNumber}.pdf`);
 }
