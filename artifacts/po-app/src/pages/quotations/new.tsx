@@ -19,6 +19,7 @@ const itemSchema = z.object({
   description: z.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
+  discount: z.coerce.number().min(0).max(100).default(0),
 });
 
 const CURRENCIES = [
@@ -39,6 +40,7 @@ const schema = z.object({
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
+  discountAmount: z.coerce.number().min(0).default(0),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
 
@@ -56,7 +58,8 @@ export default function QuotationNew() {
       paymentTerms: "30 Days Net", notes: "",
       currency: "SGD",
       tax: 9,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
+      discountAmount: 0,
+      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
     },
   });
 
@@ -87,7 +90,7 @@ export default function QuotationNew() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -96,9 +99,11 @@ export default function QuotationNew() {
 
   const currency = form.watch("currency") || "SGD";
 
-  const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
-  const taxAmount = subtotal * (taxPercent / 100);
-  const totalAmount = subtotal + taxAmount;
+  const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+  const discountAmt = form.watch("discountAmount") || 0;
+  const taxableAmount = subtotal - discountAmt;
+  const taxAmount = taxableAmount * (taxPercent / 100);
+  const totalAmount = taxableAmount + taxAmount;
 
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(v);
 
@@ -110,8 +115,11 @@ export default function QuotationNew() {
       setIsSubmitting(false);
       return;
     }
-    const itemsWithAmount = filledItems.map(i => ({ ...i, amount: (i.qty * i.unitPrice).toString() }));
-    createMutation.mutate({ data: { ...values, items: itemsWithAmount } }, {
+    const itemsWithAmount = filledItems.map(i => {
+      const disc = Number(i.discount) || 0;
+      return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+    });
+    createMutation.mutate({ data: { ...values, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: async (data) => {
         try { await generateQuotation_PDF(data); } catch {}
         toast({ title: "Success", description: "Quotation created and PDF downloaded." });
@@ -209,6 +217,7 @@ export default function QuotationNew() {
                       <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-right w-20">Qty</th>
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
+                      <th className="px-4 py-3 text-right w-16">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
@@ -217,7 +226,8 @@ export default function QuotationNew() {
                     {fields.map((field, index) => {
                       const qty = Number(form.watch(`items.${index}.qty`)) || 0;
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
-                      const amount = qty * price;
+                      const disc = Number(form.watch(`items.${index}.discount`)) || 0;
+                      const amount = qty * price * (1 - disc / 100);
                       return (
                         <tr key={field.id} className="border-b last:border-0 hover:bg-muted/20">
                           <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
@@ -241,6 +251,11 @@ export default function QuotationNew() {
                               <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
                             )} />
                           </td>
+                          <td className="px-4 py-2">
+                            <FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
+                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
+                            )} />
+                          </td>
                           <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
                           <td className="px-4 py-2">
                             {fields.length > 1 && (
@@ -256,8 +271,17 @@ export default function QuotationNew() {
                 </table>
               </div>
               <div className="border-t bg-muted/20 p-4 flex justify-end">
-                <div className="w-64 space-y-2 text-sm">
+                <div className="w-72 space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground whitespace-nowrap">Invoice Discount (−)</span>
+                    <FormField control={form.control} name="discountAmount" render={({ field }) => (
+                      <FormItem className="m-0 p-0"><FormControl>
+                        <Input inputMode="decimal" className="h-7 w-28 text-sm text-right" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} />
+                      </FormControl></FormItem>
+                    )} />
+                  </div>
+                  {discountAmt > 0 && <div className="flex justify-between text-xs text-muted-foreground"><span>Net Amount</span><span>{fmt(taxableAmount)}</span></div>}
                   <div className="flex justify-between"><span className="text-muted-foreground">GST ({taxPercent}%)</span><span>{fmt(taxAmount)}</span></div>
                   <div className="flex justify-between font-semibold text-base border-t pt-2"><span>Total</span><span>{fmt(totalAmount)}</span></div>
                 </div>

@@ -14,6 +14,7 @@ export const quotationsTable = pgTable("quotations", {
   notes: text("notes"),
   items: jsonb("items").notNull().default([]),
   subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
+  discountAmount: decimal("discount_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   tax: decimal("tax", { precision: 15, scale: 2 }).notNull().default("0"),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("SGD"),

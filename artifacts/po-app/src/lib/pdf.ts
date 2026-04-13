@@ -41,6 +41,7 @@ interface CompanyInfo {
   addressLine1?: string;
   addressLine2?: string;
   registrationNo?: string;
+  gstNo?: string;
   phone?: string;
   email?: string;
 }
@@ -51,6 +52,8 @@ function companyToInfo(company: Company | null | undefined): CompanyInfo {
       name: "RSV Infotech Pte. Ltd.",
       addressLine1: "#07-52A, 10 Ubi Crescent, UBI Techpark Lobby C,",
       addressLine2: "Singapore 408564",
+      registrationNo: "200812581D",
+      gstNo: "200812581D",
     };
   }
   const addr = company.address || "";
@@ -127,7 +130,11 @@ function buildDocHeader(
     companyY += 5;
   }
   if (info.registrationNo) {
-    doc.text(`Reg. No: ${info.registrationNo}`, marginLeft, companyY);
+    doc.text(`Co. Reg. No.: ${info.registrationNo}`, marginLeft, companyY);
+    companyY += 5;
+  }
+  if (info.gstNo) {
+    doc.text(`GST Reg. No.: ${info.gstNo}`, marginLeft, companyY);
   }
 
   doc.setDrawColor(200, 200, 200);
@@ -194,7 +201,8 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   let companyY = 46;
   if (info.addressLine1) { doc.text(info.addressLine1, marginLeft, companyY); companyY += 5; }
   if (info.addressLine2) { doc.text(info.addressLine2, marginLeft, companyY); companyY += 5; }
-  if (info.registrationNo) doc.text(`Reg. No: ${info.registrationNo}`, marginLeft, companyY);
+  if (info.registrationNo) { doc.text(`Co. Reg. No.: ${info.registrationNo}`, marginLeft, companyY); companyY += 5; }
+  if (info.gstNo) doc.text(`GST Reg. No.: ${info.gstNo}`, marginLeft, companyY);
 
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.4);
@@ -314,20 +322,32 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(qt.paymentTerms || "Standard", marginLeft + 33, 100);
 
   const qtCurrency = (qt as any).currency || "SGD";
-  const tableData = (qt.items as any[]).map((item, i) => [
-    i + 1, item.partNumber || "", htmlToText(item.description),
-    item.qty, fmtMoney(qtCurrency, Number(item.unitPrice)), fmtMoney(qtCurrency, Number(item.amount)),
-  ]);
+  const qtDocDiscount = Number((qt as any).discountAmount) || 0;
+  const hasItemDiscount = (qt.items as any[]).some(item => Number(item.discount) > 0);
+  const qtHeaders = hasItemDiscount
+    ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
+    : ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"];
+  const tableData = (qt.items as any[]).map((item, i) => {
+    const disc = Number(item.discount) || 0;
+    const row = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty, fmtMoney(qtCurrency, Number(item.unitPrice))];
+    if (hasItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
+    row.push(fmtMoney(qtCurrency, Number(item.amount)));
+    return row;
+  });
 
   (doc as any).autoTable({
     startY: 107,
-    head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
+    head: [qtHeaders],
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: {
+    columnStyles: hasItemDiscount ? {
+      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 28 },
+      2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" },
+      4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" },
+    } : {
       0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 },
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
@@ -363,18 +383,34 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   // ── Totals (right side, bottom) ─────────────────────────────────────────────
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = pageHeight - 47;
+  const extraRows = qtDocDiscount > 0 ? 1 : 0;
+  const boxH = (3 + extraRows) * 7 + 10;
+  const totalsY = pageHeight - 12 - boxH;
 
-  doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
-  doc.text("Subtotal:", labelX, totalsY);
-  doc.text(fmtMoney(qtCurrency, Number(qt.subtotal)), valueX, totalsY, { align: "right" });
-  doc.text("GST:", labelX, totalsY + 7);
-  doc.text(fmtMoney(qtCurrency, Number(qt.tax)), valueX, totalsY + 7, { align: "right" });
+  doc.setFillColor(244, 246, 250);
+  doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, boxH, 2, 2, "F");
+
+  let ty = totalsY;
+  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont("helvetica", "normal");
+  doc.text("Subtotal:", labelX, ty);
+  doc.text(fmtMoney(qtCurrency, Number(qt.subtotal)), valueX, ty, { align: "right" });
+  ty += 7;
+  if (qtDocDiscount > 0) {
+    doc.setTextColor(180, 0, 0);
+    doc.text("Discount:", labelX, ty);
+    doc.text(`-${fmtMoney(qtCurrency, qtDocDiscount)}`, valueX, ty, { align: "right" });
+    doc.setTextColor(60, 60, 60);
+    ty += 7;
+  }
+  doc.text("GST:", labelX, ty);
+  doc.text(fmtMoney(qtCurrency, Number(qt.tax)), valueX, ty, { align: "right" });
+  ty += 3;
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
-  doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
+  doc.line(labelX, ty, marginRight, ty);
+  ty += 7;
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
-  doc.text("Total Amount:", labelX, totalsY + 17);
-  doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, totalsY + 17, { align: "right" });
+  doc.text("Total Amount:", labelX, ty);
+  doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
@@ -407,20 +443,32 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(inv.paymentTerms || "Standard", marginLeft + 33, 100);
 
   const invCurrency = (inv as any).currency || "SGD";
-  const tableData = (inv.items as any[]).map((item, i) => [
-    i + 1, item.partNumber || "", htmlToText(item.description),
-    item.qty, fmtMoney(invCurrency, Number(item.unitPrice)), fmtMoney(invCurrency, Number(item.amount)),
-  ]);
+  const invDocDiscount = Number((inv as any).discountAmount) || 0;
+  const hasInvItemDiscount = (inv.items as any[]).some(item => Number(item.discount) > 0);
+  const invHeaders = hasInvItemDiscount
+    ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
+    : ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"];
+  const tableData = (inv.items as any[]).map((item, i) => {
+    const disc = Number(item.discount) || 0;
+    const row = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty, fmtMoney(invCurrency, Number(item.unitPrice))];
+    if (hasInvItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
+    row.push(fmtMoney(invCurrency, Number(item.amount)));
+    return row;
+  });
 
   (doc as any).autoTable({
     startY: 107,
-    head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
+    head: [invHeaders],
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: {
+    columnStyles: hasInvItemDiscount ? {
+      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 28 },
+      2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" },
+      4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" },
+    } : {
       0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 },
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
@@ -476,18 +524,34 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   // ── Totals (right side, bottom) ─────────────────────────────────────────────
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = pageHeight - 47;
+  const invExtraRows = invDocDiscount > 0 ? 1 : 0;
+  const invBoxH = (3 + invExtraRows) * 7 + 10;
+  const totalsY = pageHeight - 12 - invBoxH;
 
-  doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
-  doc.text("Subtotal:", labelX, totalsY);
-  doc.text(fmtMoney(invCurrency, Number(inv.subtotal)), valueX, totalsY, { align: "right" });
-  doc.text("GST:", labelX, totalsY + 7);
-  doc.text(fmtMoney(invCurrency, Number(inv.tax)), valueX, totalsY + 7, { align: "right" });
+  doc.setFillColor(244, 246, 250);
+  doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, invBoxH, 2, 2, "F");
+
+  let ity = totalsY;
+  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont("helvetica", "normal");
+  doc.text("Subtotal:", labelX, ity);
+  doc.text(fmtMoney(invCurrency, Number(inv.subtotal)), valueX, ity, { align: "right" });
+  ity += 7;
+  if (invDocDiscount > 0) {
+    doc.setTextColor(180, 0, 0);
+    doc.text("Discount:", labelX, ity);
+    doc.text(`-${fmtMoney(invCurrency, invDocDiscount)}`, valueX, ity, { align: "right" });
+    doc.setTextColor(60, 60, 60);
+    ity += 7;
+  }
+  doc.text("GST:", labelX, ity);
+  doc.text(fmtMoney(invCurrency, Number(inv.tax)), valueX, ity, { align: "right" });
+  ity += 3;
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
-  doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
+  doc.line(labelX, ity, marginRight, ity);
+  ity += 7;
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
-  doc.text("Total Amount:", labelX, totalsY + 17);
-  doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, totalsY + 17, { align: "right" });
+  doc.text("Total Amount:", labelX, ity);
+  doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];

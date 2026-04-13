@@ -69,12 +69,14 @@ router.get("/invoices", async (req, res): Promise<void> => {
 router.post("/invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
-  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, currency } = req.body;
+  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, currency, discountAmount } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => s + parseFloat(item.amount || "0"), 0);
-  const taxAmt = typeof tax === "number" ? (subtotal * tax) / 100 : 0;
-  const totalAmount = subtotal + taxAmt;
+  const docDiscount = Number(discountAmount) || 0;
+  const taxableAmount = subtotal - docDiscount;
+  const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
+  const totalAmount = taxableAmount + taxAmt;
 
   let invNumber = generateInvNumber();
   let attempts = 0;
@@ -89,7 +91,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
     customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items,
     currency: currency || "SGD",
-    subtotal: subtotal.toFixed(2), tax: taxAmt.toFixed(2),
+    subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
     totalAmount: totalAmount.toFixed(2), status: "draft", createdBy: req.session.userId!,
   }).returning();
   res.status(201).json(parseDoc(doc));
@@ -106,16 +108,18 @@ router.get("/invoices/:id", async (req, res): Promise<void> => {
 router.put("/invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
-  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, status, currency } = req.body;
+  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, status, currency, discountAmount } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => s + parseFloat(item.amount || "0"), 0);
-  const taxAmt = typeof tax === "number" ? (subtotal * tax) / 100 : 0;
-  const totalAmount = subtotal + taxAmt;
+  const docDiscount = Number(discountAmount) || 0;
+  const taxableAmount = subtotal - docDiscount;
+  const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
+  const totalAmount = taxableAmount + taxAmt;
 
   const [updated] = await db.update(invoicesTable).set({
     customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items,
     ...(currency ? { currency } : {}),
-    subtotal: subtotal.toFixed(2), tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
+    subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
     ...(status ? { status } : {}),
   }).where(eq(invoicesTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Invoice not found" }); return; }
