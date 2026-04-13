@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Printer, Trash2, Calendar, MapPin, Building, CreditCard, Tag } from "lucide-react";
+import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag } from "lucide-react";
 import { format } from "date-fns";
 import { generatePO_PDF } from "@/lib/pdf";
 import { useToast } from "@/hooks/use-toast";
@@ -110,6 +110,10 @@ export default function PurchaseOrderView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
           <Button variant="outline" className="gap-2" onClick={handlePrint}>
             <Printer className="h-4 w-4" />
             Download PDF

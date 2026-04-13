@@ -217,6 +217,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PurchaseOrder"
+    put:
+      operationId: updatePurchaseOrder
+      tags: [purchase-orders]
+      summary: Update a purchase order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePurchaseOrderBody"
+      responses:
+        "200":
+          description: Purchase order updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
     delete:
       operationId: deletePurchaseOrder
       tags: [purchase-orders]
@@ -396,6 +419,34 @@ components:
           type: string
         notes:
           type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/POItem"
+        tax:
+          type: number
+      required: [vendorName, items]
+
+    UpdatePurchaseOrderBody:
+      type: object
+      properties:
+        vendorName:
+          type: string
+        vendorAddress:
+          type: string
+        vendorContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
         items:
           type: array
           items:

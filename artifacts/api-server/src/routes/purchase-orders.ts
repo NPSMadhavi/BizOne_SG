@@ -3,8 +3,10 @@ import { db, purchaseOrdersTable, usersTable } from "@workspace/db";
 import { eq, count, sum, desc } from "drizzle-orm";
 import {
   CreatePurchaseOrderBody,
+  UpdatePurchaseOrderBody,
   GetPurchaseOrderParams,
   DeletePurchaseOrderParams,
+  UpdatePurchaseOrderParams,
 } from "@workspace/api-zod";
 
 declare module "express-session" {
@@ -105,6 +107,54 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     .returning();
 
   res.status(201).json(parsePO(po));
+});
+
+router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+
+  const params = UpdatePurchaseOrderParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const parsed = UpdatePurchaseOrderBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const existing = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, params.data.id));
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Purchase order not found" });
+    return;
+  }
+
+  const { items, tax = 0, status, ...rest } = parsed.data;
+
+  const subtotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.unitPrice), 0);
+  const taxAmount = (subtotal * (tax as number)) / 100;
+  const totalAmount = subtotal + taxAmount;
+
+  const itemsWithAmounts = items.map((item: any) => ({
+    ...item,
+    amount: item.qty * item.unitPrice,
+  }));
+
+  const [updated] = await db
+    .update(purchaseOrdersTable)
+    .set({
+      ...rest,
+      items: itemsWithAmounts,
+      subtotal: subtotal.toFixed(2),
+      tax: taxAmount.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+      ...(status ? { status } : {}),
+    })
+    .where(eq(purchaseOrdersTable.id, params.data.id))
+    .returning();
+
+  res.json(parsePO(updated));
 });
 
 router.get("/purchase-orders/:id", async (req, res): Promise<void> => {

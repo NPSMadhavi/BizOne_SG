@@ -190,6 +190,61 @@ export const GetPurchaseOrderResponse = zod.object({
 });
 
 /**
+ * @summary Update a purchase order
+ */
+export const UpdatePurchaseOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePurchaseOrderBody = zod.object({
+  vendorName: zod.string(),
+  vendorAddress: zod.string().optional(),
+  vendorContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
+  items: zod.array(
+    zod.object({
+      partNumber: zod.string(),
+      description: zod.string(),
+      qty: zod.number(),
+      unitPrice: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+  tax: zod.number().optional(),
+});
+
+export const UpdatePurchaseOrderResponse = zod.object({
+  id: zod.number(),
+  poNumber: zod.string(),
+  vendorName: zod.string(),
+  vendorAddress: zod.string().optional(),
+  vendorContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      partNumber: zod.string(),
+      description: zod.string(),
+      qty: zod.number(),
+      unitPrice: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+  subtotal: zod.number(),
+  tax: zod.number(),
+  totalAmount: zod.number(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
  * @summary Delete a purchase order
  */
 export const DeletePurchaseOrderParams = zod.object({

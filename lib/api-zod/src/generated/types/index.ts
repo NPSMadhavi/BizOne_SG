@@ -18,6 +18,8 @@ export * from "./pOStats";
 export * from "./purchaseOrder";
 export * from "./purchaseOrderStatus";
 export * from "./successResponse";
+export * from "./updatePurchaseOrderBody";
+export * from "./updatePurchaseOrderBodyStatus";
 export * from "./updateUserBody";
 export * from "./updateUserBodyRole";
 export * from "./user";

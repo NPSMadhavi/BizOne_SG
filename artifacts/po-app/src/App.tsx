@@ -8,6 +8,7 @@ import Dashboard from "@/pages/dashboard";
 import PurchaseOrderList from "@/pages/purchase-orders/list";
 import PurchaseOrderNew from "@/pages/purchase-orders/new";
 import PurchaseOrderView from "@/pages/purchase-orders/view";
+import PurchaseOrderEdit from "@/pages/purchase-orders/edit";
 import Admin from "@/pages/admin/index";
 import Settings from "@/pages/settings/index";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
@@ -52,6 +53,9 @@ function Router() {
         </Route>
         <Route path="/purchase-orders/new">
           {() => <ProtectedRoute component={PurchaseOrderNew} />}
+        </Route>
+        <Route path="/purchase-orders/:id/edit">
+          {() => <ProtectedRoute component={PurchaseOrderEdit} />}
         </Route>
         <Route path="/purchase-orders/:id">
           {() => <ProtectedRoute component={PurchaseOrderView} />}

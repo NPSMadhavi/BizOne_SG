@@ -116,6 +116,28 @@ export interface CreatePurchaseOrderBody {
   tax?: number;
 }
 
+export type UpdatePurchaseOrderBodyStatus =
+  (typeof UpdatePurchaseOrderBodyStatus)[keyof typeof UpdatePurchaseOrderBodyStatus];
+
+export const UpdatePurchaseOrderBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdatePurchaseOrderBody {
+  vendorName: string;
+  vendorAddress?: string;
+  vendorContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  status?: UpdatePurchaseOrderBodyStatus;
+  items: POItem[];
+  tax?: number;
+}
+
 export interface POStats {
   total: number;
   confirmed: number;
