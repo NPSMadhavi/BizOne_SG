@@ -7,6 +7,7 @@ import { useCreateInvoice, useGetSettings, getGetSettingsQueryKey } from "@works
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -204,9 +205,9 @@ export default function InvoiceNew() {
                               <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2 align-top">
                             <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Item description" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
                             )} />
                           </td>
                           <td className="px-4 py-2">

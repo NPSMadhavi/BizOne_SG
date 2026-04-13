@@ -228,7 +228,7 @@ export default function PurchaseOrderView() {
                 <tr key={index} className="bg-card">
                   <td className="px-6 py-4 text-center text-muted-foreground">{index + 1}</td>
                   <td className="px-6 py-4 font-medium">{item.partNumber}</td>
-                  <td className="px-6 py-4 text-muted-foreground">{item.description}</td>
+                  <td className="px-6 py-4 text-muted-foreground prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                   <td className="px-6 py-4 text-center font-medium">{item.qty}</td>
                   <td className="px-6 py-4 text-right text-muted-foreground">{formatCurrency(item.unitPrice)}</td>
                   <td className="px-6 py-4 text-right font-medium">{formatCurrency(item.amount)}</td>

@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -382,14 +383,14 @@ export default function PurchaseOrderEdit() {
                             )}
                           />
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="px-4 py-2 align-top">
                           <FormField
                             control={form.control}
                             name={`items.${index}.description`}
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input className="h-8" placeholder="Item description" {...field} />
+                                  <RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" />
                                 </FormControl>
                               </FormItem>
                             )}

@@ -3,6 +3,22 @@ import "jspdf-autotable";
 import type { PurchaseOrder, Quotation, Invoice, DeliveryOrder, Company } from "@workspace/api-client-react";
 import logoUrl from "@assets/logo_1776054030755.png";
 
+function htmlToText(html: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
   const res = await fetch(imageUrl);
   const blob = await res.blob();
@@ -204,7 +220,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
   const tableData = po.items.map((item, index) => [
-    index + 1, item.partNumber, item.description, item.qty,
+    index + 1, item.partNumber, htmlToText(item.description), item.qty,
     `$${Number(item.unitPrice).toFixed(2)}`, `$${Number(item.amount).toFixed(2)}`,
   ]);
 
@@ -291,7 +307,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(qt.paymentTerms || "Standard", col2 + 33, 105);
 
   const tableData = (qt.items as any[]).map((item, i) => [
-    i + 1, item.partNumber || "", item.description,
+    i + 1, item.partNumber || "", htmlToText(item.description),
     item.qty, `$${Number(item.unitPrice).toFixed(2)}`, `$${Number(item.amount).toFixed(2)}`,
   ]);
 
@@ -369,7 +385,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(inv.paymentTerms || "Standard", col2 + 33, 105);
 
   const tableData = (inv.items as any[]).map((item, i) => [
-    i + 1, item.partNumber || "", item.description,
+    i + 1, item.partNumber || "", htmlToText(item.description),
     item.qty, `$${Number(item.unitPrice).toFixed(2)}`, `$${Number(item.amount).toFixed(2)}`,
   ]);
 

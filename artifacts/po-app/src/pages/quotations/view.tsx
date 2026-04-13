@@ -141,7 +141,7 @@ export default function QuotationView() {
                 <tr key={i} className="hover:bg-muted/30">
                   <td className="px-6 py-3 text-muted-foreground">{i + 1}</td>
                   <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>
-                  <td className="px-6 py-3 font-medium">{item.description}</td>
+                  <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                   <td className="px-6 py-3 text-right">{item.qty}</td>
                   <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
                   <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
