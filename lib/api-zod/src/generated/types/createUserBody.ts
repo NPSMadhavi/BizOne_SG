@@ -5,11 +5,12 @@
  * API specification for RSV Infotech PO Generator
  * OpenAPI spec version: 0.1.0
  */
+import type { CompanyAccessItem } from "./companyAccessItem";
 import type { CreateUserBodyRole } from "./createUserBodyRole";
 
 export interface CreateUserBody {
   username: string;
   password: string;
   role: CreateUserBodyRole;
-  companyIds?: number[];
+  companyAccess?: CompanyAccessItem[];
 }

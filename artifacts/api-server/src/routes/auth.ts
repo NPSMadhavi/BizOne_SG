@@ -11,6 +11,8 @@ declare module "express-session" {
   }
 }
 
+const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"];
+
 const router: IRouter = Router();
 
 async function getUserCompanies(userId: number) {
@@ -18,16 +20,20 @@ async function getUserCompanies(userId: number) {
   if (!user) return [];
 
   if (user.role === "admin") {
-    return await db.select().from(companiesTable);
+    const allCompanies = await db.select().from(companiesTable);
+    return allCompanies.map(c => ({ ...c, modules: ALL_MODULES }));
   }
 
   const rows = await db
-    .select({ company: companiesTable })
+    .select({ company: companiesTable, uc: userCompaniesTable })
     .from(userCompaniesTable)
     .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
     .where(eq(userCompaniesTable.userId, userId));
 
-  return rows.map(r => r.company);
+  return rows.map(r => ({
+    ...r.company,
+    modules: (r.uc.modules as string[]) ?? ALL_MODULES,
+  }));
 }
 
 function formatUser(user: any, companies: any[], selectedCompanyId?: number | null) {

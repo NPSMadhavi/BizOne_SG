@@ -1,15 +1,26 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useGetMe, getGetMeQueryKey, useLogout, type User, type Company } from "@workspace/api-client-react";
+import { useGetMe, getGetMeQueryKey, useLogout, type User, type UserCompany } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+
+export const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"] as const;
+export type AppModule = typeof ALL_MODULES[number];
+
+export const MODULE_LABELS: Record<AppModule, string> = {
+  purchase_orders: "Purchase Orders",
+  quotations: "Quotations",
+  invoices: "Invoices",
+  delivery_orders: "Delivery Orders",
+};
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   logout: () => void;
   isAdmin: boolean;
-  selectedCompany: Company | null;
+  selectedCompany: UserCompany | null;
   setSelectedCompanyId: (id: number) => void;
+  hasModuleAccess: (module: AppModule) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,6 +64,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const effectiveCompanyId = localCompanyId ?? user?.selectedCompanyId ?? null;
   const selectedCompany = user?.companies?.find(c => c.id === effectiveCompanyId) ?? null;
 
+  const hasModuleAccess = (module: AppModule): boolean => {
+    if (isAdmin) return true;
+    if (!selectedCompany) return false;
+    const mods = selectedCompany.modules ?? [];
+    return mods.length === 0 || mods.includes(module);
+  };
+
   return (
     <AuthContext.Provider value={{
       user: user || null,
@@ -61,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAdmin,
       selectedCompany,
       setSelectedCompanyId,
+      hasModuleAccess,
     }}>
       {children}
     </AuthContext.Provider>

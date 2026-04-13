@@ -708,6 +708,42 @@ components:
           type: string
       required: [id, name, country]
 
+    UserCompany:
+      type: object
+      description: Company with per-company module access list for the user
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        country:
+          type: string
+        address:
+          type: string
+        registrationNo:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        modules:
+          type: array
+          items:
+            type: string
+      required: [id, name, country, modules]
+
+    CompanyAccessItem:
+      type: object
+      description: Company ID with list of allowed modules for that company
+      properties:
+        companyId:
+          type: integer
+        modules:
+          type: array
+          items:
+            type: string
+      required: [companyId, modules]
+
     SelectCompanyBody:
       type: object
       properties:
@@ -730,7 +766,7 @@ components:
         companies:
           type: array
           items:
-            $ref: "#/components/schemas/Company"
+            $ref: "#/components/schemas/UserCompany"
         selectedCompanyId:
           type: integer
       required: [id, username, role, createdAt, companies]
@@ -745,10 +781,10 @@ components:
         role:
           type: string
           enum: [admin, user]
-        companyIds:
+        companyAccess:
           type: array
           items:
-            type: integer
+            $ref: "#/components/schemas/CompanyAccessItem"
       required: [username, password, role]
 
     UpdateUserBody:
@@ -761,10 +797,10 @@ components:
         role:
           type: string
           enum: [admin, user]
-        companyIds:
+        companyAccess:
           type: array
           items:
-            type: integer
+            $ref: "#/components/schemas/CompanyAccessItem"
 
     POItem:
       type: object

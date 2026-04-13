@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, companiesTable, userCompaniesTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { CreateUserBody, UpdateUserBody, UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
 
 declare module "express-session" {
@@ -10,6 +10,8 @@ declare module "express-session" {
     companyId?: number;
   }
 }
+
+const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"];
 
 const router: IRouter = Router();
 
@@ -31,7 +33,7 @@ async function getUserWithCompanies(userId: number) {
   if (!user) return null;
 
   const ucRows = await db
-    .select({ company: companiesTable })
+    .select({ company: companiesTable, uc: userCompaniesTable })
     .from(userCompaniesTable)
     .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
     .where(eq(userCompaniesTable.userId, userId));
@@ -41,7 +43,10 @@ async function getUserWithCompanies(userId: number) {
     username: user.username,
     role: user.role,
     createdAt: user.createdAt.toISOString(),
-    companies: ucRows.map(r => r.company),
+    companies: ucRows.map(r => ({
+      ...r.company,
+      modules: (r.uc.modules as string[]) ?? ALL_MODULES,
+    })),
     selectedCompanyId: null,
   };
 }
@@ -50,7 +55,6 @@ router.get("/users", async (req, res): Promise<void> => {
   if (!(await requireAdmin(req, res))) return;
 
   const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
-
   const result = await Promise.all(users.map(u => getUserWithCompanies(u.id)));
   res.json(result.filter(Boolean));
 });
@@ -64,7 +68,7 @@ router.post("/users", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password, role, companyIds } = parsed.data;
+  const { username, password, role, companyAccess } = parsed.data;
 
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.username, username));
   if (existing) {
@@ -75,9 +79,11 @@ router.post("/users", async (req, res): Promise<void> => {
   const passwordHash = await bcrypt.hash(password, 12);
   const [user] = await db.insert(usersTable).values({ username, passwordHash, role }).returning();
 
-  if (companyIds && companyIds.length > 0) {
-    for (const companyId of companyIds) {
-      await db.insert(userCompaniesTable).values({ userId: user.id, companyId }).onConflictDoNothing();
+  if (companyAccess && companyAccess.length > 0) {
+    for (const { companyId, modules } of companyAccess) {
+      await db.insert(userCompaniesTable)
+        .values({ userId: user.id, companyId, modules: modules ?? ALL_MODULES })
+        .onConflictDoNothing();
     }
   }
 
@@ -100,7 +106,7 @@ router.put("/users/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password, role, companyIds } = parsed.data;
+  const { username, password, role, companyAccess } = parsed.data;
   const updates: Record<string, any> = {};
   if (username) updates.username = username;
   if (role) updates.role = role;
@@ -114,10 +120,12 @@ router.put("/users/:id", async (req, res): Promise<void> => {
     }
   }
 
-  if (companyIds !== undefined) {
+  if (companyAccess !== undefined) {
     await db.delete(userCompaniesTable).where(eq(userCompaniesTable.userId, params.data.id));
-    for (const companyId of companyIds) {
-      await db.insert(userCompaniesTable).values({ userId: params.data.id, companyId }).onConflictDoNothing();
+    for (const { companyId, modules } of companyAccess) {
+      await db.insert(userCompaniesTable)
+        .values({ userId: params.data.id, companyId, modules: modules ?? ALL_MODULES })
+        .onConflictDoNothing();
     }
   }
 

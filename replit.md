@@ -8,15 +8,16 @@ A full-stack document management application for three companies: RSV Infotech P
 
 - Login system with admin and user roles; company selector at login for multi-company users
 - **Multi-company support** — 3 seeded companies; users are assigned to one or more companies; all documents are scoped per company
+- **Module access control** — per-company, per-user module permissions; admins see all modules; users only see modules they're granted
 - **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking
 - **Quotations** — full CRUD; auto-numbered QT-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
 - **Invoices** — full CRUD; auto-numbered INV-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
 - **Delivery Orders** — full CRUD; auto-numbered DO-YYYYMM-XXXX; no pricing columns; PDF generation
 - **Settings** — centralized GST rate (admin-only edit); currently 9%
-- **Admin Panel** — manage users (create, edit, delete); assign company access per user
+- **Admin Panel** — manage users (create, edit, delete); nested company + module assignment UI
 - Dashboard with stats
 - PDF generation using jsPDF + jspdf-autotable (consistent header/footer with selected company info)
-- Sidebar shows current company with a switch button for multi-company users
+- Sidebar shows current company with a switch button for multi-company users; hides inaccessible module nav items
 
 ## Companies (seeded on startup)
 

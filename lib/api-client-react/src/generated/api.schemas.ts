@@ -29,6 +29,33 @@ export const UserRole = {
   user: "user",
 } as const;
 
+/**
+ * Company with per-company module access list for the user
+ */
+export interface UserCompany {
+  id: number;
+  name: string;
+  country: string;
+  address?: string;
+  registrationNo?: string;
+  email?: string;
+  phone?: string;
+  modules: string[];
+}
+
+export interface User {
+  id: number;
+  username: string;
+  role: UserRole;
+  createdAt: string;
+  companies: UserCompany[];
+  selectedCompanyId?: number;
+}
+
+export interface LoginResponse {
+  user: User;
+}
+
 export interface Company {
   id: number;
   name: string;
@@ -39,17 +66,12 @@ export interface Company {
   phone?: string;
 }
 
-export interface User {
-  id: number;
-  username: string;
-  role: UserRole;
-  createdAt: string;
-  companies: Company[];
-  selectedCompanyId?: number;
-}
-
-export interface LoginResponse {
-  user: User;
+/**
+ * Company ID with list of allowed modules for that company
+ */
+export interface CompanyAccessItem {
+  companyId: number;
+  modules: string[];
 }
 
 export interface SelectCompanyBody {
@@ -68,7 +90,7 @@ export interface CreateUserBody {
   username: string;
   password: string;
   role: CreateUserBodyRole;
-  companyIds?: number[];
+  companyAccess?: CompanyAccessItem[];
 }
 
 export type UpdateUserBodyRole =
@@ -83,7 +105,7 @@ export interface UpdateUserBody {
   username?: string;
   password?: string;
   role?: UpdateUserBodyRole;
-  companyIds?: number[];
+  companyAccess?: CompanyAccessItem[];
 }
 
 export interface POItem {

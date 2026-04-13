@@ -29,15 +29,18 @@ export const LoginResponse = zod.object({
     role: zod.enum(["admin", "user"]),
     createdAt: zod.string(),
     companies: zod.array(
-      zod.object({
-        id: zod.number(),
-        name: zod.string(),
-        country: zod.string(),
-        address: zod.string().optional(),
-        registrationNo: zod.string().optional(),
-        email: zod.string().optional(),
-        phone: zod.string().optional(),
-      }),
+      zod
+        .object({
+          id: zod.number(),
+          name: zod.string(),
+          country: zod.string(),
+          address: zod.string().optional(),
+          registrationNo: zod.string().optional(),
+          email: zod.string().optional(),
+          phone: zod.string().optional(),
+          modules: zod.array(zod.string()),
+        })
+        .describe("Company with per-company module access list for the user"),
     ),
     selectedCompanyId: zod.number().optional(),
   }),
@@ -59,15 +62,18 @@ export const GetMeResponse = zod.object({
   role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
   companies: zod.array(
-    zod.object({
-      id: zod.number(),
-      name: zod.string(),
-      country: zod.string(),
-      address: zod.string().optional(),
-      registrationNo: zod.string().optional(),
-      email: zod.string().optional(),
-      phone: zod.string().optional(),
-    }),
+    zod
+      .object({
+        id: zod.number(),
+        name: zod.string(),
+        country: zod.string(),
+        address: zod.string().optional(),
+        registrationNo: zod.string().optional(),
+        email: zod.string().optional(),
+        phone: zod.string().optional(),
+        modules: zod.array(zod.string()),
+      })
+      .describe("Company with per-company module access list for the user"),
   ),
   selectedCompanyId: zod.number().optional(),
 });
@@ -106,15 +112,18 @@ export const ListUsersResponseItem = zod.object({
   role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
   companies: zod.array(
-    zod.object({
-      id: zod.number(),
-      name: zod.string(),
-      country: zod.string(),
-      address: zod.string().optional(),
-      registrationNo: zod.string().optional(),
-      email: zod.string().optional(),
-      phone: zod.string().optional(),
-    }),
+    zod
+      .object({
+        id: zod.number(),
+        name: zod.string(),
+        country: zod.string(),
+        address: zod.string().optional(),
+        registrationNo: zod.string().optional(),
+        email: zod.string().optional(),
+        phone: zod.string().optional(),
+        modules: zod.array(zod.string()),
+      })
+      .describe("Company with per-company module access list for the user"),
   ),
   selectedCompanyId: zod.number().optional(),
 });
@@ -127,7 +136,16 @@ export const CreateUserBody = zod.object({
   username: zod.string(),
   password: zod.string(),
   role: zod.enum(["admin", "user"]),
-  companyIds: zod.array(zod.number()).optional(),
+  companyAccess: zod
+    .array(
+      zod
+        .object({
+          companyId: zod.number(),
+          modules: zod.array(zod.string()),
+        })
+        .describe("Company ID with list of allowed modules for that company"),
+    )
+    .optional(),
 });
 
 /**
@@ -141,7 +159,16 @@ export const UpdateUserBody = zod.object({
   username: zod.string().optional(),
   password: zod.string().optional(),
   role: zod.enum(["admin", "user"]).optional(),
-  companyIds: zod.array(zod.number()).optional(),
+  companyAccess: zod
+    .array(
+      zod
+        .object({
+          companyId: zod.number(),
+          modules: zod.array(zod.string()),
+        })
+        .describe("Company ID with list of allowed modules for that company"),
+    )
+    .optional(),
 });
 
 export const UpdateUserResponse = zod.object({
@@ -150,15 +177,18 @@ export const UpdateUserResponse = zod.object({
   role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
   companies: zod.array(
-    zod.object({
-      id: zod.number(),
-      name: zod.string(),
-      country: zod.string(),
-      address: zod.string().optional(),
-      registrationNo: zod.string().optional(),
-      email: zod.string().optional(),
-      phone: zod.string().optional(),
-    }),
+    zod
+      .object({
+        id: zod.number(),
+        name: zod.string(),
+        country: zod.string(),
+        address: zod.string().optional(),
+        registrationNo: zod.string().optional(),
+        email: zod.string().optional(),
+        phone: zod.string().optional(),
+        modules: zod.array(zod.string()),
+      })
+      .describe("Company with per-company module access list for the user"),
   ),
   selectedCompanyId: zod.number().optional(),
 });

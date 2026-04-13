@@ -7,6 +7,7 @@
  */
 
 export * from "./company";
+export * from "./companyAccessItem";
 export * from "./createDeliveryOrderBody";
 export * from "./createInvoiceBody";
 export * from "./createPurchaseOrderBody";
@@ -45,4 +46,5 @@ export * from "./updateSettingsBody";
 export * from "./updateUserBody";
 export * from "./updateUserBodyRole";
 export * from "./user";
+export * from "./userCompany";
 export * from "./userRole";

@@ -1,4 +1,5 @@
 import { useAuth } from "@/contexts/auth-context";
+import { ALL_MODULES, MODULE_LABELS, type AppModule } from "@/contexts/auth-context";
 import {
   useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser,
   useListCompanies, getListCompaniesQueryKey, type User, type Company,
@@ -24,50 +25,128 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, UserPlus, ShieldAlert, Edit, Building2 } from "lucide-react";
+import { Trash2, UserPlus, ShieldAlert, Edit, Building2, ChevronRight } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+
+const MODULE_ICONS: Record<AppModule, string> = {
+  purchase_orders: "📋",
+  quotations: "📝",
+  invoices: "🧾",
+  delivery_orders: "🚚",
+};
+
+export interface CompanyAccessEntry {
+  companyId: number;
+  modules: string[];
+}
 
 const userSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters").or(z.literal("")),
   role: z.enum(["admin", "user"]),
-  companyIds: z.array(z.number()).min(1, "Select at least one company"),
+  companyAccess: z.array(z.object({
+    companyId: z.number(),
+    modules: z.array(z.string()).min(1, "Select at least one module"),
+  })).min(1, "Select at least one company with module access"),
 });
 
 type UserFormValues = z.infer<typeof userSchema>;
 
-function CompanyCheckboxes({
+function CompanyModuleSelector({
   companies,
   value,
   onChange,
 }: {
   companies: Company[];
-  value: number[];
-  onChange: (ids: number[]) => void;
+  value: CompanyAccessEntry[];
+  onChange: (access: CompanyAccessEntry[]) => void;
 }) {
-  const toggle = (id: number) => {
-    if (value.includes(id)) {
-      onChange(value.filter(v => v !== id));
+  const selectedCompanyIds = value.map(v => v.companyId);
+
+  const toggleCompany = (companyId: number) => {
+    if (selectedCompanyIds.includes(companyId)) {
+      onChange(value.filter(v => v.companyId !== companyId));
     } else {
-      onChange([...value, id]);
+      onChange([...value, { companyId, modules: [...ALL_MODULES] }]);
     }
   };
 
+  const toggleModule = (companyId: number, mod: string) => {
+    onChange(value.map(entry => {
+      if (entry.companyId !== companyId) return entry;
+      const mods = entry.modules.includes(mod)
+        ? entry.modules.filter(m => m !== mod)
+        : [...entry.modules, mod];
+      return { ...entry, modules: mods };
+    }));
+  };
+
+  const toggleAllModules = (companyId: number, checked: boolean) => {
+    onChange(value.map(entry => {
+      if (entry.companyId !== companyId) return entry;
+      return { ...entry, modules: checked ? [...ALL_MODULES] : [] };
+    }));
+  };
+
   return (
-    <div className="space-y-2">
-      {companies.map(company => (
-        <div key={company.id} className="flex items-center gap-2">
-          <Checkbox
-            id={`company-${company.id}`}
-            checked={value.includes(company.id)}
-            onCheckedChange={() => toggle(company.id)}
-          />
-          <label htmlFor={`company-${company.id}`} className="text-sm cursor-pointer flex-1">
-            <span className="font-medium">{company.name}</span>
-            <span className="text-muted-foreground ml-1.5">({company.country})</span>
-          </label>
-        </div>
-      ))}
+    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+      {companies.map(company => {
+        const isSelected = selectedCompanyIds.includes(company.id);
+        const entry = value.find(v => v.companyId === company.id);
+        const allChecked = entry ? ALL_MODULES.every(m => entry.modules.includes(m)) : false;
+        const someChecked = entry ? ALL_MODULES.some(m => entry.modules.includes(m)) : false;
+
+        return (
+          <div key={company.id} className="rounded-lg border bg-card overflow-hidden">
+            <div
+              className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer ${isSelected ? "bg-primary/5 border-b" : ""}`}
+              onClick={() => toggleCompany(company.id)}
+            >
+              <Checkbox
+                id={`company-${company.id}`}
+                checked={isSelected}
+                onCheckedChange={() => toggleCompany(company.id)}
+                onClick={e => e.stopPropagation()}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-none">{company.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{company.country}</p>
+              </div>
+              {isSelected && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground rotate-90" />}
+            </div>
+
+            {isSelected && (
+              <div className="px-3 py-2 bg-muted/30 space-y-1.5">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-border/50">
+                  <Checkbox
+                    id={`all-modules-${company.id}`}
+                    checked={allChecked}
+                    onCheckedChange={(checked) => toggleAllModules(company.id, !!checked)}
+                  />
+                  <label htmlFor={`all-modules-${company.id}`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer">
+                    All Modules
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                  {ALL_MODULES.map(mod => (
+                    <div key={mod} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`${company.id}-${mod}`}
+                        checked={entry?.modules.includes(mod) ?? false}
+                        onCheckedChange={() => toggleModule(company.id, mod)}
+                      />
+                      <label htmlFor={`${company.id}-${mod}`} className="text-xs cursor-pointer flex items-center gap-1">
+                        <span>{MODULE_ICONS[mod as AppModule]}</span>
+                        <span>{MODULE_LABELS[mod as AppModule]}</span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -94,12 +173,12 @@ export default function Admin() {
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userSchema),
-    defaultValues: { username: "", password: "", role: "user", companyIds: [] },
+    defaultValues: { username: "", password: "", role: "user", companyAccess: [] },
   });
 
   const editForm = useForm<UserFormValues>({
     resolver: zodResolver(userSchema),
-    defaultValues: { username: "", password: "", role: "user", companyIds: [] },
+    defaultValues: { username: "", password: "", role: "user", companyAccess: [] },
   });
 
   useEffect(() => {
@@ -108,7 +187,10 @@ export default function Admin() {
         username: editingUser.username,
         password: "",
         role: editingUser.role as "admin" | "user",
-        companyIds: editingUser.companies?.map(c => c.id) ?? [],
+        companyAccess: editingUser.companies?.map(c => ({
+          companyId: c.id,
+          modules: (c as any).modules ?? [...ALL_MODULES],
+        })) ?? [],
       });
     }
   }, [editingUser, editForm]);
@@ -125,12 +207,17 @@ export default function Admin() {
 
   function onSubmit(values: UserFormValues) {
     createMutation.mutate({
-      data: { username: values.username, password: values.password, role: values.role, companyIds: values.companyIds }
+      data: {
+        username: values.username,
+        password: values.password,
+        role: values.role,
+        companyAccess: values.companyAccess,
+      }
     }, {
       onSuccess: () => {
         toast({ title: "Success", description: "User created successfully." });
         setIsCreateOpen(false);
-        form.reset({ username: "", password: "", role: "user", companyIds: [] });
+        form.reset({ username: "", password: "", role: "user", companyAccess: [] });
         queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
       },
       onError: (error: any) => {
@@ -141,7 +228,11 @@ export default function Admin() {
 
   function onEditSubmit(values: UserFormValues) {
     if (!editingUser) return;
-    const payload: any = { username: values.username, role: values.role, companyIds: values.companyIds };
+    const payload: any = {
+      username: values.username,
+      role: values.role,
+      companyAccess: values.companyAccess,
+    };
     if (values.password) payload.password = values.password;
 
     updateMutation.mutate({ id: editingUser.id, data: payload }, {
@@ -180,25 +271,25 @@ export default function Admin() {
     setIsEditOpen(true);
   }
 
-  const UserFormFields = ({ control, isEdit = false }: { control: any; isEdit?: boolean }) => (
+  const UserFormContent = ({ f }: { f: ReturnType<typeof useForm<UserFormValues>> }) => (
     <>
-      <FormField control={control} name="username" render={({ field }) => (
+      <FormField control={f.control} name="username" render={({ field }) => (
         <FormItem>
           <FormLabel>Username</FormLabel>
           <FormControl><Input placeholder="johndoe" {...field} /></FormControl>
           <FormMessage />
         </FormItem>
       )} />
-      <FormField control={control} name="password" render={({ field }) => (
+      <FormField control={f.control} name="password" render={({ field }) => (
         <FormItem>
-          <FormLabel>{isEdit ? "New Password (Optional)" : "Password"}</FormLabel>
+          <FormLabel>Password</FormLabel>
           <FormControl>
-            <Input type="password" placeholder={isEdit ? "Leave blank to keep unchanged" : "******"} {...field} />
+            <Input type="password" placeholder="Leave blank to keep unchanged" {...field} />
           </FormControl>
           <FormMessage />
         </FormItem>
       )} />
-      <FormField control={control} name="role" render={({ field }) => (
+      <FormField control={f.control} name="role" render={({ field }) => (
         <FormItem>
           <FormLabel>Role</FormLabel>
           <Select onValueChange={field.onChange} value={field.value}>
@@ -213,14 +304,14 @@ export default function Admin() {
           <FormMessage />
         </FormItem>
       )} />
-      <FormField control={control} name="companyIds" render={({ field }) => (
+      <FormField control={f.control} name="companyAccess" render={({ field }) => (
         <FormItem>
           <FormLabel className="flex items-center gap-1.5">
             <Building2 className="h-3.5 w-3.5" />
-            Company Access
+            Company & Module Access
           </FormLabel>
           <FormControl>
-            <CompanyCheckboxes
+            <CompanyModuleSelector
               companies={companies}
               value={field.value ?? []}
               onChange={field.onChange}
@@ -237,7 +328,7 @@ export default function Admin() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground mt-1">Manage system access, roles, and company permissions.</p>
+          <p className="text-muted-foreground mt-1">Manage system access, roles, and module permissions per company.</p>
         </div>
 
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -247,14 +338,14 @@ export default function Admin() {
               Add User
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New User</DialogTitle>
-              <DialogDescription>Add a new user and assign company access.</DialogDescription>
+              <DialogDescription>Add a new user and configure their company and module access.</DialogDescription>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <UserFormFields control={form.control} />
+                <UserFormContent f={form} />
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
                   <Button type="submit" disabled={createMutation.isPending}>
@@ -268,14 +359,14 @@ export default function Admin() {
       </div>
 
       <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingUser(null); }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>Update user details, role, and company access.</DialogDescription>
+            <DialogDescription>Update user details, role, and module access per company.</DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-              <UserFormFields control={editForm.control} isEdit />
+              <UserFormContent f={editForm} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={updateMutation.isPending}>
@@ -294,7 +385,7 @@ export default function Admin() {
               <tr>
                 <th className="px-6 py-4 font-medium">Username</th>
                 <th className="px-6 py-4 font-medium">Role</th>
-                <th className="px-6 py-4 font-medium">Companies</th>
+                <th className="px-6 py-4 font-medium">Company & Module Access</th>
                 <th className="px-6 py-4 font-medium">Created</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
@@ -331,18 +422,29 @@ export default function Admin() {
                       </Badge>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {u.companies && u.companies.length > 0 ? (
-                          u.companies.map(c => (
-                            <Badge key={c.id} variant="outline" className="text-xs font-normal gap-1">
-                              <Building2 className="h-2.5 w-2.5" />
-                              {c.name}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-muted-foreground text-xs">No companies assigned</span>
-                        )}
-                      </div>
+                      {u.role === 'admin' ? (
+                        <span className="text-xs text-muted-foreground">All companies & modules</span>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {u.companies && u.companies.length > 0 ? u.companies.map(c => (
+                            <div key={c.id} className="flex items-start gap-1.5">
+                              <Badge variant="outline" className="text-xs font-normal gap-1 shrink-0">
+                                <Building2 className="h-2.5 w-2.5" />
+                                {c.name}
+                              </Badge>
+                              <div className="flex flex-wrap gap-1">
+                                {((c as any).modules as string[] ?? ALL_MODULES).map(mod => (
+                                  <span key={mod} className="text-xs bg-muted rounded px-1 py-0.5 text-muted-foreground">
+                                    {MODULE_ICONS[mod as AppModule]} {MODULE_LABELS[mod as AppModule]}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )) : (
+                            <span className="text-muted-foreground text-xs">No access assigned</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">
                       {format(new Date(u.createdAt), "MMM d, yyyy")}

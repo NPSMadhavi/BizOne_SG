@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, type AppModule } from "@/contexts/auth-context";
 import {
   LayoutDashboard,
   FileText,
@@ -79,7 +79,7 @@ function CompanyBadge() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, hasModuleAccess } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -98,25 +98,35 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </NavItem>
       </div>
 
-      <div className="mt-4">
-        <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Documents
-        </h4>
-        <div className="space-y-1">
-          <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")}>
-            Purchase Orders
-          </NavItem>
-          <NavItem href="/quotations" icon={FileSpreadsheet} active={location.startsWith("/quotations")}>
-            Quotations
-          </NavItem>
-          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices")}>
-            Invoices
-          </NavItem>
-          <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")}>
-            Delivery Orders
-          </NavItem>
+      {(hasModuleAccess("purchase_orders") || hasModuleAccess("quotations") || hasModuleAccess("invoices") || hasModuleAccess("delivery_orders")) && (
+        <div className="mt-4">
+          <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Documents
+          </h4>
+          <div className="space-y-1">
+            {hasModuleAccess("purchase_orders") && (
+              <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")}>
+                Purchase Orders
+              </NavItem>
+            )}
+            {hasModuleAccess("quotations") && (
+              <NavItem href="/quotations" icon={FileSpreadsheet} active={location.startsWith("/quotations")}>
+                Quotations
+              </NavItem>
+            )}
+            {hasModuleAccess("invoices") && (
+              <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices")}>
+                Invoices
+              </NavItem>
+            )}
+            {hasModuleAccess("delivery_orders") && (
+              <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")}>
+                Delivery Orders
+              </NavItem>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="mt-4">
         <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
