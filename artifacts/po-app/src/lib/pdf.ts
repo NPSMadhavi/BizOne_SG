@@ -1,7 +1,13 @@
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import type { PurchaseOrder, Quotation, Invoice, DeliveryOrder, Company } from "@workspace/api-client-react";
-import logoUrl from "@assets/logo_1776054030755.png";
+import logoRsvUrl from "@assets/logo_1776054030755.png";
+import logoNetopsysUrl from "@assets/Netopsys_logo_Dark_1776066608427.png";
+
+function getLogoUrl(company: Company | null | undefined): string {
+  if (!company || company.id === 1) return logoRsvUrl;
+  return logoNetopsysUrl;
+}
 
 function htmlToText(html: string): string {
   if (!html) return "";
@@ -162,7 +168,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const col2 = 108;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(logoUrl);
+  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
 
   doc.addImage(logoBase64, "PNG", marginLeft, 12, 65, 14);
 
@@ -293,7 +299,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(logoUrl);
+  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
   buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, new Date(qt.createdAt).toLocaleDateString(), qt.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
@@ -386,7 +392,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(logoUrl);
+  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
   buildDocHeader(doc, logoBase64, "INVOICE", inv.invNumber, new Date(inv.createdAt).toLocaleDateString(), inv.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
@@ -498,7 +504,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(logoUrl);
+  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
   buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, new Date(doDoc.createdAt).toLocaleDateString(), doDoc.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
