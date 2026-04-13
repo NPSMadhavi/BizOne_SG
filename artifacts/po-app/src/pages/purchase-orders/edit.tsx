@@ -352,7 +352,7 @@ export default function PurchaseOrderEdit() {
                 <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
                   <tr>
                     <th className="px-4 py-3 font-medium text-center w-12">#</th>
-                    <th className="px-4 py-3 font-medium w-48">Part Number</th>
+                    <th className="px-4 py-3 font-medium w-48">Item / Part Number</th>
                     <th className="px-4 py-3 font-medium">Description</th>
                     <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>

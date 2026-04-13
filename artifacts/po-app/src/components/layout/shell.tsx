@@ -4,11 +4,14 @@ import { useAuth } from "@/contexts/auth-context";
 import {
   LayoutDashboard,
   FileText,
-  PlusCircle,
   Users,
   Settings,
   LogOut,
   Menu,
+  FileSpreadsheet,
+  Receipt,
+  Truck,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +38,7 @@ function NavItem({ href, icon: Icon, children, active }: NavItemProps) {
             : "text-muted-foreground hover:bg-muted hover:text-foreground"
         }`}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className="h-4 w-4 shrink-0" />
         {children}
       </div>
     </Link>
@@ -47,7 +50,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { user, logout, isAdmin } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
-  // Close mobile menu on navigation
   React.useEffect(() => {
     setMobileOpen(false);
   }, [location]);
@@ -62,15 +64,29 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <NavItem href="/dashboard" icon={LayoutDashboard} active={location === "/dashboard" || location === "/"}>
           Dashboard
         </NavItem>
-        <NavItem href="/purchase-orders" icon={FileText} active={location === "/purchase-orders"}>
-          Purchase Orders
-        </NavItem>
-        <NavItem href="/purchase-orders/new" icon={PlusCircle} active={location === "/purchase-orders/new"}>
-          Create PO
-        </NavItem>
       </div>
 
-      <div className="mt-8">
+      <div className="mt-4">
+        <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          Documents
+        </h4>
+        <div className="space-y-1">
+          <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")}>
+            Purchase Orders
+          </NavItem>
+          <NavItem href="/quotations" icon={FileSpreadsheet} active={location.startsWith("/quotations")}>
+            Quotations
+          </NavItem>
+          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices")}>
+            Invoices
+          </NavItem>
+          <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")}>
+            Delivery Orders
+          </NavItem>
+        </div>
+      </div>
+
+      <div className="mt-4">
         <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
           System
         </h4>
@@ -90,7 +106,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-muted/20">
-      {/* Mobile Header */}
       <header className="md:hidden flex items-center justify-between px-4 h-14 border-b bg-card">
         <div className="flex items-center gap-2">
           <img src={logo} alt="RSV Infotech" className="h-6" />
@@ -106,7 +121,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <img src={logo} alt="RSV Infotech" className="h-8" />
             </div>
             <div className="p-4 flex flex-col h-[calc(100vh-5rem)]">
-              <div className="flex-1">
+              <div className="flex-1 overflow-y-auto">
                 {navItems}
               </div>
               <div className="pt-4 border-t border-border mt-auto">
@@ -125,16 +140,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </Sheet>
       </header>
 
-      {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0 shrink-0">
         <div className="p-6 border-b border-border/50">
           <img src={logo} alt="RSV Infotech" className="h-8" />
         </div>
-        
         <div className="flex-1 p-4 overflow-y-auto">
           {navItems}
         </div>
-
         <div className="p-4 border-t border-border/50 bg-muted/10">
           <div className="flex items-center justify-between px-2">
             <div className="flex flex-col">
@@ -148,7 +160,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 w-full max-w-7xl mx-auto">
         {children}
       </main>

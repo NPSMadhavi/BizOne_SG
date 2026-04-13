@@ -145,3 +145,207 @@ export interface POStats {
   cancelled: number;
   totalValue: number;
 }
+
+export interface Settings {
+  id: number;
+  gstRate: number;
+}
+
+export interface UpdateSettingsBody {
+  gstRate: number;
+}
+
+export interface DocStats {
+  total: number;
+  confirmed: number;
+  draft: number;
+  cancelled: number;
+  totalValue: number;
+}
+
+export interface DocItem {
+  itemPartNumber?: string;
+  description: string;
+  qty: string;
+  unitPrice?: string;
+  amount?: string;
+}
+
+export type QuotationStatus =
+  (typeof QuotationStatus)[keyof typeof QuotationStatus];
+
+export const QuotationStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface Quotation {
+  id: number;
+  qtNumber: string;
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  items: DocItem[];
+  subtotal: string;
+  tax: string;
+  totalAmount: string;
+  status: QuotationStatus;
+  createdBy: number;
+  createdAt: string;
+}
+
+export interface CreateQuotationBody {
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  items: DocItem[];
+  tax?: number;
+}
+
+export type UpdateQuotationBodyStatus =
+  (typeof UpdateQuotationBodyStatus)[keyof typeof UpdateQuotationBodyStatus];
+
+export const UpdateQuotationBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateQuotationBody {
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  status?: UpdateQuotationBodyStatus;
+  items: DocItem[];
+  tax?: number;
+}
+
+export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
+
+export const InvoiceStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface Invoice {
+  id: number;
+  invNumber: string;
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  items: DocItem[];
+  subtotal: string;
+  tax: string;
+  totalAmount: string;
+  status: InvoiceStatus;
+  createdBy: number;
+  createdAt: string;
+}
+
+export interface CreateInvoiceBody {
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  items: DocItem[];
+  tax?: number;
+}
+
+export type UpdateInvoiceBodyStatus =
+  (typeof UpdateInvoiceBodyStatus)[keyof typeof UpdateInvoiceBodyStatus];
+
+export const UpdateInvoiceBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateInvoiceBody {
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  status?: UpdateInvoiceBodyStatus;
+  items: DocItem[];
+  tax?: number;
+}
+
+export interface DOItem {
+  description: string;
+  qty: string;
+}
+
+export type DeliveryOrderStatus =
+  (typeof DeliveryOrderStatus)[keyof typeof DeliveryOrderStatus];
+
+export const DeliveryOrderStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface DeliveryOrder {
+  id: number;
+  doNumber: string;
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryDate?: string;
+  notes?: string;
+  items: DOItem[];
+  status: DeliveryOrderStatus;
+  createdBy: number;
+  createdAt: string;
+}
+
+export interface CreateDeliveryOrderBody {
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryDate?: string;
+  notes?: string;
+  items: DOItem[];
+}
+
+export type UpdateDeliveryOrderBodyStatus =
+  (typeof UpdateDeliveryOrderBodyStatus)[keyof typeof UpdateDeliveryOrderBodyStatus];
+
+export const UpdateDeliveryOrderBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
+export interface UpdateDeliveryOrderBody {
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  deliveryDate?: string;
+  notes?: string;
+  status?: UpdateDeliveryOrderBodyStatus;
+  items: DOItem[];
+}

@@ -1,17 +1,37 @@
-# RSV Infotech PO Generator
+# RSV Infotech Document Management System
 
 ## Overview
 
-A full-stack Purchase Order management application for RSV Infotech Pte. Ltd. Built on a pnpm workspace monorepo with TypeScript.
+A full-stack document management application for RSV Infotech Pte. Ltd. (Singapore). Built on a pnpm workspace monorepo with TypeScript. Supports Purchase Orders, Quotations, Invoices, and Delivery Orders with professional PDF generation and GST management.
 
 ## Features
 
 - Login system with admin and user roles
-- Create professional Purchase Orders with line items (Part Number, Description, QTY, Unit Price, Amount auto-calculated)
-- PDF generation using jsPDF with RSV Infotech logo
-- PO list with search, filtering, and status badges
-- Admin panel to manage users (create, edit, delete)
-- Dashboard with PO stats
+- **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking
+- **Quotations** — full CRUD; auto-numbered QT-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
+- **Invoices** — full CRUD; auto-numbered INV-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
+- **Delivery Orders** — full CRUD; auto-numbered DO-YYYYMM-XXXX; no pricing columns; PDF generation
+- **Settings** — centralized GST rate (admin-only edit); currently 9%
+- **Admin Panel** — manage users (create, edit, delete)
+- Dashboard with stats
+- PDF generation using jsPDF + jspdf-autotable (consistent header/footer with RSV Infotech branding)
+
+## Document Numbering
+
+- PO: `PO-YYYYMM-XXXX`
+- Quotation: `QT-YYYYMM-XXXX`
+- Invoice: `INV-YYYYMM-XXXX`
+- Delivery Order: `DO-YYYYMM-XXXX`
+
+Where XXXX is a 4-digit random number.
+
+## GST
+
+- Stored in `settingsTable` (singleton row, id=1)
+- Default 9% (Singapore standard rate)
+- Exposed via `GET /api/settings` / `PUT /api/settings`
+- Auto-populated on new Quotation / Invoice / PO forms via `useGetSettings` hook
+- Admin-only write access
 
 ## Stack
 
@@ -48,3 +68,12 @@ A full-stack Purchase Order management application for RSV Infotech Pte. Ltd. Bu
 - `lib/api-spec/` — OpenAPI specification
 - `lib/api-client-react/` — Generated React Query hooks
 - `lib/api-zod/` — Generated Zod validation schemas
+
+## Database Tables
+
+- `users` — user accounts (id, username, passwordHash, role)
+- `purchaseOrders` — PO records with JSONB items
+- `quotations` — quotation records with JSONB items
+- `invoices` — invoice records with JSONB items
+- `deliveryOrders` — DO records with JSONB items (description, qty only — no pricing)
+- `settings` — singleton row for GST rate and other config

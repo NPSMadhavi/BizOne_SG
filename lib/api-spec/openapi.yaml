@@ -16,6 +16,14 @@ tags:
     description: User management
   - name: purchase-orders
     description: Purchase order operations
+  - name: quotations
+    description: Quotation operations
+  - name: invoices
+    description: Invoice operations
+  - name: delivery-orders
+    description: Delivery order operations
+  - name: settings
+    description: Company settings
 paths:
   /healthz:
     get:
@@ -271,6 +279,335 @@ paths:
               schema:
                 $ref: "#/components/schemas/POStats"
 
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get company settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update company settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsBody"
+      responses:
+        "200":
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
+  /quotations:
+    get:
+      operationId: listQuotations
+      tags: [quotations]
+      summary: List quotations
+      responses:
+        "200":
+          description: List of quotations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Quotation"
+    post:
+      operationId: createQuotation
+      tags: [quotations]
+      summary: Create a quotation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQuotationBody"
+      responses:
+        "201":
+          description: Quotation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quotation"
+
+  /quotations/stats:
+    get:
+      operationId: getQuotationStats
+      tags: [quotations]
+      summary: Get quotation stats
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocStats"
+
+  /quotations/{id}:
+    get:
+      operationId: getQuotation
+      tags: [quotations]
+      summary: Get a quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Quotation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quotation"
+    put:
+      operationId: updateQuotation
+      tags: [quotations]
+      summary: Update a quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuotationBody"
+      responses:
+        "200":
+          description: Quotation updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quotation"
+    delete:
+      operationId: deleteQuotation
+      tags: [quotations]
+      summary: Delete a quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: List invoices
+      responses:
+        "200":
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invoice"
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      summary: Create an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvoiceBody"
+      responses:
+        "201":
+          description: Invoice created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+
+  /invoices/stats:
+    get:
+      operationId: getInvoiceStats
+      tags: [invoices]
+      summary: Get invoice stats
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocStats"
+
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      summary: Get an invoice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+    put:
+      operationId: updateInvoice
+      tags: [invoices]
+      summary: Update an invoice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInvoiceBody"
+      responses:
+        "200":
+          description: Invoice updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+    delete:
+      operationId: deleteInvoice
+      tags: [invoices]
+      summary: Delete an invoice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /delivery-orders:
+    get:
+      operationId: listDeliveryOrders
+      tags: [delivery-orders]
+      summary: List delivery orders
+      responses:
+        "200":
+          description: List of delivery orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeliveryOrder"
+    post:
+      operationId: createDeliveryOrder
+      tags: [delivery-orders]
+      summary: Create a delivery order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeliveryOrderBody"
+      responses:
+        "201":
+          description: Delivery order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryOrder"
+
+  /delivery-orders/{id}:
+    get:
+      operationId: getDeliveryOrder
+      tags: [delivery-orders]
+      summary: Get a delivery order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Delivery order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryOrder"
+    put:
+      operationId: updateDeliveryOrder
+      tags: [delivery-orders]
+      summary: Update a delivery order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeliveryOrderBody"
+      responses:
+        "200":
+          description: Delivery order updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryOrder"
+    delete:
+      operationId: deleteDeliveryOrder
+      tags: [delivery-orders]
+      summary: Delete a delivery order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -469,3 +806,315 @@ components:
         totalValue:
           type: number
       required: [total, confirmed, draft, cancelled, totalValue]
+
+    Settings:
+      type: object
+      properties:
+        id:
+          type: integer
+        gstRate:
+          type: number
+      required: [id, gstRate]
+
+    UpdateSettingsBody:
+      type: object
+      properties:
+        gstRate:
+          type: number
+      required: [gstRate]
+
+    DocStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        confirmed:
+          type: integer
+        draft:
+          type: integer
+        cancelled:
+          type: integer
+        totalValue:
+          type: number
+      required: [total, confirmed, draft, cancelled, totalValue]
+
+    DocItem:
+      type: object
+      properties:
+        itemPartNumber:
+          type: string
+        description:
+          type: string
+        qty:
+          type: string
+        unitPrice:
+          type: string
+        amount:
+          type: string
+      required: [description, qty]
+
+    Quotation:
+      type: object
+      properties:
+        id:
+          type: integer
+        qtNumber:
+          type: string
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        subtotal:
+          type: string
+        tax:
+          type: string
+        totalAmount:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        createdBy:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, qtNumber, customerName, items, subtotal, tax, totalAmount, status, createdBy, createdAt]
+
+    CreateQuotationBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        tax:
+          type: number
+      required: [customerName, items]
+
+    UpdateQuotationBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        tax:
+          type: number
+      required: [customerName, items]
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: integer
+        invNumber:
+          type: string
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        subtotal:
+          type: string
+        tax:
+          type: string
+        totalAmount:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        createdBy:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, invNumber, customerName, items, subtotal, tax, totalAmount, status, createdBy, createdAt]
+
+    CreateInvoiceBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        tax:
+          type: number
+      required: [customerName, items]
+
+    UpdateInvoiceBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryAddress:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        tax:
+          type: number
+      required: [customerName, items]
+
+    DOItem:
+      type: object
+      properties:
+        description:
+          type: string
+        qty:
+          type: string
+      required: [description, qty]
+
+    DeliveryOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        doNumber:
+          type: string
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryDate:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DOItem"
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        createdBy:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, doNumber, customerName, items, status, createdBy, createdAt]
+
+    CreateDeliveryOrderBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryDate:
+          type: string
+        notes:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DOItem"
+      required: [customerName, items]
+
+    UpdateDeliveryOrderBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        deliveryDate:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DOItem"
+      required: [customerName, items]

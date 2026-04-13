@@ -265,3 +265,473 @@ export const GetPurchaseOrderStatsResponse = zod.object({
   cancelled: zod.number(),
   totalValue: zod.number(),
 });
+
+/**
+ * @summary Get company settings
+ */
+export const GetSettingsResponse = zod.object({
+  id: zod.number(),
+  gstRate: zod.number(),
+});
+
+/**
+ * @summary Update company settings
+ */
+export const UpdateSettingsBody = zod.object({
+  gstRate: zod.number(),
+});
+
+export const UpdateSettingsResponse = zod.object({
+  id: zod.number(),
+  gstRate: zod.number(),
+});
+
+/**
+ * @summary List quotations
+ */
+export const ListQuotationsResponseItem = zod.object({
+  id: zod.number(),
+  qtNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+export const ListQuotationsResponse = zod.array(ListQuotationsResponseItem);
+
+/**
+ * @summary Create a quotation
+ */
+export const CreateQuotationBody = zod.object({
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  tax: zod.number().optional(),
+});
+
+/**
+ * @summary Get quotation stats
+ */
+export const GetQuotationStatsResponse = zod.object({
+  total: zod.number(),
+  confirmed: zod.number(),
+  draft: zod.number(),
+  cancelled: zod.number(),
+  totalValue: zod.number(),
+});
+
+/**
+ * @summary Get a quotation
+ */
+export const GetQuotationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetQuotationResponse = zod.object({
+  id: zod.number(),
+  qtNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Update a quotation
+ */
+export const UpdateQuotationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateQuotationBody = zod.object({
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  tax: zod.number().optional(),
+});
+
+export const UpdateQuotationResponse = zod.object({
+  id: zod.number(),
+  qtNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Delete a quotation
+ */
+export const DeleteQuotationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteQuotationResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List invoices
+ */
+export const ListInvoicesResponseItem = zod.object({
+  id: zod.number(),
+  invNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+export const ListInvoicesResponse = zod.array(ListInvoicesResponseItem);
+
+/**
+ * @summary Create an invoice
+ */
+export const CreateInvoiceBody = zod.object({
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  tax: zod.number().optional(),
+});
+
+/**
+ * @summary Get invoice stats
+ */
+export const GetInvoiceStatsResponse = zod.object({
+  total: zod.number(),
+  confirmed: zod.number(),
+  draft: zod.number(),
+  cancelled: zod.number(),
+  totalValue: zod.number(),
+});
+
+/**
+ * @summary Get an invoice
+ */
+export const GetInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetInvoiceResponse = zod.object({
+  id: zod.number(),
+  invNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Update an invoice
+ */
+export const UpdateInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceBody = zod.object({
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  tax: zod.number().optional(),
+});
+
+export const UpdateInvoiceResponse = zod.object({
+  id: zod.number(),
+  invNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Delete an invoice
+ */
+export const DeleteInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteInvoiceResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List delivery orders
+ */
+export const ListDeliveryOrdersResponseItem = zod.object({
+  id: zod.number(),
+  doNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      description: zod.string(),
+      qty: zod.string(),
+    }),
+  ),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+export const ListDeliveryOrdersResponse = zod.array(
+  ListDeliveryOrdersResponseItem,
+);
+
+/**
+ * @summary Create a delivery order
+ */
+export const CreateDeliveryOrderBody = zod.object({
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      description: zod.string(),
+      qty: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get a delivery order
+ */
+export const GetDeliveryOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetDeliveryOrderResponse = zod.object({
+  id: zod.number(),
+  doNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      description: zod.string(),
+      qty: zod.string(),
+    }),
+  ),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Update a delivery order
+ */
+export const UpdateDeliveryOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDeliveryOrderBody = zod.object({
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  notes: zod.string().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
+  items: zod.array(
+    zod.object({
+      description: zod.string(),
+      qty: zod.string(),
+    }),
+  ),
+});
+
+export const UpdateDeliveryOrderResponse = zod.object({
+  id: zod.number(),
+  doNumber: zod.string(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  notes: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      description: zod.string(),
+      qty: zod.string(),
+    }),
+  ),
+  status: zod.enum(["draft", "confirmed", "cancelled"]),
+  createdBy: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Delete a delivery order
+ */
+export const DeleteDeliveryOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteDeliveryOrderResponse = zod.object({
+  success: zod.boolean(),
+});

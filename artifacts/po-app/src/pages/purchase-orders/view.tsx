@@ -214,7 +214,7 @@ export default function PurchaseOrderView() {
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
               <tr>
                 <th className="px-6 py-3 font-medium w-12 text-center">#</th>
-                <th className="px-6 py-3 font-medium">Part Number</th>
+                <th className="px-6 py-3 font-medium">Item / Part Number</th>
                 <th className="px-6 py-3 font-medium">Description</th>
                 <th className="px-6 py-3 font-medium text-center">Qty</th>
                 <th className="px-6 py-3 font-medium text-right">Unit Price</th>

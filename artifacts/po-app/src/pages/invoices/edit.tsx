@@ -1,0 +1,290 @@
+import { useState, useEffect, useRef } from "react";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useParams, useLocation } from "wouter";
+import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Trash2, Save, ArrowLeft } from "lucide-react";
+
+const itemSchema = z.object({
+  partNumber: z.string(),
+  description: z.string(),
+  qty: z.coerce.number().min(1),
+  unitPrice: z.coerce.number().min(0),
+});
+
+const schema = z.object({
+  customerName: z.string().min(1, "Required"),
+  customerAddress: z.string().optional(),
+  customerContact: z.string().optional(),
+  deliveryAddress: z.string().optional(),
+  deliveryDate: z.string().optional(),
+  paymentTerms: z.string().optional(),
+  notes: z.string().optional(),
+  status: z.enum(["draft", "confirmed", "cancelled"]),
+  tax: z.coerce.number().min(0).max(100).default(9),
+  items: z.array(itemSchema).min(1),
+});
+
+export default function InvoiceEdit() {
+  const params = useParams();
+  const id = Number(params.id);
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const initialized = useRef(false);
+
+  const { data: doc } = useGetInvoice(id, {
+    query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
+  });
+
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      customerName: "", customerAddress: "", customerContact: "",
+      deliveryAddress: "", deliveryDate: "", paymentTerms: "", notes: "",
+      status: "draft", tax: 9,
+      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
+    },
+  });
+
+  useEffect(() => {
+    if (doc && !initialized.current) {
+      const items = (doc.items as any[]) || [];
+      form.reset({
+        customerName: doc.customerName,
+        customerAddress: doc.customerAddress || "",
+        customerContact: doc.customerContact || "",
+        deliveryAddress: doc.deliveryAddress || "",
+        deliveryDate: doc.deliveryDate || "",
+        paymentTerms: doc.paymentTerms || "",
+        notes: doc.notes || "",
+        status: doc.status as any,
+        tax: doc.subtotal && Number(doc.subtotal) > 0 ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10 : 9,
+        items: items.length > 0 ? items.map((i: any) => ({
+          partNumber: i.partNumber || "",
+          description: i.description || "",
+          qty: Number(i.qty) || 1,
+          unitPrice: Number(i.unitPrice) || 0,
+        })) : [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
+      });
+      initialized.current = true;
+    }
+  }, [doc]);
+
+  const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
+  const updateMutation = useUpdateInvoice();
+  const items = form.watch("items");
+  const taxPercent = form.watch("tax") || 0;
+
+  const appendLock = useRef(false);
+  useEffect(() => {
+    if (!initialized.current) return;
+    const sub = form.watch((values, { name }) => {
+      if (!name?.startsWith("items.")) return;
+      const match = name.match(/^items\.(\d+)\./);
+      if (!match) return;
+      const idx = parseInt(match[1], 10);
+      const allItems = values.items ?? [];
+      if (idx !== allItems.length - 1) return;
+      const last = allItems[idx];
+      if (!last) return;
+      const isEmpty =
+        (!last.partNumber || String(last.partNumber).trim() === "") &&
+        (!last.description || String(last.description).trim() === "") &&
+        (Number(last.unitPrice) === 0) && (Number(last.qty) <= 1);
+      if (!isEmpty && !appendLock.current) {
+        appendLock.current = true;
+        const focused = document.activeElement as HTMLElement | null;
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+        requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form, append]);
+
+  const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
+  const taxAmount = subtotal * (taxPercent / 100);
+  const totalAmount = subtotal + taxAmount;
+  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(v);
+
+  async function onSubmit(values: z.infer<typeof schema>) {
+    setIsSubmitting(true);
+    const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
+    if (filledItems.length === 0) {
+      toast({ title: "Error", description: "At least one line item required.", variant: "destructive" });
+      setIsSubmitting(false);
+      return;
+    }
+    const itemsWithAmount = filledItems.map(i => ({ ...i, amount: (i.qty * i.unitPrice).toString() }));
+    updateMutation.mutate({ id, data: { ...values, items: itemsWithAmount } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+        toast({ title: "Updated" });
+        setLocation(`/invoices/${id}`);
+      },
+      onError: (err: any) => {
+        toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
+        setIsSubmitting(false);
+      },
+    });
+  }
+
+  if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
+
+  return (
+    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => setLocation(`/invoices/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Edit Invoice</h1>
+          <p className="text-muted-foreground mt-1">{doc.invNumber}</p>
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-4"><CardTitle className="text-lg">Customer Details</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <FormField control={form.control} name="customerName" render={({ field }) => (
+                  <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="customerAddress" render={({ field }) => (
+                  <FormItem><FormLabel>Address</FormLabel>
+                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="customerContact" render={({ field }) => (
+                  <FormItem><FormLabel>Contact</FormLabel>
+                    <FormControl><Input {...field} /></FormControl></FormItem>
+                )} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-4"><CardTitle className="text-lg">Invoice Details</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem><FormLabel>Status</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="confirmed">Confirmed</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select></FormItem>
+                )} />
+                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
+                  <FormItem><FormLabel>Delivery Address</FormLabel>
+                    <FormControl><Textarea className="resize-none" rows={2} {...field} /></FormControl></FormItem>
+                )} />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                    <FormItem><FormLabel>Delivery Date</FormLabel>
+                      <FormControl><Input type="date" {...field} /></FormControl></FormItem>
+                  )} />
+                  <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                    <FormItem><FormLabel>Payment Terms</FormLabel>
+                      <FormControl><Input {...field} /></FormControl></FormItem>
+                  )} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-4 bg-muted/20 border-b">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Line Items</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">GST:</span>
+                  <div className="relative w-24">
+                    <FormField control={form.control} name="tax" render={({ field }) => (
+                      <FormItem><FormControl>
+                        <Input type="number" min="0" max="100" step="0.1" className="pr-6 h-8 text-sm" {...field} />
+                      </FormControl></FormItem>
+                    )} />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/30 text-xs text-muted-foreground uppercase border-b">
+                    <tr>
+                      <th className="px-4 py-3 text-left w-8">#</th>
+                      <th className="px-4 py-3 text-left w-36">Item / Part Number</th>
+                      <th className="px-4 py-3 text-left">Description</th>
+                      <th className="px-4 py-3 text-right w-20">Qty</th>
+                      <th className="px-4 py-3 text-right w-28">Unit Price</th>
+                      <th className="px-4 py-3 text-right w-28">Amount</th>
+                      <th className="px-4 py-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fields.map((field, index) => {
+                      const qty = Number(form.watch(`items.${index}.qty`)) || 0;
+                      const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
+                      return (
+                        <tr key={field.id} className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
+                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                            <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                            <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Item description" {...field} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(qty * price)}</td>
+                          <td className="px-4 py-2">{fields.length > 1 && (
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t bg-muted/20 p-4 flex justify-end">
+                <div className="w-64 space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">GST ({taxPercent}%)</span><span>{fmt(taxAmount)}</span></div>
+                  <div className="flex justify-between font-semibold text-base border-t pt-2"><span>Total</span><span>{fmt(totalAmount)}</span></div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setLocation(`/invoices/${id}`)}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
+              <Save className="h-4 w-4" />
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}
