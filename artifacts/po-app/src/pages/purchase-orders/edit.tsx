@@ -30,11 +30,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, ArrowLeft } from "lucide-react";
+import { Trash2, Save, ArrowLeft } from "lucide-react";
 
 const itemSchema = z.object({
-  partNumber: z.string().min(1, "Required"),
-  description: z.string().min(1, "Required"),
+  partNumber: z.string(),
+  description: z.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
 });
@@ -116,6 +116,21 @@ export default function PurchaseOrderEdit() {
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
 
+  // Auto-append a new empty row when the last row gets any data (only after init)
+  useEffect(() => {
+    if (!initialized) return;
+    const last = items[items.length - 1];
+    if (!last) return;
+    const lastIsEmpty =
+      (!last.partNumber || last.partNumber.trim() === "") &&
+      (!last.description || last.description.trim() === "") &&
+      Number(last.unitPrice) === 0 &&
+      Number(last.qty) <= 1;
+    if (!lastIsEmpty) {
+      append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+    }
+  }, [items, append, initialized]);
+
   const subtotal = items.reduce(
     (sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0),
     0
@@ -127,7 +142,14 @@ export default function PurchaseOrderEdit() {
     new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(value);
 
   async function onSubmit(values: z.infer<typeof poSchema>) {
-    const itemsWithAmount = values.items.map((item) => ({
+    const filledItems = values.items.filter(
+      (item) => item.partNumber.trim() !== "" || item.description.trim() !== ""
+    );
+    if (filledItems.length === 0) {
+      toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
+      return;
+    }
+    const itemsWithAmount = filledItems.map((item) => ({
       ...item,
       amount: item.qty * item.unitPrice,
     }));
@@ -301,15 +323,6 @@ export default function PurchaseOrderEdit() {
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Line Items</CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => append({ partNumber: "", description: "", qty: 1, unitPrice: 0 })}
-                  className="gap-1 h-8"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Row
-                </Button>
               </div>
               {form.formState.errors.items?.root && (
                 <div className="text-sm text-destructive mt-2">

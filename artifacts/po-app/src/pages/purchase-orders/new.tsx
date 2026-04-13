@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,12 +17,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Calculator, Save, FileText } from "lucide-react";
+import { Trash2, Save } from "lucide-react";
 import { generatePO_PDF } from "@/lib/pdf";
 
 const itemSchema = z.object({
-  partNumber: z.string().min(1, "Required"),
-  description: z.string().min(1, "Required"),
+  partNumber: z.string(),
+  description: z.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
 });
@@ -69,6 +69,20 @@ export default function PurchaseOrderNew() {
   // Watch for calculations
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
+
+  // Auto-append a new empty row when the last row gets any data
+  useEffect(() => {
+    const last = items[items.length - 1];
+    if (!last) return;
+    const lastIsEmpty =
+      (!last.partNumber || last.partNumber.trim() === "") &&
+      (!last.description || last.description.trim() === "") &&
+      Number(last.unitPrice) === 0 &&
+      Number(last.qty) <= 1;
+    if (!lastIsEmpty) {
+      append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+    }
+  }, [items, append]);
   
   const subtotal = items.reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
   const taxAmount = subtotal * (taxPercent / 100);
@@ -84,17 +98,25 @@ export default function PurchaseOrderNew() {
   async function onSubmit(values: z.infer<typeof poSchema>) {
     setIsGenerating(true);
     
-    // Auto-calculate amounts for backend
-    const itemsWithAmount = values.items.map(item => ({
+    // Strip the trailing empty auto-row
+    const filledItems = values.items.filter(
+      (item) => item.partNumber.trim() !== "" || item.description.trim() !== ""
+    );
+    if (filledItems.length === 0) {
+      toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
+      setIsGenerating(false);
+      return;
+    }
+    const itemsWithAmount = filledItems.map(item => ({
       ...item,
       amount: item.qty * item.unitPrice
     }));
 
     createMutation.mutate(
-      { 
+      {
         data: {
           ...values,
-          items: itemsWithAmount
+          items: itemsWithAmount,
         }
       },
       {
@@ -239,15 +261,6 @@ export default function PurchaseOrderNew() {
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Line Items</CardTitle>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => append({ partNumber: "", description: "", qty: 1, unitPrice: 0 })}
-                  className="gap-1 h-8"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Row
-                </Button>
               </div>
               {form.formState.errors.items?.root && (
                 <div className="text-sm text-destructive mt-2">{form.formState.errors.items.root.message}</div>
