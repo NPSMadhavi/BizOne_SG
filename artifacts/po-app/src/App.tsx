@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -26,6 +26,40 @@ import Admin from "@/pages/admin/index";
 import Settings from "@/pages/settings/index";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
+import { useEffect } from "react";
+
+const ROUTE_TITLES: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/purchase-orders": "Purchase Orders",
+  "/quotations": "Quotations",
+  "/invoices": "Invoices",
+  "/delivery-orders": "Delivery Orders",
+  "/admin": "User Management",
+  "/settings": "Settings",
+  "/select-company": "Select Company",
+  "/login": "Sign In",
+};
+
+function useDocumentTitle() {
+  const [location] = useLocation();
+  const { selectedCompany } = useAuth();
+
+  useEffect(() => {
+    const matchedKey = Object.keys(ROUTE_TITLES).find(key =>
+      location === key || location.startsWith(key + "/")
+    );
+    const pageTitle = matchedKey ? ROUTE_TITLES[matchedKey] : null;
+    const companyName = selectedCompany?.name ?? "RSV Infotech";
+
+    if (pageTitle && pageTitle !== "Sign In" && pageTitle !== "Select Company") {
+      document.title = `${companyName} - ${pageTitle}`;
+    } else if (pageTitle) {
+      document.title = `RSV Infotech - ${pageTitle}`;
+    } else {
+      document.title = companyName;
+    }
+  }, [location, selectedCompany]);
+}
 
 const queryClient = new QueryClient();
 
@@ -72,6 +106,7 @@ function ProtectedRoute({ component: Component, adminOnly = false, module }: Pro
 }
 
 function Router() {
+  useDocumentTitle();
   return (
     <Shell>
       <Switch>

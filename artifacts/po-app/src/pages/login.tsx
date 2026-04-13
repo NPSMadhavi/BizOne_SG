@@ -77,7 +77,7 @@ export default function Login() {
         <CardHeader className="space-y-4 items-center text-center">
           <img src={logo} alt="RSV Infotech" className="h-12 object-contain" />
           <div>
-            <CardTitle className="text-2xl font-bold tracking-tight">PO Generator</CardTitle>
+            <CardTitle className="text-2xl font-bold tracking-tight">Document Manager</CardTitle>
             <CardDescription>Sign in to your account</CardDescription>
           </div>
         </CardHeader>
