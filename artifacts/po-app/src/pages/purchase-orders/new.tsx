@@ -90,8 +90,12 @@ export default function PurchaseOrderNew() {
         (last.qty === undefined || last.qty === null || String(last.qty).trim() === "" || Number(last.qty) <= 1);
       if (!lastIsEmpty && !appendLock.current) {
         appendLock.current = true;
+        const focused = document.activeElement as HTMLElement | null;
         append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
-        queueMicrotask(() => { appendLock.current = false; });
+        requestAnimationFrame(() => {
+          focused?.focus();
+          appendLock.current = false;
+        });
       }
     });
     return () => subscription.unsubscribe();
