@@ -24,10 +24,9 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   const logoBase64 = await getBase64ImageFromUrl(logoUrl);
 
   // ── Header ─────────────────────────────────────────────────────────────
-  // Logo: preserve aspect ratio, make it big enough to be legible
-  // The RSV Infotech logo is roughly 3.4:1 (width:height)
-  const logoW = 58;
-  const logoH = 18;
+  // Logo: RSV Infotech logo is wide — approximately 4.5:1 (width:height)
+  const logoW = 65;
+  const logoH = 14;
   doc.addImage(logoBase64, "PNG", marginLeft, 12, logoW, logoH);
 
   // "PURCHASE ORDER" right-aligned to the right margin
@@ -52,12 +51,13 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100, 100, 100);
-  doc.text("Singapore", marginLeft, 46);
+  doc.text("#07-52A, 10 Ubi Crescent, UBI Techpark Lobby C,", marginLeft, 46);
+  doc.text("Singapore 408564", marginLeft, 51);
 
   // Divider line
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.4);
-  doc.line(marginLeft, 52, marginRight, 52);
+  doc.line(marginLeft, 58, marginRight, 58);
 
   // ── Vendor & Delivery ──────────────────────────────────────────────────
   const col2 = 108;
