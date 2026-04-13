@@ -134,49 +134,50 @@ export async function generatePO_PDF(po: PurchaseOrder) {
     margin: { left: marginLeft, right: 14 },
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
+  const tableEndY = (doc as any).lastAutoTable.finalY;
 
-  // ── Totals block ──────────────────────────────────────────────────────
-  // Table Amount column: starts at 169mm, ends at 196mm, cell padding 4mm
-  // So text right edge = 196 - 4 = 192mm
-  // Labels start at Unit Price column left text edge = 142 + 4 = 146mm
-  const labelX = 146;
-  const valueX = marginRight - 4; // 192mm — matches Amount column text right edge
-
-  doc.setFontSize(9.5);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont("helvetica", "normal");
-  doc.text("Subtotal:", labelX, finalY);
-  doc.text(`$${Number(po.subtotal).toFixed(2)}`, valueX, finalY, { align: "right" });
-
-  const subtotalNum = Number(po.subtotal);
-  const taxAmount = Number(po.totalAmount) - subtotalNum;
-
-  doc.text("Tax:", labelX, finalY + 7);
-  doc.text(`$${taxAmount.toFixed(2)}`, valueX, finalY + 7, { align: "right" });
-
-  doc.setDrawColor(180, 180, 180);
-  doc.setLineWidth(0.3);
-  doc.line(labelX, finalY + 10, marginRight, finalY + 10);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(24, 33, 47);
-  doc.text("Total Amount:", labelX, finalY + 17);
-  doc.text(`$${Number(po.totalAmount).toFixed(2)}`, valueX, finalY + 17, { align: "right" });
-
-  // ── Notes ─────────────────────────────────────────────────────────────
+  // ── Notes (just after the table) ──────────────────────────────────────
   if (po.notes) {
-    const notesY = finalY + (po.notes ? 5 : 0);
+    const notesY = tableEndY + 8;
     doc.setFontSize(9.5);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, notesY);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(80, 80, 80);
-    const noteLines = doc.splitTextToSize(po.notes, 110);
+    const noteLines = doc.splitTextToSize(po.notes, 120);
     doc.text(noteLines, marginLeft, notesY + 6);
   }
+
+  // ── Totals block — pinned to bottom-right of page ─────────────────────
+  // Table Amount column text right edge = 196 - 4mm cell padding = 192mm
+  const labelX = 146;
+  const valueX = marginRight - 4; // 192mm — flush with Amount column
+
+  // Pin totals block to a fixed Y near the bottom (above footer)
+  const totalsY = 250;
+
+  doc.setFontSize(9.5);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "normal");
+  doc.text("Subtotal:", labelX, totalsY);
+  doc.text(`$${Number(po.subtotal).toFixed(2)}`, valueX, totalsY, { align: "right" });
+
+  const subtotalNum = Number(po.subtotal);
+  const taxAmount = Number(po.totalAmount) - subtotalNum;
+
+  doc.text("Tax:", labelX, totalsY + 7);
+  doc.text(`$${taxAmount.toFixed(2)}`, valueX, totalsY + 7, { align: "right" });
+
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.3);
+  doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(24, 33, 47);
+  doc.text("Total Amount:", labelX, totalsY + 17);
+  doc.text(`$${Number(po.totalAmount).toFixed(2)}`, valueX, totalsY + 17, { align: "right" });
 
   // ── Footer ────────────────────────────────────────────────────────────
   doc.setFontSize(7.5);
