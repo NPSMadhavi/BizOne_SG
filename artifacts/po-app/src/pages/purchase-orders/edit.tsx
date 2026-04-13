@@ -290,7 +290,7 @@ export default function PurchaseOrderEdit() {
                       <FormItem>
                         <FormLabel>Delivery Date</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g. 15 Nov 2023" {...field} />
+                          <Input type="date" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

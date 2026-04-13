@@ -187,7 +187,11 @@ export default function PurchaseOrderView() {
               <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
               <div>
                 <span className="text-sm font-medium">Delivery Date: </span>
-                <span className="text-sm text-muted-foreground">{po.deliveryDate || "TBA"}</span>
+                <span className="text-sm text-muted-foreground">
+                  {po.deliveryDate
+                    ? (() => { const d = new Date(po.deliveryDate); return isNaN(d.getTime()) ? po.deliveryDate : d.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" }); })()
+                    : "TBA"}
+                </span>
               </div>
             </div>
             <div className="flex items-center gap-3">

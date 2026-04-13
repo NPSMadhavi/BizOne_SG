@@ -65,8 +65,8 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(0, 0, 0);
-  doc.text("Vendor:", marginLeft, 62);
-  doc.text("Delivery To:", col2, 62);
+  doc.text("Vendor:", marginLeft, 67);
+  doc.text("Delivery To:", col2, 67);
 
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "normal");
@@ -81,24 +81,34 @@ export async function generatePO_PDF(po: PurchaseOrder) {
     .join("\n");
 
   const vendorLines = doc.splitTextToSize(vendorText, 85);
-  doc.text(vendorLines, marginLeft, 69);
+  doc.text(vendorLines, marginLeft, 74);
 
   const deliveryLines = doc.splitTextToSize(
     po.deliveryAddress || "RSV Infotech Office",
     82
   );
-  doc.text(deliveryLines, col2, 69);
+  doc.text(deliveryLines, col2, 74);
 
   // ── Delivery date / Payment terms ─────────────────────────────────────
+  // Format ISO date (YYYY-MM-DD) to readable form, or pass through free text
+  const formatDeliveryDate = (d: string | null | undefined): string => {
+    if (!d) return "TBA";
+    const parsed = new Date(d);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
+    }
+    return d;
+  };
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
   doc.setTextColor(0, 0, 0);
-  doc.text("Delivery Date:", marginLeft, 100);
-  doc.text("Payment Terms:", col2, 100);
+  doc.text("Delivery Date:", marginLeft, 105);
+  doc.text("Payment Terms:", col2, 105);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
-  doc.text(po.deliveryDate || "TBA", marginLeft + 32, 100);
-  doc.text(po.paymentTerms || "Standard", col2 + 33, 100);
+  doc.text(formatDeliveryDate(po.deliveryDate), marginLeft + 32, 105);
+  doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
   // ── Line Items Table ──────────────────────────────────────────────────
   const tableData = po.items.map((item, index) => [
@@ -111,7 +121,7 @@ export async function generatePO_PDF(po: PurchaseOrder) {
   ]);
 
   (doc as any).autoTable({
-    startY: 108,
+    startY: 113,
     head: [["#", "Part Number", "Description", "Qty", "Unit Price", "Amount"]],
     body: tableData,
     theme: "striped",
