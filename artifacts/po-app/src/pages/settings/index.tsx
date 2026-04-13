@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,6 +24,7 @@ export default function Settings() {
   const [smtpPass, setSmtpPass] = useState("");
   const [smtpFrom, setSmtpFrom] = useState("");
   const [smtpEditing, setSmtpEditing] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
 
   const { data: settings, isLoading: settingsLoading } = useGetSettings({
     query: { queryKey: getGetSettingsQueryKey() },
@@ -84,6 +85,23 @@ export default function Settings() {
         },
       }
     );
+  };
+
+  const handleTestSmtp = async () => {
+    setTestingSmtp(true);
+    try {
+      const res = await fetch("/api/test-email", { method: "POST", credentials: "include" });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Connection Successful", description: data.message || "SMTP settings are working correctly." });
+      } else {
+        toast({ title: "Connection Failed", description: data.error || "Could not connect to SMTP server.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Connection Failed", description: "Could not reach the server. Please try again.", variant: "destructive" });
+    } finally {
+      setTestingSmtp(false);
+    }
   };
 
   return (
@@ -222,12 +240,25 @@ export default function Settings() {
                 />
                 <p className="text-xs text-muted-foreground">The "From" name and email shown to recipients.</p>
               </div>
-              {isAdmin && smtpEditing && (
-                <Button onClick={handleSaveSmtp} disabled={updateSettings.isPending} className="gap-2">
-                  <Save className="h-4 w-4" />
-                  {updateSettings.isPending ? "Saving..." : "Save Email Settings"}
-                </Button>
-              )}
+              <div className="flex items-center gap-3 flex-wrap pt-1">
+                {isAdmin && smtpEditing && (
+                  <Button onClick={handleSaveSmtp} disabled={updateSettings.isPending} className="gap-2">
+                    <Save className="h-4 w-4" />
+                    {updateSettings.isPending ? "Saving..." : "Save Email Settings"}
+                  </Button>
+                )}
+                {settings?.smtpConfigured && (
+                  <Button
+                    variant="outline"
+                    onClick={handleTestSmtp}
+                    disabled={testingSmtp || smtpEditing}
+                    className="gap-2"
+                  >
+                    <Wifi className="h-4 w-4" />
+                    {testingSmtp ? "Testing..." : "Test Connection"}
+                  </Button>
+                )}
+              </div>
               {!isAdmin && (
                 <p className="text-xs text-muted-foreground">Only administrators can change email settings.</p>
               )}
