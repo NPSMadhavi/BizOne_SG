@@ -116,21 +116,29 @@ export default function PurchaseOrderEdit() {
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
 
-  // Auto-append a new empty row whenever the last row gets any data (only after init)
+  // Auto-append a new empty row ONLY when the user edits the very last row (after init)
+  const appendLock = useRef(false);
   useEffect(() => {
     if (!initialized) return;
-    const subscription = form.watch((values) => {
+    const subscription = form.watch((values, { name }) => {
+      if (!name?.startsWith("items.")) return;
+      const match = name.match(/^items\.(\d+)\./);
+      if (!match) return;
+      const changedIndex = parseInt(match[1], 10);
       const allItems = values.items ?? [];
-      if (allItems.length === 0) return;
-      const last = allItems[allItems.length - 1];
+      // Only react when the user is typing in the last row
+      if (changedIndex !== allItems.length - 1) return;
+      const last = allItems[changedIndex];
       if (!last) return;
       const lastIsEmpty =
         (!last.partNumber || String(last.partNumber).trim() === "") &&
         (!last.description || String(last.description).trim() === "") &&
         (last.unitPrice === undefined || last.unitPrice === null || String(last.unitPrice).trim() === "" || Number(last.unitPrice) === 0) &&
         (last.qty === undefined || last.qty === null || String(last.qty).trim() === "" || Number(last.qty) <= 1);
-      if (!lastIsEmpty) {
+      if (!lastIsEmpty && !appendLock.current) {
+        appendLock.current = true;
         append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+        queueMicrotask(() => { appendLock.current = false; });
       }
     });
     return () => subscription.unsubscribe();
