@@ -116,20 +116,25 @@ export default function PurchaseOrderEdit() {
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
 
-  // Auto-append a new empty row when the last row gets any data (only after init)
+  // Auto-append a new empty row whenever the last row gets any data (only after init)
   useEffect(() => {
     if (!initialized) return;
-    const last = items[items.length - 1];
-    if (!last) return;
-    const lastIsEmpty =
-      (!last.partNumber || last.partNumber.trim() === "") &&
-      (!last.description || last.description.trim() === "") &&
-      Number(last.unitPrice) === 0 &&
-      Number(last.qty) <= 1;
-    if (!lastIsEmpty) {
-      append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
-    }
-  }, [items, append, initialized]);
+    const subscription = form.watch((values) => {
+      const allItems = values.items ?? [];
+      if (allItems.length === 0) return;
+      const last = allItems[allItems.length - 1];
+      if (!last) return;
+      const lastIsEmpty =
+        (!last.partNumber || String(last.partNumber).trim() === "") &&
+        (!last.description || String(last.description).trim() === "") &&
+        (last.unitPrice === undefined || last.unitPrice === null || String(last.unitPrice).trim() === "" || Number(last.unitPrice) === 0) &&
+        (last.qty === undefined || last.qty === null || String(last.qty).trim() === "" || Number(last.qty) <= 1);
+      if (!lastIsEmpty) {
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form, append, initialized]);
 
   const subtotal = items.reduce(
     (sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0),
@@ -385,7 +390,7 @@ export default function PurchaseOrderEdit() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input type="number" min="1" className="h-8 text-center" {...field} />
+                                  <Input inputMode="numeric" className="h-8 text-center" {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
@@ -398,13 +403,7 @@ export default function PurchaseOrderEdit() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    className="h-8 text-right"
-                                    {...field}
-                                  />
+                                  <Input inputMode="decimal" className="h-8 text-right" {...field} />
                                 </FormControl>
                               </FormItem>
                             )}
