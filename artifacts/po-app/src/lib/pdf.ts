@@ -288,9 +288,9 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
-  const col2 = 108;
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(logoUrl);
@@ -298,19 +298,15 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
-  doc.text("Deliver To:", col2, 67);
 
   doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
   const customerText = [qt.customerName, qt.customerAddress || "", qt.customerContact || ""].filter(Boolean).join("\n");
-  doc.text(doc.splitTextToSize(customerText, 85), marginLeft, 74);
-  doc.text(doc.splitTextToSize(qt.deliveryAddress || "—", 82), col2, 74);
+  doc.text(doc.splitTextToSize(customerText, 160), marginLeft, 74);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-  doc.text("Delivery Date:", marginLeft, 105);
-  doc.text("Payment Terms:", col2, 105);
+  doc.text("Payment Terms:", marginLeft, 100);
   doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
-  doc.text(formatDate(qt.deliveryDate), marginLeft + 32, 105);
-  doc.text(qt.paymentTerms || "Standard", col2 + 33, 105);
+  doc.text(qt.paymentTerms || "Standard", marginLeft + 33, 100);
 
   const qtCurrency = (qt as any).currency || "SGD";
   const tableData = (qt.items as any[]).map((item, i) => [
@@ -319,7 +315,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   ]);
 
   (doc as any).autoTable({
-    startY: 113,
+    startY: 107,
     head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
     body: tableData,
     theme: "striped",
@@ -334,7 +330,6 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     margin: { left: marginLeft, right: 14 },
   });
 
-  const pageHeight = doc.internal.pageSize.getHeight();
   if (qt.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
     doc.setFontSize(9.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
@@ -343,6 +338,24 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     doc.text(doc.splitTextToSize(qt.notes, 120), marginLeft, notesY + 6);
   }
 
+  // ── Terms & Conditions (left side, bottom) ──────────────────────────────────
+  const tcStartY = pageHeight - 67;
+  const tcLines = [
+    "All prices are in Singapore Dollars.",
+    "Validity: 30 days from quotation date.",
+    "Payment: 100% against order confirmation.",
+    "Hardware Delivery (if any): 2 to 4 weeks from the date of confirmation.",
+    "Cancellation Clause: 20% chargeable on selling price if cancelled after confirmation.",
+    "Job scope not defined above will be considered as a separate job scope/project.",
+  ];
+  doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.text("Terms & Conditions:", marginLeft, tcStartY);
+  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  tcLines.forEach((line, i) => {
+    doc.text(doc.splitTextToSize(`• ${line}`, 125), marginLeft, tcStartY + 5.5 + i * 5);
+  });
+
+  // ── Totals (right side, bottom) ─────────────────────────────────────────────
   const labelX = 146;
   const valueX = marginRight - 4;
   const totalsY = pageHeight - 47;
@@ -368,9 +381,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
-  const col2 = 108;
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(logoUrl);
@@ -378,19 +391,15 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
-  doc.text("Deliver To:", col2, 67);
 
   doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
   const customerText = [inv.customerName, inv.customerAddress || "", inv.customerContact || ""].filter(Boolean).join("\n");
-  doc.text(doc.splitTextToSize(customerText, 85), marginLeft, 74);
-  doc.text(doc.splitTextToSize(inv.deliveryAddress || "—", 82), col2, 74);
+  doc.text(doc.splitTextToSize(customerText, 160), marginLeft, 74);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-  doc.text("Delivery Date:", marginLeft, 105);
-  doc.text("Payment Terms:", col2, 105);
+  doc.text("Payment Terms:", marginLeft, 100);
   doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
-  doc.text(formatDate(inv.deliveryDate), marginLeft + 32, 105);
-  doc.text(inv.paymentTerms || "Standard", col2 + 33, 105);
+  doc.text(inv.paymentTerms || "Standard", marginLeft + 33, 100);
 
   const invCurrency = (inv as any).currency || "SGD";
   const tableData = (inv.items as any[]).map((item, i) => [
@@ -399,7 +408,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   ]);
 
   (doc as any).autoTable({
-    startY: 113,
+    startY: 107,
     head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
     body: tableData,
     theme: "striped",
@@ -414,7 +423,6 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     margin: { left: marginLeft, right: 14 },
   });
 
-  const pageHeight = doc.internal.pageSize.getHeight();
   if (inv.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
     doc.setFontSize(9.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
@@ -423,6 +431,44 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     doc.text(doc.splitTextToSize(inv.notes, 120), marginLeft, notesY + 6);
   }
 
+  // ── Bank Details + Terms & Conditions (left side, bottom) ───────────────────
+  const isRSV = !company || company.id === 1;
+  const bdStartY = pageHeight - 75;
+  let bdY = bdStartY;
+
+  if (isRSV) {
+    doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+    doc.text("Bank Details:", marginLeft, bdY); bdY += 5;
+    doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+    doc.text("Please Paynow (or) Internet Banking funds transfer to:", marginLeft, bdY); bdY += 4.5;
+    doc.text("UOB Bank  |  SGD A/c No: 395-302-839-3  |  Company: RSV InfoTech Pte Ltd", marginLeft, bdY); bdY += 4.5;
+    doc.text("Bank Code: 7375  |  Branch Code: 447  |  Swift Code: UOVBSGSG", marginLeft, bdY); bdY += 7;
+  }
+
+  doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.text("Terms & Conditions:", marginLeft, bdY); bdY += 5;
+  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+
+  const tcLines = isRSV
+    ? [
+        "All prices are in Singapore Dollars (SGD).",
+        "All cheques should be crossed and made payable to RSV InfoTech Pte Ltd.",
+        "Customer must check the goods at the time of delivery; No complaints entertained thereafter.",
+        "Goods once sold are not Returnable / Exchangeable.",
+      ]
+    : [
+        "All prices are as per the currency stated on this invoice.",
+        "Payment is due as per the payment terms stated above.",
+        "Goods once sold are not Returnable / Exchangeable.",
+      ];
+
+  tcLines.forEach((line) => {
+    const wrapped = doc.splitTextToSize(`• ${line}`, 125);
+    doc.text(wrapped, marginLeft, bdY);
+    bdY += wrapped.length * 4.5;
+  });
+
+  // ── Totals (right side, bottom) ─────────────────────────────────────────────
   const labelX = 146;
   const valueX = marginRight - 4;
   const totalsY = pageHeight - 47;

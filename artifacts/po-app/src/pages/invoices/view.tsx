@@ -133,8 +133,6 @@ export default function InvoiceView() {
         <Card>
           <CardHeader><CardTitle className="text-base">Invoice Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {doc.deliveryAddress && <div><span className="text-muted-foreground">Deliver To:</span><p className="whitespace-pre-line mt-0.5">{doc.deliveryAddress}</p></div>}
-            {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
             {doc.paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{doc.paymentTerms}</span></div>}
             {doc.notes && <div><span className="text-muted-foreground">Notes:</span><p className="mt-0.5 whitespace-pre-line">{doc.notes}</p></div>}
           </CardContent>

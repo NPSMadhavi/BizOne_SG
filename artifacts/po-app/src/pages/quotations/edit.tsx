@@ -36,8 +36,6 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
-  deliveryAddress: z.string().optional(),
-  deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
@@ -63,7 +61,7 @@ export default function QuotationEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      deliveryAddress: "", deliveryDate: "", paymentTerms: "", notes: "",
+      paymentTerms: "", notes: "",
       currency: "SGD", status: "draft", tax: 9,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
     },
@@ -77,8 +75,6 @@ export default function QuotationEdit() {
         customerAddress: doc.customerAddress || "",
         customerContact: doc.customerContact || "",
         customerContactEmail: (doc as any).customerContactEmail || "",
-        deliveryAddress: doc.deliveryAddress || "",
-        deliveryDate: doc.deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
         currency: doc.currency || "SGD",
@@ -226,20 +222,10 @@ export default function QuotationEdit() {
                       </SelectContent>
                     </Select></FormItem>
                 )} />
-                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Address</FormLabel>
-                    <FormControl><Textarea className="resize-none" rows={2} {...field} /></FormControl></FormItem>
+                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                  <FormItem><FormLabel>Payment Terms</FormLabel>
+                    <FormControl><Input {...field} /></FormControl></FormItem>
                 )} />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                    <FormItem><FormLabel>Delivery Date</FormLabel>
-                      <FormControl><Input type="date" {...field} /></FormControl></FormItem>
-                  )} />
-                  <FormField control={form.control} name="paymentTerms" render={({ field }) => (
-                    <FormItem><FormLabel>Payment Terms</FormLabel>
-                      <FormControl><Input {...field} /></FormControl></FormItem>
-                  )} />
-                </div>
               </CardContent>
             </Card>
           </div>

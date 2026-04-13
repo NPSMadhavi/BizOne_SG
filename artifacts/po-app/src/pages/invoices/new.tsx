@@ -35,8 +35,6 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
-  deliveryAddress: z.string().optional(),
-  deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
@@ -55,7 +53,7 @@ export default function InvoiceNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      deliveryAddress: "", deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      paymentTerms: "30 Days Net", notes: "",
       currency: "SGD",
       tax: 9,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
@@ -181,20 +179,10 @@ export default function InvoiceNew() {
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Invoice Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Address</FormLabel>
-                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                  <FormItem><FormLabel>Payment Terms</FormLabel>
+                    <FormControl><Input placeholder="30 Days Net" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                    <FormItem><FormLabel>Delivery Date</FormLabel>
-                      <FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="paymentTerms" render={({ field }) => (
-                    <FormItem><FormLabel>Payment Terms</FormLabel>
-                      <FormControl><Input placeholder="30 Days Net" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                </div>
               </CardContent>
             </Card>
           </div>
