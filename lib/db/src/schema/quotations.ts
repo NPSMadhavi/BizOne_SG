@@ -15,6 +15,7 @@ export const quotationsTable = pgTable("quotations", {
   subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
   tax: decimal("tax", { precision: 15, scale: 2 }).notNull().default("0"),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  currency: text("currency").notNull().default("SGD"),
   status: text("status").notNull().default("draft"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

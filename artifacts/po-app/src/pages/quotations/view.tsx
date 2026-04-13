@@ -34,7 +34,7 @@ export default function QuotationView() {
 
   const deleteMutation = useDeleteQuotation();
 
-  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(v);
+  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: (doc as any)?.currency || "SGD" }).format(v);
 
   const getStatusBadge = (s: string) => {
     switch (s) {

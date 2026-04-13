@@ -40,6 +40,15 @@ const itemSchema = z.object({
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
 });
 
+const CURRENCIES = [
+  { code: "SGD", label: "SGD – S$" },
+  { code: "USD", label: "USD – $" },
+  { code: "EUR", label: "EUR – €" },
+  { code: "GBP", label: "GBP – £" },
+  { code: "MYR", label: "MYR – RM" },
+  { code: "INR", label: "INR – ₹" },
+];
+
 const poSchema = z.object({
   vendorName: z.string().min(1, "Vendor name is required"),
   vendorAddress: z.string().optional(),
@@ -48,6 +57,7 @@ const poSchema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  currency: z.string().default("SGD"),
   status: z.enum(["draft", "confirmed", "cancelled"]),
   tax: z.coerce.number().min(0).max(100).default(0),
   items: z.array(itemSchema).min(1, "At least one item is required"),
@@ -78,6 +88,7 @@ export default function PurchaseOrderEdit() {
       deliveryDate: "",
       paymentTerms: "30 Days Net",
       notes: "",
+      currency: "SGD",
       status: "confirmed",
       tax: 9,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
@@ -94,6 +105,7 @@ export default function PurchaseOrderEdit() {
         deliveryDate: po.deliveryDate ?? "",
         paymentTerms: po.paymentTerms ?? "30 Days Net",
         notes: po.notes ?? "",
+        currency: (po as any).currency || "SGD",
         status: (po.status as "draft" | "confirmed" | "cancelled") ?? "confirmed",
         tax: po.tax ?? 9,
         items: po.items.map((item: any) => ({
@@ -156,8 +168,9 @@ export default function PurchaseOrderEdit() {
   const taxAmount = subtotal * (taxPercent / 100);
   const totalAmount = subtotal + taxAmount;
 
+  const currency = form.watch("currency") || "SGD";
   const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(value);
+    new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(value);
 
   async function onSubmit(values: z.infer<typeof poSchema>) {
     const filledItems = values.items.filter(
@@ -217,6 +230,26 @@ export default function PurchaseOrderEdit() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Currency</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {CURRENCIES.map(c => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => form.setValue("currency", c.code)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-4">

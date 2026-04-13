@@ -40,7 +40,7 @@ export default function PurchaseOrderView() {
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-SG', {
       style: 'currency',
-      currency: 'SGD'
+      currency: (po as any)?.currency || 'SGD'
     }).format(value);
   };
 

@@ -217,6 +217,7 @@ export const ListPurchaseOrdersResponseItem = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -248,6 +249,7 @@ export const CreatePurchaseOrderBody = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -277,6 +279,7 @@ export const GetPurchaseOrderResponse = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -309,6 +312,7 @@ export const UpdatePurchaseOrderBody = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -332,6 +336,7 @@ export const UpdatePurchaseOrderResponse = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -404,6 +409,7 @@ export const ListQuotationsResponseItem = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -433,6 +439,7 @@ export const CreateQuotationBody = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -473,6 +480,7 @@ export const GetQuotationResponse = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -505,6 +513,7 @@ export const UpdateQuotationBody = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -528,6 +537,7 @@ export const UpdateQuotationResponse = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -569,6 +579,7 @@ export const ListInvoicesResponseItem = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -638,6 +649,7 @@ export const GetInvoiceResponse = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -670,6 +682,7 @@ export const UpdateInvoiceBody = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -693,6 +706,7 @@ export const UpdateInvoiceResponse = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),

@@ -62,6 +62,10 @@ function companyToInfo(company: Company | null | undefined): CompanyInfo {
   };
 }
 
+function fmtMoney(currency: string, amount: number): string {
+  return new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(amount);
+}
+
 function formatDate(d: string | null | undefined): string {
   if (!d) return "TBA";
   const parsed = new Date(d.includes("T") ? d : d + "T00:00:00");
@@ -219,9 +223,10 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(formatDeliveryDate(po.deliveryDate), marginLeft + 32, 105);
   doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
+  const poCurrency = (po as any).currency || "SGD";
   const tableData = po.items.map((item, index) => [
     index + 1, item.partNumber, htmlToText(item.description), item.qty,
-    `$${Number(item.unitPrice).toFixed(2)}`, `$${Number(item.amount).toFixed(2)}`,
+    fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)),
   ]);
 
   (doc as any).autoTable({
@@ -255,15 +260,15 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
   doc.text("Subtotal:", labelX, totalsY);
-  doc.text(`$${Number(po.subtotal).toFixed(2)}`, valueX, totalsY, { align: "right" });
+  doc.text(fmtMoney(poCurrency, Number(po.subtotal)), valueX, totalsY, { align: "right" });
   const taxAmount = Number(po.totalAmount) - Number(po.subtotal);
   doc.text("Tax:", labelX, totalsY + 7);
-  doc.text(`$${taxAmount.toFixed(2)}`, valueX, totalsY + 7, { align: "right" });
+  doc.text(fmtMoney(poCurrency, taxAmount), valueX, totalsY + 7, { align: "right" });
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, totalsY + 17);
-  doc.text(`$${Number(po.totalAmount).toFixed(2)}`, valueX, totalsY + 17, { align: "right" });
+  doc.text(fmtMoney(poCurrency, Number(po.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
   const totalPages = (doc as any).internal.pages.length - 1;
   const footerY = pageHeight - 12;
@@ -306,9 +311,10 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(formatDate(qt.deliveryDate), marginLeft + 32, 105);
   doc.text(qt.paymentTerms || "Standard", col2 + 33, 105);
 
+  const qtCurrency = (qt as any).currency || "SGD";
   const tableData = (qt.items as any[]).map((item, i) => [
     i + 1, item.partNumber || "", htmlToText(item.description),
-    item.qty, `$${Number(item.unitPrice).toFixed(2)}`, `$${Number(item.amount).toFixed(2)}`,
+    item.qty, fmtMoney(qtCurrency, Number(item.unitPrice)), fmtMoney(qtCurrency, Number(item.amount)),
   ]);
 
   (doc as any).autoTable({
@@ -342,14 +348,14 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
   doc.text("Subtotal:", labelX, totalsY);
-  doc.text(`$${Number(qt.subtotal).toFixed(2)}`, valueX, totalsY, { align: "right" });
+  doc.text(fmtMoney(qtCurrency, Number(qt.subtotal)), valueX, totalsY, { align: "right" });
   doc.text("GST:", labelX, totalsY + 7);
-  doc.text(`$${Number(qt.tax).toFixed(2)}`, valueX, totalsY + 7, { align: "right" });
+  doc.text(fmtMoney(qtCurrency, Number(qt.tax)), valueX, totalsY + 7, { align: "right" });
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, totalsY + 17);
-  doc.text(`$${Number(qt.totalAmount).toFixed(2)}`, valueX, totalsY + 17, { align: "right" });
+  doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
   buildDocFooter(doc, "Quotation");
   doc.save(`${qt.qtNumber}.pdf`);
@@ -384,9 +390,10 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(formatDate(inv.deliveryDate), marginLeft + 32, 105);
   doc.text(inv.paymentTerms || "Standard", col2 + 33, 105);
 
+  const invCurrency = (inv as any).currency || "SGD";
   const tableData = (inv.items as any[]).map((item, i) => [
     i + 1, item.partNumber || "", htmlToText(item.description),
-    item.qty, `$${Number(item.unitPrice).toFixed(2)}`, `$${Number(item.amount).toFixed(2)}`,
+    item.qty, fmtMoney(invCurrency, Number(item.unitPrice)), fmtMoney(invCurrency, Number(item.amount)),
   ]);
 
   (doc as any).autoTable({
@@ -420,14 +427,14 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
   doc.text("Subtotal:", labelX, totalsY);
-  doc.text(`$${Number(inv.subtotal).toFixed(2)}`, valueX, totalsY, { align: "right" });
+  doc.text(fmtMoney(invCurrency, Number(inv.subtotal)), valueX, totalsY, { align: "right" });
   doc.text("GST:", labelX, totalsY + 7);
-  doc.text(`$${Number(inv.tax).toFixed(2)}`, valueX, totalsY + 7, { align: "right" });
+  doc.text(fmtMoney(invCurrency, Number(inv.tax)), valueX, totalsY + 7, { align: "right" });
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, totalsY + 17);
-  doc.text(`$${Number(inv.totalAmount).toFixed(2)}`, valueX, totalsY + 17, { align: "right" });
+  doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
   buildDocFooter(doc, "Invoice");
   doc.save(`${inv.invNumber}.pdf`);

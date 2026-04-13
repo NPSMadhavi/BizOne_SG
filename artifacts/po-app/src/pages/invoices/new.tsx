@@ -21,6 +21,15 @@ const itemSchema = z.object({
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
 });
 
+const CURRENCIES = [
+  { code: "SGD", label: "SGD – S$" },
+  { code: "USD", label: "USD – $" },
+  { code: "EUR", label: "EUR – €" },
+  { code: "GBP", label: "GBP – £" },
+  { code: "MYR", label: "MYR – RM" },
+  { code: "INR", label: "INR – ₹" },
+];
+
 const schema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   customerAddress: z.string().optional(),
@@ -29,6 +38,7 @@ const schema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
@@ -45,6 +55,7 @@ export default function InvoiceNew() {
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
       deliveryAddress: "", deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      currency: "SGD",
       tax: 9,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
     },
@@ -84,11 +95,13 @@ export default function InvoiceNew() {
     return () => sub.unsubscribe();
   }, [form, append]);
 
+  const currency = form.watch("currency") || "SGD";
+
   const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0), 0);
   const taxAmount = subtotal * (taxPercent / 100);
   const totalAmount = subtotal + taxAmount;
 
-  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(v);
+  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(v);
 
   async function onSubmit(values: z.infer<typeof schema>) {
     setIsSubmitting(true);
@@ -121,6 +134,26 @@ export default function InvoiceNew() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Currency</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {CURRENCIES.map(c => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => form.setValue("currency", c.code)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Customer Details</CardTitle></CardHeader>
