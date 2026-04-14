@@ -151,6 +151,72 @@ function CompanyModuleSelector({
   );
 }
 
+function UserFormContent({
+  f,
+  companies,
+}: {
+  f: ReturnType<typeof useForm<UserFormValues>>;
+  companies: Company[];
+}) {
+  return (
+    <>
+      <FormField control={f.control} name="username" render={({ field }) => (
+        <FormItem>
+          <FormLabel>Username</FormLabel>
+          <FormControl><Input placeholder="johndoe" {...field} /></FormControl>
+          <FormMessage />
+        </FormItem>
+      )} />
+      <FormField control={f.control} name="password" render={({ field }) => (
+        <FormItem>
+          <FormLabel>Password</FormLabel>
+          <FormControl>
+            <Input type="password" placeholder="Leave blank to keep unchanged" {...field} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )} />
+      <FormField control={f.control} name="role" render={({ field }) => (
+        <FormItem>
+          <FormLabel>Role</FormLabel>
+          <Select onValueChange={field.onChange} value={field.value}>
+            <FormControl>
+              <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value="user">User</SelectItem>
+              <SelectItem value="admin">Administrator</SelectItem>
+              <SelectItem value="external">External User</SelectItem>
+            </SelectContent>
+          </Select>
+          {field.value === "external" && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              External users can only see documents they created. Admins and regular users can still view their documents.
+            </p>
+          )}
+          <FormMessage />
+        </FormItem>
+      )} />
+      <FormField control={f.control} name="companyAccess" render={({ field }) => (
+        <FormItem>
+          <FormLabel className="flex items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5" />
+            Company & Module Access
+          </FormLabel>
+          <FormControl>
+            <CompanyModuleSelector
+              companies={companies}
+              value={field.value ?? []}
+              onChange={field.onChange}
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )} />
+    </>
+  );
+}
+
 export default function Admin() {
   const { isAdmin, user: currentUser } = useAuth();
   const { toast } = useToast();
@@ -271,63 +337,6 @@ export default function Admin() {
     setIsEditOpen(true);
   }
 
-  const UserFormContent = ({ f }: { f: ReturnType<typeof useForm<UserFormValues>> }) => (
-    <>
-      <FormField control={f.control} name="username" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Username</FormLabel>
-          <FormControl><Input placeholder="johndoe" {...field} /></FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-      <FormField control={f.control} name="password" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Password</FormLabel>
-          <FormControl>
-            <Input type="password" placeholder="Leave blank to keep unchanged" {...field} />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-      <FormField control={f.control} name="role" render={({ field }) => (
-        <FormItem>
-          <FormLabel>Role</FormLabel>
-          <Select onValueChange={field.onChange} value={field.value}>
-            <FormControl>
-              <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
-            </FormControl>
-            <SelectContent>
-              <SelectItem value="user">User</SelectItem>
-              <SelectItem value="admin">Administrator</SelectItem>
-              <SelectItem value="external">External User</SelectItem>
-            </SelectContent>
-          </Select>
-          {field.value === "external" && (
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-              External users can only see documents they created. Admins and regular users can still view their documents.
-            </p>
-          )}
-          <FormMessage />
-        </FormItem>
-      )} />
-      <FormField control={f.control} name="companyAccess" render={({ field }) => (
-        <FormItem>
-          <FormLabel className="flex items-center gap-1.5">
-            <Building2 className="h-3.5 w-3.5" />
-            Company & Module Access
-          </FormLabel>
-          <FormControl>
-            <CompanyModuleSelector
-              companies={companies}
-              value={field.value ?? []}
-              onChange={field.onChange}
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )} />
-    </>
-  );
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -351,7 +360,7 @@ export default function Admin() {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <UserFormContent f={form} />
+                <UserFormContent f={form} companies={companies} />
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
                   <Button type="submit" disabled={createMutation.isPending}>
@@ -372,7 +381,7 @@ export default function Admin() {
           </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-              <UserFormContent f={editForm} />
+              <UserFormContent f={editForm} companies={companies} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={updateMutation.isPending}>
