@@ -3,7 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useCreatePurchaseOrder } from "@workspace/api-client-react";
+import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -91,6 +91,16 @@ export default function PurchaseOrderNew() {
   });
 
   const createMutation = useCreatePurchaseOrder();
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  const nextPoNumber = (() => {
+    if (!settings) return null;
+    const prefix = (settings as any).poPrefix ?? "";
+    const counter = parseInt((settings as any).poCounter) || 1;
+    const suffix = (settings as any).poSuffix ?? "";
+    const padded = String(counter).padStart(4, "0");
+    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+  })();
 
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
@@ -187,9 +197,17 @@ export default function PurchaseOrderNew() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Create Purchase Order</h1>
-        <p className="text-muted-foreground mt-1">Draft a new professional PO document.</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Create Purchase Order</h1>
+          <p className="text-muted-foreground mt-1">Draft a new professional PO document.</p>
+        </div>
+        {nextPoNumber && (
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">PO Number</p>
+            <p className="text-lg font-semibold font-mono">{nextPoNumber}</p>
+          </div>
+        )}
       </div>
 
       <Form {...form}>

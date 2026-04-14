@@ -3,7 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useCreateDeliveryOrder } from "@workspace/api-client-react";
+import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,16 @@ export default function DeliveryOrderNew() {
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateDeliveryOrder();
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  const nextDoNumber = (() => {
+    if (!settings) return null;
+    const prefix = (settings as any).doPrefix ?? "";
+    const counter = parseInt((settings as any).doCounter) || 1;
+    const suffix = (settings as any).doSuffix ?? "";
+    const padded = String(counter).padStart(4, "0");
+    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+  })();
 
   const appendLock = useRef(false);
   useEffect(() => {
@@ -103,9 +113,17 @@ export default function DeliveryOrderNew() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">New Delivery Order</h1>
-        <p className="text-muted-foreground mt-1">Create a new delivery order.</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">New Delivery Order</h1>
+          <p className="text-muted-foreground mt-1">Create a new delivery order.</p>
+        </div>
+        {nextDoNumber && (
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">DO Number</p>
+            <p className="text-lg font-semibold font-mono">{nextDoNumber}</p>
+          </div>
+        )}
       </div>
 
       <Form {...form}>

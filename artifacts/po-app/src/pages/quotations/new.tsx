@@ -78,6 +78,16 @@ export default function QuotationNew() {
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateQuotation();
+
+  const nextQtNumber = (() => {
+    if (!settings) return null;
+    const prefix = (settings as any).qtPrefix ?? "";
+    const counter = parseInt((settings as any).qtCounter) || 1;
+    const suffix = (settings as any).qtSuffix ?? "";
+    const padded = String(counter).padStart(4, "0");
+    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+  })();
+
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
 
@@ -148,9 +158,17 @@ export default function QuotationNew() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">New Quotation</h1>
-        <p className="text-muted-foreground mt-1">Create a new customer quotation.</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">New Quotation</h1>
+          <p className="text-muted-foreground mt-1">Create a new customer quotation.</p>
+        </div>
+        {nextQtNumber && (
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Quotation Number</p>
+            <p className="text-lg font-semibold font-mono">{nextQtNumber}</p>
+          </div>
+        )}
       </div>
 
       <Form {...form}>
