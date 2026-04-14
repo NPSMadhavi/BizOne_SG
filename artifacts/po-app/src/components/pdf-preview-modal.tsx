@@ -1,8 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Mail, Loader2 } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { EmailSendDialog } from "@/components/email-send-dialog";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 interface PdfPreviewModalProps {
   open: boolean;
@@ -16,6 +22,67 @@ interface PdfPreviewModalProps {
   onEdit?: () => void;
 }
 
+function PdfCanvasRenderer({ base64 }: { base64: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [rendering, setRendering] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        const pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+        if (cancelled || !containerRef.current) return;
+
+        const container = containerRef.current;
+        container.innerHTML = "";
+
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+          if (cancelled) return;
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1.5 });
+
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.display = "block";
+          canvas.style.width = "100%";
+          canvas.style.marginBottom = "12px";
+          canvas.style.boxShadow = "0 1px 4px rgba(0,0,0,0.15)";
+          canvas.style.backgroundColor = "white";
+
+          container.appendChild(canvas);
+
+          const ctx = canvas.getContext("2d")!;
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          if (cancelled) return;
+        }
+      } catch (e) {
+        console.error("PDF render failed", e);
+      } finally {
+        if (!cancelled) setRendering(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [base64]);
+
+  return (
+    <div className="relative w-full h-full overflow-y-auto bg-muted/40 p-4">
+      {rendering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/40 z-10">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      <div ref={containerRef} className="max-w-[820px] mx-auto" />
+    </div>
+  );
+}
+
 export function PdfPreviewModal({
   open,
   onOpenChange,
@@ -27,15 +94,12 @@ export function PdfPreviewModal({
   defaultEmailBody = "",
   onEdit,
 }: PdfPreviewModalProps) {
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      if (pdfUrl) {
-        URL.revokeObjectURL(pdfUrl);
-        setPdfUrl(null);
-      }
+      setPdfBase64(null);
       return;
     }
 
@@ -47,14 +111,10 @@ export function PdfPreviewModal({
         const base64 = await generatePdf({ returnBase64: true });
         if (cancelled) return;
         if (typeof base64 === "string" && base64.length > 100) {
-          const binary = atob(base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const blob = new Blob([bytes], { type: "application/pdf" });
-          setPdfUrl(URL.createObjectURL(blob));
+          setPdfBase64(base64);
         }
       } catch (e) {
-        console.error("PDF preview failed", e);
+        console.error("PDF generation failed", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -96,17 +156,13 @@ export function PdfPreviewModal({
             />
           </div>
         </DialogHeader>
-        <div className="flex-1 overflow-hidden bg-muted/30">
+        <div className="flex-1 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : pdfUrl ? (
-            <iframe
-              src={`${pdfUrl}#toolbar=0&navpanes=0`}
-              className="w-full h-full border-0"
-              title={title}
-            />
+          ) : pdfBase64 ? (
+            <PdfCanvasRenderer base64={pdfBase64} />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               PDF preview not available. Use the Download button above.
