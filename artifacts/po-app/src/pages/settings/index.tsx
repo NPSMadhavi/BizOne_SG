@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
@@ -152,293 +153,348 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div>
+    <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage company preferences and account settings.</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Percent className="h-5 w-5 text-primary" />
-            Tax Settings
-          </CardTitle>
-          <CardDescription>
-            Configure the GST rate applied to all Purchase Orders, Quotations, and Invoices.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {settingsLoading ? (
-            <div className="h-10 bg-muted animate-pulse rounded-md" />
-          ) : (
-            <div className="flex items-end gap-3">
-              <div className="flex-1 max-w-xs space-y-1.5">
-                <Label htmlFor="gstRate">GST Rate (%)</Label>
-                <div className="relative">
-                  <Input
-                    id="gstRate"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={gstEditing ? gstInput : (settings?.gstRate ?? 9)}
-                    onChange={(e) => { setGstEditing(true); setGstInput(e.target.value); }}
-                    onFocus={() => { setGstEditing(true); setGstInput(String(settings?.gstRate ?? 9)); }}
-                    disabled={!isAdmin}
-                    className="pr-8"
-                  />
-                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
-                </p>
-              </div>
-              {isAdmin && gstEditing && (
-                <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
-                  <Save className="h-4 w-4" />
-                  {updateSettings.isPending ? "Saving..." : "Save"}
-                </Button>
-              )}
-            </div>
-          )}
-          {!isAdmin && (
-            <p className="text-xs text-muted-foreground">Only administrators can change the GST rate.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Hash className="h-5 w-5 text-primary" />
+      <Tabs defaultValue="tax">
+        <TabsList className="w-full justify-start border-b rounded-none bg-transparent h-auto p-0 mb-6 gap-0">
+          <TabsTrigger
+            value="tax"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <Percent className="h-4 w-4" />
+            Tax
+          </TabsTrigger>
+          <TabsTrigger
+            value="running-numbers"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <Hash className="h-4 w-4" />
             Running Numbers
-          </CardTitle>
-          <CardDescription>
-            Configure the prefix, starting counter, and suffix for each document type. The next number generated will follow the pattern: <strong>PREFIX-NNNNNSUFFIX</strong> (zero-padded to at least 4 digits).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {settingsLoading ? (
-            <div className="space-y-3">
-              {[1,2,3,4].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-md" />)}
-            </div>
-          ) : (
-            <>
-              {([
-                { label: "Purchase Order", state: rnPO, setter: setRnPO },
-                { label: "Quotation", state: rnQT, setter: setRnQT },
-                { label: "Invoice", state: rnINV, setter: setRnINV },
-                { label: "Delivery Order", state: rnDO, setter: setRnDO },
-              ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
-                <div key={label} className="rounded-lg border p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-sm">{label}</span>
-                    <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded font-mono">
-                      Next: <strong>{nextPreview(state)}</strong>
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Prefix</Label>
+          </TabsTrigger>
+          <TabsTrigger
+            value="email"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <Mail className="h-4 w-4" />
+            Email
+          </TabsTrigger>
+          <TabsTrigger
+            value="profile"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <User className="h-4 w-4" />
+            Profile
+          </TabsTrigger>
+          <TabsTrigger
+            value="account"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <Shield className="h-4 w-4" />
+            Account
+          </TabsTrigger>
+        </TabsList>
+
+        {/* TAX */}
+        <TabsContent value="tax">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Percent className="h-5 w-5 text-primary" />
+                Tax Settings
+              </CardTitle>
+              <CardDescription>
+                Configure the GST rate applied to all Purchase Orders, Quotations, and Invoices.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {settingsLoading ? (
+                <div className="h-10 bg-muted animate-pulse rounded-md" />
+              ) : (
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 max-w-xs space-y-1.5">
+                    <Label htmlFor="gstRate">GST Rate (%)</Label>
+                    <div className="relative">
                       <Input
-                        value={state.prefix}
-                        onChange={e => { setter({ ...state, prefix: e.target.value }); setRnEditing(true); }}
-                        disabled={!isAdmin}
-                        placeholder="e.g. PO"
-                        className="font-mono"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Next Counter</Label>
-                      <Input
+                        id="gstRate"
                         type="number"
-                        min="1"
-                        step="1"
-                        value={state.counter}
-                        onChange={e => { setter({ ...state, counter: e.target.value }); setRnEditing(true); }}
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={gstEditing ? gstInput : (settings?.gstRate ?? 9)}
+                        onChange={(e) => { setGstEditing(true); setGstInput(e.target.value); }}
+                        onFocus={() => { setGstEditing(true); setGstInput(String(settings?.gstRate ?? 9)); }}
                         disabled={!isAdmin}
-                        placeholder="e.g. 1000"
-                        className="font-mono w-full"
+                        className="pr-8"
+                      />
+                      <Percent className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
+                    </p>
+                  </div>
+                  {isAdmin && gstEditing && (
+                    <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
+                      <Save className="h-4 w-4" />
+                      {updateSettings.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">Only administrators can change the GST rate.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* RUNNING NUMBERS */}
+        <TabsContent value="running-numbers">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Hash className="h-5 w-5 text-primary" />
+                Running Numbers
+              </CardTitle>
+              <CardDescription>
+                Configure the prefix, starting counter, and suffix for each document type. Pattern: <strong>PREFIX-NNNN</strong> (zero-padded to 4+ digits).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {settingsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-md" />)}
+                </div>
+              ) : (
+                <>
+                  {([
+                    { label: "Purchase Order", state: rnPO, setter: setRnPO },
+                    { label: "Quotation", state: rnQT, setter: setRnQT },
+                    { label: "Invoice", state: rnINV, setter: setRnINV },
+                    { label: "Delivery Order", state: rnDO, setter: setRnDO },
+                  ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
+                    <div key={label} className="rounded-lg border p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-sm">{label}</span>
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded font-mono">
+                          Next: <strong>{nextPreview(state)}</strong>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Prefix</Label>
+                          <Input
+                            value={state.prefix}
+                            onChange={e => { setter({ ...state, prefix: e.target.value }); setRnEditing(true); }}
+                            disabled={!isAdmin}
+                            placeholder="e.g. PO"
+                            className="font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Next Counter</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={state.counter}
+                            onChange={e => { setter({ ...state, counter: e.target.value }); setRnEditing(true); }}
+                            disabled={!isAdmin}
+                            placeholder="e.g. 1000"
+                            className="font-mono w-full"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Suffix</Label>
+                          <Input
+                            value={state.suffix}
+                            onChange={e => { setter({ ...state, suffix: e.target.value }); setRnEditing(true); }}
+                            disabled={!isAdmin}
+                            placeholder="optional"
+                            className="font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3">
+                    {isAdmin && rnEditing && (
+                      <Button onClick={handleSaveRunningNumbers} disabled={updateSettings.isPending} className="gap-2">
+                        <Save className="h-4 w-4" />
+                        {updateSettings.isPending ? "Saving..." : "Save Running Numbers"}
+                      </Button>
+                    )}
+                    {!isAdmin && (
+                      <p className="text-xs text-muted-foreground">Only administrators can change running numbers.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* EMAIL */}
+        <TabsContent value="email">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                Email (SMTP) Settings
+              </CardTitle>
+              <CardDescription>
+                Configure your outgoing mail server to enable sending documents directly from the app.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {settingsLoading ? (
+                <div className="space-y-2">
+                  <div className="h-10 bg-muted animate-pulse rounded-md" />
+                  <div className="h-10 bg-muted animate-pulse rounded-md" />
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    {settings?.smtpConfigured ? (
+                      <><CheckCircle2 className="h-4 w-4 text-emerald-600" /><span className="text-sm text-emerald-600 font-medium">Email is configured and ready</span></>
+                    ) : (
+                      <><XCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Email not yet configured</span></>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="smtpHost">SMTP Host</Label>
+                      <Input
+                        id="smtpHost"
+                        placeholder="smtp.gmail.com"
+                        value={smtpHost}
+                        onChange={e => { setSmtpEditing(true); setSmtpHost(e.target.value); }}
+                        disabled={!isAdmin}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Suffix</Label>
+                      <Label htmlFor="smtpPort">SMTP Port</Label>
                       <Input
-                        value={state.suffix}
-                        onChange={e => { setter({ ...state, suffix: e.target.value }); setRnEditing(true); }}
+                        id="smtpPort"
+                        placeholder="587"
+                        value={smtpPort}
+                        onChange={e => { setSmtpEditing(true); setSmtpPort(e.target.value); }}
                         disabled={!isAdmin}
-                        placeholder="optional"
-                        className="font-mono"
                       />
                     </div>
                   </div>
-                </div>
-              ))}
-              <div className="flex items-center gap-3">
-                {isAdmin && rnEditing && (
-                  <Button onClick={handleSaveRunningNumbers} disabled={updateSettings.isPending} className="gap-2">
-                    <Save className="h-4 w-4" />
-                    {updateSettings.isPending ? "Saving..." : "Save Running Numbers"}
-                  </Button>
-                )}
-                {!isAdmin && (
-                  <p className="text-xs text-muted-foreground">Only administrators can change running numbers.</p>
-                )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail className="h-5 w-5 text-primary" />
-            Email (SMTP) Settings
-          </CardTitle>
-          <CardDescription>
-            Configure your outgoing mail server to enable sending documents directly from the app.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {settingsLoading ? (
-            <div className="space-y-2">
-              <div className="h-10 bg-muted animate-pulse rounded-md" />
-              <div className="h-10 bg-muted animate-pulse rounded-md" />
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 mb-2">
-                {settings?.smtpConfigured ? (
-                  <><CheckCircle2 className="h-4 w-4 text-emerald-600" /><span className="text-sm text-emerald-600 font-medium">Email is configured and ready</span></>
-                ) : (
-                  <><XCircle className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Email not yet configured</span></>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="smtpHost">SMTP Host</Label>
-                  <Input
-                    id="smtpHost"
-                    placeholder="smtp.gmail.com"
-                    value={smtpHost}
-                    onChange={e => { setSmtpEditing(true); setSmtpHost(e.target.value); }}
-                    disabled={!isAdmin}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="smtpPort">SMTP Port</Label>
-                  <Input
-                    id="smtpPort"
-                    placeholder="587"
-                    value={smtpPort}
-                    onChange={e => { setSmtpEditing(true); setSmtpPort(e.target.value); }}
-                    disabled={!isAdmin}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="smtpUser">Username / Email</Label>
-                <Input
-                  id="smtpUser"
-                  placeholder="your@email.com"
-                  value={smtpUser}
-                  onChange={e => { setSmtpEditing(true); setSmtpUser(e.target.value); }}
-                  disabled={!isAdmin}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="smtpPass">Password / App Password</Label>
-                <Input
-                  id="smtpPass"
-                  type="password"
-                  placeholder={settings?.smtpConfigured ? "••••••••  (leave blank to keep current)" : "Enter password"}
-                  value={smtpPass}
-                  onChange={e => { setSmtpEditing(true); setSmtpPass(e.target.value); }}
-                  disabled={!isAdmin}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="smtpFrom">From Address</Label>
-                <Input
-                  id="smtpFrom"
-                  placeholder="RSV Infotech <noreply@rsvinfotech.com>"
-                  value={smtpFrom}
-                  onChange={e => { setSmtpEditing(true); setSmtpFrom(e.target.value); }}
-                  disabled={!isAdmin}
-                />
-                <p className="text-xs text-muted-foreground">The "From" name and email shown to recipients.</p>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap pt-1">
-                {isAdmin && smtpEditing && (
-                  <Button onClick={handleSaveSmtp} disabled={updateSettings.isPending} className="gap-2">
-                    <Save className="h-4 w-4" />
-                    {updateSettings.isPending ? "Saving..." : "Save Email Settings"}
-                  </Button>
-                )}
-                {settings?.smtpConfigured && (
-                  <Button
-                    variant="outline"
-                    onClick={handleTestSmtp}
-                    disabled={testingSmtp || smtpEditing}
-                    className="gap-2"
-                  >
-                    <Wifi className="h-4 w-4" />
-                    {testingSmtp ? "Testing..." : "Test Connection"}
-                  </Button>
-                )}
-              </div>
-              {!isAdmin && (
-                <p className="text-xs text-muted-foreground">Only administrators can change email settings.</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtpUser">Username / Email</Label>
+                    <Input
+                      id="smtpUser"
+                      placeholder="your@email.com"
+                      value={smtpUser}
+                      onChange={e => { setSmtpEditing(true); setSmtpUser(e.target.value); }}
+                      disabled={!isAdmin}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtpPass">Password / App Password</Label>
+                    <Input
+                      id="smtpPass"
+                      type="password"
+                      placeholder={settings?.smtpConfigured ? "••••••••  (leave blank to keep current)" : "Enter password"}
+                      value={smtpPass}
+                      onChange={e => { setSmtpEditing(true); setSmtpPass(e.target.value); }}
+                      disabled={!isAdmin}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="smtpFrom">From Address</Label>
+                    <Input
+                      id="smtpFrom"
+                      placeholder="RSV Infotech <noreply@rsvinfotech.com>"
+                      value={smtpFrom}
+                      onChange={e => { setSmtpEditing(true); setSmtpFrom(e.target.value); }}
+                      disabled={!isAdmin}
+                    />
+                    <p className="text-xs text-muted-foreground">The "From" name and email shown to recipients.</p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap pt-1">
+                    {isAdmin && smtpEditing && (
+                      <Button onClick={handleSaveSmtp} disabled={updateSettings.isPending} className="gap-2">
+                        <Save className="h-4 w-4" />
+                        {updateSettings.isPending ? "Saving..." : "Save Email Settings"}
+                      </Button>
+                    )}
+                    {settings?.smtpConfigured && (
+                      <Button
+                        variant="outline"
+                        onClick={handleTestSmtp}
+                        disabled={testingSmtp || smtpEditing}
+                        className="gap-2"
+                      >
+                        <Wifi className="h-4 w-4" />
+                        {testingSmtp ? "Testing..." : "Test Connection"}
+                      </Button>
+                    )}
+                  </div>
+                  {!isAdmin && (
+                    <p className="text-xs text-muted-foreground">Only administrators can change email settings.</p>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile Information</CardTitle>
-          <CardDescription>Your current session details.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 bg-primary/10 text-primary rounded-full flex items-center justify-center">
-              <User className="h-8 w-8" />
-            </div>
-            <div>
-              <div className="font-semibold text-lg">{user?.username}</div>
-              <div className="flex items-center gap-2 mt-1">
-                <Shield className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground capitalize">{user?.role}</span>
-                {user?.role === 'admin' && (
-                  <Badge variant="default" className="ml-2 text-xs py-0">System Admin</Badge>
-                )}
+        {/* PROFILE */}
+        <TabsContent value="profile">
+          <Card>
+            <CardHeader>
+              <CardTitle>Profile Information</CardTitle>
+              <CardDescription>Your current session details.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="h-16 w-16 bg-primary/10 text-primary rounded-full flex items-center justify-center">
+                  <User className="h-8 w-8" />
+                </div>
+                <div>
+                  <div className="font-semibold text-lg">{user?.username}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground capitalize">{user?.role}</span>
+                    {user?.role === "admin" && (
+                      <Badge variant="default" className="ml-2 text-xs py-0">System Admin</Badge>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-destructive">Danger Zone</CardTitle>
-          <CardDescription>Actions that affect your current session.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between border rounded-md p-4 border-destructive/20 bg-destructive/5">
-            <div>
-              <div className="font-medium text-destructive">End Session</div>
-              <div className="text-sm text-destructive/80 mt-1">Sign out of your current account.</div>
-            </div>
-            <Button variant="destructive" onClick={() => logout()} className="gap-2">
-              <LogOut className="h-4 w-4" />
-              Sign Out
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        {/* ACCOUNT */}
+        <TabsContent value="account">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-destructive">Danger Zone</CardTitle>
+              <CardDescription>Actions that affect your current session.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between border rounded-md p-4 border-destructive/20 bg-destructive/5">
+                <div>
+                  <div className="font-medium text-destructive">End Session</div>
+                  <div className="text-sm text-destructive/80 mt-1">Sign out of your current account.</div>
+                </div>
+                <Button variant="destructive" onClick={() => logout()} className="gap-2">
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
