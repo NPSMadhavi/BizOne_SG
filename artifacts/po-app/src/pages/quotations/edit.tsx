@@ -90,7 +90,7 @@ export default function QuotationEdit() {
         notes: doc.notes || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
-        tax: doc.tax ? Number(doc.totalAmount && doc.subtotal ? ((Number(doc.tax) / Number(doc.subtotal)) * 100) : 9) : 9,
+        tax: doc.subtotal && Number(doc.subtotal) > 0 ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10 : 9,
         discountAmount: Number((doc as any).discountAmount) || 0,
         isPrivate: (doc as any).isPrivate ?? false,
         items: items.length > 0 ? items.map((i: any) => ({

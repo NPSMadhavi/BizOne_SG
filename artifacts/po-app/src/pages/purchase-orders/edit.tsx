@@ -115,7 +115,7 @@ export default function PurchaseOrderEdit() {
         currency: (po as any).currency || "SGD",
         isPrivate: (po as any).isPrivate ?? false,
         status: (po.status as "draft" | "confirmed" | "cancelled") ?? "confirmed",
-        tax: po.tax ?? 9,
+        tax: po.subtotal && Number(po.subtotal) > 0 ? Math.round((Number(po.tax) / Number(po.subtotal)) * 1000) / 10 : 9,
         items: po.items.map((item: any) => ({
           partNumber: item.partNumber ?? "",
           description: item.description ?? "",
