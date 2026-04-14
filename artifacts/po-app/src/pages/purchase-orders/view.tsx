@@ -102,7 +102,7 @@ export default function PurchaseOrderView() {
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-4 w-4" />
-            Preview & Download
+            Preview
           </Button>
           {isAdmin && (
             <AlertDialog>

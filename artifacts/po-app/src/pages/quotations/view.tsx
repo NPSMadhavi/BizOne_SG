@@ -87,7 +87,7 @@ export default function QuotationView() {
             </span>
           )}
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
-            <Eye className="h-4 w-4" />Preview & Download
+            <Eye className="h-4 w-4" />Preview
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/quotations/${id}/edit`)}>
             <Pencil className="h-4 w-4" />Edit

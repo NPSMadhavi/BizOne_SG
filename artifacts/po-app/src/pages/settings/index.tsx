@@ -215,7 +215,7 @@ export default function Settings() {
             Running Numbers
           </CardTitle>
           <CardDescription>
-            Configure the prefix, starting counter, and suffix for each document type. The next number generated will follow the pattern: <strong>PREFIX-0001SUFFIX</strong>.
+            Configure the prefix, starting counter, and suffix for each document type. The next number generated will follow the pattern: <strong>PREFIX-NNNNNSUFFIX</strong> (zero-padded to at least 4 digits).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -254,11 +254,12 @@ export default function Settings() {
                       <Input
                         type="number"
                         min="1"
+                        step="1"
                         value={state.counter}
                         onChange={e => { setter({ ...state, counter: e.target.value }); setRnEditing(true); }}
                         disabled={!isAdmin}
-                        placeholder="1"
-                        className="font-mono"
+                        placeholder="e.g. 1000"
+                        className="font-mono w-full"
                       />
                     </div>
                     <div className="space-y-1.5">

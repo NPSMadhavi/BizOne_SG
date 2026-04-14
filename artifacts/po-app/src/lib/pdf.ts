@@ -626,7 +626,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
 // ── DELIVERY ORDER PDF ────────────────────────────────────────────────────────
 
-export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | null) {
+export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
@@ -676,5 +676,6 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   }
 
   buildDocFooter(doc, "Delivery Order");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${doDoc.doNumber}.pdf`);
 }

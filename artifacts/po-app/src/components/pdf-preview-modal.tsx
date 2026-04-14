@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Mail, Loader2, X } from "lucide-react";
+import { Download, Mail, Loader2 } from "lucide-react";
 import { EmailSendDialog } from "@/components/email-send-dialog";
 
 interface PdfPreviewModalProps {
@@ -44,10 +44,10 @@ export function PdfPreviewModal({
 
     (async () => {
       try {
-        const result = await generatePdf({ returnBase64: false });
+        const base64 = await generatePdf({ returnBase64: true });
         if (cancelled) return;
-        if (typeof result === "string" && result.length > 200) {
-          const binary = atob(result);
+        if (typeof base64 === "string" && base64.length > 100) {
+          const binary = atob(base64);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           const blob = new Blob([bytes], { type: "application/pdf" });
