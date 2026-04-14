@@ -12,10 +12,14 @@ export interface UpdateInvoiceBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   status?: UpdateInvoiceBodyStatus;
   items: DocItem[];
   tax?: number;

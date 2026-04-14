@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, decimal, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, decimal, jsonb, boolean } from "drizzle-orm/pg-core";
 
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -12,6 +12,7 @@ export const invoicesTable = pgTable("invoices", {
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
+  isPrivate: boolean("is_private").default(false).notNull(),
   items: jsonb("items").notNull().default([]),
   subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
   discountAmount: decimal("discount_amount", { precision: 15, scale: 2 }).notNull().default("0"),

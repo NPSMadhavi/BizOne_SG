@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 
 export const deliveryOrdersTable = pgTable("delivery_orders", {
   id: serial("id").primaryKey(),
@@ -8,7 +8,9 @@ export const deliveryOrdersTable = pgTable("delivery_orders", {
   customerAddress: text("customer_address"),
   customerContact: text("customer_contact"),
   deliveryDate: text("delivery_date"),
+  paymentTerms: text("payment_terms"),
   notes: text("notes"),
+  isPrivate: boolean("is_private").default(false).notNull(),
   items: jsonb("items").notNull().default([]),
   status: text("status").notNull().default("draft"),
   createdBy: integer("created_by").notNull(),

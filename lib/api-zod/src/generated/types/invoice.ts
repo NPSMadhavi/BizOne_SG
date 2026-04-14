@@ -14,10 +14,14 @@ export interface Invoice {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   items: DocItem[];
   subtotal: string;
   tax: string;

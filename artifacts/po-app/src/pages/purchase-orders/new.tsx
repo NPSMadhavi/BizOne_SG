@@ -16,10 +16,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save } from "lucide-react";
+import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generatePO_PDF } from "@/lib/pdf";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DeliveryDateField } from "@/components/delivery-date-field";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   partNumber: z.string(),
@@ -42,11 +47,13 @@ const poSchema = z.object({
   vendorAddress: z.string().optional(),
   vendorContact: z.string().optional(),
   vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  quoteRefNo: z.string().optional(),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
+  isPrivate: z.boolean().default(false),
   tax: z.coerce.number().min(0).max(100).default(0),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
@@ -54,7 +61,10 @@ const poSchema = z.object({
 export default function PurchaseOrderNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [savedPo, setSavedPo] = useState<any>(null);
 
   const form = useForm<z.infer<typeof poSchema>>({
     resolver: zodResolver(poSchema),
@@ -63,11 +73,13 @@ export default function PurchaseOrderNew() {
       vendorAddress: "",
       vendorContact: "",
       vendorContactEmail: "",
+      quoteRefNo: "",
       deliveryAddress: "RSV Infotech Pte. Ltd.\nSingapore",
       deliveryDate: "",
       paymentTerms: "30 Days Net",
       notes: "",
       currency: "SGD",
+      isPrivate: false,
       tax: 9,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0 }],
     },
@@ -80,11 +92,11 @@ export default function PurchaseOrderNew() {
 
   const createMutation = useCreatePurchaseOrder();
 
-  // Watch for calculations
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
+  const currency = form.watch("currency") || "SGD";
+  const isPrivate = form.watch("isPrivate");
 
-  // Auto-append a new empty row ONLY when the user edits the very last row
   const appendLock = useRef(false);
   useEffect(() => {
     const subscription = form.watch((values, { name }) => {
@@ -93,7 +105,6 @@ export default function PurchaseOrderNew() {
       if (!match) return;
       const changedIndex = parseInt(match[1], 10);
       const allItems = values.items ?? [];
-      // Only react when the user is typing in the last row
       if (changedIndex !== allItems.length - 1) return;
       const last = allItems[changedIndex];
       if (!last) return;
@@ -114,8 +125,6 @@ export default function PurchaseOrderNew() {
     });
     return () => subscription.unsubscribe();
   }, [form, append]);
-  
-  const currency = form.watch("currency") || "SGD";
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
   const taxAmount = subtotal * (taxPercent / 100);
@@ -124,58 +133,56 @@ export default function PurchaseOrderNew() {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-SG', { style: 'currency', currency }).format(value);
 
-  async function onSubmit(values: z.infer<typeof poSchema>) {
-    setIsGenerating(true);
-    
-    // Strip the trailing empty auto-row
+  async function saveDocument(values: z.infer<typeof poSchema>, status: "draft" | "confirmed" = "draft") {
     const filledItems = values.items.filter(
       (item) => item.partNumber.trim() !== "" || item.description.trim() !== ""
     );
     if (filledItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
-      setIsGenerating(false);
-      return;
+      return null;
     }
     const itemsWithAmount = filledItems.map(item => ({
       ...item,
       amount: item.qty * item.unitPrice
     }));
 
-    createMutation.mutate(
-      {
-        data: {
-          ...values,
-          items: itemsWithAmount,
+    return new Promise<any>((resolve, reject) => {
+      createMutation.mutate(
+        { data: { ...values, items: itemsWithAmount, status } },
+        {
+          onSuccess: (data) => resolve(data),
+          onError: (error: any) => reject(error),
         }
-      },
-      {
-        onSuccess: async (data) => {
-          try {
-            await generatePO_PDF(data);
-            toast({
-              title: "Success",
-              description: "Purchase order created and PDF downloaded.",
-            });
-            setLocation(`/purchase-orders/${data.id}`);
-          } catch (e) {
-            toast({
-              title: "Created, but PDF failed",
-              description: "The PO was saved but PDF generation failed.",
-              variant: "destructive"
-            });
-            setLocation(`/purchase-orders/${data.id}`);
-          }
-        },
-        onError: (error: any) => {
-          toast({
-            title: "Error",
-            description: error?.message || "Failed to create purchase order.",
-            variant: "destructive",
-          });
-          setIsGenerating(false);
-        }
-      }
-    );
+      );
+    });
+  }
+
+  async function onSaveDraft(values: z.infer<typeof poSchema>) {
+    setIsGenerating(true);
+    try {
+      const data = await saveDocument(values, "draft");
+      if (!data) return;
+      toast({ title: "Saved", description: "Purchase order saved as draft." });
+      setLocation(`/purchase-orders/${data.id}`);
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Failed to save draft.", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  async function onSaveAndPreview(values: z.infer<typeof poSchema>) {
+    setIsGenerating(true);
+    try {
+      const data = await saveDocument(values, "draft");
+      if (!data) return;
+      setSavedPo(data);
+      setPreviewOpen(true);
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Failed to save.", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+    }
   }
 
   return (
@@ -186,7 +193,7 @@ export default function PurchaseOrderNew() {
       </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form className="space-y-8">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Currency</CardTitle>
@@ -219,9 +226,7 @@ export default function PurchaseOrderNew() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input placeholder="Acme Corp" {...field} />
-                      </FormControl>
+                      <FormControl><Input placeholder="Acme Corp" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -232,9 +237,7 @@ export default function PurchaseOrderNew() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Address</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} />
-                      </FormControl>
+                      <FormControl><Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -245,9 +248,7 @@ export default function PurchaseOrderNew() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Person</FormLabel>
-                      <FormControl>
-                        <Input placeholder="John Doe" {...field} />
-                      </FormControl>
+                      <FormControl><Input placeholder="John Doe" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -258,9 +259,7 @@ export default function PurchaseOrderNew() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
-                      <FormControl>
-                        <Input placeholder="john@example.com" type="email" {...field} />
-                      </FormControl>
+                      <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -275,154 +274,136 @@ export default function PurchaseOrderNew() {
               <CardContent className="space-y-4">
                 <FormField
                   control={form.control}
+                  name="quoteRefNo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sales Quote Reference No.</FormLabel>
+                      <FormControl><Input placeholder="SQ-2024-001" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="deliveryAddress"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Delivery Address</FormLabel>
+                      <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="deliveryDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Date</FormLabel>
                       <FormControl>
-                        <Textarea className="resize-none" rows={3} {...field} />
+                        <DeliveryDateField value={field.value} onChange={field.onChange} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="deliveryDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Delivery Date</FormLabel>
+                <FormField
+                  control={form.control}
+                  name="paymentTerms"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Terms</FormLabel>
+                      <FormControl>
+                        <PaymentTermsSelect value={field.value} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="isPrivate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                        <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1">
+                          <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
+                          <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
+                        </div>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="paymentTerms"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Payment Terms</FormLabel>
-                        <FormControl>
-                          <Input placeholder="30 Days Net" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                      </div>
+                    </FormItem>
+                  )}
+                />
               </CardContent>
             </Card>
           </div>
 
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Line Items</CardTitle>
-              </div>
+              <CardTitle className="text-lg">Line Items</CardTitle>
               {form.formState.errors.items?.root && (
                 <div className="text-sm text-destructive mt-2">{form.formState.errors.items.root.message}</div>
               )}
             </CardHeader>
-            <div className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
-                    <tr>
-                      <th className="px-4 py-3 font-medium text-center w-12">#</th>
-                      <th className="px-4 py-3 font-medium w-48">Item / Part Number</th>
-                      <th className="px-4 py-3 font-medium">Description</th>
-                      <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
-                      <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>
-                      <th className="px-4 py-3 font-medium w-32 text-right">Amount</th>
-                      <th className="px-4 py-3 font-medium w-16 text-center"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {fields.map((field, index) => {
-                      const itemQty = Number(items[index]?.qty) || 0;
-                      const itemPrice = Number(items[index]?.unitPrice) || 0;
-                      const itemAmount = itemQty * itemPrice;
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
+                  <tr>
+                    <th className="px-4 py-3 font-medium text-center w-12">#</th>
+                    <th className="px-4 py-3 font-medium w-48">Item / Part Number</th>
+                    <th className="px-4 py-3 font-medium">Description</th>
+                    <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
+                    <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>
+                    <th className="px-4 py-3 font-medium w-32 text-right">Amount</th>
+                    <th className="px-4 py-3 font-medium w-16 text-center"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {fields.map((field, index) => {
+                    const itemQty = Number(items[index]?.qty) || 0;
+                    const itemPrice = Number(items[index]?.unitPrice) || 0;
+                    const itemAmount = itemQty * itemPrice;
 
-                      return (
-                        <tr key={field.id} className="bg-card">
-                          <td className="px-4 py-2 text-center text-muted-foreground">{index + 1}</td>
-                          <td className="px-4 py-2">
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.partNumber`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input className="h-8" placeholder="PN-123" {...field} />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </td>
-                          <td className="px-4 py-2 align-top">
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.description`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </td>
-                          <td className="px-4 py-2">
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.qty`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input inputMode="numeric" className="h-8 text-center" {...field} />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </td>
-                          <td className="px-4 py-2">
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.unitPrice`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input inputMode="decimal" className="h-8 text-right" {...field} />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-right font-medium text-muted-foreground bg-muted/10">
-                            {formatCurrency(itemAmount)}
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => remove(index)}
-                              disabled={fields.length === 1}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                    return (
+                      <tr key={field.id} className="bg-card">
+                        <td className="px-4 py-2 text-center text-muted-foreground">{index + 1}</td>
+                        <td className="px-4 py-2">
+                          <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                            <FormItem><FormControl><Input className="h-8" placeholder="PN-123" {...field} /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                            <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2">
+                          <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-center" {...field} /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2">
+                          <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-right" {...field} /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium text-muted-foreground bg-muted/10">
+                          {formatCurrency(itemAmount)}
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => remove(index)} disabled={fields.length === 1}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
             <div className="bg-muted/20 border-t p-6">
               <div className="flex flex-col md:flex-row justify-between gap-6">
@@ -434,11 +415,7 @@ export default function PurchaseOrderNew() {
                       <FormItem>
                         <FormLabel className="text-muted-foreground">Additional Notes</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="Any special instructions or terms..." 
-                            className="resize-none h-24" 
-                            {...field} 
-                          />
+                          <Textarea placeholder="Any special instructions or terms..." className="resize-none h-24" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -450,7 +427,6 @@ export default function PurchaseOrderNew() {
                     <span className="text-muted-foreground">Subtotal</span>
                     <span className="font-medium">{formatCurrency(subtotal)}</span>
                   </div>
-                  
                   <div className="flex justify-between items-center text-sm">
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">GST ({form.watch("tax") ?? 0}%)</span>
@@ -460,9 +436,7 @@ export default function PurchaseOrderNew() {
                     </div>
                     <span className="font-medium">{formatCurrency(taxAmount)}</span>
                   </div>
-                  
                   <div className="h-px bg-border my-2" />
-                  
                   <div className="flex justify-between items-center text-lg">
                     <span className="font-bold">Total Amount</span>
                     <span className="font-bold text-primary">{formatCurrency(totalAmount)}</span>
@@ -472,23 +446,58 @@ export default function PurchaseOrderNew() {
             </div>
           </Card>
 
-          <div className="flex justify-end gap-4 fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:left-64 md:px-8 z-10">
+          <div className="flex justify-end gap-3 fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:left-64 md:px-8 z-10">
             <Button type="button" variant="outline" onClick={() => setLocation("/purchase-orders")}>
               Cancel
             </Button>
-            <Button type="submit" className="gap-2" disabled={createMutation.isPending || isGenerating}>
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={createMutation.isPending || isGenerating}
+              onClick={form.handleSubmit(onSaveDraft)}
+            >
+              <Save className="h-4 w-4" />
+              Save Draft
+            </Button>
+            <Button
+              type="button"
+              className="gap-2"
+              disabled={createMutation.isPending || isGenerating}
+              onClick={form.handleSubmit(onSaveAndPreview)}
+            >
               {createMutation.isPending || isGenerating ? (
-                "Processing..."
+                "Saving..."
               ) : (
                 <>
-                  <Save className="h-4 w-4" />
-                  Save & Generate PDF
+                  <Eye className="h-4 w-4" />
+                  Save & Preview
                 </>
               )}
             </Button>
           </div>
         </form>
       </Form>
+
+      {savedPo && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/purchase-orders/${savedPo.id}`);
+          }}
+          title={`Purchase Order ${savedPo.poNumber}`}
+          generatePdf={(opts) => generatePO_PDF(savedPo, selectedCompany, opts)}
+          pdfFilename={`${savedPo.poNumber}.pdf`}
+          defaultEmailTo={(savedPo as any).vendorContactEmail || ""}
+          defaultEmailSubject={`Purchase Order ${savedPo.poNumber}`}
+          defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          onEdit={() => {
+            setPreviewOpen(false);
+            setLocation(`/purchase-orders/${savedPo.id}/edit`);
+          }}
+        />
+      )}
     </div>
   );
 }

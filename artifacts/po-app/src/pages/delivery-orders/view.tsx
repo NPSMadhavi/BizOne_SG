@@ -4,11 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Printer, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { generateDO_PDF } from "@/lib/pdf";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { useState } from "react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -27,6 +29,7 @@ export default function DeliveryOrderView() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { data: doc, isLoading } = useGetDeliveryOrder(id, {
     query: { queryKey: getGetDeliveryOrderQueryKey(id), enabled: !!id },
@@ -69,8 +72,13 @@ export default function DeliveryOrderView() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2" onClick={() => generateDO_PDF(doc, selectedCompany).catch(() => toast({ title: "Error", description: "PDF failed", variant: "destructive" }))}>
-            <Printer className="h-4 w-4" />Download PDF
+          {(doc as any).isPrivate && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded-md px-2 py-1">
+              <Lock className="h-3 w-3" />Private
+            </span>
+          )}
+          <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
+            <Eye className="h-4 w-4" />Preview & Download
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/delivery-orders/${id}/edit`)}>
             <Pencil className="h-4 w-4" />Edit
@@ -136,6 +144,18 @@ export default function DeliveryOrderView() {
           </table>
         </div>
       </Card>
+
+      <PdfPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        title={`Delivery Order ${doc.doNumber}`}
+        generatePdf={(opts) => generateDO_PDF(doc, selectedCompany, opts)}
+        pdfFilename={`${doc.doNumber}.pdf`}
+        defaultEmailTo=""
+        defaultEmailSubject={`Delivery Order ${doc.doNumber}`}
+        defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${doc.doNumber}.\n\nThank you.`}
+        onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${id}/edit`); }}
+      />
     </div>
   );
 }

@@ -1,25 +1,21 @@
 import { useGetPurchaseOrder, getGetPurchaseOrderQueryKey, useDeletePurchaseOrder } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag } from "lucide-react";
+import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { generatePO_PDF } from "@/lib/pdf";
 import { EmailSendDialog } from "@/components/email-send-dialog";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { useState } from "react";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export default function PurchaseOrderView() {
@@ -28,22 +24,16 @@ export default function PurchaseOrderView() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
-    query: {
-      queryKey: getGetPurchaseOrderQueryKey(id),
-      enabled: !!id,
-    }
+    query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
   });
 
   const deleteMutation = useDeletePurchaseOrder();
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-SG', {
-      style: 'currency',
-      currency: (po as any)?.currency || 'SGD'
-    }).format(value);
-  };
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('en-SG', { style: 'currency', currency: (po as any)?.currency || 'SGD' }).format(value);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -51,24 +41,6 @@ export default function PurchaseOrderView() {
       case 'draft': return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case 'cancelled': return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
       default: return <Badge variant="outline" className="text-sm py-1">{status}</Badge>;
-    }
-  };
-
-  const handlePrint = async () => {
-    if (po) {
-      try {
-        await generatePO_PDF(po, selectedCompany);
-        toast({
-          title: "Success",
-          description: "PDF generated successfully.",
-        });
-      } catch (err) {
-        toast({
-          title: "Error",
-          description: "Failed to generate PDF.",
-          variant: "destructive",
-        });
-      }
     }
   };
 
@@ -93,9 +65,14 @@ export default function PurchaseOrderView() {
     );
   }
 
-  if (!po) {
-    return <div>Purchase order not found.</div>;
-  }
+  if (!po) return <div>Purchase order not found.</div>;
+
+  const formatDeliveryDate = (d: string) => {
+    if (!d) return "TBA";
+    const parsed = new Date(d);
+    if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
+    return d;
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -104,30 +81,29 @@ export default function PurchaseOrderView() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-3xl font-bold tracking-tight">{po.poNumber}</h1>
             {getStatusBadge(po.status)}
+            {(po as any).isPrivate && (
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <Lock className="h-3 w-3" />
+                Private
+              </Badge>
+            )}
           </div>
           <p className="text-muted-foreground mt-1">
             Created on {format(new Date(po.createdAt), "MMMM d, yyyy")}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>
             <Pencil className="h-4 w-4" />
             Edit
           </Button>
-          <Button variant="outline" className="gap-2" onClick={handlePrint}>
-            <Printer className="h-4 w-4" />
-            Download PDF
+          <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
+            <Eye className="h-4 w-4" />
+            Preview & Download
           </Button>
-          <EmailSendDialog
-            defaultTo={(po as any).vendorContactEmail || ""}
-            defaultSubject={`Purchase Order ${po.poNumber}`}
-            defaultBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
-            pdfFilename={`${po.poNumber}.pdf`}
-            generatePdf={() => generatePO_PDF(po, selectedCompany, { returnBase64: true }) as Promise<string>}
-          />
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="icon">
@@ -192,6 +168,15 @@ export default function PurchaseOrderView() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {(po as any).quoteRefNo && (
+              <div className="flex items-center gap-3">
+                <Tag className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <span className="text-sm font-medium">Sales Quote Ref: </span>
+                  <span className="text-sm text-muted-foreground">{(po as any).quoteRefNo}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-start gap-3">
               <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
               <div>
@@ -205,11 +190,7 @@ export default function PurchaseOrderView() {
               <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
               <div>
                 <span className="text-sm font-medium">Delivery Date: </span>
-                <span className="text-sm text-muted-foreground">
-                  {po.deliveryDate
-                    ? (() => { const d = new Date(po.deliveryDate); return isNaN(d.getTime()) ? po.deliveryDate : d.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" }); })()
-                    : "TBA"}
-                </span>
+                <span className="text-sm text-muted-foreground">{formatDeliveryDate(po.deliveryDate || "")}</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -261,8 +242,8 @@ export default function PurchaseOrderView() {
                 <span className="font-medium">{formatCurrency(po.subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Tax ({po.tax}%)</span>
-                <span className="font-medium">{formatCurrency(po.subtotal * (po.tax / 100))}</span>
+                <span className="text-muted-foreground">Tax</span>
+                <span className="font-medium">{formatCurrency(po.totalAmount - po.subtotal)}</span>
               </div>
               <div className="h-px bg-border my-2" />
               <div className="flex justify-between text-lg font-bold text-primary">
@@ -276,14 +257,24 @@ export default function PurchaseOrderView() {
 
       {po.notes && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Notes</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-sm">Notes</CardTitle></CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground whitespace-pre-wrap">{po.notes}</p>
           </CardContent>
         </Card>
       )}
+
+      <PdfPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        title={`Purchase Order ${po.poNumber}`}
+        generatePdf={(opts) => generatePO_PDF(po, selectedCompany, opts)}
+        pdfFilename={`${po.poNumber}.pdf`}
+        defaultEmailTo={(po as any).vendorContactEmail || ""}
+        defaultEmailSubject={`Purchase Order ${po.poNumber}`}
+        defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+        onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
+      />
     </div>
   );
 }

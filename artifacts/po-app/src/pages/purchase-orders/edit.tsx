@@ -21,17 +21,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DeliveryDateField } from "@/components/delivery-date-field";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { generatePO_PDF } from "@/lib/pdf";
+import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   partNumber: z.string(),
@@ -54,11 +53,13 @@ const poSchema = z.object({
   vendorAddress: z.string().optional(),
   vendorContact: z.string().optional(),
   vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  quoteRefNo: z.string().optional(),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
+  isPrivate: z.boolean().default(false),
   status: z.enum(["draft", "confirmed", "cancelled"]),
   tax: z.coerce.number().min(0).max(100).default(0),
   items: z.array(itemSchema).min(1, "At least one item is required"),
@@ -69,8 +70,10 @@ export default function PurchaseOrderEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const [initialized, setInitialized] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: {
@@ -104,11 +107,13 @@ export default function PurchaseOrderEdit() {
         vendorAddress: po.vendorAddress ?? "",
         vendorContact: po.vendorContact ?? "",
         vendorContactEmail: (po as any).vendorContactEmail ?? "",
+        quoteRefNo: (po as any).quoteRefNo ?? "",
         deliveryAddress: po.deliveryAddress ?? "",
         deliveryDate: po.deliveryDate ?? "",
         paymentTerms: po.paymentTerms ?? "30 Days Net",
         notes: po.notes ?? "",
         currency: (po as any).currency || "SGD",
+        isPrivate: (po as any).isPrivate ?? false,
         status: (po.status as "draft" | "confirmed" | "cancelled") ?? "confirmed",
         tax: po.tax ?? 9,
         items: po.items.map((item: any) => ({
@@ -321,6 +326,17 @@ export default function PurchaseOrderEdit() {
               <CardContent className="space-y-4">
                 <FormField
                   control={form.control}
+                  name="quoteRefNo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sales Quote Reference No.</FormLabel>
+                      <FormControl><Input placeholder="SQ-2024-001" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="deliveryAddress"
                   render={({ field }) => (
                     <FormItem>
@@ -332,52 +348,65 @@ export default function PurchaseOrderEdit() {
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="deliveryDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Delivery Date</FormLabel>
+                <FormField
+                  control={form.control}
+                  name="deliveryDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Date</FormLabel>
+                      <FormControl>
+                        <DeliveryDateField value={field.value} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="paymentTerms"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Terms</FormLabel>
+                      <FormControl>
+                        <PaymentTermsSelect value={field.value} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="isPrivate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                        <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1">
+                          <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
+                          <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
+                        </div>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="paymentTerms"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Payment Terms</FormLabel>
-                        <FormControl>
-                          <Input placeholder="30 Days Net" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                      </div>
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="status"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Status</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="confirmed">Confirmed</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <select
+                        value={field.value}
+                        onChange={e => field.onChange(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -537,7 +566,7 @@ export default function PurchaseOrderEdit() {
             </div>
           </Card>
 
-          <div className="flex justify-end gap-4 fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:left-64 md:px-8 z-10">
+          <div className="flex justify-end gap-3 fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:left-64 md:px-8 z-10">
             <Button
               type="button"
               variant="outline"
@@ -545,19 +574,49 @@ export default function PurchaseOrderEdit() {
             >
               Cancel
             </Button>
-            <Button type="submit" className="gap-2" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? (
-                "Saving..."
-              ) : (
-                <>
-                  <Save className="h-4 w-4" />
-                  Save Changes
-                </>
-              )}
+            <Button type="submit" variant="outline" className="gap-2" disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? "Saving..." : <><Save className="h-4 w-4" />Save Changes</>}
+            </Button>
+            <Button
+              type="button"
+              className="gap-2"
+              disabled={updateMutation.isPending}
+              onClick={form.handleSubmit(async (values) => {
+                const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
+                if (!filledItems.length) return;
+                const itemsWithAmount = filledItems.map(i => ({ ...i, amount: i.qty * i.unitPrice }));
+                updateMutation.mutate(
+                  { id, data: { ...values, items: itemsWithAmount } },
+                  {
+                    onSuccess: () => {
+                      queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
+                      setPreviewOpen(true);
+                    },
+                    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                  }
+                );
+              })}
+            >
+              <Eye className="h-4 w-4" />
+              Save & Preview
             </Button>
           </div>
         </form>
       </Form>
+
+      {po && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          title={`Purchase Order ${po.poNumber}`}
+          generatePdf={(opts) => generatePO_PDF(po, selectedCompany, opts)}
+          pdfFilename={`${po.poNumber}.pdf`}
+          defaultEmailTo={(po as any).vendorContactEmail || ""}
+          defaultEmailSubject={`Purchase Order ${po.poNumber}`}
+          defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          onEdit={() => setPreviewOpen(false)}
+        />
+      )}
     </div>
   );
 }

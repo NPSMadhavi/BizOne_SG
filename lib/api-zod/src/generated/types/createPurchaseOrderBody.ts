@@ -5,16 +5,22 @@
  * API specification for RSV Infotech PO Generator
  * OpenAPI spec version: 0.1.0
  */
+import type { CreatePurchaseOrderBodyStatus } from "./createPurchaseOrderBodyStatus";
 import type { POItem } from "./pOItem";
 
 export interface CreatePurchaseOrderBody {
   vendorName: string;
   vendorAddress?: string;
   vendorContact?: string;
+  vendorContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  quoteRefNo?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
   items: POItem[];
   tax?: number;
+  status?: CreatePurchaseOrderBodyStatus;
 }

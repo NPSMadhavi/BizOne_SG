@@ -9,14 +9,19 @@ A full-stack document management application for three companies: RSV Infotech P
 - Login system with admin and user roles; company selector at login for multi-company users
 - **Multi-company support** — 3 seeded companies; users are assigned to one or more companies; all documents are scoped per company
 - **Module access control** — per-company, per-user module permissions; admins see all modules; users only see modules they're granted
-- **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking
-- **Quotations** — full CRUD; auto-numbered QT-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
-- **Invoices** — full CRUD; auto-numbered INV-YYYYMM-XXXX; GST pre-filled from settings; PDF generation
-- **Delivery Orders** — full CRUD; auto-numbered DO-YYYYMM-XXXX; no pricing columns; PDF generation
-- **Settings** — centralized GST rate (admin-only edit); SMTP email config with connection status indicator
-- **Email sending** — send PO/Quotation/Invoice as PDF attachment via SMTP; pre-filled recipient, subject, body; reusable EmailSendDialog component
+- **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking; Sales Quote Ref No field
+- **Quotations** — full CRUD; configurable running number; GST pre-filled from settings; PDF generation
+- **Invoices** — full CRUD; configurable running number; GST pre-filled from settings; PDF generation
+- **Delivery Orders** — full CRUD; configurable running number; no pricing columns; PDF generation
+- **Settings** — centralized GST rate (admin-only edit); SMTP email config; **Running Numbers** card (per-doc-type prefix/counter/suffix with live preview)
+- **Email sending** — multi-recipient tag-input dialog (Outlook-style); send PO/Quotation/Invoice as PDF attachment via SMTP; reusable EmailSendDialog component
+- **PdfPreviewModal** — inline PDF preview (iframe) with Edit / Download / Send Email actions; used on all New, Edit, and View pages
+- **PaymentTermsSelect** — dropdown with 30-Day, 14-Day, 7-Day, COD, Advance, and custom options on all PO/Quotation/Invoice forms
+- **DeliveryDateField** — quick-pick options (1 Week / 2 Weeks / ETA / Custom) on PO and Delivery Order forms
+- **isPrivate** — per-document visibility toggle; private docs visible only to creator + admins; Lock icon badge on view pages
+- **Draft / Preview workflow** — all New and Edit forms have "Save Draft" and "Save & Preview" buttons
 - **Multi-currency** — SGD, USD, EUR, GBP, MYR, INR; `fmtMoney(currency, amount)` helper using Intl.NumberFormat in PDFs
-- **Split contact fields** — separate "Contact Person" (name) and "Contact Email" fields on all forms; shown in view pages with mailto links; pre-fills email dialog
+- **Split contact fields** — separate "Contact Person" (name) and "Contact Email" fields on all forms
 - **Admin Panel** — manage users (create, edit, delete); nested company + module assignment UI
 - Dashboard with stats
 - PDF generation using jsPDF + jspdf-autotable (consistent header/footer with selected company info)

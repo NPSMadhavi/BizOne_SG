@@ -14,10 +14,14 @@ export interface PurchaseOrder {
   vendorName: string;
   vendorAddress?: string;
   vendorContact?: string;
+  vendorContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  quoteRefNo?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
   items: POItem[];
   subtotal: number;
   tax: number;

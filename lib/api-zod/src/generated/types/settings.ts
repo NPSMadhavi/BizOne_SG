@@ -9,4 +9,21 @@
 export interface Settings {
   id: number;
   gstRate: number;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpFrom?: string;
+  smtpConfigured?: boolean;
+  poPrefix?: string;
+  poCounter?: number;
+  poSuffix?: string;
+  invPrefix?: string;
+  invCounter?: number;
+  invSuffix?: string;
+  qtPrefix?: string;
+  qtCounter?: number;
+  qtSuffix?: string;
+  doPrefix?: string;
+  doCounter?: number;
+  doSuffix?: string;
 }

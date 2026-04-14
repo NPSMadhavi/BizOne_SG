@@ -131,10 +131,14 @@ export interface PurchaseOrder {
   vendorName: string;
   vendorAddress?: string;
   vendorContact?: string;
+  vendorContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  quoteRefNo?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
   items: POItem[];
   subtotal: number;
   tax: number;
@@ -144,16 +148,30 @@ export interface PurchaseOrder {
   createdAt: string;
 }
 
+export type CreatePurchaseOrderBodyStatus =
+  (typeof CreatePurchaseOrderBodyStatus)[keyof typeof CreatePurchaseOrderBodyStatus];
+
+export const CreatePurchaseOrderBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
 export interface CreatePurchaseOrderBody {
   vendorName: string;
   vendorAddress?: string;
   vendorContact?: string;
+  vendorContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  quoteRefNo?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
   items: POItem[];
   tax?: number;
+  status?: CreatePurchaseOrderBodyStatus;
 }
 
 export type UpdatePurchaseOrderBodyStatus =
@@ -169,10 +187,14 @@ export interface UpdatePurchaseOrderBody {
   vendorName: string;
   vendorAddress?: string;
   vendorContact?: string;
+  vendorContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  quoteRefNo?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
   status?: UpdatePurchaseOrderBodyStatus;
   items: POItem[];
   tax?: number;
@@ -189,10 +211,44 @@ export interface POStats {
 export interface Settings {
   id: number;
   gstRate: number;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpFrom?: string;
+  smtpConfigured?: boolean;
+  poPrefix?: string;
+  poCounter?: number;
+  poSuffix?: string;
+  invPrefix?: string;
+  invCounter?: number;
+  invSuffix?: string;
+  qtPrefix?: string;
+  qtCounter?: number;
+  qtSuffix?: string;
+  doPrefix?: string;
+  doCounter?: number;
+  doSuffix?: string;
 }
 
 export interface UpdateSettingsBody {
-  gstRate: number;
+  gstRate?: number;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpFrom?: string;
+  poPrefix?: string;
+  poCounter?: number;
+  poSuffix?: string;
+  invPrefix?: string;
+  invCounter?: number;
+  invSuffix?: string;
+  qtPrefix?: string;
+  qtCounter?: number;
+  qtSuffix?: string;
+  doPrefix?: string;
+  doCounter?: number;
+  doSuffix?: string;
 }
 
 export interface DocStats {
@@ -226,10 +282,14 @@ export interface Quotation {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   items: DocItem[];
   subtotal: string;
   tax: string;
@@ -239,16 +299,30 @@ export interface Quotation {
   createdAt: string;
 }
 
+export type CreateQuotationBodyStatus =
+  (typeof CreateQuotationBodyStatus)[keyof typeof CreateQuotationBodyStatus];
+
+export const CreateQuotationBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
 export interface CreateQuotationBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   items: DocItem[];
   tax?: number;
+  status?: CreateQuotationBodyStatus;
 }
 
 export type UpdateQuotationBodyStatus =
@@ -264,10 +338,14 @@ export interface UpdateQuotationBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   status?: UpdateQuotationBodyStatus;
   items: DocItem[];
   tax?: number;
@@ -287,10 +365,14 @@ export interface Invoice {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   items: DocItem[];
   subtotal: string;
   tax: string;
@@ -300,16 +382,30 @@ export interface Invoice {
   createdAt: string;
 }
 
+export type CreateInvoiceBodyStatus =
+  (typeof CreateInvoiceBodyStatus)[keyof typeof CreateInvoiceBodyStatus];
+
+export const CreateInvoiceBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
 export interface CreateInvoiceBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   items: DocItem[];
   tax?: number;
+  status?: CreateInvoiceBodyStatus;
 }
 
 export type UpdateInvoiceBodyStatus =
@@ -325,10 +421,14 @@ export interface UpdateInvoiceBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   status?: UpdateInvoiceBodyStatus;
   items: DocItem[];
   tax?: number;
@@ -355,20 +455,34 @@ export interface DeliveryOrder {
   customerAddress?: string;
   customerContact?: string;
   deliveryDate?: string;
+  paymentTerms?: string;
   notes?: string;
+  isPrivate?: boolean;
   items: DOItem[];
   status: DeliveryOrderStatus;
   createdBy: number;
   createdAt: string;
 }
 
+export type CreateDeliveryOrderBodyStatus =
+  (typeof CreateDeliveryOrderBodyStatus)[keyof typeof CreateDeliveryOrderBodyStatus];
+
+export const CreateDeliveryOrderBodyStatus = {
+  draft: "draft",
+  confirmed: "confirmed",
+  cancelled: "cancelled",
+} as const;
+
 export interface CreateDeliveryOrderBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
   deliveryDate?: string;
+  paymentTerms?: string;
   notes?: string;
+  isPrivate?: boolean;
   items: DOItem[];
+  status?: CreateDeliveryOrderBodyStatus;
 }
 
 export type UpdateDeliveryOrderBodyStatus =
@@ -385,7 +499,9 @@ export interface UpdateDeliveryOrderBody {
   customerAddress?: string;
   customerContact?: string;
   deliveryDate?: string;
+  paymentTerms?: string;
   notes?: string;
+  isPrivate?: boolean;
   status?: UpdateDeliveryOrderBodyStatus;
   items: DOItem[];
 }

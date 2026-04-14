@@ -830,14 +830,22 @@ components:
           type: string
         vendorContact:
           type: string
+        vendorContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
           type: string
         paymentTerms:
           type: string
+        quoteRefNo:
+          type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
         items:
           type: array
           items:
@@ -866,20 +874,31 @@ components:
           type: string
         vendorContact:
           type: string
+        vendorContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
           type: string
         paymentTerms:
           type: string
+        quoteRefNo:
+          type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
         items:
           type: array
           items:
             $ref: "#/components/schemas/POItem"
         tax:
           type: number
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
       required: [vendorName, items]
 
     UpdatePurchaseOrderBody:
@@ -891,14 +910,22 @@ components:
           type: string
         vendorContact:
           type: string
+        vendorContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
           type: string
         paymentTerms:
           type: string
+        quoteRefNo:
+          type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
         status:
           type: string
           enum: [draft, confirmed, cancelled]
@@ -932,6 +959,40 @@ components:
           type: integer
         gstRate:
           type: number
+        smtpHost:
+          type: string
+        smtpPort:
+          type: string
+        smtpUser:
+          type: string
+        smtpFrom:
+          type: string
+        smtpConfigured:
+          type: boolean
+        poPrefix:
+          type: string
+        poCounter:
+          type: integer
+        poSuffix:
+          type: string
+        invPrefix:
+          type: string
+        invCounter:
+          type: integer
+        invSuffix:
+          type: string
+        qtPrefix:
+          type: string
+        qtCounter:
+          type: integer
+        qtSuffix:
+          type: string
+        doPrefix:
+          type: string
+        doCounter:
+          type: integer
+        doSuffix:
+          type: string
       required: [id, gstRate]
 
     UpdateSettingsBody:
@@ -939,7 +1000,40 @@ components:
       properties:
         gstRate:
           type: number
-      required: [gstRate]
+        smtpHost:
+          type: string
+        smtpPort:
+          type: string
+        smtpUser:
+          type: string
+        smtpPass:
+          type: string
+        smtpFrom:
+          type: string
+        poPrefix:
+          type: string
+        poCounter:
+          type: integer
+        poSuffix:
+          type: string
+        invPrefix:
+          type: string
+        invCounter:
+          type: integer
+        invSuffix:
+          type: string
+        qtPrefix:
+          type: string
+        qtCounter:
+          type: integer
+        qtSuffix:
+          type: string
+        doPrefix:
+          type: string
+        doCounter:
+          type: integer
+        doSuffix:
+          type: string
 
     DocStats:
       type: object
@@ -984,6 +1078,8 @@ components:
           type: string
         customerContact:
           type: string
+        customerContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
@@ -992,6 +1088,12 @@ components:
           type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
         items:
           type: array
           items:
@@ -1020,6 +1122,8 @@ components:
           type: string
         customerContact:
           type: string
+        customerContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
@@ -1028,12 +1132,21 @@ components:
           type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
         items:
           type: array
           items:
             $ref: "#/components/schemas/DocItem"
         tax:
           type: number
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
       required: [customerName, items]
 
     UpdateQuotationBody:
@@ -1045,6 +1158,8 @@ components:
           type: string
         customerContact:
           type: string
+        customerContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
@@ -1053,6 +1168,12 @@ components:
           type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
         status:
           type: string
           enum: [draft, confirmed, cancelled]
@@ -1077,6 +1198,8 @@ components:
           type: string
         customerContact:
           type: string
+        customerContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
@@ -1085,6 +1208,12 @@ components:
           type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
         items:
           type: array
           items:
@@ -1113,6 +1242,8 @@ components:
           type: string
         customerContact:
           type: string
+        customerContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
@@ -1121,12 +1252,21 @@ components:
           type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
         items:
           type: array
           items:
             $ref: "#/components/schemas/DocItem"
         tax:
           type: number
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
       required: [customerName, items]
 
     UpdateInvoiceBody:
@@ -1138,6 +1278,8 @@ components:
           type: string
         customerContact:
           type: string
+        customerContactEmail:
+          type: string
         deliveryAddress:
           type: string
         deliveryDate:
@@ -1146,6 +1288,12 @@ components:
           type: string
         notes:
           type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
         status:
           type: string
           enum: [draft, confirmed, cancelled]
@@ -1181,8 +1329,12 @@ components:
           type: string
         deliveryDate:
           type: string
+        paymentTerms:
+          type: string
         notes:
           type: string
+        isPrivate:
+          type: boolean
         items:
           type: array
           items:
@@ -1207,12 +1359,19 @@ components:
           type: string
         deliveryDate:
           type: string
+        paymentTerms:
+          type: string
         notes:
           type: string
+        isPrivate:
+          type: boolean
         items:
           type: array
           items:
             $ref: "#/components/schemas/DOItem"
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
       required: [customerName, items]
 
     UpdateDeliveryOrderBody:
@@ -1226,8 +1385,12 @@ components:
           type: string
         deliveryDate:
           type: string
+        paymentTerms:
+          type: string
         notes:
           type: string
+        isPrivate:
+          type: boolean
         status:
           type: string
           enum: [draft, confirmed, cancelled]

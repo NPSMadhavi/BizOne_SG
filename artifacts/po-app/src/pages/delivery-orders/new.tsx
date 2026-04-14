@@ -8,10 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save } from "lucide-react";
+import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generateDO_PDF } from "@/lib/pdf";
+import { DeliveryDateField } from "@/components/delivery-date-field";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   description: z.string(),
@@ -24,19 +28,24 @@ const schema = z.object({
   customerContact: z.string().optional(),
   deliveryDate: z.string().optional(),
   notes: z.string().optional(),
+  isPrivate: z.boolean().default(false),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
 
 export default function DeliveryOrderNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [savedDoc, setSavedDoc] = useState<any>(null);
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
       deliveryDate: "", notes: "",
+      isPrivate: false,
       items: [{ description: "", qty: 1 }],
     },
   });
@@ -66,7 +75,7 @@ export default function DeliveryOrderNew() {
     return () => sub.unsubscribe();
   }, [form, append]);
 
-  async function onSubmit(values: z.infer<typeof schema>) {
+  async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => i.description.trim() !== "");
     if (filledItems.length === 0) {
@@ -75,10 +84,15 @@ export default function DeliveryOrderNew() {
       return;
     }
     createMutation.mutate({ data: { ...values, items: filledItems } }, {
-      onSuccess: async (data) => {
-        try { await generateDO_PDF(data); } catch {}
-        toast({ title: "Success", description: "Delivery order created and PDF downloaded." });
-        setLocation(`/delivery-orders/${data.id}`);
+      onSuccess: (data) => {
+        setSavedDoc(data);
+        setIsSubmitting(false);
+        if (openPreview) {
+          setPreviewOpen(true);
+        } else {
+          toast({ title: "Delivery order saved as draft." });
+          setLocation(`/delivery-orders/${data.id}`);
+        }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Failed to create delivery order.", variant: "destructive" });
@@ -120,11 +134,23 @@ export default function DeliveryOrderNew() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem><FormLabel>Notes</FormLabel>
-                    <FormControl><Textarea placeholder="Special delivery instructions..." className="resize-none" rows={4} {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Textarea placeholder="Special delivery instructions..." className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1">
+                        <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
+                      </div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </div>
+                  </FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -176,13 +202,36 @@ export default function DeliveryOrderNew() {
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation("/delivery-orders")}>Cancel</Button>
-            <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
+            <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Creating..." : "Create & Download PDF"}
+              {isSubmitting ? "Saving..." : "Save Draft"}
+            </Button>
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              className="gap-2"
+              onClick={form.handleSubmit(v => onSubmit(v, true))}
+            >
+              <Eye className="h-4 w-4" />
+              {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
           </div>
         </form>
       </Form>
+
+      {savedDoc && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          title={`Delivery Order ${savedDoc.doNumber}`}
+          generatePdf={(opts) => generateDO_PDF(savedDoc, selectedCompany, opts)}
+          pdfFilename={`${savedDoc.doNumber}.pdf`}
+          defaultEmailTo=""
+          defaultEmailSubject={`Delivery Order ${savedDoc.doNumber}`}
+          defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${savedDoc.doNumber}.\n\nThank you.`}
+          onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${savedDoc.id}/edit`); }}
+        />
+      )}
     </div>
   );
 }

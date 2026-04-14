@@ -7,5 +7,22 @@
  */
 
 export interface UpdateSettingsBody {
-  gstRate: number;
+  gstRate?: number;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpFrom?: string;
+  poPrefix?: string;
+  poCounter?: number;
+  poSuffix?: string;
+  invPrefix?: string;
+  invCounter?: number;
+  invSuffix?: string;
+  qtPrefix?: string;
+  qtCounter?: number;
+  qtSuffix?: string;
+  doPrefix?: string;
+  doCounter?: number;
+  doSuffix?: string;
 }

@@ -15,7 +15,9 @@ export interface DeliveryOrder {
   customerAddress?: string;
   customerContact?: string;
   deliveryDate?: string;
+  paymentTerms?: string;
   notes?: string;
+  isPrivate?: boolean;
   items: DOItem[];
   status: DeliveryOrderStatus;
   createdBy: number;

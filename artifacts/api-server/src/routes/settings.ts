@@ -28,6 +28,18 @@ function formatSettings(s: typeof settingsTable.$inferSelect) {
     smtpUser: s.smtpUser || "",
     smtpFrom: s.smtpFrom || "",
     smtpConfigured: !!(s.smtpHost && s.smtpUser && s.smtpPass),
+    poPrefix: s.poPrefix ?? "PO",
+    poCounter: s.poCounter ?? 1,
+    poSuffix: s.poSuffix ?? "",
+    invPrefix: s.invPrefix ?? "INV",
+    invCounter: s.invCounter ?? 1,
+    invSuffix: s.invSuffix ?? "",
+    qtPrefix: s.qtPrefix ?? "QT",
+    qtCounter: s.qtCounter ?? 1,
+    qtSuffix: s.qtSuffix ?? "",
+    doPrefix: s.doPrefix ?? "DO",
+    doCounter: s.doCounter ?? 1,
+    doSuffix: s.doSuffix ?? "",
   };
 }
 
@@ -43,7 +55,13 @@ router.get("/", async (req, res) => {
 router.put("/", async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
 
-  const { gstRate, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
+  const {
+    gstRate, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom,
+    poPrefix, poCounter, poSuffix,
+    invPrefix, invCounter, invSuffix,
+    qtPrefix, qtCounter, qtSuffix,
+    doPrefix, doCounter, doSuffix,
+  } = req.body;
 
   const updateData: Record<string, any> = {};
 
@@ -59,6 +77,19 @@ router.put("/", async (req, res) => {
   if (smtpUser !== undefined) updateData.smtpUser = smtpUser;
   if (smtpPass !== undefined && smtpPass !== "") updateData.smtpPass = smtpPass;
   if (smtpFrom !== undefined) updateData.smtpFrom = smtpFrom;
+
+  if (poPrefix !== undefined) updateData.poPrefix = poPrefix;
+  if (poCounter !== undefined) updateData.poCounter = Number(poCounter);
+  if (poSuffix !== undefined) updateData.poSuffix = poSuffix;
+  if (invPrefix !== undefined) updateData.invPrefix = invPrefix;
+  if (invCounter !== undefined) updateData.invCounter = Number(invCounter);
+  if (invSuffix !== undefined) updateData.invSuffix = invSuffix;
+  if (qtPrefix !== undefined) updateData.qtPrefix = qtPrefix;
+  if (qtCounter !== undefined) updateData.qtCounter = Number(qtCounter);
+  if (qtSuffix !== undefined) updateData.qtSuffix = qtSuffix;
+  if (doPrefix !== undefined) updateData.doPrefix = doPrefix;
+  if (doCounter !== undefined) updateData.doCounter = Number(doCounter);
+  if (doSuffix !== undefined) updateData.doSuffix = doSuffix;
 
   try {
     const settings = await ensureSettings();

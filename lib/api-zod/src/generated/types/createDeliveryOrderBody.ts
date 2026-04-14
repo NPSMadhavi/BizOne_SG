@@ -5,6 +5,7 @@
  * API specification for RSV Infotech PO Generator
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateDeliveryOrderBodyStatus } from "./createDeliveryOrderBodyStatus";
 import type { DOItem } from "./dOItem";
 
 export interface CreateDeliveryOrderBody {
@@ -12,6 +13,9 @@ export interface CreateDeliveryOrderBody {
   customerAddress?: string;
   customerContact?: string;
   deliveryDate?: string;
+  paymentTerms?: string;
   notes?: string;
+  isPrivate?: boolean;
   items: DOItem[];
+  status?: CreateDeliveryOrderBodyStatus;
 }

@@ -9,10 +9,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save } from "lucide-react";
+import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generateInvoice_PDF } from "@/lib/pdf";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   partNumber: z.string(),
@@ -41,13 +45,17 @@ const schema = z.object({
   currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
+  isPrivate: z.boolean().default(false),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
 
 export default function InvoiceNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [savedDoc, setSavedDoc] = useState<any>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -59,6 +67,7 @@ export default function InvoiceNew() {
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
+      isPrivate: false,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
     },
   });
@@ -107,7 +116,7 @@ export default function InvoiceNew() {
 
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(v);
 
-  async function onSubmit(values: z.infer<typeof schema>) {
+  async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
     if (filledItems.length === 0) {
@@ -120,10 +129,15 @@ export default function InvoiceNew() {
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     createMutation.mutate({ data: { ...values, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
-      onSuccess: async (data) => {
-        try { await generateInvoice_PDF(data); } catch {}
-        toast({ title: "Success", description: "Invoice created and PDF downloaded." });
-        setLocation(`/invoices/${data.id}`);
+      onSuccess: (data) => {
+        setSavedDoc(data);
+        setIsSubmitting(false);
+        if (openPreview) {
+          setPreviewOpen(true);
+        } else {
+          toast({ title: "Invoice saved as draft." });
+          setLocation(`/invoices/${data.id}`);
+        }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Failed to create invoice.", variant: "destructive" });
@@ -189,7 +203,19 @@ export default function InvoiceNew() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
-                    <FormControl><Input placeholder="30 Days Net" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1">
+                        <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
+                      </div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </div>
+                  </FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -300,13 +326,36 @@ export default function InvoiceNew() {
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation("/invoices")}>Cancel</Button>
-            <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
+            <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Creating..." : "Create & Download PDF"}
+              {isSubmitting ? "Saving..." : "Save Draft"}
+            </Button>
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              className="gap-2"
+              onClick={form.handleSubmit(v => onSubmit(v, true))}
+            >
+              <Eye className="h-4 w-4" />
+              {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
           </div>
         </form>
       </Form>
+
+      {savedDoc && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          title={`Invoice ${savedDoc.invNumber}`}
+          generatePdf={(opts) => generateInvoice_PDF(savedDoc, selectedCompany, opts)}
+          pdfFilename={`${savedDoc.invNumber}.pdf`}
+          defaultEmailTo={savedDoc.customerContactEmail || ""}
+          defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
+          defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+          onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
+        />
+      )}
     </div>
   );
 }

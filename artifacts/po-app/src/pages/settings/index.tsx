@@ -4,11 +4,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+
+type RunningNumberConfig = {
+  prefix: string;
+  counter: string;
+  suffix: string;
+};
 
 export default function Settings() {
   const { user, logout, isAdmin } = useAuth();
@@ -26,6 +32,12 @@ export default function Settings() {
   const [smtpEditing, setSmtpEditing] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
 
+  const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "1", suffix: "" });
+  const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "1", suffix: "" });
+  const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "1", suffix: "" });
+  const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "1", suffix: "" });
+  const [rnEditing, setRnEditing] = useState(false);
+
   const { data: settings, isLoading: settingsLoading } = useGetSettings({
     query: { queryKey: getGetSettingsQueryKey() },
   });
@@ -39,6 +51,12 @@ export default function Settings() {
       setSmtpPort(settings.smtpPort || "587");
       setSmtpUser(settings.smtpUser || "");
       setSmtpFrom(settings.smtpFrom || "");
+    }
+    if (settings && !rnEditing) {
+      setRnPO({ prefix: (settings as any).poPrefix ?? "PO", counter: String((settings as any).poCounter ?? 1), suffix: (settings as any).poSuffix ?? "" });
+      setRnQT({ prefix: (settings as any).qtPrefix ?? "QT", counter: String((settings as any).qtCounter ?? 1), suffix: (settings as any).qtSuffix ?? "" });
+      setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 1), suffix: (settings as any).invSuffix ?? "" });
+      setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 1), suffix: (settings as any).doSuffix ?? "" });
     }
   }, [settings]);
 
@@ -86,6 +104,35 @@ export default function Settings() {
       }
     );
   };
+
+  const handleSaveRunningNumbers = () => {
+    updateSettings.mutate(
+      {
+        data: {
+          poPrefix: rnPO.prefix, poCounter: parseInt(rnPO.counter) || 1, poSuffix: rnPO.suffix,
+          qtPrefix: rnQT.prefix, qtCounter: parseInt(rnQT.counter) || 1, qtSuffix: rnQT.suffix,
+          invPrefix: rnINV.prefix, invCounter: parseInt(rnINV.counter) || 1, invSuffix: rnINV.suffix,
+          doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 1, doSuffix: rnDO.suffix,
+        } as any,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+          setRnEditing(false);
+          toast({ title: "Saved", description: "Running numbers updated successfully." });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to update running numbers.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  function nextPreview(cfg: RunningNumberConfig) {
+    const n = parseInt(cfg.counter) || 1;
+    const padded = String(n).padStart(4, "0");
+    return `${cfg.prefix}${cfg.prefix && (padded || cfg.suffix) ? "-" : ""}${padded}${cfg.suffix}`;
+  }
 
   const handleTestSmtp = async () => {
     setTestingSmtp(true);
@@ -157,6 +204,88 @@ export default function Settings() {
           )}
           {!isAdmin && (
             <p className="text-xs text-muted-foreground">Only administrators can change the GST rate.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Hash className="h-5 w-5 text-primary" />
+            Running Numbers
+          </CardTitle>
+          <CardDescription>
+            Configure the prefix, starting counter, and suffix for each document type. The next number generated will follow the pattern: <strong>PREFIX-0001SUFFIX</strong>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {settingsLoading ? (
+            <div className="space-y-3">
+              {[1,2,3,4].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-md" />)}
+            </div>
+          ) : (
+            <>
+              {([
+                { label: "Purchase Order", state: rnPO, setter: setRnPO },
+                { label: "Quotation", state: rnQT, setter: setRnQT },
+                { label: "Invoice", state: rnINV, setter: setRnINV },
+                { label: "Delivery Order", state: rnDO, setter: setRnDO },
+              ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
+                <div key={label} className="rounded-lg border p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm">{label}</span>
+                    <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded font-mono">
+                      Next: <strong>{nextPreview(state)}</strong>
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Prefix</Label>
+                      <Input
+                        value={state.prefix}
+                        onChange={e => { setter({ ...state, prefix: e.target.value }); setRnEditing(true); }}
+                        disabled={!isAdmin}
+                        placeholder="e.g. PO"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Next Counter</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={state.counter}
+                        onChange={e => { setter({ ...state, counter: e.target.value }); setRnEditing(true); }}
+                        disabled={!isAdmin}
+                        placeholder="1"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Suffix</Label>
+                      <Input
+                        value={state.suffix}
+                        onChange={e => { setter({ ...state, suffix: e.target.value }); setRnEditing(true); }}
+                        disabled={!isAdmin}
+                        placeholder="optional"
+                        className="font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center gap-3">
+                {isAdmin && rnEditing && (
+                  <Button onClick={handleSaveRunningNumbers} disabled={updateSettings.isPending} className="gap-2">
+                    <Save className="h-4 w-4" />
+                    {updateSettings.isPending ? "Saving..." : "Save Running Numbers"}
+                  </Button>
+                )}
+                {!isAdmin && (
+                  <p className="text-xs text-muted-foreground">Only administrators can change running numbers.</p>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

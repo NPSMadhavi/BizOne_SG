@@ -1,11 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db, invoicesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
+import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
   interface SessionData {
     userId?: number;
     companyId?: number;
+    isAdmin?: boolean;
   }
 }
 
@@ -24,52 +26,62 @@ function requireCompany(req: any, res: any): boolean {
   return true;
 }
 
-function generateInvNumber(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const random = String(Math.floor(Math.random() * 9000) + 1000);
-  return `INV-${year}${month}-${random}`;
-}
-
 function parseDoc(doc: any) {
   return {
     ...doc,
     subtotal: parseFloat(doc.subtotal ?? "0"),
+    discountAmount: parseFloat(doc.discountAmount ?? "0"),
     tax: parseFloat(doc.tax ?? "0"),
     totalAmount: parseFloat(doc.totalAmount ?? "0"),
     createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
   };
 }
 
+function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
+  return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
+}
+
 router.get("/invoices/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
+  const userId = req.session.userId!;
+  const isAdmin = req.session.isAdmin ?? false;
+
   const all = companyId
     ? await db.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId))
     : await db.select().from(invoicesTable);
+  const visible = visibilityFilter(all, userId, isAdmin);
   res.json({
-    total: all.length,
-    confirmed: all.filter(x => x.status === "confirmed").length,
-    draft: all.filter(x => x.status === "draft").length,
-    cancelled: all.filter(x => x.status === "cancelled").length,
-    totalValue: all.reduce((s, x) => s + parseFloat(x.totalAmount ?? "0"), 0),
+    total: visible.length,
+    confirmed: visible.filter(x => x.status === "confirmed").length,
+    draft: visible.filter(x => x.status === "draft").length,
+    cancelled: visible.filter(x => x.status === "cancelled").length,
+    totalValue: visible.reduce((s, x) => s + parseFloat(x.totalAmount ?? "0"), 0),
   });
 });
 
 router.get("/invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
+  const userId = req.session.userId!;
+  const isAdmin = req.session.isAdmin ?? false;
+
   const docs = companyId
     ? await db.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId)).orderBy(desc(invoicesTable.createdAt))
     : await db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt));
-  res.json(docs.map(parseDoc));
+  res.json(visibilityFilter(docs, userId, isAdmin).map(parseDoc));
 });
 
 router.post("/invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
-  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, currency, discountAmount } = req.body;
+
+  const {
+    customerName, customerAddress, customerContact, customerContactEmail,
+    deliveryAddress, deliveryDate, paymentTerms, notes, items, tax,
+    currency, discountAmount, isPrivate, status,
+  } = req.body;
+
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => s + parseFloat(item.amount || "0"), 0);
@@ -78,21 +90,15 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
   const totalAmount = taxableAmount + taxAmt;
 
-  let invNumber = generateInvNumber();
-  let attempts = 0;
-  while (attempts < 5) {
-    const existing = await db.select().from(invoicesTable).where(eq(invoicesTable.invNumber, invNumber));
-    if (existing.length === 0) break;
-    invNumber = generateInvNumber();
-    attempts++;
-  }
+  const invNumber = await nextDocNumber("inv");
 
   const [doc] = await db.insert(invoicesTable).values({
     invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
     customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items,
     currency: currency || "SGD",
+    isPrivate: isPrivate === true,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
-    totalAmount: totalAmount.toFixed(2), status: "draft", createdBy: req.session.userId!,
+    totalAmount: totalAmount.toFixed(2), status: status || "draft", createdBy: req.session.userId!,
   }).returning();
   res.status(201).json(parseDoc(doc));
 });
@@ -100,15 +106,30 @@ router.post("/invoices", async (req, res): Promise<void> => {
 router.get("/invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
   const [doc] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   if (!doc) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const userId = req.session.userId!;
+  const isAdmin = req.session.isAdmin ?? false;
+  if (doc.isPrivate && doc.createdBy !== userId && !isAdmin) {
+    res.status(403).json({ error: "Access denied" }); return;
+  }
+
   res.json(parseDoc(doc));
 });
 
 router.put("/invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
-  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, status, currency, discountAmount } = req.body;
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const {
+    customerName, customerAddress, customerContact, customerContactEmail,
+    deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, status,
+    currency, discountAmount, isPrivate,
+  } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => s + parseFloat(item.amount || "0"), 0);
   const docDiscount = Number(discountAmount) || 0;
@@ -116,12 +137,17 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
   const totalAmount = taxableAmount + taxAmt;
 
-  const [updated] = await db.update(invoicesTable).set({
-    customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items,
-    ...(currency ? { currency } : {}),
-    subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
-    ...(status ? { status } : {}),
-  }).where(eq(invoicesTable.id, id)).returning();
+  const updateData: any = {
+    customerName, customerAddress, customerContact, customerContactEmail,
+    deliveryAddress, deliveryDate, paymentTerms, notes, items,
+    subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
+    tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
+  };
+  if (currency !== undefined) updateData.currency = currency;
+  if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
+  if (status) updateData.status = status;
+
+  const [updated] = await db.update(invoicesTable).set(updateData).where(eq(invoicesTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Invoice not found" }); return; }
   res.json(parseDoc(updated));
 });

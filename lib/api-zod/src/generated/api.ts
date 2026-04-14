@@ -217,8 +217,10 @@ export const ListPurchaseOrdersResponseItem = zod.object({
   deliveryAddress: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  quoteRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -250,8 +252,10 @@ export const CreatePurchaseOrderBody = zod.object({
   deliveryAddress: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  quoteRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -262,6 +266,7 @@ export const CreatePurchaseOrderBody = zod.object({
     }),
   ),
   tax: zod.number().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
 });
 
 /**
@@ -281,8 +286,10 @@ export const GetPurchaseOrderResponse = zod.object({
   deliveryAddress: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  quoteRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -315,8 +322,10 @@ export const UpdatePurchaseOrderBody = zod.object({
   deliveryAddress: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  quoteRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -340,8 +349,10 @@ export const UpdatePurchaseOrderResponse = zod.object({
   deliveryAddress: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  quoteRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -392,6 +403,18 @@ export const GetSettingsResponse = zod.object({
   smtpUser: zod.string().optional(),
   smtpFrom: zod.string().optional(),
   smtpConfigured: zod.boolean().optional(),
+  poPrefix: zod.string().optional(),
+  poCounter: zod.number().optional(),
+  poSuffix: zod.string().optional(),
+  invPrefix: zod.string().optional(),
+  invCounter: zod.number().optional(),
+  invSuffix: zod.string().optional(),
+  qtPrefix: zod.string().optional(),
+  qtCounter: zod.number().optional(),
+  qtSuffix: zod.string().optional(),
+  doPrefix: zod.string().optional(),
+  doCounter: zod.number().optional(),
+  doSuffix: zod.string().optional(),
 });
 
 /**
@@ -404,6 +427,18 @@ export const UpdateSettingsBody = zod.object({
   smtpUser: zod.string().optional(),
   smtpPass: zod.string().optional(),
   smtpFrom: zod.string().optional(),
+  poPrefix: zod.string().optional(),
+  poCounter: zod.number().optional(),
+  poSuffix: zod.string().optional(),
+  invPrefix: zod.string().optional(),
+  invCounter: zod.number().optional(),
+  invSuffix: zod.string().optional(),
+  qtPrefix: zod.string().optional(),
+  qtCounter: zod.number().optional(),
+  qtSuffix: zod.string().optional(),
+  doPrefix: zod.string().optional(),
+  doCounter: zod.number().optional(),
+  doSuffix: zod.string().optional(),
 });
 
 export const UpdateSettingsResponse = zod.object({
@@ -414,6 +449,18 @@ export const UpdateSettingsResponse = zod.object({
   smtpUser: zod.string().optional(),
   smtpFrom: zod.string().optional(),
   smtpConfigured: zod.boolean().optional(),
+  poPrefix: zod.string().optional(),
+  poCounter: zod.number().optional(),
+  poSuffix: zod.string().optional(),
+  invPrefix: zod.string().optional(),
+  invCounter: zod.number().optional(),
+  invSuffix: zod.string().optional(),
+  qtPrefix: zod.string().optional(),
+  qtCounter: zod.number().optional(),
+  qtSuffix: zod.string().optional(),
+  doPrefix: zod.string().optional(),
+  doCounter: zod.number().optional(),
+  doSuffix: zod.string().optional(),
 });
 
 /**
@@ -431,6 +478,8 @@ export const ListQuotationsResponseItem = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -462,6 +511,8 @@ export const CreateQuotationBody = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -472,6 +523,7 @@ export const CreateQuotationBody = zod.object({
     }),
   ),
   tax: zod.number().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
 });
 
 /**
@@ -504,6 +556,8 @@ export const GetQuotationResponse = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -538,6 +592,8 @@ export const UpdateQuotationBody = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -563,6 +619,8 @@ export const UpdateQuotationResponse = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -606,6 +664,8 @@ export const ListInvoicesResponseItem = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -636,6 +696,9 @@ export const CreateInvoiceBody = zod.object({
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -646,6 +709,7 @@ export const CreateInvoiceBody = zod.object({
     }),
   ),
   tax: zod.number().optional(),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
 });
 
 /**
@@ -678,6 +742,8 @@ export const GetInvoiceResponse = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -712,6 +778,8 @@ export const UpdateInvoiceBody = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -737,6 +805,8 @@ export const UpdateInvoiceResponse = zod.object({
   paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
       itemPartNumber: zod.string().optional(),
@@ -774,9 +844,10 @@ export const ListDeliveryOrdersResponseItem = zod.object({
   customerName: zod.string(),
   customerAddress: zod.string().optional(),
   customerContact: zod.string().optional(),
-  customerContactEmail: zod.string().optional(),
   deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       description: zod.string(),
@@ -798,15 +869,17 @@ export const CreateDeliveryOrderBody = zod.object({
   customerName: zod.string(),
   customerAddress: zod.string().optional(),
   customerContact: zod.string().optional(),
-  customerContactEmail: zod.string().optional(),
   deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       description: zod.string(),
       qty: zod.string(),
     }),
   ),
+  status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
 });
 
 /**
@@ -822,9 +895,10 @@ export const GetDeliveryOrderResponse = zod.object({
   customerName: zod.string(),
   customerAddress: zod.string().optional(),
   customerContact: zod.string().optional(),
-  customerContactEmail: zod.string().optional(),
   deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       description: zod.string(),
@@ -847,9 +921,10 @@ export const UpdateDeliveryOrderBody = zod.object({
   customerName: zod.string(),
   customerAddress: zod.string().optional(),
   customerContact: zod.string().optional(),
-  customerContactEmail: zod.string().optional(),
   deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -865,9 +940,10 @@ export const UpdateDeliveryOrderResponse = zod.object({
   customerName: zod.string(),
   customerAddress: zod.string().optional(),
   customerContact: zod.string().optional(),
-  customerContactEmail: zod.string().optional(),
   deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
   notes: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
   items: zod.array(
     zod.object({
       description: zod.string(),

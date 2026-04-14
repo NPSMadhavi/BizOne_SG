@@ -5,16 +5,22 @@
  * API specification for RSV Infotech PO Generator
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateQuotationBodyStatus } from "./createQuotationBodyStatus";
 import type { DocItem } from "./docItem";
 
 export interface CreateQuotationBody {
   customerName: string;
   customerAddress?: string;
   customerContact?: string;
+  customerContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
   items: DocItem[];
   tax?: number;
+  status?: CreateQuotationBodyStatus;
 }

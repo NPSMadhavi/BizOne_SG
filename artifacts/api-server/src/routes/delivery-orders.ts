@@ -1,11 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db, deliveryOrdersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
+import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
   interface SessionData {
     userId?: number;
     companyId?: number;
+    isAdmin?: boolean;
   }
 }
 
@@ -24,14 +26,6 @@ function requireCompany(req: any, res: any): boolean {
   return true;
 }
 
-function generateDoNumber(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const random = String(Math.floor(Math.random() * 9000) + 1000);
-  return `DO-${year}${month}-${random}`;
-}
-
 function parseDoc(doc: any) {
   return {
     ...doc,
@@ -39,33 +33,55 @@ function parseDoc(doc: any) {
   };
 }
 
+function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
+  return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
+}
+
+router.get("/delivery-orders/stats", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const companyId = req.session.companyId;
+  const userId = req.session.userId!;
+  const isAdmin = req.session.isAdmin ?? false;
+
+  const all = companyId
+    ? await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.companyId, companyId))
+    : await db.select().from(deliveryOrdersTable);
+  const visible = visibilityFilter(all, userId, isAdmin);
+  res.json({
+    total: visible.length,
+    confirmed: visible.filter(x => x.status === "confirmed").length,
+    draft: visible.filter(x => x.status === "draft").length,
+    cancelled: visible.filter(x => x.status === "cancelled").length,
+    totalValue: 0,
+  });
+});
+
 router.get("/delivery-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
+  const userId = req.session.userId!;
+  const isAdmin = req.session.isAdmin ?? false;
+
   const docs = companyId
     ? await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.companyId, companyId)).orderBy(desc(deliveryOrdersTable.createdAt))
     : await db.select().from(deliveryOrdersTable).orderBy(desc(deliveryOrdersTable.createdAt));
-  res.json(docs.map(parseDoc));
+  res.json(visibilityFilter(docs, userId, isAdmin).map(parseDoc));
 });
 
 router.post("/delivery-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
-  const { customerName, customerAddress, customerContact, deliveryDate, notes, items } = req.body;
+
+  const { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items, isPrivate, status } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
-  let doNumber = generateDoNumber();
-  let attempts = 0;
-  while (attempts < 5) {
-    const existing = await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.doNumber, doNumber));
-    if (existing.length === 0) break;
-    doNumber = generateDoNumber();
-    attempts++;
-  }
+  const doNumber = await nextDocNumber("do");
 
   const [doc] = await db.insert(deliveryOrdersTable).values({
     doNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-    deliveryDate, notes, items, status: "draft", createdBy: req.session.userId!,
+    deliveryDate, paymentTerms, notes, items,
+    isPrivate: isPrivate === true,
+    status: status || "draft", createdBy: req.session.userId!,
   }).returning();
   res.status(201).json(parseDoc(doc));
 });
@@ -73,20 +89,32 @@ router.post("/delivery-orders", async (req, res): Promise<void> => {
 router.get("/delivery-orders/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
   const [doc] = await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id));
   if (!doc) { res.status(404).json({ error: "Delivery order not found" }); return; }
+
+  const userId = req.session.userId!;
+  const isAdmin = req.session.isAdmin ?? false;
+  if (doc.isPrivate && doc.createdBy !== userId && !isAdmin) {
+    res.status(403).json({ error: "Access denied" }); return;
+  }
+
   res.json(parseDoc(doc));
 });
 
 router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
-  const { customerName, customerAddress, customerContact, deliveryDate, notes, items, status } = req.body;
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const [updated] = await db.update(deliveryOrdersTable).set({
-    customerName, customerAddress, customerContact, deliveryDate, notes, items,
-    ...(status ? { status } : {}),
-  }).where(eq(deliveryOrdersTable.id, id)).returning();
+  const { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items, status, isPrivate } = req.body;
+
+  const updateData: any = { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items };
+  if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
+  if (status) updateData.status = status;
+
+  const [updated] = await db.update(deliveryOrdersTable).set(updateData).where(eq(deliveryOrdersTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Delivery order not found" }); return; }
   res.json(parseDoc(updated));
 });

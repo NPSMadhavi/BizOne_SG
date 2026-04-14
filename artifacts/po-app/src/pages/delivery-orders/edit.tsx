@@ -9,10 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
+import { DeliveryDateField } from "@/components/delivery-date-field";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { generateDO_PDF } from "@/lib/pdf";
+import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   description: z.string(),
@@ -25,6 +29,7 @@ const schema = z.object({
   customerContact: z.string().optional(),
   deliveryDate: z.string().optional(),
   notes: z.string().optional(),
+  isPrivate: z.boolean().default(false),
   status: z.enum(["draft", "confirmed", "cancelled"]),
   items: z.array(itemSchema).min(1),
 });
@@ -34,8 +39,10 @@ export default function DeliveryOrderEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const initialized = useRef(false);
 
   const { data: doc } = useGetDeliveryOrder(id, {
@@ -46,7 +53,7 @@ export default function DeliveryOrderEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
-      deliveryDate: "", notes: "", status: "draft",
+      deliveryDate: "", notes: "", isPrivate: false, status: "draft",
       items: [{ description: "", qty: 1 }],
     },
   });
@@ -60,6 +67,7 @@ export default function DeliveryOrderEdit() {
         customerContact: doc.customerContact || "",
         deliveryDate: doc.deliveryDate || "",
         notes: doc.notes || "",
+        isPrivate: (doc as any).isPrivate ?? false,
         status: doc.status as any,
         items: items.length > 0 ? items.map((i: any) => ({
           description: i.description || "",
@@ -96,7 +104,7 @@ export default function DeliveryOrderEdit() {
     return () => sub.unsubscribe();
   }, [form, append]);
 
-  async function onSubmit(values: z.infer<typeof schema>) {
+  async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => i.description.trim() !== "");
     if (filledItems.length === 0) {
@@ -107,8 +115,9 @@ export default function DeliveryOrderEdit() {
     updateMutation.mutate({ id, data: { ...values, items: filledItems } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
-        toast({ title: "Updated" });
-        setLocation(`/delivery-orders/${id}`);
+        setIsSubmitting(false);
+        if (openPreview) setPreviewOpen(true);
+        else { toast({ title: "Updated" }); setLocation(`/delivery-orders/${id}`); }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
@@ -155,22 +164,29 @@ export default function DeliveryOrderEdit() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="status" render={({ field }) => (
                   <FormItem><FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select></FormItem>
+                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="draft">Draft</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select></FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl></FormItem>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
                 )} />
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem><FormLabel>Notes</FormLabel>
                     <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1"><FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p></div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </div>
+                  </FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -220,9 +236,21 @@ export default function DeliveryOrderEdit() {
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
+            <Button type="button" disabled={isSubmitting} variant="secondary" className="gap-2" onClick={() => form.handleSubmit(v => onSubmit(v, true))()}>
+              <Eye className="h-4 w-4" />
+              Save & Preview
+            </Button>
           </div>
         </form>
       </Form>
+      <PdfPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        docType="delivery-order"
+        docId={id}
+        companyId={selectedCompany ?? undefined}
+        onEdit={() => { setPreviewOpen(false); }}
+      />
     </div>
   );
 }

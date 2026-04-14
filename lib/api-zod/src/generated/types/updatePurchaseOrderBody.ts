@@ -12,10 +12,14 @@ export interface UpdatePurchaseOrderBody {
   vendorName: string;
   vendorAddress?: string;
   vendorContact?: string;
+  vendorContactEmail?: string;
   deliveryAddress?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  quoteRefNo?: string;
   notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
   status?: UpdatePurchaseOrderBodyStatus;
   items: POItem[];
   tax?: number;

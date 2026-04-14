@@ -10,10 +10,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { generateQuotation_PDF } from "@/lib/pdf";
+import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   partNumber: z.string(),
@@ -43,6 +47,7 @@ const schema = z.object({
   status: z.enum(["draft", "confirmed", "cancelled"]),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
+  isPrivate: z.boolean().default(false),
   items: z.array(itemSchema).min(1),
 });
 
@@ -51,8 +56,10 @@ export default function QuotationEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const initialized = useRef(false);
 
   const { data: doc } = useGetQuotation(id, {
@@ -66,6 +73,7 @@ export default function QuotationEdit() {
       paymentTerms: "", notes: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
+      isPrivate: false,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
     },
   });
@@ -84,6 +92,7 @@ export default function QuotationEdit() {
         status: doc.status as any,
         tax: doc.tax ? Number(doc.totalAmount && doc.subtotal ? ((Number(doc.tax) / Number(doc.subtotal)) * 100) : 9) : 9,
         discountAmount: Number((doc as any).discountAmount) || 0,
+        isPrivate: (doc as any).isPrivate ?? false,
         items: items.length > 0 ? items.map((i: any) => ({
           partNumber: i.partNumber || "",
           description: i.description || "",
@@ -136,7 +145,7 @@ export default function QuotationEdit() {
   const totalAmount = taxableAmount + taxAmount;
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(v);
 
-  async function onSubmit(values: z.infer<typeof schema>) {
+  async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
     if (filledItems.length === 0) {
@@ -149,10 +158,11 @@ export default function QuotationEdit() {
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     updateMutation.mutate({ id, data: { ...values, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
-      onSuccess: (updated) => {
+      onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetQuotationQueryKey(id) });
-        toast({ title: "Updated", description: "Quotation updated." });
-        setLocation(`/quotations/${id}`);
+        setIsSubmitting(false);
+        if (openPreview) setPreviewOpen(true);
+        else { toast({ title: "Updated" }); setLocation(`/quotations/${id}`); }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
@@ -223,18 +233,25 @@ export default function QuotationEdit() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="status" render={({ field }) => (
                   <FormItem><FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select></FormItem>
+                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="draft">Draft</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select></FormItem>
                 )} />
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
-                    <FormControl><Input {...field} /></FormControl></FormItem>
+                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1"><FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
+                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p></div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </div>
+                  </FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -336,9 +353,21 @@ export default function QuotationEdit() {
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
+            <Button type="button" disabled={isSubmitting} variant="secondary" className="gap-2" onClick={() => form.handleSubmit(v => onSubmit(v, true))()}>
+              <Eye className="h-4 w-4" />
+              Save & Preview
+            </Button>
           </div>
         </form>
       </Form>
+      <PdfPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        docType="quotation"
+        docId={id}
+        companyId={selectedCompany ?? undefined}
+        onEdit={() => { setPreviewOpen(false); }}
+      />
     </div>
   );
 }

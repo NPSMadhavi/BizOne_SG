@@ -13,7 +13,9 @@ export interface UpdateDeliveryOrderBody {
   customerAddress?: string;
   customerContact?: string;
   deliveryDate?: string;
+  paymentTerms?: string;
   notes?: string;
+  isPrivate?: boolean;
   status?: UpdateDeliveryOrderBodyStatus;
   items: DOItem[];
 }
