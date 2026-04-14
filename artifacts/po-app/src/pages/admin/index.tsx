@@ -43,7 +43,7 @@ export interface CompanyAccessEntry {
 const userSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters").or(z.literal("")),
-  role: z.enum(["admin", "user"]),
+  role: z.enum(["admin", "user", "external"]),
   companyAccess: z.array(z.object({
     companyId: z.number(),
     modules: z.array(z.string()).min(1, "Select at least one module"),
@@ -299,8 +299,14 @@ export default function Admin() {
             <SelectContent>
               <SelectItem value="user">User</SelectItem>
               <SelectItem value="admin">Administrator</SelectItem>
+              <SelectItem value="external">External User</SelectItem>
             </SelectContent>
           </Select>
+          {field.value === "external" && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              External users can only see documents they created. Admins and regular users can still view their documents.
+            </p>
+          )}
           <FormMessage />
         </FormItem>
       )} />
@@ -417,8 +423,11 @@ export default function Admin() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="capitalize">
-                        {u.role}
+                      <Badge
+                        variant={u.role === 'admin' ? 'default' : u.role === 'external' ? 'outline' : 'secondary'}
+                        className={u.role === 'external' ? 'text-amber-600 border-amber-300 bg-amber-50' : ''}
+                      >
+                        {u.role === 'admin' ? 'Administrator' : u.role === 'external' ? 'External' : 'User'}
                       </Badge>
                     </td>
                     <td className="px-6 py-4">

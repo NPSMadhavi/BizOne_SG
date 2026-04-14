@@ -8,6 +8,7 @@ declare module "express-session" {
     userId?: number;
     companyId?: number;
     isAdmin?: boolean;
+    userRole?: string;
   }
 }
 
@@ -36,7 +37,8 @@ function parsePO(po: any) {
   };
 }
 
-function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
+function visibilityFilter(docs: any[], userId: number, isAdmin: boolean, isExternal: boolean) {
+  if (isExternal) return docs.filter(d => d.createdBy === userId);
   return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
 }
 
@@ -56,12 +58,13 @@ router.get("/purchase-orders/stats", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
 
   const all = companyId
     ? await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.companyId, companyId))
     : await db.select().from(purchaseOrdersTable);
 
-  const visible = visibilityFilter(all, userId, isAdmin);
+  const visible = visibilityFilter(all, userId, isAdmin, isExternal);
   res.json({
     total: visible.length,
     confirmed: visible.filter(p => p.status === "confirmed").length,
@@ -76,12 +79,13 @@ router.get("/purchase-orders", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
 
   const pos = companyId
     ? await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.companyId, companyId)).orderBy(desc(purchaseOrdersTable.createdAt))
     : await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
 
-  const visible = visibilityFilter(pos, userId, isAdmin).map(parsePO);
+  const visible = visibilityFilter(pos, userId, isAdmin, isExternal).map(parsePO);
   res.json(await withUsernames(visible));
 });
 
@@ -136,6 +140,10 @@ router.get("/purchase-orders/:id", async (req, res): Promise<void> => {
 
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
+  if (isExternal && po.createdBy !== userId) {
+    res.status(403).json({ error: "Access denied" }); return;
+  }
   if (po.isPrivate && po.createdBy !== userId && !isAdmin) {
     res.status(403).json({ error: "Access denied" }); return;
   }
@@ -187,6 +195,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
 router.delete("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
   if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete purchase orders" }); return; }
 
   const id = parseInt(req.params.id);

@@ -18,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   logout: () => void;
   isAdmin: boolean;
+  isExternal: boolean;
   selectedCompany: UserCompany | null;
   setSelectedCompanyId: (id: number) => void;
   hasModuleAccess: (module: AppModule) => boolean;
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isAdmin = user?.role === "admin";
+  const isExternal = user?.role === "external";
   const effectiveCompanyId = localCompanyId ?? user?.selectedCompanyId ?? null;
   const selectedCompany = user?.companies?.find(c => c.id === effectiveCompanyId) ?? null;
 
@@ -77,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       logout: handleLogout,
       isAdmin,
+      isExternal,
       selectedCompany,
       setSelectedCompanyId,
       hasModuleAccess,

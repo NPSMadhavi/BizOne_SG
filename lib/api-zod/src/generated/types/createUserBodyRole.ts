@@ -12,4 +12,5 @@ export type CreateUserBodyRole =
 export const CreateUserBodyRole = {
   admin: "admin",
   user: "user",
+  external: "external",
 } as const;

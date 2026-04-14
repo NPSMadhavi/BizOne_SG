@@ -37,7 +37,8 @@ function parseDoc(doc: any) {
   };
 }
 
-function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
+function visibilityFilter(docs: any[], userId: number, isAdmin: boolean, isExternal: boolean) {
+  if (isExternal) return docs.filter(d => d.createdBy === userId);
   return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
 }
 
@@ -57,11 +58,12 @@ router.get("/quotations/stats", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
 
   const all = companyId
     ? await db.select().from(quotationsTable).where(eq(quotationsTable.companyId, companyId))
     : await db.select().from(quotationsTable);
-  const visible = visibilityFilter(all, userId, isAdmin);
+  const visible = visibilityFilter(all, userId, isAdmin, isExternal);
   res.json({
     total: visible.length,
     confirmed: visible.filter(x => x.status === "confirmed").length,
@@ -76,11 +78,12 @@ router.get("/quotations", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
 
   const docs = companyId
     ? await db.select().from(quotationsTable).where(eq(quotationsTable.companyId, companyId)).orderBy(desc(quotationsTable.createdAt))
     : await db.select().from(quotationsTable).orderBy(desc(quotationsTable.createdAt));
-  const visible = visibilityFilter(docs, userId, isAdmin).map(parseDoc);
+  const visible = visibilityFilter(docs, userId, isAdmin, isExternal).map(parseDoc);
   res.json(await withUsernames(visible));
 });
 
@@ -125,6 +128,10 @@ router.get("/quotations/:id", async (req, res): Promise<void> => {
 
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
+  if (isExternal && doc.createdBy !== userId) {
+    res.status(403).json({ error: "Access denied" }); return;
+  }
   if (doc.isPrivate && doc.createdBy !== userId && !isAdmin) {
     res.status(403).json({ error: "Access denied" }); return;
   }
@@ -167,6 +174,7 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 router.delete("/quotations/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const isAdmin = req.session.isAdmin ?? false;
+  const isExternal = req.session.userRole === "external";
   if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete quotations" }); return; }
   const id = parseInt(req.params.id);
   await db.delete(quotationsTable).where(eq(quotationsTable.id, id));

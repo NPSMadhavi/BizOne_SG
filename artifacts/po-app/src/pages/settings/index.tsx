@@ -462,9 +462,12 @@ export default function Settings() {
                   <div className="font-semibold text-lg">{user?.username}</div>
                   <div className="flex items-center gap-2 mt-1">
                     <Shield className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground capitalize">{user?.role}</span>
+                    <span className="text-sm text-muted-foreground capitalize">{user?.role === "external" ? "External User" : user?.role}</span>
                     {user?.role === "admin" && (
                       <Badge variant="default" className="ml-2 text-xs py-0">System Admin</Badge>
+                    )}
+                    {user?.role === "external" && (
+                      <Badge variant="outline" className="ml-2 text-xs py-0 text-amber-600 border-amber-300 bg-amber-50">External</Badge>
                     )}
                   </div>
                 </div>
