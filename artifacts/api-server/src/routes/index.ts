@@ -9,6 +9,7 @@ import invoicesRouter from "./invoices";
 import deliveryOrdersRouter from "./delivery-orders";
 import settingsRouter from "./settings";
 import emailRouter from "./email";
+import contactsRouter from "./contacts";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(invoicesRouter);
 router.use(deliveryOrdersRouter);
 router.use("/settings", settingsRouter);
 router.use(emailRouter);
+router.use(contactsRouter);
 
 export default router;

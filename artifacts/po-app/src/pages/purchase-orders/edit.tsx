@@ -31,6 +31,7 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generatePO_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
+import { ContactAutocomplete } from "@/components/contact-autocomplete";
 
 const itemSchema = z.object({
   partNumber: z.string(),
@@ -271,7 +272,19 @@ export default function PurchaseOrderEdit() {
                     <FormItem>
                       <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
-                        <Input placeholder="Acme Corp" {...field} />
+                        <ContactAutocomplete
+                          type="vendor"
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Acme Corp"
+                          onSelect={(c) => {
+                            form.setValue("vendorName", c.name);
+                            if (c.address) form.setValue("vendorAddress", c.address);
+                            if (c.contact) form.setValue("vendorContact", c.contact);
+                            if (c.email) form.setValue("vendorContactEmail", c.email);
+                            if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -3,6 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
+import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { useGetDeliveryOrder, useUpdateDeliveryOrder, getGetDeliveryOrderQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -146,7 +147,19 @@ export default function DeliveryOrderEdit() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl>
+                      <ContactAutocomplete
+                        type="customer"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onSelect={(c) => {
+                          form.setValue("customerName", c.name);
+                          if (c.address) form.setValue("customerAddress", c.address);
+                          if (c.contact) form.setValue("customerContact", c.contact);
+                          if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                        }}
+                      />
+                    </FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Address</FormLabel>

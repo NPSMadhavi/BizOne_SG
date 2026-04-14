@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
 import { useCreateQuotation, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -199,7 +200,21 @@ export default function QuotationNew() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input placeholder="Acme Corp" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl>
+                      <ContactAutocomplete
+                        type="customer"
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Acme Corp"
+                        onSelect={(c) => {
+                          form.setValue("customerName", c.name);
+                          if (c.address) form.setValue("customerAddress", c.address);
+                          if (c.contact) form.setValue("customerContact", c.contact);
+                          if (c.email) form.setValue("customerContactEmail", c.email);
+                          if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                        }}
+                      />
+                    </FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Address</FormLabel>

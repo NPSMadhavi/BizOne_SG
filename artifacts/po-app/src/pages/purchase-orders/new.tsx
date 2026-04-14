@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
 import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -244,7 +245,21 @@ export default function PurchaseOrderNew() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input placeholder="Acme Corp" {...field} /></FormControl>
+                      <FormControl>
+                        <ContactAutocomplete
+                          type="vendor"
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Acme Corp"
+                          onSelect={(c) => {
+                            form.setValue("vendorName", c.name);
+                            if (c.address) form.setValue("vendorAddress", c.address);
+                            if (c.contact) form.setValue("vendorContact", c.contact);
+                            if (c.email) form.setValue("vendorContactEmail", c.email);
+                            if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                          }}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
