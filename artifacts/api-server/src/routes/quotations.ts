@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, quotationsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { db, quotationsTable, usersTable } from "@workspace/db";
+import { eq, desc, inArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -41,6 +41,17 @@ function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
   return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
 }
 
+async function withUsernames(docs: any[]): Promise<any[]> {
+  const userIds = [...new Set(docs.map(d => d.createdBy))].filter(Boolean);
+  let usernameMap: Record<number, string> = {};
+  if (userIds.length > 0) {
+    const users = await db.select({ id: usersTable.id, username: usersTable.username })
+      .from(usersTable).where(inArray(usersTable.id, userIds));
+    usernameMap = Object.fromEntries(users.map(u => [u.id, u.username]));
+  }
+  return docs.map(d => ({ ...d, createdByUsername: usernameMap[d.createdBy] || null }));
+}
+
 router.get("/quotations/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
@@ -69,7 +80,8 @@ router.get("/quotations", async (req, res): Promise<void> => {
   const docs = companyId
     ? await db.select().from(quotationsTable).where(eq(quotationsTable.companyId, companyId)).orderBy(desc(quotationsTable.createdAt))
     : await db.select().from(quotationsTable).orderBy(desc(quotationsTable.createdAt));
-  res.json(visibilityFilter(docs, userId, isAdmin).map(parseDoc));
+  const visible = visibilityFilter(docs, userId, isAdmin).map(parseDoc);
+  res.json(await withUsernames(visible));
 });
 
 router.post("/quotations", async (req, res): Promise<void> => {
@@ -154,6 +166,8 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 
 router.delete("/quotations/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  const isAdmin = req.session.isAdmin ?? false;
+  if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete quotations" }); return; }
   const id = parseInt(req.params.id);
   await db.delete(quotationsTable).where(eq(quotationsTable.id, id));
   res.json({ success: true });

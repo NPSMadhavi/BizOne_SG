@@ -353,9 +353,11 @@ export default function InvoiceEdit() {
       <PdfPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        docType="invoice"
-        docId={id}
-        companyId={selectedCompany ?? undefined}
+        title={doc ? `Invoice ${doc.invNumber}` : "Invoice Preview"}
+        generatePdf={(opts) => generateInvoice_PDF(doc!, selectedCompany, opts)}
+        pdfFilename={doc ? `${doc.invNumber}.pdf` : "invoice.pdf"}
+        defaultEmailTo={(doc as any)?.customerContactEmail || ""}
+        defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
         onEdit={() => { setPreviewOpen(false); }}
       />
     </div>

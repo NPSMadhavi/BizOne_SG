@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, invoicesTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { db, invoicesTable, usersTable } from "@workspace/db";
+import { eq, desc, inArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -41,6 +41,17 @@ function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
   return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
 }
 
+async function withUsernames(docs: any[]): Promise<any[]> {
+  const userIds = [...new Set(docs.map(d => d.createdBy))].filter(Boolean);
+  let usernameMap: Record<number, string> = {};
+  if (userIds.length > 0) {
+    const users = await db.select({ id: usersTable.id, username: usersTable.username })
+      .from(usersTable).where(inArray(usersTable.id, userIds));
+    usernameMap = Object.fromEntries(users.map(u => [u.id, u.username]));
+  }
+  return docs.map(d => ({ ...d, createdByUsername: usernameMap[d.createdBy] || null }));
+}
+
 router.get("/invoices/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
@@ -69,7 +80,9 @@ router.get("/invoices", async (req, res): Promise<void> => {
   const docs = companyId
     ? await db.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId)).orderBy(desc(invoicesTable.createdAt))
     : await db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt));
-  res.json(visibilityFilter(docs, userId, isAdmin).map(parseDoc));
+
+  const visible = visibilityFilter(docs, userId, isAdmin).map(parseDoc);
+  res.json(await withUsernames(visible));
 });
 
 router.post("/invoices", async (req, res): Promise<void> => {
@@ -152,11 +165,46 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   res.json(parseDoc(updated));
 });
 
-router.delete("/invoices/:id", async (req, res): Promise<void> => {
+router.post("/invoices/:id/void", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
-  await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
-  res.json({ success: true });
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const { voidReason } = req.body;
+  if (!voidReason || !String(voidReason).trim()) {
+    res.status(400).json({ error: "Void reason is required" }); return;
+  }
+
+  const [existing] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
+  if (existing.status === "void") { res.status(400).json({ error: "Invoice is already voided" }); return; }
+
+  const [updated] = await db.update(invoicesTable)
+    .set({ status: "void", voidReason: String(voidReason).trim() })
+    .where(eq(invoicesTable.id, id))
+    .returning();
+  res.json(parseDoc(updated));
+});
+
+router.post("/invoices/:id/knock-off", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [existing] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
+  if (existing.status === "void") { res.status(400).json({ error: "Cannot knock off a voided invoice" }); return; }
+  if (existing.status === "paid") { res.status(400).json({ error: "Invoice is already marked as paid" }); return; }
+
+  const [updated] = await db.update(invoicesTable)
+    .set({ status: "paid" })
+    .where(eq(invoicesTable.id, id))
+    .returning();
+  res.json(parseDoc(updated));
+});
+
+router.delete("/invoices/:id", async (req, res): Promise<void> => {
+  res.status(403).json({ error: "Invoices cannot be deleted. Use Void or Knock-Off instead." });
 });
 
 export default router;

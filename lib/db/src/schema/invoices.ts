@@ -20,6 +20,7 @@ export const invoicesTable = pgTable("invoices", {
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("SGD"),
   status: text("status").notNull().default("draft"),
+  voidReason: text("void_reason"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

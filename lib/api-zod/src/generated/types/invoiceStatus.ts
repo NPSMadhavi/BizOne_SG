@@ -12,4 +12,6 @@ export const InvoiceStatus = {
   draft: "draft",
   confirmed: "confirmed",
   cancelled: "cancelled",
+  void: "void",
+  paid: "paid",
 } as const;

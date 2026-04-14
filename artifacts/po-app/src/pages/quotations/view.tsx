@@ -28,7 +28,7 @@ export default function QuotationView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany } = useAuth();
+  const { selectedCompany, isAdmin } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const { data: doc, isLoading } = useGetQuotation(id, {
@@ -92,24 +92,26 @@ export default function QuotationView() {
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/quotations/${id}/edit`)}>
             <Pencil className="h-4 w-4" />Edit
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="icon"><Trash2 className="h-4 w-4" /></Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Quotation?</AlertDialogTitle>
-                <AlertDialogDescription>This will permanently delete {doc.qtNumber}.</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => deleteMutation.mutate({ id }, {
-                  onSuccess: () => { toast({ title: "Deleted" }); setLocation("/quotations"); },
-                  onError: () => toast({ title: "Error", description: "Failed to delete", variant: "destructive" }),
-                })}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {isAdmin && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="icon"><Trash2 className="h-4 w-4" /></Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Quotation?</AlertDialogTitle>
+                  <AlertDialogDescription>This will permanently delete {doc.qtNumber}.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => deleteMutation.mutate({ id }, {
+                    onSuccess: () => { toast({ title: "Deleted" }); setLocation("/quotations"); },
+                    onError: () => toast({ title: "Error", description: "Failed to delete", variant: "destructive" }),
+                  })}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </div>
 

@@ -52,3 +52,4 @@ export * from "./updateUserBodyRole";
 export * from "./user";
 export * from "./userCompany";
 export * from "./userRole";
+export * from "./voidInvoiceBody";

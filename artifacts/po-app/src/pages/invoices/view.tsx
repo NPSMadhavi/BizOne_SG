@@ -1,10 +1,12 @@
-import { useGetInvoice, getGetInvoiceQueryKey, useDeleteInvoice } from "@workspace/api-client-react";
+import { useGetInvoice, getGetInvoiceQueryKey, useVoidInvoice, useKnockOffInvoice } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -15,6 +17,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -30,12 +35,17 @@ export default function InvoiceView() {
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidSubmitting, setVoidSubmitting] = useState(false);
 
-  const { data: doc, isLoading } = useGetInvoice(id, {
+  const { data: doc, isLoading, refetch } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
   });
 
-  const deleteMutation = useDeleteInvoice();
+  const voidMutation = useVoidInvoice();
+  const knockOffMutation = useKnockOffInvoice();
+
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: (doc as any)?.currency || "SGD" }).format(v);
 
   const getStatusBadge = (s: string) => {
@@ -43,8 +53,27 @@ export default function InvoiceView() {
       case "confirmed": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Confirmed</Badge>;
       case "draft": return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
+      case "void": return <Badge className="bg-gray-500 hover:bg-gray-600 text-sm py-1">Void</Badge>;
+      case "paid": return <Badge className="bg-blue-600 hover:bg-blue-700 text-sm py-1">Paid (Knocked Off)</Badge>;
       default: return <Badge variant="outline" className="text-sm py-1">{s}</Badge>;
     }
+  };
+
+  const handleVoid = async () => {
+    if (!voidReason.trim()) return;
+    setVoidSubmitting(true);
+    voidMutation.mutate({ id, data: { voidReason: voidReason.trim() } }, {
+      onSuccess: () => {
+        toast({ title: "Invoice Voided", description: "The invoice has been voided." });
+        setVoidDialogOpen(false);
+        setVoidReason("");
+        refetch();
+      },
+      onError: (err: any) => {
+        toast({ title: "Error", description: err.message || "Failed to void invoice", variant: "destructive" });
+      },
+      onSettled: () => setVoidSubmitting(false),
+    });
   };
 
   if (isLoading) return (
@@ -63,6 +92,10 @@ export default function InvoiceView() {
   const total = Number(doc.totalAmount) || 0;
   const discountAmt = Number((doc as any).discountAmount) || 0;
   const hasItemDiscount = items.some((item: any) => Number(item.discount) > 0);
+  const isVoided = doc.status === "void";
+  const isPaid = doc.status === "paid";
+  const canVoid = !isVoided && !isPaid;
+  const canKnockOff = !isVoided && !isPaid;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
@@ -77,7 +110,7 @@ export default function InvoiceView() {
             <p className="text-muted-foreground text-sm mt-0.5">Created {format(new Date(doc.createdAt), "d MMM yyyy")}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {(doc as any).isPrivate && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded-md px-2 py-1">
               <Lock className="h-3 w-3" />Private
@@ -86,29 +119,60 @@ export default function InvoiceView() {
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-4 w-4" />Preview & Download
           </Button>
-          <Button variant="outline" className="gap-2" onClick={() => setLocation(`/invoices/${id}/edit`)}>
-            <Pencil className="h-4 w-4" />Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="icon"><Trash2 className="h-4 w-4" /></Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Invoice?</AlertDialogTitle>
-                <AlertDialogDescription>This will permanently delete {doc.invNumber}.</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => deleteMutation.mutate({ id }, {
-                  onSuccess: () => { toast({ title: "Deleted" }); setLocation("/invoices"); },
-                  onError: () => toast({ title: "Error", description: "Failed to delete", variant: "destructive" }),
-                })}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {!isVoided && !isPaid && (
+            <Button variant="outline" className="gap-2" onClick={() => setLocation(`/invoices/${id}/edit`)}>
+              <Pencil className="h-4 w-4" />Edit
+            </Button>
+          )}
+          {canKnockOff && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50">
+                  <CheckCircle2 className="h-4 w-4" />Invoice Knock-Off
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Mark as Paid?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will mark {doc.invNumber} as paid / knocked off. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-blue-600 hover:bg-blue-700"
+                    onClick={() => knockOffMutation.mutate({ id }, {
+                      onSuccess: () => {
+                        toast({ title: "Knocked Off", description: "Invoice marked as paid." });
+                        refetch();
+                      },
+                      onError: (err: any) => toast({ title: "Error", description: err.message || "Failed", variant: "destructive" }),
+                    })}
+                  >
+                    Confirm Knock-Off
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {canVoid && (
+            <Button variant="outline" className="gap-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => setVoidDialogOpen(true)}>
+              <Ban className="h-4 w-4" />Void Invoice
+            </Button>
+          )}
         </div>
       </div>
+
+      {isVoided && (doc as any).voidReason && (
+        <div className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <Ban className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-gray-700">This invoice has been voided</p>
+            <p className="text-sm text-gray-500 mt-0.5">Reason: {(doc as any).voidReason}</p>
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
@@ -136,6 +200,7 @@ export default function InvoiceView() {
           <CardHeader><CardTitle className="text-base">Invoice Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             {doc.paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{doc.paymentTerms}</span></div>}
+            {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
             {doc.notes && <div><span className="text-muted-foreground">Notes:</span><p className="mt-0.5 whitespace-pre-line">{doc.notes}</p></div>}
           </CardContent>
         </Card>
@@ -192,6 +257,39 @@ export default function InvoiceView() {
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${doc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
       />
+
+      <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Void Invoice {doc.invNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Voiding an invoice cannot be undone. Please provide a reason for voiding.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="void-reason">Reason for Voiding <span className="text-destructive">*</span></Label>
+              <Textarea
+                id="void-reason"
+                placeholder="e.g. Duplicate invoice, wrong customer, etc."
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setVoidDialogOpen(false); setVoidReason(""); }}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!voidReason.trim() || voidSubmitting}
+              onClick={handleVoid}
+            >
+              {voidSubmitting ? "Voiding..." : "Void Invoice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

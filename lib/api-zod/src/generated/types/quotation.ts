@@ -28,5 +28,6 @@ export interface Quotation {
   totalAmount: string;
   status: QuotationStatus;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }

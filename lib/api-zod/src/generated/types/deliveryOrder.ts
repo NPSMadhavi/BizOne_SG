@@ -21,5 +21,6 @@ export interface DeliveryOrder {
   items: DOItem[];
   status: DeliveryOrderStatus;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }

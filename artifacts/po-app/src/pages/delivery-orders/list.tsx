@@ -63,6 +63,7 @@ export default function DeliveryOrderList() {
                 <th className="px-6 py-4 font-medium">DO Number</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
+                <th className="px-6 py-4 font-medium">Created By</th>
                 <th className="px-6 py-4 font-medium">Delivery Date</th>
                 <th className="px-6 py-4 font-medium text-center">Status</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
@@ -72,14 +73,14 @@ export default function DeliveryOrderList() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {[...Array(6)].map((_, j) => (
+                    {[...Array(7)].map((_, j) => (
                       <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : !filtered || filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50" />
                       <p>No delivery orders found.</p>
@@ -93,6 +94,7 @@ export default function DeliveryOrderList() {
                     <td className="px-6 py-4 font-medium text-primary">{doc.doNumber}</td>
                     <td className="px-6 py-4 text-muted-foreground">{format(new Date(doc.createdAt), "MMM d, yyyy")}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{(doc as any).createdByUsername || "—"}</td>
                     <td className="px-6 py-4 text-muted-foreground">{doc.deliveryDate || "—"}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
                     <td className="px-6 py-4 text-right">

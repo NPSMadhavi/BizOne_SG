@@ -246,9 +246,11 @@ export default function DeliveryOrderEdit() {
       <PdfPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        docType="delivery-order"
-        docId={id}
-        companyId={selectedCompany ?? undefined}
+        title={doc ? `Delivery Order ${doc.doNumber}` : "Delivery Order Preview"}
+        generatePdf={(opts) => generateDO_PDF(doc!, selectedCompany, opts)}
+        pdfFilename={doc ? `${doc.doNumber}.pdf` : "delivery-order.pdf"}
+        defaultEmailTo={(doc as any)?.customerContactEmail || ""}
+        defaultEmailSubject={doc ? `Delivery Order ${doc.doNumber}` : "Delivery Order"}
         onEdit={() => { setPreviewOpen(false); }}
       />
     </div>

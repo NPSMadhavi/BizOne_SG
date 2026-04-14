@@ -10,9 +10,9 @@ A full-stack document management application for three companies: RSV Infotech P
 - **Multi-company support** — 3 seeded companies; users are assigned to one or more companies; all documents are scoped per company
 - **Module access control** — per-company, per-user module permissions; admins see all modules; users only see modules they're granted
 - **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking; Sales Quote Ref No field
-- **Quotations** — full CRUD; configurable running number; GST pre-filled from settings; PDF generation
-- **Invoices** — full CRUD; configurable running number; GST pre-filled from settings; PDF generation
-- **Delivery Orders** — full CRUD; configurable running number; no pricing columns; PDF generation
+- **Quotations** — full CRUD (admin-only delete); configurable running number; GST pre-filled from settings; PDF generation with rich text bold/italic
+- **Invoices** — Void (with reason dialog) + Knock-Off (mark paid) instead of delete; no deletion ever; configurable running number; GST; PDF header shows "TAX INVOICE"; rich text bold/italic in item descriptions
+- **Delivery Orders** — full CRUD (admin-only delete); configurable running number; rich text bold/italic in item descriptions; PDF generation
 - **Settings** — centralized GST rate (admin-only edit); SMTP email config; **Running Numbers** card (per-doc-type prefix/counter/suffix with live preview)
 - **Email sending** — multi-recipient tag-input dialog (Outlook-style); send PO/Quotation/Invoice as PDF attachment via SMTP; reusable EmailSendDialog component
 - **PdfPreviewModal** — inline PDF preview (iframe) with Edit / Download / Send Email actions; used on all New, Edit, and View pages
@@ -23,6 +23,11 @@ A full-stack document management application for three companies: RSV Infotech P
 - **Multi-currency** — SGD, USD, EUR, GBP, MYR, INR; `fmtMoney(currency, amount)` helper using Intl.NumberFormat in PDFs
 - **Split contact fields** — separate "Contact Person" (name) and "Contact Email" fields on all forms
 - **Admin Panel** — manage users (create, edit, delete); nested company + module assignment UI
+- **Delete restrictions** — PO/QT/DO: delete button hidden for non-admin users; Invoice: no delete at all; void/knock-off workflow instead
+- **Void Invoice** — dialog prompts for reason; sets status to "void" with stored reason; displayed as banner on invoice view
+- **Invoice Knock-Off** — marks invoice as "paid"; confirmation dialog; both status values shown in list with blue/gray badges
+- **"Created By" column** — all 4 list pages show username of the person who created each document
+- **Rich text in PDFs** — bold/italic HTML formatting from the description editor is rendered in PDF item tables (autoTableRich helper)
 - Dashboard with stats
 - PDF generation using jsPDF + jspdf-autotable (consistent header/footer with selected company info)
 - Sidebar shows current company with a switch button for multi-company users; hides inaccessible module nav items

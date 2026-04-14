@@ -363,9 +363,11 @@ export default function QuotationEdit() {
       <PdfPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
-        docType="quotation"
-        docId={id}
-        companyId={selectedCompany ?? undefined}
+        title={doc ? `Quotation ${doc.qtNumber}` : "Quotation Preview"}
+        generatePdf={(opts) => generateQuotation_PDF(doc!, selectedCompany, opts)}
+        pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}
+        defaultEmailTo={(doc as any)?.customerContactEmail || ""}
+        defaultEmailSubject={doc ? `Quotation ${doc.qtNumber}` : "Quotation"}
         onEdit={() => { setPreviewOpen(false); }}
       />
     </div>

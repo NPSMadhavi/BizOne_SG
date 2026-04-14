@@ -76,7 +76,7 @@ export function PdfPreviewModal({
       <DialogContent className="max-w-4xl w-full h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between space-y-0">
           <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pr-8">
             {onEdit && (
               <Button variant="outline" size="sm" onClick={onEdit}>
                 Edit

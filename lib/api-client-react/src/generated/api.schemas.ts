@@ -145,6 +145,7 @@ export interface PurchaseOrder {
   totalAmount: number;
   status: PurchaseOrderStatus;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }
 
@@ -296,6 +297,7 @@ export interface Quotation {
   totalAmount: string;
   status: QuotationStatus;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }
 
@@ -357,6 +359,8 @@ export const InvoiceStatus = {
   draft: "draft",
   confirmed: "confirmed",
   cancelled: "cancelled",
+  void: "void",
+  paid: "paid",
 } as const;
 
 export interface Invoice {
@@ -378,7 +382,9 @@ export interface Invoice {
   tax: string;
   totalAmount: string;
   status: InvoiceStatus;
+  voidReason?: string;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }
 
@@ -461,6 +467,7 @@ export interface DeliveryOrder {
   items: DOItem[];
   status: DeliveryOrderStatus;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }
 
@@ -505,3 +512,7 @@ export interface UpdateDeliveryOrderBody {
   status?: UpdateDeliveryOrderBodyStatus;
   items: DOItem[];
 }
+
+export type VoidInvoiceBody = {
+  voidReason: string;
+};

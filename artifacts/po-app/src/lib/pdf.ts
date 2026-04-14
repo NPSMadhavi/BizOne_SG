@@ -25,6 +25,69 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+interface RichLine { text: string; bold: boolean; italic: boolean; }
+
+function htmlToRichLines(html: string): RichLine[] {
+  if (!html) return [];
+  const rawLines = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/?(ul|ol|div|h[1-6])[^>]*>/gi, "\n")
+    .split("\n");
+  const result: RichLine[] = [];
+  for (const rawLine of rawLines) {
+    const hasBold = /<(strong|b)\b/i.test(rawLine);
+    const hasItalic = /<(em|i)\b/i.test(rawLine);
+    const text = rawLine
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&nbsp;/g, " ")
+      .trim();
+    if (text) result.push({ text, bold: hasBold, italic: hasItalic });
+  }
+  return result;
+}
+
+function autoTableRich(
+  doc: jsPDF,
+  opts: any,
+  descColIdx: number,
+  richDescRows: RichLine[][]
+): void {
+  (doc as any).autoTable({
+    ...opts,
+    willDrawCell: (data: any) => {
+      if (data.section === "body" && data.column.index === descColIdx) {
+        data.cell.text = [];
+      }
+    },
+    didDrawCell: (data: any) => {
+      if (data.section !== "body" || data.column.index !== descColIdx) return;
+      const richLines = richDescRows[data.row.index];
+      if (!richLines || richLines.length === 0) return;
+      const jdoc = data.doc as jsPDF;
+      const cell = data.cell;
+      const padding = 4;
+      const x = cell.x + padding;
+      const maxW = cell.width - padding * 2;
+      let ty = cell.y + padding + 3.35;
+      jdoc.setFontSize(9.5);
+      for (const { text, bold, italic } of richLines) {
+        const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
+        jdoc.setFont("helvetica", style);
+        jdoc.setTextColor(60, 60, 60);
+        const wrapped = jdoc.splitTextToSize(text, maxW);
+        jdoc.text(wrapped, x, ty);
+        ty += wrapped.length * 4.5;
+      }
+    },
+  });
+}
+
 async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
   const res = await fetch(imageUrl);
   const blob = await res.blob();
@@ -237,12 +300,13 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
   const poCurrency = (po as any).currency || "SGD";
+  const poRichDesc = po.items.map((item: any) => htmlToRichLines(item.description));
   const tableData = po.items.map((item, index) => [
     index + 1, item.partNumber, htmlToText(item.description), item.qty,
     fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)),
   ]);
 
-  (doc as any).autoTable({
+  autoTableRich(doc, {
     startY: 113,
     head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
     body: tableData,
@@ -256,7 +320,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
     margin: { left: marginLeft, right: 14 },
-  });
+  }, 2, poRichDesc);
 
   const pageHeight = doc.internal.pageSize.getHeight();
   if (po.notes) {
@@ -327,6 +391,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtHeaders = hasItemDiscount
     ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
     : ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"];
+  const qtRichDesc = (qt.items as any[]).map((item: any) => htmlToRichLines(item.description));
   const tableData = (qt.items as any[]).map((item, i) => {
     const disc = Number(item.discount) || 0;
     const row = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty, fmtMoney(qtCurrency, Number(item.unitPrice))];
@@ -335,7 +400,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     return row;
   });
 
-  (doc as any).autoTable({
+  autoTableRich(doc, {
     startY: 107,
     head: [qtHeaders],
     body: tableData,
@@ -353,7 +418,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
     margin: { left: marginLeft, right: 14 },
-  });
+  }, 2, qtRichDesc);
 
   if (qt.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
@@ -428,7 +493,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "INVOICE", inv.invNumber, new Date(inv.createdAt).toLocaleDateString(), inv.status, info);
+  buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, new Date(inv.createdAt).toLocaleDateString(), inv.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
@@ -448,6 +513,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invHeaders = hasInvItemDiscount
     ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
     : ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"];
+  const invRichDesc = (inv.items as any[]).map((item: any) => htmlToRichLines(item.description));
   const tableData = (inv.items as any[]).map((item, i) => {
     const disc = Number(item.discount) || 0;
     const row = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty, fmtMoney(invCurrency, Number(item.unitPrice))];
@@ -456,7 +522,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     return row;
   });
 
-  (doc as any).autoTable({
+  autoTableRich(doc, {
     startY: 107,
     head: [invHeaders],
     body: tableData,
@@ -474,7 +540,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
     margin: { left: marginLeft, right: 14 },
-  });
+  }, 2, invRichDesc);
 
   if (inv.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
@@ -582,9 +648,10 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
   doc.text(formatDate(doDoc.deliveryDate), marginLeft + 32, 105);
 
-  const tableData = (doDoc.items as any[]).map((item, i) => [i + 1, item.description, item.qty]);
+  const doRichDesc = (doDoc.items as any[]).map((item: any) => htmlToRichLines(item.description));
+  const tableData = (doDoc.items as any[]).map((item, i) => [i + 1, htmlToText(item.description), item.qty]);
 
-  (doc as any).autoTable({
+  autoTableRich(doc, {
     startY: 113,
     head: [["#", "Description", "Qty"]],
     body: tableData,
@@ -598,7 +665,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
       2: { cellWidth: 20, halign: "center" },
     },
     margin: { left: marginLeft, right: 14 },
-  });
+  }, 1, doRichDesc);
 
   if (doDoc.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;

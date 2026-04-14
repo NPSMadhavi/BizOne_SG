@@ -43,6 +43,7 @@ import type {
   UpdateSettingsBody,
   UpdateUserBody,
   User,
+  VoidInvoiceBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -2481,6 +2482,177 @@ export const useDeleteInvoice = <
   TContext
 > => {
   return useMutation(getDeleteInvoiceMutationOptions(options));
+};
+
+/**
+ * @summary Void an invoice
+ */
+export const getVoidInvoiceUrl = (id: number) => {
+  return `/api/invoices/${id}/void`;
+};
+
+export const voidInvoice = async (
+  id: number,
+  voidInvoiceBody: VoidInvoiceBody,
+  options?: RequestInit,
+): Promise<Invoice> => {
+  return customFetch<Invoice>(getVoidInvoiceUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(voidInvoiceBody),
+  });
+};
+
+export const getVoidInvoiceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof voidInvoice>>,
+    TError,
+    { id: number; data: BodyType<VoidInvoiceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof voidInvoice>>,
+  TError,
+  { id: number; data: BodyType<VoidInvoiceBody> },
+  TContext
+> => {
+  const mutationKey = ["voidInvoice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof voidInvoice>>,
+    { id: number; data: BodyType<VoidInvoiceBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return voidInvoice(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VoidInvoiceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof voidInvoice>>
+>;
+export type VoidInvoiceMutationBody = BodyType<VoidInvoiceBody>;
+export type VoidInvoiceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Void an invoice
+ */
+export const useVoidInvoice = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof voidInvoice>>,
+    TError,
+    { id: number; data: BodyType<VoidInvoiceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof voidInvoice>>,
+  TError,
+  { id: number; data: BodyType<VoidInvoiceBody> },
+  TContext
+> => {
+  return useMutation(getVoidInvoiceMutationOptions(options));
+};
+
+/**
+ * @summary Mark invoice as paid (knock off)
+ */
+export const getKnockOffInvoiceUrl = (id: number) => {
+  return `/api/invoices/${id}/knock-off`;
+};
+
+export const knockOffInvoice = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Invoice> => {
+  return customFetch<Invoice>(getKnockOffInvoiceUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getKnockOffInvoiceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof knockOffInvoice>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof knockOffInvoice>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["knockOffInvoice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof knockOffInvoice>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return knockOffInvoice(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type KnockOffInvoiceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof knockOffInvoice>>
+>;
+
+export type KnockOffInvoiceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Mark invoice as paid (knock off)
+ */
+export const useKnockOffInvoice = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof knockOffInvoice>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof knockOffInvoice>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getKnockOffInvoiceMutationOptions(options));
 };
 
 /**

@@ -28,5 +28,6 @@ export interface PurchaseOrder {
   totalAmount: number;
   status: PurchaseOrderStatus;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }

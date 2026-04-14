@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, purchaseOrdersTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { db, purchaseOrdersTable, usersTable } from "@workspace/db";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -40,6 +40,17 @@ function visibilityFilter(docs: any[], userId: number, isAdmin: boolean) {
   return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
 }
 
+async function withUsernames(docs: any[]): Promise<any[]> {
+  const userIds = [...new Set(docs.map(d => d.createdBy))].filter(Boolean);
+  let usernameMap: Record<number, string> = {};
+  if (userIds.length > 0) {
+    const users = await db.select({ id: usersTable.id, username: usersTable.username })
+      .from(usersTable).where(inArray(usersTable.id, userIds));
+    usernameMap = Object.fromEntries(users.map(u => [u.id, u.username]));
+  }
+  return docs.map(d => ({ ...d, createdByUsername: usernameMap[d.createdBy] || null }));
+}
+
 router.get("/purchase-orders/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
@@ -70,7 +81,8 @@ router.get("/purchase-orders", async (req, res): Promise<void> => {
     ? await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.companyId, companyId)).orderBy(desc(purchaseOrdersTable.createdAt))
     : await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
 
-  res.json(visibilityFilter(pos, userId, isAdmin).map(parsePO));
+  const visible = visibilityFilter(pos, userId, isAdmin).map(parsePO);
+  res.json(await withUsernames(visible));
 });
 
 router.post("/purchase-orders", async (req, res): Promise<void> => {
@@ -174,6 +186,9 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
 
 router.delete("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
+  const isAdmin = req.session.isAdmin ?? false;
+  if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete purchase orders" }); return; }
+
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 

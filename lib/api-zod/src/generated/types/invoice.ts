@@ -27,6 +27,8 @@ export interface Invoice {
   tax: string;
   totalAmount: string;
   status: InvoiceStatus;
+  voidReason?: string;
   createdBy: number;
+  createdByUsername?: string;
   createdAt: string;
 }
