@@ -236,7 +236,7 @@ export default function Settings() {
                       Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
                     </p>
                   </div>
-                  {isAdmin && gstEditing && (
+                  {isAdmin && (
                     <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
                       <Save className="h-4 w-4" />
                       {updateSettings.isPending ? "Saving..." : "Save"}
@@ -321,7 +321,7 @@ export default function Settings() {
                     </div>
                   ))}
                   <div className="flex items-center gap-3">
-                    {isAdmin && rnEditing && (
+                    {isAdmin && (
                       <Button onClick={handleSaveRunningNumbers} disabled={updateSettings.isPending} className="gap-2">
                         <Save className="h-4 w-4" />
                         {updateSettings.isPending ? "Saving..." : "Save Running Numbers"}
@@ -419,7 +419,7 @@ export default function Settings() {
                     <p className="text-xs text-muted-foreground">The "From" name and email shown to recipients.</p>
                   </div>
                   <div className="flex items-center gap-3 flex-wrap pt-1">
-                    {isAdmin && smtpEditing && (
+                    {isAdmin && (
                       <Button onClick={handleSaveSmtp} disabled={updateSettings.isPending} className="gap-2">
                         <Save className="h-4 w-4" />
                         {updateSettings.isPending ? "Saving..." : "Save Email Settings"}
