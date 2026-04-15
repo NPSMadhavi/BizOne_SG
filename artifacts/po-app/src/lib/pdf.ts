@@ -689,7 +689,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
-  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, labelX - 8);
+  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, 120);
 
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
@@ -797,7 +797,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text("Total Amount:", labelX, ity);
   doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
-  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, labelX - 8);
+  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, 120);
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
