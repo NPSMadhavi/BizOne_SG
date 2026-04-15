@@ -242,6 +242,47 @@ function buildDocFooter(doc: jsPDF, docType: string) {
   }
 }
 
+function buildDoFooter(doc: jsPDF) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 14;
+  const marginRight = pageWidth - 14;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const totalPages = (doc as any).internal.pages.length - 1;
+  const footerY = pageHeight - 10;
+
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+
+    if (p === totalPages) {
+      const sigY = pageHeight - 62;
+
+      doc.setDrawColor(120, 120, 120);
+      doc.setLineWidth(0.3);
+      doc.line(marginLeft, sigY, marginLeft + 130, sigY);
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(60, 60, 60);
+      doc.text("Customer Authorised Signature(s) & Company official stamp/NRIC", marginLeft, sigY + 5);
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      const ackLines = doc.splitTextToSize(
+        "Received above goods in good order & condition. No further claim for damage, shortage or errors will be entertained after acceptance of goods.",
+        pageWidth - marginLeft * 2
+      );
+      doc.text(ackLines, marginLeft, sigY + 20);
+    }
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 100, 100);
+    doc.text("Confidential", pageWidth / 2, footerY, { align: "center" });
+    doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
+  }
+}
+
 // ── PURCHASE ORDER PDF ────────────────────────────────────────────────────────
 
 export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
@@ -690,7 +731,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     doc.text(doc.splitTextToSize(doDoc.notes, 120), marginLeft, notesY + 6);
   }
 
-  buildDocFooter(doc, "Delivery Order");
+  buildDoFooter(doc);
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${doDoc.doNumber}.pdf`);
 }

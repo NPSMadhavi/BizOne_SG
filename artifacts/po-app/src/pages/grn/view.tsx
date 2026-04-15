@@ -103,6 +103,14 @@ export default function GrnView() {
     },
   });
 
+  const allReceived = items.length > 0 && items.every((i) => i.received);
+  const someReceived = items.some((i) => i.received) && !allReceived;
+
+  const handleSelectAll = (checked: boolean) => {
+    setItems((prev) => prev.map((item) => ({ ...item, received: checked })));
+    setIsDirty(true);
+  };
+
   const handleToggleReceived = (index: number, checked: boolean) => {
     setItems((prev) => {
       const next = [...prev];
@@ -211,7 +219,18 @@ export default function GrnView() {
             <table className="w-full text-sm">
               <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-t">
                 <tr>
-                  <th className="px-4 py-3 font-medium w-12 text-center">Recv</th>
+                  <th className="px-4 py-3 font-medium w-12 text-center">
+                    <div className="flex flex-col items-center gap-1">
+                      <Checkbox
+                        checked={allReceived}
+                        data-state={someReceived ? "indeterminate" : allReceived ? "checked" : "unchecked"}
+                        onCheckedChange={(checked) => handleSelectAll(checked === true)}
+                        className={allReceived ? "border-emerald-600 data-[state=checked]:bg-emerald-600" : ""}
+                        aria-label="Select all"
+                      />
+                      <span>Recv</span>
+                    </div>
+                  </th>
                   <th className="px-4 py-3 font-medium">Part No.</th>
                   <th className="px-4 py-3 font-medium">Description</th>
                   <th className="px-4 py-3 font-medium text-center w-16">Qty</th>
