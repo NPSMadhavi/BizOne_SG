@@ -13,21 +13,27 @@ let _fontPromise: Promise<void> | null = null;
 
 function _bufToB64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
-  const CHUNK = 8192;
+  const CHUNK = 32768;
   const parts: string[] = [];
   for (let i = 0; i < bytes.length; i += CHUNK) {
-    parts.push(String.fromCharCode(...(bytes.subarray(i, i + CHUNK) as unknown as number[])));
+    // Use apply to avoid spread-operator stack limits on large TypedArrays
+    parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]));
   }
   return btoa(parts.join(""));
 }
 
 function _loadFonts(): Promise<void> {
-  const base = "https://cdn.jsdelivr.net/npm/roboto-fontface@0.10.0/fonts/roboto/";
+  const base = `${import.meta.env.BASE_URL}fonts/`;
+  const load = (name: string) =>
+    fetch(`${base}${name}`).then(r => {
+      if (!r.ok) throw new Error(`Font ${name} not found (${r.status})`);
+      return r.arrayBuffer();
+    });
   return Promise.all([
-    fetch(`${base}Roboto-Regular.ttf`).then(r => r.arrayBuffer()),
-    fetch(`${base}Roboto-Bold.ttf`).then(r => r.arrayBuffer()),
-    fetch(`${base}Roboto-Italic.ttf`).then(r => r.arrayBuffer()),
-    fetch(`${base}Roboto-BoldItalic.ttf`).then(r => r.arrayBuffer()),
+    load("Roboto-Regular.ttf"),
+    load("Roboto-Bold.ttf"),
+    load("Roboto-Italic.ttf"),
+    load("Roboto-BoldItalic.ttf"),
   ]).then(([reg, bold, ital, boldItal]) => {
     _fontCache = {
       regular: _bufToB64(reg),
@@ -35,8 +41,8 @@ function _loadFonts(): Promise<void> {
       italic: _bufToB64(ital),
       bolditalic: _bufToB64(boldItal),
     };
-    PDF_FONT = "Roboto";
-  }).catch(() => { /* keep helvetica on network error */ });
+    // PDF_FONT is set only after successful addFont in attachPdfFonts
+  }).catch((e) => { console.warn("Roboto fonts failed to load, using Helvetica:", e); });
 }
 
 function ensurePdfFonts(): Promise<void> {
@@ -55,7 +61,13 @@ function attachPdfFonts(doc: jsPDF): void {
     doc.addFont("Roboto-Italic.ttf", "Roboto", "italic");
     doc.addFileToVFS("Roboto-BoldItalic.ttf", _fontCache.bolditalic);
     doc.addFont("Roboto-BoldItalic.ttf", "Roboto", "bolditalic");
-  } catch { /* already registered */ }
+    PDF_FONT = "Roboto"; // Only mark as active after every variant is registered
+  } catch (e) {
+    console.warn("Roboto font registration failed, falling back to Helvetica:", e);
+    PDF_FONT = "helvetica"; // Ensure fallback is used for this generation
+    _fontCache = null;     // Clear cache so next attempt re-downloads
+    _fontPromise = null;
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -214,7 +226,8 @@ function renderEntityBlock(
 
 function fmtMoney(currency: string, amount: number): string {
   const SYMBOLS: Record<string, string> = {
-    SGD: "S$", USD: "$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ", INR: "\u20B9",
+    SGD: "S$", USD: "$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ",
+    INR: PDF_FONT === "Roboto" ? "\u20B9" : "Rs.",
   };
   const symbol = SYMBOLS[currency] ?? (currency + " ");
   const num = new Intl.NumberFormat("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
