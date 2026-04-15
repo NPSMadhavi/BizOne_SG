@@ -105,7 +105,8 @@ export default function DeliveryOrderNew() {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {
-          setLocation(`/delivery-orders/${data.id}`);
+          setSavedDoc(data);
+          setPreviewOpen(true);
         } else {
           toast({ title: "Draft saved." });
           setLocation("/delivery-orders");

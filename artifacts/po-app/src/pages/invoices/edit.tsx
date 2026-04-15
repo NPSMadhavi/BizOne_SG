@@ -175,7 +175,7 @@ export default function InvoiceEdit() {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         setIsSubmitting(false);
-        if (openPreview) { setLocation(`/invoices/${id}`); }
+        if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Draft saved." }); }
       },
       onError: (err: any) => {

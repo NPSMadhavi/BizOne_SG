@@ -175,7 +175,7 @@ export default function QuotationEdit() {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetQuotationQueryKey(id) });
         setIsSubmitting(false);
-        if (openPreview) { setLocation(`/quotations/${id}`); }
+        if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Draft saved." }); }
       },
       onError: (err: any) => {

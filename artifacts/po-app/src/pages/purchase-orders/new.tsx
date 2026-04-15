@@ -192,7 +192,8 @@ export default function PurchaseOrderNew() {
     try {
       const data = await saveDocument(values, "draft");
       if (!data) return;
-      setLocation(`/purchase-orders/${data.id}`);
+      setSavedPo(data);
+      setPreviewOpen(true);
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Failed to save.", variant: "destructive" });
     } finally {

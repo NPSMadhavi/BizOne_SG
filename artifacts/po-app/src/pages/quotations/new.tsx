@@ -150,7 +150,8 @@ export default function QuotationNew() {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {
-          setLocation(`/quotations/${data.id}`);
+          setSavedDoc(data);
+          setPreviewOpen(true);
         } else {
           toast({ title: "Draft saved." });
           setLocation("/quotations");

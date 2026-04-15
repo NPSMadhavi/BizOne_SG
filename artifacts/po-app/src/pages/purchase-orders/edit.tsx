@@ -629,7 +629,8 @@ export default function PurchaseOrderEdit() {
                   { id, data: { ...values, items: itemsWithAmount } },
                   {
                     onSuccess: async () => {
-                      setLocation(`/purchase-orders/${id}`);
+                      await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
+                      setPreviewOpen(true);
                     },
                     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
                   }

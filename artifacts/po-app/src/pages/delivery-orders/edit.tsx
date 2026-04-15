@@ -127,7 +127,7 @@ export default function DeliveryOrderEdit() {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
         setIsSubmitting(false);
-        if (openPreview) { setLocation(`/delivery-orders/${id}`); }
+        if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Draft saved." }); }
       },
       onError: (err: any) => {

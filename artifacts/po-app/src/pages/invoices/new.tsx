@@ -150,7 +150,8 @@ export default function InvoiceNew() {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {
-          setLocation(`/invoices/${data.id}`);
+          setSavedDoc(data);
+          setPreviewOpen(true);
         } else {
           toast({ title: "Draft saved." });
           setLocation("/invoices");
