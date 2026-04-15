@@ -471,7 +471,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(fmtMoney(poCurrency, taxAmount), valueX, totalsY + 7, { align: "right" });
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
-  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, totalsY + 17);
   doc.text(fmtMoney(poCurrency, Number(po.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
@@ -601,7 +601,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, ty, marginRight, ty);
   ty += 7;
-  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
@@ -743,7 +743,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, ity, marginRight, ity);
   ity += 7;
-  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ity);
   doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
