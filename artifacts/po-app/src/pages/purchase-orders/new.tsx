@@ -242,7 +242,7 @@ export default function PurchaseOrderNew() {
                   type="vendor"
                   onSelect={(v) => {
                     form.setValue("vendorName", v.name);
-                    form.setValue("vendorAddress", v.address);
+                    form.setValue("vendorAddress", v.fullAddress);
                     form.setValue("vendorContact", v.contactPerson);
                     form.setValue("vendorContactEmail", v.contactEmail);
                     if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);

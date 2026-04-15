@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users2, CheckCircle2, XCircle, MapPin } from "lucide-react";
 import { useGetSettings } from "@workspace/api-client-react";
 import { COUNTRIES } from "@/lib/countries";
 
@@ -25,6 +25,7 @@ interface Customer {
   companyId: number;
   name: string;
   address: string | null;
+  postalCode: string | null;
   country: string | null;
   contactPerson: string | null;
   contactEmail: string | null;
@@ -36,7 +37,7 @@ interface Customer {
 }
 
 const blank = (): Partial<Customer> => ({
-  name: "", address: "", country: "", contactPerson: "",
+  name: "", address: "", postalCode: "", country: "", contactPerson: "",
   contactEmail: "", phone: "", gstRegistered: false, gstNo: "", isActive: true,
 });
 
@@ -61,6 +62,11 @@ async function saveCustomer(data: Partial<Customer>, id?: number): Promise<Custo
 async function deleteCustomer(id: number) {
   const res = await fetch(`/api/customers/${id}`, { method: "DELETE", credentials: "include" });
   if (!res.ok) throw new Error("Failed to delete");
+}
+
+function formatAddress(c: Customer): string {
+  const parts = [c.address, c.postalCode].filter(Boolean);
+  return parts.join(", ") || "—";
 }
 
 export default function CustomersPage() {
@@ -108,7 +114,8 @@ export default function CustomersPage() {
   const filtered = customers.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.country || "").toLowerCase().includes(search.toLowerCase()) ||
-    (c.contactEmail || "").toLowerCase().includes(search.toLowerCase())
+    (c.contactEmail || "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.postalCode || "").includes(search)
   );
 
   const effectiveGst = (c: Customer) => {
@@ -131,7 +138,7 @@ export default function CustomersPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search customers by name, country or email…"
+          placeholder="Search by name, country, postal code or email…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="pl-9"
@@ -173,7 +180,12 @@ export default function CustomersPage() {
                     <tr key={c.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <div className="font-medium">{c.name}</div>
-                        {c.address && <div className="text-xs text-muted-foreground truncate max-w-[200px]">{c.address}</div>}
+                        {(c.address || c.postalCode) && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <MapPin className="h-2.5 w-2.5 shrink-0" />
+                            <span className="truncate max-w-[200px]">{formatAddress(c)}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{c.country || "—"}</td>
                       <td className="px-4 py-3">
@@ -240,7 +252,23 @@ export default function CustomersPage() {
 
             <div className="space-y-1.5">
               <Label>Address</Label>
-              <Textarea value={form.address || ""} onChange={e => setField("address", e.target.value)} placeholder="Full billing address" rows={2} className="resize-none" />
+              <Textarea
+                value={form.address || ""}
+                onChange={e => setField("address", e.target.value)}
+                placeholder="Street / unit number, building name"
+                rows={2}
+                className="resize-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Postal Code</Label>
+              <Input
+                value={form.postalCode || ""}
+                onChange={e => setField("postalCode", e.target.value)}
+                placeholder="e.g. 408564 (SG) or 530007 (IN)"
+                className="max-w-[200px]"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -291,7 +319,6 @@ export default function CustomersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirmation */}
       <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

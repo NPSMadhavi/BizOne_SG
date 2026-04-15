@@ -6,6 +6,7 @@ export const customersTable = pgTable("customers", {
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   address: text("address"),
+  postalCode: text("postal_code"),
   country: text("country"),
   contactPerson: text("contact_person"),
   contactEmail: text("contact_email"),

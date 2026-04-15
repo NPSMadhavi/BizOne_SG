@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Building2, Users2, Search, CheckCircle2 } from "lucide-react";
+import { Building2, Users2, Search, CheckCircle2, MapPin } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
 
@@ -14,6 +14,7 @@ interface DirectoryEntry {
   id: number;
   name: string;
   address: string | null;
+  postalCode: string | null;
   country: string | null;
   contactPerson: string | null;
   contactEmail: string | null;
@@ -26,12 +27,14 @@ interface DirectoryEntry {
 export interface PickedEntry {
   name: string;
   address: string;
+  postalCode: string;
   contactPerson: string;
   contactEmail: string;
   phone: string;
   effectiveGstRate: number;
   gstNo: string;
   country: string;
+  fullAddress: string;
 }
 
 interface DirectoryPickerButtonProps {
@@ -46,6 +49,14 @@ async function fetchEntries(type: "vendor" | "customer"): Promise<DirectoryEntry
   if (!res.ok) return [];
   const all: DirectoryEntry[] = await res.json();
   return all.filter(e => e.isActive);
+}
+
+function buildFullAddress(entry: DirectoryEntry): string {
+  const lines: string[] = [];
+  if (entry.address) lines.push(entry.address);
+  const cityLine = [entry.country, entry.postalCode].filter(Boolean).join(" ");
+  if (cityLine) lines.push(cityLine);
+  return lines.join("\n");
 }
 
 export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPickerButtonProps) {
@@ -64,7 +75,9 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
 
   const filtered = entries.filter(e =>
     e.name.toLowerCase().includes(search.toLowerCase()) ||
-    (e.country || "").toLowerCase().includes(search.toLowerCase())
+    (e.country || "").toLowerCase().includes(search.toLowerCase()) ||
+    (e.postalCode || "").includes(search) ||
+    (e.address || "").toLowerCase().includes(search.toLowerCase())
   );
 
   function computeEffectiveGst(entry: DirectoryEntry): number {
@@ -80,12 +93,14 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
     onSelect({
       name: entry.name,
       address: entry.address || "",
+      postalCode: entry.postalCode || "",
       contactPerson: entry.contactPerson || "",
       contactEmail: entry.contactEmail || "",
       phone: entry.phone || "",
       effectiveGstRate,
       gstNo: entry.gstNo || "",
       country: entry.country || "",
+      fullAddress: buildFullAddress(entry),
     });
     setSearch("");
     setOpen(false);
@@ -120,7 +135,7 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               autoFocus
-              placeholder={`Search ${type === "vendor" ? "vendors" : "customers"}…`}
+              placeholder={`Search by name, address or postal code…`}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-8 h-9 text-sm"
@@ -147,8 +162,17 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-medium text-sm truncate">{entry.name}</div>
-                        {entry.address && <div className="text-xs text-muted-foreground truncate mt-0.5">{entry.address}</div>}
-                        {entry.contactEmail && <div className="text-xs text-muted-foreground">{entry.contactEmail}</div>}
+                        {(entry.address || entry.postalCode) && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <MapPin className="h-2.5 w-2.5 shrink-0" />
+                            <span className="truncate">
+                              {[entry.address, entry.postalCode].filter(Boolean).join(", ")}
+                            </span>
+                          </div>
+                        )}
+                        {entry.contactEmail && (
+                          <div className="text-xs text-muted-foreground">{entry.contactEmail}</div>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         {entry.country && (

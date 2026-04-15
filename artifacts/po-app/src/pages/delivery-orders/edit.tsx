@@ -156,7 +156,7 @@ export default function DeliveryOrderEdit() {
                   type="customer"
                   onSelect={(c) => {
                     form.setValue("customerName", c.name);
-                    form.setValue("customerAddress", c.address);
+                    form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
                   }}

@@ -22,7 +22,7 @@ router.post("/customers", async (req, res) => {
   const companyId = (req.session as any).companyId;
   if (!companyId) return res.status(400).json({ error: "No company selected" });
 
-  const { name, address, country, contactPerson, contactEmail, phone, gstRegistered, gstNo } = req.body;
+  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo } = req.body;
   if (!name) return res.status(400).json({ error: "Name is required" });
 
   try {
@@ -30,6 +30,7 @@ router.post("/customers", async (req, res) => {
       companyId,
       name,
       address: address || null,
+      postalCode: postalCode || null,
       country: country || null,
       contactPerson: contactPerson || null,
       contactEmail: contactEmail || null,
@@ -49,12 +50,13 @@ router.put("/customers/:id", async (req, res) => {
   if (!companyId) return res.status(400).json({ error: "No company selected" });
 
   const id = parseInt(req.params.id);
-  const { name, address, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, isActive } = req.body;
+  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, isActive } = req.body;
 
   try {
     const [customer] = await db.update(customersTable).set({
       name,
       address: address || null,
+      postalCode: postalCode || null,
       country: country || null,
       contactPerson: contactPerson || null,
       contactEmail: contactEmail || null,
