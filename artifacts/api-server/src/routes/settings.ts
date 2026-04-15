@@ -132,12 +132,17 @@ router.put("/", async (req, res) => {
   if (bankDetails !== undefined) updateData.bankDetails = bankDetails;
   if (termsAndConditions !== undefined) updateData.termsAndConditions = termsAndConditions;
 
+  if (Object.keys(updateData).length === 0) {
+    return res.status(400).json({ error: "No fields to update" });
+  }
+
   try {
     const settings = await ensureSettings(companyId);
     const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
     const [updated] = await db.update(settingsTable).set(updateData).where(eq(settingsTable.id, settings.id)).returning();
     res.json(formatSettings(updated, company?.country));
   } catch (err) {
+    console.error("[settings PUT error]", err);
     res.status(500).json({ error: "Failed to update settings" });
   }
 });
