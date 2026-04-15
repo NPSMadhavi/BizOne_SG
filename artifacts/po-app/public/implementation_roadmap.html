@@ -3,356 +3,187 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Document Management System — Enhancement Roadmap</title>
+<title>DMS Enhancement Roadmap — RSV Infotech / Netopsys</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  @page {
+    size: A4 portrait;
+    margin: 15mm 14mm 14mm 14mm;
+  }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-    font-size: 13px;
+    font-size: 10pt;
     color: #1a1a2e;
-    background: #f7f8fc;
-    line-height: 1.6;
+    background: #e8eaed;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
-  .page {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 48px 52px;
+  /* Screen wrapper — A4 card */
+  .page-shell {
+    width: 210mm;
+    margin: 10mm auto;
     background: #fff;
-    min-height: 100vh;
-  }
-
-  /* HEADER */
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 3px solid #18212f;
-    padding-bottom: 24px;
-    margin-bottom: 32px;
-  }
-  .header-left h1 {
-    font-size: 22px;
-    font-weight: 700;
-    color: #18212f;
-    letter-spacing: -0.3px;
-  }
-  .header-left h2 {
-    font-size: 14px;
-    font-weight: 400;
-    color: #6b7280;
-    margin-top: 4px;
-  }
-  .header-right {
-    text-align: right;
-    font-size: 12px;
-    color: #6b7280;
-    line-height: 1.8;
-  }
-  .header-right strong {
-    color: #18212f;
-  }
-
-  /* SECTION HEADINGS */
-  .section-title {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: #9ca3af;
-    margin: 32px 0 12px;
-  }
-
-  /* EXECUTIVE SUMMARY */
-  .summary-box {
-    background: #f0f4ff;
-    border-left: 4px solid #3b5bdb;
-    border-radius: 4px;
-    padding: 16px 20px;
-    font-size: 13px;
-    color: #1e3a8a;
-    line-height: 1.75;
-  }
-
-  /* STATS ROW */
-  .stats-row {
-    display: flex;
-    gap: 16px;
-    margin: 20px 0;
-  }
-  .stat-card {
-    flex: 1;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 16px;
-    text-align: center;
-  }
-  .stat-card .num {
-    font-size: 28px;
-    font-weight: 700;
-    color: #18212f;
-  }
-  .stat-card .lbl {
-    font-size: 11px;
-    color: #6b7280;
-    margin-top: 2px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  /* PHASE CARD */
-  .phase {
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 24px;
-    page-break-inside: avoid;
-  }
-  .phase-header {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 14px 20px;
-    color: #fff;
-  }
-  .phase-header .badge {
-    font-size: 11px;
-    font-weight: 700;
-    background: rgba(255,255,255,0.2);
-    border-radius: 4px;
-    padding: 2px 8px;
-    letter-spacing: 0.5px;
-  }
-  .phase-header .phase-title {
-    font-size: 15px;
-    font-weight: 700;
-    flex: 1;
-  }
-  .phase-header .phase-duration {
-    font-size: 11px;
-    opacity: 0.85;
-    white-space: nowrap;
-  }
-
-  .phase-1 .phase-header { background: #1d4ed8; }
-  .phase-2 .phase-header { background: #0f766e; }
-  .phase-3 .phase-header { background: #7c3aed; }
-  .phase-4 .phase-header { background: #b45309; }
-
-  .phase-body {
-    padding: 0;
-  }
-
-  .feature-row {
-    display: grid;
-    grid-template-columns: 28px 1fr 160px 90px;
-    align-items: start;
-    padding: 13px 20px;
-    border-bottom: 1px solid #f3f4f6;
-    gap: 12px;
-  }
-  .feature-row:last-child { border-bottom: none; }
-  .feature-row:hover { background: #fafafa; }
-
-  .feature-num {
-    font-size: 11px;
-    font-weight: 700;
-    color: #9ca3af;
-    padding-top: 1px;
-  }
-  .feature-main {}
-  .feature-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: #111827;
-  }
-  .feature-desc {
-    font-size: 11.5px;
-    color: #6b7280;
-    margin-top: 2px;
-    line-height: 1.5;
-  }
-  .feature-module {
-    font-size: 10.5px;
-    color: #6b7280;
-    padding-top: 2px;
-    line-height: 1.5;
-  }
-  .tag {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 600;
-    border-radius: 3px;
-    padding: 1px 6px;
-    margin: 1px 2px 1px 0;
-    letter-spacing: 0.3px;
-  }
-  .tag-new   { background: #dbeafe; color: #1d4ed8; }
-  .tag-enh   { background: #dcfce7; color: #15803d; }
-  .tag-ux    { background: #fef9c3; color: #854d0e; }
-  .tag-fin   { background: #fce7f3; color: #9d174d; }
-
-  .effort-pill {
-    font-size: 10px;
-    font-weight: 700;
-    border-radius: 20px;
-    padding: 3px 10px;
-    text-align: center;
-    margin-top: 2px;
-  }
-  .effort-low    { background: #dcfce7; color: #166534; }
-  .effort-medium { background: #fef9c3; color: #854d0e; }
-  .effort-high   { background: #fee2e2; color: #991b1b; }
-
-  /* TIMELINE VISUAL */
-  .timeline-wrap {
-    margin: 8px 0 28px;
-  }
-  .tl-row {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    height: 38px;
-  }
-  .tl-label {
-    width: 80px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #374151;
-    flex-shrink: 0;
-  }
-  .tl-bar-wrap {
-    flex: 1;
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-  .tl-track {
-    width: 100%;
-    height: 26px;
-    background: #f3f4f6;
-    border-radius: 4px;
-    position: relative;
-  }
-  .tl-fill {
-    position: absolute;
-    top: 0; bottom: 0;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    padding-left: 8px;
-  }
-  .tl-fill span {
-    font-size: 10px;
-    font-weight: 600;
-    color: #fff;
-    white-space: nowrap;
-  }
-  .tl-months {
-    display: flex;
-    margin-left: 80px;
-    margin-bottom: 4px;
-  }
-  .tl-month {
-    font-size: 9.5px;
-    color: #9ca3af;
-    text-align: center;
-    flex: 1;
-  }
-
-  /* RISK TABLE */
-  .risk-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-top: 8px;
-  }
-  .risk-table th {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    padding: 8px 12px;
-    font-weight: 600;
-    text-align: left;
-    color: #374151;
-  }
-  .risk-table td {
-    border: 1px solid #e5e7eb;
-    padding: 8px 12px;
-    color: #4b5563;
-    vertical-align: top;
-  }
-  .risk-table tr:hover td { background: #fafafa; }
-
-  /* ASSUMPTIONS */
-  .assumption-list {
-    list-style: none;
-    padding: 0;
-  }
-  .assumption-list li {
-    padding: 6px 0 6px 20px;
-    position: relative;
-    font-size: 12.5px;
-    color: #4b5563;
-    border-bottom: 1px solid #f3f4f6;
-  }
-  .assumption-list li::before {
-    content: '→';
-    position: absolute;
-    left: 0;
-    color: #9ca3af;
-  }
-
-  /* SIGN-OFF */
-  .signoff {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 24px;
-    margin-top: 12px;
-  }
-  .signoff-block {
-    border-top: 1px solid #d1d5db;
-    padding-top: 8px;
-  }
-  .signoff-block .role {
-    font-size: 11px;
-    font-weight: 700;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .signoff-block .name-line {
-    height: 32px;
-    border-bottom: 1px dashed #d1d5db;
-    margin: 8px 0;
-  }
-  .signoff-block .date-line {
-    font-size: 11px;
-    color: #9ca3af;
-  }
-
-  /* FOOTER */
-  .doc-footer {
-    border-top: 1px solid #e5e7eb;
-    padding-top: 12px;
-    margin-top: 36px;
-    display: flex;
-    justify-content: space-between;
-    font-size: 10.5px;
-    color: #9ca3af;
+    padding: 14mm 15mm 13mm 15mm;
+    box-shadow: 0 3px 24px rgba(0,0,0,0.14);
   }
 
   @media print {
-    body { background: #fff; }
-    .page { padding: 28px 36px; max-width: 100%; }
-    .phase { page-break-inside: avoid; }
+    body { background: none; }
+    .page-shell { width: 100%; margin: 0; padding: 0; box-shadow: none; }
   }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2.5pt solid #18212f;
+    padding-bottom: 7pt;
+    margin-bottom: 9pt;
+  }
+  .header-left h1 { font-size: 15pt; font-weight: 700; color: #18212f; letter-spacing: -0.3px; }
+  .header-left h2 { font-size: 9pt; font-weight: 400; color: #6b7280; margin-top: 2pt; }
+  .header-right { text-align: right; font-size: 7.5pt; color: #6b7280; line-height: 1.75; }
+  .header-right strong { color: #18212f; }
+
+  /* ── SECTION LABEL ── */
+  .slabel {
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #9ca3af;
+    margin: 9pt 0 4pt;
+    border-bottom: 0.5pt solid #e5e7eb;
+    padding-bottom: 2pt;
+  }
+
+  /* ── EXECUTIVE SUMMARY ── */
+  .summary {
+    background: #eff4ff;
+    border-left: 3pt solid #3b5bdb;
+    border-radius: 3pt;
+    padding: 7pt 10pt;
+    font-size: 8.5pt;
+    color: #1e3a8a;
+    line-height: 1.65;
+    margin-bottom: 7pt;
+  }
+  .summary strong { font-weight: 700; }
+
+  /* ── STATS ── */
+  .stats-row { display: flex; gap: 7pt; margin-bottom: 8pt; }
+  .stat {
+    flex: 1; border: 0.75pt solid #e5e7eb; border-radius: 4pt;
+    padding: 6pt 5pt; text-align: center; background: #fafafa;
+  }
+  .stat .n { font-size: 17pt; font-weight: 700; color: #18212f; line-height: 1.1; }
+  .stat .l { font-size: 6.5pt; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1pt; }
+
+  /* ── TIMELINE ── */
+  .tl-wrap { margin-bottom: 8pt; }
+  .tl-axis {
+    display: flex;
+    margin-left: 50pt;
+    margin-bottom: 2pt;
+  }
+  .tl-tick {
+    flex: 1;
+    font-size: 6.5pt;
+    color: #9ca3af;
+    text-align: left;
+    border-left: 0.5pt dashed #d1d5db;
+    padding-left: 2pt;
+    line-height: 1;
+  }
+  .tl-row { display: flex; align-items: center; height: 18pt; }
+  .tl-lbl { width: 50pt; font-size: 8pt; font-weight: 600; color: #374151; flex-shrink: 0; }
+  .tl-track {
+    flex: 1; height: 14pt; background: #f3f4f6;
+    border-radius: 3pt; position: relative; overflow: hidden;
+  }
+  .tl-fill {
+    position: absolute; top: 0; bottom: 0; border-radius: 3pt;
+    display: flex; align-items: center; padding-left: 6pt;
+  }
+  .tl-fill span { font-size: 7pt; font-weight: 600; color: #fff; white-space: nowrap; }
+  .c1 { background: #1d4ed8; }
+  .c2 { background: #0f766e; }
+  .c3 { background: #7c3aed; }
+  .c4 { background: #b45309; }
+
+  /* ── PHASE BLOCK ── */
+  .phase { border: 0.75pt solid #e5e7eb; border-radius: 5pt; overflow: hidden; margin-bottom: 7pt; page-break-inside: avoid; }
+  .phase-hdr { display: flex; align-items: center; gap: 7pt; padding: 6pt 9pt; color: #fff; }
+  .ph1 .phase-hdr { background: #1d4ed8; }
+  .ph2 .phase-hdr { background: #0f766e; }
+  .ph3 .phase-hdr { background: #7c3aed; }
+  .ph4 .phase-hdr { background: #b45309; }
+  .ph-badge { font-size: 6.5pt; font-weight: 700; background: rgba(255,255,255,0.22); border-radius: 2pt; padding: 1pt 5pt; letter-spacing: 0.3px; white-space: nowrap; }
+  .ph-title { font-size: 10.5pt; font-weight: 700; flex: 1; }
+  .ph-days { font-size: 7.5pt; opacity: 0.88; white-space: nowrap; }
+
+  .feat-row {
+    display: grid;
+    grid-template-columns: 15pt 1fr 76pt 42pt;
+    align-items: start;
+    padding: 6pt 9pt;
+    border-bottom: 0.5pt solid #f3f4f6;
+    gap: 6pt;
+  }
+  .feat-row:last-child { border-bottom: none; }
+  .feat-no { font-size: 7.5pt; font-weight: 700; color: #d1d5db; padding-top: 1pt; }
+  .feat-name { font-size: 9pt; font-weight: 700; color: #111827; line-height: 1.3; }
+  .feat-desc { font-size: 7.5pt; color: #6b7280; margin-top: 2pt; line-height: 1.5; }
+  .feat-tags { padding-top: 1pt; }
+  .tag { display: inline-block; font-size: 6.5pt; font-weight: 700; border-radius: 2pt; padding: 1pt 4pt; margin: 0 2pt 1pt 0; }
+  .tn { background: #dbeafe; color: #1d4ed8; }
+  .te { background: #dcfce7; color: #15803d; }
+  .tu { background: #fef9c3; color: #854d0e; }
+  .tf { background: #fce7f3; color: #9d174d; }
+  .feat-module { font-size: 7pt; color: #9ca3af; margin-top: 2pt; }
+
+  .effort { font-size: 7pt; font-weight: 700; border-radius: 10pt; padding: 2pt 5pt; text-align: center; margin-top: 2pt; white-space: nowrap; }
+  .eL { background: #dcfce7; color: #166534; }
+  .eM { background: #fef9c3; color: #854d0e; }
+  .eH { background: #fee2e2; color: #991b1b; }
+
+  /* ── LEGEND ── */
+  .legend { display: flex; gap: 10pt; align-items: center; font-size: 7pt; color: #6b7280; margin-bottom: 8pt; }
+  .legend strong { color: #374151; }
+
+  /* ── RISK TABLE ── */
+  .risk-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-top: 3pt; margin-bottom: 8pt; }
+  .risk-table th { background: #f9fafb; border: 0.5pt solid #e5e7eb; padding: 4pt 7pt; font-weight: 700; text-align: left; color: #374151; }
+  .risk-table td { border: 0.5pt solid #e5e7eb; padding: 4pt 7pt; color: #4b5563; vertical-align: top; line-height: 1.5; }
+
+  /* ── ASSUMPTIONS ── */
+  .assume-list { list-style: none; margin-bottom: 9pt; }
+  .assume-list li {
+    padding: 3pt 0 3pt 13pt; position: relative;
+    font-size: 7.5pt; color: #4b5563; border-bottom: 0.5pt solid #f3f4f6; line-height: 1.5;
+  }
+  .assume-list li::before { content: '→'; position: absolute; left: 0; color: #9ca3af; }
+
+  /* ── SIGN-OFF ── */
+  .signoff { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14pt; margin-top: 4pt; margin-bottom: 9pt; }
+  .sb { border-top: 0.75pt solid #d1d5db; padding-top: 5pt; }
+  .sb .role { font-size: 7pt; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sb .line { height: 22pt; border-bottom: 0.75pt dashed #d1d5db; margin: 4pt 0; }
+  .sb .dl { font-size: 7pt; color: #9ca3af; }
+
+  /* ── DOC FOOTER ── */
+  .doc-foot { border-top: 0.5pt solid #e5e7eb; padding-top: 5pt; display: flex; justify-content: space-between; font-size: 6.5pt; color: #9ca3af; }
 </style>
 </head>
 <body>
-<div class="page">
+<div class="page-shell">
 
   <!-- HEADER -->
   <div class="header">
@@ -362,379 +193,244 @@
     </div>
     <div class="header-right">
       <strong>Prepared by:</strong> Technology Team<br>
-      <strong>Date:</strong> April 2026<br>
+      <strong>Date:</strong> April 2026 &nbsp;&nbsp;
       <strong>Version:</strong> 1.0<br>
       <strong>Status:</strong> Pending Approval
     </div>
   </div>
 
   <!-- EXECUTIVE SUMMARY -->
-  <div class="section-title">Executive Summary</div>
-  <div class="summary-box">
-    The RSV Infotech / Netopsys Document Management System currently supports Purchase Orders, Quotations, Tax Invoices, Delivery Orders, and Goods Receipt Notes across three company entities. This proposal outlines <strong>15 targeted enhancements</strong> across four structured phases over an estimated <strong>10 months</strong>. The enhancements span new operational modules (Credit Notes, Purchase Requisitions, Expense Claims), financial intelligence tools (Invoice Aging, Partial Payments), workflow automation, and platform-wide UX improvements. Each phase is designed to deliver standalone business value so that work may be paused or reprioritised between phases without disrupting the live system.
+  <div class="slabel">Executive Summary</div>
+  <div class="summary">
+    The RSV Infotech / Netopsys Document Management System currently supports Purchase Orders, Quotations, Tax Invoices, Delivery Orders, and Goods Receipt Notes across three company entities. This proposal outlines <strong>15 targeted enhancements</strong> across four structured phases over an estimated <strong>55 working days</strong>. Enhancements span new operational modules (Credit Notes, Purchase Requisitions, Expense Claims), financial intelligence tools (Invoice Aging, Partial Payments), workflow automation, and platform-wide UX improvements. Each phase is designed to deliver standalone business value and can be paused or reprioritised between phases without disrupting the live system.
   </div>
 
   <!-- STATS -->
   <div class="stats-row">
-    <div class="stat-card"><div class="num">15</div><div class="lbl">Enhancements</div></div>
-    <div class="stat-card"><div class="num">4</div><div class="lbl">Phases</div></div>
-    <div class="stat-card"><div class="num">~10</div><div class="lbl">Months Total</div></div>
-    <div class="stat-card"><div class="num">3</div><div class="lbl">Companies Covered</div></div>
+    <div class="stat"><div class="n">15</div><div class="l">Enhancements</div></div>
+    <div class="stat"><div class="n">4</div><div class="l">Phases</div></div>
+    <div class="stat"><div class="n">55</div><div class="l">Working Days</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">Companies</div></div>
   </div>
 
-  <!-- TIMELINE VISUAL -->
-  <div class="section-title">High-Level Timeline</div>
-  <div class="timeline-wrap">
-    <div class="tl-months">
-      <div class="tl-month">Month 1</div>
-      <div class="tl-month">Month 2</div>
-      <div class="tl-month">Month 3</div>
-      <div class="tl-month">Month 4</div>
-      <div class="tl-month">Month 5</div>
-      <div class="tl-month">Month 6</div>
-      <div class="tl-month">Month 7</div>
-      <div class="tl-month">Month 8</div>
-      <div class="tl-month">Month 9</div>
-      <div class="tl-month">Month 10</div>
+  <!-- TIMELINE -->
+  <div class="slabel">Implementation Timeline (Working Days)</div>
+  <div class="tl-wrap">
+    <div class="tl-axis">
+      <div class="tl-tick">Day 1</div>
+      <div class="tl-tick">Day 6</div>
+      <div class="tl-tick">Day 11</div>
+      <div class="tl-tick">Day 16</div>
+      <div class="tl-tick">Day 21</div>
+      <div class="tl-tick">Day 26</div>
+      <div class="tl-tick">Day 31</div>
+      <div class="tl-tick">Day 36</div>
+      <div class="tl-tick">Day 41</div>
+      <div class="tl-tick">Day 46</div>
+      <div class="tl-tick">Day 51</div>
     </div>
     <div class="tl-row">
-      <div class="tl-label">Phase 1</div>
-      <div class="tl-bar-wrap">
-        <div class="tl-track">
-          <div class="tl-fill" style="left:0%;width:25%;background:#1d4ed8;"><span>Foundation (2.5 mo)</span></div>
-        </div>
-      </div>
+      <div class="tl-lbl">Phase 1</div>
+      <div class="tl-track"><div class="tl-fill c1" style="left:0%;width:22%"><span>Days 1 – 12</span></div></div>
     </div>
     <div class="tl-row">
-      <div class="tl-label">Phase 2</div>
-      <div class="tl-bar-wrap">
-        <div class="tl-track">
-          <div class="tl-fill" style="left:25%;width:30%;background:#0f766e;"><span>Financial Ops (3 mo)</span></div>
-        </div>
-      </div>
+      <div class="tl-lbl">Phase 2</div>
+      <div class="tl-track"><div class="tl-fill c2" style="left:22%;width:27%"><span>Days 13 – 27</span></div></div>
     </div>
     <div class="tl-row">
-      <div class="tl-label">Phase 3</div>
-      <div class="tl-bar-wrap">
-        <div class="tl-track">
-          <div class="tl-fill" style="left:55%;width:25%;background:#7c3aed;"><span>Automation (2.5 mo)</span></div>
-        </div>
-      </div>
+      <div class="tl-lbl">Phase 3</div>
+      <div class="tl-track"><div class="tl-fill c3" style="left:49%;width:29%"><span>Days 28 – 44</span></div></div>
     </div>
     <div class="tl-row">
-      <div class="tl-label">Phase 4</div>
-      <div class="tl-bar-wrap">
-        <div class="tl-track">
-          <div class="tl-fill" style="left:80%;width:20%;background:#b45309;"><span>Compliance (2 mo)</span></div>
-        </div>
-      </div>
+      <div class="tl-lbl">Phase 4</div>
+      <div class="tl-track"><div class="tl-fill c4" style="left:78%;width:22%"><span>Days 45 – 55</span></div></div>
     </div>
   </div>
 
   <!-- PHASE 1 -->
-  <div class="section-title">Phase 1 — Foundation &amp; Quick Wins &nbsp;|&nbsp; Months 1 – 2.5</div>
-  <div class="phase phase-1">
-    <div class="phase-header">
-      <div class="badge">PHASE 1</div>
-      <div class="phase-title">Foundation &amp; Quick Wins</div>
-      <div class="phase-duration">&#128197; Months 1 – 2.5 &nbsp;|&nbsp; 4 Features</div>
+  <div class="slabel">Phase 1 &mdash; Foundation &amp; Quick Wins &nbsp;&bull;&nbsp; Days 1 – 12 &nbsp;&bull;&nbsp; 4 Features</div>
+  <div class="phase ph1">
+    <div class="phase-hdr">
+      <div class="ph-badge">PHASE 1</div>
+      <div class="ph-title">Foundation &amp; Quick Wins</div>
+      <div class="ph-days">Days 1 – 12 &nbsp;|&nbsp; ~12 working days</div>
     </div>
-    <div class="phase-body">
-      <div class="feature-row">
-        <div class="feature-num">01</div>
-        <div class="feature-main">
-          <div class="feature-name">Vendor / Supplier Directory</div>
-          <div class="feature-desc">Maintain a centralised list of vendors with name, address, contact person, UEN, and default payment terms. Auto-fill these details when creating a new Purchase Order or GRN, eliminating repetitive data entry and reducing errors.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-new">New Module</span><br>
-          Affects: PO, GRN
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">02</div>
-        <div class="feature-main">
-          <div class="feature-name">Customer Directory</div>
-          <div class="feature-desc">Maintain a centralised list of customers with billing address, contact, and preferred payment terms. Auto-fill when creating Quotations, Invoices, and Delivery Orders. Enables faster document creation and consistent customer data.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-new">New Module</span><br>
-          Affects: QT, INV, DO
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">03</div>
-        <div class="feature-main">
-          <div class="feature-name">Global Search</div>
-          <div class="feature-desc">A single search bar accessible from every page that instantly finds documents (by number, vendor/customer name, or amount), vendors, and customers across all modules and all companies the user has access to.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-ux">UX</span><br>
-          All Modules
-        </div>
-        <div><div class="effort-pill effort-low">Low</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">04</div>
-        <div class="feature-main">
-          <div class="feature-name">Dashboard Enhancements</div>
-          <div class="feature-desc">Add monthly revenue trend chart, top 5 customers by invoice value, inventory low-stock alerts, and outstanding invoice totals — all filterable per company. Gives management a real-time operational snapshot on login.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-enh">Enhancement</span><br>
-          Dashboard
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
+    <div class="feat-row">
+      <div class="feat-no">01</div>
+      <div><div class="feat-name">Vendor / Supplier Directory</div><div class="feat-desc">Centralised vendor database with name, address, contact person, UEN, and default payment terms. Auto-fills PO and GRN forms — eliminates repetitive entry and reduces errors.</div></div>
+      <div class="feat-tags"><span class="tag tn">New Module</span><div class="feat-module">Affects: PO, GRN</div></div>
+      <div><div class="effort eM">Medium</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">02</div>
+      <div><div class="feat-name">Customer Directory</div><div class="feat-desc">Centralised customer database with billing address, contact, and preferred payment terms. Auto-fills Quotation, Invoice, and Delivery Order forms for consistent customer data.</div></div>
+      <div class="feat-tags"><span class="tag tn">New Module</span><div class="feat-module">Affects: QT, INV, DO</div></div>
+      <div><div class="effort eM">Medium</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">03</div>
+      <div><div class="feat-name">Global Search</div><div class="feat-desc">Unified search bar across all pages — instantly finds documents by number, vendor/customer name, or amount, across all companies the user has access to.</div></div>
+      <div class="feat-tags"><span class="tag tu">UX</span><div class="feat-module">All Modules</div></div>
+      <div><div class="effort eL">Low</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">04</div>
+      <div><div class="feat-name">Dashboard Enhancements</div><div class="feat-desc">Monthly revenue trend chart, top customers by invoice value, low-stock inventory alerts, and outstanding invoice totals — filterable per company for management overview.</div></div>
+      <div class="feat-tags"><span class="tag te">Enhancement</span><div class="feat-module">Dashboard</div></div>
+      <div><div class="effort eM">Medium</div></div>
     </div>
   </div>
 
   <!-- PHASE 2 -->
-  <div class="section-title">Phase 2 — Financial Intelligence &nbsp;|&nbsp; Months 3 – 5.5</div>
-  <div class="phase phase-2">
-    <div class="phase-header">
-      <div class="badge">PHASE 2</div>
-      <div class="phase-title">Financial Intelligence</div>
-      <div class="phase-duration">&#128197; Months 3 – 5.5 &nbsp;|&nbsp; 4 Features</div>
+  <div class="slabel">Phase 2 &mdash; Financial Intelligence &nbsp;&bull;&nbsp; Days 13 – 27 &nbsp;&bull;&nbsp; 4 Features</div>
+  <div class="phase ph2">
+    <div class="phase-hdr">
+      <div class="ph-badge">PHASE 2</div>
+      <div class="ph-title">Financial Intelligence</div>
+      <div class="ph-days">Days 13 – 27 &nbsp;|&nbsp; ~15 working days</div>
     </div>
-    <div class="phase-body">
-      <div class="feature-row">
-        <div class="feature-num">05</div>
-        <div class="feature-main">
-          <div class="feature-name">Credit Notes</div>
-          <div class="feature-desc">Issue a credit note linked to an existing Tax Invoice — for goods returns, overbilling corrections, or goodwill credits. Credit notes have their own running number (CN-XXXXXX), PDF generation, and email delivery. Full audit trail against the source invoice.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-new">New Module</span><br>
-          Linked to: INV
-        </div>
-        <div><div class="effort-pill effort-high">High</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">06</div>
-        <div class="feature-main">
-          <div class="feature-name">Partial Payments on Invoices</div>
-          <div class="feature-desc">Record multiple payment instalments against a single invoice — each with a date, amount, and reference. Track outstanding balance automatically and mark the invoice as fully paid when settled. Supports both cash and bank transfer references.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-enh">Enhancement</span><br>
-          Invoices
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">07</div>
-        <div class="feature-main">
-          <div class="feature-name">Invoice Aging Report</div>
-          <div class="feature-desc">A dedicated report page showing all outstanding invoices grouped into aging buckets: 0–30 days, 31–60 days, 61–90 days, and 90+ days overdue. Helps the finance team identify and chase overdue payments. Exportable to PDF and Excel.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-new">New Report</span><br>
-          Invoices
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">08</div>
-        <div class="feature-main">
-          <div class="feature-name">Quotation Expiry Alerts</div>
-          <div class="feature-desc">Automatically flag quotations approaching or past their 30-day validity window. Show a warning badge on the list and detail pages. Optionally send an automated email reminder to the customer before the quotation expires.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-enh">Enhancement</span><br>
-          Quotations
-        </div>
-        <div><div class="effort-pill effort-low">Low</div></div>
-      </div>
+    <div class="feat-row">
+      <div class="feat-no">05</div>
+      <div><div class="feat-name">Credit Notes</div><div class="feat-desc">Issue credits against existing Tax Invoices for returns, overbilling, or goodwill. Own running number (CN-XXXXXX), PDF, email delivery, and full audit trail against the source invoice.</div></div>
+      <div class="feat-tags"><span class="tag tn">New Module</span><div class="feat-module">Linked to: INV</div></div>
+      <div><div class="effort eH">High</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">06</div>
+      <div><div class="feat-name">Partial Payments on Invoices</div><div class="feat-desc">Record multiple payment instalments per invoice — each with date, amount, and reference. Outstanding balance tracked automatically; invoice marked paid when fully settled.</div></div>
+      <div class="feat-tags"><span class="tag te">Enhancement</span><div class="feat-module">Invoices</div></div>
+      <div><div class="effort eM">Medium</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">07</div>
+      <div><div class="feat-name">Invoice Aging Report</div><div class="feat-desc">Report showing outstanding invoices grouped into 0–30, 31–60, 61–90, and 90+ day buckets. Helps finance team identify and chase overdue payments. Exportable to PDF and Excel.</div></div>
+      <div class="feat-tags"><span class="tag tn">New Report</span><div class="feat-module">Invoices</div></div>
+      <div><div class="effort eM">Medium</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">08</div>
+      <div><div class="feat-name">Quotation Expiry Alerts</div><div class="feat-desc">Flag quotations approaching or past 30-day validity with warning badges. Optional automated email reminder to the customer before the quotation expires.</div></div>
+      <div class="feat-tags"><span class="tag te">Enhancement</span><div class="feat-module">Quotations</div></div>
+      <div><div class="effort eL">Low</div></div>
     </div>
   </div>
 
   <!-- PHASE 3 -->
-  <div class="section-title">Phase 3 — Workflow &amp; Automation &nbsp;|&nbsp; Months 6 – 8.5</div>
-  <div class="phase phase-3">
-    <div class="phase-header">
-      <div class="badge">PHASE 3</div>
-      <div class="phase-title">Workflow &amp; Automation</div>
-      <div class="phase-duration">&#128197; Months 6 – 8.5 &nbsp;|&nbsp; 4 Features</div>
+  <div class="slabel">Phase 3 &mdash; Workflow &amp; Automation &nbsp;&bull;&nbsp; Days 28 – 44 &nbsp;&bull;&nbsp; 4 Features</div>
+  <div class="phase ph3">
+    <div class="phase-hdr">
+      <div class="ph-badge">PHASE 3</div>
+      <div class="ph-title">Workflow &amp; Automation</div>
+      <div class="ph-days">Days 28 – 44 &nbsp;|&nbsp; ~17 working days</div>
     </div>
-    <div class="phase-body">
-      <div class="feature-row">
-        <div class="feature-num">09</div>
-        <div class="feature-main">
-          <div class="feature-name">Document Linking &amp; Conversion</div>
-          <div class="feature-desc">Convert a confirmed Quotation directly into a Tax Invoice with one click, carrying over all line items. Link POs to their GRNs and Delivery Orders. Each document shows a visual "document trail" (QT → INV, PO → GRN → DO) for full traceability.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-enh">Enhancement</span><br>
-          All Modules
-        </div>
-        <div><div class="effort-pill effort-high">High</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">10</div>
-        <div class="feature-main">
-          <div class="feature-name">Purchase Requisitions (PR)</div>
-          <div class="feature-desc">Internal approval workflow: staff raise a Purchase Requisition; an admin reviews and approves or rejects it; approved PRs can be converted into a Purchase Order in one click. Provides spending control and a procurement audit trail before any external PO is issued.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-new">New Module</span><br>
-          Linked to: PO
-        </div>
-        <div><div class="effort-pill effort-high">High</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">11</div>
-        <div class="feature-main">
-          <div class="feature-name">Recurring Invoices</div>
-          <div class="feature-desc">Schedule an invoice to auto-generate on a monthly or quarterly cadence — useful for retainer-based or subscription contracts. The system creates a draft invoice automatically on the due date, which staff review and confirm before sending to the customer.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-enh">Enhancement</span><br>
-          Invoices
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">12</div>
-        <div class="feature-main">
-          <div class="feature-name">Financial-Year Running Numbers</div>
-          <div class="feature-desc">Option to reset document counters at the start of the financial year (April for Singapore / India) rather than monthly. Configurable per company. Supports formats like INV-FY2627-0001. No impact on existing historical documents.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-enh">Enhancement</span><br>
-          Settings, All Docs
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
+    <div class="feat-row">
+      <div class="feat-no">09</div>
+      <div><div class="feat-name">Document Linking &amp; Conversion</div><div class="feat-desc">Convert a confirmed Quotation into a Tax Invoice with one click, carrying all line items. Link POs to GRNs and Delivery Orders. Visual document trail (QT→INV, PO→GRN→DO) on every page.</div></div>
+      <div class="feat-tags"><span class="tag te">Enhancement</span><div class="feat-module">All Modules</div></div>
+      <div><div class="effort eH">High</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">10</div>
+      <div><div class="feat-name">Purchase Requisitions (PR)</div><div class="feat-desc">Internal approval workflow: staff raise a PR; admin approves or rejects; approved PRs convert to PO in one click. Spending control and procurement audit trail before any external PO is issued.</div></div>
+      <div class="feat-tags"><span class="tag tn">New Module</span><div class="feat-module">Linked to: PO</div></div>
+      <div><div class="effort eH">High</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">11</div>
+      <div><div class="feat-name">Recurring Invoices</div><div class="feat-desc">Schedule invoices to auto-generate monthly or quarterly — for retainer or subscription contracts. System creates a draft on due date; staff review and confirm before sending to the customer.</div></div>
+      <div class="feat-tags"><span class="tag te">Enhancement</span><div class="feat-module">Invoices</div></div>
+      <div><div class="effort eM">Medium</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">12</div>
+      <div><div class="feat-name">Financial-Year Running Numbers</div><div class="feat-desc">Option to reset document counters at the start of the financial year (April for SG/India). Configurable per company. Supports formats like INV-FY2627-0001. No impact on historical documents.</div></div>
+      <div class="feat-tags"><span class="tag te">Enhancement</span><div class="feat-module">Settings, All Docs</div></div>
+      <div><div class="effort eM">Medium</div></div>
     </div>
   </div>
 
   <!-- PHASE 4 -->
-  <div class="section-title">Phase 4 — Compliance &amp; Advanced Operations &nbsp;|&nbsp; Months 9 – 10</div>
-  <div class="phase phase-4">
-    <div class="phase-header">
-      <div class="badge">PHASE 4</div>
-      <div class="phase-title">Compliance &amp; Advanced Operations</div>
-      <div class="phase-duration">&#128197; Months 9 – 10 &nbsp;|&nbsp; 3 Features</div>
+  <div class="slabel">Phase 4 &mdash; Compliance &amp; Advanced Operations &nbsp;&bull;&nbsp; Days 45 – 55 &nbsp;&bull;&nbsp; 3 Features</div>
+  <div class="phase ph4">
+    <div class="phase-hdr">
+      <div class="ph-badge">PHASE 4</div>
+      <div class="ph-title">Compliance &amp; Advanced Operations</div>
+      <div class="ph-days">Days 45 – 55 &nbsp;|&nbsp; ~11 working days</div>
     </div>
-    <div class="phase-body">
-      <div class="feature-row">
-        <div class="feature-num">13</div>
-        <div class="feature-main">
-          <div class="feature-name">Expense Claims</div>
-          <div class="feature-desc">Staff submit expense items with amount, category, date, and receipt upload. Admins review and approve or reject each claim. Approved claims are tracked for reimbursement. Supports SGD and INR per company. Monthly expense summaries exportable to PDF.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-new">New Module</span><br>
-          HR / Finance
-        </div>
-        <div><div class="effort-pill effort-high">High</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">14</div>
-        <div class="feature-main">
-          <div class="feature-name">Bulk Export (PDF ZIP &amp; CSV)</div>
-          <div class="feature-desc">Select multiple documents from any list view and download them all as PDFs packaged in a single ZIP file, or export the filtered list as a spreadsheet (CSV/Excel). Useful for monthly reconciliation, auditor submissions, and record-keeping.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-ux">UX</span><br>
-          All Modules
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
-      <div class="feature-row">
-        <div class="feature-num">15</div>
-        <div class="feature-main">
-          <div class="feature-name">Audit &amp; Activity Log</div>
-          <div class="feature-desc">Every create, edit, status change, void, email send, and deletion is recorded with the username, timestamp, and a before/after summary. Accessible to admins via a dedicated log page per document and a system-wide activity feed. Essential for regulatory compliance and internal accountability.</div>
-        </div>
-        <div class="feature-module">
-          <span class="tag tag-fin">Compliance</span><br>
-          All Modules
-        </div>
-        <div><div class="effort-pill effort-medium">Medium</div></div>
-      </div>
+    <div class="feat-row">
+      <div class="feat-no">13</div>
+      <div><div class="feat-name">Expense Claims</div><div class="feat-desc">Staff submit expenses with amount, category, date, and receipt upload. Admins approve or reject. Approved claims tracked for reimbursement. Supports SGD and INR. Monthly summaries exportable to PDF.</div></div>
+      <div class="feat-tags"><span class="tag tn">New Module</span><div class="feat-module">HR / Finance</div></div>
+      <div><div class="effort eH">High</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">14</div>
+      <div><div class="feat-name">Bulk Export — PDF ZIP &amp; CSV</div><div class="feat-desc">Select multiple documents from any list and download as PDFs in a single ZIP, or export the filtered list as a spreadsheet. Useful for reconciliation, auditor submissions, and record-keeping.</div></div>
+      <div class="feat-tags"><span class="tag tu">UX</span><div class="feat-module">All Modules</div></div>
+      <div><div class="effort eM">Medium</div></div>
+    </div>
+    <div class="feat-row">
+      <div class="feat-no">15</div>
+      <div><div class="feat-name">Audit &amp; Activity Log</div><div class="feat-desc">Every create, edit, status change, void, email send, and deletion is logged with username, timestamp, and before/after summary. Accessible to admins per document and via a system-wide activity feed.</div></div>
+      <div class="feat-tags"><span class="tag tf">Compliance</span><div class="feat-module">All Modules</div></div>
+      <div><div class="effort eM">Medium</div></div>
     </div>
   </div>
 
-  <!-- EFFORT LEGEND -->
-  <div style="display:flex;gap:16px;align-items:center;margin-bottom:28px;font-size:11px;color:#6b7280;">
-    <strong style="color:#374151;">Effort key:</strong>
-    <span><span class="effort-pill effort-low" style="display:inline-block;">Low</span> &lt; 1 week</span>
-    <span><span class="effort-pill effort-medium" style="display:inline-block;">Medium</span> 1 – 3 weeks</span>
-    <span><span class="effort-pill effort-high" style="display:inline-block;">High</span> 3 – 6 weeks</span>
+  <!-- LEGEND -->
+  <div class="legend">
+    <strong>Effort key:</strong>
+    <span><span class="effort eL" style="display:inline-block;padding:1pt 6pt;">Low</span>&nbsp; &lt; 2 days</span>
+    <span><span class="effort eM" style="display:inline-block;padding:1pt 6pt;">Medium</span>&nbsp; 2 – 5 days</span>
+    <span><span class="effort eH" style="display:inline-block;padding:1pt 6pt;">High</span>&nbsp; 5 – 10 days</span>
+    &nbsp;&nbsp;
+    <strong>Tags:</strong>
+    <span class="tag tn">New Module</span>
+    <span class="tag te">Enhancement</span>
+    <span class="tag tu">UX</span>
+    <span class="tag tf">Compliance</span>
   </div>
 
   <!-- RISKS -->
-  <div class="section-title">Risks &amp; Mitigations</div>
+  <div class="slabel">Risks &amp; Mitigations</div>
   <table class="risk-table">
     <thead>
       <tr>
-        <th style="width:22%">Risk</th>
-        <th style="width:22%">Likelihood</th>
+        <th style="width:27%">Risk</th>
+        <th style="width:14%">Likelihood</th>
         <th>Mitigation</th>
       </tr>
     </thead>
     <tbody>
-      <tr>
-        <td>Scope creep between phases</td>
-        <td>Medium</td>
-        <td>Each phase is independently deliverable. New requests are queued to the next phase rather than inserted mid-sprint.</td>
-      </tr>
-      <tr>
-        <td>Data migration complexity (Vendor/Customer directories)</td>
-        <td>Low</td>
-        <td>Directories are additive — existing documents are unaffected. Historical records are not required to reference directory entries.</td>
-      </tr>
-      <tr>
-        <td>User adoption of new modules (PR, Expense Claims)</td>
-        <td>Medium</td>
-        <td>Each new module includes a short user guide and an admin walk-through session before go-live.</td>
-      </tr>
-      <tr>
-        <td>Timeline slippage on high-effort items</td>
-        <td>Low–Medium</td>
-        <td>High-effort features (Credit Notes, Document Linking, PR) are scoped with buffer weeks. Phase end-dates are target, not hard deadlines.</td>
-      </tr>
+      <tr><td>Scope creep between phases</td><td>Medium</td><td>Each phase is independently deliverable. New requests are queued to the next phase rather than inserted mid-sprint.</td></tr>
+      <tr><td>Data migration (Vendor / Customer directories)</td><td>Low</td><td>Directories are purely additive — existing documents are unaffected and are not required to reference directory entries.</td></tr>
+      <tr><td>User adoption (PR, Expense Claims)</td><td>Medium</td><td>Each new module includes a short user guide and admin walk-through session before go-live.</td></tr>
+      <tr><td>Timeline slippage on high-effort items</td><td>Low–Medium</td><td>High-effort features are scoped with buffer days. Phase end-dates are targets, not hard deadlines.</td></tr>
     </tbody>
   </table>
 
   <!-- ASSUMPTIONS -->
-  <div class="section-title" style="margin-top:24px;">Assumptions &amp; Dependencies</div>
-  <ul class="assumption-list">
-    <li>The existing system infrastructure (PostgreSQL database, Express API, React frontend) remains unchanged throughout all phases.</li>
-    <li>Business requirements for each phase will be confirmed and signed off by stakeholders at least two weeks before development begins.</li>
-    <li>SMTP email configuration remains active for notification features (Quotation Expiry Alerts, Recurring Invoices).</li>
-    <li>File storage (for Expense Claim receipts) will use the existing cloud object storage already provisioned for the platform.</li>
-    <li>User testing and sign-off for each phase will be completed within one week of feature delivery before the next phase begins.</li>
+  <div class="slabel">Assumptions &amp; Dependencies</div>
+  <ul class="assume-list">
+    <li>Existing system infrastructure (PostgreSQL, Express API, React frontend) remains unchanged throughout all phases.</li>
+    <li>Business requirements for each phase will be confirmed at least 3 working days before development begins on that phase.</li>
+    <li>SMTP email configuration remains active for notification features (Expiry Alerts, Recurring Invoices).</li>
+    <li>File storage for Expense Claim receipts will use existing cloud object storage provisioned for the platform.</li>
+    <li>User acceptance testing (UAT) for each phase will be completed within 2 working days of feature delivery before the next phase begins.</li>
   </ul>
 
   <!-- SIGN-OFF -->
-  <div class="section-title" style="margin-top:28px;">Approval &amp; Sign-Off</div>
+  <div class="slabel">Approval &amp; Sign-Off</div>
   <div class="signoff">
-    <div class="signoff-block">
-      <div class="role">Prepared By</div>
-      <div class="name-line"></div>
-      <div class="date-line">Name / Date</div>
-    </div>
-    <div class="signoff-block">
-      <div class="role">Reviewed By</div>
-      <div class="name-line"></div>
-      <div class="date-line">Name / Date</div>
-    </div>
-    <div class="signoff-block">
-      <div class="role">Approved By</div>
-      <div class="name-line"></div>
-      <div class="date-line">Name / Date</div>
-    </div>
+    <div class="sb"><div class="role">Prepared By</div><div class="line"></div><div class="dl">Name &nbsp;/&nbsp; Date</div></div>
+    <div class="sb"><div class="role">Reviewed By</div><div class="line"></div><div class="dl">Name &nbsp;/&nbsp; Date</div></div>
+    <div class="sb"><div class="role">Approved By</div><div class="line"></div><div class="dl">Name &nbsp;/&nbsp; Date</div></div>
   </div>
 
   <!-- DOC FOOTER -->
-  <div class="doc-footer">
+  <div class="doc-foot">
     <span>RSV Infotech / Netopsys &mdash; Internal Document &mdash; Confidential</span>
-    <span>DMS Enhancement Roadmap v1.0 &mdash; April 2026</span>
+    <span>DMS Enhancement Roadmap &nbsp;v1.0 &mdash; April 2026</span>
   </div>
 
 </div>
