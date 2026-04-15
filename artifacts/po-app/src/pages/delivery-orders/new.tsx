@@ -103,13 +103,12 @@ export default function DeliveryOrderNew() {
     }
     createMutation.mutate({ data: { ...values, items: filledItems } }, {
       onSuccess: (data) => {
-        setSavedDoc(data);
         setIsSubmitting(false);
         if (openPreview) {
-          setPreviewOpen(true);
-        } else {
-          toast({ title: "Delivery order saved as draft." });
           setLocation(`/delivery-orders/${data.id}`);
+        } else {
+          toast({ title: "Draft saved." });
+          setLocation("/delivery-orders");
         }
       },
       onError: (err: any) => {
@@ -271,7 +270,7 @@ export default function DeliveryOrderNew() {
             <Button type="button" variant="outline" onClick={() => setLocation("/delivery-orders")}>Cancel</Button>
             <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save Draft"}
+              {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button
               type="button"
@@ -280,7 +279,7 @@ export default function DeliveryOrderNew() {
               onClick={form.handleSubmit(v => onSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save & Preview"}
+              {isSubmitting ? "Saving..." : "Save"}
             </Button>
           </div>
         </form>

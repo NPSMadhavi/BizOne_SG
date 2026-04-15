@@ -127,8 +127,8 @@ export default function DeliveryOrderEdit() {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
         setIsSubmitting(false);
-        if (openPreview) setPreviewOpen(true);
-        else { toast({ title: "Updated" }); setLocation(`/delivery-orders/${id}`); }
+        if (openPreview) { setLocation(`/delivery-orders/${id}`); }
+        else { toast({ title: "Draft saved." }); }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
@@ -291,11 +291,11 @@ export default function DeliveryOrderEdit() {
             <Button type="button" variant="outline" onClick={() => setLocation(`/delivery-orders/${id}`)}>Cancel</Button>
             <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save Changes"}
+              {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button type="button" disabled={isSubmitting} variant="secondary" className="gap-2" onClick={() => form.handleSubmit(v => onSubmit(v, true))()}>
               <Eye className="h-4 w-4" />
-              Save & Preview
+              Save
             </Button>
           </div>
         </form>

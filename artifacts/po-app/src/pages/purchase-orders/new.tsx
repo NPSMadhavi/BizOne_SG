@@ -178,8 +178,8 @@ export default function PurchaseOrderNew() {
     try {
       const data = await saveDocument(values, "draft");
       if (!data) return;
-      toast({ title: "Saved", description: "Purchase order saved as draft." });
-      setLocation(`/purchase-orders/${data.id}`);
+      toast({ title: "Draft saved." });
+      setLocation("/purchase-orders");
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Failed to save draft.", variant: "destructive" });
     } finally {
@@ -192,8 +192,7 @@ export default function PurchaseOrderNew() {
     try {
       const data = await saveDocument(values, "draft");
       if (!data) return;
-      setSavedPo(data);
-      setPreviewOpen(true);
+      setLocation(`/purchase-orders/${data.id}`);
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Failed to save.", variant: "destructive" });
     } finally {
@@ -518,7 +517,7 @@ export default function PurchaseOrderNew() {
               onClick={form.handleSubmit(onSaveDraft)}
             >
               <Save className="h-4 w-4" />
-              Save Draft
+              Save as Draft
             </Button>
             <Button
               type="button"
@@ -531,7 +530,7 @@ export default function PurchaseOrderNew() {
               ) : (
                 <>
                   <Eye className="h-4 w-4" />
-                  Save & Preview
+                  Save
                 </>
               )}
             </Button>

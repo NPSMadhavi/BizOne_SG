@@ -147,13 +147,12 @@ export default function InvoiceNew() {
     });
     createMutation.mutate({ data: { ...values, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: (data) => {
-        setSavedDoc(data);
         setIsSubmitting(false);
         if (openPreview) {
-          setPreviewOpen(true);
-        } else {
-          toast({ title: "Invoice saved as draft." });
           setLocation(`/invoices/${data.id}`);
+        } else {
+          toast({ title: "Draft saved." });
+          setLocation("/invoices");
         }
       },
       onError: (err: any) => {
@@ -390,7 +389,7 @@ export default function InvoiceNew() {
             <Button type="button" variant="outline" onClick={() => setLocation("/invoices")}>Cancel</Button>
             <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save Draft"}
+              {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button
               type="button"
@@ -399,7 +398,7 @@ export default function InvoiceNew() {
               onClick={form.handleSubmit(v => onSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save & Preview"}
+              {isSubmitting ? "Saving..." : "Save"}
             </Button>
           </div>
         </form>

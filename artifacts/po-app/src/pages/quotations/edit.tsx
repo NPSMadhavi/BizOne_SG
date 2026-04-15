@@ -174,8 +174,8 @@ export default function QuotationEdit() {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetQuotationQueryKey(id) });
         setIsSubmitting(false);
-        if (openPreview) setPreviewOpen(true);
-        else { toast({ title: "Updated" }); setLocation(`/quotations/${id}`); }
+        if (openPreview) { setLocation(`/quotations/${id}`); }
+        else { toast({ title: "Draft saved." }); }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
@@ -400,11 +400,11 @@ export default function QuotationEdit() {
             <Button type="button" variant="outline" onClick={() => setLocation(`/quotations/${id}`)}>Cancel</Button>
             <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save Changes"}
+              {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button type="button" disabled={isSubmitting} variant="secondary" className="gap-2" onClick={() => form.handleSubmit(v => onSubmit(v, true))()}>
               <Eye className="h-4 w-4" />
-              Save & Preview
+              Save
             </Button>
           </div>
         </form>

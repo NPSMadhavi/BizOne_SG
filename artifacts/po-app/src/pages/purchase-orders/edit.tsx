@@ -205,8 +205,7 @@ export default function PurchaseOrderEdit() {
       {
         onSuccess: (data) => {
           queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
-          toast({ title: "Success", description: "Purchase order updated." });
-          setLocation(`/purchase-orders/${data.id}`);
+          toast({ title: "Draft saved." });
         },
         onError: (error: any) => {
           toast({
@@ -616,7 +615,7 @@ export default function PurchaseOrderEdit() {
               Cancel
             </Button>
             <Button type="submit" variant="outline" className="gap-2" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : <><Save className="h-4 w-4" />Save Changes</>}
+              {updateMutation.isPending ? "Saving..." : <><Save className="h-4 w-4" />Save as Draft</>}
             </Button>
             <Button
               type="button"
@@ -630,8 +629,7 @@ export default function PurchaseOrderEdit() {
                   { id, data: { ...values, items: itemsWithAmount } },
                   {
                     onSuccess: async () => {
-                      await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
-                      setPreviewOpen(true);
+                      setLocation(`/purchase-orders/${id}`);
                     },
                     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
                   }
@@ -639,7 +637,7 @@ export default function PurchaseOrderEdit() {
               })}
             >
               <Eye className="h-4 w-4" />
-              Save & Preview
+              Save
             </Button>
           </div>
         </form>
