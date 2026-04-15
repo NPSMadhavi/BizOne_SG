@@ -124,8 +124,8 @@ export default function DeliveryOrderEdit() {
       return;
     }
     updateMutation.mutate({ id, data: { ...values, items: filledItems } }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
+      onSuccess: async () => {
+        await queryClient.refetchQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
         setIsSubmitting(false);
         if (openPreview) setPreviewOpen(true);
         else { toast({ title: "Updated" }); setLocation(`/delivery-orders/${id}`); }

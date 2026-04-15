@@ -167,8 +167,8 @@ export default function InvoiceEdit() {
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     updateMutation.mutate({ id, data: { ...values, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+      onSuccess: async () => {
+        await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         setIsSubmitting(false);
         if (openPreview) setPreviewOpen(true);
         else { toast({ title: "Updated" }); setLocation(`/invoices/${id}`); }

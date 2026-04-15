@@ -629,8 +629,8 @@ export default function PurchaseOrderEdit() {
                 updateMutation.mutate(
                   { id, data: { ...values, items: itemsWithAmount } },
                   {
-                    onSuccess: () => {
-                      queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
+                    onSuccess: async () => {
+                      await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
                       setPreviewOpen(true);
                     },
                     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
