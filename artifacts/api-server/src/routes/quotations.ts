@@ -105,7 +105,7 @@ router.post("/quotations", async (req, res): Promise<void> => {
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
   const totalAmount = taxableAmount + taxAmt;
 
-  const qtNumber = await nextDocNumber("qt");
+  const qtNumber = await nextDocNumber("qt", companyId);
 
   const [doc] = await db.insert(quotationsTable).values({
     qtNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,

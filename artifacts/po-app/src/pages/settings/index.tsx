@@ -299,7 +299,7 @@ export default function Settings() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
+                    Current rate: <strong>{settings?.gstRate ?? 9}%</strong> {(settings as any)?.taxLabel ?? "GST"}
                   </p>
                 </div>
               )}

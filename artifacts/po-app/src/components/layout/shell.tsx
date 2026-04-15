@@ -15,6 +15,7 @@ import {
   RefreshCw,
   ClipboardList,
   Package,
+  Users2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -142,6 +143,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="space-y-1">
           <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")}>
             Stock Items
+          </NavItem>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          Directory
+        </h4>
+        <div className="space-y-1">
+          <NavItem href="/vendors" icon={Building2} active={location.startsWith("/vendors")}>
+            Vendors
+          </NavItem>
+          <NavItem href="/customers" icon={Users2} active={location.startsWith("/customers")}>
+            Customers
           </NavItem>
         </div>
       </div>

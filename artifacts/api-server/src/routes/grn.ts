@@ -37,7 +37,7 @@ export async function autoCreateGrn(po: any, userId: number): Promise<void> {
     serialNumbers: "",
   }));
 
-  const grnNumber = await nextDocNumber("grn");
+  const grnNumber = await nextDocNumber("grn", po.companyId);
 
   await db.insert(grnTable).values({
     grnNumber,

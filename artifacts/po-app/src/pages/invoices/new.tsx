@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useAuth } from "@/contexts/auth-context";
@@ -198,7 +199,19 @@ export default function InvoiceNew() {
 
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
-              <CardHeader className="pb-4"><CardTitle className="text-lg">Customer Details</CardTitle></CardHeader>
+              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+                <CardTitle className="text-lg">Customer Details</CardTitle>
+                <DirectoryPickerButton
+                  type="customer"
+                  onSelect={(c) => {
+                    form.setValue("customerName", c.name);
+                    form.setValue("customerAddress", c.address);
+                    form.setValue("customerContact", c.contactPerson);
+                    form.setValue("customerContactEmail", c.contactEmail);
+                    if (c.effectiveGstRate !== undefined) form.setValue("tax", c.effectiveGstRate);
+                  }}
+                />
+              </CardHeader>
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>

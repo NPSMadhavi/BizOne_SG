@@ -12,6 +12,8 @@ import emailRouter from "./email";
 import contactsRouter from "./contacts";
 import grnRouter from "./grn";
 import stockItemsRouter from "./stock-items";
+import vendorsRouter from "./vendors";
+import customersRouter from "./customers";
 
 const router: IRouter = Router();
 
@@ -28,5 +30,7 @@ router.use(emailRouter);
 router.use(contactsRouter);
 router.use(grnRouter);
 router.use(stockItemsRouter);
+router.use(vendorsRouter);
+router.use(customersRouter);
 
 export default router;

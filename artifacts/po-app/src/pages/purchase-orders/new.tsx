@@ -25,6 +25,7 @@ import { generatePO_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -235,8 +236,18 @@ export default function PurchaseOrderNew() {
 
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
-              <CardHeader className="pb-4">
+              <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Vendor Details</CardTitle>
+                <DirectoryPickerButton
+                  type="vendor"
+                  onSelect={(v) => {
+                    form.setValue("vendorName", v.name);
+                    form.setValue("vendorAddress", v.address);
+                    form.setValue("vendorContact", v.contactPerson);
+                    form.setValue("vendorContactEmail", v.contactEmail);
+                    if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
+                  }}
+                />
               </CardHeader>
               <CardContent className="space-y-4">
                 <FormField

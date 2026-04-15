@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -135,7 +136,18 @@ export default function DeliveryOrderNew() {
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
-              <CardHeader className="pb-4"><CardTitle className="text-lg">Customer Details</CardTitle></CardHeader>
+              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+                <CardTitle className="text-lg">Customer Details</CardTitle>
+                <DirectoryPickerButton
+                  type="customer"
+                  onSelect={(c) => {
+                    form.setValue("customerName", c.name);
+                    form.setValue("customerAddress", c.address);
+                    form.setValue("customerContact", c.contactPerson);
+                    form.setValue("customerContactEmail", c.contactEmail);
+                  }}
+                />
+              </CardHeader>
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>

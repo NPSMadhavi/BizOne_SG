@@ -111,7 +111,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
   const taxAmount = (subtotal * (Number(tax) || 0)) / 100;
   const totalAmount = subtotal + taxAmount;
 
-  const poNumber = await nextDocNumber("po");
+  const poNumber = await nextDocNumber("po", companyId);
 
   const [po] = await db.insert(purchaseOrdersTable).values({
     poNumber,

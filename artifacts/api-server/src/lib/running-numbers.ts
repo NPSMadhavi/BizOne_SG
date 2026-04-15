@@ -1,9 +1,9 @@
-import { db, settingsTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 type DocType = "po" | "inv" | "qt" | "do" | "grn";
 
-export async function nextDocNumber(type: DocType): Promise<string> {
+export async function nextDocNumber(type: DocType, companyId?: number): Promise<string> {
   const counterCol =
     type === "po" ? "po_counter" :
     type === "inv" ? "inv_counter" :
@@ -22,9 +22,17 @@ export async function nextDocNumber(type: DocType): Promise<string> {
     type === "qt" ? "qt_suffix" :
     type === "grn" ? "grn_suffix" : "do_suffix";
 
-  const rows = await db.execute(
-    sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
-  ) as any[];
+  let rows: any[];
+
+  if (companyId) {
+    rows = await db.execute(
+      sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE company_id = ${companyId} RETURNING *`
+    ) as any[];
+  } else {
+    rows = await db.execute(
+      sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
+    ) as any[];
+  }
 
   const s = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
 

@@ -1,0 +1,19 @@
+import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { companiesTable } from "./companies";
+
+export const vendorsTable = pgTable("vendors", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  address: text("address"),
+  country: text("country"),
+  contactPerson: text("contact_person"),
+  contactEmail: text("contact_email"),
+  phone: text("phone"),
+  gstRegistered: boolean("gst_registered").notNull().default(false),
+  gstNo: text("gst_no"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type VendorRecord = typeof vendorsTable.$inferSelect;

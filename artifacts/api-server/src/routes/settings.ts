@@ -1,28 +1,47 @@
 import { Router } from "express";
-import { db, settingsTable } from "@workspace/db";
+import { db, settingsTable, companiesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-
-declare module "express-session" {
-  interface SessionData {
-    userId?: number;
-  }
-}
 
 const router = Router();
 
-async function ensureSettings() {
-  const existing = await db.select().from(settingsTable).limit(1);
-  if (existing.length === 0) {
-    const [created] = await db.insert(settingsTable).values({ gstRate: "9" }).returning();
-    return created;
-  }
-  return existing[0];
+function gstLabelForCountry(country: string | null | undefined): string {
+  if (!country) return "GST";
+  const c = country.toLowerCase();
+  if (c === "india") return "GST (India)";
+  if (c === "singapore") return "GST (Singapore)";
+  return `GST (${country})`;
 }
 
-function formatSettings(s: typeof settingsTable.$inferSelect) {
+function defaultGstForCountry(country: string | null | undefined): string {
+  if (!country) return "9";
+  return country.toLowerCase() === "india" ? "18" : "9";
+}
+
+async function ensureSettings(companyId: number) {
+  const existing = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+  if (existing.length > 0) return existing[0];
+
+  const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const defaultGst = defaultGstForCountry(company?.country);
+
+  const [created] = await db.insert(settingsTable).values({
+    companyId,
+    gstRate: defaultGst,
+    poPrefix: "PO", poCounter: 1, poSuffix: "",
+    invPrefix: "INV", invCounter: 1, invSuffix: "",
+    qtPrefix: "QT", qtCounter: 1, qtSuffix: "",
+    doPrefix: "DO", doCounter: 1, doSuffix: "",
+    grnPrefix: "GRN", grnCounter: 1, grnSuffix: "",
+  }).returning();
+  return created;
+}
+
+function formatSettings(s: typeof settingsTable.$inferSelect, country?: string | null) {
   return {
     id: s.id,
+    companyId: s.companyId,
     gstRate: parseFloat(s.gstRate),
+    taxLabel: gstLabelForCountry(country),
     smtpHost: s.smtpHost || "",
     smtpPort: s.smtpPort || "587",
     smtpUser: s.smtpUser || "",
@@ -52,8 +71,11 @@ function formatSettings(s: typeof settingsTable.$inferSelect) {
 
 router.get("/", async (req, res) => {
   try {
-    const settings = await ensureSettings();
-    res.json(formatSettings(settings));
+    const companyId = (req.session as any).companyId;
+    if (!companyId) return res.status(400).json({ error: "No company selected" });
+    const settings = await ensureSettings(companyId);
+    const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+    res.json(formatSettings(settings, company?.country));
   } catch (err) {
     res.status(500).json({ error: "Failed to get settings" });
   }
@@ -61,6 +83,8 @@ router.get("/", async (req, res) => {
 
 router.put("/", async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+  const companyId = (req.session as any).companyId;
+  if (!companyId) return res.status(400).json({ error: "No company selected" });
 
   const {
     gstRate, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom,
@@ -73,20 +97,16 @@ router.put("/", async (req, res) => {
   } = req.body;
 
   const updateData: Record<string, any> = {};
-
   if (gstRate !== undefined) {
-    if (typeof gstRate !== "number" || gstRate < 0 || gstRate > 100) {
+    if (typeof gstRate !== "number" || gstRate < 0 || gstRate > 100)
       return res.status(400).json({ error: "Invalid GST rate" });
-    }
     updateData.gstRate = gstRate.toString();
   }
-
   if (smtpHost !== undefined) updateData.smtpHost = smtpHost;
   if (smtpPort !== undefined) updateData.smtpPort = smtpPort;
   if (smtpUser !== undefined) updateData.smtpUser = smtpUser;
   if (smtpPass !== undefined && smtpPass !== "") updateData.smtpPass = smtpPass;
   if (smtpFrom !== undefined) updateData.smtpFrom = smtpFrom;
-
   if (poPrefix !== undefined) updateData.poPrefix = poPrefix;
   if (poCounter !== undefined) updateData.poCounter = Number(poCounter);
   if (poSuffix !== undefined) updateData.poSuffix = poSuffix;
@@ -108,13 +128,10 @@ router.put("/", async (req, res) => {
   if (defaultUom !== undefined) updateData.defaultUom = defaultUom;
 
   try {
-    const settings = await ensureSettings();
-    const [updated] = await db
-      .update(settingsTable)
-      .set(updateData)
-      .where(eq(settingsTable.id, settings.id))
-      .returning();
-    res.json(formatSettings(updated));
+    const settings = await ensureSettings(companyId);
+    const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+    const [updated] = await db.update(settingsTable).set(updateData).where(eq(settingsTable.id, settings.id)).returning();
+    res.json(formatSettings(updated, company?.country));
   } catch (err) {
     res.status(500).json({ error: "Failed to update settings" });
   }

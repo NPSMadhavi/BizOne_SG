@@ -90,7 +90,7 @@ router.post("/delivery-orders", async (req, res): Promise<void> => {
   const { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items, isPrivate, status } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
-  const doNumber = await nextDocNumber("do");
+  const doNumber = await nextDocNumber("do", companyId);
 
   const [doc] = await db.insert(deliveryOrdersTable).values({
     doNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,

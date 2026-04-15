@@ -2,6 +2,7 @@ import { pgTable, serial, decimal, text, integer, boolean } from "drizzle-orm/pg
 
 export const settingsTable = pgTable("settings", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id"),
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).notNull().default("9"),
   smtpHost: text("smtp_host"),
   smtpPort: text("smtp_port"),

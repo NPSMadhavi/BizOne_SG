@@ -106,7 +106,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
   const totalAmount = taxableAmount + taxAmt;
 
-  const invNumber = await nextDocNumber("inv");
+  const invNumber = await nextDocNumber("inv", companyId);
 
   const [doc] = await db.insert(invoicesTable).values({
     invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
