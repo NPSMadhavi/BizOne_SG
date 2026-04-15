@@ -86,6 +86,7 @@ router.get("/delivery-orders", async (req, res): Promise<void> => {
 router.post("/delivery-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
 
   const { customerName, customerAddress, customerContact, issueDate, deliveryDate, paymentTerms, notes, items, isPrivate, status } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }

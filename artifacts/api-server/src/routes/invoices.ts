@@ -91,6 +91,7 @@ router.get("/invoices", async (req, res): Promise<void> => {
 router.post("/invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,

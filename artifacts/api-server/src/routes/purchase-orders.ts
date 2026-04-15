@@ -93,6 +93,7 @@ router.get("/purchase-orders", async (req, res): Promise<void> => {
 router.post("/purchase-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
 
   const {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
