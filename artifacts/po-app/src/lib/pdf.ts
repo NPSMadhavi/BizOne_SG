@@ -311,25 +311,30 @@ function buildDocHeader(
   doc.line(marginLeft, 58, marginRight, 58);
 }
 
+const FOOTER_RESERVE = 14; // mm from page bottom reserved for the footer bar
+
 function buildDocFooter(doc: jsPDF, docType: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
   const pageHeight = doc.internal.pageSize.getHeight();
   const totalPages = (doc as any).internal.pages.length - 1;
-  const footerY = pageHeight - 12;
+  const sepY = pageHeight - FOOTER_RESERVE + 2;
+  const textY = pageHeight - 5;
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
-    doc.setFontSize(7.5);
+    doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.2);
+    doc.line(marginLeft, sepY, marginRight, sepY);
+    doc.setFontSize(6.5);
     doc.setFont(PDF_FONT, "italic");
-    doc.setTextColor(160, 160, 160);
+    doc.setTextColor(175, 175, 175);
     doc.text(
       `This is a computer-generated ${docType} document and does not require a physical signature.`,
       pageWidth / 2,
-      footerY,
+      textY,
       { align: "center" }
     );
-    doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
+    doc.text(`Page ${p} of ${totalPages}`, marginRight, textY, { align: "right" });
   }
 }
 
@@ -503,40 +508,82 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.save(`${po.poNumber}.pdf`);
 }
 
+function calcBlockHeight(
+  doc: jsPDF,
+  settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
+  maxW: number
+): number {
+  const bank = (settings?.bankDetails || "").trim();
+  const tnc = (settings?.termsAndConditions || "").trim();
+  if (!bank && !tnc) return 0;
+  const lineH = 3.8;
+  let h = 0;
+  if (bank) {
+    h += 4; // "Bank Details:" header
+    bank.split("\n").filter(l => l.trim()).forEach(l => {
+      h += doc.splitTextToSize(l.trim(), maxW).length * lineH;
+    });
+    h += 5; // box padding top + bottom
+    if (tnc) h += 4; // gap between bank box and T&C
+  }
+  if (tnc) {
+    h += 4; // "Terms & Conditions:" header
+    tnc.split("\n").filter(l => l.trim()).forEach(l => {
+      h += doc.splitTextToSize(`\u2022 ${l.trim()}`, maxW).length * lineH;
+    });
+  }
+  return h + 2; // bottom margin
+}
+
 function renderBottomDocInfo(
   doc: jsPDF,
   settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
   x: number,
-  startY: number,
+  pageHeight: number,
   maxW: number
 ): void {
   const bank = (settings?.bankDetails || "").trim();
   const tnc = (settings?.termsAndConditions || "").trim();
   if (!bank && !tnc) return;
 
-  let y = startY;
+  const lineH = 3.8;
+  const footerSepY = pageHeight - FOOTER_RESERVE + 1;
+  const blockH = calcBlockHeight(doc, settings, maxW);
+  let y = footerSepY - blockH;
+
   doc.setFontSize(7.5);
 
   if (bank) {
-    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(90, 90, 90);
-    doc.text("Bank Details:", x, y); y += 4;
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(120, 120, 120);
-    bank.split("\n").filter(l => l.trim()).forEach(line => {
-      const wrapped = doc.splitTextToSize(line.trim(), maxW);
-      doc.text(wrapped, x, y);
-      y += wrapped.length * 3.8;
+    const bankContentLines: string[] = [];
+    bank.split("\n").filter(l => l.trim()).forEach(l => {
+      doc.splitTextToSize(l.trim(), maxW).forEach((row: string) => bankContentLines.push(row));
     });
-    if (tnc) y += 3;
+    const bankTextH = bankContentLines.length * lineH;
+    const boxPad = 2.5;
+    const boxH = 4 + bankTextH + boxPad * 2 + 1;
+
+    doc.setFillColor(245, 246, 248);
+    doc.roundedRect(x - 2, y - boxPad, maxW + 4, boxH, 1.5, 1.5, "F");
+
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Bank Details:", x, y); y += 4;
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(110, 110, 110);
+    bankContentLines.forEach(row => {
+      doc.text(row, x, y);
+      y += lineH;
+    });
+    y += boxPad + 1;
+    if (tnc) y += 4;
   }
 
   if (tnc) {
-    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(90, 90, 90);
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Terms & Conditions:", x, y); y += 4;
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(120, 120, 120);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(110, 110, 110);
     tnc.split("\n").filter(l => l.trim()).forEach(line => {
       const wrapped = doc.splitTextToSize(`\u2022 ${line.trim()}`, maxW);
       doc.text(wrapped, x, y);
-      y += wrapped.length * 3.8;
+      y += wrapped.length * lineH;
     });
   }
 }
@@ -642,7 +689,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
-  renderBottomDocInfo(doc, settings, marginLeft, totalsY, labelX - 8);
+  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, labelX - 8);
 
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
@@ -750,7 +797,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text("Total Amount:", labelX, ity);
   doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
-  renderBottomDocInfo(doc, settings, marginLeft, totalsY, labelX - 8);
+  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, labelX - 8);
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
