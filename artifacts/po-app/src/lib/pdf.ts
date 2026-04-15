@@ -159,15 +159,29 @@ function autoTableRich(
   });
 }
 
-async function getBase64ImageFromUrl(imageUrl: string): Promise<string> {
+interface LogoData { dataUrl: string; natW: number; natH: number; }
+
+async function getLogoData(imageUrl: string): Promise<LogoData> {
   const res = await fetch(imageUrl);
   const blob = await res.blob();
-  return new Promise((resolve, reject) => {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+  const { natW, natH } = await new Promise<{ natW: number; natH: number }>((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ natW: img.naturalWidth, natH: img.naturalHeight });
+    img.onerror = () => resolve({ natW: 260, natH: 56 });
+    img.src = dataUrl;
+  });
+  return { dataUrl, natW, natH };
+}
+
+function fitInBox(natW: number, natH: number, maxW: number, maxH: number): { w: number; h: number } {
+  const scale = Math.min(maxW / natW, maxH / natH);
+  return { w: natW * scale, h: natH * scale };
 }
 
 interface CompanyInfo {
@@ -240,7 +254,7 @@ function formatDate(d: string | null | undefined): string {
 
 function buildDocHeader(
   doc: jsPDF,
-  logoBase64: string,
+  logo: LogoData,
   title: string,
   docNumber: string,
   date: string,
@@ -251,7 +265,8 @@ function buildDocHeader(
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
 
-  doc.addImage(logoBase64, "PNG", marginLeft, 12, 65, 14);
+  const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
+  doc.addImage(logo.dataUrl, "PNG", marginLeft, 12, lw, lh);
 
   doc.setFontSize(26);
   doc.setFont(PDF_FONT, "bold");
@@ -371,9 +386,9 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const col2 = 108;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-
-  doc.addImage(logoBase64, "PNG", marginLeft, 12, 65, 14);
+  const logo = await getLogoData(getLogoUrl(company));
+  const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
+  doc.addImage(logo.dataUrl, "PNG", marginLeft, 12, lw, lh);
 
   doc.setFontSize(26);
   doc.setFont(PDF_FONT, "bold");
@@ -500,8 +515,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, fmtDate(qt.issueDate || qt.createdAt), qt.status, info);
+  const logo = await getLogoData(getLogoUrl(company));
+  buildDocHeader(doc, logo, "QUOTATION", qt.qtNumber, fmtDate(qt.issueDate || qt.createdAt), qt.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
@@ -622,8 +637,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, fmtDate(inv.issueDate || inv.createdAt), inv.status, info);
+  const logo = await getLogoData(getLogoUrl(company));
+  buildDocHeader(doc, logo, "TAX INVOICE", inv.invNumber, fmtDate(inv.issueDate || inv.createdAt), inv.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
@@ -763,8 +778,8 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
 
-  const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.issueDate || doDoc.createdAt), doDoc.status, info);
+  const logo = await getLogoData(getLogoUrl(company));
+  buildDocHeader(doc, logo, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.issueDate || doDoc.createdAt), doDoc.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Deliver To:", marginLeft, 67);
