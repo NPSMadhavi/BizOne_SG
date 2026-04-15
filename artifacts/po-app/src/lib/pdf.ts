@@ -155,7 +155,12 @@ function renderEntityBlock(
 }
 
 function fmtMoney(currency: string, amount: number): string {
-  return new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(amount);
+  const SYMBOLS: Record<string, string> = {
+    SGD: "S$", USD: "$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ", INR: "Rs.",
+  };
+  const symbol = SYMBOLS[currency] ?? (currency + " ");
+  const num = new Intl.NumberFormat("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  return symbol + num;
 }
 
 function formatDate(d: string | null | undefined): string {
