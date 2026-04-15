@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, purchaseOrdersTable, quotationsTable, invoicesTable, deliveryOrdersTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -84,15 +84,15 @@ router.get("/contacts", async (req, res): Promise<void> => {
             name: deliveryOrdersTable.customerName,
             address: deliveryOrdersTable.customerAddress,
             contact: deliveryOrdersTable.customerContact,
-            email: null,
-            deliveryAddress: deliveryOrdersTable.deliveryAddress,
+            email: sql<string | null>`null`.as("email"),
+            deliveryAddress: sql<string | null>`null`.as("deliveryAddress"),
           }).from(deliveryOrdersTable).where(eq(deliveryOrdersTable.companyId, companyId)).orderBy(desc(deliveryOrdersTable.id))
         : db.select({
             name: deliveryOrdersTable.customerName,
             address: deliveryOrdersTable.customerAddress,
             contact: deliveryOrdersTable.customerContact,
-            email: null,
-            deliveryAddress: deliveryOrdersTable.deliveryAddress,
+            email: sql<string | null>`null`.as("email"),
+            deliveryAddress: sql<string | null>`null`.as("deliveryAddress"),
           }).from(deliveryOrdersTable).orderBy(desc(deliveryOrdersTable.id)),
     ]);
 

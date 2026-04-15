@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +22,7 @@ import { generateDO_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
+  partNumber: z.string().default(""),
   description: z.string(),
   qty: z.coerce.number().min(1),
 });
@@ -29,6 +32,7 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   deliveryDate: z.string().optional(),
+  paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   isPrivate: z.boolean().default(false),
   status: z.enum(["draft", "confirmed", "cancelled"]),
@@ -54,8 +58,8 @@ export default function DeliveryOrderEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
-      deliveryDate: "", notes: "", isPrivate: false, status: "draft",
-      items: [{ description: "", qty: 1 }],
+      deliveryDate: "", paymentTerms: "", notes: "", isPrivate: false, status: "draft",
+      items: [{ partNumber: "", description: "", qty: 1 }],
     },
   });
 
@@ -67,13 +71,15 @@ export default function DeliveryOrderEdit() {
         customerAddress: doc.customerAddress || "",
         customerContact: doc.customerContact || "",
         deliveryDate: doc.deliveryDate || "",
+        paymentTerms: (doc as any).paymentTerms || "",
         notes: doc.notes || "",
         isPrivate: (doc as any).isPrivate ?? false,
         status: doc.status as any,
         items: items.length > 0 ? items.map((i: any) => ({
+          partNumber: i.partNumber || "",
           description: i.description || "",
           qty: Number(i.qty) || 1,
-        })) : [{ description: "", qty: 1 }],
+        })) : [{ partNumber: "", description: "", qty: 1 }],
       });
       initialized.current = true;
     }
@@ -187,6 +193,10 @@ export default function DeliveryOrderEdit() {
                   <FormItem><FormLabel>Delivery Date</FormLabel>
                     <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
                 )} />
+                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                  <FormItem><FormLabel>Payment Terms</FormLabel>
+                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                )} />
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem><FormLabel>Notes</FormLabel>
                     <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
@@ -215,6 +225,7 @@ export default function DeliveryOrderEdit() {
                   <thead className="bg-muted/30 text-xs text-muted-foreground uppercase border-b">
                     <tr>
                       <th className="px-4 py-3 text-left w-8">#</th>
+                      <th className="px-4 py-3 text-left w-32">Item No.</th>
                       <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-right w-24">Qty</th>
                       <th className="px-4 py-3 w-10"></th>
@@ -223,18 +234,29 @@ export default function DeliveryOrderEdit() {
                   <tbody>
                     {fields.map((field, index) => (
                       <tr key={field.id} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
-                        <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                          <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Item description" {...field} /></FormControl></FormItem>
-                        )} /></td>
-                        <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
-                          <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
-                        )} /></td>
-                        <td className="px-4 py-2">{fields.length > 1 && (
-                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}</td>
+                        <td className="px-4 py-2 text-muted-foreground text-xs align-top pt-3">{index + 1}</td>
+                        <td className="px-4 py-2 align-top">
+                          <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                            <FormItem><FormControl><Input className="h-8 text-sm font-mono" placeholder="PN-123" {...field} /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                            <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right" {...field} /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2 align-top pt-2">
+                          {fields.length > 1 && (
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

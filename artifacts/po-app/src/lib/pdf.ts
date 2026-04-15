@@ -648,24 +648,36 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
   doc.text(formatDate(doDoc.deliveryDate), marginLeft + 32, 105);
 
+  const hasPartNo = (doDoc.items as any[]).some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
+  const doHeaders = hasPartNo ? ["#", "Item No.", "Description", "Qty"] : ["#", "Description", "Qty"];
+  const doDescColIdx = hasPartNo ? 2 : 1;
   const doRichDesc = (doDoc.items as any[]).map((item: any) => htmlToRichLines(item.description));
-  const tableData = (doDoc.items as any[]).map((item, i) => [i + 1, htmlToText(item.description), item.qty]);
+  const tableData = (doDoc.items as any[]).map((item, i) =>
+    hasPartNo
+      ? [i + 1, item.partNumber || "", htmlToText(item.description), item.qty]
+      : [i + 1, htmlToText(item.description), item.qty]
+  );
 
   autoTableRich(doc, {
     startY: 113,
-    head: [["#", "Description", "Qty"]],
+    head: [doHeaders],
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: {
+    columnStyles: hasPartNo ? {
+      0: { cellWidth: 10, halign: "center" },
+      1: { cellWidth: 30, halign: "left" },
+      2: { cellWidth: "auto" },
+      3: { cellWidth: 20, halign: "center" },
+    } : {
       0: { cellWidth: 10, halign: "center" },
       1: { cellWidth: "auto" },
       2: { cellWidth: 20, halign: "center" },
     },
     margin: { left: marginLeft, right: 14 },
-  }, 1, doRichDesc);
+  }, doDescColIdx, doRichDesc);
 
   if (doDoc.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;

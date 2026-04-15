@@ -12,11 +12,11 @@ A full-stack document management application for three companies: RSV Infotech P
 - **Purchase Orders** — create, edit, view, delete; PDF generation; item table with "Item / Part Number" column; status tracking; Sales Quote Ref No field
 - **Quotations** — full CRUD (admin-only delete); configurable running number; GST pre-filled from settings; PDF generation with rich text bold/italic
 - **Invoices** — Void (with reason dialog) + Knock-Off (mark paid) instead of delete; no deletion ever; configurable running number; GST; PDF header shows "TAX INVOICE"; rich text bold/italic in item descriptions
-- **Delivery Orders** — full CRUD (admin-only delete); configurable running number; rich text bold/italic in item descriptions; PDF generation
+- **Delivery Orders** — full CRUD (admin-only delete); configurable running number; rich text bold/italic in item descriptions; **Item No. (Part Number)** column; **Payment Terms** dropdown; PDF auto-shows Part Number column when any item has one
 - **Settings** — centralized GST rate (admin-only edit); SMTP email config; **Running Numbers** card (per-doc-type prefix/counter/suffix with live preview)
 - **Email sending** — multi-recipient tag-input dialog (Outlook-style); send PO/Quotation/Invoice as PDF attachment via SMTP; reusable EmailSendDialog component
 - **PdfPreviewModal** — inline PDF preview (iframe) with Edit / Download / Send Email actions; used on all New, Edit, and View pages
-- **PaymentTermsSelect** — dropdown with 30-Day, 14-Day, 7-Day, COD, Advance, and custom options on all PO/Quotation/Invoice forms
+- **PaymentTermsSelect** — dropdown with 30-Day, 14-Day, 7-Day, COD, Advance, and custom options on all PO/Quotation/Invoice/DO forms
 - **DeliveryDateField** — quick-pick options (1 Week / 2 Weeks / ETA / Custom) on PO and Delivery Order forms
 - **isPrivate** — per-document visibility toggle; private docs visible only to creator + admins; Lock icon badge on view pages
 - **Draft / Preview workflow** — all New and Edit forms have "Save Draft" and "Save & Preview" buttons

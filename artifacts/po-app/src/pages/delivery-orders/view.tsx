@@ -119,6 +119,7 @@ export default function DeliveryOrderView() {
           <CardHeader><CardTitle className="text-base">Delivery Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
+            {(doc as any).paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{(doc as any).paymentTerms}</span></div>}
             {doc.notes && <div><span className="text-muted-foreground">Notes:</span><p className="mt-0.5 whitespace-pre-line">{doc.notes}</p></div>}
           </CardContent>
         </Card>
@@ -130,6 +131,7 @@ export default function DeliveryOrderView() {
             <thead className="bg-muted/50 border-b text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="px-6 py-3 text-left w-8">#</th>
+                {items.some((item: any) => item.partNumber) && <th className="px-6 py-3 text-left w-32">Item No.</th>}
                 <th className="px-6 py-3 text-left">Description</th>
                 <th className="px-6 py-3 text-right w-24">Qty</th>
               </tr>
@@ -138,7 +140,8 @@ export default function DeliveryOrderView() {
               {items.map((item: any, i: number) => (
                 <tr key={i} className="hover:bg-muted/30">
                   <td className="px-6 py-3 text-muted-foreground">{i + 1}</td>
-                  <td className="px-6 py-3 font-medium">{item.description}</td>
+                  {items.some((it: any) => it.partNumber) && <td className="px-6 py-3 font-mono text-xs text-muted-foreground">{item.partNumber || "—"}</td>}
+                  <td className="px-6 py-3 font-medium" dangerouslySetInnerHTML={{ __html: item.description }} />
                   <td className="px-6 py-3 text-right">{item.qty}</td>
                 </tr>
               ))}
