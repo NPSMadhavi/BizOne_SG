@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -267,12 +267,12 @@ export default function CustomersPage() {
 
             <div className="space-y-1.5">
               <Label>Address</Label>
-              <Textarea
+              <AddressAutocomplete
                 value={form.address || ""}
-                onChange={e => setField("address", e.target.value)}
-                placeholder="Street / unit number, building name"
-                rows={2}
-                className="resize-none"
+                onChange={v => setField("address", v)}
+                onPostalCodeChange={v => setField("postalCode", v)}
+                country={form.country || undefined}
+                placeholder="Start typing to search address…"
               />
             </div>
 
@@ -284,6 +284,7 @@ export default function CustomersPage() {
                 placeholder="e.g. 408564 (SG) or 530007 (IN)"
                 className="max-w-[200px]"
               />
+              <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
