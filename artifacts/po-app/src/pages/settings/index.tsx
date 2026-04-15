@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,6 +32,51 @@ export default function Settings() {
   const [smtpFrom, setSmtpFrom] = useState("");
   const [smtpEditing, setSmtpEditing] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
+
+  const [companyEdits, setCompanyEdits] = useState<Record<number, {
+    name: string; address: string; phone: string; email: string; registrationNo: string;
+  }>>({});
+  const [savingCompany, setSavingCompany] = useState<number | null>(null);
+
+  const { data: companies, isLoading: companiesLoading } = useListCompanies({
+    query: { queryKey: getListCompaniesQueryKey() },
+  });
+
+  const getCompanyField = (id: number, field: string, fallback: string) =>
+    companyEdits[id]?.[field as keyof typeof companyEdits[0]] ?? fallback;
+
+  const setCompanyField = (id: number, field: string, value: string) => {
+    setCompanyEdits(prev => ({
+      ...prev,
+      [id]: { ...((prev[id]) || {}), [field]: value } as any,
+    }));
+  };
+
+  const handleSaveCompany = async (company: { id: number; name: string; address?: string | null; phone?: string | null; email?: string | null; registrationNo?: string | null }) => {
+    setSavingCompany(company.id);
+    try {
+      const payload = {
+        name: getCompanyField(company.id, "name", company.name),
+        address: getCompanyField(company.id, "address", company.address || ""),
+        phone: getCompanyField(company.id, "phone", company.phone || ""),
+        email: getCompanyField(company.id, "email", company.email || ""),
+        registrationNo: getCompanyField(company.id, "registrationNo", company.registrationNo || ""),
+      };
+      const res = await fetch(`/api/companies/${company.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
+      toast({ title: "Saved", description: "Company info updated successfully." });
+    } catch {
+      toast({ title: "Error", description: "Failed to update company info.", variant: "destructive" });
+    } finally {
+      setSavingCompany(null);
+    }
+  };
 
   const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "1", suffix: "" });
   const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "1", suffix: "" });
@@ -185,6 +230,15 @@ export default function Settings() {
             <Mail className="h-4 w-4" />
             Email
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger
+              value="companies"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+            >
+              <Building2 className="h-4 w-4" />
+              Companies
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="profile"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
@@ -480,6 +534,90 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* COMPANIES */}
+        <TabsContent value="companies">
+          <div className="space-y-6">
+            <div className="mb-2">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                Company Information
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Edit the details for each registered company. These appear on all generated PDF documents.
+              </p>
+            </div>
+            {companiesLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => <div key={i} className="h-48 bg-muted animate-pulse rounded-lg" />)}
+              </div>
+            ) : (
+              (companies || []).map(company => (
+                <Card key={company.id}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{company.name}</CardTitle>
+                    <CardDescription>{company.country === "SG" ? "Singapore" : company.country === "IN" ? "India" : company.country}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label>Company Name</Label>
+                        <Input
+                          value={getCompanyField(company.id, "name", company.name)}
+                          onChange={e => setCompanyField(company.id, "name", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Registration No.</Label>
+                        <Input
+                          value={getCompanyField(company.id, "registrationNo", (company as any).registrationNo || "")}
+                          onChange={e => setCompanyField(company.id, "registrationNo", e.target.value)}
+                          placeholder="e.g. 200812581D"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Address</Label>
+                      <Input
+                        value={getCompanyField(company.id, "address", (company as any).address || "")}
+                        onChange={e => setCompanyField(company.id, "address", e.target.value)}
+                        placeholder="Full address"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label>Phone</Label>
+                        <Input
+                          value={getCompanyField(company.id, "phone", company.phone || "")}
+                          onChange={e => setCompanyField(company.id, "phone", e.target.value)}
+                          placeholder="+65 6123 4567"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Email</Label>
+                        <Input
+                          value={getCompanyField(company.id, "email", company.email || "")}
+                          onChange={e => setCompanyField(company.id, "email", e.target.value)}
+                          placeholder="info@example.com"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <Button
+                        onClick={() => handleSaveCompany(company as any)}
+                        disabled={savingCompany === company.id}
+                        className="gap-2"
+                      >
+                        <Save className="h-4 w-4" />
+                        {savingCompany === company.id ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         </TabsContent>
 
         {/* ACCOUNT */}

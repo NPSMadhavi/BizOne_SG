@@ -113,7 +113,7 @@ function companyToInfo(company: Company | null | undefined): CompanyInfo {
   if (!company) {
     return {
       name: "RSV Infotech Pte. Ltd.",
-      addressLine1: "#07-52A, 10 Ubi Crescent, UBI Techpark Lobby C,",
+      addressLine1: "#07-52, 10 UBI Crescent, UBI Techpark Lobby C,",
       addressLine2: "Singapore 408564",
       registrationNo: "200812581D",
       gstNo: "200812581D",
@@ -132,6 +132,25 @@ function companyToInfo(company: Company | null | undefined): CompanyInfo {
     phone: company.phone,
     email: company.email,
   };
+}
+
+function renderEntityBlock(
+  doc: jsPDF,
+  name: string,
+  rest: (string | null | undefined)[],
+  x: number,
+  startY: number,
+  maxWidth: number
+): void {
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(60, 60, 60);
+  doc.text(name, x, startY);
+  const restText = rest.filter(Boolean).join("\n");
+  if (restText) {
+    doc.setFont("helvetica", "normal");
+    doc.text(doc.splitTextToSize(restText, maxWidth), x, startY + 5);
+  }
 }
 
 function fmtMoney(currency: string, amount: number): string {
@@ -277,12 +296,11 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text("Vendor:", marginLeft, 67);
   doc.text("Delivery To:", col2, 67);
 
+  renderEntityBlock(doc, po.vendorName, [po.vendorAddress, po.vendorContact], marginLeft, 74, 85);
+
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(60, 60, 60);
-
-  const vendorText = [po.vendorName, po.vendorAddress || "", po.vendorContact || ""].filter(Boolean).join("\n");
-  doc.text(doc.splitTextToSize(vendorText, 85), marginLeft, 74);
   doc.text(doc.splitTextToSize(po.deliveryAddress || `${info.name} Office`, 82), col2, 74);
 
   const formatDeliveryDate = (d: string | null | undefined): string => {
@@ -376,9 +394,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
 
-  doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
-  const customerText = [qt.customerName, qt.customerAddress || "", qt.customerContact || ""].filter(Boolean).join("\n");
-  doc.text(doc.splitTextToSize(customerText, 160), marginLeft, 74);
+  renderEntityBlock(doc, qt.customerName, [qt.customerAddress, qt.customerContact], marginLeft, 74, 160);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Payment Terms:", marginLeft, 100);
@@ -498,9 +514,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
 
-  doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
-  const customerText = [inv.customerName, inv.customerAddress || "", inv.customerContact || ""].filter(Boolean).join("\n");
-  doc.text(doc.splitTextToSize(customerText, 160), marginLeft, 74);
+  renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact], marginLeft, 74, 160);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Payment Terms:", marginLeft, 100);
@@ -639,9 +653,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Deliver To:", marginLeft, 67);
 
-  doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
-  const customerText = [doDoc.customerName, doDoc.customerAddress || "", doDoc.customerContact || ""].filter(Boolean).join("\n");
-  doc.text(doc.splitTextToSize(customerText, 85), marginLeft, 74);
+  renderEntityBlock(doc, doDoc.customerName, [doDoc.customerAddress, doDoc.customerContact], marginLeft, 74, 85);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Delivery Date:", marginLeft, 105);

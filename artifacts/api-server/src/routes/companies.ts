@@ -16,17 +16,17 @@ export const COMPANIES_SEED = [
   {
     id: 1,
     name: "RSV Infotech Pte Ltd",
-    country: "Singapore",
-    address: "63 Ubi Avenue 1, #08-01, Singapore 408937",
-    registrationNo: "201929506R",
+    country: "SG",
+    address: "#07-52, 10 UBI Crescent, UBI Techpark Lobby C, Singapore 408564",
+    registrationNo: "200812581D",
     email: "info@rsvinfotech.com",
     phone: "+65 6123 4567",
   },
   {
     id: 2,
     name: "Netopsys Pte Ltd",
-    country: "Singapore",
-    address: "63 Ubi Avenue 1, #08-01, Singapore 408937",
+    country: "SG",
+    address: "#07-52, 10 UBI Crescent, UBI Techpark Lobby C, Singapore 408564",
     registrationNo: "202119506K",
     email: "info@netopsys.com",
     phone: "+65 6234 5678",
@@ -34,8 +34,8 @@ export const COMPANIES_SEED = [
   {
     id: 3,
     name: "Netopsys AI Pvt Ltd",
-    country: "India",
-    address: "12th Floor, DLF Cyber City, Gurugram, Haryana 122002",
+    country: "IN",
+    address: "Door No 39-6-36, Madhavadhara Main Road, Visakhapatnam - 530007",
     registrationNo: "U72900HR2023PTC400123",
     email: "info@netopsys.ai",
     phone: "+91 98765 43210",
@@ -64,6 +64,27 @@ export async function seedCompanies() {
     }
   }
 }
+
+router.put("/companies/:id", async (req, res): Promise<void> => {
+  if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
+
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const { name, address, phone, email, registrationNo } = req.body;
+  const updateData: Record<string, any> = {};
+  if (name !== undefined) updateData.name = name;
+  if (address !== undefined) updateData.address = address;
+  if (phone !== undefined) updateData.phone = phone;
+  if (email !== undefined) updateData.email = email;
+  if (registrationNo !== undefined) updateData.registrationNo = registrationNo;
+
+  const [updated] = await db.update(companiesTable).set(updateData).where(eq(companiesTable.id, id)).returning();
+  if (!updated) { res.status(404).json({ error: "Company not found" }); return; }
+  res.json(updated);
+});
 
 router.get("/companies", async (req, res): Promise<void> => {
   if (!req.session.userId) {
