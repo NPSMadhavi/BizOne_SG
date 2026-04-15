@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, grnTable, purchaseOrdersTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -64,6 +64,26 @@ export async function autoDeleteGrnIfEmpty(poId: number): Promise<{ blocked: boo
   await db.delete(grnTable).where(eq(grnTable.id, grn.id));
   return { blocked: false };
 }
+
+router.post("/grn/from-po/:poId", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const poId = parseInt(req.params.poId);
+  if (isNaN(poId)) { res.status(400).json({ error: "Invalid PO ID" }); return; }
+
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (po.status !== "confirmed") { res.status(400).json({ error: "PO must be confirmed to create a GRN" }); return; }
+
+  const existing = await db.select().from(grnTable).where(eq(grnTable.poId, poId));
+  if (existing.length > 0) {
+    res.json(existing[0]);
+    return;
+  }
+
+  await autoCreateGrn(po, req.session.userId!);
+  const [created] = await db.select().from(grnTable).where(eq(grnTable.poId, poId));
+  res.status(201).json(created);
+});
 
 router.get("/grn", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;

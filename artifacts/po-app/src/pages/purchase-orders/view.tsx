@@ -12,7 +12,7 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -26,6 +26,8 @@ export default function PurchaseOrderView() {
   const { toast } = useToast();
   const { selectedCompany, isAdmin } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  const queryClient = useQueryClient();
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
@@ -41,6 +43,28 @@ export default function PurchaseOrderView() {
     enabled: !!po && po.status === "confirmed",
   });
   const linkedGrn = grns?.find((g: any) => g.poId === id);
+
+  const createGrnMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/grn/from-po/${id}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create GRN");
+      }
+      return res.json();
+    },
+    onSuccess: (grn: any) => {
+      queryClient.invalidateQueries({ queryKey: ["grns"] });
+      toast({ title: "GRN Created", description: `${grn.grnNumber} has been created.` });
+      setLocation(`/grn/${grn.id}`);
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
   const deleteMutation = useDeletePurchaseOrder();
 
@@ -108,7 +132,7 @@ export default function PurchaseOrderView() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {linkedGrn && (
+          {linkedGrn ? (
             <Button
               variant="outline"
               className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
@@ -116,6 +140,16 @@ export default function PurchaseOrderView() {
             >
               <ClipboardList className="h-4 w-4" />
               {linkedGrn.grnNumber}
+            </Button>
+          ) : po.status === "confirmed" && (
+            <Button
+              variant="outline"
+              className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+              onClick={() => createGrnMutation.mutate()}
+              disabled={createGrnMutation.isPending}
+            >
+              <ClipboardList className="h-4 w-4" />
+              {createGrnMutation.isPending ? "Creating..." : "Create GRN"}
             </Button>
           )}
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>

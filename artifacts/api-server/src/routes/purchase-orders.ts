@@ -193,7 +193,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
 
   const newStatus = updateData.status ?? previousStatus;
 
-  if (previousStatus !== "confirmed" && newStatus === "confirmed") {
+  if (newStatus === "confirmed") {
     await autoCreateGrn(updated, req.session.userId!);
   } else if (previousStatus === "confirmed" && newStatus !== "confirmed") {
     const result = await autoDeleteGrnIfEmpty(id);
