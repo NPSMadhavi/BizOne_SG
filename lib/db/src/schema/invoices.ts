@@ -9,6 +9,7 @@ export const invoicesTable = pgTable("invoices", {
   customerContact: text("customer_contact"),
   customerContactEmail: text("customer_contact_email"),
   deliveryAddress: text("delivery_address"),
+  issueDate: text("issue_date"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),

@@ -7,6 +7,7 @@ export const deliveryOrdersTable = pgTable("delivery_orders", {
   customerName: text("customer_name").notNull(),
   customerAddress: text("customer_address"),
   customerContact: text("customer_contact"),
+  issueDate: text("issue_date"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),

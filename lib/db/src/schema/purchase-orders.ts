@@ -11,6 +11,7 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   vendorContact: text("vendor_contact"),
   vendorContactEmail: text("vendor_contact_email"),
   deliveryAddress: text("delivery_address"),
+  issueDate: text("issue_date"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),
   quoteRefNo: text("quote_ref_no"),

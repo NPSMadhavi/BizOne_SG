@@ -18,6 +18,7 @@ import { generateInvoice_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -43,6 +44,7 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  issueDate: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
@@ -67,7 +69,7 @@ export default function InvoiceNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
@@ -249,6 +251,13 @@ export default function InvoiceNew() {
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Invoice Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
+                <FormField control={form.control} name="issueDate" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Invoice Date" />
+                    </FormControl><FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
                     <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>

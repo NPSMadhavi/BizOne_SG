@@ -18,6 +18,7 @@ import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
@@ -44,6 +45,7 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  issueDate: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
@@ -74,7 +76,7 @@ export default function InvoiceEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      deliveryDate: "", paymentTerms: "", notes: "",
+      issueDate: "", deliveryDate: "", paymentTerms: "", notes: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
@@ -90,6 +92,7 @@ export default function InvoiceEdit() {
         customerAddress: doc.customerAddress || "",
         customerContact: doc.customerContact || "",
         customerContactEmail: (doc as any).customerContactEmail || "",
+        issueDate: (doc as any).issueDate || "",
         deliveryDate: (doc as any).deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
@@ -268,6 +271,13 @@ export default function InvoiceEdit() {
                       <option value="confirmed">Confirmed</option>
                       <option value="cancelled">Cancelled</option>
                     </select></FormItem>
+                )} />
+                <FormField control={form.control} name="issueDate" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Invoice Date" />
+                    </FormControl><FormMessage />
+                  </FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>

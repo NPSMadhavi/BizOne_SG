@@ -87,14 +87,14 @@ router.post("/delivery-orders", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
 
-  const { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items, isPrivate, status } = req.body;
+  const { customerName, customerAddress, customerContact, issueDate, deliveryDate, paymentTerms, notes, items, isPrivate, status } = req.body;
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
   const doNumber = await nextDocNumber("do", companyId);
 
   const [doc] = await db.insert(deliveryOrdersTable).values({
     doNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-    deliveryDate, paymentTerms, notes, items,
+    issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
     isPrivate: isPrivate === true,
     status: status || "draft", createdBy: req.session.userId!,
   }).returning();
@@ -127,9 +127,9 @@ router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items, status, isPrivate } = req.body;
+  const { customerName, customerAddress, customerContact, issueDate, deliveryDate, paymentTerms, notes, items, status, isPrivate } = req.body;
 
-  const updateData: any = { customerName, customerAddress, customerContact, deliveryDate, paymentTerms, notes, items };
+  const updateData: any = { customerName, customerAddress, customerContact, issueDate, deliveryDate, paymentTerms, notes, items };
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
 

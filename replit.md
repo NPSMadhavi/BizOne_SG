@@ -18,6 +18,7 @@ A full-stack document management application for three companies: RSV Infotech P
 - **PdfPreviewModal** — inline PDF preview (iframe) with Edit / Download / Send Email actions; used on all New, Edit, and View pages
 - **PaymentTermsSelect** — dropdown with 30-Day, 14-Day, 7-Day, COD, Advance, and custom options on all PO/Quotation/Invoice/DO forms
 - **DeliveryDateField** — quick-pick options (1 Week / 2 Weeks / ETA / Custom) on PO, Quotation, Invoice, and Delivery Order forms
+- **IssueDateField** — document date picker (defaults to today, max=today) on all 8 forms (PO/QT/INV/DO new+edit); stored as `issue_date` TEXT column; shows info note for backdating ≤30 days, warning for >30 days (India GST compliance); PDFs use `issueDate` preferentially, fallback to `createdAt`
 - **isPrivate** — per-document visibility toggle; private docs visible only to creator + admins; Lock icon badge on view pages
 - **Draft / Preview workflow** — all New and Edit forms have "Save Draft" and "Save & Preview" buttons
 - **Multi-currency** — SGD, USD, EUR, GBP, MYR, INR; `fmtMoney(currency, amount)` helper using Intl.NumberFormat in PDFs

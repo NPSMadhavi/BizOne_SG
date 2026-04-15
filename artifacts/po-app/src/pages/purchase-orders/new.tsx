@@ -24,6 +24,7 @@ import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { useAuth } from "@/contexts/auth-context";
@@ -49,6 +50,7 @@ const poSchema = z.object({
   vendorAddress: z.string().optional(),
   vendorContact: z.string().optional(),
   vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  issueDate: z.string().optional(),
   quoteRefNo: z.string().optional(),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
@@ -75,6 +77,7 @@ export default function PurchaseOrderNew() {
       vendorAddress: "",
       vendorContact: "",
       vendorContactEmail: "",
+      issueDate: getToday(),
       quoteRefNo: "",
       deliveryAddress: "RSV Infotech Pte. Ltd.\nSingapore",
       deliveryDate: "",
@@ -334,6 +337,18 @@ export default function PurchaseOrderNew() {
                     <FormItem>
                       <FormLabel>Delivery Address</FormLabel>
                       <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="issueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <IssueDateField value={field.value || ""} onChange={field.onChange} label="PO Date" />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { generatePO_PDF } from "@/lib/pdf";
@@ -55,6 +56,7 @@ const poSchema = z.object({
   vendorAddress: z.string().optional(),
   vendorContact: z.string().optional(),
   vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  issueDate: z.string().optional(),
   quoteRefNo: z.string().optional(),
   deliveryAddress: z.string().optional(),
   deliveryDate: z.string().optional(),
@@ -91,6 +93,7 @@ export default function PurchaseOrderEdit() {
       vendorAddress: "",
       vendorContact: "",
       vendorContactEmail: "",
+      issueDate: "",
       deliveryAddress: "",
       deliveryDate: "",
       paymentTerms: "30 Days Net",
@@ -109,6 +112,7 @@ export default function PurchaseOrderEdit() {
         vendorAddress: po.vendorAddress ?? "",
         vendorContact: po.vendorContact ?? "",
         vendorContactEmail: (po as any).vendorContactEmail ?? "",
+        issueDate: (po as any).issueDate ?? "",
         quoteRefNo: (po as any).quoteRefNo ?? "",
         deliveryAddress: po.deliveryAddress ?? "",
         deliveryDate: po.deliveryDate ?? "",
@@ -367,6 +371,18 @@ export default function PurchaseOrderEdit() {
                       <FormLabel>Delivery Address</FormLabel>
                       <FormControl>
                         <Textarea className="resize-none" rows={3} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="issueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <IssueDateField value={field.value || ""} onChange={field.onChange} label="PO Date" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

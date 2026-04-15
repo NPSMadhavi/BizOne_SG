@@ -96,7 +96,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
 
   const {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, quoteRefNo, notes,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, quoteRefNo, notes,
     items, tax = 0, currency, isPrivate, status,
   } = req.body;
 
@@ -117,7 +117,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     poNumber,
     companyId: req.session.companyId!,
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, quoteRefNo, notes,
+    deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, quoteRefNo, notes,
     items: itemsWithAmounts,
     currency: currency || "SGD",
     isPrivate: isPrivate === true,
@@ -162,7 +162,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
 
   const {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, quoteRefNo, notes,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, quoteRefNo, notes,
     items, tax = 0, currency, isPrivate, status,
   } = req.body;
 
@@ -177,7 +177,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
 
   const updateData: any = {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, quoteRefNo, notes,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, quoteRefNo, notes,
     items: itemsWithAmounts,
     subtotal: subtotal.toFixed(2),
     tax: taxAmount.toFixed(2),

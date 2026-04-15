@@ -93,7 +93,7 @@ router.post("/quotations", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, notes, items, tax,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
     currency, discountAmount, isPrivate, status,
   } = req.body;
 
@@ -109,7 +109,7 @@ router.post("/quotations", async (req, res): Promise<void> => {
 
   const [doc] = await db.insert(quotationsTable).values({
     qtNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-    customerContactEmail, deliveryAddress, deliveryDate, paymentTerms, notes, items,
+    customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
     currency: currency || "SGD",
     isPrivate: isPrivate === true,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
@@ -146,7 +146,7 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, notes, items, tax, status,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
     currency, discountAmount, isPrivate,
   } = req.body;
 
@@ -158,7 +158,7 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 
   const updateData: any = {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, deliveryDate, paymentTerms, notes, items,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
   };

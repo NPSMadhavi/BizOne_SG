@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
 import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateDO_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
@@ -32,6 +33,7 @@ const schema = z.object({
   customerName: z.string().min(1, "Required"),
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
+  issueDate: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
@@ -59,7 +61,7 @@ export default function DeliveryOrderEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
-      deliveryDate: "", paymentTerms: "", notes: "", isPrivate: false, status: "draft",
+      issueDate: "", deliveryDate: "", paymentTerms: "", notes: "", isPrivate: false, status: "draft",
       items: [{ partNumber: "", description: "", qty: 1 }],
     },
   });
@@ -71,6 +73,7 @@ export default function DeliveryOrderEdit() {
         customerName: doc.customerName,
         customerAddress: doc.customerAddress || "",
         customerContact: doc.customerContact || "",
+        issueDate: (doc as any).issueDate || "",
         deliveryDate: doc.deliveryDate || "",
         paymentTerms: (doc as any).paymentTerms || "",
         notes: doc.notes || "",
@@ -200,6 +203,13 @@ export default function DeliveryOrderEdit() {
                       <option value="confirmed">Confirmed</option>
                       <option value="cancelled">Cancelled</option>
                     </select></FormItem>
+                )} />
+                <FormField control={form.control} name="issueDate" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Document Date" />
+                    </FormControl><FormMessage />
+                  </FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>

@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generateDO_PDF } from "@/lib/pdf";
 import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -31,6 +32,7 @@ const schema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
+  issueDate: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
@@ -50,7 +52,7 @@ export default function DeliveryOrderNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
-      deliveryDate: "", paymentTerms: "", notes: "",
+      issueDate: getToday(), deliveryDate: "", paymentTerms: "", notes: "",
       isPrivate: false,
       items: [{ partNumber: "", description: "", qty: 1 }],
     },
@@ -180,6 +182,13 @@ export default function DeliveryOrderNew() {
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Delivery Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
+                <FormField control={form.control} name="issueDate" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Document Date" />
+                    </FormControl><FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
                     <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>

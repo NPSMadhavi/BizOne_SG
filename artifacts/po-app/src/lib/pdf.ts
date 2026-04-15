@@ -306,7 +306,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setFont("helvetica", "normal");
   doc.setTextColor(80, 80, 80);
   doc.text(`PO Number: ${po.poNumber}`, marginRight, 30, { align: "right" });
-  doc.text(`Date: ${fmtDate(po.createdAt)}`, marginRight, 36, { align: "right" });
+  doc.text(`Date: ${fmtDate(po.issueDate || po.createdAt)}`, marginRight, 36, { align: "right" });
   doc.text(`Status: ${po.status.toUpperCase()}`, marginRight, 42, { align: "right" });
 
   doc.setFontSize(11);
@@ -421,7 +421,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, fmtDate(qt.createdAt), qt.status, info);
+  buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, fmtDate(qt.issueDate || qt.createdAt), qt.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
@@ -541,7 +541,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, fmtDate(inv.createdAt), inv.status, info);
+  buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, fmtDate(inv.issueDate || inv.createdAt), inv.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
@@ -680,7 +680,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.createdAt), doDoc.status, info);
+  buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.issueDate || doDoc.createdAt), doDoc.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Deliver To:", marginLeft, 67);
