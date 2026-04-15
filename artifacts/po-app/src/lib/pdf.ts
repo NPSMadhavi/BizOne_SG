@@ -258,7 +258,7 @@ function buildDocHeader(
   title: string,
   docNumber: string,
   date: string,
-  status: string,
+  _status: string,
   info: CompanyInfo
 ) {
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -278,7 +278,6 @@ function buildDocHeader(
   doc.setTextColor(80, 80, 80);
   doc.text(`Number: ${docNumber}`, marginRight, 30, { align: "right" });
   doc.text(`Date: ${date}`, marginRight, 36, { align: "right" });
-  doc.text(`Status: ${status.toUpperCase()}`, marginRight, 42, { align: "right" });
 
   doc.setFontSize(11);
   doc.setFont(PDF_FONT, "bold");
@@ -405,7 +404,6 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setTextColor(80, 80, 80);
   doc.text(`PO Number: ${po.poNumber}`, marginRight, 30, { align: "right" });
   doc.text(`Date: ${fmtDate(po.issueDate || po.createdAt)}`, marginRight, 36, { align: "right" });
-  doc.text(`Status: ${po.status.toUpperCase()}`, marginRight, 42, { align: "right" });
 
   doc.setFontSize(11);
   doc.setFont(PDF_FONT, "bold");
