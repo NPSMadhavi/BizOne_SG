@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users2, CheckCircle2, XCircle, MapPin } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users2, CheckCircle2, XCircle, MapPin, Globe, Info } from "lucide-react";
 import { useGetSettings } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/auth-context";
 import { COUNTRIES } from "@/lib/countries";
 
 interface Customer {
@@ -78,9 +79,17 @@ export default function CustomersPage() {
   const [form, setForm] = useState<Partial<Customer>>(blank());
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
+  const { selectedCompany } = useAuth();
+  const companyCountry = selectedCompany?.country ?? "";
+
   const { data: settings } = useGetSettings({});
   const companyGstRate = settings?.gstRate ?? 9;
   const taxLabel = (settings as any)?.taxLabel ?? "GST";
+
+  const isInternational = Boolean(
+    form.country && companyCountry &&
+    form.country.toLowerCase() !== companyCountry.toLowerCase()
+  );
 
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["customers"],
@@ -237,7 +246,13 @@ export default function CustomersPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Country</Label>
-                <Select value={form.country || ""} onValueChange={v => setField("country", v)}>
+                <Select
+                  value={form.country || ""}
+                  onValueChange={v => {
+                    const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                    setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
                   <SelectContent>
                     {COUNTRIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -282,26 +297,46 @@ export default function CustomersPage() {
               </div>
             </div>
 
-            <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
-              <div className="flex items-center justify-between">
+            {isInternational ? (
+              <div className="border rounded-lg p-4 bg-blue-50 border-blue-200 flex gap-3">
+                <Globe className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
                 <div>
-                  <Label className="text-sm font-semibold">GST / Tax Registered</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Toggle on if this customer is {taxLabel} registered ({companyGstRate}% applies for local customers)
+                  <p className="text-sm font-semibold text-blue-800">International Customer — GST Not Applicable</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    This customer is based in <strong>{form.country}</strong>, which is outside your company's country ({companyCountry}).
+                    Under local {taxLabel} regulations, exports and cross-border sales to overseas entities are <strong>zero-rated (0%)</strong> — GST is not charged regardless of their own registration status.
                   </p>
                 </div>
-                <Switch
-                  checked={form.gstRegistered || false}
-                  onCheckedChange={v => setField("gstRegistered", v)}
-                />
               </div>
-              {form.gstRegistered && (
-                <div className="space-y-1.5">
-                  <Label>GST / Tax Registration Number</Label>
-                  <Input value={form.gstNo || ""} onChange={e => setField("gstNo", e.target.value)} placeholder="e.g. 200812581D / 22XXXXX1234X1ZX" />
+            ) : (
+              <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-semibold">GST / Tax Registered</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Toggle on if this customer is {taxLabel} registered ({companyGstRate}% applies for local customers)
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.gstRegistered || false}
+                    onCheckedChange={v => setField("gstRegistered", v)}
+                  />
                 </div>
-              )}
-            </div>
+                {form.gstRegistered && (
+                  <div className="space-y-1.5">
+                    <Label>GST / Tax Registration Number</Label>
+                    <Input value={form.gstNo || ""} onChange={e => setField("gstNo", e.target.value)} placeholder="e.g. 200812581D / 22XXXXX1234X1ZX" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!form.country && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                Select a country to determine if GST applies to this customer.
+              </div>
+            )}
 
             {editing && (
               <div className="flex items-center justify-between border rounded-lg p-3">
