@@ -503,9 +503,47 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.save(`${po.poNumber}.pdf`);
 }
 
+function renderBottomDocInfo(
+  doc: jsPDF,
+  settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
+  x: number,
+  startY: number,
+  maxW: number
+): void {
+  const bank = (settings?.bankDetails || "").trim();
+  const tnc = (settings?.termsAndConditions || "").trim();
+  if (!bank && !tnc) return;
+
+  let y = startY;
+  doc.setFontSize(7.5);
+
+  if (bank) {
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(90, 90, 90);
+    doc.text("Bank Details:", x, y); y += 4;
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(120, 120, 120);
+    bank.split("\n").filter(l => l.trim()).forEach(line => {
+      const wrapped = doc.splitTextToSize(line.trim(), maxW);
+      doc.text(wrapped, x, y);
+      y += wrapped.length * 3.8;
+    });
+    if (tnc) y += 3;
+  }
+
+  if (tnc) {
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(90, 90, 90);
+    doc.text("Terms & Conditions:", x, y); y += 4;
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(120, 120, 120);
+    tnc.split("\n").filter(l => l.trim()).forEach(line => {
+      const wrapped = doc.splitTextToSize(`\u2022 ${line.trim()}`, maxW);
+      doc.text(wrapped, x, y);
+      y += wrapped.length * 3.8;
+    });
+  }
+}
+
 // ── QUOTATION PDF ─────────────────────────────────────────────────────────────
 
-export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   attachPdfFonts(doc);
@@ -571,22 +609,6 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     doc.text(doc.splitTextToSize(qt.notes, 120), marginLeft, notesY + 6);
   }
 
-  // ── Terms & Conditions (left side, bottom) ──────────────────────────────────
-  const tcStartY = pageHeight - 67;
-  const tcLines = [
-    "All prices are in Singapore Dollars.",
-    "Validity: 30 days from quotation date.",
-    "Payment: 100% against order confirmation.",
-    "Hardware Delivery (if any): 2 to 4 weeks from the date of confirmation.",
-    "Cancellation Clause: 20% chargeable on selling price if cancelled after confirmation.",
-    "Job scope not defined above will be considered as a separate job scope/project.",
-  ];
-  doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text("Terms & Conditions:", marginLeft, tcStartY);
-  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-  tcLines.forEach((line, i) => {
-    doc.text(doc.splitTextToSize(`• ${line}`, 125), marginLeft, tcStartY + 5.5 + i * 5);
-  });
 
   // ── Totals (right side, bottom) ─────────────────────────────────────────────
   const labelX = 146;
@@ -620,6 +642,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
+  renderBottomDocInfo(doc, settings, marginLeft, totalsY, labelX - 8);
+
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${qt.qtNumber}.pdf`);
@@ -627,7 +651,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
 // ── INVOICE PDF ───────────────────────────────────────────────────────────────
 
-export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   attachPdfFonts(doc);
@@ -693,42 +717,6 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     doc.text(doc.splitTextToSize(inv.notes, 120), marginLeft, notesY + 6);
   }
 
-  // ── Bank Details + Terms & Conditions (left side, bottom) ───────────────────
-  const isRSV = !company || company.id === 1;
-  const bdStartY = pageHeight - 75;
-  let bdY = bdStartY;
-
-  if (isRSV) {
-    doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Bank Details:", marginLeft, bdY); bdY += 5;
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text("Please Paynow (or) Internet Banking funds transfer to:", marginLeft, bdY); bdY += 4.5;
-    doc.text("UOB Bank  |  SGD A/c No: 395-302-839-3  |  Company: RSV InfoTech Pte Ltd", marginLeft, bdY); bdY += 4.5;
-    doc.text("Bank Code: 7375  |  Branch Code: 447  |  Swift Code: UOVBSGSG", marginLeft, bdY); bdY += 7;
-  }
-
-  doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text("Terms & Conditions:", marginLeft, bdY); bdY += 5;
-  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-
-  const tcLines = isRSV
-    ? [
-        "All prices are in Singapore Dollars (SGD).",
-        "All cheques should be crossed and made payable to RSV InfoTech Pte Ltd.",
-        "Customer must check the goods at the time of delivery; No complaints entertained thereafter.",
-        "Goods once sold are not Returnable / Exchangeable.",
-      ]
-    : [
-        "All prices are as per the currency stated on this invoice.",
-        "Payment is due as per the payment terms stated above.",
-        "Goods once sold are not Returnable / Exchangeable.",
-      ];
-
-  tcLines.forEach((line) => {
-    const wrapped = doc.splitTextToSize(`• ${line}`, 125);
-    doc.text(wrapped, marginLeft, bdY);
-    bdY += wrapped.length * 4.5;
-  });
 
   // ── Totals (right side, bottom) ─────────────────────────────────────────────
   const labelX = 146;
@@ -761,6 +749,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ity);
   doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
+
+  renderBottomDocInfo(doc, settings, marginLeft, totalsY, labelX - 8);
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];

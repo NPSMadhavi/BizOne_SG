@@ -1160,6 +1160,10 @@ components:
           type: number
         defaultUom:
           type: string
+        bankDetails:
+          type: string
+        termsAndConditions:
+          type: string
       required: [id, gstRate]
 
     UpdateSettingsBody:
@@ -1200,6 +1204,10 @@ components:
         doCounter:
           type: integer
         doSuffix:
+          type: string
+        bankDetails:
+          type: string
+        termsAndConditions:
           type: string
 
     DocStats:

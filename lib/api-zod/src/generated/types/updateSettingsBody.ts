@@ -25,4 +25,6 @@ export interface UpdateSettingsBody {
   doPrefix?: string;
   doCounter?: number;
   doSuffix?: string;
+  bankDetails?: string;
+  termsAndConditions?: string;
 }

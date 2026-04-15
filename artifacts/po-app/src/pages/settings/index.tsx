@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2 } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -78,6 +79,10 @@ export default function Settings() {
     }
   };
 
+  const [bankDetails, setBankDetails] = useState("");
+  const [termsAndConditions, setTermsAndConditions] = useState("");
+  const [docsEditing, setDocsEditing] = useState(false);
+
   const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "1", suffix: "" });
   const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "1", suffix: "" });
   const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "1", suffix: "" });
@@ -105,6 +110,10 @@ export default function Settings() {
       setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 1), suffix: (settings as any).invSuffix ?? "" });
       setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 1), suffix: (settings as any).doSuffix ?? "" });
       setRnGRN({ prefix: (settings as any).grnPrefix ?? "GRN", counter: String((settings as any).grnCounter ?? 1), suffix: (settings as any).grnSuffix ?? "" });
+    }
+    if (settings && !docsEditing) {
+      setBankDetails((settings as any).bankDetails ?? "");
+      setTermsAndConditions((settings as any).termsAndConditions ?? "");
     }
   }, [settings]);
 
@@ -177,6 +186,22 @@ export default function Settings() {
     );
   };
 
+  const handleSaveDocs = () => {
+    setDocsEditing(false);
+    updateSettings.mutate(
+      { data: { bankDetails, termsAndConditions } as any },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+          toast({ title: "Saved", description: "Document settings updated successfully." });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to update document settings.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
   function nextPreview(cfg: RunningNumberConfig) {
     const n = parseInt(cfg.counter) || 1;
     const padded = String(n).padStart(4, "0");
@@ -239,6 +264,13 @@ export default function Settings() {
               Companies
             </TabsTrigger>
           )}
+          <TabsTrigger
+            value="documents"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <FileText className="h-4 w-4" />
+            Documents
+          </TabsTrigger>
           <TabsTrigger
             value="profile"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
@@ -618,6 +650,51 @@ export default function Settings() {
               ))
             )}
           </div>
+        </TabsContent>
+
+        {/* DOCUMENTS */}
+        <TabsContent value="documents">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Document Settings
+              </CardTitle>
+              <CardDescription>
+                Bank account details and terms &amp; conditions printed at the bottom of all invoices and quotations.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="bankDetails">Bank Account Details</Label>
+                <Textarea
+                  id="bankDetails"
+                  rows={5}
+                  placeholder={"Account No: 1234567890\nAccount Name: Your Company\nIFSC Code: XXXX0001234\nBank: Bank Name\nBranch: Branch Name"}
+                  value={bankDetails}
+                  onChange={(e) => { setDocsEditing(true); setBankDetails(e.target.value); }}
+                />
+                <p className="text-xs text-muted-foreground">Each line will appear as a separate line in the PDF.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="termsAndConditions">Terms &amp; Conditions</Label>
+                <Textarea
+                  id="termsAndConditions"
+                  rows={5}
+                  placeholder={"All prices are as per the currency stated on this invoice.\nPayment is due as per the payment terms stated above.\nGoods once sold are not Returnable / Exchangeable."}
+                  value={termsAndConditions}
+                  onChange={(e) => { setDocsEditing(true); setTermsAndConditions(e.target.value); }}
+                />
+                <p className="text-xs text-muted-foreground">Each line will be prefixed with a bullet point in the PDF.</p>
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button onClick={handleSaveDocs} className="gap-2">
+                  <Save className="h-4 w-4" />
+                  Save Changes
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ACCOUNT */}

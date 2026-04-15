@@ -1,4 +1,4 @@
-import { useGetInvoice, getGetInvoiceQueryKey, useVoidInvoice, useKnockOffInvoice } from "@workspace/api-client-react";
+import { useGetInvoice, getGetInvoiceQueryKey, useVoidInvoice, useKnockOffInvoice, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,10 @@ export default function InvoiceView() {
 
   const { data: doc, isLoading, refetch } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
+  });
+
+  const { data: docSettings } = useGetSettings({
+    query: { queryKey: getGetSettingsQueryKey() },
   });
 
   const voidMutation = useVoidInvoice();
@@ -248,7 +252,7 @@ export default function InvoiceView() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         title={`Invoice ${doc.invNumber}`}
-        generatePdf={(opts) => generateInvoice_PDF(doc, selectedCompany, opts)}
+        generatePdf={(opts) => generateInvoice_PDF(doc, selectedCompany, docSettings as any, opts)}
         pdfFilename={`${doc.invNumber}.pdf`}
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Invoice ${doc.invNumber}`}

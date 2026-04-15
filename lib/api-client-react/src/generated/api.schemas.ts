@@ -236,6 +236,8 @@ export interface Settings {
   autoDeductOnDo?: boolean;
   lowStockWarning?: number;
   defaultUom?: string;
+  bankDetails?: string;
+  termsAndConditions?: string;
 }
 
 export interface UpdateSettingsBody {
@@ -257,6 +259,8 @@ export interface UpdateSettingsBody {
   doPrefix?: string;
   doCounter?: number;
   doSuffix?: string;
+  bankDetails?: string;
+  termsAndConditions?: string;
 }
 
 export interface DocStats {

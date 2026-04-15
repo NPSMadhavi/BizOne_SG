@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
-import { useGetQuotation, useUpdateQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
+import { useGetQuotation, useUpdateQuotation, getGetQuotationQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -70,6 +70,10 @@ export default function QuotationEdit() {
 
   const { data: doc } = useGetQuotation(id, {
     query: { queryKey: getGetQuotationQueryKey(id), enabled: !!id },
+  });
+
+  const { data: docSettings } = useGetSettings({
+    query: { queryKey: getGetSettingsQueryKey() },
   });
 
   const form = useForm<z.infer<typeof schema>>({
@@ -409,7 +413,7 @@ export default function QuotationEdit() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         title={doc ? `Quotation ${doc.qtNumber}` : "Quotation Preview"}
-        generatePdf={(opts) => generateQuotation_PDF(doc!, selectedCompany, opts)}
+        generatePdf={(opts) => generateQuotation_PDF(doc!, selectedCompany, docSettings as any, opts)}
         pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Quotation ${doc.qtNumber}` : "Quotation"}

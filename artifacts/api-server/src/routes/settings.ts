@@ -66,6 +66,8 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     autoDeductOnDo: s.autoDeductOnDo ?? false,
     lowStockWarning: parseFloat(s.lowStockWarning ?? "0"),
     defaultUom: s.defaultUom ?? "pcs",
+    bankDetails: s.bankDetails ?? "",
+    termsAndConditions: s.termsAndConditions ?? "",
   };
 }
 
@@ -94,6 +96,7 @@ router.put("/", async (req, res) => {
     doPrefix, doCounter, doSuffix,
     grnPrefix, grnCounter, grnSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
+    bankDetails, termsAndConditions,
   } = req.body;
 
   const updateData: Record<string, any> = {};
@@ -126,6 +129,8 @@ router.put("/", async (req, res) => {
   if (autoDeductOnDo !== undefined) updateData.autoDeductOnDo = Boolean(autoDeductOnDo);
   if (lowStockWarning !== undefined) updateData.lowStockWarning = String(lowStockWarning);
   if (defaultUom !== undefined) updateData.defaultUom = defaultUom;
+  if (bankDetails !== undefined) updateData.bankDetails = bankDetails;
+  if (termsAndConditions !== undefined) updateData.termsAndConditions = termsAndConditions;
 
   try {
     const settings = await ensureSettings(companyId);

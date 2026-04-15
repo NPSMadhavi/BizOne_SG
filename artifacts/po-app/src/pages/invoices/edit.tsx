@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
-import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey } from "@workspace/api-client-react";
+import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -70,6 +70,10 @@ export default function InvoiceEdit() {
 
   const { data: doc } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
+  });
+
+  const { data: docSettings } = useGetSettings({
+    query: { queryKey: getGetSettingsQueryKey() },
   });
 
   const form = useForm<z.infer<typeof schema>>({
@@ -400,7 +404,7 @@ export default function InvoiceEdit() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         title={doc ? `Invoice ${doc.invNumber}` : "Invoice Preview"}
-        generatePdf={(opts) => generateInvoice_PDF(doc!, selectedCompany, opts)}
+        generatePdf={(opts) => generateInvoice_PDF(doc!, selectedCompany, docSettings as any, opts)}
         pdfFilename={doc ? `${doc.invNumber}.pdf` : "invoice.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}

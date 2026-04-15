@@ -425,6 +425,8 @@ export const GetSettingsResponse = zod.object({
   autoDeductOnDo: zod.boolean().optional(),
   lowStockWarning: zod.number().optional(),
   defaultUom: zod.string().optional(),
+  bankDetails: zod.string().optional(),
+  termsAndConditions: zod.string().optional(),
 });
 
 /**
@@ -449,6 +451,8 @@ export const UpdateSettingsBody = zod.object({
   doPrefix: zod.string().optional(),
   doCounter: zod.number().optional(),
   doSuffix: zod.string().optional(),
+  bankDetails: zod.string().optional(),
+  termsAndConditions: zod.string().optional(),
 });
 
 export const UpdateSettingsResponse = zod.object({
@@ -478,6 +482,8 @@ export const UpdateSettingsResponse = zod.object({
   autoDeductOnDo: zod.boolean().optional(),
   lowStockWarning: zod.number().optional(),
   defaultUom: zod.string().optional(),
+  bankDetails: zod.string().optional(),
+  termsAndConditions: zod.string().optional(),
 });
 
 /**

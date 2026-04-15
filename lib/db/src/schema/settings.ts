@@ -28,6 +28,8 @@ export const settingsTable = pgTable("settings", {
   autoDeductOnDo: boolean("auto_deduct_on_do").default(false).notNull(),
   lowStockWarning: decimal("low_stock_warning", { precision: 15, scale: 3 }).default("0"),
   defaultUom: text("default_uom").default("pcs"),
+  bankDetails: text("bank_details"),
+  termsAndConditions: text("terms_and_conditions"),
 });
 
 export type SettingsRecord = typeof settingsTable.$inferSelect;

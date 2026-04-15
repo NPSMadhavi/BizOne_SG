@@ -1,4 +1,4 @@
-import { useGetQuotation, getGetQuotationQueryKey, useDeleteQuotation } from "@workspace/api-client-react";
+import { useGetQuotation, getGetQuotationQueryKey, useDeleteQuotation, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,10 @@ export default function QuotationView() {
 
   const { data: doc, isLoading } = useGetQuotation(id, {
     query: { queryKey: getGetQuotationQueryKey(id), enabled: !!id },
+  });
+
+  const { data: docSettings } = useGetSettings({
+    query: { queryKey: getGetSettingsQueryKey() },
   });
 
   const deleteMutation = useDeleteQuotation();
@@ -188,7 +192,7 @@ export default function QuotationView() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         title={`Quotation ${doc.qtNumber}`}
-        generatePdf={(opts) => generateQuotation_PDF(doc, selectedCompany, opts)}
+        generatePdf={(opts) => generateQuotation_PDF(doc, selectedCompany, docSettings as any, opts)}
         pdfFilename={`${doc.qtNumber}.pdf`}
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Quotation ${doc.qtNumber}`}

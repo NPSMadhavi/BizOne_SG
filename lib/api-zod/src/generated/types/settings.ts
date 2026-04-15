@@ -33,4 +33,6 @@ export interface Settings {
   autoDeductOnDo?: boolean;
   lowStockWarning?: number;
   defaultUom?: string;
+  bankDetails?: string;
+  termsAndConditions?: string;
 }
