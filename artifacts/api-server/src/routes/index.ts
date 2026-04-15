@@ -10,6 +10,7 @@ import deliveryOrdersRouter from "./delivery-orders";
 import settingsRouter from "./settings";
 import emailRouter from "./email";
 import contactsRouter from "./contacts";
+import grnRouter from "./grn";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(deliveryOrdersRouter);
 router.use("/settings", settingsRouter);
 router.use(emailRouter);
 router.use(contactsRouter);
+router.use(grnRouter);
 
 export default router;

@@ -37,6 +37,7 @@ export default function Settings() {
   const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "1", suffix: "" });
   const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "1", suffix: "" });
   const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "1", suffix: "" });
+  const [rnGRN, setRnGRN] = useState<RunningNumberConfig>({ prefix: "GRN", counter: "1", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
 
   const { data: settings, isLoading: settingsLoading } = useGetSettings({
@@ -58,6 +59,7 @@ export default function Settings() {
       setRnQT({ prefix: (settings as any).qtPrefix ?? "QT", counter: String((settings as any).qtCounter ?? 1), suffix: (settings as any).qtSuffix ?? "" });
       setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 1), suffix: (settings as any).invSuffix ?? "" });
       setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 1), suffix: (settings as any).doSuffix ?? "" });
+      setRnGRN({ prefix: (settings as any).grnPrefix ?? "GRN", counter: String((settings as any).grnCounter ?? 1), suffix: (settings as any).grnSuffix ?? "" });
     }
   }, [settings]);
 
@@ -114,6 +116,7 @@ export default function Settings() {
           qtPrefix: rnQT.prefix, qtCounter: parseInt(rnQT.counter) || 1, qtSuffix: rnQT.suffix,
           invPrefix: rnINV.prefix, invCounter: parseInt(rnINV.counter) || 1, invSuffix: rnINV.suffix,
           doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 1, doSuffix: rnDO.suffix,
+          grnPrefix: rnGRN.prefix, grnCounter: parseInt(rnGRN.counter) || 1, grnSuffix: rnGRN.suffix,
         } as any,
       },
       {
@@ -268,7 +271,7 @@ export default function Settings() {
             <CardContent className="space-y-6">
               {settingsLoading ? (
                 <div className="space-y-3">
-                  {[1, 2, 3, 4].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-md" />)}
+                  {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-16 bg-muted animate-pulse rounded-md" />)}
                 </div>
               ) : (
                 <>
@@ -277,6 +280,7 @@ export default function Settings() {
                     { label: "Quotation", state: rnQT, setter: setRnQT },
                     { label: "Invoice", state: rnINV, setter: setRnINV },
                     { label: "Delivery Order", state: rnDO, setter: setRnDO },
+                    { label: "Goods Receipt Note", state: rnGRN, setter: setRnGRN },
                   ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
                     <div key={label} className="rounded-lg border p-4 space-y-3">
                       <div className="flex items-center justify-between">

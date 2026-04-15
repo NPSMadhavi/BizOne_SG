@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye } from "lucide-react";
+import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList } from "lucide-react";
 import { format } from "date-fns";
 import { generatePO_PDF } from "@/lib/pdf";
 import { EmailSendDialog } from "@/components/email-send-dialog";
@@ -12,6 +12,7 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -29,6 +30,17 @@ export default function PurchaseOrderView() {
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
   });
+
+  const { data: grns } = useQuery<any[]>({
+    queryKey: ["grns"],
+    queryFn: async () => {
+      const res = await fetch("/api/grn", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!po && po.status === "confirmed",
+  });
+  const linkedGrn = grns?.find((g: any) => g.poId === id);
 
   const deleteMutation = useDeletePurchaseOrder();
 
@@ -96,6 +108,16 @@ export default function PurchaseOrderView() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {linkedGrn && (
+            <Button
+              variant="outline"
+              className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+              onClick={() => setLocation(`/grn/${linkedGrn.id}`)}
+            >
+              <ClipboardList className="h-4 w-4" />
+              {linkedGrn.grnNumber}
+            </Button>
+          )}
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>
             <Pencil className="h-4 w-4" />
             Edit

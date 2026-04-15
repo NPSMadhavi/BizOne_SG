@@ -1,23 +1,26 @@
 import { db, settingsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
-type DocType = "po" | "inv" | "qt" | "do";
+type DocType = "po" | "inv" | "qt" | "do" | "grn";
 
 export async function nextDocNumber(type: DocType): Promise<string> {
   const counterCol =
     type === "po" ? "po_counter" :
     type === "inv" ? "inv_counter" :
-    type === "qt" ? "qt_counter" : "do_counter";
+    type === "qt" ? "qt_counter" :
+    type === "grn" ? "grn_counter" : "do_counter";
 
   const prefixCol =
     type === "po" ? "po_prefix" :
     type === "inv" ? "inv_prefix" :
-    type === "qt" ? "qt_prefix" : "do_prefix";
+    type === "qt" ? "qt_prefix" :
+    type === "grn" ? "grn_prefix" : "do_prefix";
 
   const suffixCol =
     type === "po" ? "po_suffix" :
     type === "inv" ? "inv_suffix" :
-    type === "qt" ? "qt_suffix" : "do_suffix";
+    type === "qt" ? "qt_suffix" :
+    type === "grn" ? "grn_suffix" : "do_suffix";
 
   const rows = await db.execute(
     sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`

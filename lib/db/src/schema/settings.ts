@@ -20,6 +20,9 @@ export const settingsTable = pgTable("settings", {
   doPrefix: text("do_prefix").default("DO"),
   doCounter: integer("do_counter").default(1).notNull(),
   doSuffix: text("do_suffix").default(""),
+  grnPrefix: text("grn_prefix").default("GRN"),
+  grnCounter: integer("grn_counter").default(1).notNull(),
+  grnSuffix: text("grn_suffix").default(""),
 });
 
 export type SettingsRecord = typeof settingsTable.$inferSelect;

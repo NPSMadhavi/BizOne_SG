@@ -13,6 +13,7 @@ import {
   Truck,
   Building2,
   RefreshCw,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,6 +123,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {hasModuleAccess("delivery_orders") && (
               <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")}>
                 Delivery Orders
+              </NavItem>
+            )}
+            {hasModuleAccess("purchase_orders") && (
+              <NavItem href="/grn" icon={ClipboardList} active={location.startsWith("/grn")}>
+                Goods Receipt
               </NavItem>
             )}
           </div>

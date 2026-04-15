@@ -24,6 +24,8 @@ import DeliveryOrderView from "@/pages/delivery-orders/view";
 import DeliveryOrderEdit from "@/pages/delivery-orders/edit";
 import Admin from "@/pages/admin/index";
 import Settings from "@/pages/settings/index";
+import GrnList from "@/pages/grn/list";
+import GrnView from "@/pages/grn/view";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { useEffect } from "react";
@@ -34,6 +36,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/quotations": "Quotations",
   "/invoices": "Invoices",
   "/delivery-orders": "Delivery Orders",
+  "/grn": "Goods Receipt Notes",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -139,6 +142,10 @@ function Router() {
         <Route path="/delivery-orders/new">{() => <ProtectedRoute component={DeliveryOrderNew} module="delivery_orders" />}</Route>
         <Route path="/delivery-orders/:id/edit">{() => <ProtectedRoute component={DeliveryOrderEdit} module="delivery_orders" />}</Route>
         <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
+
+        {/* Goods Receipt Notes */}
+        <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="purchase_orders" />}</Route>
+        <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="purchase_orders" />}</Route>
 
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
         <Route path="/settings">{() => <ProtectedRoute component={Settings} />}</Route>

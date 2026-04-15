@@ -40,6 +40,9 @@ function formatSettings(s: typeof settingsTable.$inferSelect) {
     doPrefix: s.doPrefix ?? "DO",
     doCounter: s.doCounter ?? 1,
     doSuffix: s.doSuffix ?? "",
+    grnPrefix: s.grnPrefix ?? "GRN",
+    grnCounter: s.grnCounter ?? 1,
+    grnSuffix: s.grnSuffix ?? "",
   };
 }
 
@@ -61,6 +64,7 @@ router.put("/", async (req, res) => {
     invPrefix, invCounter, invSuffix,
     qtPrefix, qtCounter, qtSuffix,
     doPrefix, doCounter, doSuffix,
+    grnPrefix, grnCounter, grnSuffix,
   } = req.body;
 
   const updateData: Record<string, any> = {};
@@ -90,6 +94,9 @@ router.put("/", async (req, res) => {
   if (doPrefix !== undefined) updateData.doPrefix = doPrefix;
   if (doCounter !== undefined) updateData.doCounter = Number(doCounter);
   if (doSuffix !== undefined) updateData.doSuffix = doSuffix;
+  if (grnPrefix !== undefined) updateData.grnPrefix = grnPrefix;
+  if (grnCounter !== undefined) updateData.grnCounter = Number(grnCounter);
+  if (grnSuffix !== undefined) updateData.grnSuffix = grnSuffix;
 
   try {
     const settings = await ensureSettings();

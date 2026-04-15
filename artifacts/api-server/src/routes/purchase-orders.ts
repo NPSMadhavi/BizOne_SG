@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, purchaseOrdersTable, usersTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
+import { autoCreateGrn, autoDeleteGrnIfEmpty } from "./grn.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -186,8 +187,24 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
 
+  const previousStatus = existing[0].status;
   const [updated] = await db.update(purchaseOrdersTable).set(updateData).where(eq(purchaseOrdersTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Purchase order not found" }); return; }
+
+  const newStatus = updateData.status ?? previousStatus;
+
+  if (previousStatus !== "confirmed" && newStatus === "confirmed") {
+    await autoCreateGrn(updated, req.session.userId!);
+  } else if (previousStatus === "confirmed" && newStatus !== "confirmed") {
+    const result = await autoDeleteGrnIfEmpty(id);
+    if (result.blocked) {
+      await db.update(purchaseOrdersTable).set({ status: "confirmed" }).where(eq(purchaseOrdersTable.id, id));
+      res.status(409).json({
+        error: `Cannot revert PO to ${newStatus}. Goods have already been received in GRN ${result.grnNumber}. Please void the GRN first.`,
+      });
+      return;
+    }
+  }
 
   res.json(parsePO(updated));
 });
