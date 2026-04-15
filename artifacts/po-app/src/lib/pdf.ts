@@ -3,6 +3,7 @@ import "jspdf-autotable";
 import type { PurchaseOrder, Quotation, Invoice, DeliveryOrder, Company } from "@workspace/api-client-react";
 import logoRsvUrl from "@assets/logo_1776054030755.png";
 import logoNetopsysUrl from "@assets/Netopsys_logo_Dark_1776066608427.png";
+import { fmtDate } from "./utils";
 
 function getLogoUrl(company: Company | null | undefined): string {
   if (!company || company.id === 1) return logoRsvUrl;
@@ -158,12 +159,7 @@ function fmtMoney(currency: string, amount: number): string {
 }
 
 function formatDate(d: string | null | undefined): string {
-  if (!d) return "TBA";
-  const parsed = new Date(d.includes("T") ? d : d + "T00:00:00");
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
-  }
-  return d;
+  return fmtDate(d);
 }
 
 function buildDocHeader(
@@ -269,7 +265,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setFont("helvetica", "normal");
   doc.setTextColor(80, 80, 80);
   doc.text(`PO Number: ${po.poNumber}`, marginRight, 30, { align: "right" });
-  doc.text(`Date: ${new Date(po.createdAt).toLocaleDateString()}`, marginRight, 36, { align: "right" });
+  doc.text(`Date: ${fmtDate(po.createdAt)}`, marginRight, 36, { align: "right" });
   doc.text(`Status: ${po.status.toUpperCase()}`, marginRight, 42, { align: "right" });
 
   doc.setFontSize(11);
@@ -303,12 +299,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setTextColor(60, 60, 60);
   doc.text(doc.splitTextToSize(po.deliveryAddress || `${info.name} Office`, 82), col2, 74);
 
-  const formatDeliveryDate = (d: string | null | undefined): string => {
-    if (!d) return "TBA";
-    const parsed = new Date(d);
-    if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
-    return d;
-  };
+  const formatDeliveryDate = (d: string | null | undefined): string => fmtDate(d);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Delivery Date:", marginLeft, 105);
@@ -389,7 +380,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, new Date(qt.createdAt).toLocaleDateString(), qt.status, info);
+  buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, fmtDate(qt.createdAt), qt.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
@@ -509,7 +500,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, new Date(inv.createdAt).toLocaleDateString(), inv.status, info);
+  buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, fmtDate(inv.createdAt), inv.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
@@ -648,7 +639,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const info = companyToInfo(company);
 
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
-  buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, new Date(doDoc.createdAt).toLocaleDateString(), doDoc.status, info);
+  buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.createdAt), doDoc.status, info);
 
   doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Deliver To:", marginLeft, 67);

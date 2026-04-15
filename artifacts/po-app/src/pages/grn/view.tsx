@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, ClipboardList, PackageCheck } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 
 interface GrnItem {
   partNumber?: string;
@@ -189,7 +189,7 @@ export default function GrnView() {
         </Card>
         <Card className="p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Created</p>
-          <p className="font-semibold">{format(new Date(grn.createdAt), "MMM d, yyyy")}</p>
+          <p className="font-semibold">{fmtDate(grn.createdAt)}</p>
         </Card>
       </div>
 

@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useGetPurchaseOrderStats({
@@ -146,7 +146,7 @@ export default function Dashboard() {
                         </Link>
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
-                        {format(new Date(po.createdAt), "MMM d, yyyy")}
+                        {fmtDate(po.createdAt)}
                       </td>
                       <td className="px-6 py-4 font-medium">{po.vendorName}</td>
                       <td className="px-6 py-4 text-right font-medium">

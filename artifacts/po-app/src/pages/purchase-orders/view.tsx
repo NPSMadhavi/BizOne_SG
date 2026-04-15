@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
 import { EmailSendDialog } from "@/components/email-send-dialog";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -103,12 +103,7 @@ export default function PurchaseOrderView() {
 
   if (!po) return <div>Purchase order not found.</div>;
 
-  const formatDeliveryDate = (d: string) => {
-    if (!d) return "TBA";
-    const parsed = new Date(d);
-    if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
-    return d;
-  };
+  const formatDeliveryDate = (d: string) => fmtDate(d);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -128,7 +123,7 @@ export default function PurchaseOrderView() {
             )}
           </div>
           <p className="text-muted-foreground mt-1">
-            Created on {format(new Date(po.createdAt), "MMMM d, yyyy")}
+            Created on {fmtDate(po.createdAt)}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

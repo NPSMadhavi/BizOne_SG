@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { Search, Plus, ArrowRight } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DeliveryOrderList() {
@@ -92,10 +92,10 @@ export default function DeliveryOrderList() {
                 filtered.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>
                     <td className="px-6 py-4 font-medium text-primary">{doc.doNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{format(new Date(doc.createdAt), "MMM d, yyyy")}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{(doc as any).createdByUsername || "—"}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{doc.deliveryDate || "—"}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{doc.deliveryDate ? fmtDate(doc.deliveryDate) : "—"}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
                     <td className="px-6 py-4 text-right">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">

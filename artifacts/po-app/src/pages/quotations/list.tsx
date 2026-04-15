@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { Search, Plus, ArrowRight } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function QuotationList() {
@@ -95,7 +95,7 @@ export default function QuotationList() {
                 filtered.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/quotations/${doc.id}`)}>
                     <td className="px-6 py-4 font-medium text-primary">{doc.qtNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{format(new Date(doc.createdAt), "MMM d, yyyy")}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{(doc as any).createdByUsername || "—"}</td>
                     <td className="px-6 py-4 text-right font-medium">{formatCurrency(doc.totalAmount)}</td>

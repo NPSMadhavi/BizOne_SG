@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { Search, Plus, ArrowRight } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function PurchaseOrderList() {
@@ -95,7 +95,7 @@ export default function PurchaseOrderList() {
                 filteredPOs.map((po) => (
                   <tr key={po.id} className="hover:bg-muted/50 transition-colors group cursor-pointer" onClick={() => setLocation(`/purchase-orders/${po.id}`)}>
                     <td className="px-6 py-4 font-medium text-primary">{po.poNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{format(new Date(po.createdAt), "MMM d, yyyy")}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(po.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{po.vendorName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{(po as any).createdByUsername || "—"}</td>
                     <td className="px-6 py-4 text-right font-medium">{formatCurrency(po.totalAmount)}</td>

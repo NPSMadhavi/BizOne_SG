@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { Search, ArrowRight, ClipboardList } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface GrnItem {
@@ -144,7 +144,7 @@ export default function GrnList() {
                       <td className="px-6 py-4 font-medium">{grn.poNumber}</td>
                       <td className="px-6 py-4">{grn.vendorName}</td>
                       <td className="px-6 py-4 text-muted-foreground">
-                        {format(new Date(grn.createdAt), "MMM d, yyyy")}
+                        {fmtDate(grn.createdAt)}
                       </td>
                       <td className="px-6 py-4 text-center text-muted-foreground">
                         {receivedCount}/{grn.items.length} received

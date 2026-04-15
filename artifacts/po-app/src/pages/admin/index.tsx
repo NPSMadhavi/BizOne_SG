@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
 import { z } from "zod";
@@ -465,7 +465,7 @@ export default function Admin() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">
-                      {format(new Date(u.createdAt), "MMM d, yyyy")}
+                      {fmtDate(u.createdAt)}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">

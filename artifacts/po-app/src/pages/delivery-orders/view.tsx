@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Trash2, Pencil, Eye, Lock } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/utils";
 import { generateDO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -18,9 +18,7 @@ import {
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
-  const d = new Date(dateStr + (dateStr.includes("T") ? "" : "T00:00:00"));
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
+  return fmtDate(dateStr);
 }
 
 export default function DeliveryOrderView() {
@@ -68,7 +66,7 @@ export default function DeliveryOrderView() {
               <h1 className="text-2xl font-bold tracking-tight">{doc.doNumber}</h1>
               {getStatusBadge(doc.status)}
             </div>
-            <p className="text-muted-foreground text-sm mt-0.5">Created {format(new Date(doc.createdAt), "d MMM yyyy")}</p>
+            <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
