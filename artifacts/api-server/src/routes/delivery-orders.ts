@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, deliveryOrdersTable, usersTable } from "@workspace/db";
-import { eq, desc, inArray } from "drizzle-orm";
+import { db, deliveryOrdersTable, usersTable, customersTable } from "@workspace/db";
+import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -24,6 +24,19 @@ function requireCompany(req: any, res: any): boolean {
     return false;
   }
   return true;
+}
+
+async function upsertCustomerByName(companyId: number, name: string, address?: string | null, contactPerson?: string | null) {
+  if (!name?.trim()) return;
+  const existing = await db.select({ id: customersTable.id }).from(customersTable)
+    .where(and(eq(customersTable.companyId, companyId), ilike(customersTable.name, name.trim())))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(customersTable).values({
+      companyId, name: name.trim(),
+      address: address || null, contactPerson: contactPerson || null,
+    });
+  }
 }
 
 function parseDoc(doc: any) {
@@ -99,6 +112,7 @@ router.post("/delivery-orders", async (req, res): Promise<void> => {
     isPrivate: isPrivate === true,
     status: status || "draft", createdBy: req.session.userId!,
   }).returning();
+  await upsertCustomerByName(companyId, customerName, customerAddress, customerContact);
   res.status(201).json(parseDoc(doc));
 });
 

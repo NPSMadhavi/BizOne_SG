@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, purchaseOrdersTable, usersTable } from "@workspace/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { db, purchaseOrdersTable, usersTable, vendorsTable } from "@workspace/db";
+import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { autoCreateGrn, autoDeleteGrnIfEmpty } from "./grn.js";
 
@@ -26,6 +26,19 @@ function requireCompany(req: any, res: any): boolean {
     return false;
   }
   return true;
+}
+
+async function upsertVendorByName(companyId: number, name: string, address?: string | null, contactPerson?: string | null, contactEmail?: string | null) {
+  if (!name?.trim()) return;
+  const existing = await db.select({ id: vendorsTable.id }).from(vendorsTable)
+    .where(and(eq(vendorsTable.companyId, companyId), ilike(vendorsTable.name, name.trim())))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(vendorsTable).values({
+      companyId, name: name.trim(),
+      address: address || null, contactPerson: contactPerson || null, contactEmail: contactEmail || null,
+    });
+  }
 }
 
 function parsePO(po: any) {
@@ -128,7 +141,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     status: status || "draft",
     createdBy: req.session.userId!,
   }).returning();
-
+  await upsertVendorByName(companyId, vendorName, vendorAddress, vendorContact, vendorContactEmail);
   res.status(201).json(parsePO(po));
 });
 
