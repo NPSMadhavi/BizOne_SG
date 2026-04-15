@@ -151,7 +151,8 @@ export default function QuotationEdit() {
   const taxableAmount = subtotal - discountAmt;
   const taxAmount = taxableAmount * (taxPercent / 100);
   const totalAmount = taxableAmount + taxAmount;
-  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(v);
+  const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
+  const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
 
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);

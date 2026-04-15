@@ -145,8 +145,9 @@ export default function PurchaseOrderNew() {
   const taxAmount = subtotal * (taxPercent / 100);
   const totalAmount = subtotal + taxAmount;
 
+  const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
   const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('en-SG', { style: 'currency', currency }).format(value);
+    new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(value);
 
   async function saveDocument(values: z.infer<typeof poSchema>, status: "draft" | "confirmed" = "draft") {
     const filledItems = values.items.filter(

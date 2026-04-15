@@ -183,8 +183,9 @@ export default function PurchaseOrderEdit() {
   const totalAmount = subtotal + taxAmount;
 
   const currency = form.watch("currency") || "SGD";
+  const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
   const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(value);
+    new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(value);
 
   async function onSubmit(values: z.infer<typeof poSchema>) {
     const filledItems = values.items.filter(
