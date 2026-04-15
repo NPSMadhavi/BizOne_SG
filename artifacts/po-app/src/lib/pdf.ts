@@ -5,6 +5,60 @@ import logoRsvUrl from "@assets/logo_1776054030755.png";
 import logoNetopsysUrl from "@assets/Netopsys_logo_Dark_1776066608427.png";
 import { fmtDate } from "./utils";
 
+// ── Unicode font (Roboto) — supports ₹, €, £ and all PDF currency symbols ───
+let PDF_FONT = "helvetica";
+type FontCache = { regular: string; bold: string; italic: string; bolditalic: string };
+let _fontCache: FontCache | null = null;
+let _fontPromise: Promise<void> | null = null;
+
+function _bufToB64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...(bytes.subarray(i, i + CHUNK) as unknown as number[])));
+  }
+  return btoa(parts.join(""));
+}
+
+function _loadFonts(): Promise<void> {
+  const base = "https://cdn.jsdelivr.net/npm/roboto-fontface@0.10.0/fonts/roboto/";
+  return Promise.all([
+    fetch(`${base}Roboto-Regular.ttf`).then(r => r.arrayBuffer()),
+    fetch(`${base}Roboto-Bold.ttf`).then(r => r.arrayBuffer()),
+    fetch(`${base}Roboto-Italic.ttf`).then(r => r.arrayBuffer()),
+    fetch(`${base}Roboto-BoldItalic.ttf`).then(r => r.arrayBuffer()),
+  ]).then(([reg, bold, ital, boldItal]) => {
+    _fontCache = {
+      regular: _bufToB64(reg),
+      bold: _bufToB64(bold),
+      italic: _bufToB64(ital),
+      bolditalic: _bufToB64(boldItal),
+    };
+    PDF_FONT = "Roboto";
+  }).catch(() => { /* keep helvetica on network error */ });
+}
+
+function ensurePdfFonts(): Promise<void> {
+  if (!_fontPromise) _fontPromise = _loadFonts();
+  return _fontPromise;
+}
+
+function attachPdfFonts(doc: jsPDF): void {
+  if (!_fontCache) return;
+  try {
+    doc.addFileToVFS("Roboto-Regular.ttf", _fontCache.regular);
+    doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
+    doc.addFileToVFS("Roboto-Bold.ttf", _fontCache.bold);
+    doc.addFont("Roboto-Bold.ttf", "Roboto", "bold");
+    doc.addFileToVFS("Roboto-Italic.ttf", _fontCache.italic);
+    doc.addFont("Roboto-Italic.ttf", "Roboto", "italic");
+    doc.addFileToVFS("Roboto-BoldItalic.ttf", _fontCache.bolditalic);
+    doc.addFont("Roboto-BoldItalic.ttf", "Roboto", "bolditalic");
+  } catch { /* already registered */ }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function getLogoUrl(company: Company | null | undefined): string {
   if (!company || company.id === 1) return logoRsvUrl;
   return logoNetopsysUrl;
@@ -59,8 +113,12 @@ function autoTableRich(
   descColIdx: number,
   richDescRows: RichLine[][]
 ): void {
+  const { headStyles: hs, bodyStyles: bs, ...restOpts } = opts;
   (doc as any).autoTable({
-    ...opts,
+    styles: { font: PDF_FONT },
+    ...restOpts,
+    headStyles: { font: PDF_FONT, ...(hs ?? {}) },
+    bodyStyles: { font: PDF_FONT, ...(bs ?? {}) },
     willDrawCell: (data: any) => {
       if (data.section === "body" && data.column.index === descColIdx) {
         data.cell.text = [];
@@ -79,7 +137,7 @@ function autoTableRich(
       jdoc.setFontSize(9.5);
       for (const { text, bold, italic } of richLines) {
         const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
-        jdoc.setFont("helvetica", style);
+        jdoc.setFont(PDF_FONT, style);
         jdoc.setTextColor(60, 60, 60);
         const wrapped = jdoc.splitTextToSize(text, maxW);
         jdoc.text(wrapped, x, ty);
@@ -144,19 +202,19 @@ function renderEntityBlock(
   maxWidth: number
 ): void {
   doc.setFontSize(9.5);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(60, 60, 60);
   doc.text(name, x, startY);
   const restText = rest.filter(Boolean).join("\n");
   if (restText) {
-    doc.setFont("helvetica", "normal");
+    doc.setFont(PDF_FONT, "normal");
     doc.text(doc.splitTextToSize(restText, maxWidth), x, startY + 5);
   }
 }
 
 function fmtMoney(currency: string, amount: number): string {
   const SYMBOLS: Record<string, string> = {
-    SGD: "S$", USD: "$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ", INR: "Rs.",
+    SGD: "S$", USD: "$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ", INR: "\u20B9",
   };
   const symbol = SYMBOLS[currency] ?? (currency + " ");
   const num = new Intl.NumberFormat("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
@@ -183,24 +241,24 @@ function buildDocHeader(
   doc.addImage(logoBase64, "PNG", marginLeft, 12, 65, 14);
 
   doc.setFontSize(26);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(24, 33, 47);
   doc.text(title, marginRight, 22, { align: "right" });
 
   doc.setFontSize(9.5);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(80, 80, 80);
   doc.text(`Number: ${docNumber}`, marginRight, 30, { align: "right" });
   doc.text(`Date: ${date}`, marginRight, 36, { align: "right" });
   doc.text(`Status: ${status.toUpperCase()}`, marginRight, 42, { align: "right" });
 
   doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(0, 0, 0);
   doc.text(info.name, marginLeft, 40);
 
   doc.setFontSize(9.5);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(100, 100, 100);
 
   let companyY = 46;
@@ -235,7 +293,7 @@ function buildDocFooter(doc: jsPDF, docType: string) {
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
     doc.setFontSize(7.5);
-    doc.setFont("helvetica", "italic");
+    doc.setFont(PDF_FONT, "italic");
     doc.setTextColor(160, 160, 160);
     doc.text(
       `This is a computer-generated ${docType} document and does not require a physical signature.`,
@@ -266,12 +324,12 @@ function buildDoFooter(doc: jsPDF) {
       doc.line(marginLeft, sigY, marginLeft + 130, sigY);
 
       doc.setFontSize(9);
-      doc.setFont("helvetica", "italic");
+      doc.setFont(PDF_FONT, "italic");
       doc.setTextColor(60, 60, 60);
       doc.text("Customer Authorised Signature(s) & Company official stamp/NRIC", marginLeft, sigY + 5);
 
       doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
+      doc.setFont(PDF_FONT, "normal");
       doc.setTextColor(60, 60, 60);
       const ackLines = doc.splitTextToSize(
         "Received above goods in good order & condition. No further claim for damage, shortage or errors will be entertained after acceptance of goods.",
@@ -281,7 +339,7 @@ function buildDoFooter(doc: jsPDF) {
     }
 
     doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(PDF_FONT, "normal");
     doc.setTextColor(100, 100, 100);
     doc.text("Confidential", pageWidth / 2, footerY, { align: "center" });
     doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
@@ -291,7 +349,9 @@ function buildDoFooter(doc: jsPDF) {
 // ── PURCHASE ORDER PDF ────────────────────────────────────────────────────────
 
 export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
@@ -303,24 +363,24 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.addImage(logoBase64, "PNG", marginLeft, 12, 65, 14);
 
   doc.setFontSize(26);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(24, 33, 47);
   doc.text("PURCHASE ORDER", marginRight, 22, { align: "right" });
 
   doc.setFontSize(9.5);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(80, 80, 80);
   doc.text(`PO Number: ${po.poNumber}`, marginRight, 30, { align: "right" });
   doc.text(`Date: ${fmtDate(po.issueDate || po.createdAt)}`, marginRight, 36, { align: "right" });
   doc.text(`Status: ${po.status.toUpperCase()}`, marginRight, 42, { align: "right" });
 
   doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(0, 0, 0);
   doc.text(info.name, marginLeft, 40);
 
   doc.setFontSize(9.5);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(100, 100, 100);
   let companyY = 46;
   if (info.addressLine1) { doc.text(info.addressLine1, marginLeft, companyY); companyY += 5; }
@@ -333,7 +393,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.line(marginLeft, 58, marginRight, 58);
 
   doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(0, 0, 0);
   doc.text("Vendor:", marginLeft, 67);
   doc.text("Delivery To:", col2, 67);
@@ -341,16 +401,16 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   renderEntityBlock(doc, po.vendorName, [po.vendorAddress, po.vendorContact], marginLeft, 74, 85);
 
   doc.setFontSize(9.5);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(60, 60, 60);
   doc.text(doc.splitTextToSize(po.deliveryAddress || `${info.name} Office`, 82), col2, 74);
 
   const formatDeliveryDate = (d: string | null | undefined): string => fmtDate(d);
 
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Delivery Date:", marginLeft, 105);
   doc.text("Payment Terms:", col2, 105);
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
   doc.text(formatDeliveryDate(po.deliveryDate), marginLeft + 32, 105);
   doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
@@ -380,9 +440,9 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const pageHeight = doc.internal.pageSize.getHeight();
   if (po.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
-    doc.setFontSize(9.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, notesY);
-    doc.setFont("helvetica", "normal"); doc.setTextColor(80, 80, 80);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
     doc.text(doc.splitTextToSize(po.notes, 120), marginLeft, notesY + 6);
   }
 
@@ -390,7 +450,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const valueX = marginRight - 4;
   const totalsY = pageHeight - 47;
 
-  doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
   doc.text(fmtMoney(poCurrency, Number(po.subtotal)), valueX, totalsY, { align: "right" });
   const taxAmount = Number(po.totalAmount) - Number(po.subtotal);
@@ -398,7 +458,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(fmtMoney(poCurrency, taxAmount), valueX, totalsY + 7, { align: "right" });
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, totalsY + 17);
   doc.text(fmtMoney(poCurrency, Number(po.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
@@ -406,7 +466,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const footerY = pageHeight - 12;
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
-    doc.setFontSize(7.5); doc.setFont("helvetica", "italic"); doc.setTextColor(160, 160, 160);
+    doc.setFontSize(7.5); doc.setFont(PDF_FONT, "italic"); doc.setTextColor(160, 160, 160);
     doc.text("This is a computer-generated Purchase Order document and does not require a physical signature.", pageWidth / 2, footerY, { align: "center" });
     doc.text(`Page ${p} of ${totalPages}`, marginRight, footerY, { align: "right" });
   }
@@ -418,7 +478,9 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 // ── QUOTATION PDF ─────────────────────────────────────────────────────────────
 
 export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const marginLeft = 14;
@@ -428,14 +490,14 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
   buildDocHeader(doc, logoBase64, "QUOTATION", qt.qtNumber, fmtDate(qt.issueDate || qt.createdAt), qt.status, info);
 
-  doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
 
   renderEntityBlock(doc, qt.customerName, [qt.customerAddress, qt.customerContact], marginLeft, 74, 160);
 
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Payment Terms:", marginLeft, 100);
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
   doc.text(qt.paymentTerms || "Standard", marginLeft + 33, 100);
 
   const qtCurrency = (qt as any).currency || "SGD";
@@ -475,9 +537,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   if (qt.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
-    doc.setFontSize(9.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, notesY);
-    doc.setFont("helvetica", "normal"); doc.setTextColor(80, 80, 80);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
     doc.text(doc.splitTextToSize(qt.notes, 120), marginLeft, notesY + 6);
   }
 
@@ -491,9 +553,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     "Cancellation Clause: 20% chargeable on selling price if cancelled after confirmation.",
     "Job scope not defined above will be considered as a separate job scope/project.",
   ];
-  doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Terms & Conditions:", marginLeft, tcStartY);
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
   tcLines.forEach((line, i) => {
     doc.text(doc.splitTextToSize(`• ${line}`, 125), marginLeft, tcStartY + 5.5 + i * 5);
   });
@@ -509,7 +571,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, boxH, 2, 2, "F");
 
   let ty = totalsY;
-  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, ty);
   doc.text(fmtMoney(qtCurrency, Number(qt.subtotal)), valueX, ty, { align: "right" });
   ty += 7;
@@ -526,7 +588,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, ty, marginRight, ty);
   ty += 7;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
@@ -538,7 +600,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 // ── INVOICE PDF ───────────────────────────────────────────────────────────────
 
 export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const marginLeft = 14;
@@ -548,14 +612,14 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
   buildDocHeader(doc, logoBase64, "TAX INVOICE", inv.invNumber, fmtDate(inv.issueDate || inv.createdAt), inv.status, info);
 
-  doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
 
   renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact], marginLeft, 74, 160);
 
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Payment Terms:", marginLeft, 100);
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
   doc.text(inv.paymentTerms || "Standard", marginLeft + 33, 100);
 
   const invCurrency = (inv as any).currency || "SGD";
@@ -595,9 +659,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   if (inv.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
-    doc.setFontSize(9.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, notesY);
-    doc.setFont("helvetica", "normal"); doc.setTextColor(80, 80, 80);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
     doc.text(doc.splitTextToSize(inv.notes, 120), marginLeft, notesY + 6);
   }
 
@@ -607,17 +671,17 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   let bdY = bdStartY;
 
   if (isRSV) {
-    doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Bank Details:", marginLeft, bdY); bdY += 5;
-    doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
     doc.text("Please Paynow (or) Internet Banking funds transfer to:", marginLeft, bdY); bdY += 4.5;
     doc.text("UOB Bank  |  SGD A/c No: 395-302-839-3  |  Company: RSV InfoTech Pte Ltd", marginLeft, bdY); bdY += 4.5;
     doc.text("Bank Code: 7375  |  Branch Code: 447  |  Swift Code: UOVBSGSG", marginLeft, bdY); bdY += 7;
   }
 
-  doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Terms & Conditions:", marginLeft, bdY); bdY += 5;
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
 
   const tcLines = isRSV
     ? [
@@ -649,7 +713,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, invBoxH, 2, 2, "F");
 
   let ity = totalsY;
-  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, ity);
   doc.text(fmtMoney(invCurrency, Number(inv.subtotal)), valueX, ity, { align: "right" });
   ity += 7;
@@ -666,7 +730,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, ity, marginRight, ity);
   ity += 7;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(11); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ity);
   doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
@@ -678,7 +742,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 // ── DELIVERY ORDER PDF ────────────────────────────────────────────────────────
 
 export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
@@ -687,14 +753,14 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const logoBase64 = await getBase64ImageFromUrl(getLogoUrl(company));
   buildDocHeader(doc, logoBase64, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.issueDate || doDoc.createdAt), doDoc.status, info);
 
-  doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Deliver To:", marginLeft, 67);
 
   renderEntityBlock(doc, doDoc.customerName, [doDoc.customerAddress, doDoc.customerContact], marginLeft, 74, 85);
 
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
+  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Delivery Date:", marginLeft, 105);
-  doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
   doc.text(formatDate(doDoc.deliveryDate), marginLeft + 32, 105);
 
   const hasPartNo = (doDoc.items as any[]).some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
@@ -730,9 +796,9 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
 
   if (doDoc.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;
-    doc.setFontSize(9.5); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, notesY);
-    doc.setFont("helvetica", "normal"); doc.setTextColor(80, 80, 80);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
     doc.text(doc.splitTextToSize(doDoc.notes, 120), marginLeft, notesY + 6);
   }
 
