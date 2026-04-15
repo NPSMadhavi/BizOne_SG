@@ -26,7 +26,7 @@ export const LoginResponse = zod.object({
   user: zod.object({
     id: zod.number(),
     username: zod.string(),
-    role: zod.enum(["admin", "user", "external"]),
+    role: zod.enum(["admin", "user"]),
     createdAt: zod.string(),
     companies: zod.array(
       zod
@@ -59,7 +59,7 @@ export const LogoutResponse = zod.object({
 export const GetMeResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -109,7 +109,7 @@ export const ListCompaniesResponse = zod.array(ListCompaniesResponseItem);
 export const ListUsersResponseItem = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -135,7 +135,7 @@ export const ListUsersResponse = zod.array(ListUsersResponseItem);
 export const CreateUserBody = zod.object({
   username: zod.string(),
   password: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user"]),
   companyAccess: zod
     .array(
       zod
@@ -158,7 +158,7 @@ export const UpdateUserParams = zod.object({
 export const UpdateUserBody = zod.object({
   username: zod.string().optional(),
   password: zod.string().optional(),
-  role: zod.enum(["admin", "user", "external"]).optional(),
+  role: zod.enum(["admin", "user"]).optional(),
   companyAccess: zod
     .array(
       zod
@@ -174,7 +174,7 @@ export const UpdateUserBody = zod.object({
 export const UpdateUserResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -418,6 +418,13 @@ export const GetSettingsResponse = zod.object({
   doPrefix: zod.string().optional(),
   doCounter: zod.number().optional(),
   doSuffix: zod.string().optional(),
+  grnPrefix: zod.string().optional(),
+  grnCounter: zod.number().optional(),
+  grnSuffix: zod.string().optional(),
+  allowNegativeStock: zod.boolean().optional(),
+  autoDeductOnDo: zod.boolean().optional(),
+  lowStockWarning: zod.number().optional(),
+  defaultUom: zod.string().optional(),
 });
 
 /**
@@ -464,6 +471,13 @@ export const UpdateSettingsResponse = zod.object({
   doPrefix: zod.string().optional(),
   doCounter: zod.number().optional(),
   doSuffix: zod.string().optional(),
+  grnPrefix: zod.string().optional(),
+  grnCounter: zod.number().optional(),
+  grnSuffix: zod.string().optional(),
+  allowNegativeStock: zod.boolean().optional(),
+  autoDeductOnDo: zod.boolean().optional(),
+  lowStockWarning: zod.number().optional(),
+  defaultUom: zod.string().optional(),
 });
 
 /**
@@ -1062,5 +1076,106 @@ export const DeleteDeliveryOrderParams = zod.object({
 });
 
 export const DeleteDeliveryOrderResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List stock items for current company
+ */
+export const ListStockItemsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  type: zod.enum(["product", "service"]).optional(),
+});
+
+export const ListStockItemsResponseItem = zod.object({
+  id: zod.number(),
+  companyId: zod.number(),
+  code: zod.string(),
+  name: zod.string(),
+  description: zod.string().optional(),
+  uom: zod.string(),
+  type: zod.enum(["product", "service"]),
+  unitPrice: zod.number().optional(),
+  stockQty: zod.number().optional(),
+  isActive: zod.boolean(),
+  createdAt: zod.string().optional(),
+});
+export const ListStockItemsResponse = zod.array(ListStockItemsResponseItem);
+
+/**
+ * @summary Create a stock item
+ */
+export const CreateStockItemBody = zod.object({
+  code: zod.string(),
+  name: zod.string(),
+  description: zod.string().optional(),
+  uom: zod.string().optional(),
+  type: zod.enum(["product", "service"]).optional(),
+  unitPrice: zod.number().optional(),
+  stockQty: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+/**
+ * @summary Get a stock item
+ */
+export const GetStockItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetStockItemResponse = zod.object({
+  id: zod.number(),
+  companyId: zod.number(),
+  code: zod.string(),
+  name: zod.string(),
+  description: zod.string().optional(),
+  uom: zod.string(),
+  type: zod.enum(["product", "service"]),
+  unitPrice: zod.number().optional(),
+  stockQty: zod.number().optional(),
+  isActive: zod.boolean(),
+  createdAt: zod.string().optional(),
+});
+
+/**
+ * @summary Update a stock item
+ */
+export const UpdateStockItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateStockItemBody = zod.object({
+  code: zod.string().optional(),
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+  uom: zod.string().optional(),
+  type: zod.enum(["product", "service"]).optional(),
+  unitPrice: zod.number().optional(),
+  stockQty: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateStockItemResponse = zod.object({
+  id: zod.number(),
+  companyId: zod.number(),
+  code: zod.string(),
+  name: zod.string(),
+  description: zod.string().optional(),
+  uom: zod.string(),
+  type: zod.enum(["product", "service"]),
+  unitPrice: zod.number().optional(),
+  stockQty: zod.number().optional(),
+  isActive: zod.boolean(),
+  createdAt: zod.string().optional(),
+});
+
+/**
+ * @summary Delete a stock item
+ */
+export const DeleteStockItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteStockItemResponse = zod.object({
   success: zod.boolean(),
 });

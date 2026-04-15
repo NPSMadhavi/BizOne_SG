@@ -229,6 +229,13 @@ export interface Settings {
   doPrefix?: string;
   doCounter?: number;
   doSuffix?: string;
+  grnPrefix?: string;
+  grnCounter?: number;
+  grnSuffix?: string;
+  allowNegativeStock?: boolean;
+  autoDeductOnDo?: boolean;
+  lowStockWarning?: number;
+  defaultUom?: string;
 }
 
 export interface UpdateSettingsBody {
@@ -513,6 +520,78 @@ export interface UpdateDeliveryOrderBody {
   items: DOItem[];
 }
 
+export type StockItemType = (typeof StockItemType)[keyof typeof StockItemType];
+
+export const StockItemType = {
+  product: "product",
+  service: "service",
+} as const;
+
+export interface StockItem {
+  id: number;
+  companyId: number;
+  code: string;
+  name: string;
+  description?: string;
+  uom: string;
+  type: StockItemType;
+  unitPrice?: number;
+  stockQty?: number;
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export type CreateStockItemBodyType =
+  (typeof CreateStockItemBodyType)[keyof typeof CreateStockItemBodyType];
+
+export const CreateStockItemBodyType = {
+  product: "product",
+  service: "service",
+} as const;
+
+export interface CreateStockItemBody {
+  code: string;
+  name: string;
+  description?: string;
+  uom?: string;
+  type?: CreateStockItemBodyType;
+  unitPrice?: number;
+  stockQty?: number;
+  isActive?: boolean;
+}
+
+export type UpdateStockItemBodyType =
+  (typeof UpdateStockItemBodyType)[keyof typeof UpdateStockItemBodyType];
+
+export const UpdateStockItemBodyType = {
+  product: "product",
+  service: "service",
+} as const;
+
+export interface UpdateStockItemBody {
+  code?: string;
+  name?: string;
+  description?: string;
+  uom?: string;
+  type?: UpdateStockItemBodyType;
+  unitPrice?: number;
+  stockQty?: number;
+  isActive?: boolean;
+}
+
 export type VoidInvoiceBody = {
   voidReason: string;
 };
+
+export type ListStockItemsParams = {
+  search?: string;
+  type?: ListStockItemsType;
+};
+
+export type ListStockItemsType =
+  (typeof ListStockItemsType)[keyof typeof ListStockItemsType];
+
+export const ListStockItemsType = {
+  product: "product",
+  service: "service",
+} as const;

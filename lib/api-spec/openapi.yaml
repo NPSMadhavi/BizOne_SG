@@ -26,6 +26,8 @@ tags:
     description: Delivery order operations
   - name: settings
     description: Company settings
+  - name: stock-items
+    description: Stock item operations
 paths:
   /healthz:
     get:
@@ -698,6 +700,107 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
 
+  /stock-items:
+    get:
+      operationId: listStockItems
+      tags: [stock-items]
+      summary: List stock items for current company
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [product, service]
+      responses:
+        "200":
+          description: List of stock items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockItem"
+    post:
+      operationId: createStockItem
+      tags: [stock-items]
+      summary: Create a stock item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStockItemBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockItem"
+
+  /stock-items/{id}:
+    get:
+      operationId: getStockItem
+      tags: [stock-items]
+      summary: Get a stock item
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Stock item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockItem"
+    put:
+      operationId: updateStockItem
+      tags: [stock-items]
+      summary: Update a stock item
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStockItemBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockItem"
+    delete:
+      operationId: deleteStockItem
+      tags: [stock-items]
+      summary: Delete a stock item
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -1042,6 +1145,20 @@ components:
         doCounter:
           type: integer
         doSuffix:
+          type: string
+        grnPrefix:
+          type: string
+        grnCounter:
+          type: integer
+        grnSuffix:
+          type: string
+        allowNegativeStock:
+          type: boolean
+        autoDeductOnDo:
+          type: boolean
+        lowStockWarning:
+          type: number
+        defaultUom:
           type: string
       required: [id, gstRate]
 
@@ -1457,3 +1574,74 @@ components:
           items:
             $ref: "#/components/schemas/DOItem"
       required: [customerName, items]
+
+    StockItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        uom:
+          type: string
+        type:
+          type: string
+          enum: [product, service]
+        unitPrice:
+          type: number
+        stockQty:
+          type: number
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, companyId, code, name, uom, type, isActive]
+
+    CreateStockItemBody:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        uom:
+          type: string
+        type:
+          type: string
+          enum: [product, service]
+        unitPrice:
+          type: number
+        stockQty:
+          type: number
+        isActive:
+          type: boolean
+      required: [code, name]
+
+    UpdateStockItemBody:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        uom:
+          type: string
+        type:
+          type: string
+          enum: [product, service]
+        unitPrice:
+          type: number
+        stockQty:
+          type: number
+        isActive:
+          type: boolean

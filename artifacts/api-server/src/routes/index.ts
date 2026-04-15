@@ -11,6 +11,7 @@ import settingsRouter from "./settings";
 import emailRouter from "./email";
 import contactsRouter from "./contacts";
 import grnRouter from "./grn";
+import stockItemsRouter from "./stock-items";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use("/settings", settingsRouter);
 router.use(emailRouter);
 router.use(contactsRouter);
 router.use(grnRouter);
+router.use(stockItemsRouter);
 
 export default router;

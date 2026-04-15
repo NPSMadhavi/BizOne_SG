@@ -43,6 +43,10 @@ function formatSettings(s: typeof settingsTable.$inferSelect) {
     grnPrefix: s.grnPrefix ?? "GRN",
     grnCounter: s.grnCounter ?? 1,
     grnSuffix: s.grnSuffix ?? "",
+    allowNegativeStock: s.allowNegativeStock ?? false,
+    autoDeductOnDo: s.autoDeductOnDo ?? false,
+    lowStockWarning: parseFloat(s.lowStockWarning ?? "0"),
+    defaultUom: s.defaultUom ?? "pcs",
   };
 }
 
@@ -65,6 +69,7 @@ router.put("/", async (req, res) => {
     qtPrefix, qtCounter, qtSuffix,
     doPrefix, doCounter, doSuffix,
     grnPrefix, grnCounter, grnSuffix,
+    allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
   } = req.body;
 
   const updateData: Record<string, any> = {};
@@ -97,6 +102,10 @@ router.put("/", async (req, res) => {
   if (grnPrefix !== undefined) updateData.grnPrefix = grnPrefix;
   if (grnCounter !== undefined) updateData.grnCounter = Number(grnCounter);
   if (grnSuffix !== undefined) updateData.grnSuffix = grnSuffix;
+  if (allowNegativeStock !== undefined) updateData.allowNegativeStock = Boolean(allowNegativeStock);
+  if (autoDeductOnDo !== undefined) updateData.autoDeductOnDo = Boolean(autoDeductOnDo);
+  if (lowStockWarning !== undefined) updateData.lowStockWarning = String(lowStockWarning);
+  if (defaultUom !== undefined) updateData.defaultUom = defaultUom;
 
   try {
     const settings = await ensureSettings();

@@ -26,4 +26,11 @@ export interface Settings {
   doPrefix?: string;
   doCounter?: number;
   doSuffix?: string;
+  grnPrefix?: string;
+  grnCounter?: number;
+  grnSuffix?: string;
+  allowNegativeStock?: boolean;
+  autoDeductOnDo?: boolean;
+  lowStockWarning?: number;
+  defaultUom?: string;
 }

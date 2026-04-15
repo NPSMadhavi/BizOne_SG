@@ -17,7 +17,7 @@ A full-stack document management application for three companies: RSV Infotech P
 - **Email sending** — multi-recipient tag-input dialog (Outlook-style); send PO/Quotation/Invoice as PDF attachment via SMTP; reusable EmailSendDialog component
 - **PdfPreviewModal** — inline PDF preview (iframe) with Edit / Download / Send Email actions; used on all New, Edit, and View pages
 - **PaymentTermsSelect** — dropdown with 30-Day, 14-Day, 7-Day, COD, Advance, and custom options on all PO/Quotation/Invoice/DO forms
-- **DeliveryDateField** — quick-pick options (1 Week / 2 Weeks / ETA / Custom) on PO and Delivery Order forms
+- **DeliveryDateField** — quick-pick options (1 Week / 2 Weeks / ETA / Custom) on PO, Quotation, Invoice, and Delivery Order forms
 - **isPrivate** — per-document visibility toggle; private docs visible only to creator + admins; Lock icon badge on view pages
 - **Draft / Preview workflow** — all New and Edit forms have "Save Draft" and "Save & Preview" buttons
 - **Multi-currency** — SGD, USD, EUR, GBP, MYR, INR; `fmtMoney(currency, amount)` helper using Intl.NumberFormat in PDFs
@@ -103,7 +103,8 @@ Where XXXX is a 4-digit random number.
 - `quotations` — quotation records with JSONB items; scoped by companyId
 - `invoices` — invoice records with JSONB items; scoped by companyId
 - `deliveryOrders` — DO records with JSONB items (description, qty only — no pricing); scoped by companyId
-- `settings` — singleton row for GST rate and SMTP config (smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom)
+- `settings` — singleton row for GST rate, SMTP config, running number config, and ERP settings (allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom)
+- `stock_items` — product/service catalogue per company (code, name, description, uom, type, unitPrice, stockQty, isActive)
 
 ## Session
 

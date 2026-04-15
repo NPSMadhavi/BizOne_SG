@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, Eye, Lock } from "lucide-react";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DeliveryDateField } from "@/components/delivery-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -41,6 +42,7 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
@@ -64,7 +66,7 @@ export default function InvoiceNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      paymentTerms: "30 Days Net", notes: "",
+      deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
@@ -234,6 +236,10 @@ export default function InvoiceNew() {
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Invoice Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
+                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                  <FormItem><FormLabel>Delivery Date</FormLabel>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                )} />
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
                     <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>

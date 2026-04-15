@@ -6,10 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CreateUserBodyRole =
-  (typeof CreateUserBodyRole)[keyof typeof CreateUserBodyRole];
+export type StockItemType = (typeof StockItemType)[keyof typeof StockItemType];
 
-export const CreateUserBodyRole = {
-  admin: "admin",
-  user: "user",
+export const StockItemType = {
+  product: "product",
+  service: "service",
 } as const;

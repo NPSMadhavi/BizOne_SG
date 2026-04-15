@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DeliveryDateField } from "@/components/delivery-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
@@ -42,6 +43,7 @@ const schema = z.object({
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
@@ -71,7 +73,7 @@ export default function QuotationEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      paymentTerms: "", notes: "",
+      deliveryDate: "", paymentTerms: "", notes: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
@@ -87,6 +89,7 @@ export default function QuotationEdit() {
         customerAddress: doc.customerAddress || "",
         customerContact: doc.customerContact || "",
         customerContactEmail: (doc as any).customerContactEmail || "",
+        deliveryDate: (doc as any).deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
         currency: doc.currency || "SGD",
@@ -252,6 +255,10 @@ export default function QuotationEdit() {
                       <option value="confirmed">Confirmed</option>
                       <option value="cancelled">Cancelled</option>
                     </select></FormItem>
+                )} />
+                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                  <FormItem><FormLabel>Delivery Date</FormLabel>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
