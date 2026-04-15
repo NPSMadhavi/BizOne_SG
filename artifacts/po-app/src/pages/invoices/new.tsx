@@ -62,6 +62,7 @@ export default function InvoiceNew() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
+  const [isOverseas, setIsOverseas] = useState(false);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -286,10 +287,25 @@ export default function InvoiceNew() {
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Line Items</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">GST: <span className="font-medium text-foreground">{form.watch("tax") ?? 0}%</span></span>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">Overseas / Export</span>
+                    <Switch
+                      checked={isOverseas}
+                      onCheckedChange={(v) => {
+                        setIsOverseas(v);
+                        form.setValue("tax", v ? 0 : (settings?.gstRate ?? 0));
+                      }}
+                    />
+                  </div>
                   <FormField control={form.control} name="tax" render={({ field }) => (
-                    <FormItem className="hidden"><FormControl><input type="hidden" {...field} /></FormControl></FormItem>
+                    <FormItem className="flex items-center gap-1">
+                      <span className="text-sm text-muted-foreground">GST:</span>
+                      <FormControl>
+                        <Input type="number" min={0} max={100} step={0.5} {...field} disabled={isOverseas} className="w-16 h-7 text-sm text-right px-1" />
+                      </FormControl>
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </FormItem>
                   )} />
                 </div>
               </div>
