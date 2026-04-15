@@ -214,34 +214,36 @@ export default function Settings() {
               {settingsLoading ? (
                 <div className="h-10 bg-muted animate-pulse rounded-md" />
               ) : (
-                <div className="flex items-end gap-3">
-                  <div className="flex-1 max-w-xs space-y-1.5">
-                    <Label htmlFor="gstRate">GST Rate (%)</Label>
-                    <div className="relative">
-                      <Input
-                        id="gstRate"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={gstEditing ? gstInput : (settings?.gstRate ?? 9)}
-                        onChange={(e) => { setGstEditing(true); setGstInput(e.target.value); }}
-                        onFocus={() => { setGstEditing(true); setGstInput(String(settings?.gstRate ?? 9)); }}
-                        disabled={!isAdmin}
-                        className="pr-8"
-                      />
-                      <Percent className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <div className="space-y-2">
+                  <div className="flex items-end gap-3">
+                    <div className="max-w-xs space-y-1.5">
+                      <Label htmlFor="gstRate">GST Rate (%)</Label>
+                      <div className="relative">
+                        <Input
+                          id="gstRate"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={gstEditing ? gstInput : (settings?.gstRate ?? 9)}
+                          onChange={(e) => { setGstEditing(true); setGstInput(e.target.value); }}
+                          onFocus={() => { setGstEditing(true); setGstInput(String(settings?.gstRate ?? 9)); }}
+                          disabled={!isAdmin}
+                          className="pr-8"
+                        />
+                        <Percent className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
-                    </p>
+                    {isAdmin && (
+                      <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
+                        <Save className="h-4 w-4" />
+                        {updateSettings.isPending ? "Saving..." : "Save"}
+                      </Button>
+                    )}
                   </div>
-                  {isAdmin && (
-                    <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
-                      <Save className="h-4 w-4" />
-                      {updateSettings.isPending ? "Saving..." : "Save"}
-                    </Button>
-                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Current rate: <strong>{settings?.gstRate ?? 9}%</strong> GST (Singapore)
+                  </p>
                 </div>
               )}
               {!isAdmin && (
