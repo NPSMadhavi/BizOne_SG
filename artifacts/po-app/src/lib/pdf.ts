@@ -426,7 +426,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text("Vendor:", marginLeft, 67);
   doc.text("Delivery To:", col2, 67);
 
-  renderEntityBlock(doc, po.vendorName, [po.vendorAddress, po.vendorContact ? `Attn: ${po.vendorContact}` : null], marginLeft, 74, 85);
+  renderEntityBlock(doc, po.vendorName, [po.vendorAddress, po.vendorContact ? `\nAttn: ${po.vendorContact}` : null], marginLeft, 74, 85);
 
   doc.setFontSize(9.5);
   doc.setFont(PDF_FONT, "normal");
@@ -521,7 +521,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
 
-  renderEntityBlock(doc, qt.customerName, [qt.customerAddress, qt.customerContact ? `Attn: ${qt.customerContact}` : null], marginLeft, 74, 160);
+  renderEntityBlock(doc, qt.customerName, [qt.customerAddress, qt.customerContact ? `\nAttn: ${qt.customerContact}` : null], marginLeft, 74, 160);
 
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Payment Terms:", marginLeft, 100);
@@ -643,7 +643,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
 
-  renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `Attn: ${inv.customerContact}` : null], marginLeft, 74, 160);
+  renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 160);
 
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Payment Terms:", marginLeft, 100);
