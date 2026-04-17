@@ -142,6 +142,11 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     createdBy: req.session.userId!,
   }).returning();
   await upsertVendorByName(companyId, vendorName, vendorAddress, vendorContact, vendorContactEmail);
+
+  if (po.status === "confirmed") {
+    await autoCreateGrn(po, req.session.userId!);
+  }
+
   res.status(201).json(parsePO(po));
 });
 
