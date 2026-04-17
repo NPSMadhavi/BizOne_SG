@@ -39,13 +39,13 @@ router.put("/stock-serials/reserve", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
-  const { serialIds, invoiceId, invoiceNumber } = req.body;
+  const { serialIds, invoiceId, invoiceNumber, reservedByUser } = req.body;
   if (!Array.isArray(serialIds) || serialIds.length === 0) {
     res.status(400).json({ error: "serialIds array required" }); return;
   }
 
   await db.update(stockSerialsTable)
-    .set({ status: "reserved", invoiceId: invoiceId || null, invoiceNumber: invoiceNumber || null })
+    .set({ status: "reserved", invoiceId: invoiceId || null, invoiceNumber: invoiceNumber || null, reservedByUser: reservedByUser || null })
     .where(and(eq(stockSerialsTable.companyId, companyId), inArray(stockSerialsTable.id, serialIds)));
 
   res.json({ ok: true });
@@ -62,7 +62,7 @@ router.put("/stock-serials/release", async (req, res): Promise<void> => {
   }
 
   await db.update(stockSerialsTable)
-    .set({ status: "available", invoiceId: null, invoiceNumber: null })
+    .set({ status: "available", invoiceId: null, invoiceNumber: null, reservedByUser: null })
     .where(and(eq(stockSerialsTable.companyId, companyId), inArray(stockSerialsTable.id, serialIds)));
 
   res.json({ ok: true });

@@ -35,6 +35,7 @@ const itemSchema = z.object({
   discount: z.coerce.number().min(0).max(100).default(0),
   isStockItem: z.boolean().default(false),
   selectedSerials: z.array(z.string()).default([]),
+  selectedSerialIds: z.array(z.number()).default([]),
 });
 
 const CURRENCIES = [
@@ -68,7 +69,7 @@ export default function InvoiceEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany } = useAuth();
+  const { selectedCompany, user } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -80,6 +81,52 @@ export default function InvoiceEdit() {
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+
+  const newlyReservedIds = useRef<Set<number>>(new Set());
+
+  async function releaseSerials(ids: number[]) {
+    if (ids.length === 0) return;
+    try {
+      await fetch("/api/stock-serials/release", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serialIds: ids }),
+      });
+    } catch { }
+  }
+
+  async function reserveSerials(ids: number[], invoiceNum?: string) {
+    if (ids.length === 0) return;
+    try {
+      await fetch("/api/stock-serials/reserve", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serialIds: ids,
+          invoiceId: id,
+          invoiceNumber: invoiceNum || `INV-${id}`,
+          reservedByUser: (user as any)?.username || "unknown",
+        }),
+      });
+    } catch { }
+  }
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const ids = Array.from(newlyReservedIds.current);
+      if (ids.length > 0) {
+        navigator.sendBeacon("/api/stock-serials/release", new Blob([JSON.stringify({ serialIds: ids })], { type: "application/json" }));
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      const ids = Array.from(newlyReservedIds.current);
+      releaseSerials(ids);
+    };
+  }, []);
 
   const { data: doc } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
@@ -97,7 +144,7 @@ export default function InvoiceEdit() {
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] }],
+      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
     },
   });
 
@@ -126,7 +173,8 @@ export default function InvoiceEdit() {
           discount: Number(i.discount) || 0,
           isStockItem: i.isStockItem ?? false,
           selectedSerials: i.selectedSerials ?? [],
-        })) : [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] }],
+          selectedSerialIds: i.selectedSerialIds ?? [],
+        })) : [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
       });
       initialized.current = true;
     }
@@ -156,7 +204,7 @@ export default function InvoiceEdit() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] });
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -430,7 +478,14 @@ export default function InvoiceEdit() {
                             )} />
                           </td>
                           <td className="px-4 py-2">{fields.length > 1 && (
-                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => {
+                              const ids = form.getValues(`items.${index}.selectedSerialIds`) || [];
+                              if (ids.length > 0) {
+                                ids.forEach((id: number) => newlyReservedIds.current.delete(id));
+                                releaseSerials(ids);
+                              }
+                              remove(index);
+                            }}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}</td>
@@ -478,8 +533,17 @@ export default function InvoiceEdit() {
           onOpenChange={(open) => { if (!open) setPickerIndex(null); }}
           partNumber={form.watch(`items.${pickerIndex}.partNumber`) || ""}
           currentSelected={form.watch(`items.${pickerIndex}.selectedSerials`) || []}
-          onConfirm={(serials) => {
-            form.setValue(`items.${pickerIndex}.selectedSerials`, serials);
+          currentSelectedIds={form.watch(`items.${pickerIndex}.selectedSerialIds`) || []}
+          onConfirm={(serials, serialIds) => {
+            const prevIds: number[] = form.getValues(`items.${pickerIndex!}.selectedSerialIds`) || [];
+            const toRelease = prevIds.filter(id => !serialIds.includes(id));
+            const toReserve = serialIds.filter(id => !prevIds.includes(id));
+            toRelease.forEach(id => newlyReservedIds.current.delete(id));
+            toReserve.forEach(id => newlyReservedIds.current.add(id));
+            releaseSerials(toRelease);
+            reserveSerials(toReserve, doc?.invNumber);
+            form.setValue(`items.${pickerIndex!}.selectedSerials`, serials);
+            form.setValue(`items.${pickerIndex!}.selectedSerialIds`, serialIds);
             setPickerIndex(null);
           }}
         />
@@ -488,8 +552,15 @@ export default function InvoiceEdit() {
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        onSelect={({ item, selectedSerials }: StockItemSelection) => {
+        currentInvoiceId={id}
+        onSelect={({ item, selectedSerials, selectedSerialIds }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
+          const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
+          toRelease.forEach(id => newlyReservedIds.current.delete(id));
+          selectedSerialIds.forEach(id => newlyReservedIds.current.add(id));
+          releaseSerials(toRelease);
+          reserveSerials(selectedSerialIds, doc?.invNumber);
           const desc = selectedSerials.length > 0
             ? `<p>${item.name}</p><p><strong>Serial Numbers: ${selectedSerials.join(", ")}</strong></p>`
             : `<p>${item.name}</p>`;
@@ -500,6 +571,7 @@ export default function InvoiceEdit() {
           if (selectedSerials.length > 0) {
             form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length);
             form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
+            form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
           }
           setStockPickerIndex(null);
         }}

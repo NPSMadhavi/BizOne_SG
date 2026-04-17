@@ -12,6 +12,7 @@ export const stockSerialsTable = pgTable("stock_serials", {
   grnNumber: text("grn_number"),
   invoiceId: integer("invoice_id"),
   invoiceNumber: text("invoice_number"),
+  reservedByUser: text("reserved_by_user"),
   doId: integer("do_id"),
   doNumber: text("do_number"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

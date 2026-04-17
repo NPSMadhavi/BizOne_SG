@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Package, ArrowLeft, Loader2 } from "lucide-react";
+import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface StockItem {
   id: number;
@@ -20,28 +21,33 @@ interface StockItem {
 interface Serial {
   id: number;
   serialNumber: string;
+  status: string;
   grnNumber?: string;
+  invoiceNumber?: string;
+  reservedByUser?: string;
 }
 
 export interface StockItemSelection {
   item: StockItem;
   selectedSerials: string[];
+  selectedSerialIds: number[];
 }
 
 interface StockItemPickerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (selection: StockItemSelection) => void;
+  currentInvoiceId?: number;
 }
 
-export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockItemPickerDialogProps) {
+export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInvoiceId }: StockItemPickerDialogProps) {
   const [step, setStep] = useState<"items" | "serials">("items");
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
   const [serials, setSerials] = useState<Serial[]>([]);
   const [serialsLoading, setSerialsLoading] = useState(false);
   const [serialSearch, setSerialSearch] = useState("");
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [chosen, setChosen] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (!open) {
@@ -75,7 +81,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
 
     try {
       const res = await fetch(
-        `/api/stock-serials?stockItemId=${item.id}&status=available`,
+        `/api/stock-serials?stockItemId=${item.id}`,
         { credentials: "include" }
       );
       const data: Serial[] = res.ok ? await res.json() : [];
@@ -85,17 +91,19 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
     }
   }
 
-  function toggleSerial(sn: string) {
+  function toggleSerial(id: number, status: string) {
+    if (status === "reserved") return;
     setChosen(prev => {
       const next = new Set(prev);
-      if (next.has(sn)) next.delete(sn);
-      else next.add(sn);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
   function selectAll() {
-    setChosen(new Set(filteredSerials.map(s => s.serialNumber)));
+    const available = filteredSerials.filter(s => s.status === "available");
+    setChosen(new Set(available.map(s => s.id)));
   }
 
   function selectNone() {
@@ -104,7 +112,12 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
 
   function handleConfirm() {
     if (!selectedItem) return;
-    onSelect({ item: selectedItem, selectedSerials: Array.from(chosen) });
+    const chosenSerials = serials.filter(s => chosen.has(s.id));
+    onSelect({
+      item: selectedItem,
+      selectedSerials: chosenSerials.map(s => s.serialNumber),
+      selectedSerialIds: chosenSerials.map(s => s.id),
+    });
     onOpenChange(false);
   }
 
@@ -112,11 +125,12 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
     !serialSearch || s.serialNumber.toLowerCase().includes(serialSearch.toLowerCase())
   );
 
-  const allSelected = filteredSerials.length > 0 && filteredSerials.every(s => chosen.has(s.serialNumber));
+  const availableCount = serials.filter(s => s.status === "available").length;
+  const allAvailableSelected = availableCount > 0 && filteredSerials.filter(s => s.status === "available").every(s => chosen.has(s.id));
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
 
         {step === "items" && (
           <>
@@ -138,41 +152,59 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
               />
             </div>
 
-            <div className="max-h-80 overflow-y-auto divide-y rounded-md border">
-              {isLoading && (
-                <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
-              )}
-              {!isLoading && items.length === 0 && (
-                <div className="py-8 text-center text-sm text-muted-foreground">No stock items found.</div>
-              )}
-              {items.map((item) => {
-                const qty = Number(item.stockQty) || 0;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors flex items-center justify-between gap-3"
-                    onClick={() => handleItemClick(item)}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{item.code}</span>
-                        <Badge variant={qty > 0 ? "default" : "secondary"} className="text-xs px-1.5 py-0">
-                          Qty: {qty} {item.uom}
-                        </Badge>
-                      </div>
-                      <div className="font-medium text-sm truncate mt-0.5">{item.name}</div>
-                      {item.description && (
-                        <div className="text-xs text-muted-foreground truncate">{item.description}</div>
-                      )}
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-medium">{Number(item.unitPrice).toFixed(2)}</div>
-                      <div className="text-xs text-muted-foreground">per {item.uom}</div>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="border rounded-md overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-28">Code</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-24 text-right">Avail. Qty</TableHead>
+                    <TableHead className="w-28 text-right">Unit Price</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoading && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin mx-auto mb-1" />
+                        Loading...
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!isLoading && items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No stock items found.</TableCell>
+                    </TableRow>
+                  )}
+                  {items.map((item) => {
+                    const qty = Number(item.stockQty) || 0;
+                    return (
+                      <TableRow
+                        key={item.id}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => handleItemClick(item)}
+                      >
+                        <TableCell className="font-mono text-xs">{item.code}</TableCell>
+                        <TableCell>
+                          <div className="font-medium text-sm">{item.name}</div>
+                          {item.description && (
+                            <div className="text-xs text-muted-foreground">{item.description}</div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={qty > 0 ? "default" : "secondary"} className="text-xs">
+                            {qty} {item.uom}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium">
+                          {Number(item.unitPrice).toFixed(2)}
+                          <span className="text-xs text-muted-foreground ml-1">/{item.uom}</span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           </>
         )}
@@ -201,52 +233,86 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
               </div>
             ) : serials.length === 0 ? (
               <div className="py-4 text-center text-sm text-muted-foreground">
-                No available serial numbers for this item.
+                No serial numbers found for this item.
               </div>
             ) : (
               <>
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    className="pl-9"
-                    placeholder="Search serial numbers..."
-                    value={serialSearch}
-                    onChange={(e) => setSerialSearch(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-xs text-muted-foreground">
-                    {chosen.size} of {serials.length} selected
-                  </span>
-                  <div className="flex gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      placeholder="Search serial numbers..."
+                      value={serialSearch}
+                      onChange={(e) => setSerialSearch(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex gap-2 text-xs shrink-0">
                     <button
                       type="button"
-                      className="text-xs text-primary hover:underline"
-                      onClick={allSelected ? selectNone : selectAll}
+                      className="text-primary hover:underline"
+                      onClick={allAvailableSelected ? selectNone : selectAll}
                     >
-                      {allSelected ? "Deselect All" : "Select All"}
+                      {allAvailableSelected ? "Deselect All" : "Select All"}
                     </button>
                   </div>
                 </div>
 
-                <div className="max-h-64 overflow-y-auto space-y-1 border rounded-md p-2">
-                  {filteredSerials.map(s => (
-                    <label
-                      key={s.id}
-                      className="flex items-center gap-3 px-2 py-1.5 rounded cursor-pointer hover:bg-muted/50"
-                    >
-                      <Checkbox
-                        checked={chosen.has(s.serialNumber)}
-                        onCheckedChange={() => toggleSerial(s.serialNumber)}
-                      />
-                      <span className="text-sm font-mono flex-1">{s.serialNumber}</span>
-                      {s.grnNumber && (
-                        <Badge variant="outline" className="text-xs">{s.grnNumber}</Badge>
-                      )}
-                    </label>
-                  ))}
+                <div className="text-xs text-muted-foreground px-1">
+                  {chosen.size} selected · {availableCount} available · {serials.length - availableCount} reserved
+                </div>
+
+                <div className="border rounded-md overflow-hidden max-h-72 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="w-10"></TableHead>
+                        <TableHead>Serial Number</TableHead>
+                        <TableHead className="w-28">GRN #</TableHead>
+                        <TableHead className="w-48">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredSerials.map(s => {
+                        const isReserved = s.status === "reserved";
+                        return (
+                          <TableRow
+                            key={s.id}
+                            className={isReserved ? "opacity-60 bg-muted/20" : "cursor-pointer hover:bg-muted/50"}
+                            onClick={() => toggleSerial(s.id, s.status)}
+                          >
+                            <TableCell>
+                              {isReserved ? (
+                                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                              ) : (
+                                <Checkbox
+                                  checked={chosen.has(s.id)}
+                                  onCheckedChange={() => toggleSerial(s.id, s.status)}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              )}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{s.serialNumber}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{s.grnNumber || "—"}</TableCell>
+                            <TableCell>
+                              {isReserved ? (
+                                <div>
+                                  <Badge variant="secondary" className="text-xs mb-0.5">Reserved</Badge>
+                                  <div className="text-xs text-muted-foreground leading-tight">
+                                    {s.invoiceNumber && <span>for {s.invoiceNumber}</span>}
+                                    {s.reservedByUser && <span className="ml-1">by {s.reservedByUser}</span>}
+                                  </div>
+                                </div>
+                              ) : (
+                                <Badge variant="outline" className="text-xs text-green-600 border-green-300">Available</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               </>
             )}
