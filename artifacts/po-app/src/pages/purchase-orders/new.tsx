@@ -440,7 +440,7 @@ export default function PurchaseOrderNew() {
                     <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Amount</th>
-                    <th className="px-4 py-3 font-medium w-20 text-center">Serialized</th>
+                    <th className="px-4 py-3 font-medium w-20 text-center">Stock Item</th>
                     <th className="px-4 py-3 font-medium w-16 text-center"></th>
                   </tr>
                 </thead>

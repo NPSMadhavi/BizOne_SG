@@ -12,6 +12,10 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, PackageCheck, ClipboardList, PackagePlus } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").trim();
+}
+
 interface GrnItem {
   partNumber?: string;
   description: string;
@@ -253,7 +257,7 @@ export default function GrnView() {
                   <th className="px-4 py-3 font-medium">Part No.</th>
                   <th className="px-4 py-3 font-medium">Description</th>
                   <th className="px-4 py-3 font-medium text-center w-16">Qty</th>
-                  <th className="px-4 py-3 font-medium text-center w-24">Serialized?</th>
+                  <th className="px-4 py-3 font-medium text-center w-24">Stock Item</th>
                   <th className="px-4 py-3 font-medium">Serial Numbers</th>
                 </tr>
               </thead>
@@ -281,7 +285,7 @@ export default function GrnView() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={item.received ? "font-medium text-emerald-800" : ""}>
-                        {item.description}
+                        {stripHtml(item.description || "")}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center font-medium">{item.qty}</td>
@@ -301,7 +305,7 @@ export default function GrnView() {
                           rows={Math.max(2, item.qty)}
                         />
                       ) : (
-                        <span className="text-xs text-muted-foreground">Not serialized</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
                   </tr>
