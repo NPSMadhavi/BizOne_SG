@@ -15,6 +15,8 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
@@ -30,6 +32,8 @@ const itemSchema = z.object({
   qty: z.coerce.number().min(1),
   unitPrice: z.coerce.number().min(0),
   discount: z.coerce.number().min(0).max(100).default(0),
+  isStockItem: z.boolean().default(false),
+  selectedSerials: z.array(z.string()).default([]),
 });
 
 const CURRENCIES = [
@@ -73,6 +77,7 @@ export default function InvoiceEdit() {
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null);
 
   const { data: doc } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
@@ -90,7 +95,7 @@ export default function InvoiceEdit() {
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
+      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] }],
     },
   });
 
@@ -117,7 +122,9 @@ export default function InvoiceEdit() {
           qty: Number(i.qty) || 1,
           unitPrice: Number(i.unitPrice) || 0,
           discount: Number(i.discount) || 0,
-        })) : [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
+          isStockItem: i.isStockItem ?? false,
+          selectedSerials: i.selectedSerials ?? [],
+        })) : [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] }],
       });
       initialized.current = true;
     }
@@ -147,7 +154,7 @@ export default function InvoiceEdit() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 });
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -365,6 +372,7 @@ export default function InvoiceEdit() {
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
                       <th className="px-4 py-3 text-right w-16">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
+                      <th className="px-4 py-3 text-center w-24">Serials</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
                   </thead>
@@ -392,6 +400,26 @@ export default function InvoiceEdit() {
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
                           )} /></td>
                           <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(qty * price * (1 - disc / 100))}</td>
+                          <td className="px-4 py-2 text-center">
+                            <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
+                              <FormItem className="space-y-0">
+                                <div className="flex flex-col items-center gap-1">
+                                  <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Serialized stock item" />
+                                  {field.value && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPickerIndex(index)}
+                                      className="text-xs text-primary hover:underline whitespace-nowrap"
+                                    >
+                                      {(form.watch(`items.${index}.selectedSerials`) || []).length > 0
+                                        ? `${(form.watch(`items.${index}.selectedSerials`) || []).length} S/N`
+                                        : "Pick S/N"}
+                                    </button>
+                                  )}
+                                </div>
+                              </FormItem>
+                            )} />
+                          </td>
                           <td className="px-4 py-2">{fields.length > 1 && (
                             <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
                               <Trash2 className="h-3.5 w-3.5" />
@@ -435,6 +463,19 @@ export default function InvoiceEdit() {
           </div>
         </form>
       </Form>
+      {pickerIndex !== null && (
+        <SerialPickerDialog
+          open={pickerIndex !== null}
+          onOpenChange={(open) => { if (!open) setPickerIndex(null); }}
+          partNumber={form.watch(`items.${pickerIndex}.partNumber`) || ""}
+          currentSelected={form.watch(`items.${pickerIndex}.selectedSerials`) || []}
+          onConfirm={(serials) => {
+            form.setValue(`items.${pickerIndex}.selectedSerials`, serials);
+            setPickerIndex(null);
+          }}
+        />
+      )}
+
       <CurrencyMismatchDialog
         open={currencyDialogOpen}
         entityName={directoryCurrencyName}

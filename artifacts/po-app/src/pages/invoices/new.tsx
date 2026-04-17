@@ -14,6 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, Eye, Lock } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
@@ -29,6 +31,8 @@ const itemSchema = z.object({
   qty: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   discount: z.coerce.number().min(0).max(100).default(0),
+  isStockItem: z.boolean().default(false),
+  selectedSerials: z.array(z.string()).default([]),
 });
 
 const CURRENCIES = [
@@ -68,6 +72,7 @@ export default function InvoiceNew() {
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -80,7 +85,7 @@ export default function InvoiceNew() {
       tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
+      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] }],
     },
   });
 
@@ -121,7 +126,7 @@ export default function InvoiceNew() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 });
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [] });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -342,6 +347,7 @@ export default function InvoiceNew() {
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
                       <th className="px-4 py-3 text-right w-16">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
+                      <th className="px-4 py-3 text-center w-24">Serials</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
                   </thead>
@@ -380,6 +386,26 @@ export default function InvoiceNew() {
                             )} />
                           </td>
                           <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
+                          <td className="px-4 py-2 text-center">
+                            <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
+                              <FormItem className="space-y-0">
+                                <div className="flex flex-col items-center gap-1">
+                                  <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Serialized stock item" />
+                                  {field.value && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPickerIndex(index)}
+                                      className="text-xs text-primary hover:underline whitespace-nowrap"
+                                    >
+                                      {(form.watch(`items.${index}.selectedSerials`) || []).length > 0
+                                        ? `${(form.watch(`items.${index}.selectedSerials`) || []).length} S/N`
+                                        : "Pick S/N"}
+                                    </button>
+                                  )}
+                                </div>
+                              </FormItem>
+                            )} />
+                          </td>
                           <td className="px-4 py-2">
                             {fields.length > 1 && (
                               <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
@@ -439,6 +465,19 @@ export default function InvoiceNew() {
           </div>
         </form>
       </Form>
+
+      {pickerIndex !== null && (
+        <SerialPickerDialog
+          open={pickerIndex !== null}
+          onOpenChange={(open) => { if (!open) setPickerIndex(null); }}
+          partNumber={form.watch(`items.${pickerIndex}.partNumber`) || ""}
+          currentSelected={form.watch(`items.${pickerIndex}.selectedSerials`) || []}
+          onConfirm={(serials) => {
+            form.setValue(`items.${pickerIndex}.selectedSerials`, serials);
+            setPickerIndex(null);
+          }}
+        />
+      )}
 
       <CurrencyMismatchDialog
         open={currencyDialogOpen}

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, grnTable, purchaseOrdersTable, stockItemsTable } from "@workspace/db";
+import { db, grnTable, purchaseOrdersTable, stockItemsTable, stockSerialsTable } from "@workspace/db";
 import { eq, desc, and, ilike, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
@@ -160,10 +160,40 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
       .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
       .limit(1);
 
-    if (stockItem) {
-      const addQty = Number(item.qty) || 0;
-      await db
-        .update(stockItemsTable)
+    if (!stockItem) continue;
+
+    const addQty = Number(item.qty) || 0;
+    const isStockItem = item.isStockItem === true;
+
+    if (isStockItem) {
+      const serialLines = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
+      if (serialLines.length > 0) {
+        for (const sn of serialLines) {
+          const exists = await db.select({ id: stockSerialsTable.id })
+            .from(stockSerialsTable)
+            .where(and(
+              eq(stockSerialsTable.companyId, companyId),
+              eq(stockSerialsTable.stockItemId, stockItem.id),
+              eq(stockSerialsTable.serialNumber, sn)
+            ))
+            .limit(1);
+          if (exists.length === 0) {
+            await db.insert(stockSerialsTable).values({
+              companyId, stockItemId: stockItem.id, serialNumber: sn,
+              status: "available", grnId: id, grnNumber: existing.grnNumber,
+            });
+          }
+        }
+        await db.update(stockItemsTable)
+          .set({ stockQty: sql`${stockItemsTable.stockQty} + ${serialLines.length}` })
+          .where(eq(stockItemsTable.id, stockItem.id));
+      } else {
+        await db.update(stockItemsTable)
+          .set({ stockQty: sql`${stockItemsTable.stockQty} + ${addQty}` })
+          .where(eq(stockItemsTable.id, stockItem.id));
+      }
+    } else {
+      await db.update(stockItemsTable)
         .set({ stockQty: sql`${stockItemsTable.stockQty} + ${addQty}` })
         .where(eq(stockItemsTable.id, stockItem.id));
     }

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, deliveryOrdersTable, usersTable, customersTable } from "@workspace/db";
-import { eq, desc, inArray, ilike, and } from "drizzle-orm";
+import { db, deliveryOrdersTable, usersTable, customersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
+import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -148,8 +148,41 @@ router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
 
+  const [existing] = await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Delivery order not found" }); return; }
+
   const [updated] = await db.update(deliveryOrdersTable).set(updateData).where(eq(deliveryOrdersTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Delivery order not found" }); return; }
+
+  const isNewlyConfirmed = status === "confirmed" && existing.status !== "confirmed";
+  if (isNewlyConfirmed) {
+    const companyId = updated.companyId;
+    const doItems = (updated.items as any[]) || [];
+    for (const item of doItems) {
+      const serialLines = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
+      if (serialLines.length === 0) continue;
+      const partNumber = (item.partNumber || "").trim();
+      if (!partNumber) continue;
+      const [stockItem] = await db.select({ id: stockItemsTable.id })
+        .from(stockItemsTable)
+        .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+        .limit(1);
+      if (!stockItem) continue;
+      for (const sn of serialLines) {
+        await db.update(stockSerialsTable)
+          .set({ status: "shipped", doId: id, doNumber: updated.doNumber })
+          .where(and(
+            eq(stockSerialsTable.companyId, companyId),
+            eq(stockSerialsTable.stockItemId, stockItem.id),
+            eq(stockSerialsTable.serialNumber, sn)
+          ));
+      }
+      await db.update(stockItemsTable)
+        .set({ stockQty: sql`GREATEST(0, ${stockItemsTable.stockQty} - ${serialLines.length})` })
+        .where(eq(stockItemsTable.id, stockItem.id));
+    }
+  }
+
   res.json(parseDoc(updated));
 });
 

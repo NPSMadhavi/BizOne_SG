@@ -15,6 +15,7 @@ import stockItemsRouter from "./stock-items";
 import vendorsRouter from "./vendors";
 import customersRouter from "./customers";
 import emailContactsRouter from "./email-contacts";
+import stockSerialsRouter from "./stock-serials";
 
 const router: IRouter = Router();
 
@@ -31,6 +32,7 @@ router.use(emailRouter);
 router.use(contactsRouter);
 router.use(grnRouter);
 router.use(stockItemsRouter);
+router.use(stockSerialsRouter);
 router.use(vendorsRouter);
 router.use(customersRouter);
 router.use(emailContactsRouter);

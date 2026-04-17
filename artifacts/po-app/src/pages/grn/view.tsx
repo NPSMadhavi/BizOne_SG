@@ -19,6 +19,7 @@ interface GrnItem {
   unitPrice: number;
   amount: number;
   received: boolean;
+  isStockItem: boolean;
   serialNumbers: string;
 }
 
@@ -87,7 +88,7 @@ export default function GrnView() {
 
   useEffect(() => {
     if (grn) {
-      setItems(grn.items.map((item) => ({ ...item })));
+      setItems(grn.items.map((item) => ({ ...item, isStockItem: (item as any).isStockItem ?? false })));
       setIsDirty(false);
     }
   }, [grn]);
@@ -125,6 +126,15 @@ export default function GrnView() {
     setIsDirty(true);
   };
 
+  const handleToggleIsStockItem = (index: number, checked: boolean) => {
+    setItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], isStockItem: checked };
+      return next;
+    });
+    setIsDirty(true);
+  };
+
   const handleSerialNumbers = (index: number, value: string) => {
     setItems((prev) => {
       const next = [...prev];
@@ -144,7 +154,7 @@ export default function GrnView() {
   };
 
   const receivedItems = items.filter((i) => i.received);
-  const missingSerials = receivedItems.filter((i) => !i.serialNumbers.trim());
+  const missingSerials = receivedItems.filter((i) => i.isStockItem && !i.serialNumbers.trim());
 
   if (isLoading) {
     return (
@@ -243,6 +253,7 @@ export default function GrnView() {
                   <th className="px-4 py-3 font-medium">Part No.</th>
                   <th className="px-4 py-3 font-medium">Description</th>
                   <th className="px-4 py-3 font-medium text-center w-16">Qty</th>
+                  <th className="px-4 py-3 font-medium text-center w-24">Serialized?</th>
                   <th className="px-4 py-3 font-medium">Serial Numbers</th>
                 </tr>
               </thead>
@@ -274,14 +285,24 @@ export default function GrnView() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center font-medium">{item.qty}</td>
-                    <td className="px-4 py-3 min-w-[200px]">
-                      <Textarea
-                        value={item.serialNumbers}
-                        onChange={(e) => handleSerialNumbers(index, e.target.value)}
-                        placeholder={`Enter serial numbers (1 per line)\nQty: ${item.qty}`}
-                        className="text-xs font-mono resize-none min-h-[64px]"
-                        rows={Math.max(2, item.qty)}
+                    <td className="px-4 py-3 text-center">
+                      <Checkbox
+                        checked={item.isStockItem}
+                        onCheckedChange={(checked) => handleToggleIsStockItem(index, checked === true)}
                       />
+                    </td>
+                    <td className="px-4 py-3 min-w-[200px]">
+                      {item.isStockItem ? (
+                        <Textarea
+                          value={item.serialNumbers}
+                          onChange={(e) => handleSerialNumbers(index, e.target.value)}
+                          placeholder={`Enter serial numbers (1 per line)\nQty: ${item.qty}`}
+                          className="text-xs font-mono resize-none min-h-[64px]"
+                          rows={Math.max(2, item.qty)}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not serialized</span>
+                      )}
                     </td>
                   </tr>
                 ))}

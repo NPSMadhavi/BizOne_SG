@@ -8,6 +8,7 @@ export * from "./delivery-orders";
 export * from "./settings";
 export * from "./grn";
 export * from "./stock-items";
+export * from "./stock-serials";
 export * from "./vendors";
 export * from "./customers";
 export * from "./email-contacts";

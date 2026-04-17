@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
@@ -41,6 +42,7 @@ const itemSchema = z.object({
   description: z.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
+  isStockItem: z.boolean().default(false),
 });
 
 const CURRENCIES = [
@@ -132,6 +134,7 @@ export default function PurchaseOrderEdit() {
           description: item.description ?? "",
           qty: item.qty ?? 1,
           unitPrice: item.unitPrice ?? 0,
+          isStockItem: item.isStockItem ?? false,
         })),
       });
       setInitialized(true);
@@ -170,7 +173,7 @@ export default function PurchaseOrderEdit() {
       if (!lastIsEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0 });
+        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false });
         requestAnimationFrame(() => {
           focused?.focus();
           appendLock.current = false;
@@ -502,6 +505,7 @@ export default function PurchaseOrderEdit() {
                     <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Amount</th>
+                    <th className="px-4 py-3 font-medium w-20 text-center">Serialized</th>
                     <th className="px-4 py-3 font-medium w-16 text-center"></th>
                   </tr>
                 </thead>
@@ -568,6 +572,13 @@ export default function PurchaseOrderEdit() {
                         </td>
                         <td className="px-4 py-2 text-right font-medium text-muted-foreground bg-muted/10">
                           {formatCurrency(itemAmount)}
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
+                            <FormItem><FormControl>
+                              <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Track serials for this item" />
+                            </FormControl></FormItem>
+                          )} />
                         </td>
                         <td className="px-4 py-2 text-center">
                           <Button
