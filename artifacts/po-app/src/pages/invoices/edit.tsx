@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Package } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
-import { StockItemPickerDialog } from "@/components/stock-item-picker-dialog";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
@@ -488,12 +488,19 @@ export default function InvoiceEdit() {
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        onSelect={(item) => {
+        onSelect={({ item, selectedSerials }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          const desc = selectedSerials.length > 0
+            ? `${item.name}\nSerial Numbers: ${selectedSerials.join(", ")}`
+            : item.name;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
-          form.setValue(`items.${stockPickerIndex}.description`, item.name);
+          form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
+          if (selectedSerials.length > 0) {
+            form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length);
+            form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
+          }
           setStockPickerIndex(null);
         }}
       />

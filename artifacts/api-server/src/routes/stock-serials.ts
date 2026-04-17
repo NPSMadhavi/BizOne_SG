@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, stockSerialsTable, stockItemsTable } from "@workspace/db";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, ilike } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -14,8 +14,17 @@ router.get("/stock-serials", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
-  const stockItemId = req.query.stockItemId ? parseInt(req.query.stockItemId as string) : undefined;
+  let stockItemId = req.query.stockItemId ? parseInt(req.query.stockItemId as string) : undefined;
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  const partNumber = typeof req.query.partNumber === "string" ? req.query.partNumber : undefined;
+
+  if (partNumber && !stockItemId) {
+    const [found] = await db.select({ id: stockItemsTable.id })
+      .from(stockItemsTable)
+      .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+      .limit(1);
+    if (found) stockItemId = found.id;
+  }
 
   let rows = await db.select().from(stockSerialsTable).where(eq(stockSerialsTable.companyId, companyId));
 

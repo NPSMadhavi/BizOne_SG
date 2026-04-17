@@ -28,18 +28,18 @@ export function SerialPickerDialog({ open, onOpenChange, partNumber, currentSele
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !partNumber) return;
     setSelected(new Set(currentSelected));
     setSearch("");
     setLoading(true);
-    fetch("/api/stock-serials?status=available", { credentials: "include" })
+    fetch(`/api/stock-serials?status=available&partNumber=${encodeURIComponent(partNumber)}`, { credentials: "include" })
       .then(r => r.json())
       .then((data: Serial[]) => {
         setSerials(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [open]);
+  }, [open, partNumber]);
 
   const filtered = serials.filter(s => {
     const matchesSearch = !search || s.serialNumber.toLowerCase().includes(search.toLowerCase());
