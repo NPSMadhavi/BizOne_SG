@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, ClipboardList, PackageCheck } from "lucide-react";
+import { ArrowLeft, PackageCheck, ClipboardList, PackagePlus } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
 interface GrnItem {
@@ -41,16 +42,16 @@ async function fetchGrn(id: string): Promise<Grn> {
   return res.json();
 }
 
-async function saveGrn(id: number, items: GrnItem[]): Promise<Grn> {
-  const res = await fetch(`/api/grn/${id}`, {
-    method: "PUT",
+async function receiveGrn(id: number, items: GrnItem[]): Promise<Grn> {
+  const res = await fetch(`/api/grn/${id}/receive`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ items }),
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error || "Failed to save GRN");
+    throw new Error(err.error || "Failed to confirm goods received");
   }
   return res.json();
 }
@@ -82,6 +83,7 @@ export default function GrnView() {
 
   const [items, setItems] = useState<GrnItem[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (grn) {
@@ -91,14 +93,17 @@ export default function GrnView() {
   }, [grn]);
 
   const mutation = useMutation({
-    mutationFn: (updatedItems: GrnItem[]) => saveGrn(grn!.id, updatedItems),
+    mutationFn: (updatedItems: GrnItem[]) => receiveGrn(grn!.id, updatedItems),
     onSuccess: (updated) => {
       queryClient.setQueryData(["grn", params.id], updated);
       queryClient.invalidateQueries({ queryKey: ["grns"] });
+      queryClient.invalidateQueries({ queryKey: ["stock-items"] });
       setIsDirty(false);
-      toast({ title: "Saved", description: "GRN updated successfully." });
+      setConfirmOpen(false);
+      toast({ title: "Goods Received", description: "GRN confirmed and stock updated successfully." });
     },
     onError: (err: any) => {
+      setConfirmOpen(false);
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
@@ -129,9 +134,17 @@ export default function GrnView() {
     setIsDirty(true);
   };
 
-  const handleSave = () => {
-    mutation.mutate(items);
+  const handleReceiveClick = () => {
+    const receivedItems = items.filter((i) => i.received);
+    if (receivedItems.length === 0) {
+      toast({ title: "No items selected", description: "Please check at least one item as received.", variant: "destructive" });
+      return;
+    }
+    setConfirmOpen(true);
   };
+
+  const receivedItems = items.filter((i) => i.received);
+  const missingSerials = receivedItems.filter((i) => !i.serialNumbers.trim());
 
   if (isLoading) {
     return (
@@ -156,10 +169,6 @@ export default function GrnView() {
   }
 
   const receivedCount = items.filter((i) => i.received).length;
-  const currentStatus =
-    receivedCount === 0 ? "draft"
-    : receivedCount === items.length ? "complete"
-    : "partial";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl">
@@ -177,12 +186,12 @@ export default function GrnView() {
           </p>
         </div>
         <Button
-          onClick={handleSave}
+          onClick={handleReceiveClick}
           disabled={!isDirty || mutation.isPending}
           className="gap-2"
         >
-          <Save className="h-4 w-4" />
-          {mutation.isPending ? "Saving..." : "Save"}
+          <PackagePlus className="h-4 w-4" />
+          {mutation.isPending ? "Confirming..." : "Goods Received"}
         </Button>
       </div>
 
@@ -290,12 +299,56 @@ export default function GrnView() {
 
       {isDirty && (
         <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={mutation.isPending} className="gap-2" size="lg">
-            <Save className="h-4 w-4" />
-            {mutation.isPending ? "Saving..." : "Save Changes"}
+          <Button onClick={handleReceiveClick} disabled={mutation.isPending} className="gap-2" size="lg">
+            <PackagePlus className="h-4 w-4" />
+            {mutation.isPending ? "Confirming..." : "Goods Received"}
           </Button>
         </div>
       )}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <PackagePlus className="h-5 w-5 text-emerald-600" />
+              Confirm Goods Received
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  You are confirming receipt of <strong className="text-foreground">{receivedItems.length} item{receivedItems.length !== 1 ? "s" : ""}</strong> from <strong className="text-foreground">{grn.vendorName}</strong>. Stock quantities will be updated for matched items.
+                </p>
+                {missingSerials.length > 0 && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5">
+                    <p className="font-medium text-amber-800 mb-1">⚠ Serial numbers not entered</p>
+                    <p className="text-amber-700 text-xs">
+                      {missingSerials.length === 1
+                        ? `1 item has no serial numbers:`
+                        : `${missingSerials.length} items have no serial numbers:`}
+                    </p>
+                    <ul className="mt-1 text-xs text-amber-700 list-disc list-inside">
+                      {missingSerials.map((i, idx) => (
+                        <li key={idx}>{i.partNumber || i.description} (Qty: {i.qty})</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-amber-600 mt-1">You can continue without serial numbers.</p>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => mutation.mutate(items)}
+              disabled={mutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {mutation.isPending ? "Confirming..." : "Goods Received"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

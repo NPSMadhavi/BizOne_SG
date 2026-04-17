@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, grnTable, purchaseOrdersTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { db, grnTable, purchaseOrdersTable, stockItemsTable } from "@workspace/db";
+import { eq, desc, and, ilike, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
@@ -125,6 +125,49 @@ router.put("/grn/:id", async (req, res): Promise<void> => {
     .set({ items, status: newStatus, updatedAt: new Date() })
     .where(eq(grnTable.id, id))
     .returning();
+
+  res.json(updated);
+});
+
+router.post("/grn/:id/receive", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const { items } = req.body;
+  if (!Array.isArray(items)) { res.status(400).json({ error: "items array is required" }); return; }
+
+  const [existing] = await db.select().from(grnTable).where(eq(grnTable.id, id));
+  if (!existing) { res.status(404).json({ error: "GRN not found" }); return; }
+
+  const companyId = existing.companyId;
+  const newStatus = computeGrnStatus(items);
+
+  const [updated] = await db
+    .update(grnTable)
+    .set({ items, status: newStatus, updatedAt: new Date() })
+    .where(eq(grnTable.id, id))
+    .returning();
+
+  const receivedItems = items.filter((i: any) => i.received);
+  for (const item of receivedItems) {
+    const partNumber = (item.partNumber || "").trim();
+    if (!partNumber) continue;
+
+    const [stockItem] = await db
+      .select()
+      .from(stockItemsTable)
+      .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+      .limit(1);
+
+    if (stockItem) {
+      const addQty = Number(item.qty) || 0;
+      await db
+        .update(stockItemsTable)
+        .set({ stockQty: sql`${stockItemsTable.stockQty} + ${addQty}` })
+        .where(eq(stockItemsTable.id, stockItem.id));
+    }
+  }
 
   res.json(updated);
 });
