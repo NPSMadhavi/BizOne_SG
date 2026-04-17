@@ -553,7 +553,7 @@ export default function InvoiceNew() {
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        onSelect={({ item, selectedSerials, selectedSerialIds }: StockItemSelection) => {
+        onSelect={({ item, selectedSerials, selectedSerialIds, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
           const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
@@ -572,6 +572,10 @@ export default function InvoiceNew() {
             form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length);
             form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
             form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
+          } else if (qty && qty > 0) {
+            form.setValue(`items.${stockPickerIndex}.qty`, qty);
+            form.setValue(`items.${stockPickerIndex}.selectedSerials`, []);
+            form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, []);
           }
           setStockPickerIndex(null);
         }}

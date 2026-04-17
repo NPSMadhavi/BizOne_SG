@@ -131,6 +131,25 @@ router.post("/invoices", async (req, res): Promise<void> => {
     totalAmount: totalAmount.toFixed(2), status: status || "draft", createdBy: req.session.userId!,
   }).returning();
   await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
+
+  // Deduct stockQty for non-serial stock items immediately on invoice save
+  for (const item of (items as any[])) {
+    const selectedSerials: string[] = item.selectedSerials || [];
+    if (!item.isStockItem || selectedSerials.length > 0) continue;
+    const partNumber = (item.partNumber || "").trim();
+    if (!partNumber) continue;
+    const qty = Number(item.qty) || 0;
+    if (qty <= 0) continue;
+    const [stockItem] = await db.select({ id: stockItemsTable.id })
+      .from(stockItemsTable)
+      .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+      .limit(1);
+    if (!stockItem) continue;
+    await db.update(stockItemsTable)
+      .set({ stockQty: sql`GREATEST(0, ${stockItemsTable.stockQty} - ${qty})` })
+      .where(eq(stockItemsTable.id, stockItem.id));
+  }
+
   res.status(201).json(parseDoc(doc));
 });
 
