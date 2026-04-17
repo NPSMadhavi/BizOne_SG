@@ -20,6 +20,7 @@ import { Plus, Search, Edit2, Trash2, Building2, CheckCircle2, XCircle, MapPin, 
 import { useGetSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { COUNTRIES } from "@/lib/countries";
+import { CURRENCIES } from "@/lib/currencies";
 
 interface Vendor {
   id: number;
@@ -31,6 +32,7 @@ interface Vendor {
   contactPerson: string | null;
   contactEmail: string | null;
   phone: string | null;
+  currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
   isActive: boolean;
@@ -39,7 +41,7 @@ interface Vendor {
 
 const blank = (): Partial<Vendor> => ({
   name: "", address: "", postalCode: "", country: "", contactPerson: "",
-  contactEmail: "", phone: "", gstRegistered: false, gstNo: "", isActive: true,
+  contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "", isActive: true,
 });
 
 async function fetchVendors(): Promise<Vendor[]> {
@@ -177,6 +179,7 @@ export default function VendorsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-medium">Name</th>
                     <th className="px-4 py-3 text-left font-medium">Country</th>
+                    <th className="px-4 py-3 text-left font-medium">Currency</th>
                     <th className="px-4 py-3 text-left font-medium">Contact</th>
                     <th className="px-4 py-3 text-left font-medium">{taxLabel}</th>
                     <th className="px-4 py-3 text-left font-medium">GST No</th>
@@ -197,6 +200,11 @@ export default function VendorsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{v.country || "—"}</td>
+                      <td className="px-4 py-3">
+                        {v.currency
+                          ? <Badge variant="outline" className="font-mono text-xs">{v.currency}</Badge>
+                          : <span className="text-muted-foreground text-xs">—</span>}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="text-xs">{v.contactPerson || "—"}</div>
                         <div className="text-xs text-muted-foreground">{v.contactEmail || ""}</div>
@@ -296,6 +304,17 @@ export default function VendorsPage() {
                 <Label>Contact Email</Label>
                 <Input type="email" value={form.contactEmail || ""} onChange={e => setField("contactEmail", e.target.value)} placeholder="email@vendor.com" />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Default Currency</Label>
+              <Select value={form.currency || ""} onValueChange={v => setField("currency", v)}>
+                <SelectTrigger><SelectValue placeholder="Select currency (optional)" /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map(c => <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this vendor.</p>
             </div>
 
             {isInternational ? (

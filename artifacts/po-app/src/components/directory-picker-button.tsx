@@ -19,6 +19,7 @@ interface DirectoryEntry {
   contactPerson: string | null;
   contactEmail: string | null;
   phone: string | null;
+  currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
   isActive: boolean;
@@ -35,6 +36,7 @@ export interface PickedEntry {
   gstNo: string;
   country: string;
   fullAddress: string;
+  currency: string;
 }
 
 interface DirectoryPickerButtonProps {
@@ -101,6 +103,7 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
       gstNo: entry.gstNo || "",
       country: entry.country || "",
       fullAddress: buildFullAddress(entry),
+      currency: entry.currency || "",
     });
     setSearch("");
     setOpen(false);

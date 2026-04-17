@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock } from "lucide-react";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -68,6 +69,10 @@ export default function InvoiceEdit() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
+  const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
+  const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
+  const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
 
   const { data: doc } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
@@ -160,6 +165,15 @@ export default function InvoiceEdit() {
   const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
 
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
+      setPendingConfirmValues(values);
+      setCurrencyDialogOpen(true);
+      return;
+    }
+    await doSubmit(values, openPreview);
+  }
+
+  async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
     if (filledItems.length === 0) {
@@ -231,6 +245,11 @@ export default function InvoiceEdit() {
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
                     if (c.effectiveGstRate !== undefined) form.setValue("tax", c.effectiveGstRate);
+                    if (c.currency) {
+                      form.setValue("currency", c.currency);
+                      setDirectoryCurrency(c.currency);
+                      setDirectoryCurrencyName(c.name);
+                    }
                   }}
                 />
               </CardHeader>
@@ -416,6 +435,27 @@ export default function InvoiceEdit() {
           </div>
         </form>
       </Form>
+      <CurrencyMismatchDialog
+        open={currencyDialogOpen}
+        entityName={directoryCurrencyName}
+        entityType="customer"
+        defaultCurrency={directoryCurrency}
+        selectedCurrency={form.getValues("currency")}
+        onContinue={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
+          setPendingConfirmValues(null);
+        }}
+        onRevert={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) {
+            const updated = { ...pendingConfirmValues, currency: directoryCurrency };
+            form.setValue("currency", directoryCurrency);
+            await doSubmit(updated, true);
+          }
+          setPendingConfirmValues(null);
+        }}
+      />
       <PdfPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}

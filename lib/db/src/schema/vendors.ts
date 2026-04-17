@@ -11,6 +11,7 @@ export const vendorsTable = pgTable("vendors", {
   contactPerson: text("contact_person"),
   contactEmail: text("contact_email"),
   phone: text("phone"),
+  currency: text("currency"),
   gstRegistered: boolean("gst_registered").notNull().default(false),
   gstNo: text("gst_no"),
   isActive: boolean("is_active").notNull().default(true),

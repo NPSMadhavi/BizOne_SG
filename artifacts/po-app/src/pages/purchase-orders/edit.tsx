@@ -31,6 +31,7 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generatePO_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
@@ -78,6 +79,10 @@ export default function PurchaseOrderEdit() {
   const queryClient = useQueryClient();
   const [initialized, setInitialized] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
+  const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
+  const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: {
@@ -218,6 +223,22 @@ export default function PurchaseOrderEdit() {
     );
   }
 
+  async function doSaveConfirmed(values: z.infer<typeof poSchema>) {
+    const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
+    if (!filledItems.length) return;
+    const itemsWithAmount = filledItems.map(i => ({ ...i, amount: i.qty * i.unitPrice }));
+    updateMutation.mutate(
+      { id, data: { ...values, status: "confirmed", items: itemsWithAmount } },
+      {
+        onSuccess: async () => {
+          await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
+          setPreviewOpen(true);
+        },
+        onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  }
+
   if (isLoading || !initialized) {
     return (
       <div className="space-y-6 max-w-5xl mx-auto">
@@ -276,6 +297,11 @@ export default function PurchaseOrderEdit() {
                     form.setValue("vendorContact", v.contactPerson);
                     form.setValue("vendorContactEmail", v.contactEmail);
                     if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
+                    if (v.currency) {
+                      form.setValue("currency", v.currency);
+                      setDirectoryCurrency(v.currency);
+                      setDirectoryCurrencyName(v.name);
+                    }
                   }}
                 />
               </CardHeader>
@@ -622,19 +648,12 @@ export default function PurchaseOrderEdit() {
               className="gap-2"
               disabled={updateMutation.isPending}
               onClick={form.handleSubmit(async (values) => {
-                const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
-                if (!filledItems.length) return;
-                const itemsWithAmount = filledItems.map(i => ({ ...i, amount: i.qty * i.unitPrice }));
-                updateMutation.mutate(
-                  { id, data: { ...values, status: "confirmed", items: itemsWithAmount } },
-                  {
-                    onSuccess: async () => {
-                      await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
-                      setPreviewOpen(true);
-                    },
-                    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-                  }
-                );
+                if (directoryCurrency && values.currency !== directoryCurrency) {
+                  setPendingConfirmValues(values);
+                  setCurrencyDialogOpen(true);
+                  return;
+                }
+                await doSaveConfirmed(values);
               })}
             >
               <Eye className="h-4 w-4" />
@@ -643,6 +662,28 @@ export default function PurchaseOrderEdit() {
           </div>
         </form>
       </Form>
+
+      <CurrencyMismatchDialog
+        open={currencyDialogOpen}
+        entityName={directoryCurrencyName}
+        entityType="vendor"
+        defaultCurrency={directoryCurrency}
+        selectedCurrency={form.getValues("currency")}
+        onContinue={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) await doSaveConfirmed(pendingConfirmValues);
+          setPendingConfirmValues(null);
+        }}
+        onRevert={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) {
+            const updated = { ...pendingConfirmValues, currency: directoryCurrency };
+            form.setValue("currency", directoryCurrency);
+            await doSaveConfirmed(updated);
+          }
+          setPendingConfirmValues(null);
+        }}
+      />
 
       {po && (
         <PdfPreviewModal

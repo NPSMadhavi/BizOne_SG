@@ -1,0 +1,17 @@
+export const CURRENCIES = [
+  { code: "SGD", label: "SGD — Singapore Dollar" },
+  { code: "USD", label: "USD — US Dollar" },
+  { code: "EUR", label: "EUR — Euro" },
+  { code: "GBP", label: "GBP — British Pound" },
+  { code: "MYR", label: "MYR — Malaysian Ringgit" },
+  { code: "INR", label: "INR — Indian Rupee" },
+  { code: "AUD", label: "AUD — Australian Dollar" },
+  { code: "JPY", label: "JPY — Japanese Yen" },
+  { code: "CNY", label: "CNY — Chinese Yuan" },
+  { code: "HKD", label: "HKD — Hong Kong Dollar" },
+  { code: "THB", label: "THB — Thai Baht" },
+  { code: "IDR", label: "IDR — Indonesian Rupiah" },
+  { code: "PHP", label: "PHP — Philippine Peso" },
+  { code: "AED", label: "AED — UAE Dirham" },
+  { code: "SAR", label: "SAR — Saudi Riyal" },
+];

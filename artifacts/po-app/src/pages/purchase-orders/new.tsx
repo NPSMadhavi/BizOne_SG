@@ -27,6 +27,7 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -69,6 +70,10 @@ export default function PurchaseOrderNew() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedPo, setSavedPo] = useState<any>(null);
+  const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
+  const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
+  const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
 
   const form = useForm<z.infer<typeof poSchema>>({
     resolver: zodResolver(poSchema),
@@ -188,6 +193,15 @@ export default function PurchaseOrderNew() {
   }
 
   async function onSaveAndPreview(values: z.infer<typeof poSchema>) {
+    if (directoryCurrency && values.currency !== directoryCurrency) {
+      setPendingConfirmValues(values);
+      setCurrencyDialogOpen(true);
+      return;
+    }
+    await doSaveAndPreview(values);
+  }
+
+  async function doSaveAndPreview(values: z.infer<typeof poSchema>) {
     setIsGenerating(true);
     try {
       const data = await saveDocument(values, "confirmed");
@@ -250,6 +264,11 @@ export default function PurchaseOrderNew() {
                     form.setValue("vendorContact", v.contactPerson);
                     form.setValue("vendorContactEmail", v.contactEmail);
                     if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
+                    if (v.currency) {
+                      form.setValue("currency", v.currency);
+                      setDirectoryCurrency(v.currency);
+                      setDirectoryCurrencyName(v.name);
+                    }
                   }}
                 />
               </CardHeader>
@@ -538,6 +557,28 @@ export default function PurchaseOrderNew() {
           </div>
         </form>
       </Form>
+
+      <CurrencyMismatchDialog
+        open={currencyDialogOpen}
+        entityName={directoryCurrencyName}
+        entityType="vendor"
+        defaultCurrency={directoryCurrency}
+        selectedCurrency={form.getValues("currency")}
+        onContinue={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) await doSaveAndPreview(pendingConfirmValues);
+          setPendingConfirmValues(null);
+        }}
+        onRevert={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) {
+            const updated = { ...pendingConfirmValues, currency: directoryCurrency };
+            form.setValue("currency", directoryCurrency);
+            await doSaveAndPreview(updated);
+          }
+          setPendingConfirmValues(null);
+        }}
+      />
 
       {savedPo && (
         <PdfPreviewModal

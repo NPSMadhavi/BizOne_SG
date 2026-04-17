@@ -20,6 +20,7 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -63,6 +64,10 @@ export default function QuotationNew() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [isOverseas, setIsOverseas] = useState(false);
+  const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
+  const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
+  const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -135,6 +140,15 @@ export default function QuotationNew() {
   const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
 
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
+      setPendingConfirmValues(values);
+      setCurrencyDialogOpen(true);
+      return;
+    }
+    await doSubmit(values, openPreview);
+  }
+
+  async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
     if (filledItems.length === 0) {
@@ -213,6 +227,11 @@ export default function QuotationNew() {
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
                     if (c.effectiveGstRate !== undefined) form.setValue("tax", c.effectiveGstRate);
+                    if (c.currency) {
+                      form.setValue("currency", c.currency);
+                      setDirectoryCurrency(c.currency);
+                      setDirectoryCurrencyName(c.name);
+                    }
                   }}
                 />
               </CardHeader>
@@ -420,6 +439,28 @@ export default function QuotationNew() {
           </div>
         </form>
       </Form>
+
+      <CurrencyMismatchDialog
+        open={currencyDialogOpen}
+        entityName={directoryCurrencyName}
+        entityType="customer"
+        defaultCurrency={directoryCurrency}
+        selectedCurrency={form.getValues("currency")}
+        onContinue={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
+          setPendingConfirmValues(null);
+        }}
+        onRevert={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) {
+            const updated = { ...pendingConfirmValues, currency: directoryCurrency };
+            form.setValue("currency", directoryCurrency);
+            await doSubmit(updated, true);
+          }
+          setPendingConfirmValues(null);
+        }}
+      />
 
       {savedDoc && (
         <PdfPreviewModal

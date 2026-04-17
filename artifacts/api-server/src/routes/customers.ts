@@ -22,7 +22,7 @@ router.post("/customers", async (req, res) => {
   const companyId = (req.session as any).companyId;
   if (!companyId) return res.status(400).json({ error: "No company selected" });
 
-  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo } = req.body;
+  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, currency } = req.body;
   if (!name) return res.status(400).json({ error: "Name is required" });
 
   try {
@@ -35,6 +35,7 @@ router.post("/customers", async (req, res) => {
       contactPerson: contactPerson || null,
       contactEmail: contactEmail || null,
       phone: phone || null,
+      currency: currency || null,
       gstRegistered: Boolean(gstRegistered),
       gstNo: gstRegistered && gstNo ? gstNo : null,
     }).returning();
@@ -50,7 +51,7 @@ router.put("/customers/:id", async (req, res) => {
   if (!companyId) return res.status(400).json({ error: "No company selected" });
 
   const id = parseInt(req.params.id);
-  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, isActive } = req.body;
+  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, isActive, currency } = req.body;
 
   try {
     const [customer] = await db.update(customersTable).set({
@@ -61,6 +62,7 @@ router.put("/customers/:id", async (req, res) => {
       contactPerson: contactPerson || null,
       contactEmail: contactEmail || null,
       phone: phone || null,
+      currency: currency || null,
       gstRegistered: Boolean(gstRegistered),
       gstNo: gstRegistered && gstNo ? gstNo : null,
       isActive: isActive !== undefined ? Boolean(isActive) : undefined,
