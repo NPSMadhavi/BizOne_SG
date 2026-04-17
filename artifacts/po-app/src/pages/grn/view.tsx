@@ -297,15 +297,6 @@ export default function GrnView() {
         </CardContent>
       </Card>
 
-      {isDirty && (
-        <div className="flex justify-end">
-          <Button onClick={handleReceiveClick} disabled={mutation.isPending} className="gap-2" size="lg">
-            <PackagePlus className="h-4 w-4" />
-            {mutation.isPending ? "Confirming..." : "Goods Received"}
-          </Button>
-        </div>
-      )}
-
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
