@@ -190,7 +190,7 @@ export default function PurchaseOrderNew() {
   async function onSaveAndPreview(values: z.infer<typeof poSchema>) {
     setIsGenerating(true);
     try {
-      const data = await saveDocument(values, "draft");
+      const data = await saveDocument(values, "confirmed");
       if (!data) return;
       setSavedPo(data);
       setPreviewOpen(true);
@@ -551,7 +551,7 @@ export default function PurchaseOrderNew() {
           pdfFilename={`${savedPo.poNumber}.pdf`}
           defaultEmailTo={(savedPo as any).vendorContactEmail || ""}
           defaultEmailSubject={`Purchase Order ${savedPo.poNumber}`}
-          defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}${(savedPo as any).quoteRefNo ? ` with the sales reference number ${(savedPo as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
           onEdit={() => {
             setPreviewOpen(false);
             setLocation(`/purchase-orders/${savedPo.id}/edit`);

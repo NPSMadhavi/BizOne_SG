@@ -16,6 +16,7 @@ import {
   ClipboardList,
   Package,
   Users2,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,6 +158,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </NavItem>
           <NavItem href="/customers" icon={Users2} active={location.startsWith("/customers")}>
             Customers
+          </NavItem>
+          <NavItem href="/address-book" icon={Mail} active={location.startsWith("/address-book")}>
+            Address Book
           </NavItem>
         </div>
       </div>

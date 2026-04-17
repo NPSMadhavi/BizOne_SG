@@ -123,7 +123,7 @@ export default function DeliveryOrderEdit() {
       setIsSubmitting(false);
       return;
     }
-    updateMutation.mutate({ id, data: { ...values, items: filledItems } }, {
+    updateMutation.mutate({ id, data: { ...values, status: openPreview ? "confirmed" : "draft", items: filledItems } }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
         setIsSubmitting(false);

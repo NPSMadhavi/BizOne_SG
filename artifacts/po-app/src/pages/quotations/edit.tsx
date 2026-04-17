@@ -171,7 +171,7 @@ export default function QuotationEdit() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    updateMutation.mutate({ id, data: { ...values, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
+    updateMutation.mutate({ id, data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetQuotationQueryKey(id) });
         setIsSubmitting(false);

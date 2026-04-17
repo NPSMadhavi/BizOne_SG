@@ -201,7 +201,7 @@ export default function PurchaseOrderEdit() {
     }));
 
     updateMutation.mutate(
-      { id, data: { ...values, items: itemsWithAmount } },
+      { id, data: { ...values, status: "draft", items: itemsWithAmount } },
       {
         onSuccess: (data) => {
           queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
@@ -626,7 +626,7 @@ export default function PurchaseOrderEdit() {
                 if (!filledItems.length) return;
                 const itemsWithAmount = filledItems.map(i => ({ ...i, amount: i.qty * i.unitPrice }));
                 updateMutation.mutate(
-                  { id, data: { ...values, items: itemsWithAmount } },
+                  { id, data: { ...values, status: "confirmed", items: itemsWithAmount } },
                   {
                     onSuccess: async () => {
                       await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
@@ -653,7 +653,7 @@ export default function PurchaseOrderEdit() {
           pdfFilename={`${po.poNumber}.pdf`}
           defaultEmailTo={(po as any).vendorContactEmail || ""}
           defaultEmailSubject={`Purchase Order ${po.poNumber}`}
-          defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}${(po as any).quoteRefNo ? ` with the sales reference number ${(po as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
           onEdit={() => setPreviewOpen(false)}
         />
       )}

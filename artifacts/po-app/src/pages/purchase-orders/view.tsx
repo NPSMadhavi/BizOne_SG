@@ -325,7 +325,7 @@ export default function PurchaseOrderView() {
         pdfFilename={`${po.poNumber}.pdf`}
         defaultEmailTo={(po as any).vendorContactEmail || ""}
         defaultEmailSubject={`Purchase Order ${po.poNumber}`}
-        defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+        defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}${(po as any).quoteRefNo ? ` with the sales reference number ${(po as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
       />
     </div>

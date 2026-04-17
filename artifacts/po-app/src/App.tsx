@@ -29,6 +29,7 @@ import GrnView from "@/pages/grn/view";
 import StockList from "@/pages/stock/list";
 import VendorsPage from "@/pages/vendors/index";
 import CustomersPage from "@/pages/customers/index";
+import AddressBookPage from "@/pages/address-book/index";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { useEffect } from "react";
@@ -43,6 +44,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/stock": "Stock Items",
   "/vendors": "Vendors",
   "/customers": "Customers",
+  "/address-book": "Address Book",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -159,6 +161,7 @@ function Router() {
         {/* Directory */}
         <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} />}</Route>
         <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} />}</Route>
+        <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} />}</Route>
 
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
         <Route path="/settings">{() => <ProtectedRoute component={Settings} />}</Route>
