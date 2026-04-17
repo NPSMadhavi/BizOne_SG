@@ -248,6 +248,10 @@ function fmtMoney(currency: string, amount: number): string {
   return symbol + num;
 }
 
+function fmtMoneyTotal(currency: string, amount: number): string {
+  return currency + " " + fmtMoney(currency, amount);
+}
+
 function formatDate(d: string | null | undefined): string {
   return fmtDate(d);
 }
@@ -490,15 +494,15 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
-  doc.text(fmtMoney(poCurrency, Number(po.subtotal)), valueX, totalsY, { align: "right" });
+  doc.text(fmtMoneyTotal(poCurrency, Number(po.subtotal)), valueX, totalsY, { align: "right" });
   const taxAmount = Number(po.totalAmount) - Number(po.subtotal);
   doc.text("Tax:", labelX, totalsY + 7);
-  doc.text(fmtMoney(poCurrency, taxAmount), valueX, totalsY + 7, { align: "right" });
+  doc.text(fmtMoneyTotal(poCurrency, taxAmount), valueX, totalsY + 7, { align: "right" });
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, totalsY + 10, marginRight, totalsY + 10);
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, totalsY + 17);
-  doc.text(fmtMoney(poCurrency, Number(po.totalAmount)), valueX, totalsY + 17, { align: "right" });
+  doc.text(fmtMoneyTotal(poCurrency, Number(po.totalAmount)), valueX, totalsY + 17, { align: "right" });
 
   const totalPages = (doc as any).internal.pages.length - 1;
   const footerY = pageHeight - 12;
@@ -675,24 +679,24 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   let ty = totalsY;
   doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, ty);
-  doc.text(fmtMoney(qtCurrency, Number(qt.subtotal)), valueX, ty, { align: "right" });
+  doc.text(fmtMoneyTotal(qtCurrency, Number(qt.subtotal)), valueX, ty, { align: "right" });
   ty += 7;
   if (qtDocDiscount > 0) {
     doc.setTextColor(180, 0, 0);
     doc.text("Discount:", labelX, ty);
-    doc.text(`-${fmtMoney(qtCurrency, qtDocDiscount)}`, valueX, ty, { align: "right" });
+    doc.text(`-${fmtMoneyTotal(qtCurrency, qtDocDiscount)}`, valueX, ty, { align: "right" });
     doc.setTextColor(60, 60, 60);
     ty += 7;
   }
   doc.text("GST:", labelX, ty);
-  doc.text(fmtMoney(qtCurrency, Number(qt.tax)), valueX, ty, { align: "right" });
+  doc.text(fmtMoneyTotal(qtCurrency, Number(qt.tax)), valueX, ty, { align: "right" });
   ty += 3;
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, ty, marginRight, ty);
   ty += 7;
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ty);
-  doc.text(fmtMoney(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
+  doc.text(fmtMoneyTotal(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
   renderBottomDocInfo(doc, settings, marginLeft, pageHeight, 120);
 
@@ -783,24 +787,24 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   let ity = totalsY;
   doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, ity);
-  doc.text(fmtMoney(invCurrency, Number(inv.subtotal)), valueX, ity, { align: "right" });
+  doc.text(fmtMoneyTotal(invCurrency, Number(inv.subtotal)), valueX, ity, { align: "right" });
   ity += 7;
   if (invDocDiscount > 0) {
     doc.setTextColor(180, 0, 0);
     doc.text("Discount:", labelX, ity);
-    doc.text(`-${fmtMoney(invCurrency, invDocDiscount)}`, valueX, ity, { align: "right" });
+    doc.text(`-${fmtMoneyTotal(invCurrency, invDocDiscount)}`, valueX, ity, { align: "right" });
     doc.setTextColor(60, 60, 60);
     ity += 7;
   }
   doc.text("GST:", labelX, ity);
-  doc.text(fmtMoney(invCurrency, Number(inv.tax)), valueX, ity, { align: "right" });
+  doc.text(fmtMoneyTotal(invCurrency, Number(inv.tax)), valueX, ity, { align: "right" });
   ity += 3;
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
   doc.line(labelX, ity, marginRight, ity);
   ity += 7;
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(24, 33, 47);
   doc.text("Total Amount:", labelX, ity);
-  doc.text(fmtMoney(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
+  doc.text(fmtMoneyTotal(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
   renderBottomDocInfo(doc, settings, marginLeft, pageHeight, 120);
 
