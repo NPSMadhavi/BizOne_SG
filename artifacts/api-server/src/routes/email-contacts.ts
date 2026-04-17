@@ -39,6 +39,35 @@ router.get("/email-contacts", async (req, res): Promise<void> => {
   }
 });
 
+router.post("/email-contacts", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const { name, email } = req.body;
+
+  if (!email || typeof email !== "string" || !email.includes("@")) {
+    res.status(400).json({ error: "Valid email required" }); return;
+  }
+
+  try {
+    const existing = await db.select({ id: emailContactsTable.id })
+      .from(emailContactsTable)
+      .where(and(eq(emailContactsTable.companyId, companyId), ilike(emailContactsTable.email, email.trim())))
+      .limit(1);
+
+    if (existing.length > 0) {
+      res.status(409).json({ error: "This email already exists in the address book." }); return;
+    }
+
+    const [created] = await db.insert(emailContactsTable).values({
+      companyId, email: email.trim().toLowerCase(), name: name?.trim() || null,
+    }).returning();
+    res.json(created);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create email contact" });
+  }
+});
+
 router.post("/email-contacts/track", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;

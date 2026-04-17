@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Edit2, Trash2, Mail, Clock } from "lucide-react";
+import { Search, Edit2, Trash2, Mail, Clock, Plus } from "lucide-react";
 
 interface EmailContact {
   id: number;
@@ -25,6 +25,9 @@ export default function AddressBookPage() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [deleteContact, setDeleteContact] = useState<EmailContact | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addEmail, setAddEmail] = useState("");
 
   const { data: contacts = [], isLoading } = useQuery<EmailContact[]>({
     queryKey: ["email-contacts"],
@@ -33,6 +36,28 @@ export default function AddressBookPage() {
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async ({ name, email }: { name: string; email: string }) => {
+      const res = await fetch("/api/email-contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name, email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add contact");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["email-contacts"] });
+      toast({ title: "Contact added." });
+      setAddOpen(false);
+      setAddName("");
+      setAddEmail("");
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -83,6 +108,10 @@ export default function AddressBookPage() {
           <h1 className="text-3xl font-bold tracking-tight">Address Book</h1>
           <p className="text-muted-foreground mt-1">Email contacts saved automatically when you send documents.</p>
         </div>
+        <Button className="gap-2" onClick={() => { setAddName(""); setAddEmail(""); setAddOpen(true); }}>
+          <Plus className="h-4 w-4" />
+          Add Contact
+        </Button>
       </div>
 
       <div className="relative max-w-sm">
@@ -139,6 +168,37 @@ export default function AddressBookPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Contact</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Display Name (optional)</Label>
+              <Input value={addName} onChange={e => setAddName(e.target.value)} placeholder="John Smith" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email Address <span className="text-destructive">*</span></Label>
+              <Input
+                value={addEmail}
+                onChange={e => setAddEmail(e.target.value)}
+                placeholder="john@company.com"
+                type="email"
+                onKeyDown={e => { if (e.key === "Enter" && addEmail) addMutation.mutate({ name: addName, email: addEmail }); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => addMutation.mutate({ name: addName, email: addEmail })}
+              disabled={!addEmail || addMutation.isPending}
+            >
+              {addMutation.isPending ? "Adding..." : "Add Contact"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editContact} onOpenChange={v => !v && setEditContact(null)}>
         <DialogContent>
