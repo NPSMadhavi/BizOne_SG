@@ -13,9 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
+import { StockItemPickerDialog } from "@/components/stock-item-picker-dialog";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
@@ -73,6 +74,7 @@ export default function InvoiceNew() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -362,7 +364,14 @@ export default function InvoiceNew() {
                           <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
                           <td className="px-4 py-2">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl>
+                                <div className="flex items-center gap-1">
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                    <Package className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </FormControl></FormItem>
                             )} />
                           </td>
                           <td className="px-4 py-2 align-top">
@@ -478,6 +487,19 @@ export default function InvoiceNew() {
           }}
         />
       )}
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        onSelect={(item) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, item.name);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
+          setStockPickerIndex(null);
+        }}
+      />
 
       <CurrencyMismatchDialog
         open={currencyDialogOpen}
