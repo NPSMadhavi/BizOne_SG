@@ -1,6 +1,7 @@
 import { Router } from "express";
 import nodemailer from "nodemailer";
 import { db, settingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
@@ -38,7 +39,10 @@ router.post("/send-email", async (req, res): Promise<void> => {
     return;
   }
 
-  const settingsRows = await db.select().from(settingsTable).limit(1);
+  const companyId = (req.session as any).companyId;
+  const settingsRows = companyId
+    ? await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1)
+    : await db.select().from(settingsTable).limit(1);
   const settings = settingsRows[0];
 
   if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
@@ -76,7 +80,10 @@ router.post("/test-email", async (req, res): Promise<void> => {
     return;
   }
 
-  const settingsRows = await db.select().from(settingsTable).limit(1);
+  const companyId = (req.session as any).companyId;
+  const settingsRows = companyId
+    ? await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1)
+    : await db.select().from(settingsTable).limit(1);
   const settings = settingsRows[0];
 
   if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
