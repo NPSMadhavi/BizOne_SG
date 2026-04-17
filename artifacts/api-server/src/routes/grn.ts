@@ -152,46 +152,55 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
   const receivedItems = items.filter((i: any) => i.received);
   for (const item of receivedItems) {
     const partNumber = (item.partNumber || "").trim();
+    const isStockItem = item.isStockItem === true;
+
+    if (!isStockItem) continue;
     if (!partNumber) continue;
 
-    const [stockItem] = await db
+    let [stockItem] = await db
       .select()
       .from(stockItemsTable)
       .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
       .limit(1);
 
-    if (!stockItem) continue;
+    if (!stockItem) {
+      const rawName = (item.description || partNumber).replace(/<[^>]*>/g, "").trim();
+      const [created] = await db.insert(stockItemsTable).values({
+        companyId,
+        code: partNumber,
+        name: rawName || partNumber,
+        uom: "pcs",
+        type: "product",
+        unitPrice: String(item.unitPrice || "0"),
+        stockQty: "0",
+        isActive: true,
+      }).returning();
+      stockItem = created;
+    }
 
     const addQty = Number(item.qty) || 0;
-    const isStockItem = item.isStockItem === true;
 
-    if (isStockItem) {
-      const serialLines = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
-      if (serialLines.length > 0) {
-        for (const sn of serialLines) {
-          const exists = await db.select({ id: stockSerialsTable.id })
-            .from(stockSerialsTable)
-            .where(and(
-              eq(stockSerialsTable.companyId, companyId),
-              eq(stockSerialsTable.stockItemId, stockItem.id),
-              eq(stockSerialsTable.serialNumber, sn)
-            ))
-            .limit(1);
-          if (exists.length === 0) {
-            await db.insert(stockSerialsTable).values({
-              companyId, stockItemId: stockItem.id, serialNumber: sn,
-              status: "available", grnId: id, grnNumber: existing.grnNumber,
-            });
-          }
+    const serialLines = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
+    if (serialLines.length > 0) {
+      for (const sn of serialLines) {
+        const exists = await db.select({ id: stockSerialsTable.id })
+          .from(stockSerialsTable)
+          .where(and(
+            eq(stockSerialsTable.companyId, companyId),
+            eq(stockSerialsTable.stockItemId, stockItem.id),
+            eq(stockSerialsTable.serialNumber, sn)
+          ))
+          .limit(1);
+        if (exists.length === 0) {
+          await db.insert(stockSerialsTable).values({
+            companyId, stockItemId: stockItem.id, serialNumber: sn,
+            status: "available", grnId: id, grnNumber: existing.grnNumber,
+          });
         }
-        await db.update(stockItemsTable)
-          .set({ stockQty: sql`${stockItemsTable.stockQty} + ${serialLines.length}` })
-          .where(eq(stockItemsTable.id, stockItem.id));
-      } else {
-        await db.update(stockItemsTable)
-          .set({ stockQty: sql`${stockItemsTable.stockQty} + ${addQty}` })
-          .where(eq(stockItemsTable.id, stockItem.id));
       }
+      await db.update(stockItemsTable)
+        .set({ stockQty: sql`${stockItemsTable.stockQty} + ${serialLines.length}` })
+        .where(eq(stockItemsTable.id, stockItem.id));
     } else {
       await db.update(stockItemsTable)
         .set({ stockQty: sql`${stockItemsTable.stockQty} + ${addQty}` })
