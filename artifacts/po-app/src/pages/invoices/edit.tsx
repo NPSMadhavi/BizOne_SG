@@ -491,8 +491,8 @@ export default function InvoiceEdit() {
         onSelect={({ item, selectedSerials }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           const desc = selectedSerials.length > 0
-            ? `${item.name}\nSerial Numbers: ${selectedSerials.join(", ")}`
-            : item.name;
+            ? `<p>${item.name}</p><p><strong>Serial Numbers: ${selectedSerials.join(", ")}</strong></p>`
+            : `<p>${item.name}</p>`;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);

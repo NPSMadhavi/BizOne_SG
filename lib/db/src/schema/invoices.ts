@@ -1,8 +1,8 @@
-import { pgTable, text, serial, timestamp, integer, decimal, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, decimal, jsonb, boolean, unique } from "drizzle-orm/pg-core";
 
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
-  invNumber: text("inv_number").notNull().unique(),
+  invNumber: text("inv_number").notNull(),
   companyId: integer("company_id").notNull().default(1),
   customerName: text("customer_name").notNull(),
   customerAddress: text("customer_address"),
@@ -24,6 +24,8 @@ export const invoicesTable = pgTable("invoices", {
   voidReason: text("void_reason"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => ({
+  companyInvUnique: unique("invoices_company_inv_number_unique").on(t.companyId, t.invNumber),
+}));
 
 export type InvoiceRecord = typeof invoicesTable.$inferSelect;
