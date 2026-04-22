@@ -86,7 +86,7 @@ function ModuleSummaryCard({
               <span className="text-muted-foreground">Drafts</span>
               <span className="font-semibold text-amber-600">{stats.draft}</span>
             </div>
-            {stats.totalValue !== undefined && stats.totalValue > 0 && (
+            {stats.totalValue !== undefined && (
               <div className="flex justify-between text-sm pt-1 border-t border-border/50 mt-1">
                 <span className="text-muted-foreground">Total Value</span>
                 <span className="font-semibold text-xs">{fmt(stats.totalValue)}</span>
