@@ -96,11 +96,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const navItems = (
     <>
-      <div className="space-y-1">
-        <NavItem href="/dashboard" icon={LayoutDashboard} active={location === "/dashboard" || location === "/"}>
-          Dashboard
-        </NavItem>
-      </div>
+      {(isAdmin || hasModuleAccess("dashboard")) && (
+        <div className="space-y-1">
+          <NavItem href="/dashboard" icon={LayoutDashboard} active={location === "/dashboard" || location === "/"}>
+            Dashboard
+          </NavItem>
+        </div>
+      )}
 
       {(hasModuleAccess("purchase_orders") || hasModuleAccess("quotations") || hasModuleAccess("invoices") || hasModuleAccess("delivery_orders")) && (
         <div className="mt-4">

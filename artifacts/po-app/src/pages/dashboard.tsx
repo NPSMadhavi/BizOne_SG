@@ -1,167 +1,494 @@
-import { useGetPurchaseOrderStats, getGetPurchaseOrderStatsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  useGetPurchaseOrderStats, getGetPurchaseOrderStatsQueryKey,
+  useGetQuotationStats, getGetQuotationStatsQueryKey,
+  useGetInvoiceStats, getGetInvoiceStatsQueryKey,
+  useListPurchaseOrders, getListPurchaseOrdersQueryKey,
+  useListInvoices, getListInvoicesQueryKey,
+  useListQuotations, getListQuotationsQueryKey,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, CheckCircle2, Clock, XCircle, DollarSign } from "lucide-react";
+import {
+  FileText, CheckCircle2, Clock, DollarSign, Receipt, FileSpreadsheet,
+  Truck, Package, TrendingUp, AlertTriangle, ShoppingCart,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fmtDate } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
+
+function StatCard({
+  title, value, icon: Icon, iconClass = "text-primary", loading, sub,
+}: {
+  title: string; value: string | number; icon: React.ElementType;
+  iconClass?: string; loading?: boolean; sub?: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <Icon className={`h-4 w-4 ${iconClass}`} />
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-8 w-24" />
+        ) : (
+          <>
+            <div className="text-2xl font-bold">{value}</div>
+            {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModuleSummaryCard({
+  title, icon: Icon, iconBg, stats, loading, href,
+}: {
+  title: string; icon: React.ElementType; iconBg: string;
+  stats?: { total: number; confirmed: number; draft: number; cancelled?: number; totalValue?: number };
+  loading?: boolean; href: string;
+}) {
+  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD", maximumFractionDigits: 0 }).format(v);
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardContent className="pt-5 pb-4">
+        <div className="flex items-start justify-between mb-3">
+          <div className={`p-2 rounded-lg ${iconBg}`}>
+            <Icon className="h-4 w-4 text-white" />
+          </div>
+          <Link href={href}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-primary px-2">
+              View all →
+            </Button>
+          </Link>
+        </div>
+        <p className="text-sm font-semibold text-foreground mb-2">{title}</p>
+        {loading ? (
+          <div className="space-y-1.5">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        ) : stats ? (
+          <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-semibold">{stats.total}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Confirmed</span>
+              <span className="font-semibold text-emerald-600">{stats.confirmed}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Drafts</span>
+              <span className="font-semibold text-amber-600">{stats.draft}</span>
+            </div>
+            {stats.totalValue !== undefined && stats.totalValue > 0 && (
+              <div className="flex justify-between text-sm pt-1 border-t border-border/50 mt-1">
+                <span className="text-muted-foreground">Total Value</span>
+                <span className="font-semibold text-xs">{fmt(stats.totalValue)}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No data available</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case "confirmed": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs py-0">Confirmed</Badge>;
+    case "draft": return <Badge variant="secondary" className="text-xs py-0">Draft</Badge>;
+    case "cancelled": return <Badge variant="destructive" className="text-xs py-0">Cancelled</Badge>;
+    case "void": return <Badge variant="outline" className="text-xs py-0 border-red-300 text-red-600">Void</Badge>;
+    case "paid": return <Badge className="bg-blue-600 hover:bg-blue-700 text-xs py-0">Paid</Badge>;
+    default: return <Badge variant="outline" className="text-xs py-0">{status}</Badge>;
+  }
+}
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useGetPurchaseOrderStats({
-    query: {
-      queryKey: getGetPurchaseOrderStatsQueryKey(),
-    }
+  const { selectedCompany } = useAuth();
+
+  const { data: poStats, isLoading: poStatsLoading } = useGetPurchaseOrderStats({
+    query: { queryKey: getGetPurchaseOrderStatsQueryKey() },
+  });
+  const { data: qtStats, isLoading: qtStatsLoading } = useGetQuotationStats({
+    query: { queryKey: getGetQuotationStatsQueryKey() },
+  });
+  const { data: invStats, isLoading: invStatsLoading } = useGetInvoiceStats({
+    query: { queryKey: getGetInvoiceStatsQueryKey() },
+  });
+  const { data: doStats, isLoading: doStatsLoading } = useQuery({
+    queryKey: ["delivery-orders-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/delivery-orders/stats", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ total: number; confirmed: number; draft: number; cancelled: number; totalValue: number }>;
+    },
+  });
+  const { data: stockItems, isLoading: stockLoading } = useQuery({
+    queryKey: ["stock-items-dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/stock-items", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json() as Promise<{ id: number; name: string; stockQty: string; uom: string }[]>;
+    },
   });
 
-  const { data: pos, isLoading: posLoading } = useListPurchaseOrders({
-    query: {
-      queryKey: getListPurchaseOrdersQueryKey(),
-    }
+  const { data: recentInvoices, isLoading: invLoading } = useListInvoices({
+    query: { queryKey: getListInvoicesQueryKey() },
+  });
+  const { data: recentPOs, isLoading: posLoading } = useListPurchaseOrders({
+    query: { queryKey: getListPurchaseOrdersQueryKey() },
+  });
+  const { data: recentQuotations, isLoading: qtLoading } = useListQuotations({
+    query: { queryKey: getListQuotationsQueryKey() },
   });
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-SG', {
-      style: 'currency',
-      currency: 'SGD'
-    }).format(value);
-  };
+  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(v);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'confirmed': return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
-      case 'draft': return <Badge variant="secondary">Draft</Badge>;
-      case 'cancelled': return <Badge variant="destructive">Cancelled</Badge>;
-      default: return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  const totalInvoiceRevenue = invStats?.totalValue ?? 0;
+  const pendingDrafts = (poStats?.draft ?? 0) + (qtStats?.draft ?? 0) + (invStats?.draft ?? 0) + (doStats?.draft ?? 0);
+  const stockTotal = stockItems?.length ?? 0;
+  const lowStockCount = stockItems?.filter(i => Number(i.stockQty) <= 5 && Number(i.stockQty) >= 0).length ?? 0;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Overview of your procurement activity.</p>
+          <p className="text-muted-foreground mt-1">
+            Overview for {selectedCompany?.name ?? "your company"}
+          </p>
         </div>
-        <Link href="/purchase-orders/new">
-          <Button>Create Purchase Order</Button>
-        </Link>
+        <div className="flex gap-2 flex-wrap">
+          <Link href="/invoices/new">
+            <Button size="sm" className="gap-1.5">
+              <Receipt className="h-3.5 w-3.5" />
+              New Invoice
+            </Button>
+          </Link>
+          <Link href="/purchase-orders/new">
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              New PO
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Value</CardTitle>
-            <DollarSign className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-24" />
-            ) : (
-              <div className="text-2xl font-bold">{formatCurrency(stats?.totalValue || 0)}</div>
-            )}
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total POs</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{stats?.total || 0}</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Confirmed</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{stats?.confirmed || 0}</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Drafts</CardTitle>
-            <Clock className="h-4 w-4 text-amber-600" />
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{stats?.draft || 0}</div>
-            )}
-          </CardContent>
-        </Card>
+      {/* KPI Row */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Invoice Revenue"
+          value={fmt(totalInvoiceRevenue)}
+          icon={TrendingUp}
+          iconClass="text-emerald-600"
+          loading={invStatsLoading}
+          sub="Confirmed invoices"
+        />
+        <StatCard
+          title="PO Spend"
+          value={fmt(poStats?.totalValue ?? 0)}
+          icon={ShoppingCart}
+          iconClass="text-blue-600"
+          loading={poStatsLoading}
+          sub="Confirmed purchase orders"
+        />
+        <StatCard
+          title="Pending Drafts"
+          value={pendingDrafts}
+          icon={Clock}
+          iconClass="text-amber-600"
+          loading={poStatsLoading || qtStatsLoading || invStatsLoading || doStatsLoading}
+          sub="Across all modules"
+        />
+        <StatCard
+          title="Stock Items"
+          value={stockTotal}
+          icon={Package}
+          iconClass={lowStockCount > 0 ? "text-orange-500" : "text-primary"}
+          loading={stockLoading}
+          sub={lowStockCount > 0 ? `${lowStockCount} item(s) low stock` : "All levels OK"}
+        />
       </div>
 
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold tracking-tight">Recent Purchase Orders</h2>
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
-                <tr>
-                  <th className="px-6 py-3 font-medium">PO Number</th>
-                  <th className="px-6 py-3 font-medium">Date</th>
-                  <th className="px-6 py-3 font-medium">Vendor</th>
-                  <th className="px-6 py-3 font-medium text-right">Amount</th>
-                  <th className="px-6 py-3 font-medium text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {posLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>
-                      <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
-                      <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
-                      <td className="px-6 py-4"><Skeleton className="h-4 w-32" /></td>
-                      <td className="px-6 py-4"><Skeleton className="h-4 w-20 ml-auto" /></td>
-                      <td className="px-6 py-4"><Skeleton className="h-6 w-20 mx-auto" /></td>
-                    </tr>
-                  ))
-                ) : !pos || pos.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">
-                      No purchase orders found.
-                    </td>
-                  </tr>
-                ) : (
-                  pos.slice(0, 10).map((po) => (
-                    <tr key={po.id} className="hover:bg-muted/50 transition-colors group">
-                      <td className="px-6 py-4 font-medium">
-                        <Link href={`/purchase-orders/${po.id}`} className="text-primary hover:underline">
-                          {po.poNumber}
-                        </Link>
-                      </td>
-                      <td className="px-6 py-4 text-muted-foreground">
-                        {fmtDate(po.createdAt)}
-                      </td>
-                      <td className="px-6 py-4 font-medium">{po.vendorName}</td>
-                      <td className="px-6 py-4 text-right font-medium">
-                        {formatCurrency(po.totalAmount)}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        {getStatusBadge(po.status)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      {/* Module Summary Row */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Module Activity</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <ModuleSummaryCard
+            title="Purchase Orders"
+            icon={FileText}
+            iconBg="bg-blue-600"
+            stats={poStats ? { total: poStats.total, confirmed: poStats.confirmed, draft: poStats.draft, totalValue: poStats.totalValue } : undefined}
+            loading={poStatsLoading}
+            href="/purchase-orders"
+          />
+          <ModuleSummaryCard
+            title="Quotations"
+            icon={FileSpreadsheet}
+            iconBg="bg-violet-600"
+            stats={qtStats ? { total: qtStats.total, confirmed: qtStats.confirmed, draft: qtStats.draft, totalValue: qtStats.totalValue } : undefined}
+            loading={qtStatsLoading}
+            href="/quotations"
+          />
+          <ModuleSummaryCard
+            title="Invoices"
+            icon={Receipt}
+            iconBg="bg-emerald-600"
+            stats={invStats ? { total: invStats.total, confirmed: invStats.confirmed, draft: invStats.draft, totalValue: invStats.totalValue } : undefined}
+            loading={invStatsLoading}
+            href="/invoices"
+          />
+          <ModuleSummaryCard
+            title="Delivery Orders"
+            icon={Truck}
+            iconBg="bg-orange-600"
+            stats={doStats ? { total: doStats.total, confirmed: doStats.confirmed, draft: doStats.draft } : undefined}
+            loading={doStatsLoading}
+            href="/delivery-orders"
+          />
+        </div>
+      </div>
+
+      {/* Low Stock Alert */}
+      {!stockLoading && lowStockCount > 0 && (
+        <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-900">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertTriangle className="h-5 w-5 text-orange-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                Low Stock Alert — {lowStockCount} item{lowStockCount > 1 ? "s" : ""} running low (≤5 units)
+              </p>
+            </div>
+            <Link href="/stock">
+              <Button size="sm" variant="outline" className="border-orange-300 text-orange-700 hover:bg-orange-100 shrink-0">
+                View Stock
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent Activity — two columns */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Recent Invoices */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Recent Invoices</h2>
+            <Link href="/invoices">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7">View all →</Button>
+            </Link>
           </div>
-        </Card>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">Invoice #</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Customer</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Amount</th>
+                    <th className="px-4 py-2.5 text-center font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {invLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-5 w-16 mx-auto" /></td>
+                      </tr>
+                    ))
+                  ) : !recentInvoices?.length ? (
+                    <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-muted-foreground">No invoices yet.</td></tr>
+                  ) : (
+                    recentInvoices.slice(0, 8).map((inv: any) => (
+                      <tr key={inv.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <Link href={`/invoices/${inv.id}`} className="font-mono text-xs font-medium text-primary hover:underline">
+                            {inv.invNumber}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm truncate max-w-[140px]">{inv.customerName}</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium">{fmt(parseFloat(inv.totalAmount ?? "0"))}</td>
+                        <td className="px-4 py-3 text-center">{getStatusBadge(inv.status)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        {/* Recent Quotations */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Recent Quotations</h2>
+            <Link href="/quotations">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7">View all →</Button>
+            </Link>
+          </div>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">Quote #</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Customer</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Amount</th>
+                    <th className="px-4 py-2.5 text-center font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {qtLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-5 w-16 mx-auto" /></td>
+                      </tr>
+                    ))
+                  ) : !recentQuotations?.length ? (
+                    <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-muted-foreground">No quotations yet.</td></tr>
+                  ) : (
+                    recentQuotations.slice(0, 8).map((qt: any) => (
+                      <tr key={qt.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <Link href={`/quotations/${qt.id}`} className="font-mono text-xs font-medium text-primary hover:underline">
+                            {qt.qtNumber}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm truncate max-w-[140px]">{qt.customerName}</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium">{fmt(parseFloat(qt.totalAmount ?? "0"))}</td>
+                        <td className="px-4 py-3 text-center">{getStatusBadge(qt.status)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        {/* Recent Purchase Orders */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Recent Purchase Orders</h2>
+            <Link href="/purchase-orders">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7">View all →</Button>
+            </Link>
+          </div>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">PO #</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Vendor</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Amount</th>
+                    <th className="px-4 py-2.5 text-center font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {posLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-5 w-16 mx-auto" /></td>
+                      </tr>
+                    ))
+                  ) : !recentPOs?.length ? (
+                    <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-muted-foreground">No purchase orders yet.</td></tr>
+                  ) : (
+                    recentPOs.slice(0, 8).map((po: any) => (
+                      <tr key={po.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <Link href={`/purchase-orders/${po.id}`} className="font-mono text-xs font-medium text-primary hover:underline">
+                            {po.poNumber}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-sm truncate max-w-[140px]">{po.vendorName}</td>
+                        <td className="px-4 py-3 text-right text-sm font-medium">{fmt(po.totalAmount ?? 0)}</td>
+                        <td className="px-4 py-3 text-center">{getStatusBadge(po.status)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        {/* Low Stock Items */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Stock Overview</h2>
+            <Link href="/stock">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7">View all →</Button>
+            </Link>
+          </div>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left font-medium">Item</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Qty</th>
+                    <th className="px-4 py-2.5 text-center font-medium">Level</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {stockLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-12 ml-auto" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-5 w-16 mx-auto" /></td>
+                      </tr>
+                    ))
+                  ) : !stockItems?.length ? (
+                    <tr><td colSpan={3} className="px-4 py-6 text-center text-sm text-muted-foreground">No stock items yet.</td></tr>
+                  ) : (
+                    stockItems.slice(0, 8).map((item) => {
+                      const qty = Number(item.stockQty) || 0;
+                      const isLow = qty <= 5;
+                      const isOut = qty === 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-muted/40 transition-colors">
+                          <td className="px-4 py-3 text-sm font-medium truncate max-w-[180px]">{item.name}</td>
+                          <td className="px-4 py-3 text-right text-sm">{qty} {item.uom}</td>
+                          <td className="px-4 py-3 text-center">
+                            {isOut ? (
+                              <Badge variant="destructive" className="text-xs py-0">Out of stock</Badge>
+                            ) : isLow ? (
+                              <Badge className="bg-orange-500 hover:bg-orange-600 text-xs py-0">Low</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs py-0 text-green-600 border-green-300">OK</Badge>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   );

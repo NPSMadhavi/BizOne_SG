@@ -101,6 +101,15 @@ interface ProtectedRouteProps {
   module?: AppModule;
 }
 
+function getFirstAccessiblePath(isAdmin: boolean, hasModuleAccess: (m: any) => boolean): string {
+  if (isAdmin || hasModuleAccess("dashboard")) return "/dashboard";
+  if (hasModuleAccess("purchase_orders")) return "/purchase-orders";
+  if (hasModuleAccess("invoices")) return "/invoices";
+  if (hasModuleAccess("quotations")) return "/quotations";
+  if (hasModuleAccess("delivery_orders")) return "/delivery-orders";
+  return "/settings";
+}
+
 function ProtectedRoute({ component: Component, adminOnly = false, module }: ProtectedRouteProps) {
   const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
 
@@ -110,11 +119,20 @@ function ProtectedRoute({ component: Component, adminOnly = false, module }: Pro
   const hasMultipleCompanies = (user.companies?.length ?? 0) > 1;
   if (!selectedCompany && hasMultipleCompanies) return <Redirect to="/select-company" />;
 
-  if (adminOnly && !isAdmin) return <Redirect to="/dashboard" />;
+  if (adminOnly && !isAdmin) return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
 
   if (module && !hasModuleAccess(module)) return <AccessDenied />;
 
   return <Component />;
+}
+
+function SmartHomeRedirect() {
+  const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
+  if (isLoading) return <LoadingSpinner />;
+  if (!user) return <Redirect to="/login" />;
+  const hasMultiple = (user.companies?.length ?? 0) > 1;
+  if (!selectedCompany && hasMultiple) return <Redirect to="/select-company" />;
+  return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
 }
 
 function Router() {
@@ -124,9 +142,9 @@ function Router() {
       <Switch>
         <Route path="/login" component={Login} />
         <Route path="/select-company" component={SelectCompany} />
-        <Route path="/">{() => <Redirect to="/dashboard" />}</Route>
+        <Route path="/">{() => <SmartHomeRedirect />}</Route>
 
-        <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} />}</Route>
+        <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>
 
         {/* Purchase Orders */}
         <Route path="/purchase-orders">{() => <ProtectedRoute component={PurchaseOrderList} module="purchase_orders" />}</Route>

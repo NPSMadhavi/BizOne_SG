@@ -1,5 +1,5 @@
 import { useAuth } from "@/contexts/auth-context";
-import { ALL_MODULES, MODULE_LABELS, type AppModule } from "@/contexts/auth-context";
+import { ALL_MODULES, DEFAULT_MODULES, MODULE_LABELS, type AppModule } from "@/contexts/auth-context";
 import {
   useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser,
   useListCompanies, getListCompaniesQueryKey, type User, type Company,
@@ -29,6 +29,7 @@ import { Trash2, UserPlus, ShieldAlert, Edit, Building2, ChevronRight } from "lu
 import { useQueryClient } from "@tanstack/react-query";
 
 const MODULE_ICONS: Record<AppModule, string> = {
+  dashboard: "📊",
   purchase_orders: "📋",
   quotations: "📝",
   invoices: "🧾",
@@ -67,7 +68,7 @@ function CompanyModuleSelector({
     if (selectedCompanyIds.includes(companyId)) {
       onChange(value.filter(v => v.companyId !== companyId));
     } else {
-      onChange([...value, { companyId, modules: [...ALL_MODULES] }]);
+      onChange([...value, { companyId, modules: [...DEFAULT_MODULES] }]);
     }
   };
 
@@ -255,7 +256,7 @@ export default function Admin() {
         role: editingUser.role as "admin" | "user",
         companyAccess: editingUser.companies?.map(c => ({
           companyId: c.id,
-          modules: (c as any).modules ?? [...ALL_MODULES],
+          modules: (c as any).modules ?? [...DEFAULT_MODULES],
         })) ?? [],
       });
     }
