@@ -245,7 +245,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 p-4 md:p-8 w-full max-w-7xl mx-auto">
+      <main className="flex-1 min-w-0 p-4 md:p-6 xl:p-8 overflow-auto">
         {children}
       </main>
     </div>
