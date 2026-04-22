@@ -33,6 +33,7 @@ import AddressBookPage from "@/pages/address-book/index";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
+import { MaintenanceGuard } from "@/components/maintenance-guard";
 import { useEffect } from "react";
 
 const ROUTE_TITLES: Record<string, string> = {
@@ -197,8 +198,10 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
-            <InactivityTimeout />
-            <Router />
+            <MaintenanceGuard>
+              <InactivityTimeout />
+              <Router />
+            </MaintenanceGuard>
           </AuthProvider>
         </WouterRouter>
         <Toaster />

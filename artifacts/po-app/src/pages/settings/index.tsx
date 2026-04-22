@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -89,6 +90,55 @@ export default function Settings() {
   const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "1", suffix: "" });
   const [rnGRN, setRnGRN] = useState<RunningNumberConfig>({ prefix: "GRN", counter: "1", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
+
+  const [maintEnabled, setMaintEnabled] = useState(false);
+  const [maintStart, setMaintStart] = useState("");
+  const [maintEnd, setMaintEnd] = useState("");
+  const [maintMessage, setMaintMessage] = useState("");
+  const [maintContact, setMaintContact] = useState("");
+  const [maintSaving, setMaintSaving] = useState(false);
+  const [maintLoaded, setMaintLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/maintenance", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setMaintEnabled(data.isEnabled ?? false);
+          setMaintStart(data.scheduledStart ? data.scheduledStart.slice(0, 16) : "");
+          setMaintEnd(data.scheduledEnd ? data.scheduledEnd.slice(0, 16) : "");
+          setMaintMessage(data.message ?? "");
+          setMaintContact(data.contactEmail ?? "");
+          setMaintLoaded(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveMaintenance = async () => {
+    setMaintSaving(true);
+    try {
+      const res = await fetch("/api/maintenance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          isEnabled: maintEnabled,
+          scheduledStart: maintStart ? new Date(maintStart).toISOString() : null,
+          scheduledEnd: maintEnd ? new Date(maintEnd).toISOString() : null,
+          message: maintMessage || null,
+          contactEmail: maintContact || null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      window.dispatchEvent(new CustomEvent("maintenance-updated"));
+      toast({ title: "Maintenance settings saved", description: maintEnabled ? "Maintenance mode is now active." : "Maintenance mode is now disabled." });
+    } catch {
+      toast({ title: "Error", description: "Failed to save maintenance settings.", variant: "destructive" });
+    } finally {
+      setMaintSaving(false);
+    }
+  };
 
   const { data: settings, isLoading: settingsLoading } = useGetSettings({
     query: { queryKey: getGetSettingsQueryKey() },
@@ -285,6 +335,15 @@ export default function Settings() {
             <Shield className="h-4 w-4" />
             Account
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger
+              value="maintenance"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+            >
+              <Wrench className="h-4 w-4" />
+              Maintenance
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* TAX */}
@@ -703,6 +762,111 @@ export default function Settings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* MAINTENANCE */}
+        {isAdmin && (
+          <TabsContent value="maintenance">
+            <div className="space-y-4">
+              <Card className={maintEnabled ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/10" : ""}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wrench className="h-5 w-5 text-primary" />
+                    Maintenance Mode
+                  </CardTitle>
+                  <CardDescription>
+                    When enabled, all non-admin users will see a maintenance page instead of the application.
+                    Admins can still access and use the app normally.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="flex items-center justify-between p-4 rounded-lg border bg-background">
+                    <div>
+                      <div className="font-medium flex items-center gap-2">
+                        Enable Maintenance Mode
+                        {maintEnabled && (
+                          <Badge className="bg-amber-500 hover:bg-amber-600 text-xs">Active</Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-0.5">
+                        {maintEnabled
+                          ? "Users are currently seeing the maintenance page."
+                          : "App is accessible to all users."}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={maintEnabled}
+                      onCheckedChange={setMaintEnabled}
+                    />
+                  </div>
+
+                  {maintEnabled && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 px-4 py-3 flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        <strong>Maintenance mode is ON.</strong> All regular users are currently blocked from accessing the application.
+                        Remember to turn this off when maintenance is complete.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="maintStart">Scheduled Start</Label>
+                      <Input
+                        id="maintStart"
+                        type="datetime-local"
+                        value={maintStart}
+                        onChange={e => setMaintStart(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">When the maintenance window begins.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="maintEnd">Scheduled End</Label>
+                      <Input
+                        id="maintEnd"
+                        type="datetime-local"
+                        value={maintEnd}
+                        onChange={e => setMaintEnd(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">Shown as countdown on the maintenance page.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="maintMessage">Message to Users</Label>
+                    <Textarea
+                      id="maintMessage"
+                      rows={3}
+                      placeholder="We are currently performing scheduled maintenance to improve our services. We apologize for any inconvenience."
+                      value={maintMessage}
+                      onChange={e => setMaintMessage(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">This message will be shown on the maintenance page.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="maintContact">Support Email (optional)</Label>
+                    <Input
+                      id="maintContact"
+                      type="email"
+                      placeholder="support@example.com"
+                      value={maintContact}
+                      onChange={e => setMaintContact(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Users can click this to email support during maintenance.</p>
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <Button onClick={handleSaveMaintenance} disabled={maintSaving} className="gap-2">
+                      <Save className="h-4 w-4" />
+                      {maintSaving ? "Saving..." : "Save Maintenance Settings"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        )}
 
         {/* ACCOUNT */}
         <TabsContent value="account">
