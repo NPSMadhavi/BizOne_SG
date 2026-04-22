@@ -672,6 +672,7 @@ export default function Settings() {
                   rows={5}
                   placeholder={"Account No: 1234567890\nAccount Name: Your Company\nIFSC Code: XXXX0001234\nBank: Bank Name\nBranch: Branch Name"}
                   value={bankDetails}
+                  disabled={!isAdmin}
                   onChange={(e) => { setDocsEditing(true); setBankDetails(e.target.value); }}
                 />
                 <p className="text-xs text-muted-foreground">Each line will appear as a separate line in the PDF.</p>
@@ -683,16 +684,22 @@ export default function Settings() {
                   rows={5}
                   placeholder={"All prices are as per the currency stated on this invoice.\nPayment is due as per the payment terms stated above.\nGoods once sold are not Returnable / Exchangeable."}
                   value={termsAndConditions}
+                  disabled={!isAdmin}
                   onChange={(e) => { setDocsEditing(true); setTermsAndConditions(e.target.value); }}
                 />
                 <p className="text-xs text-muted-foreground">Each line will be prefixed with a bullet point in the PDF.</p>
               </div>
-              <div className="flex justify-end pt-1">
-                <Button onClick={handleSaveDocs} className="gap-2">
-                  <Save className="h-4 w-4" />
-                  Save Changes
-                </Button>
-              </div>
+              {isAdmin && (
+                <div className="flex justify-end pt-1">
+                  <Button onClick={handleSaveDocs} className="gap-2">
+                    <Save className="h-4 w-4" />
+                    Save Changes
+                  </Button>
+                </div>
+              )}
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground">Only administrators can change the document settings.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
