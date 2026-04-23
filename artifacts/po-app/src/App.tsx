@@ -100,6 +100,7 @@ interface ProtectedRouteProps {
   component: React.ComponentType;
   adminOnly?: boolean;
   module?: AppModule;
+  anyOf?: AppModule[];
 }
 
 function getFirstAccessiblePath(isAdmin: boolean, hasModuleAccess: (m: any) => boolean): string {
@@ -108,10 +109,10 @@ function getFirstAccessiblePath(isAdmin: boolean, hasModuleAccess: (m: any) => b
   if (hasModuleAccess("invoices")) return "/invoices";
   if (hasModuleAccess("quotations")) return "/quotations";
   if (hasModuleAccess("delivery_orders")) return "/delivery-orders";
-  return "/settings";
+  return "/login";
 }
 
-function ProtectedRoute({ component: Component, adminOnly = false, module }: ProtectedRouteProps) {
+function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf }: ProtectedRouteProps) {
   const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
 
   if (isLoading) return <LoadingSpinner />;
@@ -122,7 +123,9 @@ function ProtectedRoute({ component: Component, adminOnly = false, module }: Pro
 
   if (adminOnly && !isAdmin) return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
 
-  if (module && !hasModuleAccess(module)) return <AccessDenied />;
+  if (module && !isAdmin && !hasModuleAccess(module)) return <AccessDenied />;
+
+  if (anyOf && !isAdmin && !anyOf.some((m) => hasModuleAccess(m))) return <AccessDenied />;
 
   return <Component />;
 }
@@ -175,16 +178,17 @@ function Router() {
         <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="purchase_orders" />}</Route>
         <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="purchase_orders" />}</Route>
 
-        {/* Stock Items */}
-        <Route path="/stock">{() => <ProtectedRoute component={StockList} />}</Route>
+        {/* Stock Items — requires purchase_orders access */}
+        <Route path="/stock">{() => <ProtectedRoute component={StockList} module="purchase_orders" />}</Route>
 
-        {/* Directory */}
-        <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} />}</Route>
-        <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} />}</Route>
-        <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} />}</Route>
+        {/* Directory — scoped by relevant module */}
+        <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>
+        <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} anyOf={["invoices", "quotations"]} />}</Route>
+        <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} anyOf={["purchase_orders", "invoices", "quotations", "delivery_orders"]} />}</Route>
 
+        {/* System — admin only */}
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
-        <Route path="/settings">{() => <ProtectedRoute component={Settings} />}</Route>
+        <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
 
         <Route component={NotFound} />
       </Switch>

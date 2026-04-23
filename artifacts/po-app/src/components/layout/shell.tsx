@@ -140,49 +140,59 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <div className="mt-4">
-        <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Inventory
-        </h4>
-        <div className="space-y-1">
-          <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")}>
-            Stock Items
-          </NavItem>
+      {(isAdmin || hasModuleAccess("purchase_orders")) && (
+        <div className="mt-4">
+          <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Inventory
+          </h4>
+          <div className="space-y-1">
+            <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")}>
+              Stock Items
+            </NavItem>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="mt-4">
-        <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Directory
-        </h4>
-        <div className="space-y-1">
-          <NavItem href="/vendors" icon={Building2} active={location.startsWith("/vendors")}>
-            Vendors
-          </NavItem>
-          <NavItem href="/customers" icon={Users2} active={location.startsWith("/customers")}>
-            Customers
-          </NavItem>
-          <NavItem href="/address-book" icon={Mail} active={location.startsWith("/address-book")}>
-            Address Book
-          </NavItem>
+      {(isAdmin || hasModuleAccess("purchase_orders") || hasModuleAccess("invoices") || hasModuleAccess("quotations") || hasModuleAccess("delivery_orders")) && (
+        <div className="mt-4">
+          <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Directory
+          </h4>
+          <div className="space-y-1">
+            {(isAdmin || hasModuleAccess("purchase_orders")) && (
+              <NavItem href="/vendors" icon={Building2} active={location.startsWith("/vendors")}>
+                Vendors
+              </NavItem>
+            )}
+            {(isAdmin || hasModuleAccess("invoices") || hasModuleAccess("quotations")) && (
+              <NavItem href="/customers" icon={Users2} active={location.startsWith("/customers")}>
+                Customers
+              </NavItem>
+            )}
+            {(isAdmin || hasModuleAccess("purchase_orders") || hasModuleAccess("invoices") || hasModuleAccess("quotations") || hasModuleAccess("delivery_orders")) && (
+              <NavItem href="/address-book" icon={Mail} active={location.startsWith("/address-book")}>
+                Address Book
+              </NavItem>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="mt-4">
-        <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          System
-        </h4>
-        <div className="space-y-1">
-          {isAdmin && (
+      {isAdmin && (
+        <div className="mt-4">
+          <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            System
+          </h4>
+          <div className="space-y-1">
             <NavItem href="/admin" icon={Users} active={location === "/admin"}>
               User Management
             </NavItem>
-          )}
-          <NavItem href="/settings" icon={Settings} active={location === "/settings"}>
-            Settings
-          </NavItem>
+            <NavItem href="/settings" icon={Settings} active={location === "/settings"}>
+              Settings
+            </NavItem>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 
