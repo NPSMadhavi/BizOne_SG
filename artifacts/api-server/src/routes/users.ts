@@ -11,7 +11,7 @@ declare module "express-session" {
   }
 }
 
-const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"];
+const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders", "grn", "stock_items"];
 
 const router: IRouter = Router();
 

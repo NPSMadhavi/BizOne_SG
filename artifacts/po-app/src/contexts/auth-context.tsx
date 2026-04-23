@@ -3,7 +3,7 @@ import { useGetMe, getGetMeQueryKey, useLogout, type User, type UserCompany } fr
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
-export const ALL_MODULES = ["dashboard", "purchase_orders", "quotations", "invoices", "delivery_orders"] as const;
+export const ALL_MODULES = ["dashboard", "purchase_orders", "quotations", "invoices", "delivery_orders", "grn", "stock_items"] as const;
 export const DEFAULT_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"] as const;
 export type AppModule = typeof ALL_MODULES[number];
 
@@ -13,6 +13,8 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   quotations: "Quotations",
   invoices: "Invoices",
   delivery_orders: "Delivery Orders",
+  grn: "Goods Receipt",
+  stock_items: "Stock Items",
 };
 
 interface AuthContextType {

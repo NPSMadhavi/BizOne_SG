@@ -175,11 +175,11 @@ function Router() {
         <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
         {/* Goods Receipt Notes */}
-        <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="purchase_orders" />}</Route>
-        <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="purchase_orders" />}</Route>
+        <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
+        <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="grn" />}</Route>
 
-        {/* Stock Items — requires purchase_orders access */}
-        <Route path="/stock">{() => <ProtectedRoute component={StockList} module="purchase_orders" />}</Route>
+        {/* Stock Items — requires stock_items access */}
+        <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
 
         {/* Directory — scoped by relevant module */}
         <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>

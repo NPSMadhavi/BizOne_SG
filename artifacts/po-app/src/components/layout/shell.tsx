@@ -131,7 +131,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 Delivery Orders
               </NavItem>
             )}
-            {hasModuleAccess("purchase_orders") && (
+            {(isAdmin || hasModuleAccess("grn")) && (
               <NavItem href="/grn" icon={ClipboardList} active={location.startsWith("/grn")}>
                 Goods Receipt
               </NavItem>
@@ -140,7 +140,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {(isAdmin || hasModuleAccess("purchase_orders")) && (
+      {(isAdmin || hasModuleAccess("stock_items")) && (
         <div className="mt-4">
           <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
             Inventory
@@ -220,7 +220,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex flex-col">
                   <span className="text-sm font-medium">{user.username}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                  {isAdmin && <span className="text-xs text-muted-foreground capitalize">{user.role}</span>}
                 </div>
                 <Button
                   variant="outline"
@@ -250,7 +250,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-between px-2">
               <div className="flex flex-col">
                 <span className="text-sm font-medium">{user.username}</span>
-                <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                {isAdmin && <span className="text-xs text-muted-foreground capitalize">{user.role}</span>}
               </div>
               <Button variant="ghost" size="icon" onClick={() => logout()} title="Logout" className="h-8 w-8 text-muted-foreground hover:text-foreground">
                 <LogOut className="h-4 w-4" />

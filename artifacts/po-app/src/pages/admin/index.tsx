@@ -34,6 +34,8 @@ const MODULE_ICONS: Record<AppModule, string> = {
   quotations: "📝",
   invoices: "🧾",
   delivery_orders: "🚚",
+  grn: "📦",
+  stock_items: "🗄️",
 };
 
 export interface CompanyAccessEntry {
