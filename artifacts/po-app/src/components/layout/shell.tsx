@@ -68,12 +68,13 @@ function CompanyBadge() {
         {hasMultiple && (
           <Button
             variant="ghost"
-            size="icon"
-            className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+            size="sm"
+            className="h-7 px-2 shrink-0 text-xs text-muted-foreground hover:text-primary gap-1"
             title="Switch company"
             onClick={() => setLocation("/select-company")}
           >
             <RefreshCw className="h-3 w-3" />
+            <span>Switch</span>
           </Button>
         )}
       </div>
@@ -197,25 +198,29 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0">
-            <div className="p-4 border-b">
+          <SheetContent side="left" className="w-72 p-0 flex flex-col">
+            <div className="p-4 border-b shrink-0">
               <img src={logo} alt="RSV Infotech" className="h-8" />
             </div>
-            <div className="p-4 flex flex-col h-[calc(100vh-5rem)]">
-              <div className="flex-1 overflow-y-auto">
-                {navItems}
-              </div>
-              <div className="pt-4 border-t border-border mt-auto space-y-2">
-                <CompanyBadge />
-                <div className="flex items-center justify-between px-3 py-2">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{user.username}</span>
-                    <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => logout()} title="Logout">
-                    <LogOut className="h-4 w-4" />
-                  </Button>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
+              {navItems}
+            </div>
+            <div className="shrink-0 border-t border-border/50 bg-muted/10">
+              <CompanyBadge />
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">{user.username}</span>
+                  <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { logout(); }}
+                  className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </Button>
               </div>
             </div>
           </SheetContent>

@@ -60,10 +60,10 @@ export default function Login() {
           });
           setLocation("/dashboard");
         },
-        onError: (error: any) => {
+        onError: () => {
           toast({
             title: "Login failed",
-            description: error?.message || "Invalid username or password",
+            description: "Invalid username or password. Please try again.",
             variant: "destructive",
           });
         },
