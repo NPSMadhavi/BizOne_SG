@@ -60,6 +60,15 @@ export default function VendorInvoiceView() {
   const [editNotes, setEditNotes] = useState("");
   const [editSaving, setEditSaving] = useState(false);
 
+  const [editPaymentOpen, setEditPaymentOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<any>(null);
+  const [epDate, setEpDate] = useState("");
+  const [epAmount, setEpAmount] = useState("");
+  const [epMethod, setEpMethod] = useState("bank_transfer");
+  const [epRef, setEpRef] = useState("");
+  const [epNotes, setEpNotes] = useState("");
+  const [epSaving, setEpSaving] = useState(false);
+
   const { data: pi, isLoading, refetch } = useQuery<any>({
     queryKey: ["vendor-invoice", id],
     queryFn: async () => {
@@ -115,6 +124,49 @@ export default function VendorInvoiceView() {
       queryClient.invalidateQueries({ queryKey: ["vendor-invoices"] });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const openEditPayment = (p: any) => {
+    setEditingPayment(p);
+    setEpDate(p.paymentDate ? p.paymentDate.split("T")[0] : new Date().toISOString().split("T")[0]);
+    setEpAmount(String(p.amount ?? ""));
+    setEpMethod(p.paymentMethod || "bank_transfer");
+    setEpRef(p.reference || "");
+    setEpNotes(p.notes || "");
+    setEditPaymentOpen(true);
+  };
+
+  const handleEditPaymentSave = async () => {
+    if (!epAmount || isNaN(Number(epAmount)) || Number(epAmount) <= 0) {
+      toast({ title: "Error", description: "Enter a valid amount", variant: "destructive" }); return;
+    }
+    setEpSaving(true);
+    try {
+      const res = await fetch(`/api/vendor-invoices/${id}/payments/${editingPayment.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentDate: epDate,
+          amount: parseFloat(epAmount),
+          reference: epRef || null,
+          paymentMethod: epMethod,
+          notes: epNotes || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update payment");
+      }
+      toast({ title: "Payment Updated" });
+      setEditPaymentOpen(false);
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["vendor-invoices"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setEpSaving(false);
     }
   };
 
@@ -326,7 +378,7 @@ export default function VendorInvoiceView() {
                   <th className="px-4 py-3 font-medium">Reference / UTR</th>
                   <th className="px-4 py-3 font-medium text-right">Amount</th>
                   <th className="px-4 py-3 font-medium">Notes</th>
-                  {isAdmin && <th className="px-4 py-3 font-medium"></th>}
+                  <th className="px-4 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -340,29 +392,34 @@ export default function VendorInvoiceView() {
                     <td className="px-4 py-3 font-mono text-sm">{p.reference || "—"}</td>
                     <td className="px-4 py-3 text-right font-semibold text-emerald-600">{formatCurrency(p.amount, pi.currency)}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.notes || "—"}</td>
-                    {isAdmin && (
-                      <td className="px-4 py-3">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will remove the payment of {formatCurrency(p.amount, pi.currency)} and recalculate the balance.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeletePayment(p.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </td>
-                    )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditPayment(p)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {isAdmin && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will remove the payment of {formatCurrency(p.amount, pi.currency)} and recalculate the balance.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeletePayment(p.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -377,6 +434,51 @@ export default function VendorInvoiceView() {
           </div>
         )}
       </Card>
+
+      <Dialog open={editPaymentOpen} onOpenChange={setEditPaymentOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Payment Date</Label>
+                <Input type="date" value={epDate} onChange={e => setEpDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Amount <span className="text-destructive">*</span></Label>
+                <Input type="number" min="0" step="0.01" placeholder="0.00" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Method</Label>
+              <Select value={epMethod} onValueChange={setEpMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="online">Online Payment</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Bank Reference / UTR</Label>
+              <Input placeholder="Transaction reference number" value={epRef} onChange={e => setEpRef(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea placeholder="Optional notes..." value={epNotes} onChange={e => setEpNotes(e.target.value)} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditPaymentSave} disabled={epSaving}>{epSaving ? "Saving..." : "Save Changes"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-lg">

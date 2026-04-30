@@ -214,6 +214,30 @@ router.post("/vendor-invoices/:id/payments", async (req, res): Promise<void> => 
   });
 });
 
+router.put("/vendor-invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  const paymentId = parseInt(req.params.paymentId);
+  if (isNaN(id) || isNaN(paymentId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+
+  const { paymentDate, amount, reference, paymentMethod, notes } = req.body;
+  const updates: any = { updatedAt: new Date() };
+  if (paymentDate !== undefined) updates.paymentDate = paymentDate;
+  if (amount !== undefined) updates.amount = parseFloat(amount).toFixed(2);
+  if (reference !== undefined) updates.reference = reference || null;
+  if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
+  if (notes !== undefined) updates.notes = notes || null;
+
+  await db.update(vendorPaymentsTable).set(updates).where(eq(vendorPaymentsTable.id, paymentId));
+  await recalcPI(id, existing.companyId);
+  const [updatedPI] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  logAudit({ req, action: "payment:update", entityType: "vendor_invoice", entityId: id, entityLabel: existing.piNumber, details: { amount: updates.amount, reference: updates.reference } });
+  res.json({ success: true, vendorInvoice: parsePI(updatedPI) });
+});
+
 router.delete("/vendor-invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const isAdmin = req.session.isAdmin ?? false;
