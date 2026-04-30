@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Plus, Trash2, Building, Calendar, CreditCard, FileText } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Building, Calendar, CreditCard, FileText, Pencil } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -50,6 +50,15 @@ export default function VendorInvoiceView() {
   const [payMethod, setPayMethod] = useState("bank_transfer");
   const [payNotes, setPayNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editPiNumber, setEditPiNumber] = useState("");
+  const [editPiDate, setEditPiDate] = useState("");
+  const [editVendorName, setEditVendorName] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editCurrency, setEditCurrency] = useState("SGD");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const { data: pi, isLoading, refetch } = useQuery<any>({
     queryKey: ["vendor-invoice", id],
@@ -109,6 +118,50 @@ export default function VendorInvoiceView() {
     }
   };
 
+  const openEdit = () => {
+    setEditPiNumber(pi.piNumber || "");
+    setEditPiDate(pi.piDate ? pi.piDate.split("T")[0] : new Date().toISOString().split("T")[0]);
+    setEditVendorName(pi.vendorName || "");
+    setEditAmount(String(pi.totalAmount ?? ""));
+    setEditCurrency(pi.currency || "SGD");
+    setEditNotes(pi.notes || "");
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editPiNumber.trim()) { toast({ title: "Error", description: "Vendor PI number is required", variant: "destructive" }); return; }
+    if (!editVendorName.trim()) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
+    if (!editAmount || isNaN(Number(editAmount)) || Number(editAmount) <= 0) { toast({ title: "Error", description: "Valid amount is required", variant: "destructive" }); return; }
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/vendor-invoices/${id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          piNumber: editPiNumber.trim(),
+          piDate: editPiDate,
+          vendorName: editVendorName.trim(),
+          currency: editCurrency,
+          totalAmount: parseFloat(editAmount),
+          notes: editNotes || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to update");
+      }
+      toast({ title: "Vendor PI Updated" });
+      setEditOpen(false);
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["vendor-invoices"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleDeletePI = async () => {
     try {
       const res = await fetch(`/api/vendor-invoices/${id}`, { method: "DELETE", credentials: "include" });
@@ -148,6 +201,10 @@ export default function VendorInvoiceView() {
           <p className="text-muted-foreground mt-1">Recorded on {fmtDate(pi.createdAt)}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={openEdit} className="gap-2">
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
           {pi.status !== "paid" && (
             <Button onClick={() => setPaymentOpen(true)} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -320,6 +377,48 @@ export default function VendorInvoiceView() {
           </div>
         )}
       </Card>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Vendor Invoice</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Vendor PI / Invoice Number <span className="text-destructive">*</span></Label>
+                <Input placeholder="e.g. INV-2024-001" value={editPiNumber} onChange={e => setEditPiNumber(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>PI Date</Label>
+                <Input type="date" value={editPiDate} onChange={e => setEditPiDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Vendor Name <span className="text-destructive">*</span></Label>
+              <Input placeholder="Vendor name" value={editVendorName} onChange={e => setEditVendorName(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>PI Amount <span className="text-destructive">*</span></Label>
+                <Input type="number" min="0" step="0.01" placeholder="0.00" value={editAmount} onChange={e => setEditAmount(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Currency</Label>
+                <Input value={editCurrency} onChange={e => setEditCurrency(e.target.value)} placeholder="SGD" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes (internal)</Label>
+              <Textarea placeholder="Any notes..." value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditSave} disabled={editSaving}>{editSaving ? "Saving..." : "Save Changes"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
         <DialogContent className="max-w-md">
