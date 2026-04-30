@@ -42,6 +42,7 @@ export default function NewVendorInvoiceDialog({
   const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
   const [notes, setNotes] = useState("");
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>(prefillPoId ? [prefillPoId] : []);
+  const [amountAutoFilled, setAmountAutoFilled] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -118,6 +119,11 @@ export default function NewVendorInvoiceDialog({
       : [...selectedPoIds, po.id];
     setSelectedPoIds(newIds);
 
+    const newSelectedPos = pos.filter((p: any) => newIds.includes(p.id));
+    const total = newSelectedPos.reduce((sum: number, p: any) => sum + parseFloat(p.totalAmount || "0"), 0);
+    setAmount(newIds.length > 0 ? total.toFixed(2) : "");
+    setAmountAutoFilled(newIds.length > 0);
+
     if (!alreadySelected && !vendorName && po.vendorName) {
       setVendorSearch(po.vendorName);
       setSelectedVendor(null);
@@ -143,6 +149,7 @@ export default function NewVendorInvoiceDialog({
     setSelectedVendor(null);
     setVendorFromPo(false);
     setAmount(prefillAmount ? String(prefillAmount) : "");
+    setAmountAutoFilled(false);
     setCurrency(prefillCurrency || selectedCompany?.currency || "SGD");
     setNotes("");
     setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
@@ -343,7 +350,16 @@ export default function NewVendorInvoiceDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>PI Amount <span className="text-destructive">*</span></Label>
-              <Input type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
+              <Input
+                type="number" min="0" step="0.01" placeholder="0.00"
+                value={amount}
+                onChange={e => { setAmount(e.target.value); setAmountAutoFilled(false); }}
+              />
+              {amountAutoFilled && (
+                <p className="text-xs text-primary flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Auto-calculated from selected PO(s) — edit if needed
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Currency</Label>
