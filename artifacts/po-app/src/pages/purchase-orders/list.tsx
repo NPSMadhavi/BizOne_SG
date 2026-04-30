@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,24 +9,52 @@ import { Link, useLocation } from "wouter";
 import { Search, Plus, ArrowRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/auth-context";
+
+function piStatusBadge(status: string) {
+  switch (status) {
+    case "paid":    return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs py-0 px-1.5">Paid</Badge>;
+    case "partial": return <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-xs py-0 px-1.5">Partial</Badge>;
+    default:        return <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs py-0 px-1.5">Pending</Badge>;
+  }
+}
 
 export default function PurchaseOrderList() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
+  const { selectedCompany } = useAuth();
 
   const { data: pos, isLoading } = useListPurchaseOrders({
     query: { queryKey: getListPurchaseOrdersQueryKey() },
   });
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(value);
+  const { data: vendorInvoices = [] } = useQuery<any[]>({
+    queryKey: ["vendor-invoices", selectedCompany?.id],
+    queryFn: async () => {
+      const res = await fetch("/api/vendor-invoices", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const pisByPoId = vendorInvoices.reduce((acc: Record<number, any[]>, pi: any) => {
+    const ids: number[] = pi.poIds || [];
+    for (const poId of ids) {
+      if (!acc[poId]) acc[poId] = [];
+      acc[poId].push(pi);
+    }
+    return acc;
+  }, {});
+
+  const formatCurrency = (value: number, currency = "SGD") =>
+    new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(value);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "confirmed": return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
-      case "draft": return <Badge variant="secondary">Draft</Badge>;
+      case "draft":     return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
-      default: return <Badge variant="outline">{status}</Badge>;
+      default:          return <Badge variant="outline">{status}</Badge>;
     }
   };
 
@@ -69,6 +98,7 @@ export default function PurchaseOrderList() {
                 <th className="px-6 py-4 font-medium">Created By</th>
                 <th className="px-6 py-4 font-medium text-right">Amount</th>
                 <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium">Vendor PI</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
@@ -76,14 +106,14 @@ export default function PurchaseOrderList() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {[...Array(7)].map((_, j) => (
+                    {[...Array(8)].map((_, j) => (
                       <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : !filteredPOs || filteredPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50" />
                       <p>No purchase orders found.</p>
@@ -92,21 +122,58 @@ export default function PurchaseOrderList() {
                   </td>
                 </tr>
               ) : (
-                filteredPOs.map((po) => (
-                  <tr key={po.id} className="hover:bg-muted/50 transition-colors group cursor-pointer" onClick={() => setLocation(`/purchase-orders/${po.id}`)}>
-                    <td className="px-6 py-4 font-medium text-primary">{po.poNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(po.createdAt)}</td>
-                    <td className="px-6 py-4 font-medium">{po.vendorName}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{(po as any).createdByUsername || "—"}</td>
-                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(po.totalAmount)}</td>
-                    <td className="px-6 py-4 text-center">{getStatusBadge(po.status)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))
+                filteredPOs.map((po) => {
+                  const pis: any[] = pisByPoId[po.id] || [];
+                  const overallStatus = pis.length === 0 ? null
+                    : pis.every(p => p.status === "paid") ? "paid"
+                    : pis.some(p => p.status === "paid" || p.status === "partial") ? "partial"
+                    : "pending";
+
+                  return (
+                    <tr
+                      key={po.id}
+                      className="hover:bg-muted/50 transition-colors group cursor-pointer"
+                      onClick={() => setLocation(`/purchase-orders/${po.id}`)}
+                    >
+                      <td className="px-6 py-4 font-medium text-primary">{po.poNumber}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{fmtDate(po.createdAt)}</td>
+                      <td className="px-6 py-4 font-medium">{po.vendorName}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{(po as any).createdByUsername || "—"}</td>
+                      <td className="px-6 py-4 text-right font-medium">{formatCurrency(po.totalAmount, (po as any).currency || "SGD")}</td>
+                      <td className="px-6 py-4 text-center">{getStatusBadge(po.status)}</td>
+                      <td className="px-6 py-4">
+                        {pis.length === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : pis.length === 1 ? (
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="font-mono text-xs font-medium text-primary hover:underline cursor-pointer"
+                              onClick={e => { e.stopPropagation(); setLocation(`/vendor-invoices/${pis[0].id}`); }}
+                            >
+                              {pis[0].piNumber}
+                            </span>
+                            {piStatusBadge(pis[0].status)}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="font-mono text-xs font-medium text-primary hover:underline cursor-pointer"
+                              onClick={e => { e.stopPropagation(); setLocation(`/vendor-invoices`); }}
+                            >
+                              {pis.length} PIs
+                            </span>
+                            {overallStatus && piStatusBadge(overallStatus)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
