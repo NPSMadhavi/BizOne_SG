@@ -92,7 +92,7 @@ export default function AuditLogPage() {
   const handleEntity = (v: string) => { setEntityFilter(v); setPage(0); };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
