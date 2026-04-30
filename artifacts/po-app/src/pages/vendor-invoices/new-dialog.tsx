@@ -36,6 +36,7 @@ export default function NewVendorInvoiceDialog({
   const [piDate, setPiDate] = useState(new Date().toISOString().split("T")[0]);
   const [vendorSearch, setVendorSearch] = useState(prefillVendorName || "");
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
+  const [vendorFromPo, setVendorFromPo] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currency, setCurrency] = useState(prefillCurrency || selectedCompany?.currency || "SGD");
   const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
@@ -96,6 +97,7 @@ export default function NewVendorInvoiceDialog({
   const handleSelectVendor = (vendor: any) => {
     setSelectedVendor(vendor);
     setVendorSearch(vendor.name);
+    setVendorFromPo(false);
     if (vendor.currency) setCurrency(vendor.currency);
     setSelectedPoIds([]);
     setDropdownOpen(false);
@@ -104,19 +106,27 @@ export default function NewVendorInvoiceDialog({
   const handleClearVendor = () => {
     setSelectedVendor(null);
     setVendorSearch("");
+    setVendorFromPo(false);
     setSelectedPoIds([]);
     vendorInputRef.current?.focus();
   };
 
   const togglePo = (po: any) => {
     const alreadySelected = selectedPoIds.includes(po.id);
-    setSelectedPoIds(prev =>
-      alreadySelected ? prev.filter(x => x !== po.id) : [...prev, po.id]
-    );
+    const newIds = alreadySelected
+      ? selectedPoIds.filter(x => x !== po.id)
+      : [...selectedPoIds, po.id];
+    setSelectedPoIds(newIds);
+
     if (!alreadySelected && !vendorName && po.vendorName) {
       setVendorSearch(po.vendorName);
       setSelectedVendor(null);
+      setVendorFromPo(true);
       if (po.currency) setCurrency(po.currency);
+    }
+    if (newIds.length === 0 && vendorFromPo) {
+      setVendorSearch("");
+      setVendorFromPo(false);
     }
   };
 
@@ -131,6 +141,7 @@ export default function NewVendorInvoiceDialog({
     setPiDate(new Date().toISOString().split("T")[0]);
     setVendorSearch(prefillVendorName || "");
     setSelectedVendor(null);
+    setVendorFromPo(false);
     setAmount(prefillAmount ? String(prefillAmount) : "");
     setCurrency(prefillCurrency || selectedCompany?.currency || "SGD");
     setNotes("");
@@ -264,8 +275,13 @@ export default function NewVendorInvoiceDialog({
                   <Check className="h-3 w-3" /> Selected from vendor directory
                 </p>
               )}
-              {!selectedVendor && vendorSearch && (
-                <p className="text-xs text-muted-foreground">Not from directory — will be saved as typed</p>
+              {vendorFromPo && !selectedVendor && vendorSearch && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Auto-filled from PO — PO list locked to this vendor
+                </p>
+              )}
+              {!selectedVendor && !vendorFromPo && vendorSearch && (
+                <p className="text-xs text-muted-foreground">Not in directory — will be saved as typed</p>
               )}
             </div>
           ) : (
