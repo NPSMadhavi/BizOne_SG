@@ -17,6 +17,7 @@ import {
   Package,
   Users2,
   Mail,
+  FileInput,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,6 +115,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {hasModuleAccess("purchase_orders") && (
               <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")}>
                 Purchase Orders
+              </NavItem>
+            )}
+            {hasModuleAccess("purchase_orders") && (
+              <NavItem href="/vendor-invoices" icon={FileInput} active={location.startsWith("/vendor-invoices")}>
+                Vendor Invoices
               </NavItem>
             )}
             {hasModuleAccess("quotations") && (

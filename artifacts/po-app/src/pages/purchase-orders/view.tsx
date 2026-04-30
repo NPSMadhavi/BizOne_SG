@@ -4,10 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Printer, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
-import { EmailSendDialog } from "@/components/email-send-dialog";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -18,6 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
   AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import NewVendorInvoiceDialog from "@/pages/vendor-invoices/new-dialog";
 
 export default function PurchaseOrderView() {
   const params = useParams();
@@ -33,6 +33,8 @@ export default function PurchaseOrderView() {
     query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
   });
 
+  const [piDialogOpen, setPiDialogOpen] = useState(false);
+
   const { data: grns } = useQuery<any[]>({
     queryKey: ["grns"],
     queryFn: async () => {
@@ -43,6 +45,16 @@ export default function PurchaseOrderView() {
     enabled: !!po && po.status === "confirmed",
   });
   const linkedGrn = grns?.find((g: any) => g.poId === id);
+
+  const { data: linkedPIs = [], refetch: refetchPIs } = useQuery<any[]>({
+    queryKey: ["vendor-invoices-po", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/vendor-invoices?poId=${id}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!po && po.status === "confirmed",
+  });
 
   const createGrnMutation = useMutation({
     mutationFn: async () => {
@@ -145,6 +157,16 @@ export default function PurchaseOrderView() {
             >
               <ClipboardList className="h-4 w-4" />
               {createGrnMutation.isPending ? "Creating..." : "Create GRN"}
+            </Button>
+          )}
+          {po.status === "confirmed" && (
+            <Button
+              variant="outline"
+              className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+              onClick={() => setPiDialogOpen(true)}
+            >
+              <FileInput className="h-4 w-4" />
+              Record Vendor PI
             </Button>
           )}
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>
@@ -316,6 +338,73 @@ export default function PurchaseOrderView() {
           </CardContent>
         </Card>
       )}
+
+      {po.status === "confirmed" && linkedPIs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <FileInput className="h-4 w-4 text-muted-foreground" />
+                Vendor Purchase Invoices
+              </span>
+              <Button variant="outline" size="sm" className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50" onClick={() => setPiDialogOpen(true)}>
+                <FileInput className="h-3.5 w-3.5" />
+                Add PI
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Vendor PI #</th>
+                  <th className="px-4 py-2 font-medium">PI Date</th>
+                  <th className="px-4 py-2 font-medium text-right">PI Amount</th>
+                  <th className="px-4 py-2 font-medium text-right">Paid</th>
+                  <th className="px-4 py-2 font-medium text-right">Balance</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {linkedPIs.map((pi: any) => {
+                  const piStatus = pi.status;
+                  return (
+                    <tr key={pi.id} className="bg-card">
+                      <td className="px-4 py-2 font-medium font-mono">{pi.piNumber}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{pi.piDate ? fmtDate(pi.piDate) : "—"}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(pi.totalAmount)}</td>
+                      <td className="px-4 py-2 text-right text-emerald-600">{formatCurrency(pi.paidAmount)}</td>
+                      <td className="px-4 py-2 text-right font-medium text-orange-600">{formatCurrency(pi.balance)}</td>
+                      <td className="px-4 py-2">
+                        {piStatus === "paid" ? <Badge className="bg-emerald-600 hover:bg-emerald-700">Paid</Badge>
+                          : piStatus === "partial" ? <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Partial</Badge>
+                          : <Badge variant="outline" className="text-orange-600 border-orange-300">Pending</Badge>}
+                      </td>
+                      <td className="px-4 py-2">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setLocation(`/vendor-invoices/${pi.id}`)}>
+                          <ArrowUpRight className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      <NewVendorInvoiceDialog
+        open={piDialogOpen}
+        onOpenChange={setPiDialogOpen}
+        prefillPoId={id}
+        prefillPoNumber={(po as any).poNumber}
+        prefillVendorName={po.vendorName}
+        prefillAmount={po.totalAmount}
+        prefillCurrency={(po as any).currency}
+        onCreated={() => refetchPIs()}
+      />
 
       <PdfPreviewModal
         open={previewOpen}

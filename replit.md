@@ -24,6 +24,7 @@ A full-stack document management application for three companies: RSV Infotech P
 - **Multi-currency** — SGD, USD, EUR, GBP, MYR, INR; `fmtMoney(currency, amount)` helper using Intl.NumberFormat in PDFs
 - **Split contact fields** — separate "Contact Person" (name) and "Contact Email" fields on all forms
 - **Admin Panel** — manage users (create, edit, delete); nested company + module assignment UI
+- **Vendor Invoices (AP module)** — record vendor PIs against confirmed POs; track partial/full payments per PI; payment history with bank reference/UTR; auto-calculates paid amount, balance, and status (Pending/Partial/Paid); accessible from sidebar (Documents → Vendor Invoices) or via "Record Vendor PI" button on PO view; supports one PI across multiple POs
 - **Delete restrictions** — PO/QT/DO: delete button hidden for non-admin users; Invoice: no delete at all; void/knock-off workflow instead
 - **Void Invoice** — dialog prompts for reason; sets status to "void" with stored reason; displayed as banner on invoice view
 - **Invoice Knock-Off** — marks invoice as "paid"; confirmation dialog; both status values shown in list with blue/gray badges

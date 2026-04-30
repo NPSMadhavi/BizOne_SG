@@ -13,3 +13,5 @@ export * from "./maintenance";
 export * from "./vendors";
 export * from "./customers";
 export * from "./email-contacts";
+export * from "./vendor-invoices";
+export * from "./vendor-payments";

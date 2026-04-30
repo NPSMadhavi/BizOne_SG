@@ -17,6 +17,7 @@ import customersRouter from "./customers";
 import emailContactsRouter from "./email-contacts";
 import stockSerialsRouter from "./stock-serials";
 import maintenanceRouter from "./maintenance";
+import vendorInvoicesRouter from "./vendor-invoices";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(vendorsRouter);
 router.use(customersRouter);
 router.use(emailContactsRouter);
 router.use(maintenanceRouter);
+router.use(vendorInvoicesRouter);
 
 export default router;

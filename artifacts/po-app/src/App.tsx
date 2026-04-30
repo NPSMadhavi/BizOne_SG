@@ -30,6 +30,8 @@ import StockList from "@/pages/stock/list";
 import VendorsPage from "@/pages/vendors/index";
 import CustomersPage from "@/pages/customers/index";
 import AddressBookPage from "@/pages/address-book/index";
+import VendorInvoiceList from "@/pages/vendor-invoices/list";
+import VendorInvoiceView from "@/pages/vendor-invoices/view";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -44,6 +46,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/delivery-orders": "Delivery Orders",
   "/grn": "Goods Receipt Notes",
   "/stock": "Stock Items",
+  "/vendor-invoices": "Vendor Invoices",
   "/vendors": "Vendors",
   "/customers": "Customers",
   "/address-book": "Address Book",
@@ -180,6 +183,10 @@ function Router() {
 
         {/* Stock Items — requires stock_items access */}
         <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
+
+        {/* Vendor Invoices — requires purchase_orders access */}
+        <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="purchase_orders" />}</Route>
+        <Route path="/vendor-invoices/:id">{() => <ProtectedRoute component={VendorInvoiceView} module="purchase_orders" />}</Route>
 
         {/* Directory — scoped by relevant module */}
         <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>

@@ -1,0 +1,227 @@
+import { Router, type IRouter } from "express";
+import { db, vendorInvoicesTable, vendorPaymentsTable, usersTable } from "@workspace/db";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
+
+declare module "express-session" {
+  interface SessionData {
+    userId?: number;
+    companyId?: number;
+    isAdmin?: boolean;
+  }
+}
+
+const router: IRouter = Router();
+
+function requireAuth(req: any, res: any): boolean {
+  if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return false; }
+  return true;
+}
+
+function requireCompany(req: any, res: any): boolean {
+  if (!req.session.companyId) { res.status(400).json({ error: "No company selected" }); return false; }
+  return true;
+}
+
+function parsePI(doc: any) {
+  return {
+    ...doc,
+    totalAmount: parseFloat(doc.totalAmount ?? "0"),
+    paidAmount: parseFloat(doc.paidAmount ?? "0"),
+    balance: parseFloat(doc.totalAmount ?? "0") - parseFloat(doc.paidAmount ?? "0"),
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
+    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : doc.updatedAt,
+  };
+}
+
+async function recalcPI(piId: number, companyId: number): Promise<void> {
+  const payments = await db.select().from(vendorPaymentsTable)
+    .where(and(eq(vendorPaymentsTable.vendorInvoiceId, piId), eq(vendorPaymentsTable.companyId, companyId)));
+  const paidAmount = payments.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+  const [pi] = await db.select({ totalAmount: vendorInvoicesTable.totalAmount })
+    .from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, piId));
+  const total = parseFloat(pi?.totalAmount ?? "0");
+  let status = "pending";
+  if (paidAmount >= total && total > 0) status = "paid";
+  else if (paidAmount > 0) status = "partial";
+  await db.update(vendorInvoicesTable)
+    .set({ paidAmount: paidAmount.toFixed(2), status, updatedAt: new Date() })
+    .where(eq(vendorInvoicesTable.id, piId));
+}
+
+router.get("/vendor-invoices", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const companyId = req.session.companyId;
+  if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
+
+  const poId = req.query.poId ? parseInt(req.query.poId as string) : undefined;
+
+  let rows = await db.select().from(vendorInvoicesTable)
+    .where(eq(vendorInvoicesTable.companyId, companyId))
+    .orderBy(desc(vendorInvoicesTable.createdAt));
+
+  if (poId) {
+    rows = rows.filter(r => ((r.poIds as number[]) || []).includes(poId));
+  }
+
+  const userIds = [...new Set(rows.map(r => r.createdBy))].filter(Boolean);
+  let usernameMap: Record<number, string> = {};
+  if (userIds.length > 0) {
+    const users = await db.select({ id: usersTable.id, username: usersTable.username })
+      .from(usersTable).where(inArray(usersTable.id, userIds));
+    usernameMap = Object.fromEntries(users.map(u => [u.id, u.username]));
+  }
+
+  res.json(rows.map(r => ({ ...parsePI(r), createdByUsername: usernameMap[r.createdBy] || null })));
+});
+
+router.post("/vendor-invoices", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+
+  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes } = req.body;
+  if (!piNumber?.trim()) { res.status(400).json({ error: "Vendor PI number is required" }); return; }
+  if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
+  if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
+    res.status(400).json({ error: "Valid total amount is required" }); return;
+  }
+
+  const [doc] = await db.insert(vendorInvoicesTable).values({
+    companyId,
+    piNumber: piNumber.trim(),
+    piDate: piDate || new Date().toISOString().split("T")[0],
+    vendorName: vendorName.trim(),
+    poIds: Array.isArray(poIds) ? poIds : [],
+    poNumbers: poNumbers || null,
+    currency: currency || "SGD",
+    totalAmount: parseFloat(totalAmount).toFixed(2),
+    paidAmount: "0",
+    status: "pending",
+    notes: notes || null,
+    createdBy: req.session.userId!,
+  }).returning();
+
+  res.status(201).json(parsePI(doc));
+});
+
+router.get("/vendor-invoices/:id", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [doc] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!doc) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+
+  const payments = await db.select().from(vendorPaymentsTable)
+    .where(eq(vendorPaymentsTable.vendorInvoiceId, id))
+    .orderBy(desc(vendorPaymentsTable.createdAt));
+
+  res.json({ ...parsePI(doc), payments: payments.map(p => ({
+    ...p,
+    amount: parseFloat(p.amount ?? "0"),
+    createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+  })) });
+});
+
+router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+
+  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes } = req.body;
+  const updates: any = { updatedAt: new Date() };
+  if (piNumber !== undefined) updates.piNumber = piNumber.trim();
+  if (piDate !== undefined) updates.piDate = piDate;
+  if (vendorName !== undefined) updates.vendorName = vendorName.trim();
+  if (poIds !== undefined) updates.poIds = poIds;
+  if (poNumbers !== undefined) updates.poNumbers = poNumbers;
+  if (currency !== undefined) updates.currency = currency;
+  if (totalAmount !== undefined) updates.totalAmount = parseFloat(totalAmount).toFixed(2);
+  if (notes !== undefined) updates.notes = notes || null;
+
+  await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
+  await recalcPI(id, existing.companyId);
+  const [updated] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  res.json(parsePI(updated));
+});
+
+router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const isAdmin = req.session.isAdmin ?? false;
+  if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  const id = parseInt(req.params.id);
+  await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  res.json({ success: true });
+});
+
+router.get("/vendor-invoices/:id/payments", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const payments = await db.select().from(vendorPaymentsTable)
+    .where(eq(vendorPaymentsTable.vendorInvoiceId, id))
+    .orderBy(desc(vendorPaymentsTable.createdAt));
+
+  res.json(payments.map(p => ({
+    ...p,
+    amount: parseFloat(p.amount ?? "0"),
+    createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+  })));
+});
+
+router.post("/vendor-invoices/:id/payments", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+
+  const { paymentDate, amount, reference, paymentMethod, notes } = req.body;
+  if (!paymentDate) { res.status(400).json({ error: "Payment date is required" }); return; }
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    res.status(400).json({ error: "Valid payment amount is required" }); return;
+  }
+
+  const [payment] = await db.insert(vendorPaymentsTable).values({
+    companyId,
+    vendorInvoiceId: id,
+    paymentDate,
+    amount: parseFloat(amount).toFixed(2),
+    reference: reference || null,
+    paymentMethod: paymentMethod || "bank_transfer",
+    notes: notes || null,
+    createdBy: req.session.userId!,
+  }).returning();
+
+  await recalcPI(id, companyId);
+  const [updatedPI] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+
+  res.status(201).json({
+    payment: { ...payment, amount: parseFloat(payment.amount ?? "0") },
+    vendorInvoice: parsePI(updatedPI),
+  });
+});
+
+router.delete("/vendor-invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const isAdmin = req.session.isAdmin ?? false;
+  if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  const id = parseInt(req.params.id);
+  const paymentId = parseInt(req.params.paymentId);
+
+  const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+
+  await db.delete(vendorPaymentsTable).where(eq(vendorPaymentsTable.id, paymentId));
+  await recalcPI(id, existing.companyId);
+  res.json({ success: true });
+});
+
+export default router;
