@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,12 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
+import { Check, ChevronsUpDown, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -35,12 +34,15 @@ export default function NewVendorInvoiceDialog({
 
   const [piNumber, setPiNumber] = useState("");
   const [piDate, setPiDate] = useState(new Date().toISOString().split("T")[0]);
-  const [selectedVendorId, setSelectedVendorId] = useState<string>("");
-  const [vendorName, setVendorName] = useState(prefillVendorName || "");
-  const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
+  const [vendorSearch, setVendorSearch] = useState(prefillVendorName || "");
+  const [selectedVendor, setSelectedVendor] = useState<any>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currency, setCurrency] = useState(prefillCurrency || selectedCompany?.currency || "SGD");
+  const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
   const [notes, setNotes] = useState("");
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>(prefillPoId ? [prefillPoId] : []);
+  const vendorInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const { data: vendors = [] } = useQuery<any[]>({
     queryKey: ["vendors", selectedCompany?.id],
@@ -49,7 +51,7 @@ export default function NewVendorInvoiceDialog({
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: open && !prefillPoId,
+    enabled: open && !prefillVendorName,
   });
 
   const { data: pos = [] } = useQuery<any[]>({
@@ -63,27 +65,59 @@ export default function NewVendorInvoiceDialog({
     enabled: open && !prefillPoId,
   });
 
+  const filteredVendors = useMemo(() => {
+    if (!vendorSearch.trim()) return vendors.slice(0, 50);
+    const q = vendorSearch.toLowerCase();
+    return vendors.filter((v: any) => v.name.toLowerCase().includes(q)).slice(0, 50);
+  }, [vendors, vendorSearch]);
+
+  const vendorName = selectedVendor ? selectedVendor.name : vendorSearch.trim();
+
   const filteredPos = useMemo(() => {
-    if (!vendorName.trim()) return pos;
+    if (!vendorName) return pos;
     return pos.filter((p: any) =>
-      p.vendorName?.toLowerCase().includes(vendorName.trim().toLowerCase())
+      p.vendorName?.toLowerCase().includes(vendorName.toLowerCase())
     );
   }, [pos, vendorName]);
 
-  const handleVendorSelect = (vendorId: string) => {
-    setSelectedVendorId(vendorId);
-    const vendor = vendors.find((v: any) => String(v.id) === vendorId);
-    if (vendor) {
-      setVendorName(vendor.name);
-      if (vendor.currency) setCurrency(vendor.currency);
-      setSelectedPoIds([]);
-    }
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        vendorInputRef.current && !vendorInputRef.current.contains(e.target as Node)
+      ) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelectVendor = (vendor: any) => {
+    setSelectedVendor(vendor);
+    setVendorSearch(vendor.name);
+    if (vendor.currency) setCurrency(vendor.currency);
+    setSelectedPoIds([]);
+    setDropdownOpen(false);
   };
 
-  const togglePo = (id: number) => {
+  const handleClearVendor = () => {
+    setSelectedVendor(null);
+    setVendorSearch("");
+    setSelectedPoIds([]);
+    vendorInputRef.current?.focus();
+  };
+
+  const togglePo = (po: any) => {
+    const alreadySelected = selectedPoIds.includes(po.id);
     setSelectedPoIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      alreadySelected ? prev.filter(x => x !== po.id) : [...prev, po.id]
     );
+    if (!alreadySelected && !vendorName && po.vendorName) {
+      setVendorSearch(po.vendorName);
+      setSelectedVendor(null);
+      if (po.currency) setCurrency(po.currency);
+    }
   };
 
   const selectedPos = prefillPoId
@@ -95,17 +129,18 @@ export default function NewVendorInvoiceDialog({
   const resetForm = () => {
     setPiNumber("");
     setPiDate(new Date().toISOString().split("T")[0]);
-    setSelectedVendorId("");
-    setVendorName(prefillVendorName || "");
+    setVendorSearch(prefillVendorName || "");
+    setSelectedVendor(null);
     setAmount(prefillAmount ? String(prefillAmount) : "");
     setCurrency(prefillCurrency || selectedCompany?.currency || "SGD");
     setNotes("");
     setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
+    setDropdownOpen(false);
   };
 
   const handleSave = async () => {
     if (!piNumber.trim()) { toast({ title: "Error", description: "Vendor PI number is required", variant: "destructive" }); return; }
-    if (!vendorName.trim()) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
+    if (!vendorName) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) { toast({ title: "Error", description: "Valid amount is required", variant: "destructive" }); return; }
 
     setSaving(true);
@@ -117,7 +152,7 @@ export default function NewVendorInvoiceDialog({
         body: JSON.stringify({
           piNumber: piNumber.trim(),
           piDate,
-          vendorName: vendorName.trim(),
+          vendorName,
           poIds: selectedPoIds,
           poNumbers: poNumbers || null,
           currency,
@@ -160,36 +195,85 @@ export default function NewVendorInvoiceDialog({
             </div>
           </div>
 
-          {!prefillVendorName && (
+          {!prefillVendorName ? (
             <div className="space-y-1.5">
-              <Label>Select Vendor</Label>
-              <Select value={selectedVendorId} onValueChange={handleVendorSelect}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pick from vendor directory…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {vendors.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">No vendors found</div>
-                  ) : vendors.map((v: any) => (
-                    <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Vendor <span className="text-destructive">*</span></Label>
+              <div className="relative">
+                <div className="relative">
+                  <Input
+                    ref={vendorInputRef}
+                    placeholder="Type to search vendors…"
+                    value={vendorSearch}
+                    onChange={e => {
+                      setVendorSearch(e.target.value);
+                      setSelectedVendor(null);
+                      setDropdownOpen(true);
+                    }}
+                    onFocus={() => setDropdownOpen(true)}
+                    className={cn("pr-16", selectedVendor && "bg-primary/5 border-primary/40")}
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {vendorSearch && (
+                      <button
+                        type="button"
+                        onClick={handleClearVendor}
+                        className="text-muted-foreground hover:text-foreground p-0.5"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                </div>
+
+                {dropdownOpen && !prefillVendorName && (
+                  <div
+                    ref={dropdownRef}
+                    className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto"
+                  >
+                    {filteredVendors.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        {vendorSearch ? `No vendors matching "${vendorSearch}"` : "No vendors in directory"}
+                      </div>
+                    ) : (
+                      <>
+                        {filteredVendors.map((v: any) => (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onMouseDown={e => { e.preventDefault(); handleSelectVendor(v); }}
+                            className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <Check className={cn("h-3.5 w-3.5 shrink-0", selectedVendor?.id === v.id ? "opacity-100" : "opacity-0")} />
+                            <span className="flex-1 truncate">{v.name}</span>
+                            {v.currency && <span className="text-xs text-muted-foreground">{v.currency}</span>}
+                          </button>
+                        ))}
+                        {vendors.length > 50 && filteredVendors.length === 50 && (
+                          <div className="px-3 py-1.5 text-xs text-muted-foreground border-t">
+                            Showing first 50 results — type to narrow down
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              {selectedVendor && (
+                <p className="text-xs text-primary flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Selected from vendor directory
+                </p>
+              )}
+              {!selectedVendor && vendorSearch && (
+                <p className="text-xs text-muted-foreground">Not from directory — will be saved as typed</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Vendor</Label>
+              <Input value={prefillVendorName} readOnly className="bg-muted" />
             </div>
           )}
-
-          <div className="space-y-1.5">
-            <Label>Vendor Name <span className="text-destructive">*</span></Label>
-            <Input
-              placeholder="Vendor name"
-              value={vendorName}
-              onChange={e => { setVendorName(e.target.value); setSelectedVendorId(""); }}
-              readOnly={!!prefillVendorName}
-            />
-            {!prefillVendorName && (
-              <p className="text-xs text-muted-foreground">Auto-filled from selection, or type manually</p>
-            )}
-          </div>
 
           {prefillPoId ? (
             <div className="space-y-1.5">
@@ -200,35 +284,41 @@ export default function NewVendorInvoiceDialog({
             <div className="space-y-1.5">
               <Label>
                 Link to Purchase Order(s)
-                {filteredPos.length !== pos.length && (
+                {vendorName && filteredPos.length !== pos.length && (
                   <span className="ml-2 text-xs font-normal text-primary">
-                    {filteredPos.length} of {pos.length} POs shown
+                    {filteredPos.length} of {pos.length} shown
                   </span>
                 )}
               </Label>
               <div className="border rounded-md max-h-40 overflow-y-auto p-2 space-y-1">
                 {filteredPos.length === 0 ? (
                   <p className="text-sm text-muted-foreground px-1">
-                    {pos.length === 0 ? "No confirmed POs found" : "No POs match this vendor"}
+                    {pos.length === 0
+                      ? "No confirmed POs found"
+                      : vendorName
+                        ? `No confirmed POs for "${vendorName}"`
+                        : "No confirmed POs found"}
                   </p>
                 ) : filteredPos.map((po: any) => (
                   <div key={po.id} className="flex items-center gap-2 px-1 py-0.5">
                     <Checkbox
                       id={`po-${po.id}`}
                       checked={selectedPoIds.includes(po.id)}
-                      onCheckedChange={() => togglePo(po.id)}
+                      onCheckedChange={() => togglePo(po)}
                     />
                     <label htmlFor={`po-${po.id}`} className="text-sm cursor-pointer flex-1 min-w-0">
                       <span className="font-medium font-mono">{po.poNumber}</span>
                       <span className="text-muted-foreground ml-2 truncate">{po.vendorName}</span>
                     </label>
-                    <span className="text-xs text-muted-foreground shrink-0">{po.currency} {parseFloat(po.totalAmount).toLocaleString()}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {po.currency} {parseFloat(po.totalAmount).toLocaleString()}
+                    </span>
                   </div>
                 ))}
               </div>
               {selectedPoIds.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Selected {selectedPoIds.length} PO{selectedPoIds.length > 1 ? "s" : ""}: {poNumbers}
+                  {selectedPoIds.length} PO{selectedPoIds.length > 1 ? "s" : ""} selected: {poNumbers}
                 </p>
               )}
             </div>
