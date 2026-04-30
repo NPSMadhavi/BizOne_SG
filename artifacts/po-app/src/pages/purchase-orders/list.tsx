@@ -145,9 +145,9 @@ export default function PurchaseOrderList() {
                         {pis.length === 0 ? (
                           <span className="text-muted-foreground">—</span>
                         ) : pis.length === 1 ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span
-                              className="font-mono text-xs font-medium text-primary hover:underline cursor-pointer"
+                              className="font-medium text-primary hover:underline cursor-pointer"
                               onClick={e => { e.stopPropagation(); setLocation(`/vendor-invoices/${pis[0].id}`); }}
                             >
                               {pis[0].piNumber}
@@ -155,9 +155,9 @@ export default function PurchaseOrderList() {
                             {piStatusBadge(pis[0].status)}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span
-                              className="font-mono text-xs font-medium text-primary hover:underline cursor-pointer"
+                              className="font-medium text-primary hover:underline cursor-pointer"
                               onClick={e => { e.stopPropagation(); setLocation(`/vendor-invoices`); }}
                             >
                               {pis.length} PIs
