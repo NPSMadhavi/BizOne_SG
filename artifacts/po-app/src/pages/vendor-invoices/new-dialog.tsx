@@ -58,7 +58,7 @@ export default function NewVendorInvoiceDialog({
   const { data: pos = [] } = useQuery<any[]>({
     queryKey: ["purchase-orders-confirmed", selectedCompany?.id],
     queryFn: async () => {
-      const res = await fetch("/api/purchase-orders?status=confirmed", { credentials: "include" });
+      const res = await fetch("/api/purchase-orders?status=confirmed&excludeLinked=true", { credentials: "include" });
       if (!res.ok) return [];
       const all = await res.json();
       return all.filter((p: any) => p.status === "confirmed");

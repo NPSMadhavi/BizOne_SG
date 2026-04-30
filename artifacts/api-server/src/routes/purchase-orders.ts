@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, purchaseOrdersTable, usersTable, vendorsTable } from "@workspace/db";
+import { db, purchaseOrdersTable, usersTable, vendorsTable, vendorInvoicesTable } from "@workspace/db";
 import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { autoCreateGrn, autoDeleteGrnIfEmpty } from "./grn.js";
@@ -95,12 +95,24 @@ router.get("/purchase-orders", async (req, res): Promise<void> => {
   const userId = req.session.userId!;
   const isAdmin = req.session.isAdmin ?? false;
   const isExternal = req.session.userRole === "external";
+  const excludeLinked = req.query.excludeLinked === "true";
 
   const pos = companyId
     ? await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.companyId, companyId)).orderBy(desc(purchaseOrdersTable.createdAt))
     : await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
 
-  const visible = visibilityFilter(pos, userId, isAdmin, isExternal).map(parsePO);
+  let visible = visibilityFilter(pos, userId, isAdmin, isExternal).map(parsePO);
+
+  if (excludeLinked && companyId) {
+    const vendorInvoices = await db.select({ poIds: vendorInvoicesTable.poIds })
+      .from(vendorInvoicesTable)
+      .where(eq(vendorInvoicesTable.companyId, companyId));
+    const linkedPoIds = new Set<number>(
+      vendorInvoices.flatMap(vi => (vi.poIds as number[]) || [])
+    );
+    visible = visible.filter(po => !linkedPoIds.has(po.id));
+  }
+
   res.json(await withUsernames(visible));
 });
 
