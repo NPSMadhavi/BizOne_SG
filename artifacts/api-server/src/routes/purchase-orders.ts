@@ -3,6 +3,7 @@ import { db, purchaseOrdersTable, usersTable, vendorsTable } from "@workspace/db
 import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { autoCreateGrn, autoDeleteGrnIfEmpty } from "./grn.js";
+import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -147,6 +148,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     await autoCreateGrn(po, req.session.userId!);
   }
 
+  logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
   res.status(201).json(parsePO(po));
 });
 
@@ -225,6 +227,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  logAudit({ req, action: updateData.status && updateData.status !== existing[0].status ? `status:${updateData.status}` : "update", entityType: "purchase_order", entityId: id, entityLabel: updated.poNumber });
   res.json(parsePO(updated));
 });
 
@@ -240,6 +243,7 @@ router.delete("/purchase-orders/:id", async (req, res): Promise<void> => {
   const [po] = await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id)).returning();
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
+  logAudit({ req, action: "delete", entityType: "purchase_order", entityId: id, entityLabel: po.poNumber });
   res.json({ success: true });
 });
 

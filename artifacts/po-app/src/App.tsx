@@ -32,6 +32,7 @@ import CustomersPage from "@/pages/customers/index";
 import AddressBookPage from "@/pages/address-book/index";
 import VendorInvoiceList from "@/pages/vendor-invoices/list";
 import VendorInvoiceView from "@/pages/vendor-invoices/view";
+import AuditLog from "@/pages/admin/audit-log";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -196,6 +197,7 @@ function Router() {
         {/* System — admin only */}
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
         <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
+        <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
 
         <Route component={NotFound} />
       </Switch>

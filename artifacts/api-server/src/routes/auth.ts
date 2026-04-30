@@ -10,6 +10,7 @@ declare module "express-session" {
     companyId?: number;
     isAdmin?: boolean;
     userRole?: string;
+    username?: string;
   }
 }
 
@@ -71,6 +72,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   req.session.userId = user.id;
+  req.session.username = user.username;
   req.session.isAdmin = user.role === "admin";
   req.session.userRole = user.role;
   req.session.companyId = undefined;

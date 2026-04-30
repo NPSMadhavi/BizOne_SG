@@ -18,6 +18,7 @@ import {
   Users2,
   Mail,
   FileInput,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -192,6 +193,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="space-y-1">
             <NavItem href="/admin" icon={Users} active={location === "/admin"}>
               User Management
+            </NavItem>
+            <NavItem href="/audit-log" icon={ShieldCheck} active={location === "/audit-log"}>
+              Audit Log
             </NavItem>
             <NavItem href="/settings" icon={Settings} active={location === "/settings"}>
               Settings

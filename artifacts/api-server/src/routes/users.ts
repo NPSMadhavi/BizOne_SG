@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db, usersTable, companiesTable, userCompaniesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { CreateUserBody, UpdateUserBody, UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
+import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -88,6 +89,7 @@ router.post("/users", async (req, res): Promise<void> => {
   }
 
   const result = await getUserWithCompanies(user.id);
+  logAudit({ req, action: "create", entityType: "user", entityId: user.id, entityLabel: user.username });
   res.status(201).json(result);
 });
 
@@ -134,6 +136,7 @@ router.put("/users/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "User not found" });
     return;
   }
+  logAudit({ req, action: "update", entityType: "user", entityId: params.data.id, entityLabel: result.username });
   res.json(result);
 });
 
@@ -157,6 +160,7 @@ router.delete("/users/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  logAudit({ req, action: "delete", entityType: "user", entityId: params.data.id, entityLabel: user.username });
   res.json({ success: true });
 });
 

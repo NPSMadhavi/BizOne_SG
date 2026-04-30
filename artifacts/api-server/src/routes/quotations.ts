@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, quotationsTable, usersTable, customersTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
+import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -130,6 +131,7 @@ router.post("/quotations", async (req, res): Promise<void> => {
     totalAmount: totalAmount.toFixed(2), status: status || "draft", createdBy: req.session.userId!,
   }).returning();
   await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
+  logAudit({ req, action: "create", entityType: "quotation", entityId: doc.id, entityLabel: doc.qtNumber });
   res.status(201).json(parseDoc(doc));
 });
 
@@ -183,6 +185,7 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 
   const [updated] = await db.update(quotationsTable).set(updateData).where(eq(quotationsTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Quotation not found" }); return; }
+  logAudit({ req, action: updateData.status ? `status:${updateData.status}` : "update", entityType: "quotation", entityId: id, entityLabel: updated.qtNumber });
   res.json(parseDoc(updated));
 });
 
@@ -192,7 +195,8 @@ router.delete("/quotations/:id", async (req, res): Promise<void> => {
   const isExternal = req.session.userRole === "external";
   if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete quotations" }); return; }
   const id = parseInt(req.params.id);
-  await db.delete(quotationsTable).where(eq(quotationsTable.id, id));
+  const [deleted] = await db.delete(quotationsTable).where(eq(quotationsTable.id, id)).returning();
+  logAudit({ req, action: "delete", entityType: "quotation", entityId: id, entityLabel: deleted?.qtNumber });
   res.json({ success: true });
 });
 

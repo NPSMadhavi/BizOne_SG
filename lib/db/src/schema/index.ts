@@ -15,3 +15,4 @@ export * from "./customers";
 export * from "./email-contacts";
 export * from "./vendor-invoices";
 export * from "./vendor-payments";
+export * from "./audit-logs";

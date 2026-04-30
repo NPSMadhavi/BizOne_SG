@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, vendorInvoicesTable, vendorPaymentsTable, usersTable } from "@workspace/db";
+import { logAudit } from "../lib/audit.js";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 
 declare module "express-session" {
@@ -101,6 +102,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     createdBy: req.session.userId!,
   }).returning();
 
+  logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
   res.status(201).json(parsePI(doc));
 });
 
@@ -145,6 +147,7 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
   await recalcPI(id, existing.companyId);
   const [updated] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  logAudit({ req, action: "update", entityType: "vendor_invoice", entityId: id, entityLabel: updated?.piNumber });
   res.json(parsePI(updated));
 });
 
@@ -153,7 +156,8 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const isAdmin = req.session.isAdmin ?? false;
   if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
   const id = parseInt(req.params.id);
-  await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  const [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
+  logAudit({ req, action: "delete", entityType: "vendor_invoice", entityId: id, entityLabel: deleted?.piNumber });
   res.json({ success: true });
 });
 
@@ -203,6 +207,7 @@ router.post("/vendor-invoices/:id/payments", async (req, res): Promise<void> => 
   await recalcPI(id, companyId);
   const [updatedPI] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
 
+  logAudit({ req, action: "payment:add", entityType: "vendor_invoice", entityId: id, entityLabel: updatedPI?.piNumber, details: { amount: payment.amount, reference: payment.reference } });
   res.status(201).json({
     payment: { ...payment, amount: parseFloat(payment.amount ?? "0") },
     vendorInvoice: parsePI(updatedPI),
@@ -221,6 +226,7 @@ router.delete("/vendor-invoices/:id/payments/:paymentId", async (req, res): Prom
 
   await db.delete(vendorPaymentsTable).where(eq(vendorPaymentsTable.id, paymentId));
   await recalcPI(id, existing.companyId);
+  logAudit({ req, action: "payment:delete", entityType: "vendor_invoice", entityId: id, entityLabel: existing.piNumber });
   res.json({ success: true });
 });
 

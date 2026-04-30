@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, invoicesTable, usersTable, customersTable, deliveryOrdersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
+import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -150,6 +151,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
       .where(eq(stockItemsTable.id, stockItem.id));
   }
 
+  logAudit({ req, action: "create", entityType: "invoice", entityId: doc.id, entityLabel: doc.invNumber });
   res.status(201).json(parseDoc(doc));
 });
 
@@ -266,6 +268,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     }
   }
 
+  logAudit({ req, action: isNewlyConfirmed ? "status:confirmed" : "update", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
   res.json(parseDoc(updated));
 });
 
@@ -287,6 +290,7 @@ router.post("/invoices/:id/void", async (req, res): Promise<void> => {
     .set({ status: "void", voidReason: String(voidReason).trim() })
     .where(eq(invoicesTable.id, id))
     .returning();
+  logAudit({ req, action: "void", entityType: "invoice", entityId: id, entityLabel: updated.invNumber, details: { voidReason } });
   res.json(parseDoc(updated));
 });
 
@@ -304,6 +308,7 @@ router.post("/invoices/:id/knock-off", async (req, res): Promise<void> => {
     .set({ status: "paid" })
     .where(eq(invoicesTable.id, id))
     .returning();
+  logAudit({ req, action: "knock-off", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
   res.json(parseDoc(updated));
 });
 

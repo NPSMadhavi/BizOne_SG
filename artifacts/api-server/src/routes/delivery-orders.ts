@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, deliveryOrdersTable, usersTable, customersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
+import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -113,6 +114,7 @@ router.post("/delivery-orders", async (req, res): Promise<void> => {
     status: status || "draft", createdBy: req.session.userId!,
   }).returning();
   await upsertCustomerByName(companyId, customerName, customerAddress, customerContact);
+  logAudit({ req, action: "create", entityType: "delivery_order", entityId: doc.id, entityLabel: doc.doNumber });
   res.status(201).json(parseDoc(doc));
 });
 
@@ -183,6 +185,7 @@ router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  logAudit({ req, action: isNewlyConfirmed ? "status:confirmed" : "update", entityType: "delivery_order", entityId: id, entityLabel: updated.doNumber });
   res.json(parseDoc(updated));
 });
 
@@ -192,7 +195,8 @@ router.delete("/delivery-orders/:id", async (req, res): Promise<void> => {
   const isExternal = req.session.userRole === "external";
   if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete delivery orders" }); return; }
   const id = parseInt(req.params.id);
-  await db.delete(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id));
+  const [deleted] = await db.delete(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id)).returning();
+  logAudit({ req, action: "delete", entityType: "delivery_order", entityId: id, entityLabel: deleted?.doNumber });
   res.json({ success: true });
 });
 
