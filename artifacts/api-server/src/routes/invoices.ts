@@ -213,58 +213,62 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const isNewlyConfirmed = status === "confirmed" && existing.status !== "confirmed";
 
   if (isNewlyConfirmed) {
-    const existingDo = await db.select({ id: deliveryOrdersTable.id })
-      .from(deliveryOrdersTable)
-      .where(and(eq(deliveryOrdersTable.companyId, companyId), eq(deliveryOrdersTable.invId, id)))
-      .limit(1);
-
-    if (existingDo.length === 0) {
-      const doNumber = await nextDocNumber("do", companyId);
-      const doItems = ((updated.items as any[]) || []).map((item: any) => ({
-        partNumber: item.partNumber || "",
-        description: item.description || "",
-        qty: item.qty,
-        serialNumbers: item.selectedSerials ? item.selectedSerials.join("\n") : "",
-      }));
-      await db.insert(deliveryOrdersTable).values({
-        doNumber, companyId,
-        customerName: updated.customerName,
-        customerAddress: updated.customerAddress || null,
-        customerContact: updated.customerContact || null,
-        issueDate: updated.issueDate || new Date().toISOString().split("T")[0],
-        deliveryDate: updated.deliveryDate || null,
-        paymentTerms: updated.paymentTerms || null,
-        notes: `Auto-created from Invoice ${updated.invNumber}`,
-        items: doItems,
-        isPrivate: updated.isPrivate,
-        status: "draft",
-        invId: id,
-        invNumber: updated.invNumber,
-        createdBy: req.session.userId!,
-      });
-    }
-
-    const invoiceItems = (updated.items as any[]) || [];
-    for (const item of invoiceItems) {
-      const selectedSerials: string[] = item.selectedSerials || [];
-      if (selectedSerials.length === 0) continue;
-      const partNumber = (item.partNumber || "").trim();
-      if (!partNumber) continue;
-      const [stockItem] = await db.select({ id: stockItemsTable.id })
-        .from(stockItemsTable)
-        .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+    try {
+      const existingDo = await db.select({ id: deliveryOrdersTable.id })
+        .from(deliveryOrdersTable)
+        .where(and(eq(deliveryOrdersTable.companyId, companyId), eq(deliveryOrdersTable.invId, id)))
         .limit(1);
-      if (!stockItem) continue;
-      for (const sn of selectedSerials) {
-        await db.update(stockSerialsTable)
-          .set({ status: "reserved", invoiceId: id, invoiceNumber: updated.invNumber })
-          .where(and(
-            eq(stockSerialsTable.companyId, companyId),
-            eq(stockSerialsTable.stockItemId, stockItem.id),
-            eq(stockSerialsTable.serialNumber, sn),
-            eq(stockSerialsTable.status, "available")
-          ));
+
+      if (existingDo.length === 0) {
+        const doNumber = await nextDocNumber("do", companyId);
+        const doItems = ((updated.items as any[]) || []).map((item: any) => ({
+          partNumber: item.partNumber || "",
+          description: item.description || "",
+          qty: item.qty,
+          serialNumbers: item.selectedSerials ? item.selectedSerials.join("\n") : "",
+        }));
+        await db.insert(deliveryOrdersTable).values({
+          doNumber, companyId,
+          customerName: updated.customerName,
+          customerAddress: updated.customerAddress || null,
+          customerContact: updated.customerContact || null,
+          issueDate: updated.issueDate || new Date().toISOString().split("T")[0],
+          deliveryDate: updated.deliveryDate || null,
+          paymentTerms: updated.paymentTerms || null,
+          notes: `Auto-created from Invoice ${updated.invNumber}`,
+          items: doItems,
+          isPrivate: updated.isPrivate,
+          status: "draft",
+          invId: id,
+          invNumber: updated.invNumber,
+          createdBy: req.session.userId!,
+        });
       }
+
+      const invoiceItems = (updated.items as any[]) || [];
+      for (const item of invoiceItems) {
+        const selectedSerials: string[] = item.selectedSerials || [];
+        if (selectedSerials.length === 0) continue;
+        const partNumber = (item.partNumber || "").trim();
+        if (!partNumber) continue;
+        const [stockItem] = await db.select({ id: stockItemsTable.id })
+          .from(stockItemsTable)
+          .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+          .limit(1);
+        if (!stockItem) continue;
+        for (const sn of selectedSerials) {
+          await db.update(stockSerialsTable)
+            .set({ status: "reserved", invoiceId: id, invoiceNumber: updated.invNumber })
+            .where(and(
+              eq(stockSerialsTable.companyId, companyId),
+              eq(stockSerialsTable.stockItemId, stockItem.id),
+              eq(stockSerialsTable.serialNumber, sn),
+              eq(stockSerialsTable.status, "available")
+            ));
+        }
+      }
+    } catch (autoDoErr: any) {
+      req.log.error({ err: autoDoErr }, "Auto-DO / serial reservation failed (non-fatal)");
     }
   }
 
