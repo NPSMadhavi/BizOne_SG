@@ -140,9 +140,6 @@ export default function InvoiceNew() {
   useEffect(() => {
     if (settings) {
       form.setValue("tax", settings.gstRate);
-      if ((settings as any).termsAndConditions && !form.getValues("notes")) {
-        form.setValue("notes", (settings as any).termsAndConditions);
-      }
     }
   }, [settings]);
 
