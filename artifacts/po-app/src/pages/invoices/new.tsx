@@ -138,7 +138,12 @@ export default function InvoiceNew() {
   });
 
   useEffect(() => {
-    if (settings) form.setValue("tax", settings.gstRate);
+    if (settings) {
+      form.setValue("tax", settings.gstRate);
+      if ((settings as any).termsAndConditions && !form.getValues("notes")) {
+        form.setValue("notes", (settings as any).termsAndConditions);
+      }
+    }
   }, [settings]);
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
@@ -511,7 +516,13 @@ export default function InvoiceNew() {
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation("/invoices")}>Cancel</Button>
-            <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting}
+              className="gap-2"
+              onClick={form.handleSubmit(v => doSubmit(v, false))}
+            >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>

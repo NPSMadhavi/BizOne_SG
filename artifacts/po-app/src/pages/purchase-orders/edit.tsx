@@ -651,7 +651,13 @@ export default function PurchaseOrderEdit() {
             >
               Cancel
             </Button>
-            <Button type="submit" variant="outline" className="gap-2" disabled={updateMutation.isPending}>
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={updateMutation.isPending}
+              onClick={form.handleSubmit(onSubmit)}
+            >
               {updateMutation.isPending ? "Saving..." : <><Save className="h-4 w-4" />Save as Draft</>}
             </Button>
             <Button

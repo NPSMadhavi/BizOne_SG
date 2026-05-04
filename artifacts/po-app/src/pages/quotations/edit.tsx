@@ -433,13 +433,25 @@ export default function QuotationEdit() {
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation(`/quotations/${id}`)}>Cancel</Button>
-            <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting}
+              className="gap-2 min-w-32"
+              onClick={form.handleSubmit(v => doSubmit(v, false))}
+            >
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save as Draft"}
+              {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
-            <Button type="button" disabled={isSubmitting} variant="secondary" className="gap-2" onClick={() => form.handleSubmit(v => onSubmit(v, true))()}>
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              variant="secondary"
+              className="gap-2"
+              onClick={form.handleSubmit(v => onSubmit(v, true))}
+            >
               <Eye className="h-4 w-4" />
-              Save
+              Save & Preview
             </Button>
           </div>
         </form>

@@ -423,7 +423,13 @@ export default function QuotationNew() {
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation("/quotations")}>Cancel</Button>
-            <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting}
+              className="gap-2"
+              onClick={form.handleSubmit(v => doSubmit(v, false))}
+            >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>

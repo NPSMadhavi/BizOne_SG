@@ -242,7 +242,8 @@ export default function InvoiceEdit() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    updateMutation.mutate({ id, data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
+    const saveStatus = openPreview ? "confirmed" : values.status;
+    updateMutation.mutate({ id, data: { ...values, status: saveStatus, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         setIsSubmitting(false);
@@ -514,15 +515,36 @@ export default function InvoiceEdit() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Notes / Terms &amp; Conditions</CardTitle></CardHeader>
+            <CardContent>
+              <FormField control={form.control} name="notes" render={({ field }) => (
+                <FormItem><FormControl><Textarea placeholder="Terms, conditions, or special instructions..." className="resize-none" rows={4} {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </CardContent>
+          </Card>
+
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation(`/invoices/${id}`)}>Cancel</Button>
-            <Button type="submit" disabled={isSubmitting} className="gap-2 min-w-32">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting}
+              className="gap-2 min-w-32"
+              onClick={form.handleSubmit(v => doSubmit(v, false))}
+            >
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save as Draft"}
+              {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
-            <Button type="button" disabled={isSubmitting} variant="secondary" className="gap-2" onClick={() => form.handleSubmit(v => onSubmit(v, true))()}>
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              variant="secondary"
+              className="gap-2"
+              onClick={form.handleSubmit(v => onSubmit(v, true))}
+            >
               <Eye className="h-4 w-4" />
-              Save
+              Save & Preview
             </Button>
           </div>
         </form>
