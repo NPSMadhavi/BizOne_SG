@@ -94,7 +94,7 @@ export default function QuotationNew() {
   const nextQtNumber = (() => {
     if (!settings) return null;
     const prefix = (settings as any).qtPrefix ?? "";
-    const counter = parseInt((settings as any).qtCounter) || 1;
+    const counter = (parseInt((settings as any).qtCounter) || 0) + 1;
     const suffix = (settings as any).qtSuffix ?? "";
     const padded = String(counter).padStart(4, "0");
     return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;

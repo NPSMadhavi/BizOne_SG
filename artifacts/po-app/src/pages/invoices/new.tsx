@@ -152,7 +152,7 @@ export default function InvoiceNew() {
   const nextInvNumber = (() => {
     if (!settings) return null;
     const prefix = (settings as any).invPrefix ?? "";
-    const counter = parseInt((settings as any).invCounter) || 1;
+    const counter = (parseInt((settings as any).invCounter) || 0) + 1;
     const suffix = (settings as any).invSuffix ?? "";
     const padded = String(counter).padStart(4, "0");
     return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
