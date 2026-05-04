@@ -317,7 +317,17 @@ router.post("/invoices/:id/knock-off", async (req, res): Promise<void> => {
 });
 
 router.delete("/invoices/:id", async (req, res): Promise<void> => {
-  res.status(403).json({ error: "Invoices cannot be deleted. Use Void or Knock-Off instead." });
+  if (!requireAuth(req, res)) return;
+  if (!req.session.isAdmin) { res.status(403).json({ error: "Only administrators can delete invoices." }); return; }
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const [existing] = await db.select({ id: invoicesTable.id, status: invoicesTable.status, invNumber: invoicesTable.invNumber })
+    .from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
+  if (existing.status !== "draft") { res.status(400).json({ error: "Only draft invoices can be deleted. Confirmed invoices must be Voided." }); return; }
+  await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
+  logAudit({ req, action: "delete", entityType: "invoice", entityId: id, entityLabel: existing.invNumber });
+  res.json({ success: true });
 });
 
 export default router;

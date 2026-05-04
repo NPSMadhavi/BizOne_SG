@@ -448,11 +448,11 @@ export default function Settings() {
                         <div className="space-y-1.5">
                           <Label className="text-xs">Next Counter</Label>
                           <Input
-                            type="number"
-                            min="1"
-                            step="1"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             value={state.counter}
-                            onChange={e => { setter({ ...state, counter: e.target.value }); setRnEditing(true); }}
+                            onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ""); setter({ ...state, counter: v }); setRnEditing(true); }}
                             disabled={!isAdmin}
                             placeholder="e.g. 1000"
                             className="font-mono w-full"

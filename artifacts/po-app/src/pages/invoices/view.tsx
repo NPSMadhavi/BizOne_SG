@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -31,7 +31,7 @@ export default function InvoiceView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany } = useAuth();
+  const { selectedCompany, isAdmin } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
@@ -162,6 +162,41 @@ export default function InvoiceView() {
             <Button variant="outline" className="gap-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => setVoidDialogOpen(true)}>
               <Ban className="h-4 w-4" />Void Invoice
             </Button>
+          )}
+          {isAdmin && doc.status === "draft" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">
+                  <Trash2 className="h-4 w-4" />Delete Draft
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this draft invoice?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete draft invoice <strong>{doc.invNumber}</strong>. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-red-600 hover:bg-red-700"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
+                        if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+                        toast({ title: "Invoice deleted." });
+                        setLocation("/invoices");
+                      } catch (err: any) {
+                        toast({ title: "Error", description: err.message, variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
         </div>
       </div>
