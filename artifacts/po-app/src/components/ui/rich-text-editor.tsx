@@ -17,10 +17,15 @@ import { cn } from "@/lib/utils";
 export function htmlToText(html: string): string {
   if (!html) return "";
   return html
+    .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
+      let n = 0;
+      return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);
+    })
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
-    .replace(/<li>/gi, "• ")
+    .replace(/<li data-n="(\d+)">/gi, (_, n) => `${n}. `)
+    .replace(/<li[^>]*>/gi, "• ")
     .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -69,7 +74,7 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class:
-          "min-h-[60px] max-h-[200px] overflow-y-auto px-2.5 py-2 text-sm focus:outline-none [&_p]:my-0 [&_ul]:my-1 [&_ol]:my-1 [&_ul]:pl-4 [&_ol]:pl-4",
+          "min-h-[60px] max-h-[200px] overflow-y-auto px-2.5 py-2 text-sm focus:outline-none [&_p]:my-0 [&_ul]:my-1 [&_ol]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_ul]:list-disc [&_ol]:list-decimal [&_li]:my-0",
       },
     },
   });

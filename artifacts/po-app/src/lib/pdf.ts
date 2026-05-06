@@ -79,10 +79,15 @@ function getLogoUrl(company: Company | null | undefined): string {
 function htmlToText(html: string): string {
   if (!html) return "";
   return html
+    .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
+      let n = 0;
+      return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);
+    })
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
-    .replace(/<li>/gi, "• ")
+    .replace(/<li data-n="(\d+)">/gi, (_, n) => `${n}. `)
+    .replace(/<li[^>]*>/gi, "• ")
     .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -96,10 +101,15 @@ interface RichLine { text: string; bold: boolean; italic: boolean; }
 
 function htmlToRichLines(html: string): RichLine[] {
   if (!html) return [];
-  const rawLines = html
+  const preprocessed = html.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
+    let n = 0;
+    return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);
+  });
+  const rawLines = preprocessed
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
+    .replace(/<li data-n="(\d+)">/gi, (_, n) => `${n}. `)
     .replace(/<li[^>]*>/gi, "• ")
     .replace(/<\/?(ul|ol|div|h[1-6])[^>]*>/gi, "\n")
     .split("\n");
