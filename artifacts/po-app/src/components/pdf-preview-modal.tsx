@@ -131,6 +131,27 @@ export function PdfPreviewModal({
     }
   };
 
+  const handlePrint = () => {
+    if (!pdfBase64) return;
+    const binary = atob(pdfBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;width:0;height:0;border:none;opacity:0;";
+    document.body.appendChild(iframe);
+    iframe.src = url;
+    iframe.onload = () => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+        URL.revokeObjectURL(url);
+      }, 60000);
+    };
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl w-full h-[90vh] flex flex-col p-0 gap-0">
@@ -145,6 +166,10 @@ export function PdfPreviewModal({
             <Button variant="outline" size="sm" className="gap-2" onClick={handleDownload}>
               <Download className="h-4 w-4" />
               Download
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint} disabled={!pdfBase64}>
+              <Printer className="h-4 w-4" />
+              Print
             </Button>
             <EmailSendDialog
               defaultTo={defaultEmailTo}
