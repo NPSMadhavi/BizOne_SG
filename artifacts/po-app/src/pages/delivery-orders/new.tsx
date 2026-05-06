@@ -269,7 +269,13 @@ export default function DeliveryOrderNew() {
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => setLocation("/delivery-orders")}>Cancel</Button>
-            <Button type="submit" variant="outline" disabled={isSubmitting} className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmitting}
+              className="gap-2"
+              onClick={form.handleSubmit(v => onSubmit(v, false))}
+            >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
