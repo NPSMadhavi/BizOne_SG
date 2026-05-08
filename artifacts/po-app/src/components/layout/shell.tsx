@@ -27,6 +27,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import logo from "@assets/logo_1776054030755.png";
+import { AgentPanel } from "@/components/agent-panel";
 
 interface NavItemProps {
   href: string;
@@ -273,6 +274,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 min-w-0 p-4 md:p-6 xl:p-8 overflow-auto">
         {children}
       </main>
+      <AgentPanel />
     </div>
   );
 }

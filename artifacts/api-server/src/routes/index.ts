@@ -19,6 +19,7 @@ import stockSerialsRouter from "./stock-serials";
 import maintenanceRouter from "./maintenance";
 import vendorInvoicesRouter from "./vendor-invoices";
 import auditLogsRouter from "./audit-logs";
+import agentRouter from "./agent";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(emailContactsRouter);
 router.use(maintenanceRouter);
 router.use(vendorInvoicesRouter);
 router.use(auditLogsRouter);
+router.use(agentRouter);
 
 export default router;
