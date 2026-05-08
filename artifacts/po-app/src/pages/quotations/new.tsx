@@ -88,6 +88,31 @@ export default function QuotationNew() {
     if (settings) form.setValue("tax", settings.gstRate);
   }, [settings]);
 
+  // Aria prefill — populated by the AI agent via navigateTo
+  useEffect(() => {
+    const prefill = (window as any).__ariaPrefill;
+    if (!prefill) return;
+    (window as any).__ariaPrefill = null;
+    const blankItem = { partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 };
+    form.reset({
+      customerName: prefill.customerName || "",
+      customerAddress: prefill.customerAddress || "",
+      customerContact: prefill.customerContact || "",
+      customerContactEmail: prefill.customerContactEmail || "",
+      currency: prefill.currency || "SGD",
+      paymentTerms: prefill.paymentTerms || "30 Days Net",
+      notes: prefill.notes || "",
+      issueDate: getToday(),
+      deliveryDate: "",
+      tax: settings?.gstRate ?? 9,
+      discountAmount: prefill.discountAmount ?? 0,
+      isPrivate: false,
+      items: prefill.items?.length
+        ? prefill.items.map((it: any) => ({ ...blankItem, partNumber: it.partNumber || "", description: it.description || "", qty: Number(it.qty) || 1, unitPrice: Number(it.unitPrice) || 0 }))
+        : [blankItem],
+    });
+  }, []);
+
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateQuotation();
 
