@@ -179,14 +179,20 @@ function useVoice() {
   const mrRef = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
 
-  const start = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
-      : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
-    const mr = new MediaRecorder(stream, { mimeType: mime });
-    chunks.current = [];
-    mr.ondataavailable = e => { if (e.data.size > 0) chunks.current.push(e.data); };
-    mr.start(250); mrRef.current = mr; setRecording(true);
+  const start = useCallback(async (): Promise<boolean> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
+      const mr = new MediaRecorder(stream, { mimeType: mime });
+      chunks.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) chunks.current.push(e.data); };
+      mr.start(250); mrRef.current = mr; setRecording(true);
+      return true;
+    } catch {
+      setRecording(false);
+      return false;
+    }
   }, []);
 
   const stop = useCallback((): Promise<Blob> => new Promise(resolve => {
@@ -210,6 +216,7 @@ export function AgentPanel() {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [micError, setMicError] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -241,6 +248,13 @@ export function AgentPanel() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Auto-clear mic error after 3 seconds
+  useEffect(() => {
+    if (!micError) return;
+    const t = setTimeout(() => setMicError(false), 3000);
+    return () => clearTimeout(t);
+  }, [micError]);
 
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
@@ -299,7 +313,10 @@ export function AgentPanel() {
       setTranscribing(true);
       try { const t = await transcribe(blob); if (t.trim()) await send(t, true); }
       catch {} finally { setTranscribing(false); }
-    } else { await start(); }
+    } else {
+      const ok = await start();
+      if (!ok) setMicError(true);
+    }
   };
 
   const stopAudio = () => { if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; } };
@@ -378,17 +395,27 @@ export function AgentPanel() {
                       }}
                     />
                     <div className="flex items-center gap-2 shrink-0 pb-0.5">
-                      <button
-                        onClick={mic}
-                        className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                          recording ? "bg-red-500 text-white animate-pulse" : "text-muted-foreground hover:text-foreground",
+                      <div className="relative">
+                        <button
+                          onClick={mic}
+                          title={micError ? "Microphone access denied" : recording ? "Stop" : "Speak"}
+                          className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                            micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
+                              : recording ? "bg-red-500 text-white animate-pulse"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {transcribing ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : recording ? <Square className="h-3.5 w-3.5 fill-current" />
+                            : <Mic className="h-4 w-4" />}
+                        </button>
+                        {micError && (
+                          <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg shadow-md pointer-events-none">
+                            Mic access denied
+                          </div>
                         )}
-                      >
-                        {transcribing ? <Loader2 className="h-4 w-4 animate-spin" />
-                          : recording ? <Square className="h-3.5 w-3.5 fill-current" />
-                          : <Mic className="h-4 w-4" />}
-                      </button>
+                      </div>
                       <button
                         onClick={submit}
                         disabled={!input.trim()}
@@ -552,18 +579,28 @@ export function AgentPanel() {
                         <Square className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    <button
-                      onClick={mic}
-                      disabled={transcribing || thinking}
-                      className={cn(
-                        "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                        recording ? "bg-red-500 text-white animate-pulse" : "text-muted-foreground hover:text-foreground",
+                    <div className="relative">
+                      <button
+                        onClick={mic}
+                        disabled={transcribing || thinking}
+                        title={micError ? "Microphone access denied" : recording ? "Stop" : "Speak"}
+                        className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                          micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
+                            : recording ? "bg-red-500 text-white animate-pulse"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {transcribing ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : recording ? <Square className="h-3.5 w-3.5 fill-current" />
+                          : <Mic className="h-4 w-4" />}
+                      </button>
+                      {micError && (
+                        <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg shadow-md pointer-events-none">
+                          Mic access denied
+                        </div>
                       )}
-                    >
-                      {transcribing ? <Loader2 className="h-4 w-4 animate-spin" />
-                        : recording ? <Square className="h-3.5 w-3.5 fill-current" />
-                        : <Mic className="h-4 w-4" />}
-                    </button>
+                    </div>
                     <button
                       onClick={submit}
                       disabled={!input.trim() || thinking || recording}
