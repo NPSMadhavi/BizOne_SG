@@ -336,224 +336,231 @@ export function AgentPanel() {
         </button>
       )}
 
-      {/* ── Full-screen modal ── */}
+      {/* ── Backdrop ── */}
       {open && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background/97 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-end p-6 pointer-events-none"
+        >
+          {/* Dim overlay — click to close */}
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-[2px] pointer-events-auto"
+            onClick={close}
+          />
 
-          {/* Top bar */}
-          <div className="flex items-center justify-between px-6 py-4 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
-                <Sparkles className="h-4 w-4" />
+          {/* Dialog card */}
+          <div
+            className="relative pointer-events-auto flex flex-col w-[520px] h-[620px] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+                <span className="text-sm font-semibold">Aria</span>
+                <span className="text-xs text-muted-foreground">· AI assistant</span>
               </div>
-              <span className="text-sm font-semibold text-foreground">Aria</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {hasMessages && (
+              <div className="flex items-center gap-1">
+                {hasMessages && (
+                  <button
+                    onClick={clear}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2.5 py-1.5 rounded-md hover:bg-muted transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    New
+                  </button>
+                )}
                 <button
-                  onClick={clear}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-muted transition-colors"
+                  onClick={close}
+                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  New chat
+                  <X className="h-3.5 w-3.5" />
                 </button>
-              )}
-              <button
-                onClick={close}
-                className="w-8 h-8 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Content area */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {!hasMessages ? (
-              /* ── Welcome ── */
-              <div className="flex flex-col items-center justify-center h-full px-6 pb-24 gap-8">
-                <div className="text-center">
-                  <p className="text-lg text-muted-foreground mb-1">Hi there</p>
-                  <h1 className="text-4xl font-semibold tracking-tight">Where should we start?</h1>
-                </div>
-
-                {/* Hero input */}
-                <div className="w-full max-w-2xl">
-                  <div className="flex items-end gap-3 bg-muted/50 border border-border rounded-2xl px-5 py-4 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all">
-                    <textarea
-                      ref={inputRef}
-                      value={input}
-                      onChange={e => setInput(e.target.value)}
-                      onKeyDown={onKey}
-                      placeholder="Ask me anything…"
-                      rows={1}
-                      className="flex-1 resize-none bg-transparent text-base focus:outline-none min-h-[28px] max-h-[160px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
-                      onInput={e => {
-                        const el = e.currentTarget;
-                        el.style.height = "auto";
-                        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-                      }}
-                    />
-                    <div className="flex items-center gap-2 shrink-0 pb-0.5">
-                      <div className="relative">
-                        <button
-                          onClick={mic}
-                          title={micError ? "Microphone access denied" : recording ? "Stop" : "Speak"}
-                          className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                            micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
-                              : recording ? "bg-red-500 text-white animate-pulse"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {transcribing ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : recording ? <Square className="h-3.5 w-3.5 fill-current" />
-                            : <Mic className="h-4 w-4" />}
-                        </button>
-                        {micError && (
-                          <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg shadow-md pointer-events-none">
-                            Mic access denied
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={submit}
-                        disabled={!input.trim()}
-                        className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Suggestion chips */}
-                <div className="flex flex-wrap justify-center gap-2.5 max-w-2xl">
-                  {SUGGESTIONS.map(s => (
-                    <button
-                      key={s.label}
-                      onClick={() => send(s.label)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-background hover:bg-muted text-sm text-foreground/70 hover:text-foreground transition-colors shadow-sm"
-                    >
-                      <span>{s.icon}</span>
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
               </div>
-            ) : (
-              /* ── Chat thread ── */
-              <div className="max-w-3xl mx-auto px-6 py-6 space-y-8">
-                {messages.map(msg => (
-                  <div key={msg.id} className={cn(
-                    "flex gap-4",
-                    msg.role === "user" ? "justify-end" : "justify-start",
-                  )}>
-                    {/* Avatar — assistant only */}
-                    {msg.role === "assistant" && (
-                      <div className="shrink-0 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center mt-0.5 shadow-sm">
-                        <Sparkles className="h-3.5 w-3.5" />
-                      </div>
-                    )}
+            </div>
 
-                    <div className={cn(
-                      "flex flex-col gap-2",
-                      msg.role === "user" ? "items-end max-w-[70%]" : "items-start max-w-[80%]",
-                    )}>
-                      {/* Tool badges */}
-                      {msg.toolCalls && msg.toolCalls.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {msg.toolCalls.map((tc, i) => {
-                            const done = !!msg.complete;
-                            const icon = done
-                              ? <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                              : tc === "getFinancialStats" ? <BarChart2 className="h-3 w-3" />
-                              : tc === "navigateTo" ? <Navigation className="h-3 w-3" />
-                              : <Loader2 className="h-3 w-3 animate-spin" />;
-                            return (
-                              <span key={i} className={cn(
-                                "text-xs rounded-full px-3 py-1 flex items-center gap-1.5 border",
-                                done
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/50"
-                                  : "bg-muted text-muted-foreground border-border/60",
-                              )}>
-                                {icon}
-                                {TOOL_LABELS[tc] ?? tc}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {!hasMessages ? (
+                /* ── Welcome ── */
+                <div className="flex flex-col items-center justify-center h-full px-6 gap-6">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-1">Hi there</p>
+                    <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
+                  </div>
 
-                      {/* Navigation badge */}
-                      {msg.navigated && (
-                        <div className="flex items-center gap-1.5 text-xs text-primary bg-primary/8 border border-primary/20 rounded-full px-3 py-1">
-                          <Navigation className="h-3 w-3" />
-                          Opened {msg.navigated.label}
-                        </div>
-                      )}
-
-                      {/* Message bubble */}
-                      {(msg.content || msg.role === "assistant") && (
-                        <div className={cn(
-                          "text-sm leading-relaxed",
-                          msg.role === "user"
-                            ? "bg-primary text-primary-foreground px-4 py-3 rounded-2xl rounded-tr-sm"
-                            : "text-foreground",
-                        )}>
-                          {msg.content ? (
-                            <MarkdownText text={msg.content} />
-                          ) : (
-                            <div className="flex gap-1 items-center h-5">
-                              <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
-                              <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
-                              <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
+                  {/* Input */}
+                  <div className="w-full">
+                    <div className="flex items-end gap-2 bg-muted/50 border border-border rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
+                      <textarea
+                        ref={inputRef}
+                        value={input}
+                        onChange={e => setInput(e.target.value)}
+                        onKeyDown={onKey}
+                        placeholder="Ask me anything…"
+                        rows={1}
+                        className="flex-1 resize-none bg-transparent text-sm focus:outline-none min-h-[24px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
+                        onInput={e => {
+                          const el = e.currentTarget;
+                          el.style.height = "auto";
+                          el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
+                        }}
+                      />
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="relative">
+                          <button
+                            onClick={mic}
+                            title={micError ? "Mic access denied" : recording ? "Stop" : "Speak"}
+                            className={cn(
+                              "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+                              micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
+                                : recording ? "bg-red-500 text-white animate-pulse"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : recording ? <Square className="h-3 w-3 fill-current" />
+                              : <Mic className="h-3.5 w-3.5" />}
+                          </button>
+                          {micError && (
+                            <div className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap text-xs bg-red-600 text-white px-2 py-0.5 rounded pointer-events-none">
+                              Mic denied
                             </div>
                           )}
+                        </div>
+                        <button
+                          onClick={submit}
+                          disabled={!input.trim()}
+                          className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >
+                          <Send className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
-                          {/* Doc link */}
-                          {msg.docRef && (
-                            <button
-                              onClick={() => { navigate(msg.docRef!.path); close(); }}
-                              className="mt-3 flex items-center gap-1.5 text-xs text-primary hover:underline underline-offset-2"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              Open {msg.docRef.number}
-                            </button>
-                          )}
+                  {/* Chips */}
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {SUGGESTIONS.map(s => (
+                      <button
+                        key={s.label}
+                        onClick={() => send(s.label)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-background hover:bg-muted text-xs text-foreground/70 hover:text-foreground transition-colors"
+                      >
+                        <span>{s.icon}</span>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* ── Chat thread ── */
+                <div className="px-4 py-4 space-y-5">
+                  {messages.map(msg => (
+                    <div key={msg.id} className={cn(
+                      "flex gap-2.5",
+                      msg.role === "user" ? "justify-end" : "justify-start",
+                    )}>
+                      {msg.role === "assistant" && (
+                        <div className="shrink-0 w-6 h-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center mt-0.5">
+                          <Sparkles className="h-3 w-3" />
                         </div>
                       )}
 
-                      {/* Listen */}
-                      {msg.role === "assistant" && msg.content && (
-                        <button
-                          onClick={() => speak(msg.content.slice(0, 600))}
-                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <Volume2 className="h-3 w-3" />
-                          Listen
-                        </button>
+                      <div className={cn(
+                        "flex flex-col gap-1.5",
+                        msg.role === "user" ? "items-end max-w-[75%]" : "items-start max-w-[85%]",
+                      )}>
+                        {/* Tool badges */}
+                        {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {msg.toolCalls.map((tc, i) => {
+                              const done = !!msg.complete;
+                              const icon = done
+                                ? <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
+                                : tc === "getFinancialStats" ? <BarChart2 className="h-2.5 w-2.5" />
+                                : tc === "navigateTo" ? <Navigation className="h-2.5 w-2.5" />
+                                : <Loader2 className="h-2.5 w-2.5 animate-spin" />;
+                              return (
+                                <span key={i} className={cn(
+                                  "text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border",
+                                  done
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/50"
+                                    : "bg-muted text-muted-foreground border-border/60",
+                                )}>
+                                  {icon}
+                                  {TOOL_LABELS[tc] ?? tc}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Navigation badge */}
+                        {msg.navigated && (
+                          <div className="flex items-center gap-1 text-xs text-primary bg-primary/8 border border-primary/20 rounded-full px-2.5 py-0.5">
+                            <Navigation className="h-2.5 w-2.5" />
+                            Opened {msg.navigated.label}
+                          </div>
+                        )}
+
+                        {/* Bubble */}
+                        {(msg.content || msg.role === "assistant") && (
+                          <div className={cn(
+                            "text-sm leading-relaxed",
+                            msg.role === "user"
+                              ? "bg-primary text-primary-foreground px-3.5 py-2.5 rounded-2xl rounded-tr-sm"
+                              : "text-foreground",
+                          )}>
+                            {msg.content ? (
+                              <MarkdownText text={msg.content} />
+                            ) : (
+                              <div className="flex gap-1 items-center h-4">
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
+                              </div>
+                            )}
+                            {msg.docRef && (
+                              <button
+                                onClick={() => { navigate(msg.docRef!.path); close(); }}
+                                className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Open {msg.docRef.number}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {msg.role === "assistant" && msg.content && (
+                          <button
+                            onClick={() => speak(msg.content.slice(0, 600))}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <Volume2 className="h-3 w-3" />
+                            Listen
+                          </button>
+                        )}
+                      </div>
+
+                      {msg.role === "user" && (
+                        <div className="shrink-0 w-6 h-6 rounded-lg bg-muted text-foreground/60 flex items-center justify-center text-xs font-bold mt-0.5">
+                          Y
+                        </div>
                       )}
                     </div>
+                  ))}
+                  <div ref={endRef} />
+                </div>
+              )}
+            </div>
 
-                    {/* Avatar — user only */}
-                    {msg.role === "user" && (
-                      <div className="shrink-0 w-8 h-8 rounded-xl bg-muted text-foreground/60 flex items-center justify-center text-xs font-bold mt-0.5">
-                        Y
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <div ref={endRef} />
-              </div>
-            )}
-          </div>
-
-          {/* Bottom input — only shown in chat mode */}
-          {hasMessages && (
-            <div className="shrink-0 border-t border-border/60 bg-background/80 backdrop-blur-sm px-6 py-4">
-              <div className="max-w-3xl mx-auto">
-                <div className="flex items-end gap-3 bg-muted/50 border border-border rounded-2xl px-5 py-4 focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary/50 transition-all">
+            {/* Bottom input — chat mode */}
+            {hasMessages && (
+              <div className="shrink-0 border-t border-border px-4 py-3">
+                <div className="flex items-end gap-2 bg-muted/40 border border-border rounded-xl px-4 py-2.5 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
                   <textarea
                     ref={inputRef}
                     value={input}
@@ -562,60 +569,60 @@ export function AgentPanel() {
                     placeholder={recording ? "🔴 Listening…" : "Ask Aria anything…"}
                     rows={1}
                     disabled={thinking || recording || transcribing}
-                    className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[24px] max-h-[140px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
+                    className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[22px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
                     onInput={e => {
                       const el = e.currentTarget;
                       el.style.height = "auto";
-                      el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+                      el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
                     }}
                   />
-                  <div className="flex items-center gap-2 shrink-0 pb-0.5">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {thinking && (
                       <button
-                        onClick={() => { abortRef.current?.abort(); }}
-                        className="w-8 h-8 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => abortRef.current?.abort()}
+                        className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                         title="Stop"
                       >
-                        <Square className="h-3.5 w-3.5" />
+                        <Square className="h-3 w-3" />
                       </button>
                     )}
                     <div className="relative">
                       <button
                         onClick={mic}
                         disabled={transcribing || thinking}
-                        title={micError ? "Microphone access denied" : recording ? "Stop" : "Speak"}
+                        title={micError ? "Mic access denied" : recording ? "Stop" : "Speak"}
                         className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                          "w-7 h-7 rounded-full flex items-center justify-center transition-all",
                           micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
                             : recording ? "bg-red-500 text-white animate-pulse"
                             : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        {transcribing ? <Loader2 className="h-4 w-4 animate-spin" />
-                          : recording ? <Square className="h-3.5 w-3.5 fill-current" />
-                          : <Mic className="h-4 w-4" />}
+                        {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : recording ? <Square className="h-3 w-3 fill-current" />
+                          : <Mic className="h-3.5 w-3.5" />}
                       </button>
                       {micError && (
-                        <div className="absolute bottom-full right-0 mb-2 whitespace-nowrap text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg shadow-md pointer-events-none">
-                          Mic access denied
+                        <div className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap text-xs bg-red-600 text-white px-2 py-0.5 rounded pointer-events-none">
+                          Mic denied
                         </div>
                       )}
                     </div>
                     <button
                       onClick={submit}
                       disabled={!input.trim() || thinking || recording}
-                      className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                     >
-                      <Send className="h-3.5 w-3.5" />
+                      <Send className="h-3 w-3" />
                     </button>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Press Enter to send · Shift+Enter for new line · Esc to close
+                <p className="text-xs text-muted-foreground text-center mt-1.5">
+                  Enter to send · Esc to close
                 </p>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </>
