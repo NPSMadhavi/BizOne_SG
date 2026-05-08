@@ -134,7 +134,7 @@ const AGENT_TOOLS = [
               type: "object",
               properties: {
                 description: { type: "string" },
-                itemPartNumber: { type: "string" },
+                partNumber: { type: "string", description: "Item / Part Number (stock code). Always include when known." },
                 qty: { type: "number" },
                 unitPrice: { type: "number" },
                 amount: { type: "number" },
