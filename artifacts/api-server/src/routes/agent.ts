@@ -3,7 +3,7 @@ import express from "express";
 import { db, invoicesTable, quotationsTable, customersTable, stockItemsTable, settingsTable } from "@workspace/db";
 import { eq, and, ilike, or, desc } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { textToSpeech, speechToText, ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
+import { speechToText, ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { nextDocNumber } from "../lib/running-numbers.js";
 
 const router: IRouter = Router();
@@ -412,7 +412,26 @@ router.post("/agent/speak", async (req: any, res: any): Promise<void> => {
   }
 
   try {
-    const audioBuffer = await textToSpeech(text, "nova");
+    // Use the dedicated TTS API (tts-1-hd) for natural, non-robotic speech.
+    // Strip markdown symbols that would be read aloud literally.
+    const cleanText = text
+      .replace(/\*\*/g, "")
+      .replace(/\*/g, "")
+      .replace(/#{1,6}\s/g, "")
+      .replace(/`/g, "")
+      .replace(/•\s*/g, "")
+      .trim()
+      .slice(0, 4096);
+
+    const mp3Response = await openai.audio.speech.create({
+      model: "tts-1-hd",
+      voice: "nova",
+      input: cleanText,
+      response_format: "mp3",
+    } as any);
+
+    const arrayBuffer = await mp3Response.arrayBuffer();
+    const audioBuffer = Buffer.from(arrayBuffer);
     res.json({ audio: audioBuffer.toString("base64") });
   } catch (e: any) {
     req.log?.error({ err: e }, "TTS failed");
