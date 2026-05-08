@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  X, Send, Mic, Volume2, Loader2, Sparkles, ExternalLink,
-  Square, BarChart2, Navigation, RotateCcw, ChevronRight,
+  Send, Mic, Volume2, Loader2, Sparkles, ExternalLink,
+  Square, BarChart2, Navigation, RotateCcw, ChevronRight, CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -11,6 +11,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   toolCalls?: string[];
+  complete?: boolean;
   docRef?: { number: string; path: string };
   navigated?: { path: string; label: string };
   fromVoice?: boolean;
@@ -264,11 +265,12 @@ export function AgentPanel() {
       );
       const inv = full.match(/\b(INV-\d+)\b/);
       const qt = full.match(/\b(QT-\d+)\b/);
-      if (inv) { setMessages(p => p.map(m => m.id === aid ? { ...m, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
-      else if (qt) { setMessages(p => p.map(m => m.id === aid ? { ...m, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
+      if (inv) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
+      else if (qt) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
+      else { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true } : m)); }
       if (fromVoice && full) speak(full.slice(0, 600));
     } catch (e: any) {
-      if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === aid ? { ...m, content: "Something went wrong — please try again." } : m));
+      if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
     } finally { setThinking(false); abortRef.current = null; }
   }, [thinking, history, memory, handleNavigate]);
 
@@ -388,14 +390,25 @@ export function AgentPanel() {
                     {/* Tool badges */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {msg.toolCalls.map((tc, i) => (
-                          <span key={i} className="text-xs bg-muted text-muted-foreground rounded-full px-2.5 py-0.5 flex items-center gap-1.5 border border-border/60">
-                            {tc === "getFinancialStats" ? <BarChart2 className="h-2.5 w-2.5" />
-                              : tc === "navigateTo" ? <Navigation className="h-2.5 w-2.5" />
-                              : <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-                            {TOOL_LABELS[tc] ?? tc}
-                          </span>
-                        ))}
+                        {msg.toolCalls.map((tc, i) => {
+                          const done = !!msg.complete;
+                          const icon = done
+                            ? <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
+                            : tc === "getFinancialStats" ? <BarChart2 className="h-2.5 w-2.5" />
+                            : tc === "navigateTo" ? <Navigation className="h-2.5 w-2.5" />
+                            : <Loader2 className="h-2.5 w-2.5 animate-spin" />;
+                          return (
+                            <span key={i} className={cn(
+                              "text-xs rounded-full px-2.5 py-0.5 flex items-center gap-1.5 border",
+                              done
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/50"
+                                : "bg-muted text-muted-foreground border-border/60",
+                            )}>
+                              {icon}
+                              {TOOL_LABELS[tc] ?? tc}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 
