@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import express from "express";
 import { db, invoicesTable, quotationsTable, customersTable, stockItemsTable, settingsTable } from "@workspace/db";
-import { eq, and, ilike, or, desc } from "drizzle-orm";
+import { eq, and, ilike, or, desc, SQL } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { speechToText, ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { nextDocNumber } from "../lib/running-numbers.js";
@@ -130,6 +130,22 @@ const AGENT_TOOLS = [
   },
 ] as const;
 
+/** Split a query into individual word tokens, stripping special chars, for OR-fuzzy matching */
+function queryTokens(raw: string): string[] {
+  const full = raw.trim();
+  const words = full.replace(/[^a-zA-Z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  // dedupe and include the original for exact-substring matching too
+  const all = [...new Set([full, ...words])].filter(s => s.length > 0);
+  return all;
+}
+
+/** Build an OR condition matching any token against a column */
+function tokenOr(col: any, raw: string): SQL {
+  const tokens = queryTokens(raw);
+  const conds = tokens.map(t => ilike(col, `%${t}%`));
+  return conds.length === 1 ? conds[0] : or(...conds) as SQL;
+}
+
 async function executeTool(name: string, args: any, companyId: number, userId: number): Promise<any> {
   switch (name) {
     case "searchCustomers": {
@@ -147,11 +163,11 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
         .where(
           and(
             eq(customersTable.companyId, companyId),
-            ilike(customersTable.name, `%${args.query}%`),
             eq(customersTable.isActive, true),
+            tokenOr(customersTable.name, args.query),
           ),
         )
-        .limit(5);
+        .limit(8);
       return rows.length > 0 ? rows : { message: "No customers found matching that name." };
     }
 
@@ -175,13 +191,13 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
           and(
             eq(quotationsTable.companyId, companyId),
             or(
-              ilike(quotationsTable.qtNumber, `%${args.query}%`),
-              ilike(quotationsTable.customerName, `%${args.query}%`),
+              tokenOr(quotationsTable.qtNumber, args.query),
+              tokenOr(quotationsTable.customerName, args.query),
             ),
           ),
         )
         .orderBy(desc(quotationsTable.createdAt))
-        .limit(5);
+        .limit(8);
       return rows.length > 0 ? rows : { message: "No quotations found matching that search." };
     }
 
@@ -211,8 +227,8 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
             eq(stockItemsTable.companyId, companyId),
             eq(stockItemsTable.isActive, true),
             or(
-              ilike(stockItemsTable.name, `%${args.query}%`),
-              ilike(stockItemsTable.code, `%${args.query}%`),
+              tokenOr(stockItemsTable.name, args.query),
+              tokenOr(stockItemsTable.code, args.query),
             ),
           ),
         )
@@ -236,7 +252,7 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
       const taxAmount = taxableAmount * (Number(gstRate) / 100);
       const totalAmount = taxableAmount + taxAmount;
       const today = new Date().toISOString().split("T")[0];
-      const invNumber = await nextDocNumber("invoice", companyId);
+      const invNumber = await nextDocNumber("inv", companyId);
       const [inv] = await db
         .insert(invoicesTable)
         .values({
