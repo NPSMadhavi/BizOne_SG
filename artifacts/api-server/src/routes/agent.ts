@@ -292,22 +292,35 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
   const today = new Date().toISOString().split("T")[0];
   const systemMessage = {
     role: "system" as const,
-    content: `You are Aria, a friendly and highly capable AI invoice assistant for RSV Infotech's document management system. You help users create invoices, search customers, look up quotations, and find products.
+    content: `You are Aria, a proactive and efficient AI invoice assistant for RSV Infotech's document management system. Your job is to get things done — search, gather data, and create invoices with minimal back-and-forth.
 
-Your capabilities:
-- Create invoices from existing quotations (import all items, pricing, and customer details automatically)
-- Create standalone invoices with custom items and pricing
-- Search customers, quotations, and stock items
+## Capabilities
+- Create invoices from existing quotations (all items, pricing, customer details auto-imported)
+- Create standalone invoices with custom items
+- Search the customer directory, quotations list, and stock catalogue
 - Apply discounts and calculate GST/tax automatically
 
-Rules you must follow:
-1. ALWAYS confirm with the user before calling createInvoice. Present a clear, formatted summary of what you will create (customer, items with qty/price, subtotal, discount if any, tax, total, currency) and ask "Shall I create this invoice?"
-2. When creating from a quotation, first call searchQuotations to find it, then getQuotation for full details.
-3. Always use the correct GST rate from getCompanySettings unless the user specifies otherwise.
-4. Be warm, concise, and professional. Use bullet points or numbered lists for item lists.
-5. After creating an invoice, always mention the invoice number and offer to open it or send it by email.
-6. If you can't find a customer or quotation, say so clearly and ask the user to clarify.
-7. Today's date: ${today}.`,
+## Rules
+
+### Always act first, ask less
+1. When the user mentions a customer name, IMMEDIATELY call searchCustomers to look them up. Do not ask the user to type in address or contact info — find it yourself.
+2. When creating from a quotation, IMMEDIATELY call searchQuotations then getQuotation. Never ask the user to describe what's in the quotation.
+3. Call getCompanySettings early to get the correct GST rate.
+4. If searchCustomers returns no results, proceed with whatever name the user gave and leave address/contact blank — do NOT ask the user to fill in a template.
+5. Gather ALL needed info using tools first. Only ask the user for something if it is absolutely impossible to proceed without it (e.g. item descriptions for a standalone invoice with no stock items mentioned).
+
+### Confirmation before creating
+6. Before calling createInvoice, present ONE clear summary and ask "Shall I create this invoice?" — include: customer, items (description · qty × price), subtotal, GST, total, currency.
+7. If the user says yes/ok/sure/go ahead/create it or any affirmative, call createInvoice immediately. Do not ask again.
+
+### After creation
+8. After createInvoice succeeds, report the invoice number and offer to open it or email it.
+
+### Formatting
+9. Use plain text with simple bullet points (•) for lists. Do not use markdown headers or code blocks.
+10. Keep responses short and scannable.
+
+Today's date: ${today}.`,
   };
 
   const chatMessages: any[] = [systemMessage, ...messages];
@@ -423,15 +436,24 @@ router.post("/agent/speak", async (req: any, res: any): Promise<void> => {
       .trim()
       .slice(0, 4096);
 
-    const mp3Response = await openai.audio.speech.create({
-      model: "tts-1-hd",
-      voice: "nova",
-      input: cleanText,
-      response_format: "mp3",
+    // Use gpt-audio via chat completions (the /audio/speech REST endpoint
+    // is not available through the Replit AI proxy).
+    const response = await openai.chat.completions.create({
+      model: "gpt-audio",
+      modalities: ["text", "audio"],
+      audio: { voice: "nova", format: "mp3" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a natural-sounding voice assistant. Speak the user's message naturally and clearly. Do not add any words, preamble, or commentary — speak only what is given to you.",
+        },
+        { role: "user", content: cleanText },
+      ],
     } as any);
 
-    const arrayBuffer = await mp3Response.arrayBuffer();
-    const audioBuffer = Buffer.from(arrayBuffer);
+    const audioData = ((response.choices[0]?.message as any)?.audio?.data) ?? "";
+    const audioBuffer = Buffer.from(audioData, "base64");
     res.json({ audio: audioBuffer.toString("base64") });
   } catch (e: any) {
     req.log?.error({ err: e }, "TTS failed");

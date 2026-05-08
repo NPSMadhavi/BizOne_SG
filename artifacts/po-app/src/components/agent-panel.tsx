@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Send, Mic, MicOff, Volume2, Loader2, Sparkles, ExternalLink, Square } from "lucide-react";
+import { X, Send, Mic, Volume2, Loader2, Sparkles, ExternalLink, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 
@@ -10,6 +10,49 @@ interface Message {
   toolCalls?: string[];
   invNumber?: string;
   fromVoice?: boolean;
+}
+
+// Inline markdown renderer — handles **bold**, *italic*, and bullet lines
+function MarkdownText({ text, isUser }: { text: string; isUser: boolean }) {
+  const lines = text.split("\n");
+  return (
+    <div className="space-y-0.5">
+      {lines.map((line, li) => {
+        const isBullet = /^[\s]*[-•*]\s+/.test(line);
+        const content = isBullet ? line.replace(/^[\s]*[-•*]\s+/, "") : line;
+
+        const segments: React.ReactNode[] = [];
+        let key = 0;
+        // Parse **bold** and *italic* (bold first to avoid collision)
+        const pattern = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+        let lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(content)) !== null) {
+          if (match.index > lastIndex) {
+            segments.push(content.slice(lastIndex, match.index));
+          }
+          if (match[0].startsWith("**")) {
+            segments.push(<strong key={key++} className="font-semibold">{match[2]}</strong>);
+          } else {
+            segments.push(<em key={key++}>{match[3]}</em>);
+          }
+          lastIndex = pattern.lastIndex;
+        }
+        if (lastIndex < content.length) segments.push(content.slice(lastIndex));
+
+        if (!line.trim()) return <div key={li} className="h-1.5" />;
+        if (isBullet) {
+          return (
+            <div key={li} className="flex gap-1.5 items-baseline">
+              <span className={cn("shrink-0 mt-[3px] w-1 h-1 rounded-full", isUser ? "bg-primary-foreground/70" : "bg-foreground/40")} />
+              <span>{segments}</span>
+            </div>
+          );
+        }
+        return <div key={li}>{segments.length ? segments : line}</div>;
+      })}
+    </div>
+  );
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -359,13 +402,13 @@ export function AgentPanel() {
             {(msg.content || msg.id === "welcome") && (
               <div
                 className={cn(
-                  "max-w-[88%] px-3.5 py-2.5 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed",
+                  "max-w-[88%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed",
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground rounded-br-sm"
                     : "bg-muted text-foreground rounded-bl-sm",
                 )}
               >
-                {msg.content}
+                <MarkdownText text={msg.content} isUser={msg.role === "user"} />
                 {msg.invNumber && (
                   <button
                     onClick={() => { navigate("/invoices"); setOpen(false); }}
