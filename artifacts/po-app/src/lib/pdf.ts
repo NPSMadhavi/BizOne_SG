@@ -473,6 +473,11 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)),
   ]);
 
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const footerReserve = 20; // space kept clear at page bottom for footer text
+  const totalsBlockH = 28; // subtotal + tax + rule + total ≈ 28 mm
+  const notesLineH = 5;
+
   autoTableRich(doc, {
     startY: 113,
     head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
@@ -486,21 +491,35 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
-    margin: { left: marginLeft, right: 14 },
+    margin: { left: marginLeft, right: 14, bottom: footerReserve + totalsBlockH + 10 },
   }, 2, poRichDesc);
 
-  const pageHeight = doc.internal.pageSize.getHeight();
+  let currentY = (doc as any).lastAutoTable.finalY + 8;
+
+  // Notes — check if they fit on this page; if not, new page
   if (po.notes) {
-    const notesY = (doc as any).lastAutoTable.finalY + 8;
+    const noteLines = doc.splitTextToSize(po.notes, 120);
+    const notesH = 8 + noteLines.length * notesLineH;
+    if (currentY + notesH + totalsBlockH + footerReserve > pageHeight) {
+      doc.addPage();
+      currentY = 20;
+    }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, notesY);
+    doc.text("Notes:", marginLeft, currentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(doc.splitTextToSize(po.notes, 120), marginLeft, notesY + 6);
+    doc.text(noteLines, marginLeft, currentY + 6);
+    currentY += notesH + 4;
+  }
+
+  // Totals — if they don't fit on this page, push to a new page
+  if (currentY + totalsBlockH + footerReserve > pageHeight) {
+    doc.addPage();
+    currentY = 20;
   }
 
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = pageHeight - 47;
+  const totalsY = currentY;
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
@@ -647,6 +666,10 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     return row;
   });
 
+  const qtFooterReserve = 20;
+  const qtExtraRows = qtDocDiscount > 0 ? 1 : 0;
+  const qtBoxH = (3 + qtExtraRows) * 7 + 16;
+
   autoTableRich(doc, {
     startY: 107,
     head: [qtHeaders],
@@ -664,27 +687,31 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
-    margin: { left: marginLeft, right: 14 },
+    margin: { left: marginLeft, right: 14, bottom: qtFooterReserve + qtBoxH + 10 },
   }, 2, qtRichDesc);
 
+  let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
+
   if (qt.notes) {
-    const notesY = (doc as any).lastAutoTable.finalY + 8;
+    const noteLines = doc.splitTextToSize(qt.notes, 120);
+    const notesH = 8 + noteLines.length * 5;
+    if (qtCurrentY + notesH + qtBoxH + qtFooterReserve > pageHeight) { doc.addPage(); qtCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, notesY);
+    doc.text("Notes:", marginLeft, qtCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(doc.splitTextToSize(qt.notes, 120), marginLeft, notesY + 6);
+    doc.text(noteLines, marginLeft, qtCurrentY + 6);
+    qtCurrentY += notesH + 4;
   }
 
+  if (qtCurrentY + qtBoxH + qtFooterReserve > pageHeight) { doc.addPage(); qtCurrentY = 20; }
 
-  // ── Totals (right side, bottom) ─────────────────────────────────────────────
+  // ── Totals ───────────────────────────────────────────────────────────────────
   const labelX = 146;
   const valueX = marginRight - 4;
-  const extraRows = qtDocDiscount > 0 ? 1 : 0;
-  const boxH = (3 + extraRows) * 7 + 10;
-  const totalsY = pageHeight - 12 - boxH;
+  const totalsY = qtCurrentY;
 
   doc.setFillColor(244, 246, 250);
-  doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, boxH, 2, 2, "F");
+  doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, qtBoxH, 2, 2, "F");
 
   let ty = totalsY;
   doc.setFontSize(9.5); doc.setTextColor(60, 60, 60); doc.setFont(PDF_FONT, "normal");
@@ -755,6 +782,10 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     return row;
   });
 
+  const invFooterReserve = 20;
+  const invExtraRows = invDocDiscount > 0 ? 1 : 0;
+  const invBoxH = (3 + invExtraRows) * 7 + 16;
+
   autoTableRich(doc, {
     startY: 107,
     head: [invHeaders],
@@ -772,24 +803,28 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
-    margin: { left: marginLeft, right: 14 },
+    margin: { left: marginLeft, right: 14, bottom: invFooterReserve + invBoxH + 10 },
   }, 2, invRichDesc);
 
+  let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
+
   if (inv.notes) {
-    const notesY = (doc as any).lastAutoTable.finalY + 8;
+    const noteLines = doc.splitTextToSize(inv.notes, 120);
+    const notesH = 8 + noteLines.length * 5;
+    if (invCurrentY + notesH + invBoxH + invFooterReserve > pageHeight) { doc.addPage(); invCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, notesY);
+    doc.text("Notes:", marginLeft, invCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(doc.splitTextToSize(inv.notes, 120), marginLeft, notesY + 6);
+    doc.text(noteLines, marginLeft, invCurrentY + 6);
+    invCurrentY += notesH + 4;
   }
 
+  if (invCurrentY + invBoxH + invFooterReserve > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
-  // ── Totals (right side, bottom) ─────────────────────────────────────────────
+  // ── Totals ───────────────────────────────────────────────────────────────────
   const labelX = 146;
   const valueX = marginRight - 4;
-  const invExtraRows = invDocDiscount > 0 ? 1 : 0;
-  const invBoxH = (3 + invExtraRows) * 7 + 10;
-  const totalsY = pageHeight - 12 - invBoxH;
+  const totalsY = invCurrentY;
 
   doc.setFillColor(244, 246, 250);
   doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, invBoxH, 2, 2, "F");
