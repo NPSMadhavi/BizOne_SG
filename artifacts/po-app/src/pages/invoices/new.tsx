@@ -592,8 +592,13 @@ export default function InvoiceNew() {
           selectedSerialIds.forEach(id => allReservedIds.current.add(id));
           releaseSerials(toRelease);
           reserveSerials(selectedSerialIds);
+          const serialRows: string[] = [];
+          for (let i = 0; i < selectedSerials.length; i += 3) {
+            serialRows.push(selectedSerials.slice(i, i + 3).join("&nbsp;&nbsp;&nbsp;"));
+          }
+          const serialHtml = serialRows.map((row) => `<p>${row}</p>`).join("");
           const desc = selectedSerials.length > 0
-            ? `<p>${item.name}</p><p><strong>Serial Numbers: ${selectedSerials.join(", ")}</strong></p>`
+            ? `<p>${item.name}</p><p><strong>Serial Numbers:</strong></p>${serialHtml}`
             : `<p>${item.name}</p>`;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, desc);

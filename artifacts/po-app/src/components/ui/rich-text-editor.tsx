@@ -14,7 +14,22 @@ import {
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
-export function htmlToText(html: string): string {
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function cleanWordHtml(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\/?(o|w|m):[^>]*>/gi, "")
+    .replace(/<o:[^>]*>[\s\S]*?<\/o:[^>]*>/gi, "")
+    .replace(/<w:[^>]*>[\s\S]*?<\/w:[^>]*>/gi, "")
+    .replace(/\s+class="[^"]*Mso[^"]*"/gi, "")
+    .replace(/\s+style="[^"]*mso-[^"]*"/gi, "")
+    .replace(/<span[^>]*>\s*<\/span>/gi, "");
+}
+
+function htmlToText(html: string): string {
   if (!html) return "";
   return html
     .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
@@ -56,6 +71,7 @@ export function RichTextEditor({
   className,
 }: RichTextEditorProps) {
   const isUpdatingRef = useRef(false);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
 
   const editor = useEditor({
     extensions: [
@@ -76,8 +92,37 @@ export function RichTextEditor({
         class:
           "min-h-[60px] max-h-[200px] overflow-y-auto px-2.5 py-2 text-sm focus:outline-none [&_p]:my-0 [&_ul]:my-1 [&_ol]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_ul]:list-disc [&_ol]:list-decimal [&_li]:my-0",
       },
+      transformPastedHTML(html) {
+        return cleanWordHtml(html);
+      },
+      handlePaste(_view, event) {
+        const clipboardData = event.clipboardData;
+        if (!clipboardData) return false;
+
+        const htmlData = clipboardData.getData("text/html");
+        if (htmlData) {
+          return false;
+        }
+
+        const textData = clipboardData.getData("text/plain");
+        if (!textData || !textData.includes("\n")) return false;
+
+        event.preventDefault();
+        const lines = textData.split("\n");
+        const html = lines
+          .map((line) => `<p>${escapeHtml(line) || "<br>"}</p>`)
+          .join("");
+        editorRef.current?.commands.insertContent(html, {
+          parseOptions: { preserveWhitespace: true },
+        });
+        return true;
+      },
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     if (!editor || isUpdatingRef.current) return;
