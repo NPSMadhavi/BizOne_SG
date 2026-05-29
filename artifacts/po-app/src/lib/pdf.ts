@@ -76,8 +76,39 @@ function getLogoUrl(company: Company | null | undefined): string {
   return logoNetopsysUrl;
 }
 
+function tableHtmlToText(html: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const rows = Array.from(doc.querySelectorAll("tr"));
+  return rows
+    .map((row) =>
+      Array.from(row.querySelectorAll("td, th"))
+        .map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .join("   ")
+    )
+    .filter((line) => line.trim())
+    .join("\n");
+}
+
 function htmlToText(html: string): string {
   if (!html) return "";
+  if (/<table/i.test(html)) {
+    const parts: string[] = [];
+    let remaining = html;
+    const tableRe = /<table[\s\S]*?<\/table>/gi;
+    let match: RegExpExecArray | null;
+    let lastIdx = 0;
+    while ((match = tableRe.exec(html)) !== null) {
+      const before = html.slice(lastIdx, match.index);
+      if (before.trim()) parts.push(htmlToText(before));
+      parts.push(tableHtmlToText(match[0]));
+      lastIdx = match.index + match[0].length;
+    }
+    const after = html.slice(lastIdx);
+    if (after.trim()) parts.push(htmlToText(after));
+    return parts.filter(Boolean).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
   return html
     .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
       let n = 0;
@@ -101,6 +132,26 @@ interface RichLine { text: string; bold: boolean; italic: boolean; }
 
 function htmlToRichLines(html: string): RichLine[] {
   if (!html) return [];
+
+  if (/<table/i.test(html)) {
+    const result: RichLine[] = [];
+    const tableRe = /<table[\s\S]*?<\/table>/gi;
+    let match: RegExpExecArray | null;
+    let lastIdx = 0;
+    while ((match = tableRe.exec(html)) !== null) {
+      const before = html.slice(lastIdx, match.index);
+      if (before.trim()) result.push(...htmlToRichLines(before));
+      const tableText = tableHtmlToText(match[0]);
+      for (const line of tableText.split("\n")) {
+        if (line.trim()) result.push({ text: line, bold: false, italic: false });
+      }
+      lastIdx = match.index + match[0].length;
+    }
+    const after = html.slice(lastIdx);
+    if (after.trim()) result.push(...htmlToRichLines(after));
+    return result;
+  }
+
   const preprocessed = html.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
     let n = 0;
     return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);

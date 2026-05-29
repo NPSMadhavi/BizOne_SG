@@ -2,6 +2,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { Underline } from "@tiptap/extension-underline";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
+import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { Bold, Italic, UnderlineIcon, List, ListOrdered } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import {
@@ -29,25 +30,11 @@ function cleanWordHtml(html: string): string {
     .replace(/<span[^>]*>\s*<\/span>/gi, "");
 }
 
-function htmlToText(html: string): string {
-  if (!html) return "";
-  return html
-    .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
-      let n = 0;
-      return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);
-    })
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<li data-n="(\d+)">/gi, (_, n) => `${n}. `)
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function buildTableHtml(rows: string[][]): string {
+  const trs = rows
+    .map((cells) => `<tr>${cells.map((c) => `<td><p>${escapeHtml(c)}</p></td>`).join("")}</tr>`)
+    .join("");
+  return `<table><tbody>${trs}</tbody></table>`;
 }
 
 const FONT_SIZES = [
@@ -79,6 +66,10 @@ export function RichTextEditor({
       Underline,
       TextStyle,
       FontSize,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: value || "",
     onUpdate({ editor }) {
@@ -89,8 +80,16 @@ export function RichTextEditor({
     },
     editorProps: {
       attributes: {
-        class:
-          "min-h-[60px] max-h-[200px] overflow-y-auto px-2.5 py-2 text-sm focus:outline-none [&_p]:my-0 [&_ul]:my-1 [&_ol]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_ul]:list-disc [&_ol]:list-decimal [&_li]:my-0",
+        class: [
+          "min-h-[60px] max-h-[200px] overflow-y-auto px-2.5 py-2 text-sm focus:outline-none",
+          "[&_p]:my-0",
+          "[&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc",
+          "[&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal",
+          "[&_li]:my-0",
+          "[&_table]:border-collapse [&_table]:my-1 [&_table]:w-full",
+          "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_td_p]:my-0",
+          "[&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted [&_th]:font-semibold [&_th_p]:my-0",
+        ].join(" "),
       },
       transformPastedHTML(html) {
         return cleanWordHtml(html);
@@ -107,19 +106,12 @@ export function RichTextEditor({
           const doc = parser.parseFromString(cleanWordHtml(htmlData), "text/html");
           const rows = Array.from(doc.querySelectorAll("tr"));
           if (rows.length > 0) {
-            const lines = rows
-              .map((row) => {
-                const cells = Array.from(row.querySelectorAll("td, th"));
-                return cells
-                  .map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim())
-                  .filter(Boolean)
-                  .join("   ");
-              })
-              .filter((line) => line.trim());
-            const html = lines
-              .map((line) => `<p>${escapeHtml(line)}</p>`)
-              .join("");
-            editorRef.current?.commands.insertContent(html, {
+            const grid = rows.map((row) =>
+              Array.from(row.querySelectorAll("td, th")).map(
+                (c) => (c.textContent ?? "").replace(/\s+/g, " ").trim()
+              )
+            );
+            editorRef.current?.commands.insertContent(buildTableHtml(grid), {
               parseOptions: { preserveWhitespace: true },
             });
             return true;
@@ -138,19 +130,24 @@ export function RichTextEditor({
         if (!hasNewlines && !hasTabs) return false;
 
         event.preventDefault();
-        const lines = textData.split("\n");
-        const html = lines
-          .map((line) => {
-            const cols = line.split("\t");
-            const joined = cols.length > 1
-              ? cols.map((c) => c.trim()).filter(Boolean).join("   ")
-              : line;
-            return `<p>${escapeHtml(joined) || "<br>"}</p>`;
-          })
-          .join("");
-        editorRef.current?.commands.insertContent(html, {
-          parseOptions: { preserveWhitespace: true },
-        });
+
+        if (hasTabs) {
+          const rows = textData
+            .split("\n")
+            .map((line) => line.split("\t").map((c) => c.trim()))
+            .filter((cells) => cells.some((c) => c));
+          editorRef.current?.commands.insertContent(buildTableHtml(rows), {
+            parseOptions: { preserveWhitespace: true },
+          });
+        } else {
+          const lines = textData.split("\n");
+          const html = lines
+            .map((line) => `<p>${escapeHtml(line) || "<br>"}</p>`)
+            .join("");
+          editorRef.current?.commands.insertContent(html, {
+            parseOptions: { preserveWhitespace: true },
+          });
+        }
         return true;
       },
     },
