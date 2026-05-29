@@ -100,17 +100,53 @@ export function RichTextEditor({
         if (!clipboardData) return false;
 
         const htmlData = clipboardData.getData("text/html");
+
+        if (htmlData && /<table/i.test(htmlData)) {
+          event.preventDefault();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(cleanWordHtml(htmlData), "text/html");
+          const rows = Array.from(doc.querySelectorAll("tr"));
+          if (rows.length > 0) {
+            const lines = rows
+              .map((row) => {
+                const cells = Array.from(row.querySelectorAll("td, th"));
+                return cells
+                  .map((c) => (c.textContent ?? "").replace(/\s+/g, " ").trim())
+                  .filter(Boolean)
+                  .join("   ");
+              })
+              .filter((line) => line.trim());
+            const html = lines
+              .map((line) => `<p>${escapeHtml(line)}</p>`)
+              .join("");
+            editorRef.current?.commands.insertContent(html, {
+              parseOptions: { preserveWhitespace: true },
+            });
+            return true;
+          }
+        }
+
         if (htmlData) {
           return false;
         }
 
         const textData = clipboardData.getData("text/plain");
-        if (!textData || !textData.includes("\n")) return false;
+        if (!textData) return false;
+
+        const hasNewlines = textData.includes("\n");
+        const hasTabs = textData.includes("\t");
+        if (!hasNewlines && !hasTabs) return false;
 
         event.preventDefault();
         const lines = textData.split("\n");
         const html = lines
-          .map((line) => `<p>${escapeHtml(line) || "<br>"}</p>`)
+          .map((line) => {
+            const cols = line.split("\t");
+            const joined = cols.length > 1
+              ? cols.map((c) => c.trim()).filter(Boolean).join("   ")
+              : line;
+            return `<p>${escapeHtml(joined) || "<br>"}</p>`;
+          })
           .join("");
         editorRef.current?.commands.insertContent(html, {
           parseOptions: { preserveWhitespace: true },
