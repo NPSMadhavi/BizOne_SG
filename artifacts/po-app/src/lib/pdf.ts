@@ -128,7 +128,7 @@ function htmlToText(html: string): string {
     .trim();
 }
 
-interface RichLine { text: string; bold: boolean; italic: boolean; }
+interface RichLine { text: string; bold: boolean; italic: boolean; cols?: string[]; }
 
 function htmlToRichLines(html: string): RichLine[] {
   if (!html) return [];
@@ -141,9 +141,15 @@ function htmlToRichLines(html: string): RichLine[] {
     while ((match = tableRe.exec(html)) !== null) {
       const before = html.slice(lastIdx, match.index);
       if (before.trim()) result.push(...htmlToRichLines(before));
-      const tableText = tableHtmlToText(match[0]);
-      for (const line of tableText.split("\n")) {
-        if (line.trim()) result.push({ text: line, bold: false, italic: false });
+      const parser = new DOMParser();
+      const tdoc = parser.parseFromString(match[0], "text/html");
+      for (const row of Array.from(tdoc.querySelectorAll("tr"))) {
+        const cells = Array.from(row.querySelectorAll("td, th")).map(
+          (c) => (c.textContent ?? "").replace(/\s+/g, " ").trim()
+        );
+        if (cells.some((c) => c)) {
+          result.push({ text: cells.join("   "), bold: false, italic: false, cols: cells });
+        }
       }
       lastIdx = match.index + match[0].length;
     }
@@ -206,15 +212,70 @@ function autoTableRich(
       const padding = 4;
       const x = cell.x + padding;
       const maxW = cell.width - padding * 2;
-      let ty = cell.y + padding + 3.35;
+      const LINE_H = 4.5;
+      const BASELINE_OFFSET = 3.35;
       jdoc.setFontSize(9.5);
-      for (const { text, bold, italic } of richLines) {
-        const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
-        jdoc.setFont(PDF_FONT, style);
+
+      // Build a rendering plan: calculate each line's baseline y
+      type Plan = { y: number; richLine: RichLine };
+      const plan: Plan[] = [];
+      let ty = cell.y + padding + BASELINE_OFFSET;
+      for (const rl of richLines) {
+        plan.push({ y: ty, richLine: rl });
+        if (rl.cols) {
+          ty += LINE_H;
+        } else {
+          jdoc.setFont(PDF_FONT, "normal");
+          const wrapped = jdoc.splitTextToSize(rl.text || " ", maxW);
+          ty += wrapped.length * LINE_H;
+        }
+      }
+
+      // Render text pass
+      for (const { y, richLine } of plan) {
+        const { text, bold, italic, cols } = richLine;
         jdoc.setTextColor(60, 60, 60);
-        const wrapped = jdoc.splitTextToSize(text, maxW);
-        jdoc.text(wrapped, x, ty);
-        ty += wrapped.length * 4.5;
+        if (cols && cols.length > 0) {
+          const colW = maxW / cols.length;
+          jdoc.setFont(PDF_FONT, "normal");
+          cols.forEach((col, ci) => {
+            const colText = jdoc.splitTextToSize(col, colW - 3);
+            jdoc.text(colText[0] ?? "", x + ci * colW + 2, y);
+          });
+        } else {
+          const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
+          jdoc.setFont(PDF_FONT, style);
+          const wrapped = jdoc.splitTextToSize(text || " ", maxW);
+          jdoc.text(wrapped, x, y);
+        }
+      }
+
+      // Border pass: group consecutive cols rows and draw grid
+      jdoc.setDrawColor(160, 160, 160);
+      jdoc.setLineWidth(0.3);
+      let groupStart = -1;
+      for (let i = 0; i <= plan.length; i++) {
+        const isCol = i < plan.length && plan[i].richLine.cols && plan[i].richLine.cols!.length > 0;
+        if (isCol && groupStart === -1) { groupStart = i; }
+        if (!isCol && groupStart !== -1) {
+          const group = plan.slice(groupStart, i);
+          const numCols = group[0].richLine.cols!.length;
+          const colW = maxW / numCols;
+          const topY = group[0].y - BASELINE_OFFSET;
+          const botY = group[group.length - 1].y - BASELINE_OFFSET + LINE_H;
+          // Outer rect
+          jdoc.rect(x, topY, maxW, botY - topY);
+          // Vertical column lines
+          for (let ci = 1; ci < numCols; ci++) {
+            jdoc.line(x + ci * colW, topY, x + ci * colW, botY);
+          }
+          // Horizontal row separators
+          for (let ri = 0; ri < group.length - 1; ri++) {
+            const rowBotY = group[ri].y - BASELINE_OFFSET + LINE_H;
+            jdoc.line(x, rowBotY, x + maxW, rowBotY);
+          }
+          groupStart = -1;
+        }
       }
     },
   });
