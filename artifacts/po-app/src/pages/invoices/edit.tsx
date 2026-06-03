@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -186,7 +186,7 @@ export default function InvoiceEdit() {
     }
   }, [doc]);
 
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
+  const { fields, append, remove, insert } = useFieldArray({ control: form.control, name: "items" });
   const updateMutation = useUpdateInvoice();
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
@@ -452,34 +452,52 @@ export default function InvoiceEdit() {
                   <tbody>
                     {fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
+                      const insertBar = (
+                        <tr className="group/ins border-0">
+                          <td colSpan={9} className="p-0 h-2 overflow-visible">
+                            <div className="flex items-center opacity-0 group-hover/ins:opacity-100 transition-opacity">
+                              <div className="h-px flex-1 bg-primary/30" />
+                              <button type="button" onClick={() => insert(index, { type: "section" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })} className="mx-2 flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary bg-background border border-primary/20 rounded px-1.5 leading-5 whitespace-nowrap">
+                                <Layers className="h-2.5 w-2.5" /> insert section
+                              </button>
+                              <div className="h-px flex-1 bg-primary/30" />
+                            </div>
+                          </td>
+                        </tr>
+                      );
                       if (itemType === "section") {
                         return (
-                          <tr key={field.id} className="border-b bg-muted/40">
-                            <td colSpan={8} className="px-4 py-2">
-                              <div className="flex items-center gap-2">
-                                <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                <div className="h-px flex-1 bg-border" />
-                                <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
-                                  <FormItem><FormControl>
-                                    <Input className="h-7 w-52 text-sm font-semibold border-dashed text-center" placeholder="Section Header" {...f} />
-                                  </FormControl></FormItem>
-                                )} />
-                                <div className="h-px flex-1 bg-border" />
-                              </div>
-                            </td>
-                            <td className="px-4 py-2">
-                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </td>
-                          </tr>
+                          <Fragment key={field.id}>
+                            {insertBar}
+                            <tr className="border-b bg-muted/40">
+                              <td colSpan={8} className="px-4 py-2">
+                                <div className="flex items-center gap-2">
+                                  <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <div className="h-px flex-1 bg-border" />
+                                  <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
+                                    <FormItem><FormControl>
+                                      <Input className="h-7 w-52 text-sm font-semibold border-dashed text-center" placeholder="Section Header" {...f} />
+                                    </FormControl></FormItem>
+                                  )} />
+                                  <div className="h-px flex-1 bg-border" />
+                                </div>
+                              </td>
+                              <td className="px-4 py-2">
+                                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </td>
+                            </tr>
+                          </Fragment>
                         );
                       }
                       const qty = Number(form.watch(`items.${index}.qty`)) || 0;
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
                       const disc = Number(form.watch(`items.${index}.discount`)) || 0;
                       return (
-                        <tr key={field.id} className="border-b last:border-0 hover:bg-muted/20">
+                        <Fragment key={field.id}>
+                          {insertBar}
+                          <tr className="border-b last:border-0 hover:bg-muted/20">
                           <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
                           <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                             <FormItem><FormControl>
@@ -537,6 +555,7 @@ export default function InvoiceEdit() {
                             </Button>
                           )}</td>
                         </tr>
+                        </Fragment>
                       );
                     })}
                   </tbody>
