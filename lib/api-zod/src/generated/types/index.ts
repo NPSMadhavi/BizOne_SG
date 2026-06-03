@@ -23,6 +23,7 @@ export * from "./createUserBodyRole";
 export * from "./deliveryOrder";
 export * from "./deliveryOrderStatus";
 export * from "./docItem";
+export * from "./docItemSectionAlign";
 export * from "./docItemType";
 export * from "./docStats";
 export * from "./dOItem";

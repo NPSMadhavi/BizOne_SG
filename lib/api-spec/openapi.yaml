@@ -1233,6 +1233,9 @@ components:
           enum: [item, section]
         sectionLabel:
           type: string
+        sectionAlign:
+          type: string
+          enum: [left, center]
         itemPartNumber:
           type: string
         description:

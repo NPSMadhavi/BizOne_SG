@@ -281,9 +281,18 @@ export const DocItemType = {
   section: "section",
 } as const;
 
+export type DocItemSectionAlign =
+  (typeof DocItemSectionAlign)[keyof typeof DocItemSectionAlign];
+
+export const DocItemSectionAlign = {
+  left: "left",
+  center: "center",
+} as const;
+
 export interface DocItem {
   type?: DocItemType;
   sectionLabel?: string;
+  sectionAlign?: DocItemSectionAlign;
   itemPartNumber?: string;
   description: string;
   qty: string;

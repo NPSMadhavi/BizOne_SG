@@ -5,11 +5,13 @@
  * API specification for RSV Infotech PO Generator
  * OpenAPI spec version: 0.1.0
  */
+import type { DocItemSectionAlign } from "./docItemSectionAlign";
 import type { DocItemType } from "./docItemType";
 
 export interface DocItem {
   type?: DocItemType;
   sectionLabel?: string;
+  sectionAlign?: DocItemSectionAlign;
   itemPartNumber?: string;
   description: string;
   qty: string;

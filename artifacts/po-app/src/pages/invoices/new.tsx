@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Package, Plus, Layers } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
@@ -29,6 +30,7 @@ import { useAuth } from "@/contexts/auth-context";
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
   sectionLabel: z.string().default(""),
+  sectionAlign: z.enum(["left", "center"]).default("left"),
   partNumber: z.string(),
   description: z.string(),
   qty: z.coerce.number().min(0).default(1),
@@ -245,7 +247,7 @@ export default function InvoiceNew() {
       return;
     }
     const itemsWithAmount = filledItems.map(i => {
-      if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "" };
+      if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left" };
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
@@ -465,22 +467,29 @@ export default function InvoiceNew() {
                           <Fragment key={field.id}>
                             {insertBar}
                             <tr className="border-b bg-muted/40">
-                              <td colSpan={8} className="px-4 py-2">
-                                <div className="flex items-center gap-2">
-                                  <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  <div className="h-px flex-1 bg-border" />
-                                  <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
-                                    <FormItem><FormControl>
-                                      <Input className="h-7 w-52 text-sm font-semibold border-dashed text-center" placeholder="Section Header" {...f} />
-                                    </FormControl></FormItem>
-                                  )} />
-                                  <div className="h-px flex-1 bg-border" />
+                              <td colSpan={9} className="px-4 py-2">
+                                <div className="flex items-start gap-2">
+                                  <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
+                                  <div className="flex-1 min-w-0">
+                                    <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
+                                      <FormItem><FormControl>
+                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                      </FormControl></FormItem>
+                                    )} />
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0 mt-1">
+                                    <FormField control={form.control} name={`items.${index}.sectionAlign`} render={({ field: f }) => (
+                                      <FormItem><FormControl>
+                                        <Button type="button" variant="ghost" size="icon" title={f.value === "center" ? "Switch to left-align" : "Switch to center-align"} className={cn("h-7 w-7", f.value === "center" ? "text-primary bg-primary/10" : "text-muted-foreground")} onClick={() => f.onChange(f.value === "center" ? "left" : "center")}>
+                                          {f.value === "center" ? <AlignCenter className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
+                                        </Button>
+                                      </FormControl></FormItem>
+                                    )} />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
                                 </div>
-                              </td>
-                              <td className="px-4 py-2">
-                                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
                               </td>
                             </tr>
                           </Fragment>

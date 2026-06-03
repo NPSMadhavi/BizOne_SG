@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2 } from "lucide-react";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -268,9 +268,7 @@ export default function InvoiceView() {
                   if (item.type === "section") {
                     return (
                       <tr key={i} className="bg-muted/40">
-                        <td colSpan={totalViewCols} className="px-6 py-2 font-semibold text-sm text-foreground">
-                          {item.sectionLabel || "Section"}
-                        </td>
+                        <td colSpan={totalViewCols} className={cn("px-6 py-2 font-semibold text-sm text-foreground prose prose-sm max-w-none [&_p]:my-0.5 [&_ul]:my-0.5 [&_ol]:my-0.5", item.sectionAlign === "center" ? "text-center" : "text-left")} dangerouslySetInnerHTML={{ __html: item.sectionLabel || "Section" }} />
                       </tr>
                     );
                   }

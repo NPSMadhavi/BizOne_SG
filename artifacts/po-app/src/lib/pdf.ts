@@ -912,7 +912,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const tableData = allInvItems.map((item: any) => {
     if (item.type === "section") {
       invRichDesc.push([]);
-      return [{ content: item.sectionLabel || "Section", colSpan: invTotalCols, styles: { fontStyle: "bold", fillColor: [235, 238, 244], textColor: [24, 33, 47] } }];
+      const sectionText = htmlToText(item.sectionLabel || "Section");
+      const halign = item.sectionAlign === "center" ? "center" : "left";
+      return [{ content: sectionText, colSpan: invTotalCols, styles: { fontStyle: "bold", fillColor: [235, 238, 244], textColor: [24, 33, 47], halign } }];
     }
     invItemCounter++;
     invRichDesc.push(htmlToRichLines(item.description));

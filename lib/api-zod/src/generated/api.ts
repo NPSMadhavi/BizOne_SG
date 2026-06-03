@@ -507,6 +507,7 @@ export const ListQuotationsResponseItem = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -543,6 +544,7 @@ export const CreateQuotationBody = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -590,6 +592,7 @@ export const GetQuotationResponse = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -630,6 +633,7 @@ export const UpdateQuotationBody = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -658,6 +662,7 @@ export const UpdateQuotationResponse = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -706,6 +711,7 @@ export const ListInvoicesResponseItem = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -746,6 +752,7 @@ export const CreateInvoiceBody = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -793,6 +800,7 @@ export const GetInvoiceResponse = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -837,6 +845,7 @@ export const UpdateInvoiceBody = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -865,6 +874,7 @@ export const UpdateInvoiceResponse = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -923,6 +933,7 @@ export const VoidInvoiceResponse = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -966,6 +977,7 @@ export const KnockOffInvoiceResponse = zod.object({
     zod.object({
       type: zod.enum(["item", "section"]).optional(),
       sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
