@@ -505,6 +505,8 @@ export const ListQuotationsResponseItem = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -539,6 +541,8 @@ export const CreateQuotationBody = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -584,6 +588,8 @@ export const GetQuotationResponse = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -622,6 +628,8 @@ export const UpdateQuotationBody = zod.object({
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -648,6 +656,8 @@ export const UpdateQuotationResponse = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -694,6 +704,8 @@ export const ListInvoicesResponseItem = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -705,6 +717,7 @@ export const ListInvoicesResponseItem = zod.object({
   tax: zod.string(),
   totalAmount: zod.string(),
   status: zod.enum(["draft", "confirmed", "cancelled", "void", "paid"]),
+  poRefNo: zod.string().optional(),
   voidReason: zod.string().optional(),
   createdBy: zod.number(),
   createdByUsername: zod.string().optional(),
@@ -721,14 +734,18 @@ export const CreateInvoiceBody = zod.object({
   customerContact: zod.string().optional(),
   customerContactEmail: zod.string().optional(),
   deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  poRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -774,6 +791,8 @@ export const GetInvoiceResponse = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -785,6 +804,7 @@ export const GetInvoiceResponse = zod.object({
   tax: zod.string(),
   totalAmount: zod.string(),
   status: zod.enum(["draft", "confirmed", "cancelled", "void", "paid"]),
+  poRefNo: zod.string().optional(),
   voidReason: zod.string().optional(),
   createdBy: zod.number(),
   createdByUsername: zod.string().optional(),
@@ -804,8 +824,10 @@ export const UpdateInvoiceBody = zod.object({
   customerContact: zod.string().optional(),
   customerContactEmail: zod.string().optional(),
   deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
   deliveryDate: zod.string().optional(),
   paymentTerms: zod.string().optional(),
+  poRefNo: zod.string().optional(),
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
@@ -813,6 +835,8 @@ export const UpdateInvoiceBody = zod.object({
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -839,6 +863,8 @@ export const UpdateInvoiceResponse = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -850,6 +876,7 @@ export const UpdateInvoiceResponse = zod.object({
   tax: zod.string(),
   totalAmount: zod.string(),
   status: zod.enum(["draft", "confirmed", "cancelled", "void", "paid"]),
+  poRefNo: zod.string().optional(),
   voidReason: zod.string().optional(),
   createdBy: zod.number(),
   createdByUsername: zod.string().optional(),
@@ -894,6 +921,8 @@ export const VoidInvoiceResponse = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -905,6 +934,7 @@ export const VoidInvoiceResponse = zod.object({
   tax: zod.string(),
   totalAmount: zod.string(),
   status: zod.enum(["draft", "confirmed", "cancelled", "void", "paid"]),
+  poRefNo: zod.string().optional(),
   voidReason: zod.string().optional(),
   createdBy: zod.number(),
   createdByUsername: zod.string().optional(),
@@ -934,6 +964,8 @@ export const KnockOffInvoiceResponse = zod.object({
   discountAmount: zod.number().optional(),
   items: zod.array(
     zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
       itemPartNumber: zod.string().optional(),
       description: zod.string(),
       qty: zod.string(),
@@ -945,6 +977,7 @@ export const KnockOffInvoiceResponse = zod.object({
   tax: zod.string(),
   totalAmount: zod.string(),
   status: zod.enum(["draft", "confirmed", "cancelled", "void", "paid"]),
+  poRefNo: zod.string().optional(),
   voidReason: zod.string().optional(),
   createdBy: zod.number(),
   createdByUsername: zod.string().optional(),

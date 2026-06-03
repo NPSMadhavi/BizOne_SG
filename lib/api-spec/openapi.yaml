@@ -1228,6 +1228,11 @@ components:
     DocItem:
       type: object
       properties:
+        type:
+          type: string
+          enum: [item, section]
+        sectionLabel:
+          type: string
         itemPartNumber:
           type: string
         description:
@@ -1404,6 +1409,8 @@ components:
         status:
           type: string
           enum: [draft, confirmed, cancelled, void, paid]
+        poRefNo:
+          type: string
         voidReason:
           type: string
         createdBy:
@@ -1427,9 +1434,13 @@ components:
           type: string
         deliveryAddress:
           type: string
+        issueDate:
+          type: string
         deliveryDate:
           type: string
         paymentTerms:
+          type: string
+        poRefNo:
           type: string
         notes:
           type: string
@@ -1463,9 +1474,13 @@ components:
           type: string
         deliveryAddress:
           type: string
+        issueDate:
+          type: string
         deliveryDate:
           type: string
         paymentTerms:
+          type: string
+        poRefNo:
           type: string
         notes:
           type: string

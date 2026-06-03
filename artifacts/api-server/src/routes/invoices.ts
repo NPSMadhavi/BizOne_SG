@@ -110,12 +110,12 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
-    currency, discountAmount, isPrivate, status,
+    currency, discountAmount, isPrivate, status, poRefNo,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
-  const subtotal = (items as any[]).reduce((s: number, item: any) => s + parseFloat(item.amount || "0"), 0);
+  const subtotal = (items as any[]).reduce((s: number, item: any) => item.type === "section" ? s : s + parseFloat(item.amount || "0"), 0);
   const docDiscount = Number(discountAmount) || 0;
   const taxableAmount = subtotal - docDiscount;
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
@@ -128,6 +128,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
     currency: currency || "SGD",
     isPrivate: isPrivate === true,
+    poRefNo: poRefNo || null,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
     totalAmount: totalAmount.toFixed(2), status: status || "draft", createdBy: req.session.userId!,
   }).returning();
@@ -184,10 +185,10 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
-    currency, discountAmount, isPrivate,
+    currency, discountAmount, isPrivate, poRefNo,
   } = req.body;
 
-  const subtotal = (items as any[]).reduce((s: number, item: any) => s + parseFloat(item.amount || "0"), 0);
+  const subtotal = (items as any[]).reduce((s: number, item: any) => item.type === "section" ? s : s + parseFloat(item.amount || "0"), 0);
   const docDiscount = Number(discountAmount) || 0;
   const taxableAmount = subtotal - docDiscount;
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
@@ -198,6 +199,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
+    poRefNo: poRefNo ?? null,
   };
   if (currency !== undefined) updateData.currency = currency;
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;

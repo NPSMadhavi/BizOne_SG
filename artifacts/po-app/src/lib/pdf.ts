@@ -872,27 +872,68 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
 
-  renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 160);
+  renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 85);
 
+  // Right column: Payment Terms + optional PO Ref No
+  const rightColX = 110;
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-  doc.text("Payment Terms:", marginLeft, 100);
+  doc.text("Payment Terms:", rightColX, 75);
   doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-  doc.text(inv.paymentTerms || "Standard", marginLeft + 33, 100);
+  doc.text(inv.paymentTerms || "Standard", marginRight, 75, { align: "right" });
+
+  const invPoRefNo = (inv as any).poRefNo;
+  if (invPoRefNo) {
+    doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
+    doc.text("PO Ref No:", rightColX, 83);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    doc.text(String(invPoRefNo), marginRight, 83, { align: "right" });
+  }
 
   const invCurrency = (inv as any).currency || "SGD";
   const invDocDiscount = Number((inv as any).discountAmount) || 0;
-  const hasInvItemDiscount = (inv.items as any[]).some(item => Number(item.discount) > 0);
+  const allInvItems = inv.items as any[];
+  const regularInvItems = allInvItems.filter(item => item.type !== "section");
+  const hasInvPartNo = regularInvItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
+  const hasInvItemDiscount = regularInvItems.some(item => Number(item.discount) > 0);
+
+  // Total columns for section row colSpan
+  const invTotalCols = 5 + (hasInvPartNo ? 1 : 0) + (hasInvItemDiscount ? 1 : 0);
+
   const invHeaders = hasInvItemDiscount
-    ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
-    : ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"];
-  const invRichDesc = (inv.items as any[]).map((item: any) => htmlToRichLines(item.description));
-  const tableData = (inv.items as any[]).map((item, i) => {
+    ? (hasInvPartNo
+        ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
+        : ["#", "Description", "Qty", "Unit Price", "Disc %", "Amount"])
+    : (hasInvPartNo
+        ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]
+        : ["#", "Description", "Qty", "Unit Price", "Amount"]);
+
+  const invRichDesc: RichLine[][] = [];
+  let invItemCounter = 0;
+  const tableData = allInvItems.map((item: any) => {
+    if (item.type === "section") {
+      invRichDesc.push([]);
+      return [{ content: item.sectionLabel || "Section", colSpan: invTotalCols, styles: { fontStyle: "bold", fillColor: [235, 238, 244], textColor: [24, 33, 47] } }];
+    }
+    invItemCounter++;
+    invRichDesc.push(htmlToRichLines(item.description));
     const disc = Number(item.discount) || 0;
-    const row = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty, fmtMoney(invCurrency, Number(item.unitPrice))];
+    const row: any[] = [invItemCounter];
+    if (hasInvPartNo) row.push(item.partNumber || "");
+    row.push(htmlToText(item.description), item.qty, fmtMoney(invCurrency, Number(item.unitPrice)));
     if (hasInvItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
     row.push(fmtMoney(invCurrency, Number(item.amount)));
     return row;
   });
+
+  const invDescColIdx = hasInvPartNo ? 2 : 1;
+
+  const invColumnStyles = hasInvItemDiscount
+    ? (hasInvPartNo
+        ? { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" }, 4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" } }
+        : { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 25, halign: "right" }, 4: { cellWidth: 16, halign: "right" }, 5: { cellWidth: 25, halign: "right" } })
+    : (hasInvPartNo
+        ? { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" } }
+        : { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 16, halign: "center" }, 3: { cellWidth: 27, halign: "right" }, 4: { cellWidth: 27, halign: "right" } });
 
   const invFooterReserve = 20;
   const invExtraRows = invDocDiscount > 0 ? 1 : 0;
@@ -906,17 +947,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: hasInvItemDiscount ? {
-      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 28 },
-      2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" },
-      4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" },
-    } : {
-      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 },
-      2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
-      4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
-    },
+    columnStyles: invColumnStyles,
     margin: { left: marginLeft, right: 14, bottom: invFooterReserve + invBoxH + 10 },
-  }, 2, invRichDesc);
+  }, invDescColIdx, invRichDesc);
 
   let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
 

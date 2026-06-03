@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Package } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
@@ -27,9 +27,11 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
+  type: z.enum(["item", "section"]).default("item"),
+  sectionLabel: z.string().default(""),
   partNumber: z.string(),
   description: z.string(),
-  qty: z.coerce.number().min(1, "Must be > 0"),
+  qty: z.coerce.number().min(0).default(1),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   discount: z.coerce.number().min(0).max(100).default(0),
   isStockItem: z.boolean().default(false),
@@ -54,6 +56,7 @@ const schema = z.object({
   issueDate: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
+  poRefNo: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
@@ -128,12 +131,12 @@ export default function InvoiceNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", poRefNo: "", notes: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
+      items: [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
     },
   });
 
@@ -146,7 +149,7 @@ export default function InvoiceNew() {
     const prefill = (window as any).__ariaPrefill;
     if (!prefill) return;
     (window as any).__ariaPrefill = null;
-    const blankItem = { partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
+    const blankItem = { type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
@@ -154,6 +157,7 @@ export default function InvoiceNew() {
       customerContactEmail: prefill.customerContactEmail || "",
       currency: prefill.currency || "SGD",
       paymentTerms: prefill.paymentTerms || "30 Days Net",
+      poRefNo: "",
       notes: prefill.notes || "",
       issueDate: getToday(),
       deliveryDate: "",
@@ -196,10 +200,11 @@ export default function InvoiceNew() {
         (!last.partNumber || String(last.partNumber).trim() === "") &&
         (!last.description || String(last.description).trim() === "") &&
         (Number(last.unitPrice) === 0) && (Number(last.qty) <= 1);
+      if ((last as any).type === "section") return;
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] });
+        append({ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -208,7 +213,7 @@ export default function InvoiceNew() {
 
   const currency = form.watch("currency") || "SGD";
 
-  const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+  const subtotal = items.reduce((s, i) => (i as any).type === "section" ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
   const taxAmount = taxableAmount * (taxPercent / 100);
@@ -228,17 +233,23 @@ export default function InvoiceNew() {
 
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
-    const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
-    if (filledItems.length === 0) {
+    const filledItems = values.items.filter(i =>
+      (i as any).type === "section"
+        ? ((i as any).sectionLabel || "").trim() !== ""
+        : i.partNumber.trim() !== "" || i.description.trim() !== ""
+    );
+    const realItems = filledItems.filter((i: any) => i.type !== "section");
+    if (realItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
       setIsSubmitting(false);
       return;
     }
     const itemsWithAmount = filledItems.map(i => {
+      if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "" };
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
+    createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {
@@ -365,6 +376,10 @@ export default function InvoiceNew() {
                   <FormItem><FormLabel>Payment Terms</FormLabel>
                     <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
+                <FormField control={form.control} name="poRefNo" render={({ field }) => (
+                  <FormItem><FormLabel>PO Reference No.</FormLabel>
+                    <FormControl><Input placeholder="e.g. PO-0001" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -384,7 +399,12 @@ export default function InvoiceNew() {
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Line Items</CardTitle>
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-lg">Line Items</CardTitle>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
+                    <Layers className="h-3 w-3" /> Add Section
+                  </Button>
+                </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-muted-foreground">Overseas / Export</span>
@@ -426,6 +446,30 @@ export default function InvoiceNew() {
                   </thead>
                   <tbody>
                     {fields.map((field, index) => {
+                      const itemType = form.watch(`items.${index}.type`);
+                      if (itemType === "section") {
+                        return (
+                          <tr key={field.id} className="border-b bg-muted/40">
+                            <td colSpan={8} className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <div className="h-px flex-1 bg-border" />
+                                <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
+                                  <FormItem><FormControl>
+                                    <Input className="h-7 w-52 text-sm font-semibold border-dashed text-center" placeholder="Section Header" {...f} />
+                                  </FormControl></FormItem>
+                                )} />
+                                <div className="h-px flex-1 bg-border" />
+                              </div>
+                            </td>
+                            <td className="px-4 py-2">
+                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      }
                       const qty = Number(form.watch(`items.${index}.qty`)) || 0;
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
                       const disc = Number(form.watch(`items.${index}.discount`)) || 0;

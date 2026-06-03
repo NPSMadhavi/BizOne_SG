@@ -14,8 +14,10 @@ export interface CreateInvoiceBody {
   customerContact?: string;
   customerContactEmail?: string;
   deliveryAddress?: string;
+  issueDate?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  poRefNo?: string;
   notes?: string;
   currency?: string;
   isPrivate?: boolean;

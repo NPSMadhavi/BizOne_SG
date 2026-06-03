@@ -1,0 +1,2 @@
+- [Invoice section rows + poRefNo](invoice-section-rows.md) — section items stored as `{type:"section",sectionLabel:"..."}` in JSONB; excluded from subtotal, doSubmit, auto-append
+- [Pre-existing TS errors in po-app](preexisting-ts-errors.md) — deliveryAddress setValue + form.handleSubmit(onSubmit) signature errors are pre-existing; don't investigate

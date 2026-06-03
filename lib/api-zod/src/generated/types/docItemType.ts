@@ -6,10 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UserRole = (typeof UserRole)[keyof typeof UserRole];
+export type DocItemType = (typeof DocItemType)[keyof typeof DocItemType];
 
-export const UserRole = {
-  admin: "admin",
-  user: "user",
-  external: "external",
+export const DocItemType = {
+  item: "item",
+  section: "section",
 } as const;

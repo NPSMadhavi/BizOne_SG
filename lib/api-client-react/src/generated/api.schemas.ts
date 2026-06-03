@@ -27,6 +27,7 @@ export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 export const UserRole = {
   admin: "admin",
   user: "user",
+  external: "external",
 } as const;
 
 /**
@@ -84,6 +85,7 @@ export type CreateUserBodyRole =
 export const CreateUserBodyRole = {
   admin: "admin",
   user: "user",
+  external: "external",
 } as const;
 
 export interface CreateUserBody {
@@ -99,6 +101,7 @@ export type UpdateUserBodyRole =
 export const UpdateUserBodyRole = {
   admin: "admin",
   user: "user",
+  external: "external",
 } as const;
 
 export interface UpdateUserBody {
@@ -271,7 +274,16 @@ export interface DocStats {
   totalValue: number;
 }
 
+export type DocItemType = (typeof DocItemType)[keyof typeof DocItemType];
+
+export const DocItemType = {
+  item: "item",
+  section: "section",
+} as const;
+
 export interface DocItem {
+  type?: DocItemType;
+  sectionLabel?: string;
   itemPartNumber?: string;
   description: string;
   qty: string;
@@ -393,6 +405,7 @@ export interface Invoice {
   tax: string;
   totalAmount: string;
   status: InvoiceStatus;
+  poRefNo?: string;
   voidReason?: string;
   createdBy: number;
   createdByUsername?: string;
@@ -414,8 +427,10 @@ export interface CreateInvoiceBody {
   customerContact?: string;
   customerContactEmail?: string;
   deliveryAddress?: string;
+  issueDate?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  poRefNo?: string;
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
@@ -440,8 +455,10 @@ export interface UpdateInvoiceBody {
   customerContact?: string;
   customerContactEmail?: string;
   deliveryAddress?: string;
+  issueDate?: string;
   deliveryDate?: string;
   paymentTerms?: string;
+  poRefNo?: string;
   notes?: string;
   currency?: string;
   isPrivate?: boolean;

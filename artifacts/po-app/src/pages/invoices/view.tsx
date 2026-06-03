@@ -93,7 +93,10 @@ export default function InvoiceView() {
   const tax = Number(doc.tax) || 0;
   const total = Number(doc.totalAmount) || 0;
   const discountAmt = Number((doc as any).discountAmount) || 0;
-  const hasItemDiscount = items.some((item: any) => Number(item.discount) > 0);
+  const regularItems = items.filter((item: any) => item.type !== "section");
+  const hasItemDiscount = regularItems.some((item: any) => Number(item.discount) > 0);
+  const hasPartNo = regularItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
+  const totalViewCols = 3 + (hasPartNo ? 1 : 0) + (hasItemDiscount ? 1 : 0) + 2;
   const isVoided = doc.status === "void";
   const isPaid = doc.status === "paid";
   const canVoid = !isVoided && !isPaid;
@@ -237,6 +240,7 @@ export default function InvoiceView() {
           <CardHeader><CardTitle className="text-base">Invoice Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             {doc.paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{doc.paymentTerms}</span></div>}
+            {(doc as any).poRefNo && <div className="flex justify-between"><span className="text-muted-foreground">PO Reference</span><span className="font-mono">{(doc as any).poRefNo}</span></div>}
             {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
             {doc.notes && <div><span className="text-muted-foreground">Notes:</span><p className="mt-0.5 whitespace-pre-line">{doc.notes}</p></div>}
           </CardContent>
@@ -249,7 +253,7 @@ export default function InvoiceView() {
             <thead className="bg-muted/50 border-b text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="px-6 py-3 text-left w-8">#</th>
-                <th className="px-6 py-3 text-left">Item / Part Number</th>
+                {hasPartNo && <th className="px-6 py-3 text-left">Item / Part Number</th>}
                 <th className="px-6 py-3 text-left">Description</th>
                 <th className="px-6 py-3 text-right">Qty</th>
                 <th className="px-6 py-3 text-right">Unit Price</th>
@@ -258,17 +262,32 @@ export default function InvoiceView() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {items.map((item: any, i: number) => (
-                <tr key={i} className="hover:bg-muted/30">
-                  <td className="px-6 py-3 text-muted-foreground">{i + 1}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>
-                  <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
-                  <td className="px-6 py-3 text-right">{item.qty}</td>
-                  <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
-                  {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
-                  <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
-                </tr>
-              ))}
+              {(() => {
+                let seq = 0;
+                return items.map((item: any, i: number) => {
+                  if (item.type === "section") {
+                    return (
+                      <tr key={i} className="bg-muted/40">
+                        <td colSpan={totalViewCols} className="px-6 py-2 font-semibold text-sm text-foreground">
+                          {item.sectionLabel || "Section"}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  seq++;
+                  return (
+                    <tr key={i} className="hover:bg-muted/30">
+                      <td className="px-6 py-3 text-muted-foreground">{seq}</td>
+                      {hasPartNo && <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>}
+                      <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                      <td className="px-6 py-3 text-right">{item.qty}</td>
+                      <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
+                      {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
+                      <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>
