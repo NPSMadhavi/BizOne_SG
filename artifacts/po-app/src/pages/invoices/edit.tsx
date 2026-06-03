@@ -206,9 +206,10 @@ export default function InvoiceEdit() {
       if (idx !== allItems.length - 1) return;
       const last = allItems[idx];
       if (!last) return;
+      const descText = String(last.description || "").replace(/<[^>]*>/g, "").trim();
       const isEmpty =
         (!last.partNumber || String(last.partNumber).trim() === "") &&
-        (!last.description || String(last.description).trim() === "") &&
+        descText === "" &&
         (Number(last.unitPrice) === 0) && (Number(last.qty) <= 1);
       if ((last as any).type === "section") return;
       if (!isEmpty && !appendLock.current) {
@@ -409,7 +410,10 @@ export default function InvoiceEdit() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-lg">Line Items</CardTitle>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
+                    <Plus className="h-3 w-3" /> Add Item
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
                 </div>
@@ -456,14 +460,15 @@ export default function InvoiceEdit() {
                     {fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
                       const insertBar = (
-                        <tr className="group/ins border-0">
-                          <td colSpan={9} className="p-0 h-2 overflow-visible">
-                            <div className="flex items-center opacity-0 group-hover/ins:opacity-100 transition-opacity">
-                              <div className="h-px flex-1 bg-primary/30" />
-                              <button type="button" onClick={() => insert(index, { type: "section" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })} className="mx-2 flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary bg-background border border-primary/20 rounded px-1.5 leading-5 whitespace-nowrap">
-                                <Layers className="h-2.5 w-2.5" /> insert section
-                              </button>
-                              <div className="h-px flex-1 bg-primary/30" />
+                        <tr className="group/ins border-0 h-5">
+                          <td colSpan={9} className="p-0 overflow-visible">
+                            <div className="relative flex items-center h-5">
+                              <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
+                              <div className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => insert(index, { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                  <Layers className="h-2.5 w-2.5" /> + section here
+                                </button>
+                              </div>
                             </div>
                           </td>
                         </tr>
