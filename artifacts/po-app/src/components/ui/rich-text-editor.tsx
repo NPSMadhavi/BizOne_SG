@@ -162,7 +162,7 @@ export function RichTextEditor({
     const currentHTML = editor.getHTML();
     const normalizedCurrent = currentHTML === "<p></p>" ? "" : currentHTML;
     if (normalizedCurrent !== value) {
-      editor.commands.setContent(value || "", false);
+      editor.commands.setContent(value || "");
     }
   }, [value, editor]);
 
@@ -170,6 +170,43 @@ export function RichTextEditor({
 
   const currentFontSize = editor.getAttributes("textStyle").fontSize ?? "13px";
   const isEmpty = !editor.getText().trim();
+
+  // Smart list toggle: if the current paragraph contains hard-break nodes,
+  // split them into separate paragraphs first so only the current line is
+  // wrapped — not the entire block.
+  const smartToggleList = (type: "orderedList" | "bulletList") => {
+    if (editor.isActive(type)) {
+      if (type === "orderedList") editor.chain().focus().toggleOrderedList().run();
+      else editor.chain().focus().toggleBulletList().run();
+      return;
+    }
+
+    editor.chain().focus().command(({ tr, state, dispatch }) => {
+      const { $from } = state.selection;
+      const parent = $from.parent;
+      if (parent.type.name !== "paragraph") return true;
+
+      let hasHardBreak = false;
+      parent.forEach((n) => { if (n.type.name === "hardBreak") hasHardBreak = true; });
+      if (!hasHardBreak) return true;
+
+      const newParas: any[] = [];
+      let inline: any[] = [];
+      parent.forEach((child) => {
+        if (child.type.name === "hardBreak") {
+          newParas.push(state.schema.nodes.paragraph.create(parent.attrs, inline.length ? inline : []));
+          inline = [];
+        } else {
+          inline.push(child);
+        }
+      });
+      if (inline.length > 0) newParas.push(state.schema.nodes.paragraph.create(parent.attrs, inline));
+
+      const nodeStart = $from.before($from.depth);
+      if (dispatch) dispatch(tr.replaceWith(nodeStart, nodeStart + parent.nodeSize, newParas));
+      return true;
+    })[type === "orderedList" ? "toggleOrderedList" : "toggleBulletList"]().run();
+  };
 
   return (
     <div className={cn("rounded-md border bg-background", className)}>
@@ -207,9 +244,7 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("bulletList")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleBulletList().run()
-          }
+          onPressedChange={() => smartToggleList("bulletList")}
           className="h-6 w-6 p-0 data-[state=on]:bg-muted"
           title="Bullet list"
         >
@@ -218,11 +253,9 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("orderedList")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleOrderedList().run()
-          }
+          onPressedChange={() => smartToggleList("orderedList")}
           className="h-6 w-6 p-0 data-[state=on]:bg-muted"
-          title="Numbered list"
+          title="Numbered list (type '1. ' at line start to auto-convert)"
         >
           <ListOrdered className="h-3 w-3" />
         </Toggle>
