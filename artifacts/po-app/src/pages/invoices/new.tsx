@@ -469,6 +469,7 @@ export default function InvoiceNew() {
                         </tr>
                       );
                       if (itemType === "section") {
+                        const emptyItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
                         return (
                           <Fragment key={field.id}>
                             {insertBar}
@@ -496,6 +497,17 @@ export default function InvoiceNew() {
                                     </Button>
                                   </div>
                                 </div>
+                              </td>
+                            </tr>
+                            <tr className="border-0">
+                              <td colSpan={9} className="px-4 py-1">
+                                <button
+                                  type="button"
+                                  onClick={() => insert(index + 1, emptyItem)}
+                                  className="flex items-center justify-center gap-1.5 w-full text-[11px] text-primary/60 hover:text-primary border border-dashed border-primary/25 hover:border-primary/50 rounded-md py-1 transition-colors"
+                                >
+                                  <Plus className="h-3 w-3" /> Add Line Item here
+                                </button>
                               </td>
                             </tr>
                           </Fragment>
