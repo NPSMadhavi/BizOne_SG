@@ -458,8 +458,9 @@ export default function InvoiceEdit() {
                     </tr>
                   </thead>
                   <tbody>
-                    {fields.map((field, index) => {
+                    {(() => { let _n = 0; return fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
+                      const _itemNo = itemType !== "section" ? ++_n : null;
                       const insertBar = (
                         <tr className="group/ins border-0 h-5">
                           <td colSpan={9} className="p-0 overflow-visible">
@@ -526,7 +527,7 @@ export default function InvoiceEdit() {
                         <Fragment key={field.id}>
                           {insertBar}
                           <tr className="border-b last:border-0 hover:bg-muted/20">
-                          <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
+                          <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
                           <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                             <FormItem><FormControl>
                               <div className="flex items-center gap-1">
@@ -585,7 +586,7 @@ export default function InvoiceEdit() {
                         </tr>
                         </Fragment>
                       );
-                    })}
+                    }); })()}
                   </tbody>
                 </table>
               </div>
