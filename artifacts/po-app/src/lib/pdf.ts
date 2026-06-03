@@ -874,19 +874,20 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 85);
 
-  // Right column: Payment Terms + optional PO Ref No
-  const rightColX = 110;
+  // Right column: Payment Terms + optional PO Ref No — label right-aligned, value left-aligned
+  const labelRightX = 158;   // labels right-align here
+  const valueLeftX  = 161;   // values left-align 3mm after label
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-  doc.text("Payment Terms:", rightColX, 75);
+  doc.text("Payment Terms:", labelRightX, 75, { align: "right" });
   doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-  doc.text(inv.paymentTerms || "Standard", marginRight, 75, { align: "right" });
+  doc.text(inv.paymentTerms || "Standard", valueLeftX, 75);
 
   const invPoRefNo = (inv as any).poRefNo;
   if (invPoRefNo) {
     doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-    doc.text("PO Ref No:", rightColX, 83);
+    doc.text("PO Ref No:", labelRightX, 83, { align: "right" });
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text(String(invPoRefNo), marginRight, 83, { align: "right" });
+    doc.text(String(invPoRefNo), valueLeftX, 83);
   }
 
   const invCurrency = (inv as any).currency || "SGD";
