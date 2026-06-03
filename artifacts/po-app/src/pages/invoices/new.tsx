@@ -455,13 +455,18 @@ export default function InvoiceNew() {
                     {(() => { let _n = 0; return fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
                       const _itemNo = itemType !== "section" ? ++_n : null;
+                      const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
+                      const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
                       const insertBar = (
                         <tr className="group/ins border-0 h-5">
                           <td colSpan={9} className="p-0 overflow-visible">
-                            <div className="relative flex items-center h-5">
+                            <div className="relative flex items-center justify-center h-5">
                               <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
-                              <div className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
-                                <button type="button" onClick={() => insert(index, { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                              <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => insert(index, blankItem)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                  <Plus className="h-2.5 w-2.5" /> + line item here
+                                </button>
+                                <button type="button" onClick={() => insert(index, blankSection)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
                                   <Layers className="h-2.5 w-2.5" /> + section here
                                 </button>
                               </div>
@@ -470,7 +475,6 @@ export default function InvoiceNew() {
                         </tr>
                       );
                       if (itemType === "section") {
-                        const emptyItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
                         return (
                           <Fragment key={field.id}>
                             {insertBar}
@@ -498,17 +502,6 @@ export default function InvoiceNew() {
                                     </Button>
                                   </div>
                                 </div>
-                              </td>
-                            </tr>
-                            <tr className="border-0">
-                              <td colSpan={9} className="px-4 py-1">
-                                <button
-                                  type="button"
-                                  onClick={() => insert(index + 1, emptyItem)}
-                                  className="flex items-center justify-center gap-1.5 w-full text-[11px] text-primary/60 hover:text-primary border border-dashed border-primary/25 hover:border-primary/50 rounded-md py-1 transition-colors"
-                                >
-                                  <Plus className="h-3 w-3" /> Add Line Item here
-                                </button>
                               </td>
                             </tr>
                           </Fragment>
