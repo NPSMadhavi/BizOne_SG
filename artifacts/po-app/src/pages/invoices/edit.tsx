@@ -25,6 +25,7 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PORefSelect } from "@/components/po-ref-select";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -389,7 +390,7 @@ export default function InvoiceEdit() {
                 )} />
                 <FormField control={form.control} name="poRefNo" render={({ field }) => (
                   <FormItem><FormLabel>PO Reference No.</FormLabel>
-                    <FormControl><Input placeholder="e.g. PO-0001" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><PORefSelect value={field.value ?? ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
