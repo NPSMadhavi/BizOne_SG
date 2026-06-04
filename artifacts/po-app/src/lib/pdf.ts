@@ -947,6 +947,15 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invCurrency = (inv as any).currency || "SGD";
   const invDocDiscount = Number((inv as any).discountAmount) || 0;
+
+  // Pre-compute totals box height and bank+tnc block height so we can set
+  // the autoTable bottom margin to guarantee they always fit on the last page.
+  const invExtraRowsEarly = invDocDiscount > 0 ? 1 : 0;
+  const invBoxH = (3 + invExtraRowsEarly) * 7 + 16;
+  const invBankBlockH = calcBlockHeight(doc, settings, 120);
+  // Bottom reserve = totals box + gap + page footer + bank/tnc + safety buffer
+  const invAutoTableBottom = invBoxH + 8 + FOOTER_RESERVE + invBankBlockH + 6;
+
   // Strip trailing/empty item rows that have no description and no part number
   const allInvItems = (inv.items as any[]).filter((item: any) => {
     if (item.type === "section") return htmlToText(item.sectionLabel || "").trim() !== "";
@@ -1007,9 +1016,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invDescColIdx = hasInvPartNo ? 2 : 1;
 
-  const invFooterReserve = 20;
-  const invExtraRows = invDocDiscount > 0 ? 1 : 0;
-  const invBoxH = (3 + invExtraRows) * 7 + 16;
+  // invBoxH, invBankBlockH, invAutoTableBottom are pre-computed above (before autoTableRich)
+  // so that the table reserves enough room for the totals block on the last page.
+  const invFooterReserve = 20; // used for notes overflow check only
 
   autoTableRich(doc, {
     startY: invTableStartY,
@@ -1020,7 +1029,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: invColumnStyles,
-    margin: { top: 20, left: marginLeft, right: 14, bottom: invFooterReserve + 10 },
+    margin: { top: 12, left: marginLeft, right: 14, bottom: invAutoTableBottom },
   }, invDescColIdx, invRichDesc);
 
   let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
@@ -1036,7 +1045,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     invCurrentY += notesH + 4;
   }
 
-  if (invCurrentY + invBoxH + invFooterReserve > pageHeight) { doc.addPage(); invCurrentY = 20; }
+  // Safety net: should not trigger now that invAutoTableBottom reserves enough room
+  if (invCurrentY + invBoxH + FOOTER_RESERVE + invBankBlockH > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
   // ── Totals ───────────────────────────────────────────────────────────────────
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
