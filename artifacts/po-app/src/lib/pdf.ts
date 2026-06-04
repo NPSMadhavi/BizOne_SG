@@ -599,7 +599,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     poColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
     poColStyles[ci++] = { cellWidth: hasPOUom ? 26 : 32 }; // part no
     poColStyles[ci++] = { cellWidth: "auto" }; // description
-    poColStyles[ci++] = { cellWidth: 12, halign: "center" }; // qty
+    poColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
     if (hasPOUom) poColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
     poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // unit price
     poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // amount
@@ -624,7 +624,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
-    bodyStyles: { fontSize: 9.5 },
+    bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: footerReserve + 10 },
@@ -810,7 +810,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     qtColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
     qtColStyles[ci++] = { cellWidth: hasQtUom ? 26 : 32 }; // part no
     qtColStyles[ci++] = { cellWidth: "auto" }; // description
-    qtColStyles[ci++] = { cellWidth: 12, halign: "center" }; // qty
+    qtColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
     if (hasQtUom) qtColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
     qtColStyles[ci++] = { cellWidth: hasItemDiscount ? 23 : 27, halign: "right" }; // unit price
     if (hasItemDiscount) qtColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
@@ -838,7 +838,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
-    bodyStyles: { fontSize: 9.5 },
+    bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: qtFooterReserve + 10 },
@@ -967,7 +967,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     invColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
     if (hasInvPartNo) invColStyles[ci++] = { cellWidth: 25 }; // part no
     invColStyles[ci++] = { cellWidth: "auto" }; // description
-    invColStyles[ci++] = { cellWidth: 12, halign: "center" }; // qty
+    invColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
     if (hasInvUom) invColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
     invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // unit price
     if (hasInvItemDiscount) invColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
@@ -1009,7 +1009,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
-    bodyStyles: { fontSize: 9.5 },
+    bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: invColumnStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: invFooterReserve + 10 },
@@ -1115,7 +1115,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     doColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
     if (hasPartNo) doColStyles[ci++] = { cellWidth: 28, halign: "left" }; // item no
     doColStyles[ci++] = { cellWidth: "auto" }; // description
-    doColStyles[ci++] = { cellWidth: hasDOUom ? 12 : 20, halign: "center" }; // qty
+    doColStyles[ci++] = { cellWidth: hasDOUom ? 18 : 22, halign: "center" }; // qty
     if (hasDOUom) doColStyles[ci++] = { cellWidth: 18, halign: "center" }; // uom
   }
 
@@ -1134,7 +1134,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     body: tableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
-    bodyStyles: { fontSize: 9.5 },
+    bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: doColStyles,
     margin: { top: 20, left: marginLeft, right: 14 },
