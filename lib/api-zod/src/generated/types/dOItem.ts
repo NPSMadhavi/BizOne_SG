@@ -9,4 +9,5 @@
 export interface DOItem {
   description: string;
   qty: string;
+  uom?: string;
 }

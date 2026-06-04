@@ -27,6 +27,7 @@ const itemSchema = z.object({
   partNumber: z.string().default(""),
   description: z.string(),
   qty: z.coerce.number().min(1),
+  uom: z.string().default(""),
 });
 
 const schema = z.object({
@@ -83,7 +84,8 @@ export default function DeliveryOrderEdit() {
           partNumber: i.partNumber || "",
           description: i.description || "",
           qty: Number(i.qty) || 1,
-        })) : [{ partNumber: "", description: "", qty: 1 }],
+          uom: i.uom || "",
+        })) : [{ partNumber: "", description: "", qty: 1, uom: "" }],
       });
       initialized.current = true;
     }
@@ -108,7 +110,7 @@ export default function DeliveryOrderEdit() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ description: "", qty: 1 });
+        append({ description: "", qty: 1, uom: "" });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -250,6 +252,7 @@ export default function DeliveryOrderEdit() {
                       <th className="px-4 py-3 text-left w-32">Item No.</th>
                       <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-right w-24">Qty</th>
+                      <th className="px-4 py-3 text-center w-16">UOM</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
                   </thead>
@@ -270,6 +273,11 @@ export default function DeliveryOrderEdit() {
                         <td className="px-4 py-2 align-top">
                           <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right" {...field} /></FormControl></FormItem>
+                          )} />
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                            <FormItem><FormControl><Input className="h-8 text-sm text-center" placeholder="Nos" {...field} /></FormControl></FormItem>
                           )} />
                         </td>
                         <td className="px-4 py-2 align-top pt-2">

@@ -96,7 +96,8 @@ export default function InvoiceView() {
   const regularItems = items.filter((item: any) => item.type !== "section");
   const hasItemDiscount = regularItems.some((item: any) => Number(item.discount) > 0);
   const hasPartNo = regularItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
-  const totalViewCols = 3 + (hasPartNo ? 1 : 0) + (hasItemDiscount ? 1 : 0) + 2;
+  const hasInvUom = regularItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
+  const totalViewCols = 3 + (hasPartNo ? 1 : 0) + (hasItemDiscount ? 1 : 0) + (hasInvUom ? 1 : 0) + 2;
   const isVoided = doc.status === "void";
   const isPaid = doc.status === "paid";
   const canVoid = !isVoided && !isPaid;
@@ -256,6 +257,7 @@ export default function InvoiceView() {
                 {hasPartNo && <th className="px-6 py-3 text-left">Item / Part Number</th>}
                 <th className="px-6 py-3 text-left">Description</th>
                 <th className="px-6 py-3 text-right">Qty</th>
+                {hasInvUom && <th className="px-6 py-3 text-center">UOM</th>}
                 <th className="px-6 py-3 text-right">Unit Price</th>
                 {hasItemDiscount && <th className="px-6 py-3 text-right">Disc %</th>}
                 <th className="px-6 py-3 text-right">Amount</th>
@@ -279,6 +281,7 @@ export default function InvoiceView() {
                       {hasPartNo && <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>}
                       <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                       <td className="px-6 py-3 text-right">{item.qty}</td>
+                      {hasInvUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
                       <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
                       {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
                       <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>

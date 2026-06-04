@@ -115,6 +115,7 @@ export interface POItem {
   partNumber: string;
   description: string;
   qty: number;
+  uom?: string;
   unitPrice: number;
   amount: number;
 }
@@ -296,6 +297,7 @@ export interface DocItem {
   itemPartNumber?: string;
   description: string;
   qty: string;
+  uom?: string;
   unitPrice?: string;
   amount?: string;
 }
@@ -480,6 +482,7 @@ export interface UpdateInvoiceBody {
 export interface DOItem {
   description: string;
   qty: string;
+  uom?: string;
 }
 
 export type DeliveryOrderStatus =

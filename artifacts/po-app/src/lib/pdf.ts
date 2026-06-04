@@ -212,8 +212,9 @@ function autoTableRich(
       const padding = 4;
       const x = cell.x + padding;
       const maxW = cell.width - padding * 2;
-      const LINE_H = 4.5;
-      const BASELINE_OFFSET = 3.35;
+      const scaleFactor = (jdoc.internal as any).scaleFactor || 2.8346;
+      const LINE_H = (9.5 * 1.15) / scaleFactor; // match autotable exactly
+      const BASELINE_OFFSET = (9.5 * 0.8) / scaleFactor; // approx baseline within first line
       jdoc.setFontSize(9.5);
 
       // Build a rendering plan: calculate each line's baseline y
@@ -372,7 +373,7 @@ function fmtMoney(currency: string, amount: number): string {
 }
 
 function fmtMoneyTotal(currency: string, amount: number): string {
-  return currency + " " + fmtMoney(currency, amount);
+  return fmtMoney(currency, amount);
 }
 
 function formatDate(d: string | null | undefined): string {
@@ -580,11 +581,31 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
   const poCurrency = (po as any).currency || "SGD";
+  const hasPOUom = po.items.some((item: any) => item.uom && String(item.uom).trim() !== "");
+
+  const poHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
+  if (hasPOUom) poHeaderArr.push("UOM");
+  poHeaderArr.push("Unit Price", "Amount");
+  const poHeaders = poHeaderArr;
+
+  const poColStyles: Record<number, any> = {};
+  { let ci = 0;
+    poColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
+    poColStyles[ci++] = { cellWidth: hasPOUom ? 26 : 32 }; // part no
+    poColStyles[ci++] = { cellWidth: "auto" }; // description
+    poColStyles[ci++] = { cellWidth: 12, halign: "center" }; // qty
+    if (hasPOUom) poColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
+    poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // unit price
+    poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // amount
+  }
+
   const poRichDesc = po.items.map((item: any) => htmlToRichLines(item.description));
-  const tableData = po.items.map((item, index) => [
-    index + 1, item.partNumber, htmlToText(item.description), item.qty,
-    fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)),
-  ]);
+  const tableData = po.items.map((item, index) => {
+    const row: any[] = [index + 1, item.partNumber, htmlToText(item.description), item.qty];
+    if (hasPOUom) row.push((item as any).uom || "");
+    row.push(fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)));
+    return row;
+  });
 
   const pageHeight = doc.internal.pageSize.getHeight();
   const footerReserve = 20; // space kept clear at page bottom for footer text
@@ -593,18 +614,14 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   autoTableRich(doc, {
     startY: 113,
-    head: [["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]],
+    head: [poHeaders],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: {
-      0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 },
-      2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
-      4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
-    },
-    margin: { top: 20, left: marginLeft, right: 14, bottom: footerReserve + totalsBlockH + 10 },
+    columnStyles: poColStyles,
+    margin: { top: 20, left: marginLeft, right: 14, bottom: footerReserve + 10 },
   }, 2, poRichDesc);
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;
@@ -767,13 +784,33 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtCurrency = (qt as any).currency || "SGD";
   const qtDocDiscount = Number((qt as any).discountAmount) || 0;
   const hasItemDiscount = (qt.items as any[]).some(item => Number(item.discount) > 0);
-  const qtHeaders = hasItemDiscount
-    ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
-    : ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"];
+  const hasQtUom = (qt.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== "");
+
+  const qtHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
+  if (hasQtUom) qtHeaderArr.push("UOM");
+  qtHeaderArr.push("Unit Price");
+  if (hasItemDiscount) qtHeaderArr.push("Disc %");
+  qtHeaderArr.push("Amount");
+  const qtHeaders = qtHeaderArr;
+
+  const qtColStyles: Record<number, any> = {};
+  { let ci = 0;
+    qtColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
+    qtColStyles[ci++] = { cellWidth: hasQtUom ? 26 : 32 }; // part no
+    qtColStyles[ci++] = { cellWidth: "auto" }; // description
+    qtColStyles[ci++] = { cellWidth: 12, halign: "center" }; // qty
+    if (hasQtUom) qtColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
+    qtColStyles[ci++] = { cellWidth: hasItemDiscount ? 23 : 27, halign: "right" }; // unit price
+    if (hasItemDiscount) qtColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
+    qtColStyles[ci++] = { cellWidth: hasItemDiscount ? 23 : 27, halign: "right" }; // amount
+  }
+
   const qtRichDesc = (qt.items as any[]).map((item: any) => htmlToRichLines(item.description));
   const tableData = (qt.items as any[]).map((item, i) => {
     const disc = Number(item.discount) || 0;
-    const row = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty, fmtMoney(qtCurrency, Number(item.unitPrice))];
+    const row: any[] = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty];
+    if (hasQtUom) row.push(item.uom || "");
+    row.push(fmtMoney(qtCurrency, Number(item.unitPrice)));
     if (hasItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
     row.push(fmtMoney(qtCurrency, Number(item.amount)));
     return row;
@@ -791,16 +828,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: hasItemDiscount ? {
-      0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 28 },
-      2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" },
-      4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 25, halign: "right" },
-    } : {
-      0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 },
-      2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
-      4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
-    },
-    margin: { top: 20, left: marginLeft, right: 14, bottom: qtFooterReserve + qtBoxH + 10 },
+    columnStyles: qtColStyles,
+    margin: { top: 20, left: marginLeft, right: 14, bottom: qtFooterReserve + 10 },
   }, 2, qtRichDesc);
 
   let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
@@ -878,20 +907,22 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 85);
 
-  // Right column: Payment Terms + optional PO Ref No — label right-aligned, value left-aligned
-  const labelRightX = 158;   // labels right-align here
-  const valueLeftX  = 161;   // values left-align 3mm after label
-  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-  doc.text("Payment Terms:", labelRightX, 75, { align: "right" });
-  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-  doc.text(inv.paymentTerms || "Standard", valueLeftX, 75);
-
+  // Right column: Payment Terms + optional PO Ref No — both fully right-aligned at marginRight
+  doc.setFontSize(9.5);
+  {
+    const ptVal = inv.paymentTerms || "Standard";
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    doc.text(ptVal, marginRight, 75, { align: "right" });
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+    doc.text("Payment Terms: ", marginRight - doc.getTextWidth(ptVal), 75, { align: "right" });
+  }
   const invPoRefNo = (inv as any).poRefNo;
   if (invPoRefNo) {
-    doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-    doc.text("PO Ref No:", labelRightX, 83, { align: "right" });
+    const prVal = String(invPoRefNo);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text(String(invPoRefNo), valueLeftX, 83);
+    doc.text(prVal, marginRight, 83, { align: "right" });
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+    doc.text("PO Ref No: ", marginRight - doc.getTextWidth(prVal), 83, { align: "right" });
   }
 
   const invCurrency = (inv as any).currency || "SGD";
@@ -900,17 +931,31 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const regularInvItems = allInvItems.filter(item => item.type !== "section");
   const hasInvPartNo = regularInvItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
   const hasInvItemDiscount = regularInvItems.some(item => Number(item.discount) > 0);
+  const hasInvUom = regularInvItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
-  // Total columns for section row colSpan
-  const invTotalCols = 5 + (hasInvPartNo ? 1 : 0) + (hasInvItemDiscount ? 1 : 0);
+  // Build headers and column styles dynamically to handle all combinations
+  const invHeaderArr: string[] = ["#"];
+  if (hasInvPartNo) invHeaderArr.push("Item / Part Number");
+  invHeaderArr.push("Description", "Qty");
+  if (hasInvUom) invHeaderArr.push("UOM");
+  invHeaderArr.push("Unit Price");
+  if (hasInvItemDiscount) invHeaderArr.push("Disc %");
+  invHeaderArr.push("Amount");
+  const invHeaders = invHeaderArr;
+  const invTotalCols = invHeaders.length;
 
-  const invHeaders = hasInvItemDiscount
-    ? (hasInvPartNo
-        ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Disc %", "Amount"]
-        : ["#", "Description", "Qty", "Unit Price", "Disc %", "Amount"])
-    : (hasInvPartNo
-        ? ["#", "Item / Part Number", "Description", "Qty", "Unit Price", "Amount"]
-        : ["#", "Description", "Qty", "Unit Price", "Amount"]);
+  const invColStyles: Record<number, any> = {};
+  { let ci = 0;
+    invColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
+    if (hasInvPartNo) invColStyles[ci++] = { cellWidth: 25 }; // part no
+    invColStyles[ci++] = { cellWidth: "auto" }; // description
+    invColStyles[ci++] = { cellWidth: 12, halign: "center" }; // qty
+    if (hasInvUom) invColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
+    invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // unit price
+    if (hasInvItemDiscount) invColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
+    invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // amount
+  }
+  const invColumnStyles = invColStyles;
 
   const invRichDesc: RichLine[][] = [];
   let invItemCounter = 0;
@@ -926,21 +971,15 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     const disc = Number(item.discount) || 0;
     const row: any[] = [invItemCounter];
     if (hasInvPartNo) row.push(item.partNumber || "");
-    row.push(htmlToText(item.description), item.qty, fmtMoney(invCurrency, Number(item.unitPrice)));
+    row.push(htmlToText(item.description), item.qty);
+    if (hasInvUom) row.push(item.uom || "");
+    row.push(fmtMoney(invCurrency, Number(item.unitPrice)));
     if (hasInvItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
     row.push(fmtMoney(invCurrency, Number(item.amount)));
     return row;
   });
 
   const invDescColIdx = hasInvPartNo ? 2 : 1;
-
-  const invColumnStyles = hasInvItemDiscount
-    ? (hasInvPartNo
-        ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" }, 4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 25, halign: "right" } }
-        : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 25, halign: "right" }, 4: { cellWidth: 20, halign: "right" }, 5: { cellWidth: 25, halign: "right" } })
-    : (hasInvPartNo
-        ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" } }
-        : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 16, halign: "center" }, 3: { cellWidth: 27, halign: "right" }, 4: { cellWidth: 27, halign: "right" } });
 
   const invFooterReserve = 20;
   const invExtraRows = invDocDiscount > 0 ? 1 : 0;
@@ -955,7 +994,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
     columnStyles: invColumnStyles,
-    margin: { top: 20, left: marginLeft, right: 14, bottom: invFooterReserve + invBoxH + 10 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: invFooterReserve + 10 },
   }, invDescColIdx, invRichDesc);
 
   let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
@@ -1038,34 +1077,43 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   doc.text(formatDate(doDoc.deliveryDate), marginLeft + 32, 105);
 
   const hasPartNo = (doDoc.items as any[]).some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
-  const doHeaders = hasPartNo ? ["#", "Item No.", "Description", "Qty"] : ["#", "Description", "Qty"];
+  const hasDOUom = (doDoc.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== "");
+
+  const doHeaderArr: string[] = ["#"];
+  if (hasPartNo) doHeaderArr.push("Item No.");
+  doHeaderArr.push("Description", "Qty");
+  if (hasDOUom) doHeaderArr.push("UOM");
+  const doHeaders = doHeaderArr;
   const doDescColIdx = hasPartNo ? 2 : 1;
+
+  const doColStyles: Record<number, any> = {};
+  { let ci = 0;
+    doColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
+    if (hasPartNo) doColStyles[ci++] = { cellWidth: 28, halign: "left" }; // item no
+    doColStyles[ci++] = { cellWidth: "auto" }; // description
+    doColStyles[ci++] = { cellWidth: hasDOUom ? 12 : 20, halign: "center" }; // qty
+    if (hasDOUom) doColStyles[ci++] = { cellWidth: 18, halign: "center" }; // uom
+  }
+
   const doRichDesc = (doDoc.items as any[]).map((item: any) => htmlToRichLines(item.description));
-  const tableData = (doDoc.items as any[]).map((item, i) =>
-    hasPartNo
-      ? [i + 1, item.partNumber || "", htmlToText(item.description), item.qty]
-      : [i + 1, htmlToText(item.description), item.qty]
-  );
+  const tableData = (doDoc.items as any[]).map((item, i) => {
+    const row: any[] = [i + 1];
+    if (hasPartNo) row.push(item.partNumber || "");
+    row.push(htmlToText(item.description), item.qty);
+    if (hasDOUom) row.push(item.uom || "");
+    return row;
+  });
 
   autoTableRich(doc, {
     startY: 113,
     head: [doHeaders],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
-    columnStyles: hasPartNo ? {
-      0: { cellWidth: 10, halign: "center" },
-      1: { cellWidth: 30, halign: "left" },
-      2: { cellWidth: "auto" },
-      3: { cellWidth: 20, halign: "center" },
-    } : {
-      0: { cellWidth: 10, halign: "center" },
-      1: { cellWidth: "auto" },
-      2: { cellWidth: 20, halign: "center" },
-    },
-    margin: { left: marginLeft, right: 14 },
+    columnStyles: doColStyles,
+    margin: { top: 20, left: marginLeft, right: 14 },
   }, doDescColIdx, doRichDesc);
 
   if (doDoc.notes) {

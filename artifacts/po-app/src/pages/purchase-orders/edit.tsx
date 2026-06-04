@@ -41,6 +41,7 @@ const itemSchema = z.object({
   partNumber: z.string(),
   description: z.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
+  uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
 });
@@ -133,6 +134,7 @@ export default function PurchaseOrderEdit() {
           partNumber: item.partNumber ?? "",
           description: item.description ?? "",
           qty: item.qty ?? 1,
+          uom: item.uom ?? "",
           unitPrice: item.unitPrice ?? 0,
           isStockItem: item.isStockItem ?? false,
         })),
@@ -173,7 +175,7 @@ export default function PurchaseOrderEdit() {
       if (!lastIsEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false });
+        append({ partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, isStockItem: false });
         requestAnimationFrame(() => {
           focused?.focus();
           appendLock.current = false;
@@ -503,6 +505,7 @@ export default function PurchaseOrderEdit() {
                     <th className="px-4 py-3 font-medium w-48">Item / Part Number</th>
                     <th className="px-4 py-3 font-medium">Description</th>
                     <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
+                    <th className="px-4 py-3 font-medium w-16 text-center">UOM</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>
                     <th className="px-4 py-3 font-medium w-32 text-right">Amount</th>
                     <th className="px-4 py-3 font-medium w-20 text-center">Stock Item</th>
@@ -556,6 +559,11 @@ export default function PurchaseOrderEdit() {
                               </FormItem>
                             )}
                           />
+                        </td>
+                        <td className="px-4 py-2">
+                          <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                            <FormItem><FormControl><Input className="h-8 text-center" placeholder="Nos" {...field} /></FormControl></FormItem>
+                          )} />
                         </td>
                         <td className="px-4 py-2">
                           <FormField

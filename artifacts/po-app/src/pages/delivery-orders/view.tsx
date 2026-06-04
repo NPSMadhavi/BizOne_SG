@@ -132,6 +132,7 @@ export default function DeliveryOrderView() {
                 {items.some((item: any) => item.partNumber) && <th className="px-6 py-3 text-left w-32">Item No.</th>}
                 <th className="px-6 py-3 text-left">Description</th>
                 <th className="px-6 py-3 text-right w-24">Qty</th>
+                {items.some((item: any) => item.uom && String(item.uom).trim() !== "") && <th className="px-6 py-3 text-center w-16">UOM</th>}
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -141,6 +142,7 @@ export default function DeliveryOrderView() {
                   {items.some((it: any) => it.partNumber) && <td className="px-6 py-3 font-mono text-xs text-muted-foreground">{item.partNumber || "—"}</td>}
                   <td className="px-6 py-3 font-medium" dangerouslySetInnerHTML={{ __html: item.description }} />
                   <td className="px-6 py-3 text-right">{item.qty}</td>
+                  {items.some((it: any) => it.uom && String(it.uom).trim() !== "") && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
                 </tr>
               ))}
             </tbody>

@@ -68,6 +68,7 @@ export default function QuotationView() {
   const total = Number(doc.totalAmount) || 0;
   const discountAmt = Number((doc as any).discountAmount) || 0;
   const hasItemDiscount = items.some((item: any) => Number(item.discount) > 0);
+  const hasQtUom = items.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
@@ -157,6 +158,7 @@ export default function QuotationView() {
                 <th className="px-6 py-3 text-left">Item / Part Number</th>
                 <th className="px-6 py-3 text-left">Description</th>
                 <th className="px-6 py-3 text-right">Qty</th>
+                {hasQtUom && <th className="px-6 py-3 text-center">UOM</th>}
                 <th className="px-6 py-3 text-right">Unit Price</th>
                 {hasItemDiscount && <th className="px-6 py-3 text-right">Disc %</th>}
                 <th className="px-6 py-3 text-right">Amount</th>
@@ -169,6 +171,7 @@ export default function QuotationView() {
                   <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>
                   <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                   <td className="px-6 py-3 text-right">{item.qty}</td>
+                  {hasQtUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
                   <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
                   {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
                   <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>

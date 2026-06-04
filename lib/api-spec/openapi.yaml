@@ -962,6 +962,8 @@ components:
           type: string
         qty:
           type: number
+        uom:
+          type: string
         unitPrice:
           type: number
         amount:
@@ -1242,6 +1244,8 @@ components:
           type: string
         qty:
           type: string
+        uom:
+          type: string
         unitPrice:
           type: string
         amount:
@@ -1510,6 +1514,8 @@ components:
         description:
           type: string
         qty:
+          type: string
+        uom:
           type: string
       required: [description, qty]
 

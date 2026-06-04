@@ -15,6 +15,7 @@ export interface DocItem {
   itemPartNumber?: string;
   description: string;
   qty: string;
+  uom?: string;
   unitPrice?: string;
   amount?: string;
 }

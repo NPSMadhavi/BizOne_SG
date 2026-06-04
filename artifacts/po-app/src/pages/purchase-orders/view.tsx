@@ -83,6 +83,8 @@ export default function PurchaseOrderView() {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-SG', { style: 'currency', currency: (po as any)?.currency || 'SGD' }).format(value);
 
+  const hasPOUom = !!(po && (po.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== ""));
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'confirmed': return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Confirmed</Badge>;
@@ -291,6 +293,7 @@ export default function PurchaseOrderView() {
                 <th className="px-6 py-3 font-medium">Item / Part Number</th>
                 <th className="px-6 py-3 font-medium">Description</th>
                 <th className="px-6 py-3 font-medium text-center">Qty</th>
+                {hasPOUom && <th className="px-6 py-3 font-medium text-center">UOM</th>}
                 <th className="px-6 py-3 font-medium text-right">Unit Price</th>
                 <th className="px-6 py-3 font-medium text-right">Amount</th>
               </tr>
@@ -302,6 +305,7 @@ export default function PurchaseOrderView() {
                   <td className="px-6 py-4 font-medium">{item.partNumber}</td>
                   <td className="px-6 py-4 text-muted-foreground prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                   <td className="px-6 py-4 text-center font-medium">{item.qty}</td>
+                  {hasPOUom && <td className="px-6 py-4 text-center text-muted-foreground">{(item as any).uom || "—"}</td>}
                   <td className="px-6 py-4 text-right text-muted-foreground">{formatCurrency(item.unitPrice)}</td>
                   <td className="px-6 py-4 text-right font-medium">{formatCurrency(item.amount)}</td>
                 </tr>

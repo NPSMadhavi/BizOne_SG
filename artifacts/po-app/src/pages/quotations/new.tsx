@@ -27,6 +27,7 @@ const itemSchema = z.object({
   partNumber: z.string(),
   description: z.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
+  uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   discount: z.coerce.number().min(0).max(100).default(0),
 });
@@ -93,7 +94,7 @@ export default function QuotationNew() {
     const prefill = (window as any).__ariaPrefill;
     if (!prefill) return;
     (window as any).__ariaPrefill = null;
-    const blankItem = { partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 };
+    const blankItem = { partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 };
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
@@ -146,7 +147,7 @@ export default function QuotationNew() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 });
+        append({ partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -364,6 +365,7 @@ export default function QuotationNew() {
                       <th className="px-4 py-3 text-left w-36">Item / Part Number</th>
                       <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-right w-20">Qty</th>
+                      <th className="px-4 py-3 text-center w-16">UOM</th>
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
                       <th className="px-4 py-3 text-right w-16">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
@@ -392,6 +394,11 @@ export default function QuotationNew() {
                           <td className="px-4 py-2">
                             <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
                               <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-4 py-2">
+                            <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                              <FormItem><FormControl><Input className="h-8 text-sm text-center border-0 bg-transparent focus:bg-background" placeholder="Nos" {...field} /></FormControl></FormItem>
                             )} />
                           </td>
                           <td className="px-4 py-2">

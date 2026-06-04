@@ -10,6 +10,7 @@ export interface POItem {
   partNumber: string;
   description: string;
   qty: number;
+  uom?: string;
   unitPrice: number;
   amount: number;
 }
