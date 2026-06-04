@@ -764,6 +764,62 @@ function calcBlockHeight(
   return h + 2; // bottom margin
 }
 
+/**
+ * Render Bank Details + T&C block starting at an explicit Y position.
+ * Used for the inline (side-by-side with totals) layout.
+ */
+function renderInlineDocInfo(
+  doc: jsPDF,
+  settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
+  x: number,
+  startY: number,
+  maxW: number
+): void {
+  const bank = (settings?.bankDetails || "").trim();
+  const tnc = (settings?.termsAndConditions || "").trim();
+  if (!bank && !tnc) return;
+
+  const lineH = 3.8;
+  let y = startY;
+
+  doc.setFontSize(7.5);
+
+  if (bank) {
+    const bankContentLines: string[] = [];
+    bank.split("\n").filter(l => l.trim()).forEach(l => {
+      doc.splitTextToSize(l.trim(), maxW).forEach((row: string) => bankContentLines.push(row));
+    });
+    const bankTextH = bankContentLines.length * lineH;
+    const boxPad = 2.5;
+    const boxH = 4 + bankTextH + boxPad * 2 + 1;
+
+    doc.setFillColor(245, 246, 248);
+    doc.roundedRect(x - 2, y - boxPad, maxW + 4, boxH, 1.5, 1.5, "F");
+
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Bank Details:", x, y); y += 4;
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(110, 110, 110);
+    bankContentLines.forEach(row => {
+      doc.text(row, x, y);
+      y += lineH;
+    });
+    y += boxPad + 1;
+    if (tnc) y += 4;
+  }
+
+  if (tnc) {
+    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Terms & Conditions:", x, y); y += 4;
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(110, 110, 110);
+    tnc.split("\n").filter(l => l.trim()).forEach(line => {
+      const wrapped = doc.splitTextToSize(`\u2022 ${line.trim()}`, maxW);
+      doc.text(wrapped, x, y);
+      y += wrapped.length * lineH;
+    });
+  }
+}
+
+// renderBottomDocInfo kept for backwards compatibility but no longer called
 function renderBottomDocInfo(
   doc: jsPDF,
   settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
@@ -886,6 +942,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtExtraRows = qtDocDiscount > 0 ? 1 : 0;
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
+  const qtBankBlockH = calcBlockHeight(doc, settings, 125);
 
   autoTableRich(doc, {
     startY: 107,
@@ -904,7 +961,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   if (qt.notes) {
     const noteLines = doc.splitTextToSize(qt.notes, 120);
     const notesH = 8 + noteLines.length * 5;
-    if (qtCurrentY + notesH + qtBoxH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+    const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
+    if (qtCurrentY + notesH + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, qtCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
@@ -912,9 +970,10 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     qtCurrentY += notesH + 4;
   }
 
-  if (qtCurrentY + qtBoxH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+  // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
+  const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
+  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
 
-  // ── Totals ───────────────────────────────────────────────────────────────────
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 100) : 0;
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
@@ -922,6 +981,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const valueX = marginRight - 4;
   const totalsY = qtCurrentY;
 
+  // Right: totals box
   doc.setFillColor(244, 246, 250);
   doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, qtBoxH, 2, 2, "F");
 
@@ -947,7 +1007,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoneyTotal(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
-  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, 120);
+  // Left: bank details + T&C inline (same Y, left of totals)
+  renderInlineDocInfo(doc, settings, marginLeft, totalsY, 125);
 
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
@@ -1090,9 +1151,10 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     invCurrentY += notesH + 4;
   }
 
-  if (invCurrentY + invBoxH + FOOTER_RESERVE + invBankBlockH > pageHeight) { doc.addPage(); invCurrentY = 20; }
+  // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
+  const invCombinedH = Math.max(invBoxH, invBankBlockH);
+  if (invCurrentY + invCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
-  // ── Totals ───────────────────────────────────────────────────────────────────
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 100) : 0;
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
@@ -1100,6 +1162,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const valueX = marginRight - 4;
   const totalsY = invCurrentY;
 
+  // Right: totals box
   doc.setFillColor(244, 246, 250);
   doc.roundedRect(labelX - 5, totalsY - 6, marginRight - labelX + 9, invBoxH, 2, 2, "F");
 
@@ -1125,7 +1188,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text("Total Amount:", labelX, ity);
   doc.text(fmtMoneyTotal(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
-  renderBottomDocInfo(doc, settings, marginLeft, pageHeight, 120);
+  // Left: bank details + T&C inline (same Y, left of totals)
+  renderInlineDocInfo(doc, settings, marginLeft, totalsY, 125);
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
