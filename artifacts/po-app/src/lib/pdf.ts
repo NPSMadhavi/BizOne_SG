@@ -186,6 +186,56 @@ function htmlToRichLines(html: string): RichLine[] {
   return result;
 }
 
+/**
+ * Smart column width allocator.
+ *
+ * Fixed columns (# row counter, Qty, UOM, Disc%, Unit Price, Amount, Part No)
+ * keep their reserved widths. The description column gets everything that
+ * remains, but we also measure the actual widest header/content value so we
+ * can warn when a fixed column is too narrow (currently just clamps to min).
+ *
+ * Returns a Record<colIndex, { cellWidth: number|"auto", halign?: string }>
+ * identical in shape to what jspdf-autotable expects for columnStyles.
+ */
+function smartColWidths(
+  doc: jsPDF,
+  headers: string[],
+  rows: any[][],
+  tableWidth: number, // marginRight - marginLeft
+  fixedMap: Array<{ halign?: string; fixed?: number; auto?: true }>
+): Record<number, any> {
+  // Sum of all fixed widths
+  const fixedTotal = fixedMap.reduce((s, c) => s + (c.fixed ?? 0), 0);
+  const autoIdx = fixedMap.findIndex(c => c.auto);
+
+  // Measure description content: longest plain-text line across all rows
+  let maxDescPx = 0;
+  if (autoIdx !== -1) {
+    doc.setFontSize(9.5);
+    for (const row of rows) {
+      const cell = row[autoIdx];
+      const text = typeof cell === "string" ? cell : String(cell ?? "");
+      for (const line of text.split("\n")) {
+        const w = doc.getTextWidth(line.trim());
+        if (w > maxDescPx) maxDescPx = w;
+      }
+    }
+  }
+
+  const descWidth = Math.max(tableWidth - fixedTotal, 30); // always at least 30 mm
+
+  const styles: Record<number, any> = {};
+  for (let i = 0; i < fixedMap.length; i++) {
+    const c = fixedMap[i];
+    if (c.auto) {
+      styles[i] = { cellWidth: descWidth, ...(c.halign ? { halign: c.halign } : {}) };
+    } else {
+      styles[i] = { cellWidth: c.fixed!, ...(c.halign ? { halign: c.halign } : {}) };
+    }
+  }
+  return styles;
+}
+
 function autoTableRich(
   doc: jsPDF,
   opts: any,
@@ -536,7 +586,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(80, 80, 80);
   doc.text(`PO Number: ${po.poNumber}`, marginRight, 30, { align: "right" });
-  doc.text(`Date: ${fmtDate(po.issueDate || po.createdAt)}`, marginRight, 36, { align: "right" });
+  doc.text(`Date: ${fmtDate((po as any).issueDate || po.createdAt)}`, marginRight, 36, { align: "right" });
 
   doc.setFontSize(11);
   doc.setFont(PDF_FONT, "bold");
@@ -599,17 +649,6 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   poHeaderArr.push("Unit Price", "Amount");
   const poHeaders = poHeaderArr;
 
-  const poColStyles: Record<number, any> = {};
-  { let ci = 0;
-    poColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
-    poColStyles[ci++] = { cellWidth: hasPOUom ? 26 : 32 }; // part no
-    poColStyles[ci++] = { cellWidth: "auto" }; // description
-    poColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
-    if (hasPOUom) poColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
-    poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // unit price
-    poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // amount
-  }
-
   const poRichDesc = filteredPOItems.map((item: any) => htmlToRichLines(item.description));
   const tableData = filteredPOItems.map((item, index) => {
     const row: any[] = [index + 1, item.partNumber, htmlToText(item.description), item.qty];
@@ -618,8 +657,19 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     return row;
   });
 
+  const poTableWidth = marginRight - marginLeft;
+  const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+    { fixed: 13, halign: "center" }, // #
+    { fixed: hasPOUom ? 26 : 32 },   // part no
+    { auto: true },                   // description
+    { fixed: 18, halign: "center" }, // qty
+    ...(hasPOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
+    { fixed: 27, halign: "right" },  // unit price
+    { fixed: 27, halign: "right" },  // amount
+  ];
+  const poColStyles = smartColWidths(doc, poHeaders, tableData, poTableWidth, poFixedMap);
+
   const pageHeight = doc.internal.pageSize.getHeight();
-  const footerReserve = 20; // space kept clear at page bottom for footer text
   const totalsBlockH = 28; // subtotal + tax + rule + total ≈ 28 mm
   const notesLineH = 5;
 
@@ -632,7 +682,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: poColStyles,
-    margin: { top: 20, left: marginLeft, right: 14, bottom: footerReserve + 10 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
   }, 2, poRichDesc);
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;
@@ -641,7 +691,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   if (po.notes) {
     const noteLines = doc.splitTextToSize(po.notes, 120);
     const notesH = 8 + noteLines.length * notesLineH;
-    if (currentY + notesH + totalsBlockH + footerReserve > pageHeight) {
+    if (currentY + notesH + totalsBlockH + FOOTER_RESERVE > pageHeight) {
       doc.addPage();
       currentY = 20;
     }
@@ -653,7 +703,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   }
 
   // Totals — if they don't fit on this page, push to a new page
-  if (currentY + totalsBlockH + footerReserve > pageHeight) {
+  if (currentY + totalsBlockH + FOOTER_RESERVE > pageHeight) {
     doc.addPage();
     currentY = 20;
   }
@@ -780,7 +830,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const info = companyToInfo(company);
 
   const logo = await getLogoData(getLogoUrl(company));
-  buildDocHeader(doc, logo, "QUOTATION", qt.qtNumber, fmtDate(qt.issueDate || qt.createdAt), qt.status, info);
+  buildDocHeader(doc, logo, "QUOTATION", qt.qtNumber, fmtDate((qt as any).issueDate || qt.createdAt), qt.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
@@ -810,20 +860,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   qtHeaderArr.push("Amount");
   const qtHeaders = qtHeaderArr;
 
-  const qtColStyles: Record<number, any> = {};
-  { let ci = 0;
-    qtColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
-    qtColStyles[ci++] = { cellWidth: hasQtUom ? 26 : 32 }; // part no
-    qtColStyles[ci++] = { cellWidth: "auto" }; // description
-    qtColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
-    if (hasQtUom) qtColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
-    qtColStyles[ci++] = { cellWidth: hasItemDiscount ? 23 : 27, halign: "right" }; // unit price
-    if (hasItemDiscount) qtColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
-    qtColStyles[ci++] = { cellWidth: hasItemDiscount ? 23 : 27, halign: "right" }; // amount
-  }
-
   const qtRichDesc = filteredQtItems.map((item: any) => htmlToRichLines(item.description));
-  const tableData = filteredQtItems.map((item, i) => {
+  const qtTableData = filteredQtItems.map((item, i) => {
     const disc = Number(item.discount) || 0;
     const row: any[] = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty];
     if (hasQtUom) row.push(item.uom || "");
@@ -833,20 +871,32 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     return row;
   });
 
-  const qtFooterReserve = 20;
+  const qtTableWidth = marginRight - marginLeft;
+  const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+    { fixed: 13, halign: "center" },                          // #
+    { fixed: hasQtUom ? 26 : 32 },                            // part no
+    { auto: true },                                            // description
+    { fixed: 18, halign: "center" },                          // qty
+    ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
+    { fixed: hasItemDiscount ? 23 : 27, halign: "right" },    // unit price
+    ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
+    { fixed: hasItemDiscount ? 23 : 27, halign: "right" },    // amount
+  ];
+  const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
+
   const qtExtraRows = qtDocDiscount > 0 ? 1 : 0;
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
 
   autoTableRich(doc, {
     startY: 107,
     head: [qtHeaders],
-    body: tableData,
+    body: qtTableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: qtColStyles,
-    margin: { top: 20, left: marginLeft, right: 14, bottom: qtFooterReserve + 10 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
   }, 2, qtRichDesc);
 
   let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
@@ -854,7 +904,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   if (qt.notes) {
     const noteLines = doc.splitTextToSize(qt.notes, 120);
     const notesH = 8 + noteLines.length * 5;
-    if (qtCurrentY + notesH + qtBoxH + qtFooterReserve > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+    if (qtCurrentY + notesH + qtBoxH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, qtCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
@@ -862,7 +912,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     qtCurrentY += notesH + 4;
   }
 
-  if (qtCurrentY + qtBoxH + qtFooterReserve > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+  if (qtCurrentY + qtBoxH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
 
   // ── Totals ───────────────────────────────────────────────────────────────────
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
@@ -917,7 +967,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const info = companyToInfo(company);
 
   const logo = await getLogoData(getLogoUrl(company));
-  buildDocHeader(doc, logo, "TAX INVOICE", inv.invNumber, fmtDate(inv.issueDate || inv.createdAt), inv.status, info);
+  buildDocHeader(doc, logo, "TAX INVOICE", inv.invNumber, fmtDate((inv as any).issueDate || inv.createdAt), inv.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
@@ -977,18 +1027,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invHeaders = invHeaderArr;
   const invTotalCols = invHeaders.length;
 
-  const invColStyles: Record<number, any> = {};
-  { let ci = 0;
-    invColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
-    if (hasInvPartNo) invColStyles[ci++] = { cellWidth: 25 }; // part no
-    invColStyles[ci++] = { cellWidth: "auto" }; // description
-    invColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
-    if (hasInvUom) invColStyles[ci++] = { cellWidth: 18, halign: "center" }; // uom
-    invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // unit price
-    if (hasInvItemDiscount) invColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
-    invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // amount
-  }
-  const invColumnStyles = invColStyles;
+  const invTableWidth = marginRight - marginLeft;
 
   const invRichDesc: RichLine[][] = [];
   let invItemCounter = 0;
@@ -1014,9 +1053,17 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invDescColIdx = hasInvPartNo ? 2 : 1;
 
-  // invBoxH, invBankBlockH, invAutoTableBottom are pre-computed above (before autoTableRich)
-  // so that the table reserves enough room for the totals block on the last page.
-  const invFooterReserve = 20; // used for notes overflow check only
+  const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+    { fixed: 13, halign: "center" },                               // #
+    ...(hasInvPartNo ? [{ fixed: 25 }] : []),                      // part no
+    { auto: true },                                                 // description
+    { fixed: 18, halign: "center" },                               // qty
+    ...(hasInvUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
+    { fixed: hasInvPartNo ? 23 : 26, halign: "right" as const },   // unit price
+    ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
+    { fixed: hasInvPartNo ? 23 : 26, halign: "right" as const },   // amount
+  ];
+  const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
 
   autoTableRich(doc, {
     startY: invTableStartY,
@@ -1035,7 +1082,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   if (inv.notes) {
     const noteLines = doc.splitTextToSize(inv.notes, 120);
     const notesH = 8 + noteLines.length * 5;
-    if (invCurrentY + notesH + invBoxH + invFooterReserve > pageHeight) { doc.addPage(); invCurrentY = 20; }
+    if (invCurrentY + notesH + invBoxH + FOOTER_RESERVE + invBankBlockH > pageHeight) { doc.addPage(); invCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, invCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
@@ -1043,7 +1090,6 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     invCurrentY += notesH + 4;
   }
 
-  // Safety net: should not trigger now that invAutoTableBottom reserves enough room
   if (invCurrentY + invBoxH + FOOTER_RESERVE + invBankBlockH > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
   // ── Totals ───────────────────────────────────────────────────────────────────
@@ -1098,7 +1144,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const info = companyToInfo(company);
 
   const logo = await getLogoData(getLogoUrl(company));
-  buildDocHeader(doc, logo, "DELIVERY ORDER", doDoc.doNumber, fmtDate(doDoc.issueDate || doDoc.createdAt), doDoc.status, info);
+  buildDocHeader(doc, logo, "DELIVERY ORDER", doDoc.doNumber, fmtDate((doDoc as any).issueDate || doDoc.createdAt), doDoc.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Deliver To:", marginLeft, 67);
@@ -1126,17 +1172,8 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const doHeaders = doHeaderArr;
   const doDescColIdx = hasPartNo ? 2 : 1;
 
-  const doColStyles: Record<number, any> = {};
-  { let ci = 0;
-    doColStyles[ci++] = { cellWidth: 13, halign: "center" }; // #
-    if (hasPartNo) doColStyles[ci++] = { cellWidth: 28, halign: "left" }; // item no
-    doColStyles[ci++] = { cellWidth: "auto" }; // description
-    doColStyles[ci++] = { cellWidth: hasDOUom ? 18 : 22, halign: "center" }; // qty
-    if (hasDOUom) doColStyles[ci++] = { cellWidth: 18, halign: "center" }; // uom
-  }
-
   const doRichDesc = filteredDOItems.map((item: any) => htmlToRichLines(item.description));
-  const tableData = filteredDOItems.map((item, i) => {
+  const doTableData = filteredDOItems.map((item, i) => {
     const row: any[] = [i + 1];
     if (hasPartNo) row.push(item.partNumber || "");
     row.push(htmlToText(item.description), item.qty);
@@ -1144,16 +1181,26 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     return row;
   });
 
+  const doTableWidth = marginRight - marginLeft;
+  const doFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+    { fixed: 13, halign: "center" },                          // #
+    ...(hasPartNo ? [{ fixed: 28, halign: "left" as const }] : []), // item no
+    { auto: true },                                            // description
+    { fixed: hasDOUom ? 18 : 22, halign: "center" },         // qty
+    ...(hasDOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
+  ];
+  const doColStyles = smartColWidths(doc, doHeaders, doTableData, doTableWidth, doFixedMap);
+
   autoTableRich(doc, {
     startY: 113,
     head: [doHeaders],
-    body: tableData,
+    body: doTableData,
     theme: "striped",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top" },
     styles: { cellPadding: 4 },
     columnStyles: doColStyles,
-    margin: { top: 20, left: marginLeft, right: 14 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
   }, doDescColIdx, doRichDesc);
 
   if (doDoc.notes) {
