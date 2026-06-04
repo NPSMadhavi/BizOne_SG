@@ -1,12 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ChevronDown } from "lucide-react";
 
 const PRESET_TERMS = [
   "Immediate",
@@ -25,31 +19,27 @@ interface PaymentTermsSelectProps {
 }
 
 export function PaymentTermsSelect({ value = "", onChange }: PaymentTermsSelectProps) {
-  const [mode, setMode] = useState<"preset" | "custom">(() =>
-    value && !PRESET_TERMS.includes(value) ? "custom" : "preset"
-  );
+  // Custom mode: value is non-empty and not in the preset list
+  const isCustomValue = !!value && !PRESET_TERMS.includes(value);
+  const [customMode, setCustomMode] = useState(isCustomValue);
 
-  // Sync mode when value is reset externally (e.g. form.reset() on edit pages)
-  useEffect(() => {
-    if (PRESET_TERMS.includes(value)) {
-      setMode("preset");
-    } else if (value !== "") {
-      // Non-empty value that isn't a preset → show in custom input
-      setMode("custom");
-    }
-  }, [value]);
+  // When value changes externally (form.reset), sync custom mode
+  // Using derived state is safe here — we only override the user's
+  // explicit toggle when the value is clearly a preset.
+  const effectiveCustomMode = isCustomValue || customMode;
 
-  const handleSelect = (v: string) => {
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value;
     if (v === "__custom__") {
-      setMode("custom");
+      setCustomMode(true);
       onChange("");
     } else {
-      setMode("preset");
+      setCustomMode(false);
       onChange(v);
     }
   };
 
-  if (mode === "custom") {
+  if (effectiveCustomMode) {
     return (
       <div className="flex gap-2">
         <Input
@@ -61,7 +51,7 @@ export function PaymentTermsSelect({ value = "", onChange }: PaymentTermsSelectP
         <button
           type="button"
           className="text-xs text-muted-foreground underline shrink-0"
-          onClick={() => { setMode("preset"); onChange(""); }}
+          onClick={() => { setCustomMode(false); onChange(""); }}
         >
           Use preset
         </button>
@@ -70,16 +60,19 @@ export function PaymentTermsSelect({ value = "", onChange }: PaymentTermsSelectP
   }
 
   return (
-    <Select value={value || "__placeholder__"} onValueChange={handleSelect}>
-      <SelectTrigger>
-        <SelectValue placeholder="Select payment terms" />
-      </SelectTrigger>
-      <SelectContent>
+    <div className="relative">
+      <select
+        value={value || ""}
+        onChange={handleSelectChange}
+        className="flex h-10 w-full appearance-none items-center rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
+      >
+        <option value="" disabled>Select payment terms</option>
         {PRESET_TERMS.map(t => (
-          <SelectItem key={t} value={t}>{t}</SelectItem>
+          <option key={t} value={t}>{t}</option>
         ))}
-        <SelectItem value="__custom__">Custom...</SelectItem>
-      </SelectContent>
-    </Select>
+        <option value="__custom__">Custom...</option>
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
   );
 }
