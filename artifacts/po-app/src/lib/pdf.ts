@@ -985,7 +985,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     if (hasInvPartNo) invColStyles[ci++] = { cellWidth: 25 }; // part no
     invColStyles[ci++] = { cellWidth: "auto" }; // description
     invColStyles[ci++] = { cellWidth: 18, halign: "center" }; // qty
-    if (hasInvUom) invColStyles[ci++] = { cellWidth: 14, halign: "center" }; // uom
+    if (hasInvUom) invColStyles[ci++] = { cellWidth: 18, halign: "center" }; // uom
     invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // unit price
     if (hasInvItemDiscount) invColStyles[ci++] = { cellWidth: 18, halign: "right" }; // disc %
     invColStyles[ci++] = { cellWidth: hasInvPartNo ? 23 : 26, halign: "right" }; // amount
