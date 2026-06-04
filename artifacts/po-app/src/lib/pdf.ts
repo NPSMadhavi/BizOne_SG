@@ -350,16 +350,21 @@ function renderEntityBlock(
   x: number,
   startY: number,
   maxWidth: number
-): void {
+): number {
   doc.setFontSize(9.5);
   doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(60, 60, 60);
   doc.text(name, x, startY);
   const restText = rest.filter(Boolean).join("\n");
+  let bottomY = startY;
   if (restText) {
     doc.setFont(PDF_FONT, "normal");
-    doc.text(doc.splitTextToSize(restText, maxWidth), x, startY + 5);
+    const lines = doc.splitTextToSize(restText, maxWidth) as string[];
+    doc.text(lines, x, startY + 5);
+    const lineH = (doc.getLineHeight() / doc.internal.scaleFactor);
+    bottomY = startY + 5 + (lines.length - 1) * lineH;
   }
+  return bottomY;
 }
 
 function fmtMoney(currency: string, amount: number): string {
@@ -917,7 +922,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
 
-  renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 85);
+  const invEntityBottom = renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 85);
 
   // Right column: Payment Terms + optional PO Ref No — both fully right-aligned at marginRight
   doc.setFontSize(9.5);
@@ -936,6 +941,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("PO Ref No: ", marginRight - doc.getTextWidth(prVal), 83, { align: "right" });
   }
+  // Dynamic table start: hug the address block + right-side labels with a fixed 10 mm gap
+  const invRightBottom = invPoRefNo ? 83 : 75;
+  const invTableStartY = Math.max(invEntityBottom, invRightBottom) + 10;
 
   const invCurrency = (inv as any).currency || "SGD";
   const invDocDiscount = Number((inv as any).discountAmount) || 0;
@@ -1004,7 +1012,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invBoxH = (3 + invExtraRows) * 7 + 16;
 
   autoTableRich(doc, {
-    startY: 107,
+    startY: invTableStartY,
     head: [invHeaders],
     body: tableData,
     theme: "striped",
