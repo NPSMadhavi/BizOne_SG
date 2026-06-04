@@ -456,7 +456,7 @@ export default function InvoiceEdit() {
                       <th className="px-4 py-3 text-right w-20">Qty</th>
                       <th className="px-4 py-3 text-center w-28">UOM</th>
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
-                      <th className="px-4 py-3 text-right w-16">Disc %</th>
+                      <th className="px-4 py-3 text-right w-24">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
                       <th className="px-4 py-3 text-center w-14">FOC</th>
                       <th className="px-4 py-3 text-center w-24">Serials</th>
