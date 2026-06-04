@@ -583,7 +583,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const poCurrency = (po as any).currency || "SGD";
   // Strip trailing/empty item rows that have no description and no part number
   const filteredPOItems = po.items.filter((item: any) => {
-    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
     return hasDesc || hasPart;
   });
@@ -791,7 +791,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtDocDiscount = Number((qt as any).discountAmount) || 0;
   // Strip trailing/empty item rows that have no description and no part number
   const filteredQtItems = (qt.items as any[]).filter((item: any) => {
-    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
     return hasDesc || hasPart;
   });
@@ -941,8 +941,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invDocDiscount = Number((inv as any).discountAmount) || 0;
   // Strip trailing/empty item rows that have no description and no part number
   const allInvItems = (inv.items as any[]).filter((item: any) => {
-    if (item.type === "section") return (item.sectionLabel || "").trim() !== "";
-    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    if (item.type === "section") return htmlToText(item.sectionLabel || "").trim() !== "";
+    const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
     return hasDesc || hasPart;
   });
@@ -1096,7 +1096,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
 
   // Strip trailing/empty item rows that have no description and no part number
   const filteredDOItems = (doDoc.items as any[]).filter((item: any) => {
-    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
     return hasDesc || hasPart;
   });
