@@ -241,7 +241,7 @@ export default function InvoiceNew() {
     const filledItems = values.items.filter(i =>
       (i as any).type === "section"
         ? ((i as any).sectionLabel || "").trim() !== ""
-        : i.partNumber.trim() !== "" || i.description.trim() !== ""
+        : (i.partNumber || "").replace(/<[^>]*>/g, "").trim() !== "" || (i.description || "").replace(/<[^>]*>/g, "").trim() !== ""
     );
     const realItems = filledItems.filter((i: any) => i.type !== "section");
     if (realItems.length === 0) {

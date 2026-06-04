@@ -581,7 +581,13 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.text(po.paymentTerms || "Standard", col2 + 33, 105);
 
   const poCurrency = (po as any).currency || "SGD";
-  const hasPOUom = po.items.some((item: any) => item.uom && String(item.uom).trim() !== "");
+  // Strip trailing/empty item rows that have no description and no part number
+  const filteredPOItems = po.items.filter((item: any) => {
+    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasPart = (item.partNumber || "").trim() !== "";
+    return hasDesc || hasPart;
+  });
+  const hasPOUom = filteredPOItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
   const poHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
   if (hasPOUom) poHeaderArr.push("UOM");
@@ -599,8 +605,8 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     poColStyles[ci++] = { cellWidth: 27, halign: "right" }; // amount
   }
 
-  const poRichDesc = po.items.map((item: any) => htmlToRichLines(item.description));
-  const tableData = po.items.map((item, index) => {
+  const poRichDesc = filteredPOItems.map((item: any) => htmlToRichLines(item.description));
+  const tableData = filteredPOItems.map((item, index) => {
     const row: any[] = [index + 1, item.partNumber, htmlToText(item.description), item.qty];
     if (hasPOUom) row.push((item as any).uom || "");
     row.push(fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)));
@@ -783,8 +789,14 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtCurrency = (qt as any).currency || "SGD";
   const qtDocDiscount = Number((qt as any).discountAmount) || 0;
-  const hasItemDiscount = (qt.items as any[]).some(item => Number(item.discount) > 0);
-  const hasQtUom = (qt.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== "");
+  // Strip trailing/empty item rows that have no description and no part number
+  const filteredQtItems = (qt.items as any[]).filter((item: any) => {
+    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasPart = (item.partNumber || "").trim() !== "";
+    return hasDesc || hasPart;
+  });
+  const hasItemDiscount = filteredQtItems.some((item: any) => Number(item.discount) > 0);
+  const hasQtUom = filteredQtItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
   const qtHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
   if (hasQtUom) qtHeaderArr.push("UOM");
@@ -805,8 +817,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     qtColStyles[ci++] = { cellWidth: hasItemDiscount ? 23 : 27, halign: "right" }; // amount
   }
 
-  const qtRichDesc = (qt.items as any[]).map((item: any) => htmlToRichLines(item.description));
-  const tableData = (qt.items as any[]).map((item, i) => {
+  const qtRichDesc = filteredQtItems.map((item: any) => htmlToRichLines(item.description));
+  const tableData = filteredQtItems.map((item, i) => {
     const disc = Number(item.discount) || 0;
     const row: any[] = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty];
     if (hasQtUom) row.push(item.uom || "");
@@ -927,7 +939,13 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invCurrency = (inv as any).currency || "SGD";
   const invDocDiscount = Number((inv as any).discountAmount) || 0;
-  const allInvItems = inv.items as any[];
+  // Strip trailing/empty item rows that have no description and no part number
+  const allInvItems = (inv.items as any[]).filter((item: any) => {
+    if (item.type === "section") return (item.sectionLabel || "").trim() !== "";
+    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasPart = (item.partNumber || "").trim() !== "";
+    return hasDesc || hasPart;
+  });
   const regularInvItems = allInvItems.filter(item => item.type !== "section");
   const hasInvPartNo = regularInvItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
   const hasInvItemDiscount = regularInvItems.some(item => Number(item.discount) > 0);
@@ -1076,8 +1094,14 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
   doc.text(formatDate(doDoc.deliveryDate), marginLeft + 32, 105);
 
-  const hasPartNo = (doDoc.items as any[]).some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
-  const hasDOUom = (doDoc.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== "");
+  // Strip trailing/empty item rows that have no description and no part number
+  const filteredDOItems = (doDoc.items as any[]).filter((item: any) => {
+    const hasDesc = (item.description || "").replace(/<[^>]*>/g, "").trim() !== "";
+    const hasPart = (item.partNumber || "").trim() !== "";
+    return hasDesc || hasPart;
+  });
+  const hasPartNo = filteredDOItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
+  const hasDOUom = filteredDOItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
   const doHeaderArr: string[] = ["#"];
   if (hasPartNo) doHeaderArr.push("Item No.");
@@ -1095,8 +1119,8 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     if (hasDOUom) doColStyles[ci++] = { cellWidth: 18, halign: "center" }; // uom
   }
 
-  const doRichDesc = (doDoc.items as any[]).map((item: any) => htmlToRichLines(item.description));
-  const tableData = (doDoc.items as any[]).map((item, i) => {
+  const doRichDesc = filteredDOItems.map((item: any) => htmlToRichLines(item.description));
+  const tableData = filteredDOItems.map((item, i) => {
     const row: any[] = [i + 1];
     if (hasPartNo) row.push(item.partNumber || "");
     row.push(htmlToText(item.description), item.qty);
