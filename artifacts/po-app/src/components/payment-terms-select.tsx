@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -25,8 +25,19 @@ interface PaymentTermsSelectProps {
 }
 
 export function PaymentTermsSelect({ value = "", onChange }: PaymentTermsSelectProps) {
-  const isPreset = PRESET_TERMS.includes(value) || value === "";
-  const [mode, setMode] = useState<"preset" | "custom">(isPreset ? "preset" : "custom");
+  const [mode, setMode] = useState<"preset" | "custom">(() =>
+    value && !PRESET_TERMS.includes(value) ? "custom" : "preset"
+  );
+
+  // Sync mode when value is reset externally (e.g. form.reset() on edit pages)
+  useEffect(() => {
+    if (PRESET_TERMS.includes(value)) {
+      setMode("preset");
+    } else if (value !== "") {
+      // Non-empty value that isn't a preset → show in custom input
+      setMode("custom");
+    }
+  }, [value]);
 
   const handleSelect = (v: string) => {
     if (v === "__custom__") {
