@@ -932,11 +932,11 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invColumnStyles = hasInvItemDiscount
     ? (hasInvPartNo
-        ? { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" }, 4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" } }
-        : { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 25, halign: "right" }, 4: { cellWidth: 16, halign: "right" }, 5: { cellWidth: 25, halign: "right" } })
+        ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" }, 4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" } }
+        : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 25, halign: "right" }, 4: { cellWidth: 16, halign: "right" }, 5: { cellWidth: 25, halign: "right" } })
     : (hasInvPartNo
-        ? { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" } }
-        : { 0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 16, halign: "center" }, 3: { cellWidth: 27, halign: "right" }, 4: { cellWidth: 27, halign: "right" } });
+        ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" } }
+        : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 16, halign: "center" }, 3: { cellWidth: 27, halign: "right" }, 4: { cellWidth: 27, halign: "right" } });
 
   const invFooterReserve = 20;
   const invExtraRows = invDocDiscount > 0 ? 1 : 0;
