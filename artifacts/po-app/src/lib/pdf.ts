@@ -217,9 +217,10 @@ function autoTableRich(
       jdoc.setFontSize(9.5);
 
       // Build a rendering plan: calculate each line's baseline y
+      // Use textPos.y from autotable when available — more accurate than manual calc
       type Plan = { y: number; richLine: RichLine };
       const plan: Plan[] = [];
-      let ty = cell.y + padding + BASELINE_OFFSET;
+      let ty = (cell as any).textPos?.y ?? (cell.y + padding + BASELINE_OFFSET);
       for (const rl of richLines) {
         plan.push({ y: ty, richLine: rl });
         if (rl.cols) {
@@ -599,11 +600,11 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
     columnStyles: {
-      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 },
+      0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 },
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
-    margin: { left: marginLeft, right: 14, bottom: footerReserve + totalsBlockH + 10 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: footerReserve + totalsBlockH + 10 },
   }, 2, poRichDesc);
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;
@@ -787,19 +788,19 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     head: [qtHeaders],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
     columnStyles: hasItemDiscount ? {
-      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 28 },
+      0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 28 },
       2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" },
-      4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" },
+      4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 25, halign: "right" },
     } : {
-      0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 32 },
+      0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 },
       2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" },
       4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" },
     },
-    margin: { left: marginLeft, right: 14, bottom: qtFooterReserve + qtBoxH + 10 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: qtFooterReserve + qtBoxH + 10 },
   }, 2, qtRichDesc);
 
   let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
@@ -818,6 +819,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   if (qtCurrentY + qtBoxH + qtFooterReserve > pageHeight) { doc.addPage(); qtCurrentY = 20; }
 
   // ── Totals ───────────────────────────────────────────────────────────────────
+  const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
+  const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 100) : 0;
+  const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
   const totalsY = qtCurrentY;
@@ -837,7 +841,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     doc.setTextColor(60, 60, 60);
     ty += 7;
   }
-  doc.text("GST:", labelX, ty);
+  doc.text(qtGstLabel, labelX, ty);
   doc.text(fmtMoneyTotal(qtCurrency, Number(qt.tax)), valueX, ty, { align: "right" });
   ty += 3;
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
@@ -932,8 +936,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invColumnStyles = hasInvItemDiscount
     ? (hasInvPartNo
-        ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" }, 4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 16, halign: "right" }, 6: { cellWidth: 25, halign: "right" } }
-        : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 25, halign: "right" }, 4: { cellWidth: 16, halign: "right" }, 5: { cellWidth: 25, halign: "right" } })
+        ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 14, halign: "center" }, 4: { cellWidth: 25, halign: "right" }, 5: { cellWidth: 20, halign: "right" }, 6: { cellWidth: 25, halign: "right" } }
+        : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 25, halign: "right" }, 4: { cellWidth: 20, halign: "right" }, 5: { cellWidth: 25, halign: "right" } })
     : (hasInvPartNo
         ? { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: 32 }, 2: { cellWidth: "auto" }, 3: { cellWidth: 16, halign: "center" }, 4: { cellWidth: 27, halign: "right" }, 5: { cellWidth: 27, halign: "right" } }
         : { 0: { cellWidth: 13, halign: "center" }, 1: { cellWidth: "auto" }, 2: { cellWidth: 16, halign: "center" }, 3: { cellWidth: 27, halign: "right" }, 4: { cellWidth: 27, halign: "right" } });
@@ -947,11 +951,11 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     head: [invHeaders],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 9.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5 },
     styles: { cellPadding: 4 },
     columnStyles: invColumnStyles,
-    margin: { left: marginLeft, right: 14, bottom: invFooterReserve + invBoxH + 10 },
+    margin: { top: 20, left: marginLeft, right: 14, bottom: invFooterReserve + invBoxH + 10 },
   }, invDescColIdx, invRichDesc);
 
   let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
@@ -970,6 +974,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   if (invCurrentY + invBoxH + invFooterReserve > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
   // ── Totals ───────────────────────────────────────────────────────────────────
+  const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
+  const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 100) : 0;
+  const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
   const totalsY = invCurrentY;
@@ -989,7 +996,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     doc.setTextColor(60, 60, 60);
     ity += 7;
   }
-  doc.text("GST:", labelX, ity);
+  doc.text(invGstLabel, labelX, ity);
   doc.text(fmtMoneyTotal(invCurrency, Number(inv.tax)), valueX, ity, { align: "right" });
   ity += 3;
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.3);
