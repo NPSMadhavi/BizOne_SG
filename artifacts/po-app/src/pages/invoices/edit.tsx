@@ -39,6 +39,7 @@ const itemSchema = z.object({
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0),
   discount: z.coerce.number().min(0).max(100).default(0),
+  isFoc: z.boolean().default(false),
   isStockItem: z.boolean().default(false),
   selectedSerials: z.array(z.string()).default([]),
   selectedSerialIds: z.array(z.number()).default([]),
@@ -151,7 +152,7 @@ export default function InvoiceEdit() {
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
+      items: [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
     },
   });
 
@@ -183,10 +184,11 @@ export default function InvoiceEdit() {
           uom: i.uom || "",
           unitPrice: Number(i.unitPrice) || 0,
           discount: Number(i.discount) || 0,
+          isFoc: !!(i.isFoc),
           isStockItem: i.isStockItem ?? false,
           selectedSerials: i.selectedSerials ?? [],
           selectedSerialIds: i.selectedSerialIds ?? [],
-        })) : [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
+        })) : [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] }],
       });
       initialized.current = true;
     }
@@ -218,7 +220,7 @@ export default function InvoiceEdit() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] });
+        append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -227,7 +229,7 @@ export default function InvoiceEdit() {
 
   const currency = form.watch("currency") || "SGD";
 
-  const subtotal = items.reduce((s, i) => (i as any).type === "section" ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+  const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
   const taxAmount = taxableAmount * (taxPercent / 100);
@@ -260,7 +262,7 @@ export default function InvoiceEdit() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left" };
       const disc = Number(i.discount) || 0;
-      return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i as any).isFoc ? "0.00" : (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     const saveStatus = openPreview ? "confirmed" : values.status;
     updateMutation.mutate({ id, data: { ...values, status: saveStatus, discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
@@ -280,7 +282,7 @@ export default function InvoiceEdit() {
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/invoices/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
@@ -413,10 +415,10 @@ export default function InvoiceEdit() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-lg">Line Items</CardTitle>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
                     <Plus className="h-3 w-3" /> Add Item
                   </Button>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] })}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
                 </div>
@@ -452,10 +454,11 @@ export default function InvoiceEdit() {
                       <th className="px-4 py-3 text-left w-36">Item / Part Number</th>
                       <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-right w-20">Qty</th>
-                      <th className="px-4 py-3 text-center w-16">UOM</th>
+                      <th className="px-4 py-3 text-center w-28">UOM</th>
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
                       <th className="px-4 py-3 text-right w-16">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
+                      <th className="px-4 py-3 text-center w-14">FOC</th>
                       <th className="px-4 py-3 text-center w-24">Serials</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
@@ -464,11 +467,11 @@ export default function InvoiceEdit() {
                     {(() => { let _n = 0; return fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
                       const _itemNo = itemType !== "section" ? ++_n : null;
-                      const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
-                      const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
+                      const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
+                      const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
                       const insertBar = (
                         <tr className="group/ins border-0 h-5">
-                          <td colSpan={9} className="p-0 overflow-visible">
+                          <td colSpan={11} className="p-0 overflow-visible">
                             <div className="relative flex items-center justify-center h-5">
                               <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
                               <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
@@ -488,7 +491,7 @@ export default function InvoiceEdit() {
                           <Fragment key={field.id}>
                             {insertBar}
                             <tr className="border-b bg-muted/40">
-                              <td colSpan={9} className="px-4 py-2">
+                              <td colSpan={11} className="px-4 py-2">
                                 <div className="flex items-start gap-2">
                                   <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
                                   <div className="flex-1 min-w-0">
@@ -519,6 +522,8 @@ export default function InvoiceEdit() {
                       const qty = Number(form.watch(`items.${index}.qty`)) || 0;
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
                       const disc = Number(form.watch(`items.${index}.discount`)) || 0;
+                      const isFoc = !!(form.watch(`items.${index}.isFoc`));
+                      const amount = isFoc ? 0 : qty * price * (1 - disc / 100);
                       return (
                         <Fragment key={field.id}>
                           {insertBar}
@@ -541,7 +546,28 @@ export default function InvoiceEdit() {
                             <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
                           )} /></td>
                           <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
-                            <FormItem><FormControl><Input className="h-8 text-sm text-center border-0 bg-transparent focus:bg-background" placeholder="Nos" {...field} /></FormControl></FormItem>
+                            <FormItem><FormControl>
+                              <select className="h-8 text-sm w-full border-0 bg-transparent focus:outline-none cursor-pointer" {...field}>
+                                <option value="">—</option>
+                                <option value="Nos">Nos</option>
+                                <option value="Pcs">Pcs</option>
+                                <option value="Set">Set</option>
+                                <option value="Lot">Lot</option>
+                                <option value="Hr">Hr</option>
+                                <option value="Day">Day</option>
+                                <option value="Month">Month</option>
+                                <option value="Yr">Yr</option>
+                                <option value="Job">Job</option>
+                                <option value="kg">kg</option>
+                                <option value="m">m</option>
+                                <option value="L">L</option>
+                                <option value="Box">Box</option>
+                                <option value="Roll">Roll</option>
+                                <option value="Pair">Pair</option>
+                                <option value="Unit">Unit</option>
+                                <option value="ls">ls</option>
+                              </select>
+                            </FormControl></FormItem>
                           )} /></td>
                           <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
@@ -549,7 +575,14 @@ export default function InvoiceEdit() {
                           <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
                           )} /></td>
-                          <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(qty * price * (1 - disc / 100))}</td>
+                          <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
+                          <td className="px-4 py-2 text-center">
+                            <FormField control={form.control} name={`items.${index}.isFoc`} render={({ field }) => (
+                              <FormItem className="space-y-0"><FormControl>
+                                <Checkbox checked={!!field.value} onCheckedChange={field.onChange} title="Free of Charge — amount shows as $0.00" />
+                              </FormControl></FormItem>
+                            )} />
+                          </td>
                           <td className="px-4 py-2 text-center">
                             <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
                               <FormItem className="space-y-0">
