@@ -170,7 +170,7 @@ function htmlToRichLines(html: string): RichLine[] {
     .replace(/<li[^>]*>/gi, "• ")
     .replace(/<\/?(ul|ol|div|h[1-6])[^>]*>/gi, "\n")
     .split("\n");
-  const result: RichLine[] = [];
+  const all: RichLine[] = [];
   for (const rawLine of rawLines) {
     const hasBold = /<(strong|b)\b/i.test(rawLine);
     const hasItalic = /<(em|i)\b/i.test(rawLine);
@@ -181,9 +181,13 @@ function htmlToRichLines(html: string): RichLine[] {
       .replace(/&gt;/g, ">")
       .replace(/&nbsp;/g, " ")
       .trim();
-    if (text) result.push({ text, bold: hasBold, italic: hasItalic });
+    all.push({ text, bold: hasBold, italic: hasItalic });
   }
-  return result;
+  // Preserve internal blank lines; trim leading/trailing blanks only
+  let s = 0, e = all.length - 1;
+  while (s <= e && all[s].text === "") s++;
+  while (e >= s && all[e].text === "") e--;
+  return all.slice(s, e + 1);
 }
 
 /**
@@ -276,9 +280,11 @@ function autoTableRich(
         plan.push({ y: ty, richLine: rl });
         if (rl.cols) {
           ty += LINE_H;
+        } else if (!rl.text) {
+          ty += LINE_H; // blank line — advance one line height, nothing to render
         } else {
           jdoc.setFont(PDF_FONT, "normal");
-          const wrapped = jdoc.splitTextToSize(rl.text || " ", maxW);
+          const wrapped = jdoc.splitTextToSize(rl.text, maxW);
           ty += wrapped.length * LINE_H;
         }
       }
@@ -294,12 +300,13 @@ function autoTableRich(
             const colText = jdoc.splitTextToSize(col, colW - 3);
             jdoc.text(colText[0] ?? "", x + ci * colW + 2, y);
           });
-        } else {
+        } else if (text) {
           const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
           jdoc.setFont(PDF_FONT, style);
-          const wrapped = jdoc.splitTextToSize(text || " ", maxW);
+          const wrapped = jdoc.splitTextToSize(text, maxW);
           jdoc.text(wrapped, x, y);
         }
+        // blank line: ty was already advanced in plan loop, nothing to render
       }
 
       // Border pass: group consecutive cols rows and draw grid

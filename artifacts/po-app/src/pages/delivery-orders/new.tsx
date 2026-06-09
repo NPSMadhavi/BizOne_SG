@@ -20,6 +20,7 @@ import { generateDO_PDF } from "@/lib/pdf";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { UomSelect } from "@/components/uom-select";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -256,7 +257,7 @@ export default function DeliveryOrderNew() {
                         </td>
                         <td className="px-4 py-2 align-top">
                           <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
-                            <FormItem><FormControl><Input className="h-8 text-sm text-center" placeholder="Nos" {...field} /></FormControl></FormItem>
+                            <FormItem><FormControl><UomSelect value={field.value ?? ""} onChange={field.onChange} /></FormControl></FormItem>
                           )} />
                         </td>
                         <td className="px-4 py-2 align-top pt-2">
