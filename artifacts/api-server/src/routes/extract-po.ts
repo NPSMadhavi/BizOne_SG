@@ -4,8 +4,12 @@ import multer from "multer";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
 const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse: (buffer: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+const { PDFParse } = require("pdf-parse") as {
+  PDFParse: new (opts: { data: Uint8Array }) => {
+    getText(): Promise<{ text: string }>;
+    destroy(): Promise<void>;
+  };
+};
 
 const router = Router();
 const upload = multer({
@@ -21,9 +25,12 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
     let text = "";
 
     try {
-      const pdfData = await pdfParse(req.file.buffer);
-      text = pdfData.text || "";
-    } catch {
+      const parser = new PDFParse({ data: new Uint8Array(req.file.buffer) });
+      const result = await parser.getText();
+      text = result.text || "";
+      await parser.destroy();
+    } catch (parseErr: any) {
+      req.log?.warn({ err: parseErr }, "pdf-parse failed");
       return res.status(422).json({ error: "Could not parse PDF. Please ensure it is not password-protected." });
     }
 
@@ -34,8 +41,8 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
     }
 
     const response = await openai.chat.completions.create({
-      model: "gpt-5",
-      max_completion_tokens: 4096,
+      model: "gpt-4o",
+      max_tokens: 4096,
       response_format: { type: "json_object" },
       messages: [
         {
