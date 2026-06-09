@@ -1039,31 +1039,44 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const logo = await getLogoData(getLogoUrl(company));
   buildDocHeader(doc, logo, "TAX INVOICE", inv.invNumber, fmtDate((inv as any).issueDate || inv.createdAt), inv.status, info);
 
-  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text("Bill To:", marginLeft, 67);
-
-  const invEntityBottom = renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, 85);
-
-  // Right column: Payment Terms + optional PO Ref No — both fully right-aligned at marginRight
+  // Payment Terms + PO Ref moved into header zone, below Date (y=36)
   doc.setFontSize(9.5);
   {
     const ptVal = inv.paymentTerms || "Standard";
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text(ptVal, marginRight, 75, { align: "right" });
+    doc.text(ptVal, marginRight, 44, { align: "right" });
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Payment Terms: ", marginRight - doc.getTextWidth(ptVal), 75, { align: "right" });
+    doc.text("Payment Terms:", marginRight - doc.getTextWidth(ptVal) - 1, 44, { align: "right" });
   }
   const invPoRefNo = (inv as any).poRefNo;
   if (invPoRefNo) {
     const prVal = String(invPoRefNo);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text(prVal, marginRight, 83, { align: "right" });
+    doc.text(prVal, marginRight, 52, { align: "right" });
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("PO Ref No: ", marginRight - doc.getTextWidth(prVal), 83, { align: "right" });
+    doc.text("PO Ref No:", marginRight - doc.getTextWidth(prVal) - 1, 52, { align: "right" });
   }
-  // Dynamic table start: hug the address block + right-side labels with a fixed 10 mm gap
-  const invRightBottom = invPoRefNo ? 83 : 75;
-  const invTableStartY = Math.max(invEntityBottom, invRightBottom) + 10;
+
+  // Bill To (left) + optional Ship To (right)
+  const invShipToAddr = ((inv as any).deliveryAddress || "").trim();
+  const midX = pageWidth / 2 + 5;
+  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+  doc.text("Bill To:", marginLeft, 67);
+  if (invShipToAddr) doc.text("Ship To:", midX, 67);
+
+  const invBillToMaxW = invShipToAddr ? midX - marginLeft - 6 : 85;
+  const invEntityBottom = renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, invBillToMaxW);
+
+  let invShipToBottom = 67;
+  if (invShipToAddr) {
+    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    const shipLines = doc.splitTextToSize(invShipToAddr, 82);
+    doc.text(shipLines, midX, 74);
+    invShipToBottom = 74 + shipLines.length * 5;
+  }
+
+  // Dynamic table start
+  const invTableStartY = Math.max(invEntityBottom, invShipToBottom) + 10;
 
   const invCurrency = (inv as any).currency || "SGD";
   const invDocDiscount = Number((inv as any).discountAmount) || 0;
@@ -1135,6 +1148,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
 
+  const invUnitPriceIdx = invHeaders.indexOf("Unit Price");
+  const invAmountIdx = invHeaders.indexOf("Amount");
   autoTableRich(doc, {
     startY: invTableStartY,
     head: [invHeaders],
@@ -1145,6 +1160,11 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     styles: { cellPadding: 4 },
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
+    didParseCell: (data: any) => {
+      if (data.section === "head" && (data.column.index === invUnitPriceIdx || data.column.index === invAmountIdx)) {
+        data.cell.styles.halign = "right";
+      }
+    },
   }, invDescColIdx, invRichDesc);
 
   let invCurrentY = (doc as any).lastAutoTable.finalY + 8;

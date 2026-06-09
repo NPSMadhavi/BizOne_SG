@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -35,13 +36,15 @@ interface Customer {
   currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
+  shipToAddress: string | null;
   isActive: boolean;
   createdAt: string;
 }
 
 const blank = (): Partial<Customer> => ({
   name: "", address: "", postalCode: "", country: "", contactPerson: "",
-  contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "", isActive: true,
+  contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "",
+  shipToAddress: "", isActive: true,
 });
 
 async function fetchCustomers(): Promise<Customer[]> {
@@ -295,6 +298,18 @@ export default function CustomersPage() {
                 className="max-w-[200px]"
               />
               <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+              <Textarea
+                value={form.shipToAddress || ""}
+                onChange={e => setField("shipToAddress", e.target.value)}
+                placeholder="Delivery / ship-to address if different from billing address"
+                className="resize-none"
+                rows={3}
+              />
+              <p className="text-[11px] text-muted-foreground">Shown on invoices when this customer is selected.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

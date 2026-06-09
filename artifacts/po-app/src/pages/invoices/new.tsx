@@ -349,6 +349,7 @@ export default function InvoiceNew() {
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
+                    if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
                     if (c.effectiveGstRate !== undefined) form.setValue("tax", c.effectiveGstRate);
                     if (c.currency) {
                       form.setValue("currency", c.currency);
@@ -388,6 +389,13 @@ export default function InvoiceNew() {
                 <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
                   <FormItem><FormLabel>Contact Email</FormLabel>
                     <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
+                    <FormControl><Textarea placeholder="Delivery / ship-to address if different from billing…" className="resize-none" rows={2} {...field} /></FormControl>
+                    <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the invoice PDF when set.</p>
+                  </FormItem>
                 )} />
               </CardContent>
             </Card>

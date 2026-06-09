@@ -22,6 +22,7 @@ interface DirectoryEntry {
   currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
+  shipToAddress: string | null;
   isActive: boolean;
 }
 
@@ -37,6 +38,7 @@ export interface PickedEntry {
   country: string;
   fullAddress: string;
   currency: string;
+  shipToAddress: string;
 }
 
 interface DirectoryPickerButtonProps {
@@ -104,6 +106,7 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
       country: entry.country || "",
       fullAddress: buildFullAddress(entry),
       currency: entry.currency || "",
+      shipToAddress: entry.shipToAddress || "",
     });
     setSearch("");
     setOpen(false);
