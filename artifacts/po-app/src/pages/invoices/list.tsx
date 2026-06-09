@@ -100,7 +100,7 @@ export default function InvoiceList() {
                     <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{(doc as any).createdByUsername || "—"}</td>
-                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(doc.totalAmount)}</td>
+                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(Number(doc.totalAmount))}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
                     <td className="px-6 py-4 text-right">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">

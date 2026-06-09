@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
@@ -26,6 +26,7 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
+import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -85,6 +86,7 @@ export default function InvoiceNew() {
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+  const [poUploadOpen, setPoUploadOpen] = useState(false);
 
   const allReservedIds = useRef<Set<number>>(new Set());
 
@@ -149,6 +151,27 @@ export default function InvoiceNew() {
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
   }, [settings]);
+
+  function handlePoExtracted(data: ExtractedPoData) {
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
+    form.setValue("customerName", data.customerName || "");
+    form.setValue("customerAddress", data.customerAddress || "");
+    form.setValue("customerContact", data.customerContact || "");
+    form.setValue("customerContactEmail", data.customerContactEmail || "");
+    form.setValue("poRefNo", data.poRefNo || "");
+    if (data.currency) form.setValue("currency", data.currency);
+    const mappedItems = data.items
+      .filter(it => it.description?.trim())
+      .map(it => ({
+        ...blankItem,
+        partNumber: it.partNumber || "",
+        description: it.description,
+        qty: Number(it.qty) || 1,
+        uom: it.uom || "",
+        unitPrice: Number(it.unitPrice) || 0,
+      }));
+    if (mappedItems.length > 0) form.setValue("items", mappedItems);
+  }
 
   // Aria prefill — populated by the AI agent via navigateTo
   useEffect(() => {
@@ -281,12 +304,23 @@ export default function InvoiceNew() {
           <h1 className="text-3xl font-bold tracking-tight">New Invoice</h1>
           <p className="text-muted-foreground mt-1">Create a new customer invoice.</p>
         </div>
-        {nextInvNumber && (
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Number</p>
-            <p className="text-lg font-semibold font-mono">{nextInvNumber}</p>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
+            onClick={() => setPoUploadOpen(true)}
+          >
+            <Upload className="h-4 w-4" />
+            Import Customer PO
+          </Button>
+          {nextInvNumber && (
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Number</p>
+              <p className="text-lg font-semibold font-mono">{nextInvNumber}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <Form {...form}>
@@ -775,6 +809,12 @@ export default function InvoiceNew() {
           }
           setPendingConfirmValues(null);
         }}
+      />
+
+      <CustomerPoUploadDialog
+        open={poUploadOpen}
+        onOpenChange={setPoUploadOpen}
+        onApply={handlePoExtracted}
       />
 
       {savedDoc && (
