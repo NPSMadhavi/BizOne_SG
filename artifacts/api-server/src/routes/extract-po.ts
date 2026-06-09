@@ -56,7 +56,7 @@ Return ONLY this JSON structure:
       "partNumber": "item/part number or SKU code, empty string if none",
       "description": "full item description",
       "qty": 1,
-      "uom": "unit of measure e.g. Unit, Nos, Pcs, Set, Kg, L, m, Box. Default Unit.",
+      "uom": "unit of measure exactly as shown in the PO (e.g. Unit, Nos, Pcs, Set, Kg, L, m, Box). Empty string if not specified.",
       "unitPrice": 0.00
     }
   ]
