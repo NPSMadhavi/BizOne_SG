@@ -941,9 +941,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     { auto: true },                                            // description
     { fixed: 18, halign: "center" },                          // qty
     ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
-    { fixed: hasItemDiscount ? 23 : 27, halign: "right" },    // unit price
+    { fixed: hasItemDiscount ? 27 : 30, halign: "right" },    // unit price
     ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasItemDiscount ? 23 : 27, halign: "right" },    // amount
+    { fixed: hasItemDiscount ? 27 : 30, halign: "right" },    // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
 
@@ -1127,9 +1127,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     { auto: true },                                                 // description
     { fixed: 18, halign: "center" },                               // qty
     ...(hasInvUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: hasInvPartNo ? 23 : 26, halign: "right" as const },   // unit price
+    { fixed: hasInvPartNo ? 27 : 30, halign: "right" as const },   // unit price
     ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasInvPartNo ? 23 : 26, halign: "right" as const },   // amount
+    { fixed: hasInvPartNo ? 27 : 30, halign: "right" as const },   // amount
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
 
