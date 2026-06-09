@@ -1060,16 +1060,19 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const midX = pageWidth / 2 + 5;
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
-  if (showInvShipTo) doc.text("Ship To:", midX, 67);
+  if (showInvShipTo) doc.text("Ship To:", marginRight, 67, { align: "right" });
 
+  const invShipColW = marginRight - midX; // width of the right column
   const invBillToMaxW = showInvShipTo ? midX - marginLeft - 6 : 85;
   const invEntityBottom = renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, invBillToMaxW);
 
   let invShipToBottom = 67;
   if (showInvShipTo) {
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    const shipLines = doc.splitTextToSize(invShipToAddr, 82);
-    doc.text(shipLines, midX, 74);
+    const shipLines = doc.splitTextToSize(invShipToAddr, invShipColW);
+    shipLines.forEach((line: string, i: number) => {
+      doc.text(line, marginRight, 74 + i * 5, { align: "right" });
+    });
     invShipToBottom = 74 + shipLines.length * 5;
   }
 
