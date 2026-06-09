@@ -28,6 +28,7 @@ router.use(healthRouter);
 router.use(authRouter);
 router.use(usersRouter);
 router.use(companiesRouter);
+router.use(extractPoRouter);
 router.use(purchaseOrdersRouter);
 router.use(quotationsRouter);
 router.use(invoicesRouter);
@@ -45,6 +46,5 @@ router.use(maintenanceRouter);
 router.use(vendorInvoicesRouter);
 router.use(auditLogsRouter);
 router.use(agentRouter);
-router.use(extractPoRouter);
 
 export default router;
