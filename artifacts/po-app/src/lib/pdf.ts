@@ -426,7 +426,7 @@ function renderEntityBlock(
 
 function fmtMoney(currency: string, amount: number): string {
   const SYMBOLS: Record<string, string> = {
-    SGD: "S$", USD: "$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ",
+    SGD: "S$", USD: "US$", EUR: "\u20AC", GBP: "\u00A3", MYR: "RM ",
     INR: PDF_FONT === "Roboto" ? "\u20B9" : "Rs.",
   };
   const symbol = SYMBOLS[currency] ?? (currency + " ");
