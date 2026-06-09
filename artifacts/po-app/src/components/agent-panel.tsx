@@ -70,6 +70,9 @@ const TOOL_LABELS: Record<string, string> = {
   getQuotation: "Loading quotation",
   searchStockItems: "Searching catalogue",
   searchPurchaseOrders: "Searching POs",
+  getPurchaseOrder: "Loading PO",
+  searchInvoices: "Searching invoices",
+  getInvoice: "Loading invoice",
   getCompanySettings: "Loading settings",
   getFinancialStats: "Calculating stats",
   navigateTo: "Navigating",
@@ -226,15 +229,9 @@ export function AgentPanel() {
 
   const hasMessages = messages.length > 0;
 
-  // Lock body scroll when open
+  // Focus input when opened
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-      setTimeout(() => inputRef.current?.focus(), 100);
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => { document.body.style.overflow = ""; };
+    if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
   // Scroll to bottom when messages update
@@ -260,7 +257,7 @@ export function AgentPanel() {
 
   const handleNavigate = useCallback((path: string, prefill: any, reason: string) => {
     if (prefill) (window as any).__ariaPrefill = prefill;
-    const label = PATH_LABELS[path] || path;
+    const label = PATH_LABELS[path] || reason || path.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
         ? { ...m, navigated: { path, label } }
@@ -336,21 +333,12 @@ export function AgentPanel() {
         </button>
       )}
 
-      {/* ── Backdrop ── */}
+      {/* ── Floating panel — no backdrop, fully non-blocking ── */}
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-end p-6 pointer-events-none"
-        >
-          {/* Dim overlay — click to close */}
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-[2px] pointer-events-auto"
-            onClick={close}
-          />
-
+        <div className="fixed bottom-6 right-6 z-50 pointer-events-none flex flex-col items-end">
           {/* Dialog card */}
           <div
-            className="relative pointer-events-auto flex flex-col w-[520px] h-[620px] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
+            className="pointer-events-auto flex flex-col w-[520px] h-[620px] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">

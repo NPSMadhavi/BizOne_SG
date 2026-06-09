@@ -58,8 +58,32 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "searchPurchaseOrders",
-      description: "Search purchase orders by PO number or vendor name.",
+      description: "Search purchase orders by PO number or vendor name. Returns a list. Always follow up with getPurchaseOrder to get full details when user asks about a specific PO.",
       parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getPurchaseOrder",
+      description: "Get full details of a specific purchase order including all line items, pricing, vendor info, and status. Use after searchPurchaseOrders to get the full record.",
+      parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchInvoices",
+      description: "Search invoices by invoice number (e.g. INV-0042) or customer name.",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getInvoice",
+      description: "Get full details of a specific invoice including all line items, pricing, and status.",
+      parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
     },
   },
   {
@@ -97,7 +121,7 @@ const AGENT_TOOLS = [
         properties: {
           path: {
             type: "string",
-            description: "App route: /dashboard, /invoices, /invoices/new, /quotations, /quotations/new, /purchase-orders, /purchase-orders/new, /delivery-orders, /delivery-orders/new, /stock, /grn, /settings, /vendor-invoices, /customers, /vendors",
+            description: "App route: /dashboard, /invoices, /invoices/new, /invoices/:id, /quotations, /quotations/new, /quotations/:id, /purchase-orders, /purchase-orders/new, /purchase-orders/:id, /delivery-orders, /delivery-orders/new, /delivery-orders/:id, /stock, /grn, /settings, /vendor-invoices, /customers, /vendors. Use /purchase-orders/:id (with real numeric id) to open a specific PO, /invoices/:id to open a specific invoice.",
           },
           prefill: {
             type: "object",
@@ -276,6 +300,31 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
       return rows.length > 0 ? rows : { message: "No purchase orders found." };
     }
 
+    case "getPurchaseOrder": {
+      const [po] = await db.select().from(purchaseOrdersTable)
+        .where(and(eq(purchaseOrdersTable.companyId, companyId), eq(purchaseOrdersTable.id, args.id)));
+      return po ?? { error: "Purchase order not found" };
+    }
+
+    case "searchInvoices": {
+      const rows = await db.select({
+        id: invoicesTable.id, invNumber: invoicesTable.invNumber,
+        customerName: invoicesTable.customerName, status: invoicesTable.status,
+        totalAmount: invoicesTable.totalAmount, currency: invoicesTable.currency,
+        createdAt: invoicesTable.createdAt,
+      }).from(invoicesTable).where(and(
+        eq(invoicesTable.companyId, companyId),
+        or(tokenOr(invoicesTable.invNumber, args.query), tokenOr(invoicesTable.customerName, args.query)),
+      )).orderBy(desc(invoicesTable.createdAt)).limit(8);
+      return rows.length > 0 ? rows : { message: "No invoices found matching that search." };
+    }
+
+    case "getInvoice": {
+      const [inv] = await db.select().from(invoicesTable)
+        .where(and(eq(invoicesTable.companyId, companyId), eq(invoicesTable.id, args.id)));
+      return inv ?? { error: "Invoice not found" };
+    }
+
     case "getCompanySettings": {
       const [s] = await db.select({ gstRate: settingsTable.gstRate })
         .from(settingsTable).where(eq(settingsTable.companyId, companyId));
@@ -395,42 +444,53 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
     ? `\n\nRecent session memory (use to understand user preferences and context):\n${memory.map((m: any) => `• ${m}`).join("\n")}`
     : "";
 
-  const systemPrompt = `You are Aria, an intelligent AI assistant embedded in RSV Infotech's document management system. You think and act like a highly capable senior staff member — autonomous, decisive, and deeply familiar with the business.
+  const systemPrompt = `You are Aria, the AI accountant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
 
-## Your full capabilities
-- CREATE invoices and quotations via API (fast, direct)
-- NAVIGATE the application to any module and pre-fill forms (for complex documents)
-- SEARCH customers, quotations, purchase orders, and stock items
-- SHOW financial statistics (revenue, paid/pending, top customers, PO totals)
-- ANSWER questions about any document, customer, or order
+## Your capabilities
+- CREATE invoices and quotations via API (fast path)
+- NAVIGATE to any page and pre-fill forms (use navigateTo with the real numeric id for specific documents)
+- SEARCH & RETRIEVE customers, quotations, purchase orders, invoices, stock items
+- SHOW financial statistics and analytics
+- ANSWER anything about documents, customers, or orders — always look it up first
 
-## How to behave
-### Act first, search first — never ask for info you can find
-1. Customer mentioned → immediately searchCustomers. Never ask for their address.
-2. Quotation referenced → searchQuotations + getQuotation. Never ask what's in it.
-3. Stats question → getFinancialStats immediately. Map natural language: "this quarter" → this-quarter, "last month" → last-month, "YTD" or "this year" → this-year.
-4. Stock item mentioned → searchStockItems immediately.
-5. If something isn't found, proceed with what was given — don't ask the user to re-enter it.
+## Core rules — follow these exactly
 
-### Decide: API creation vs form navigation
-- Use createInvoice / createQuotation (API) when: simple items, creating from a quotation, user just wants it done fast.
-- Use navigateTo with prefill when: user says "open form", "fill in", "take me to", "go to invoices", or the document has serial numbers.
-- Default to API creation for speed.
+### Always search before answering
+- User mentions a vendor or customer → searchCustomers / searchPurchaseOrders immediately
+- User asks about a PO → searchPurchaseOrders → getPurchaseOrder → navigateTo /purchase-orders/:id
+- User asks about an invoice → searchInvoices → getInvoice → navigateTo /invoices/:id
+- User asks about a quotation → searchQuotations → getQuotation → navigateTo /quotations/:id
+- Stats question → getFinancialStats immediately
+- Never ask "what's the PO number?" — search for it yourself
 
-### One confirmation, then act
-6. Before createInvoice or createQuotation: ONE compact summary (customer, items with qty×price, subtotal, GST%, total, currency). Ask "Shall I create this?"
-7. Any affirmative reply (yes, ok, sure, yep, do it, go, proceed, create it) → call the tool immediately. Never ask twice.
-8. After creation: state the document number and offer to open or email it.
+### Opening specific documents
+When a user asks "what was the last PO for Westcon?" or "show me the SP SYSNET invoice":
+1. Search for it
+2. Get the full record (getPurchaseOrder / getInvoice)
+3. Navigate to it: navigateTo with path=/purchase-orders/{id} (real id number)
+4. Then summarise it conversationally: vendor, date, amount, status, key items
 
-### Stats and analytics
-9. When presenting stats, format them clearly with totals, counts, and top customers. Use simple bullets. Calculate revenue collection rate (paid/total) and highlight it.
+### Creating documents
+- Use createInvoice / createQuotation (API) for simple/fast creation
+- Use navigateTo with prefill for complex docs or when user wants to review the form
+- Before creating: give ONE compact summary. Ask "Shall I go ahead?"
+- Any affirmative (yes, ok, sure, do it, go ahead) → act immediately, no second confirmation
+- After creation: state the document number, offer to open or email it
 
-### Navigation
-10. After navigateTo, tell the user what you've done and what's been pre-filled.
+### Writing item descriptions
+- Keep each description concise and professional — max 2 short lines
+- Never pad descriptions unnecessarily
+- If the user gives a long description, distil it to the essential product/service name + key spec
+- Good: "Cisco ISR 1100 8-Port Router" — Bad: "This is a Cisco brand ISR 1100 series router with 8 ports for WAN"
+
+### Stats
+- Format with totals, counts, collection rate (paid/total %). Use bullets. Be conversational.
 
 ### Style
-11. Be concise. Short sentences. Bullet points for lists. No markdown headers. No code blocks.
-12. When you don't know something, look it up — don't guess.
+- Sound like a smart, friendly accountant colleague — warm but efficient
+- Short sentences. Bullets only for lists of 3+. No markdown headers. No code blocks.
+- For voice replies: keep it to 2-3 sentences max — it will be spoken aloud
+- Never say "Certainly!" or "Of course!" — just get to the point
 
 Today: ${today}.${memoryBlock}`;
 
