@@ -1057,22 +1057,21 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invShipToAddr = ((inv as any).deliveryAddress || "").trim();
   const invBillAddr = (inv.customerAddress || "").trim();
   const showInvShipTo = invShipToAddr && invShipToAddr !== invBillAddr;
-  const midX = pageWidth / 2 + 5;
+  // Ship To block: left-aligned, anchored so its right edge meets marginRight
+  const invShipColW = 78; // mm wide column for ship-to
+  const shipStartX = marginRight - invShipColW;
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
-  if (showInvShipTo) doc.text("Ship To:", marginRight, 67, { align: "right" });
+  if (showInvShipTo) doc.text("Ship To:", shipStartX, 67);
 
-  const invShipColW = marginRight - midX; // width of the right column
-  const invBillToMaxW = showInvShipTo ? midX - marginLeft - 6 : 85;
+  const invBillToMaxW = showInvShipTo ? shipStartX - marginLeft - 6 : 85;
   const invEntityBottom = renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, invBillToMaxW);
 
   let invShipToBottom = 67;
   if (showInvShipTo) {
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
     const shipLines = doc.splitTextToSize(invShipToAddr, invShipColW);
-    shipLines.forEach((line: string, i: number) => {
-      doc.text(line, marginRight, 74 + i * 5, { align: "right" });
-    });
+    doc.text(shipLines, shipStartX, 74);
     invShipToBottom = 74 + shipLines.length * 5;
   }
 
