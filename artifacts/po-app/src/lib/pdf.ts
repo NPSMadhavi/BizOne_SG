@@ -992,7 +992,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = Math.max(qtCurrentY, pageHeight - FOOTER_RESERVE - qtCombinedH - 4);
+  const qtSepY = pageHeight - FOOTER_RESERVE + 2;
+  const totalsY = Math.max(qtCurrentY + 4, qtSepY - qtCombinedH);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1187,7 +1188,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = Math.max(invCurrentY, pageHeight - FOOTER_RESERVE - invCombinedH - 4);
+  // Anchor bottom of block exactly to the footer separator line
+  const invSepY = pageHeight - FOOTER_RESERVE + 2;
+  const totalsY = Math.max(invCurrentY + 4, invSepY - invCombinedH);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
