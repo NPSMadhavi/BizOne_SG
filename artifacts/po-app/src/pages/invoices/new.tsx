@@ -154,12 +154,6 @@ export default function InvoiceNew() {
 
   function handlePoExtracted(data: ExtractedPoData) {
     const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [] };
-    form.setValue("customerName", data.customerName || "");
-    form.setValue("customerAddress", data.customerAddress || "");
-    form.setValue("customerContact", data.customerContact || "");
-    form.setValue("customerContactEmail", data.customerContactEmail || "");
-    form.setValue("poRefNo", data.poRefNo || "");
-    if (data.currency) form.setValue("currency", data.currency);
     const mappedItems = data.items
       .filter(it => it.description?.trim())
       .map(it => ({

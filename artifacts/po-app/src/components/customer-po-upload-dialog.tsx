@@ -2,17 +2,10 @@ import { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ExtractedPoData {
-  customerName: string;
-  customerAddress: string;
-  customerContact: string;
-  customerContactEmail: string;
-  poRefNo: string;
-  currency: string;
   items: Array<{
     partNumber: string;
     description: string;
@@ -116,7 +109,7 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
           {step === "upload" && (
             <div className="space-y-4 py-2">
               <p className="text-sm text-muted-foreground">
-                Upload the customer's Purchase Order PDF. AI will extract the line items, customer details, and PO reference — you'll get a chance to review before applying.
+                Upload the customer's Purchase Order PDF. AI will extract the line items — you'll get a chance to review before applying.
               </p>
               <div
                 className={cn(
@@ -166,38 +159,6 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
               <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
                 <CheckCircle2 className="h-4 w-4" />
                 Extracted successfully from <span className="text-muted-foreground font-normal">{fileName}</span>
-              </div>
-
-              {/* Customer + meta */}
-              <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer &amp; Reference</p>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Customer Name</p>
-                    <EditableField value={extracted.customerName} onChange={v => setExtracted(p => p ? { ...p, customerName: v } : p)} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">PO Reference No.</p>
-                    <EditableField value={extracted.poRefNo} onChange={v => setExtracted(p => p ? { ...p, poRefNo: v } : p)} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Contact Person</p>
-                    <EditableField value={extracted.customerContact} onChange={v => setExtracted(p => p ? { ...p, customerContact: v } : p)} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Contact Email</p>
-                    <EditableField value={extracted.customerContactEmail} onChange={v => setExtracted(p => p ? { ...p, customerContactEmail: v } : p)} />
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-muted-foreground">Address</p>
-                    <EditableField value={extracted.customerAddress} onChange={v => setExtracted(p => p ? { ...p, customerAddress: v } : p)} multiline />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs text-muted-foreground">Currency:</span>
-                  <Badge variant="secondary">{extracted.currency}</Badge>
-                  <span className="text-xs text-muted-foreground ml-2">Change if needed after applying</span>
-                </div>
               </div>
 
               {/* Line items */}

@@ -47,16 +47,10 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `You are a Purchase Order document parser. Extract structured data from a PO document and return a JSON object.
+          content: `You are a Purchase Order document parser. Extract only the line items from a PO document and return a JSON object.
 
 Return ONLY this JSON structure:
 {
-  "customerName": "name of the company that issued the PO (the buyer/customer)",
-  "customerAddress": "full address of the buyer, multi-line joined with \\n",
-  "customerContact": "contact person name if present",
-  "customerContactEmail": "contact email if present, else empty string",
-  "poRefNo": "the PO reference/document number",
-  "currency": "3-letter currency code: SGD, USD, EUR, GBP, MYR, or INR. Default SGD if unclear.",
   "items": [
     {
       "partNumber": "item/part number or SKU code, empty string if none",
@@ -73,7 +67,6 @@ Rules:
 - description must be non-empty for every item
 - qty must be a positive number (default 1 if unclear)
 - unitPrice is a number, 0 if not shown
-- If multiple contact emails appear, use the primary one
 - Do not include shipping/freight as a line item unless explicitly priced`,
         },
         {
