@@ -1039,22 +1039,13 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const logo = await getLogoData(getLogoUrl(company));
   buildDocHeader(doc, logo, "TAX INVOICE", inv.invNumber, fmtDate((inv as any).issueDate || inv.createdAt), inv.status, info);
 
-  // Payment Terms + PO Ref moved into header zone, below Date (y=36)
+  // Payment Terms + PO Ref — same style as Number / Date (normal, grey, 6 mm apart)
   doc.setFontSize(9.5);
-  {
-    const ptVal = inv.paymentTerms || "Standard";
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text(ptVal, marginRight, 44, { align: "right" });
-    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Payment Terms:", marginRight - doc.getTextWidth(ptVal) - 1, 44, { align: "right" });
-  }
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(`Payment Terms: ${inv.paymentTerms || "Standard"}`, marginRight, 42, { align: "right" });
   const invPoRefNo = (inv as any).poRefNo;
   if (invPoRefNo) {
-    const prVal = String(invPoRefNo);
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text(prVal, marginRight, 52, { align: "right" });
-    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("PO Ref No:", marginRight - doc.getTextWidth(prVal) - 1, 52, { align: "right" });
+    doc.text(`PO Ref No: ${invPoRefNo}`, marginRight, 48, { align: "right" });
   }
 
   // Bill To (left) + optional Ship To (right, only when different from billing address)
