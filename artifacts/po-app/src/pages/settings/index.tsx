@@ -253,7 +253,7 @@ export default function Settings() {
   };
 
   function nextPreview(cfg: RunningNumberConfig) {
-    const n = parseInt(cfg.counter) || 1;
+    const n = (parseInt(cfg.counter) || 0) + 1;
     return `${cfg.prefix}${String(n)}${cfg.suffix}`;
   }
 
