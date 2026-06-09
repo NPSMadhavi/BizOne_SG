@@ -1058,7 +1058,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invBillAddr = (inv.customerAddress || "").trim();
   const showInvShipTo = invShipToAddr && invShipToAddr !== invBillAddr;
   // Ship To block: left-aligned, anchored so its right edge meets marginRight
-  const invShipColW = 78; // mm wide column for ship-to
+  const invShipColW = 58; // mm wide column for ship-to — starts close to right margin
   const shipStartX = marginRight - invShipColW;
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
