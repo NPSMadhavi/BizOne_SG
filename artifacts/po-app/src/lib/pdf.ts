@@ -753,6 +753,9 @@ function calcBlockHeight(
   const bank = (settings?.bankDetails || "").trim();
   const tnc = (settings?.termsAndConditions || "").trim();
   if (!bank && !tnc) return 0;
+  // Must measure at the same font size renderInlineDocInfo uses (7.5pt)
+  const prevSize = doc.getFontSize();
+  doc.setFontSize(7.5);
   const lineH = 3.8;
   let h = 0;
   if (bank) {
@@ -769,6 +772,7 @@ function calcBlockHeight(
       h += doc.splitTextToSize(`\u2022 ${l.trim()}`, maxW).length * lineH;
     });
   }
+  doc.setFontSize(prevSize);
   return h + 2; // bottom margin
 }
 
