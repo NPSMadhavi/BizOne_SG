@@ -201,8 +201,7 @@ export default function InvoiceNew() {
     const prefix = (settings as any).invPrefix ?? "";
     const counter = (parseInt((settings as any).invCounter) || 0) + 1;
     const suffix = (settings as any).invSuffix ?? "";
-    const padded = String(counter).padStart(4, "0");
-    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+    return `${prefix}${String(counter)}${suffix}`;
   })();
 
   const items = form.watch("items");

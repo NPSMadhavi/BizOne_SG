@@ -254,8 +254,7 @@ export default function Settings() {
 
   function nextPreview(cfg: RunningNumberConfig) {
     const n = parseInt(cfg.counter) || 1;
-    const padded = String(n).padStart(4, "0");
-    return `${cfg.prefix}${cfg.prefix && (padded || cfg.suffix) ? "-" : ""}${padded}${cfg.suffix}`;
+    return `${cfg.prefix}${String(n)}${cfg.suffix}`;
   }
 
   const handleTestSmtp = async () => {

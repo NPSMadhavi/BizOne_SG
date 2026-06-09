@@ -111,8 +111,7 @@ export default function PurchaseOrderNew() {
     const prefix = (settings as any).poPrefix ?? "";
     const counter = (parseInt((settings as any).poCounter) || 0) + 1;
     const suffix = (settings as any).poSuffix ?? "";
-    const padded = String(counter).padStart(4, "0");
-    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+    return `${prefix}${String(counter)}${suffix}`;
   })();
 
   const items = form.watch("items");

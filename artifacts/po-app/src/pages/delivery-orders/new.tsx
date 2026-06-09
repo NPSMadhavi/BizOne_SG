@@ -69,8 +69,7 @@ export default function DeliveryOrderNew() {
     const prefix = (settings as any).doPrefix ?? "";
     const counter = (parseInt((settings as any).doCounter) || 0) + 1;
     const suffix = (settings as any).doSuffix ?? "";
-    const padded = String(counter).padStart(4, "0");
-    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+    return `${prefix}${String(counter)}${suffix}`;
   })();
 
   const appendLock = useRef(false);

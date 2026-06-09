@@ -12,8 +12,7 @@ const TABLE_MAP: Record<DocType, { table: string; col: string }> = {
 };
 
 function buildNumber(prefix: string, counter: number, suffix: string): string {
-  const padded = String(counter).padStart(4, "0");
-  return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+  return `${prefix}${String(counter)}${suffix}`;
 }
 
 async function numberExists(type: DocType, number: string, companyId?: number): Promise<boolean> {
@@ -60,7 +59,7 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
   const s = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
 
   if (!s) {
-    return `${type.toUpperCase()}-0001`;
+    return `${type.toUpperCase()}1`;
   }
 
   const prefix  = s[prefixCol] ?? type.toUpperCase();

@@ -122,8 +122,7 @@ export default function QuotationNew() {
     const prefix = (settings as any).qtPrefix ?? "";
     const counter = (parseInt((settings as any).qtCounter) || 0) + 1;
     const suffix = (settings as any).qtSuffix ?? "";
-    const padded = String(counter).padStart(4, "0");
-    return `${prefix}${prefix ? "-" : ""}${padded}${suffix}`;
+    return `${prefix}${String(counter)}${suffix}`;
   })();
 
   const items = form.watch("items");
