@@ -8,7 +8,7 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-router.post("/api/invoices/extract-po", upload.single("file"), async (req, res) => {
+router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
   if (!req.session?.userId) return res.status(401).json({ error: "Unauthorized" });
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
