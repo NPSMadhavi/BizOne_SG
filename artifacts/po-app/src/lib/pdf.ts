@@ -715,9 +715,10 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     currentY = 20;
   }
 
+  // Pin totals to bottom of whichever page they land on
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = currentY;
+  const totalsY = Math.max(currentY, pageHeight - FOOTER_RESERVE - totalsBlockH - 4);
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
@@ -981,12 +982,13 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
   if (qtCurrentY + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
 
+  // Pin footer to bottom of whichever page it lands on
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 100) : 0;
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = qtCurrentY;
+  const totalsY = Math.max(qtCurrentY, pageHeight - FOOTER_RESERVE - qtCombinedH - 4);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1162,12 +1164,13 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invCombinedH = Math.max(invBoxH, invBankBlockH);
   if (invCurrentY + invCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
+  // Pin footer to bottom of whichever page it lands on
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 100) : 0;
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = invCurrentY;
+  const totalsY = Math.max(invCurrentY, pageHeight - FOOTER_RESERVE - invCombinedH - 4);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
