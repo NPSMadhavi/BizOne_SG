@@ -42,21 +42,21 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 4096,
+      max_tokens: 16384,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `You are a Purchase Order document parser. Extract only the line items from a PO document and return a JSON object.
+          content: `You are a Purchase Order document parser. Extract the line items from a PO or invoice document and return a JSON object.
 
 Return ONLY this JSON structure:
 {
   "items": [
     {
       "partNumber": "item/part number or SKU code, empty string if none",
-      "description": "full item description",
+      "description": "COMPLETE verbatim description exactly as it appears in the document — copy every word, bullet point, numbered list, and sub-clause. Do NOT summarize, paraphrase, shorten, or omit any part of the description text.",
       "qty": 1,
-      "uom": "unit of measure exactly as shown in the PO (e.g. Unit, Nos, Pcs, Set, Kg, L, m, Box). Empty string if not specified.",
+      "uom": "unit of measure exactly as shown (e.g. Unit, Nos, Pcs, Set, Kg, L, m, Box). Empty string if not specified.",
       "unitPrice": 0.00
     }
   ]
@@ -64,14 +64,14 @@ Return ONLY this JSON structure:
 
 Rules:
 - items must only be actual product/service line items, never headers, subtotals, tax lines, or notes
-- description must be non-empty for every item
+- description: copy the FULL text verbatim — if it spans multiple lines or paragraphs, include all of it; use \\n for line breaks
 - qty must be a positive number (default 1 if unclear)
 - unitPrice is a number, 0 if not shown
 - Do not include shipping/freight as a line item unless explicitly priced`,
         },
         {
           role: "user",
-          content: `Extract invoice data from this Purchase Order document:\n\n${text.slice(0, 14000)}`,
+          content: `Extract line items from this document:\n\n${text.slice(0, 28000)}`,
         },
       ],
     });
