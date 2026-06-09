@@ -1,6 +1,11 @@
 import { Router } from "express";
+import { createRequire } from "node:module";
 import multer from "multer";
 import { openai } from "@workspace/integrations-openai-ai-server";
+
+const require = createRequire(import.meta.url);
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse: (buffer: Buffer) => Promise<{ text: string }> = require("pdf-parse");
 
 const router = Router();
 const upload = multer({
@@ -15,9 +20,7 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
   try {
     let text = "";
 
-    // Dynamic import for pdf-parse (CJS module)
     try {
-      const { default: pdfParse } = await import("pdf-parse" as any);
       const pdfData = await pdfParse(req.file.buffer);
       text = pdfData.text || "";
     } catch {
