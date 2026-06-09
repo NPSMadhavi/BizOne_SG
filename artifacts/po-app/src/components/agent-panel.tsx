@@ -378,7 +378,63 @@ export function AgentPanel() {
                     <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
                   </div>
 
-                  {/* Input */}
+                  {/* ── Speak button ── */}
+                  <div className="w-full flex flex-col items-center gap-3">
+                    <button
+                      onClick={mic}
+                      disabled={transcribing}
+                      className={cn(
+                        "relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-semibold text-base transition-all duration-200 shadow-md select-none",
+                        micError
+                          ? "bg-red-100 text-red-600 border border-red-200"
+                          : recording
+                          ? "bg-red-500 text-white shadow-red-200 shadow-lg scale-[1.02]"
+                          : transcribing
+                          ? "bg-muted text-muted-foreground cursor-wait"
+                          : "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]",
+                      )}
+                    >
+                      {/* Pulsing ring when recording */}
+                      {recording && (
+                        <span className="absolute inset-0 rounded-2xl animate-ping bg-red-400 opacity-30 pointer-events-none" />
+                      )}
+                      <span className={cn(
+                        "flex items-center justify-center w-9 h-9 rounded-full shrink-0",
+                        recording ? "bg-white/20" : "bg-white/15",
+                      )}>
+                        {transcribing
+                          ? <Loader2 className="h-5 w-5 animate-spin" />
+                          : recording
+                          ? <Square className="h-4 w-4 fill-current" />
+                          : <Mic className="h-5 w-5" />}
+                      </span>
+                      <span className="flex flex-col items-start leading-tight">
+                        <span className="text-sm font-semibold">
+                          {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Aria"}
+                        </span>
+                        {!recording && !transcribing && !micError && (
+                          <span className="text-xs opacity-70 font-normal">Tap and talk — I'm listening</span>
+                        )}
+                      </span>
+                      {/* Sound wave bars when recording */}
+                      {recording && (
+                        <span className="ml-auto flex items-center gap-[3px]">
+                          {[1,2,3,4,3].map((h, i) => (
+                            <span key={i} className="w-[3px] rounded-full bg-white/80 animate-pulse" style={{ height: `${h * 5}px`, animationDelay: `${i * 100}ms` }} />
+                          ))}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Divider */}
+                    <div className="flex items-center gap-3 w-full">
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-xs text-muted-foreground">or type below</span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+                  </div>
+
+                  {/* Text input */}
                   <div className="w-full">
                     <div className="flex items-end gap-2 bg-muted/50 border border-border rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
                       <textarea
@@ -395,36 +451,13 @@ export function AgentPanel() {
                           el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
                         }}
                       />
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <div className="relative">
-                          <button
-                            onClick={mic}
-                            title={micError ? "Mic access denied" : recording ? "Stop" : "Speak"}
-                            className={cn(
-                              "w-7 h-7 rounded-full flex items-center justify-center transition-all",
-                              micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
-                                : recording ? "bg-red-500 text-white animate-pulse"
-                                : "text-muted-foreground hover:text-foreground",
-                            )}
-                          >
-                            {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : recording ? <Square className="h-3 w-3 fill-current" />
-                              : <Mic className="h-3.5 w-3.5" />}
-                          </button>
-                          {micError && (
-                            <div className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap text-xs bg-red-600 text-white px-2 py-0.5 rounded pointer-events-none">
-                              Mic denied
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          onClick={submit}
-                          disabled={!input.trim()}
-                          className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                        >
-                          <Send className="h-3 w-3" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={submit}
+                        disabled={!input.trim()}
+                        className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+                      >
+                        <Send className="h-3 w-3" />
+                      </button>
                     </div>
                   </div>
 
