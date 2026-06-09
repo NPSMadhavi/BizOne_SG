@@ -760,7 +760,7 @@ function calcBlockHeight(
     bank.split("\n").filter(l => l.trim()).forEach(l => {
       h += doc.splitTextToSize(l.trim(), maxW).length * lineH;
     });
-    h += 5; // box padding top + bottom
+    h += 3.5; // bottom gap after bank box (boxPad + 1 = 3.5 in renderer)
     if (tnc) h += 4; // gap between bank box and T&C
   }
   if (tnc) {
@@ -1057,18 +1057,20 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     doc.text("PO Ref No:", marginRight - doc.getTextWidth(prVal) - 1, 52, { align: "right" });
   }
 
-  // Bill To (left) + optional Ship To (right)
+  // Bill To (left) + optional Ship To (right, only when different from billing address)
   const invShipToAddr = ((inv as any).deliveryAddress || "").trim();
+  const invBillAddr = (inv.customerAddress || "").trim();
+  const showInvShipTo = invShipToAddr && invShipToAddr !== invBillAddr;
   const midX = pageWidth / 2 + 5;
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Bill To:", marginLeft, 67);
-  if (invShipToAddr) doc.text("Ship To:", midX, 67);
+  if (showInvShipTo) doc.text("Ship To:", midX, 67);
 
-  const invBillToMaxW = invShipToAddr ? midX - marginLeft - 6 : 85;
+  const invBillToMaxW = showInvShipTo ? midX - marginLeft - 6 : 85;
   const invEntityBottom = renderEntityBlock(doc, inv.customerName, [inv.customerAddress, inv.customerContact ? `\nAttn: ${inv.customerContact}` : null], marginLeft, 74, invBillToMaxW);
 
   let invShipToBottom = 67;
-  if (invShipToAddr) {
+  if (showInvShipTo) {
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
     const shipLines = doc.splitTextToSize(invShipToAddr, 82);
     doc.text(shipLines, midX, 74);
@@ -1085,7 +1087,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   // the autoTable to decide whether to add a page before drawing totals.
   const invExtraRowsEarly = invDocDiscount > 0 ? 1 : 0;
   const invBoxH = (3 + invExtraRowsEarly) * 7 + 16;
-  const invBankBlockH = calcBlockHeight(doc, settings, 120);
+  const invBankBlockH = calcBlockHeight(doc, settings, 125);
 
   // Strip trailing/empty item rows that have no description and no part number
   const allInvItems = (inv.items as any[]).filter((item: any) => {
