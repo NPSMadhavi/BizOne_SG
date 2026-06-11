@@ -913,25 +913,42 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtCurrency = (qt as any).currency || "SGD";
   const qtDocDiscount = Number((qt as any).discountAmount) || 0;
   // Strip trailing/empty item rows that have no description and no part number
-  const filteredQtItems = (qt.items as any[]).filter((item: any) => {
+  const allQtItems = (qt.items as any[]).filter((item: any) => {
+    if (item.type === "section") return htmlToText(item.sectionLabel || "").trim() !== "";
     const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
     return hasDesc || hasPart;
   });
-  const hasItemDiscount = filteredQtItems.some((item: any) => Number(item.discount) > 0);
-  const hasQtUom = filteredQtItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
+  const regularQtItems = allQtItems.filter((item: any) => item.type !== "section");
+  const hasQtPartNo = regularQtItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
+  const hasItemDiscount = regularQtItems.some((item: any) => Number(item.discount) > 0);
+  const hasQtUom = regularQtItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
-  const qtHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
+  const qtHeaderArr: string[] = ["#"];
+  if (hasQtPartNo) qtHeaderArr.push("Item / Part Number");
+  qtHeaderArr.push("Description", "Qty");
   if (hasQtUom) qtHeaderArr.push("UOM");
   qtHeaderArr.push("Unit Price");
   if (hasItemDiscount) qtHeaderArr.push("Disc %");
   qtHeaderArr.push("Amount");
   const qtHeaders = qtHeaderArr;
+  const qtTotalCols = qtHeaders.length;
 
-  const qtRichDesc = filteredQtItems.map((item: any) => htmlToRichLines(item.description));
-  const qtTableData = filteredQtItems.map((item, i) => {
+  const qtRichDesc: RichLine[][] = [];
+  let qtItemCounter = 0;
+  const qtTableData = allQtItems.map((item: any) => {
+    if (item.type === "section") {
+      qtRichDesc.push([]);
+      const sectionText = htmlToText(item.sectionLabel || "Section");
+      const halign = item.sectionAlign === "center" ? "center" : "left";
+      return [{ content: sectionText, colSpan: qtTotalCols, styles: { fontStyle: "bold", fillColor: [235, 238, 244], textColor: [24, 33, 47], halign } }];
+    }
+    qtItemCounter++;
+    qtRichDesc.push(htmlToRichLines(item.description));
     const disc = Number(item.discount) || 0;
-    const row: any[] = [i + 1, item.partNumber || "", htmlToText(item.description), item.qty];
+    const row: any[] = [qtItemCounter];
+    if (hasQtPartNo) row.push(item.partNumber || "");
+    row.push(htmlToText(item.description), item.qty);
     if (hasQtUom) row.push(item.uom || "");
     row.push(fmtMoney(qtCurrency, Number(item.unitPrice)));
     if (hasItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
@@ -940,15 +957,16 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   });
 
   const qtTableWidth = marginRight - marginLeft;
+  const qtDescColIdx = hasQtPartNo ? 2 : 1;
   const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
-    { fixed: 13, halign: "center" },                          // #
-    { fixed: hasQtUom ? 26 : 32 },                            // part no
-    { auto: true },                                            // description
-    { fixed: 18, halign: "center" },                          // qty
-    ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
-    { fixed: hasItemDiscount ? 27 : 30, halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },    // unit price
+    { fixed: 13, halign: "center" },                                  // #
+    ...(hasQtPartNo ? [{ fixed: 25 }] : []),                          // part no (conditional)
+    { auto: true },                                                    // description
+    { fixed: 18, halign: "center" },                                   // qty
+    ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
+    { fixed: hasQtPartNo ? 27 : 30, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
     ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasItemDiscount ? 27 : 30, halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },    // amount
+    { fixed: hasQtPartNo ? 27 : 30, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
 
@@ -956,6 +974,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
   const qtBankBlockH = calcBlockHeight(doc, settings, 125);
 
+  const qtUnitPriceIdx = qtHeaders.indexOf("Unit Price");
+  const qtAmountIdx = qtHeaders.indexOf("Amount");
   autoTableRich(doc, {
     startY: 107,
     head: [qtHeaders],
@@ -966,7 +986,12 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     styles: { cellPadding: 4 },
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
-  }, 2, qtRichDesc);
+    didParseCell: (data: any) => {
+      if (data.section === "head" && (data.column.index === qtUnitPriceIdx || data.column.index === qtAmountIdx)) {
+        data.cell.styles.halign = "right";
+      }
+    },
+  }, qtDescColIdx, qtRichDesc);
 
   let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
 

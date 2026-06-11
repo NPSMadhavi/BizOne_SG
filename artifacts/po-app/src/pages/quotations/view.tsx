@@ -67,8 +67,11 @@ export default function QuotationView() {
   const tax = Number(doc.tax) || 0;
   const total = Number(doc.totalAmount) || 0;
   const discountAmt = Number((doc as any).discountAmount) || 0;
-  const hasItemDiscount = items.some((item: any) => Number(item.discount) > 0);
-  const hasQtUom = items.some((item: any) => item.uom && String(item.uom).trim() !== "");
+  const regularQtItems = items.filter((item: any) => item.type !== "section");
+  const hasItemDiscount = regularQtItems.some((item: any) => Number(item.discount) > 0);
+  const hasQtUom = regularQtItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
+  const hasQtPartNo = regularQtItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
+  const qtColCount = 2 + (hasQtPartNo ? 1 : 0) + (hasQtUom ? 1 : 0) + (hasItemDiscount ? 1 : 0) + 3;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
@@ -155,7 +158,7 @@ export default function QuotationView() {
             <thead className="bg-muted/50 border-b text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="px-6 py-3 text-left w-8">#</th>
-                <th className="px-6 py-3 text-left">Item / Part Number</th>
+                {hasQtPartNo && <th className="px-6 py-3 text-left">Item / Part No.</th>}
                 <th className="px-6 py-3 text-left">Description</th>
                 <th className="px-6 py-3 text-right">Qty</th>
                 {hasQtUom && <th className="px-6 py-3 text-center">UOM</th>}
@@ -165,18 +168,28 @@ export default function QuotationView() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {items.map((item: any, i: number) => (
-                <tr key={i} className="hover:bg-muted/30">
-                  <td className="px-6 py-3 text-muted-foreground">{i + 1}</td>
-                  <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>
-                  <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
-                  <td className="px-6 py-3 text-right">{item.qty}</td>
-                  {hasQtUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
-                  <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
-                  {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
-                  <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
-                </tr>
-              ))}
+              {(() => { let _n = 0; return items.map((item: any, i: number) => {
+                if (item.type === "section") {
+                  return (
+                    <tr key={i} className="bg-muted/40 border-b">
+                      <td colSpan={qtColCount} className={`px-6 py-2 font-semibold text-sm text-foreground prose prose-sm max-w-none [&_p]:my-0.5 [&_ul]:my-0.5 [&_ol]:my-0.5 ${item.sectionAlign === "center" ? "text-center" : "text-left"}`} dangerouslySetInnerHTML={{ __html: item.sectionLabel || "Section" }} />
+                    </tr>
+                  );
+                }
+                _n++;
+                return (
+                  <tr key={i} className="hover:bg-muted/30">
+                    <td className="px-6 py-3 text-muted-foreground">{_n}</td>
+                    {hasQtPartNo && <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>}
+                    <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                    <td className="px-6 py-3 text-right">{item.qty}</td>
+                    {hasQtUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
+                    <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
+                    {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
+                    <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
+                  </tr>
+                );
+              }); })()}
             </tbody>
           </table>
         </div>

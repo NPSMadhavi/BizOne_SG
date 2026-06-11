@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
@@ -24,9 +25,12 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
+  type: z.enum(["item", "section"]).default("item"),
+  sectionLabel: z.string().default(""),
+  sectionAlign: z.enum(["left", "center"]).default("left"),
   partNumber: z.string(),
   description: z.string(),
-  qty: z.coerce.number().min(1, "Must be > 0"),
+  qty: z.coerce.number().min(0).default(1),
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   discount: z.coerce.number().min(0).max(100).default(0),
@@ -81,7 +85,7 @@ export default function QuotationNew() {
       tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0 }],
+      items: [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 }],
     },
   });
 
@@ -94,7 +98,7 @@ export default function QuotationNew() {
     const prefill = (window as any).__ariaPrefill;
     if (!prefill) return;
     (window as any).__ariaPrefill = null;
-    const blankItem = { partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 };
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 };
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
@@ -114,7 +118,7 @@ export default function QuotationNew() {
     });
   }, []);
 
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
+  const { fields, append, remove, insert } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateQuotation();
 
   const nextQtNumber = (() => {
@@ -139,6 +143,7 @@ export default function QuotationNew() {
       if (idx !== allItems.length - 1) return;
       const last = allItems[idx];
       if (!last) return;
+      if ((last as any).type === "section") return;
       const isEmpty =
         (!last.partNumber || String(last.partNumber).trim() === "") &&
         (!last.description || String(last.description).trim() === "") &&
@@ -146,7 +151,7 @@ export default function QuotationNew() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 });
+        append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -155,7 +160,7 @@ export default function QuotationNew() {
 
   const currency = form.watch("currency") || "SGD";
 
-  const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+  const subtotal = items.reduce((s, i) => ((i as any).type === "section") ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
   const taxAmount = taxableAmount * (taxPercent / 100);
@@ -175,13 +180,18 @@ export default function QuotationNew() {
 
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
-    const filledItems = values.items.filter(i => i.partNumber.trim() !== "" || i.description.trim() !== "");
-    if (filledItems.length === 0) {
+    const filledItems = values.items.filter(i => {
+      if ((i as any).type === "section") return ((i as any).sectionLabel || "").trim() !== "";
+      return i.partNumber.trim() !== "" || i.description.trim() !== "";
+    });
+    const realItems = filledItems.filter((i: any) => i.type !== "section");
+    if (realItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
       setIsSubmitting(false);
       return;
     }
     const itemsWithAmount = filledItems.map(i => {
+      if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left" };
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
@@ -331,7 +341,15 @@ export default function QuotationNew() {
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Line Items</CardTitle>
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-lg">Line Items</CardTitle>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 })}>
+                    <Plus className="h-3 w-3" /> Add Item
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 })}>
+                    <Layers className="h-3 w-3" /> Add Section
+                  </Button>
+                </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-muted-foreground">Overseas / Export</span>
@@ -372,55 +390,112 @@ export default function QuotationNew() {
                     </tr>
                   </thead>
                   <tbody>
-                    {fields.map((field, index) => {
+                    {(() => { let _n = 0; return fields.map((field, index) => {
+                      const itemType = form.watch(`items.${index}.type`);
+                      const _itemNo = itemType !== "section" ? ++_n : null;
+                      const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 };
+                      const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 };
+                      const insertBar = (
+                        <tr className="group/ins border-0 h-5">
+                          <td colSpan={9} className="p-0 overflow-visible">
+                            <div className="relative flex items-center justify-center h-5">
+                              <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
+                              <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => insert(index, blankItem)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                  <Plus className="h-2.5 w-2.5" /> + line item here
+                                </button>
+                                <button type="button" onClick={() => insert(index, blankSection)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                  <Layers className="h-2.5 w-2.5" /> + section here
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                      if (itemType === "section") {
+                        return (
+                          <Fragment key={field.id}>
+                            {insertBar}
+                            <tr className="border-b bg-muted/40">
+                              <td colSpan={9} className="px-4 py-2">
+                                <div className="flex items-start gap-2">
+                                  <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
+                                  <div className="flex-1 min-w-0">
+                                    <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
+                                      <FormItem><FormControl>
+                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                      </FormControl></FormItem>
+                                    )} />
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0 mt-1">
+                                    <FormField control={form.control} name={`items.${index}.sectionAlign`} render={({ field: f }) => (
+                                      <FormItem><FormControl>
+                                        <Button type="button" variant="ghost" size="icon" title={f.value === "center" ? "Switch to left-align" : "Switch to center-align"} className={cn("h-7 w-7", f.value === "center" ? "text-primary bg-primary/10" : "text-muted-foreground")} onClick={() => f.onChange(f.value === "center" ? "left" : "center")}>
+                                          {f.value === "center" ? <AlignCenter className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
+                                        </Button>
+                                      </FormControl></FormItem>
+                                    )} />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          </Fragment>
+                        );
+                      }
                       const qty = Number(form.watch(`items.${index}.qty`)) || 0;
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
                       const disc = Number(form.watch(`items.${index}.discount`)) || 0;
                       const amount = qty * price * (1 - disc / 100);
                       return (
-                        <tr key={field.id} className="border-b last:border-0 hover:bg-muted/20">
-                          <td className="px-4 py-2 text-muted-foreground text-xs">{index + 1}</td>
-                          <td className="px-4 py-2">
-                            <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
-                            )} />
-                          </td>
-                          <td className="px-4 py-2 align-top">
-                            <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                              <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
-                            )} />
-                          </td>
-                          <td className="px-4 py-2">
-                            <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
-                            )} />
-                          </td>
-                          <td className="px-4 py-2">
-                            <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-sm text-center border-0 bg-transparent focus:bg-background" placeholder="Nos" {...field} /></FormControl></FormItem>
-                            )} />
-                          </td>
-                          <td className="px-4 py-2">
-                            <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
-                            )} />
-                          </td>
-                          <td className="px-4 py-2">
-                            <FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
-                            )} />
-                          </td>
-                          <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
-                          <td className="px-4 py-2">
-                            {fields.length > 1 && (
-                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
+                        <Fragment key={field.id}>
+                          {insertBar}
+                          <tr className="border-b last:border-0 hover:bg-muted/20">
+                            <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
+                            <td className="px-4 py-2">
+                              <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                                <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
+                              )} />
+                            </td>
+                            <td className="px-4 py-2 align-top">
+                              <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                                <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                              )} />
+                            </td>
+                            <td className="px-4 py-2">
+                              <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                                <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
+                              )} />
+                            </td>
+                            <td className="px-4 py-2">
+                              <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                                <FormItem><FormControl><Input className="h-8 text-sm text-center border-0 bg-transparent focus:bg-background" placeholder="Nos" {...field} /></FormControl></FormItem>
+                              )} />
+                            </td>
+                            <td className="px-4 py-2">
+                              <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
+                                <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
+                              )} />
+                            </td>
+                            <td className="px-4 py-2">
+                              <FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
+                                <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
+                              )} />
+                            </td>
+                            <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
+                            <td className="px-4 py-2">
+                              {fields.length > 1 && (
+                                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        </Fragment>
                       );
-                    })}
+                    }); })()}
                   </tbody>
                 </table>
               </div>
@@ -504,7 +579,7 @@ export default function QuotationNew() {
           open={previewOpen}
           onOpenChange={setPreviewOpen}
           title={`Quotation ${savedDoc.qtNumber}`}
-          generatePdf={(opts) => generateQuotation_PDF(savedDoc, selectedCompany, opts)}
+          generatePdf={(opts) => generateQuotation_PDF(savedDoc, selectedCompany, settings as any, opts)}
           pdfFilename={`${savedDoc.qtNumber}.pdf`}
           defaultEmailTo={savedDoc.customerContactEmail || ""}
           defaultEmailSubject={`Quotation ${savedDoc.qtNumber}`}
