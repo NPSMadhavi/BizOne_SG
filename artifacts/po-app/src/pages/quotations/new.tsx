@@ -471,7 +471,28 @@ export default function QuotationNew() {
                             </td>
                             <td className="px-4 py-2">
                               <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
-                                <FormItem><FormControl><Input className="h-8 text-sm text-center border-0 bg-transparent focus:bg-background" placeholder="Nos" {...field} /></FormControl></FormItem>
+                                <FormItem><FormControl>
+                                  <select className="h-8 text-sm w-full border-0 bg-transparent focus:outline-none cursor-pointer" {...field}>
+                                    <option value="">—</option>
+                                    <option value="Nos">Nos</option>
+                                    <option value="Pcs">Pcs</option>
+                                    <option value="Set">Set</option>
+                                    <option value="Lot">Lot</option>
+                                    <option value="Hr">Hr</option>
+                                    <option value="Day">Day</option>
+                                    <option value="Month">Month</option>
+                                    <option value="Yr">Yr</option>
+                                    <option value="Job">Job</option>
+                                    <option value="kg">kg</option>
+                                    <option value="m">m</option>
+                                    <option value="L">L</option>
+                                    <option value="Box">Box</option>
+                                    <option value="Roll">Roll</option>
+                                    <option value="Pair">Pair</option>
+                                    <option value="Unit">Unit</option>
+                                    <option value="ls">ls</option>
+                                  </select>
+                                </FormControl></FormItem>
                               )} />
                             </td>
                             <td className="px-4 py-2">
