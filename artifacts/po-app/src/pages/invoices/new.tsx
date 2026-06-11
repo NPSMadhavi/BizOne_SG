@@ -464,10 +464,7 @@ export default function InvoiceNew() {
                   <FormField control={form.control} name="tax" render={({ field }) => (
                     <FormItem className="flex items-center gap-1 m-0">
                       <span className="text-sm text-muted-foreground">GST:</span>
-                      <FormControl>
-                        <Input type="number" min={0} max={100} step={0.5} {...field} disabled={isOverseas} className="w-16 h-7 text-sm text-right px-1" />
-                      </FormControl>
-                      <span className="text-sm text-muted-foreground">%</span>
+                      <span className="text-sm font-medium">{taxPercent}%</span>
                     </FormItem>
                   )} />
                 </div>
