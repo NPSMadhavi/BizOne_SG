@@ -379,9 +379,9 @@ export default function QuotationEdit() {
                       <th className="px-4 py-3 text-left w-36">Item / Part Number</th>
                       <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-right w-20">Qty</th>
-                      <th className="px-4 py-3 text-center w-16">UOM</th>
+                      <th className="px-4 py-3 text-center w-28">UOM</th>
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
-                      <th className="px-4 py-3 text-right w-16">Disc %</th>
+                      <th className="px-4 py-3 text-right w-24">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
