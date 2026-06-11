@@ -442,12 +442,10 @@ export default function InvoiceEdit() {
                       }}
                     />
                   </div>
-                  <FormField control={form.control} name="tax" render={({ field }) => (
-                    <FormItem className="flex items-center gap-1 m-0">
-                      <span className="text-sm text-muted-foreground">GST:</span>
-                      <span className="text-sm font-medium">{taxPercent}%</span>
-                    </FormItem>
-                  )} />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-muted-foreground">GST:</span>
+                    <span className="text-sm font-medium">{taxPercent}%</span>
+                  </div>
                 </div>
               </div>
             </CardHeader>
