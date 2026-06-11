@@ -3,6 +3,7 @@ import { StarterKit } from "@tiptap/starter-kit";
 import { Underline } from "@tiptap/extension-underline";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
+import { Image } from "@tiptap/extension-image";
 import { Bold, Italic, UnderlineIcon, List, ListOrdered } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import {
@@ -70,6 +71,7 @@ export function RichTextEditor({
       TableRow,
       TableHeader,
       TableCell,
+      Image.configure({ inline: false }),
     ],
     content: value || "",
     onUpdate({ editor }) {
@@ -89,6 +91,7 @@ export function RichTextEditor({
           "[&_table]:border-collapse [&_table]:my-1 [&_table]:w-full",
           "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:align-top [&_td_p]:my-0",
           "[&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:bg-muted [&_th]:font-semibold [&_th_p]:my-0",
+          "[&_img]:max-w-full [&_img]:max-h-48 [&_img]:rounded [&_img]:my-1",
         ].join(" "),
       },
       transformPastedHTML(html) {
@@ -97,6 +100,22 @@ export function RichTextEditor({
       handlePaste(_view, event) {
         const clipboardData = event.clipboardData;
         if (!clipboardData) return false;
+
+        const imageFile = Array.from(clipboardData.items).find(
+          (item) => item.type.startsWith("image/")
+        );
+        if (imageFile) {
+          event.preventDefault();
+          const file = imageFile.getAsFile();
+          if (!file) return false;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const src = e.target?.result as string;
+            if (src) editorRef.current?.commands.setImage({ src });
+          };
+          reader.readAsDataURL(file);
+          return true;
+        }
 
         const htmlData = clipboardData.getData("text/html");
 
