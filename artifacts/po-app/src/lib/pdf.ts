@@ -244,8 +244,13 @@ function autoTableRich(
   doc: jsPDF,
   opts: any,
   descColIdx: number,
-  richDescRows: RichLine[][]
+  richDescRows: RichLine[][],
+  itemImages?: (string | null | undefined)[]
 ): void {
+  const IMG_RESERVE = 26; // mm reserved at right of description cell when image present
+  const IMG_W = 24;       // mm image width
+  const IMG_H_MAX = 18;   // mm max image height
+
   const { headStyles: hs, bodyStyles: bs, ...restOpts } = opts;
   (doc as any).autoTable({
     styles: { font: PDF_FONT },
@@ -260,12 +265,28 @@ function autoTableRich(
     didDrawCell: (data: any) => {
       if (data.section !== "body" || data.column.index !== descColIdx) return;
       const richLines = richDescRows[data.row.index];
-      if (!richLines || richLines.length === 0) return;
+      const rowImg = itemImages?.[data.row.index] || null;
+      const imgReserve = rowImg ? IMG_RESERVE : 0;
+
       const jdoc = data.doc as jsPDF;
       const cell = data.cell;
       const padding = 4;
       const x = cell.x + padding;
-      const maxW = cell.width - padding * 2;
+      const maxW = cell.width - padding * 2 - imgReserve;
+
+      if (!richLines || richLines.length === 0) {
+        if (rowImg) {
+          const imgH = Math.min(IMG_H_MAX, cell.height - padding * 2);
+          const imgX = cell.x + cell.width - IMG_W - 1;
+          const imgY = cell.y + (cell.height - imgH) / 2;
+          try {
+            const fmt = rowImg.startsWith("data:image/png") ? "PNG" : "JPEG";
+            jdoc.addImage(rowImg, fmt, imgX, imgY, IMG_W, imgH, "", "FAST");
+          } catch (_e) { /* ignore corrupt/unsupported image */ }
+        }
+        return;
+      }
+
       const scaleFactor = (jdoc.internal as any).scaleFactor || 2.8346;
       const LINE_H = (9.5 * 1.15) / scaleFactor; // match autotable exactly
       const BASELINE_OFFSET = (9.5 * 0.8) / scaleFactor; // approx baseline within first line
@@ -335,6 +356,20 @@ function autoTableRich(
           }
           groupStart = -1;
         }
+      }
+
+      // Draw item image if present (right side of description cell)
+      if (rowImg) {
+        const imgH = Math.min(IMG_H_MAX, cell.height - padding * 2);
+        const imgX = cell.x + cell.width - IMG_W - 1;
+        const imgY = cell.y + (cell.height - imgH) / 2;
+        // White background to cover any text overflow
+        jdoc.setFillColor(255, 255, 255);
+        jdoc.rect(cell.x + cell.width - IMG_RESERVE, cell.y + 1, IMG_RESERVE, cell.height - 2, "F");
+        try {
+          const fmt = rowImg.startsWith("data:image/png") ? "PNG" : "JPEG";
+          jdoc.addImage(rowImg, fmt, imgX, imgY, IMG_W, imgH, "", "FAST");
+        } catch (_e) { /* ignore corrupt/unsupported image */ }
       }
     },
   });
@@ -690,7 +725,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     styles: { cellPadding: 4 },
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
-  }, 2, poRichDesc);
+  }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;
 
@@ -991,7 +1026,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
         data.cell.styles.halign = "right";
       }
     },
-  }, qtDescColIdx, qtRichDesc);
+  }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)));
 
   let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
 
@@ -1190,7 +1225,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
         data.cell.styles.halign = "right";
       }
     },
-  }, invDescColIdx, invRichDesc);
+  }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)));
 
   let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
 
@@ -1322,7 +1357,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     styles: { cellPadding: 4 },
     columnStyles: doColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
-  }, doDescColIdx, doRichDesc);
+  }, doDescColIdx, doRichDesc, filteredDOItems.map((item: any) => (item as any).itemImage || null));
 
   if (doDoc.notes) {
     const notesY = (doc as any).lastAutoTable.finalY + 8;

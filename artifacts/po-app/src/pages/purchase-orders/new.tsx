@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { ItemImageField } from "@/components/item-image-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,7 @@ const itemSchema = z.object({
   qty: z.coerce.number().min(1, "Must be > 0"),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
+  itemImage: z.string().default(""),
 });
 
 const CURRENCIES = [
@@ -94,7 +96,7 @@ export default function PurchaseOrderNew() {
       currency: "SGD",
       isPrivate: false,
       tax: 9,
-      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false }],
+      items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" }],
     },
   });
 
@@ -138,7 +140,7 @@ export default function PurchaseOrderNew() {
       if (!lastIsEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false });
+        append({ partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" });
         requestAnimationFrame(() => {
           focused?.focus();
           appendLock.current = false;
@@ -460,9 +462,14 @@ export default function PurchaseOrderNew() {
                           )} />
                         </td>
                         <td className="px-4 py-2 align-top">
-                          <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                            <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
-                          )} />
+                          <div className="flex gap-2 items-start">
+                            <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                            )} />
+                            <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
+                              <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                            )} />
+                          </div>
                         </td>
                         <td className="px-4 py-2">
                           <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (

@@ -140,7 +140,12 @@ export default function DeliveryOrderView() {
                 <tr key={i} className="hover:bg-muted/30">
                   <td className="px-6 py-3 text-muted-foreground">{i + 1}</td>
                   {items.some((it: any) => it.partNumber) && <td className="px-6 py-3 font-mono text-xs text-muted-foreground">{item.partNumber || "—"}</td>}
-                  <td className="px-6 py-3 font-medium" dangerouslySetInnerHTML={{ __html: item.description }} />
+                  <td className="px-6 py-3 font-medium">
+                    <div className="flex gap-3 items-start">
+                      <div className="flex-1 min-w-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                      {(item as any).itemImage && <img src={(item as any).itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
+                    </div>
+                  </td>
                   <td className="px-6 py-3 text-right">{item.qty}</td>
                   {items.some((it: any) => it.uom && String(it.uom).trim() !== "") && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
                 </tr>

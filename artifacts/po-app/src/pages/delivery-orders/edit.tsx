@@ -11,6 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { ItemImageField } from "@/components/item-image-field";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { Switch } from "@/components/ui/switch";
@@ -29,6 +30,7 @@ const itemSchema = z.object({
   description: z.string(),
   qty: z.coerce.number().min(1),
   uom: z.string().default(""),
+  itemImage: z.string().default(""),
 });
 
 const schema = z.object({
@@ -64,7 +66,7 @@ export default function DeliveryOrderEdit() {
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "",
       issueDate: "", deliveryDate: "", paymentTerms: "", notes: "", isPrivate: false, status: "draft",
-      items: [{ partNumber: "", description: "", qty: 1 }],
+      items: [{ partNumber: "", description: "", qty: 1, itemImage: "" }],
     },
   });
 
@@ -86,7 +88,8 @@ export default function DeliveryOrderEdit() {
           description: i.description || "",
           qty: Number(i.qty) || 1,
           uom: i.uom || "",
-        })) : [{ partNumber: "", description: "", qty: 1, uom: "" }],
+          itemImage: (i as any).itemImage || "",
+        })) : [{ partNumber: "", description: "", qty: 1, uom: "", itemImage: "" }],
       });
       initialized.current = true;
     }
@@ -111,7 +114,7 @@ export default function DeliveryOrderEdit() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ description: "", qty: 1, uom: "" });
+        append({ partNumber: "", description: "", qty: 1, uom: "", itemImage: "" });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -126,7 +129,7 @@ export default function DeliveryOrderEdit() {
       setIsSubmitting(false);
       return;
     }
-    updateMutation.mutate({ id, data: { ...values, status: openPreview ? "confirmed" : "draft", items: filledItems } }, {
+    updateMutation.mutate({ id, data: { ...values, status: openPreview ? "confirmed" : "draft", items: filledItems as any } }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
         setIsSubmitting(false);
@@ -267,9 +270,14 @@ export default function DeliveryOrderEdit() {
                           )} />
                         </td>
                         <td className="px-4 py-2 align-top">
-                          <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                            <FormItem><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
-                          )} />
+                          <div className="flex gap-2 items-start">
+                            <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                            )} />
+                            <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
+                              <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                            )} />
+                          </div>
                         </td>
                         <td className="px-4 py-2 align-top">
                           <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (

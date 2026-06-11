@@ -181,7 +181,12 @@ export default function QuotationView() {
                   <tr key={i} className="hover:bg-muted/30">
                     <td className="px-6 py-3 text-muted-foreground">{_n}</td>
                     {hasQtPartNo && <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>}
-                    <td className="px-6 py-3 font-medium prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                    <td className="px-6 py-3 font-medium">
+                      <div className="flex gap-3 items-start">
+                        <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                        {(item as any).itemImage && <img src={(item as any).itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
+                      </div>
+                    </td>
                     <td className="px-6 py-3 text-right">{item.qty}</td>
                     {hasQtUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
                     <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
