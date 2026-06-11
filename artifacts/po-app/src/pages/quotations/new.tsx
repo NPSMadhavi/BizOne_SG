@@ -390,7 +390,7 @@ export default function QuotationNew() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(() => { let _n = 0; return fields.map((field, index) => {
+                    {(() => { let _n = 0; return [...fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
                       const _itemNo = itemType !== "section" ? ++_n : null;
                       const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 };
@@ -495,7 +495,7 @@ export default function QuotationNew() {
                           </tr>
                         </Fragment>
                       );
-                    }); })()}
+                    }), <tr key="trailing-bar" className="group/ins border-0 h-5"><td colSpan={9} className="p-0 overflow-visible"><div className="relative flex items-center justify-center h-5"><div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" /><div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity"><button type="button" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Plus className="h-2.5 w-2.5" /> + line item here</button><button type="button" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0 })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Layers className="h-2.5 w-2.5" /> + section here</button></div></div></td></tr>]; })()}
                   </tbody>
                 </table>
               </div>
