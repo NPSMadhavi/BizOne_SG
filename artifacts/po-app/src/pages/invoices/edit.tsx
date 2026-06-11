@@ -433,7 +433,7 @@ export default function InvoiceEdit() {
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground">Overseas / Export</span>
+                    <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
                       checked={isOverseas}
                       onCheckedChange={(v) => {
@@ -443,7 +443,7 @@ export default function InvoiceEdit() {
                     />
                   </div>
                   <FormField control={form.control} name="tax" render={({ field }) => (
-                    <FormItem className="flex items-center gap-1">
+                    <FormItem className="flex items-center gap-1 m-0">
                       <span className="text-sm text-muted-foreground">GST:</span>
                       <FormControl>
                         <Input type="number" min={0} max={100} step={0.5} {...field} disabled={isOverseas} className="w-16 h-7 text-sm text-right px-1" />
