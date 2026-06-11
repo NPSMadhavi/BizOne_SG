@@ -350,7 +350,7 @@ export default function QuotationNew() {
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-6 flex-wrap">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
