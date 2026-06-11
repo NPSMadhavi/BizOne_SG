@@ -41,7 +41,7 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
     }
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5",
       max_tokens: 16384,
       response_format: { type: "json_object" },
       messages: [
