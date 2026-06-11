@@ -431,8 +431,8 @@ export default function InvoiceEdit() {
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
                 </div>
-                <div className="flex items-center gap-6 flex-wrap">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
                       checked={isOverseas}
