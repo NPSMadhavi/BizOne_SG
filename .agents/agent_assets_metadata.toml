@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "a8u7ZXHgpKf_GpDLuMd3f"
+uri = "file://db-scripts/rsv-dms-database-scripts.txt"
+type = "text"
+title = "RSV DMS — PostgreSQL + MySQL Schema Scripts"
