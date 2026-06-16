@@ -6,3 +6,9 @@ id = "a8u7ZXHgpKf_GpDLuMd3f"
 uri = "file://db-scripts/rsv-dms-database-scripts.txt"
 type = "text"
 title = "RSV DMS — PostgreSQL + MySQL Schema Scripts"
+
+[[outputs]]
+id = "CgJDWJPbhOEFBIup5QJe0"
+uri = "file://db-scripts/RSV-DMS-Knowledge-Transfer.md"
+type = "text"
+title = "RSV DMS — Full Knowledge Transfer Kit"
