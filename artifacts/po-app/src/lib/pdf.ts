@@ -1159,16 +1159,18 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
-  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+  let qtOverflowPage = false;
+  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; qtOverflowPage = true; }
 
-  // Pin footer to bottom of whichever page it lands on
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 1000) / 10 : 0;
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
   const qtSepY = pageHeight - FOOTER_RESERVE + 2;
-  const totalsY = Math.max(qtCurrentY + 4, qtSepY - qtCombinedH);
+  // When content overflowed to a new page, place totals right after the table
+  // instead of pinning to the bottom (avoids a large whitespace gap).
+  const totalsY = qtOverflowPage ? qtCurrentY + 4 : Math.max(qtCurrentY + 4, qtSepY - qtCombinedH);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1359,17 +1361,18 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const invCombinedH = Math.max(invBoxH, invBankBlockH);
-  if (invCurrentY + invCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); invCurrentY = 20; }
+  let invOverflowPage = false;
+  if (invCurrentY + invCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); invCurrentY = 20; invOverflowPage = true; }
 
-  // Pin footer to bottom of whichever page it lands on
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 1000) / 10 : 0;
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  // Anchor bottom of block exactly to the footer separator line
   const invSepY = pageHeight - FOOTER_RESERVE + 2;
-  const totalsY = Math.max(invCurrentY + 4, invSepY - invCombinedH);
+  // When content overflowed to a new page, place totals right after the table
+  // instead of pinning to the bottom (avoids a large whitespace gap).
+  const totalsY = invOverflowPage ? invCurrentY + 4 : Math.max(invCurrentY + 4, invSepY - invCombinedH);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
