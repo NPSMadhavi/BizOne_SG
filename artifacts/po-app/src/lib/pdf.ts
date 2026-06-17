@@ -935,15 +935,27 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const logo = await getLogoData(getLogoUrl(company));
   buildDocHeader(doc, logo, "QUOTATION", qt.qtNumber, fmtDate((qt as any).issueDate || qt.createdAt), qt.status, info);
 
+  // Payment Terms + Delivery Date — top-right, below Date (y=36), same grey/normal style as Invoice
+  doc.setFontSize(9.5);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(`Payment Terms: ${qt.paymentTerms || "Standard"}`, marginRight, 42, { align: "right" });
+  const qtDeliveryDate = (qt as any).deliveryDate;
+  if (qtDeliveryDate) {
+    doc.text(`Delivery Date: ${fmtDate(qtDeliveryDate)}`, marginRight, 48, { align: "right" });
+  }
+
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
   doc.text("Quote To:", marginLeft, 67);
 
-  renderEntityBlock(doc, qt.customerName, [qt.customerAddress, qt.customerContact ? `\nAttn: ${qt.customerContact}` : null], marginLeft, 74, 160);
-
-  doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-  doc.text("Payment Terms:", marginLeft, 100);
-  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-  doc.text(qt.paymentTerms || "Standard", marginLeft + 33, 100);
+  const qtEntityBottom = renderEntityBlock(
+    doc,
+    qt.customerName,
+    [qt.customerAddress, qt.customerContact ? `\nAttn: ${qt.customerContact}` : null],
+    marginLeft,
+    74,
+    85
+  );
+  const qtTableStartY = Math.max(qtEntityBottom + 10, 100);
 
   const qtCurrency = (qt as any).currency || "SGD";
   const qtDocDiscount = Number((qt as any).discountAmount) || 0;
@@ -1017,7 +1029,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtUnitPriceIdx = qtHeaders.indexOf("Unit Price");
   const qtAmountIdx = qtHeaders.indexOf("Amount");
   autoTableRich(doc, {
-    startY: 107,
+    startY: qtTableStartY,
     head: [qtHeaders],
     body: qtTableData,
     theme: "striped",
