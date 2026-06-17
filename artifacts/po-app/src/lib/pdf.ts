@@ -133,61 +133,113 @@ interface RichLine { text: string; bold: boolean; italic: boolean; cols?: string
 function htmlToRichLines(html: string): RichLine[] {
   if (!html) return [];
 
-  if (/<table/i.test(html)) {
-    const result: RichLine[] = [];
-    const tableRe = /<table[\s\S]*?<\/table>/gi;
-    let match: RegExpExecArray | null;
-    let lastIdx = 0;
-    while ((match = tableRe.exec(html)) !== null) {
-      const before = html.slice(lastIdx, match.index);
-      if (before.trim()) result.push(...htmlToRichLines(before));
-      const parser = new DOMParser();
-      const tdoc = parser.parseFromString(match[0], "text/html");
-      for (const row of Array.from(tdoc.querySelectorAll("tr"))) {
-        const cells = Array.from(row.querySelectorAll("td, th")).map(
-          (c) => (c.textContent ?? "").replace(/\s+/g, " ").trim()
-        );
-        if (cells.some((c) => c)) {
-          result.push({ text: cells.join("   "), bold: false, italic: false, cols: cells });
-        }
-      }
-      lastIdx = match.index + match[0].length;
+  // Use a real DOM parser so bold/italic context is tracked accurately.
+  // The old regex approach (`/<strong/i.test(rawLine)`) matched empty
+  // <strong></strong> tags that Tiptap inserts when a bold mark carries over
+  // on Enter, making every subsequent line appear bold.
+  const dom = new DOMParser().parseFromString(html, "text/html");
+  const body = dom.body;
+  const out: RichLine[] = [];
+
+  // --- helpers ---
+
+  // Walk a subtree collecting text runs, tracking bold/italic from ancestor tags.
+  type Run = { t: string; b: boolean; i: boolean };
+  function collectRuns(node: Node, b: boolean, i: boolean): Run[] {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.textContent ?? "";
+      return t ? [{ t, b, i }] : [];
     }
-    const after = html.slice(lastIdx);
-    if (after.trim()) result.push(...htmlToRichLines(after));
-    return result;
+    if (node.nodeType !== Node.ELEMENT_NODE) return [];
+    const el = node as Element;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "br") return [{ t: "\n", b, i }]; // hard-break sentinel
+    const nb = b || tag === "strong" || tag === "b";
+    const ni = i || tag === "em" || tag === "i";
+    const acc: Run[] = [];
+    for (const ch of Array.from(el.childNodes)) acc.push(...collectRuns(ch, nb, ni));
+    return acc;
   }
 
-  const preprocessed = html.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_m, inner) => {
-    let n = 0;
-    return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);
-  });
-  const rawLines = preprocessed
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<li data-n="(\d+)">/gi, (_, n) => `${n}. `)
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<\/?(ul|ol|div|h[1-6])[^>]*>/gi, "\n")
-    .split("\n");
-  const all: RichLine[] = [];
-  for (const rawLine of rawLines) {
-    const hasBold = /<(strong|b)\b/i.test(rawLine);
-    const hasItalic = /<(em|i)\b/i.test(rawLine);
-    const text = rawLine
-      .replace(/<[^>]+>/g, "")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&nbsp;/g, " ")
-      .trim();
-    all.push({ text, bold: hasBold, italic: hasItalic });
+  // Convert a run array into a finished RichLine.
+  // Bold/italic = true when more than half the characters carry that mark.
+  function runsToLine(rr: Run[], prefix = ""): RichLine | null {
+    const text = (prefix + rr.map(r => r.t).join("")).replace(/[ \t]+/g, " ").trim();
+    if (!text) return null;
+    const tot = rr.reduce((s, r) => s + r.t.length, 0);
+    const boldLen = rr.filter(r => r.b).reduce((s, r) => s + r.t.length, 0);
+    const italLen = rr.filter(r => r.i).reduce((s, r) => s + r.t.length, 0);
+    return {
+      text,
+      bold: tot > 0 && boldLen > tot / 2,
+      italic: tot > 0 && italLen > tot / 2,
+    };
   }
-  // Preserve internal blank lines; trim leading/trailing blanks only
-  let s = 0, e = all.length - 1;
-  while (s <= e && all[s].text === "") s++;
-  while (e >= s && all[e].text === "") e--;
-  return all.slice(s, e + 1);
+
+  // Add lines from a block element, splitting on <br> sentinels, with optional prefix.
+  function addBlock(el: Element, prefix = "") {
+    const rr = collectRuns(el, false, false);
+    // Split on hard-break sentinels
+    let seg: Run[] = [];
+    let firstSeg = true;
+    for (const r of rr) {
+      if (r.t === "\n") {
+        const line = runsToLine(seg, firstSeg ? prefix : "");
+        if (line) out.push(line);
+        seg = [];
+        firstSeg = false;
+      } else {
+        seg.push(r);
+      }
+    }
+    const line = runsToLine(seg, firstSeg ? prefix : "");
+    if (line) out.push(line);
+  }
+
+  // --- walk body ---
+  for (const child of Array.from(body.childNodes)) {
+    if (child.nodeType !== Node.ELEMENT_NODE) {
+      const t = (child.textContent ?? "").trim();
+      if (t) out.push({ text: t, bold: false, italic: false });
+      continue;
+    }
+    const el = child as Element;
+    const tag = el.tagName.toLowerCase();
+
+    if (tag === "p" || /^h[1-6]$/.test(tag) || tag === "div") {
+      addBlock(el);
+
+    } else if (tag === "ul" || tag === "ol") {
+      let n = 0;
+      for (const li of Array.from(el.querySelectorAll(":scope > li"))) {
+        n++;
+        const prefix = tag === "ol" ? `${n}. ` : "• ";
+        // Tiptap wraps list-item content in a nested <p>
+        const inner = (li.querySelector(":scope > p") ?? li) as Element;
+        addBlock(inner, prefix);
+      }
+
+    } else if (tag === "table") {
+      for (const row of Array.from(el.querySelectorAll("tr"))) {
+        const cells = Array.from(row.querySelectorAll("td, th")).map(
+          c => (c.textContent ?? "").replace(/\s+/g, " ").trim(),
+        );
+        if (cells.some(c => c)) {
+          out.push({ text: cells.join("   "), bold: false, italic: false, cols: cells });
+        }
+      }
+
+    } else {
+      // Any other element (span, etc.) at root — treat as inline block
+      addBlock(el);
+    }
+  }
+
+  // Trim leading/trailing blank entries
+  let s = 0, e = out.length - 1;
+  while (s <= e && !out[s].text) s++;
+  while (e >= s && !out[e].text) e--;
+  return out.slice(s, e + 1);
 }
 
 /**
