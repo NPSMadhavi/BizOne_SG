@@ -194,6 +194,15 @@ export default function InvoiceEdit() {
           itemImage: (i as any).itemImage || "",
         })) : [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" }],
       });
+      // Derive discount percentage from saved flat amount so the % input is
+      // restored when the user comes back to edit an invoice with a discount.
+      const docDiscAmt = Number((doc as any).discountAmount) || 0;
+      if (docDiscAmt > 0) {
+        const subtot = items
+          .filter((i: any) => i.type !== "section" && !i.isFoc)
+          .reduce((s: number, i: any) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+        if (subtot > 0) setDiscountPct(parseFloat((docDiscAmt / subtot * 100).toFixed(2)));
+      }
       initialized.current = true;
     }
   }, [doc]);
