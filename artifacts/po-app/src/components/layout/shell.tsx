@@ -20,6 +20,7 @@ import {
   FileInput,
   ShieldCheck,
   BookOpen,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -195,6 +196,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="space-y-1">
             <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")}>
               Chart of Accounts
+            </NavItem>
+            <NavItem href="/accounting/journal-entries" icon={ScrollText} active={location.startsWith("/accounting/journal-entries")}>
+              Journal Entries
             </NavItem>
           </div>
         </div>
