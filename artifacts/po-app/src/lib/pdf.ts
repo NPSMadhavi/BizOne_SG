@@ -303,12 +303,39 @@ function autoTableRich(
   const IMG_W = 24;       // mm image width
   const IMG_H_MAX = 18;   // mm max image height
 
-  const { headStyles: hs, bodyStyles: bs, ...restOpts } = opts;
+  const { headStyles: hs, bodyStyles: bs, didParseCell: userDidParseCell, ...restOpts } = opts;
   (doc as any).autoTable({
     styles: { font: PDF_FONT },
     ...restOpts,
     headStyles: { font: PDF_FONT, ...(hs ?? {}) },
     bodyStyles: { font: PDF_FONT, ...(bs ?? {}) },
+    // Pre-set minCellHeight for description cells so section-row fills don't clip overflow text
+    didParseCell: (data: any) => {
+      if (userDidParseCell) userDidParseCell(data);
+      if (data.section === "body" && data.column.index === descColIdx) {
+        const richLines = richDescRows[data.row.index];
+        if (!richLines || richLines.length === 0) return;
+        const scaleFactor = (doc.internal as any).scaleFactor || 2.8346;
+        const LINE_H = (9.5 * 1.15) / scaleFactor;
+        const padding = 4;
+        const maxW = data.cell.width - padding * 2;
+        doc.setFontSize(9.5);
+        let totalH = 0;
+        for (const rl of richLines) {
+          if (!rl.text) {
+            totalH += LINE_H;
+          } else {
+            const st = rl.bold && rl.italic ? "bolditalic" : rl.bold ? "bold" : rl.italic ? "italic" : "normal";
+            doc.setFont(PDF_FONT, st);
+            totalH += doc.splitTextToSize(rl.text, maxW).length * LINE_H;
+          }
+        }
+        const needed = totalH + padding * 2;
+        if (!data.cell.minCellHeight || data.cell.minCellHeight < needed) {
+          data.cell.minCellHeight = needed;
+        }
+      }
+    },
     willDrawCell: (data: any) => {
       if (data.section === "body" && data.column.index === descColIdx) {
         data.cell.text = [];
@@ -356,7 +383,9 @@ function autoTableRich(
         } else if (!rl.text) {
           ty += LINE_H; // blank line — advance one line height, nothing to render
         } else {
-          jdoc.setFont(PDF_FONT, "normal");
+          // Use actual bold/italic style for measurement — bold is wider and wraps to more lines
+          const measStyle = rl.bold && rl.italic ? "bolditalic" : rl.bold ? "bold" : rl.italic ? "italic" : "normal";
+          jdoc.setFont(PDF_FONT, measStyle);
           const wrapped = jdoc.splitTextToSize(rl.text, maxW);
           ty += wrapped.length * LINE_H;
         }

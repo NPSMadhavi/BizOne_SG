@@ -461,17 +461,17 @@ export default function InvoiceEdit() {
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs text-muted-foreground uppercase border-b">
                     <tr>
-                      <th className="px-4 py-3 text-left w-8">#</th>
-                      <th className="px-4 py-3 text-left w-36">Item / Part Number</th>
-                      <th className="px-4 py-3 text-left">Description</th>
-                      <th className="px-4 py-3 text-right w-20">Qty</th>
-                      <th className="px-4 py-3 text-center w-28">UOM</th>
-                      <th className="px-4 py-3 text-right w-28">Unit Price</th>
-                      <th className="px-4 py-3 text-right w-24">Disc %</th>
-                      <th className="px-4 py-3 text-right w-28">Amount</th>
-                      <th className="px-4 py-3 text-center w-14">FOC</th>
-                      <th className="px-4 py-3 text-center w-24">Serials</th>
-                      <th className="px-4 py-3 w-10"></th>
+                      <th className="px-2 py-3 text-left w-8">#</th>
+                      <th className="px-2 py-3 text-left w-28">Item / Part Number</th>
+                      <th className="px-2 py-3 text-left">Description</th>
+                      <th className="px-2 py-3 text-right w-16">Qty</th>
+                      <th className="px-2 py-3 text-center w-20">UOM</th>
+                      <th className="px-2 py-3 text-right w-28">Unit Price</th>
+                      <th className="px-2 py-3 text-right w-16">Disc %</th>
+                      <th className="px-2 py-3 text-right w-28">Amount</th>
+                      <th className="px-2 py-3 text-center w-12">FOC</th>
+                      <th className="px-2 py-3 text-center w-20">Serials</th>
+                      <th className="px-2 py-3 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -502,7 +502,7 @@ export default function InvoiceEdit() {
                           <Fragment key={field.id}>
                             {insertBar}
                             <tr className="border-b bg-muted/40">
-                              <td colSpan={11} className="px-4 py-2">
+                              <td colSpan={11} className="px-2 py-2">
                                 <div className="flex items-start gap-2">
                                   <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
                                   <div className="flex-1 min-w-0">
@@ -539,8 +539,8 @@ export default function InvoiceEdit() {
                         <Fragment key={field.id}>
                           {insertBar}
                           <tr className="border-b last:border-0 hover:bg-muted/20">
-                          <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
-                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                          <td className="px-2 py-2 text-muted-foreground text-xs">{_itemNo}</td>
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                             <FormItem><FormControl>
                               <div className="flex items-center gap-1">
                                 <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
@@ -550,15 +550,15 @@ export default function InvoiceEdit() {
                               </div>
                             </FormControl></FormItem>
                           )} /></td>
-                          <td className="px-4 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                          <td className="px-2 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
                             <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
                           )} /><FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                             <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
                           )} /></div></td>
-                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
                           )} /></td>
-                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
                             <FormItem><FormControl>
                               <select className="h-8 text-sm w-full border-0 bg-transparent focus:outline-none cursor-pointer" {...field}>
                                 <option value="">—</option>
@@ -582,21 +582,21 @@ export default function InvoiceEdit() {
                               </select>
                             </FormControl></FormItem>
                           )} /></td>
-                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
                           )} /></td>
-                          <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
                           )} /></td>
-                          <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
-                          <td className="px-4 py-2 text-center">
+                          <td className="px-2 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
+                          <td className="px-2 py-2 text-center">
                             <FormField control={form.control} name={`items.${index}.isFoc`} render={({ field }) => (
                               <FormItem className="space-y-0"><FormControl>
                                 <Checkbox checked={!!field.value} onCheckedChange={field.onChange} title="Free of Charge — amount shows as $0.00" />
                               </FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2 text-center">
+                          <td className="px-2 py-2 text-center">
                             <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
                               <FormItem className="space-y-0">
                                 <div className="flex flex-col items-center gap-1">
@@ -616,7 +616,7 @@ export default function InvoiceEdit() {
                               </FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2">{fields.length > 1 && (
+                          <td className="px-2 py-2">{fields.length > 1 && (
                             <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => {
                               const ids = form.getValues(`items.${index}.selectedSerialIds`) || [];
                               if (ids.length > 0) {
