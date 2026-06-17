@@ -33,6 +33,7 @@ import AddressBookPage from "@/pages/address-book/index";
 import VendorInvoiceList from "@/pages/vendor-invoices/list";
 import VendorInvoiceView from "@/pages/vendor-invoices/view";
 import AuditLog from "@/pages/admin/audit-log";
+import ChartOfAccounts from "@/pages/accounting/chart-of-accounts";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -51,6 +52,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/vendors": "Vendors",
   "/customers": "Customers",
   "/address-book": "Address Book",
+  "/accounting/chart-of-accounts": "Chart of Accounts",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -193,6 +195,9 @@ function Router() {
         <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>
         <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} anyOf={["invoices", "quotations"]} />}</Route>
         <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} anyOf={["purchase_orders", "invoices", "quotations", "delivery_orders"]} />}</Route>
+
+        {/* Accounting — Singapore companies */}
+        <Route path="/accounting/chart-of-accounts">{() => <ProtectedRoute component={ChartOfAccounts} />}</Route>
 
         {/* System — admin only */}
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>

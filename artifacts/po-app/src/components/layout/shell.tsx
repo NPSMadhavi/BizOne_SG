@@ -19,6 +19,7 @@ import {
   Mail,
   FileInput,
   ShieldCheck,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,7 +88,7 @@ function CompanyBadge() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, logout, isAdmin, hasModuleAccess } = useAuth();
+  const { user, logout, isAdmin, hasModuleAccess, selectedCompany } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -182,6 +183,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 Address Book
               </NavItem>
             )}
+          </div>
+        </div>
+      )}
+
+      {selectedCompany?.country?.toLowerCase() === "singapore" && (
+        <div className="mt-4">
+          <h4 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Accounting
+          </h4>
+          <div className="space-y-1">
+            <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")}>
+              Chart of Accounts
+            </NavItem>
           </div>
         </div>
       )}
