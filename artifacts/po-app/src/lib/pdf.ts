@@ -800,10 +800,10 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     startY: 113,
     head: [poHeaders],
     body: tableData,
-    theme: "striped",
+    theme: "plain",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top" },
-    styles: { cellPadding: 4 },
+    styles: { cellPadding: 4, lineColor: [210, 215, 220], lineWidth: { bottom: 0.2, top: 0, left: 0, right: 0 } },
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
   }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
@@ -1069,7 +1069,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
       qtRichDesc.push([]);
       const sectionText = htmlToText(item.sectionLabel || "Section");
       const halign = item.sectionAlign === "center" ? "center" : "left";
-      return [{ content: sectionText, colSpan: qtTotalCols, styles: { fontStyle: "bold", fillColor: [235, 238, 244], textColor: [24, 33, 47], halign } }];
+      return [{ content: sectionText, colSpan: qtTotalCols, styles: { fontStyle: "bold", textColor: [24, 33, 47], halign } }];
     }
     qtItemCounter++;
     qtRichDesc.push(htmlToRichLines(item.description));
@@ -1113,10 +1113,10 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     startY: qtTableStartY,
     head: [qtHeaders],
     body: qtTableData,
-    theme: "striped",
+    theme: "plain",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top" },
-    styles: { cellPadding: 4 },
+    styles: { cellPadding: 4, lineColor: [210, 215, 220], lineWidth: { bottom: 0.2, top: 0, left: 0, right: 0 } },
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {
@@ -1277,7 +1277,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
       invRichDesc.push([]);
       const sectionText = htmlToText(item.sectionLabel || "Section");
       const halign = item.sectionAlign === "center" ? "center" : "left";
-      return [{ content: sectionText, colSpan: invTotalCols, styles: { fontStyle: "bold", fillColor: [235, 238, 244], textColor: [24, 33, 47], halign } }];
+      return [{ content: sectionText, colSpan: invTotalCols, styles: { fontStyle: "bold", textColor: [24, 33, 47], halign } }];
     }
     invItemCounter++;
     invRichDesc.push(htmlToRichLines(item.description));
@@ -1312,10 +1312,10 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     startY: invTableStartY,
     head: [invHeaders],
     body: tableData,
-    theme: "striped",
+    theme: "plain",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top" },
-    styles: { cellPadding: 4 },
+    styles: { cellPadding: 4, lineColor: [210, 215, 220], lineWidth: { bottom: 0.2, top: 0, left: 0, right: 0 } },
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {
@@ -1449,10 +1449,10 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     startY: 113,
     head: [doHeaders],
     body: doTableData,
-    theme: "striped",
+    theme: "plain",
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top" },
-    styles: { cellPadding: 4 },
+    styles: { cellPadding: 4, lineColor: [210, 215, 220], lineWidth: { bottom: 0.2, top: 0, left: 0, right: 0 } },
     columnStyles: doColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
   }, doDescColIdx, doRichDesc, filteredDOItems.map((item: any) => (item as any).itemImage || null));
