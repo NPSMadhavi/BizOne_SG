@@ -165,6 +165,10 @@ export default function QuotationNew() {
   const subtotal = items.reduce((s, i) => ((i as any).type === "section") ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
+  const [discountPct, setDiscountPct] = useState(0);
+  useEffect(() => {
+    if (discountPct > 0) form.setValue("discountAmount", parseFloat((subtotal * discountPct / 100).toFixed(2)));
+  }, [subtotal]);
   const taxAmount = taxableAmount * (taxPercent / 100);
   const totalAmount = taxableAmount + taxAmount;
 
@@ -525,13 +529,34 @@ export default function QuotationNew() {
               <div className="border-t bg-muted/20 p-4 flex justify-end">
                 <div className="w-72 space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground whitespace-nowrap">Discount (−)</span>
-                    <FormField control={form.control} name="discountAmount" render={({ field }) => (
-                      <FormItem className="m-0 p-0"><FormControl>
-                        <Input inputMode="decimal" className="h-7 w-28 text-sm text-right" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} />
-                      </FormControl></FormItem>
-                    )} />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground whitespace-nowrap">Discount</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative">
+                        <Input
+                          inputMode="decimal"
+                          maxLength={3}
+                          placeholder="0"
+                          className="h-7 w-14 text-sm text-center pr-5"
+                          value={discountPct || ""}
+                          onChange={e => {
+                            const raw = e.target.value.replace(/[^0-9.]/g, "");
+                            const n = Math.min(parseFloat(raw) || 0, 100);
+                            setDiscountPct(n);
+                            form.setValue("discountAmount", parseFloat((subtotal * n / 100).toFixed(2)));
+                          }}
+                        />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+                      </div>
+                      <FormField control={form.control} name="discountAmount" render={({ field }) => (
+                        <FormItem className="m-0 p-0"><FormControl>
+                          <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
+                            value={field.value || ""}
+                            onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+                          />
+                        </FormControl></FormItem>
+                      )} />
+                    </div>
                   </div>
                   {discountAmt > 0 && <div className="flex justify-between text-xs text-muted-foreground"><span>Net Amount</span><span>{fmt(taxableAmount)}</span></div>}
                   <div className="flex justify-between"><span className="text-muted-foreground">GST ({taxPercent}%)</span><span>{fmt(taxAmount)}</span></div>
