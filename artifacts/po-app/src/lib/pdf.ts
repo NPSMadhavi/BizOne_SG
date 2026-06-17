@@ -1180,8 +1180,10 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(fmtMoneyTotal(qtCurrency, Number(qt.subtotal)), valueX, ty, { align: "right" });
   ty += 7;
   if (qtDocDiscount > 0) {
+    const qtDiscPct = Number(qt.subtotal) > 0 ? Math.round(qtDocDiscount / Number(qt.subtotal) * 1000) / 10 : 0;
+    const qtDiscLabel = qtDiscPct > 0 ? `Discount (${qtDiscPct}%):` : "Discount:";
     doc.setTextColor(180, 0, 0);
-    doc.text("Discount:", labelX, ty);
+    doc.text(qtDiscLabel, labelX, ty);
     doc.text(`-${fmtMoneyTotal(qtCurrency, qtDocDiscount)}`, valueX, ty, { align: "right" });
     doc.setTextColor(60, 60, 60);
     ty += 7;
@@ -1379,8 +1381,10 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(fmtMoneyTotal(invCurrency, Number(inv.subtotal)), valueX, ity, { align: "right" });
   ity += 7;
   if (invDocDiscount > 0) {
+    const invDiscPct = Number(inv.subtotal) > 0 ? Math.round(invDocDiscount / Number(inv.subtotal) * 1000) / 10 : 0;
+    const invDiscLabel = invDiscPct > 0 ? `Discount (${invDiscPct}%):` : "Discount:";
     doc.setTextColor(180, 0, 0);
-    doc.text("Discount:", labelX, ity);
+    doc.text(invDiscLabel, labelX, ity);
     doc.text(`-${fmtMoneyTotal(invCurrency, invDocDiscount)}`, valueX, ity, { align: "right" });
     doc.setTextColor(60, 60, 60);
     ity += 7;
