@@ -1125,6 +1125,12 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtUnitPriceIdx = qtHeaders.indexOf(`Unit Price (${qtCurrency})`);
   const qtAmountIdx = qtHeaders.indexOf(`Amount (${qtCurrency})`);
+  // Compact padding heuristic: if a normal-padding table would barely push the
+  // totals to page 2, switch to tighter padding to keep everything on one page.
+  const qtAvailH = pageHeight - qtTableStartY - qtCombinedH - FOOTER_RESERVE - 12;
+  const qtEstNormal = 9 + regularQtItems.length * 10;
+  const qtEstCompact = 9 + regularQtItems.length * 7;
+  const qtUseCompact = qtEstNormal > qtAvailH && qtEstCompact <= qtAvailH;
   autoTableRich(doc, {
     startY: qtTableStartY,
     head: [qtHeaders],
@@ -1133,7 +1139,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [245, 247, 249] },
-    styles: { cellPadding: 4 },
+    styles: { cellPadding: qtUseCompact ? 2 : 4 },
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {
@@ -1328,6 +1334,12 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${invCurrency})`);
   const invAmountIdx = invHeaders.indexOf(`Amount (${invCurrency})`);
+  // Compact padding heuristic: if a normal-padding table would barely push the
+  // totals to page 2, switch to tighter padding to keep everything on one page.
+  const invAvailH = pageHeight - invTableStartY - invCombinedH - FOOTER_RESERVE - 12;
+  const invEstNormal = 9 + regularInvItems.length * 10;
+  const invEstCompact = 9 + regularInvItems.length * 7;
+  const invUseCompact = invEstNormal > invAvailH && invEstCompact <= invAvailH;
   autoTableRich(doc, {
     startY: invTableStartY,
     head: [invHeaders],
@@ -1336,7 +1348,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
     bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [245, 247, 249] },
-    styles: { cellPadding: 4 },
+    styles: { cellPadding: invUseCompact ? 2 : 4 },
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {

@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
@@ -28,6 +28,7 @@ import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
+import { AiInvoiceDialog, type AiGeneratedInvoice } from "@/components/ai-invoice-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -89,6 +90,7 @@ export default function InvoiceNew() {
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const allReservedIds = useRef<Set<number>>(new Set());
 
@@ -153,6 +155,28 @@ export default function InvoiceNew() {
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
   }, [settings]);
+
+  function handleAiApply(data: AiGeneratedInvoice) {
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
+    form.reset({
+      customerName: data.customerName || "",
+      customerAddress: data.customerAddress || "",
+      customerContact: data.customerContact || "",
+      customerContactEmail: data.customerContactEmail || "",
+      currency: data.currency || "SGD",
+      paymentTerms: data.paymentTerms || "30 Days Net",
+      notes: data.notes || "",
+      issueDate: getToday(),
+      deliveryDate: "",
+      tax: settings?.gstRate ?? 9,
+      discountAmount: Number(data.discountAmount) || 0,
+      poRefNo: "",
+      isPrivate: false,
+      items: data.items?.length
+        ? data.items.map(it => ({ ...blankItem, partNumber: it.partNumber || "", description: it.description || "", qty: Number(it.qty) || 1, uom: it.uom || "", unitPrice: Number(it.unitPrice) || 0 }))
+        : [blankItem],
+    });
+  }
 
   function handlePoExtracted(data: ExtractedPoData) {
     const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
@@ -304,6 +328,15 @@ export default function InvoiceNew() {
           <p className="text-muted-foreground mt-1">Create a new customer invoice.</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 border-dashed border-violet-500/60 text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30"
+            onClick={() => setAiOpen(true)}
+          >
+            <Sparkles className="h-4 w-4" />
+            Generate with AI
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -837,6 +870,12 @@ export default function InvoiceNew() {
           }
           setPendingConfirmValues(null);
         }}
+      />
+
+      <AiInvoiceDialog
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        onApply={handleAiApply}
       />
 
       <CustomerPoUploadDialog
