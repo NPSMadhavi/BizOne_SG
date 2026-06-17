@@ -23,6 +23,7 @@ import agentRouter from "./agent";
 import extractPoRouter from "./extract-po";
 import accountingRouter from "./accounting";
 import aiInvoiceRouter from "./ai/generate-invoice";
+import aiFormatRouter from "./ai/format-invoice";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(auditLogsRouter);
 router.use(agentRouter);
 router.use(accountingRouter);
 router.use(aiInvoiceRouter);
+router.use(aiFormatRouter);
 
 export default router;

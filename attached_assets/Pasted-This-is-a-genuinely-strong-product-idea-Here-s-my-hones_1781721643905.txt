@@ -1,0 +1,35 @@
+This is a genuinely strong product idea. Here's my honest take:
+
+What's great about it
+
+The "non-destructive confirmation" model is the right call. Users keep their original data untouched unless they explicitly say yes — that removes the fear of "what if it messes up my numbers." Only the text structure changes (splitting one dump into sections + clean descriptions), while qty, unit price, amounts, discount, currency all stay exactly where they are.
+
+The animated progress panel is also clever UX — it makes the AI feel deliberate rather than instantaneous. Something like:
+
+✓ Reading 3 line items…
+✓ Detected 2 service categories
+✓ Found scope breakdown in item 1
+✓ Identified 6 sub-services
+✓ Structuring into section headers…
+✓ Ready — preview below
+
+That builds trust. Users understand what changed and why.
+
+One thing to think through
+
+When the AI splits one big description into multiple rows — does it copy the unit price down into every new row, or leave them at 0? My suggestion: keep price + qty only on the first "real" line item in each group, and set section headers + sub-description rows to 0 qty / 0 price (they're already excluded from the subtotal). That way the math never changes.
+
+The confirm flow
+
+The cleanest UX would be:
+
+User clicks Save & Preview as normal
+Before the PDF preview modal opens, an AI Format sheet slides up showing the progress points
+Two side-by-side panels: Original (what they typed) vs Formatted (what AI restructured)
+Two buttons: Use Formatted → opens PDF preview with the restructured items | Keep Original → opens PDF preview with the raw data as-is
+Either way, what gets saved to the database is what the user confirmed
+This means no separate "Auto-Format" button — it's invisibly woven into the Save & Preview flow, which is exactly what you want.
+
+My opinion: build it. It solves a real recurring pain, it's non-destructive, and the confirmation step makes it safe enough that even cautious users will trust it. The animated progress panel will make it feel like a premium feature rather than a hidden background process.
+
+Want me to go ahead?
