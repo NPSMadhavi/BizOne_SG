@@ -147,7 +147,8 @@ function htmlToRichLines(html: string): RichLine[] {
   type Run = { t: string; b: boolean; i: boolean };
   function collectRuns(node: Node, b: boolean, i: boolean): Run[] {
     if (node.nodeType === Node.TEXT_NODE) {
-      const t = node.textContent ?? "";
+      // Normalize non-breaking spaces (from Word/pasted content) to regular spaces
+      const t = (node.textContent ?? "").replace(/\u00a0/g, " ");
       return t ? [{ t, b, i }] : [];
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return [];
@@ -179,6 +180,12 @@ function htmlToRichLines(html: string): RichLine[] {
   // Add lines from a block element, splitting on <br> sentinels, with optional prefix.
   function addBlock(el: Element, prefix = "") {
     const rr = collectRuns(el, false, false);
+    // Empty block (<p></p> or <p><br></p>) → blank line representing a paragraph gap
+    const onlyBreak = rr.length === 1 && rr[0].t === "\n";
+    if ((rr.length === 0 || onlyBreak) && !prefix) {
+      out.push({ text: "", bold: false, italic: false });
+      return;
+    }
     // Split on hard-break sentinels
     let seg: Run[] = [];
     let firstSeg = true;
@@ -186,6 +193,7 @@ function htmlToRichLines(html: string): RichLine[] {
       if (r.t === "\n") {
         const line = runsToLine(seg, firstSeg ? prefix : "");
         if (line) out.push(line);
+        else if (!firstSeg) out.push({ text: "", bold: false, italic: false }); // hard-break gap
         seg = [];
         firstSeg = false;
       } else {
@@ -309,42 +317,50 @@ function autoTableRich(
     ...restOpts,
     headStyles: { font: PDF_FONT, ...(hs ?? {}) },
     bodyStyles: { font: PDF_FONT, ...(bs ?? {}) },
-    // Pre-set minCellHeight for description cells so section-row fills don't clip overflow text
+    // Pre-set minCellHeight for description cells AND full-width section rows
     didParseCell: (data: any) => {
       if (userDidParseCell) userDidParseCell(data);
-      if (data.section === "body" && data.column.index === descColIdx) {
-        const richLines = richDescRows[data.row.index];
-        if (!richLines || richLines.length === 0) return;
-        const scaleFactor = (doc.internal as any).scaleFactor || 2.8346;
-        const LINE_H = (9.5 * 1.15) / scaleFactor;
-        const padding = 4;
-        const maxW = data.cell.width - padding * 2;
-        doc.setFontSize(9.5);
-        let totalH = 0;
-        for (const rl of richLines) {
-          if (!rl.text) {
-            totalH += LINE_H;
-          } else {
-            const st = rl.bold && rl.italic ? "bolditalic" : rl.bold ? "bold" : rl.italic ? "italic" : "normal";
-            doc.setFont(PDF_FONT, st);
-            totalH += doc.splitTextToSize(rl.text, maxW).length * LINE_H;
-          }
+      if (data.section !== "body") return;
+      const isSection = (data.cell.colSpan ?? 1) > 1 && data.column.index === 0;
+      const isDesc = data.column.index === descColIdx && !isSection;
+      if (!isSection && !isDesc) return;
+      const richLines = richDescRows[data.row.index];
+      if (!richLines || richLines.length === 0) return;
+      const scaleFactor = (doc.internal as any).scaleFactor || 2.8346;
+      const LINE_H = (9.5 * 1.15) / scaleFactor;
+      const padding = 4;
+      const maxW = data.cell.width - padding * 2;
+      doc.setFontSize(9.5);
+      let totalH = 0;
+      for (const rl of richLines) {
+        if (!rl.text) {
+          totalH += LINE_H;
+        } else {
+          const st = rl.bold && rl.italic ? "bolditalic" : rl.bold ? "bold" : rl.italic ? "italic" : "normal";
+          doc.setFont(PDF_FONT, st);
+          totalH += doc.splitTextToSize(rl.text, maxW).length * LINE_H;
         }
-        const needed = totalH + padding * 2;
-        if (!data.cell.minCellHeight || data.cell.minCellHeight < needed) {
-          data.cell.minCellHeight = needed;
-        }
+      }
+      const needed = totalH + padding * 2;
+      if (!data.cell.minCellHeight || data.cell.minCellHeight < needed) {
+        data.cell.minCellHeight = needed;
       }
     },
     willDrawCell: (data: any) => {
-      if (data.section === "body" && data.column.index === descColIdx) {
+      if (data.section !== "body") return;
+      const isSection = (data.cell.colSpan ?? 1) > 1 && data.column.index === 0;
+      if (isSection || data.column.index === descColIdx) {
         data.cell.text = [];
       }
     },
     didDrawCell: (data: any) => {
-      if (data.section !== "body" || data.column.index !== descColIdx) return;
+      if (data.section !== "body") return;
+      const isSection = (data.cell.colSpan ?? 1) > 1 && data.column.index === 0;
+      const isDesc = data.column.index === descColIdx && !isSection;
+      if (!isSection && !isDesc) return;
+
       const richLines = richDescRows[data.row.index];
-      const rowImg = itemImages?.[data.row.index] || null;
+      const rowImg = (!isSection && itemImages?.[data.row.index]) ? itemImages![data.row.index] : null;
       const imgReserve = rowImg ? IMG_RESERVE : 0;
 
       const jdoc = data.doc as jsPDF;
@@ -367,12 +383,11 @@ function autoTableRich(
       }
 
       const scaleFactor = (jdoc.internal as any).scaleFactor || 2.8346;
-      const LINE_H = (9.5 * 1.15) / scaleFactor; // match autotable exactly
-      const BASELINE_OFFSET = (9.5 * 0.8) / scaleFactor; // approx baseline within first line
+      const LINE_H = (9.5 * 1.15) / scaleFactor;
+      const BASELINE_OFFSET = (9.5 * 0.8) / scaleFactor;
       jdoc.setFontSize(9.5);
 
-      // Build a rendering plan: calculate each line's baseline y
-      // Use textPos.y from autotable when available — more accurate than manual calc
+      // Build rendering plan — each line gets its baseline y coordinate
       type Plan = { y: number; richLine: RichLine };
       const plan: Plan[] = [];
       let ty = (cell as any).textPos?.y ?? (cell.y + padding + BASELINE_OFFSET);
@@ -381,13 +396,11 @@ function autoTableRich(
         if (rl.cols) {
           ty += LINE_H;
         } else if (!rl.text) {
-          ty += LINE_H; // blank line — advance one line height, nothing to render
+          ty += LINE_H; // blank line — advance spacing, nothing drawn
         } else {
-          // Use actual bold/italic style for measurement — bold is wider and wraps to more lines
           const measStyle = rl.bold && rl.italic ? "bolditalic" : rl.bold ? "bold" : rl.italic ? "italic" : "normal";
           jdoc.setFont(PDF_FONT, measStyle);
-          const wrapped = jdoc.splitTextToSize(rl.text, maxW);
-          ty += wrapped.length * LINE_H;
+          ty += jdoc.splitTextToSize(rl.text, maxW).length * LINE_H;
         }
       }
 
@@ -405,52 +418,46 @@ function autoTableRich(
         } else if (text) {
           const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
           jdoc.setFont(PDF_FONT, style);
-          const wrapped = jdoc.splitTextToSize(text, maxW);
-          jdoc.text(wrapped, x, y);
-        }
-        // blank line: ty was already advanced in plan loop, nothing to render
-      }
-
-      // Border pass: group consecutive cols rows and draw grid
-      jdoc.setDrawColor(160, 160, 160);
-      jdoc.setLineWidth(0.3);
-      let groupStart = -1;
-      for (let i = 0; i <= plan.length; i++) {
-        const isCol = i < plan.length && plan[i].richLine.cols && plan[i].richLine.cols!.length > 0;
-        if (isCol && groupStart === -1) { groupStart = i; }
-        if (!isCol && groupStart !== -1) {
-          const group = plan.slice(groupStart, i);
-          const numCols = group[0].richLine.cols!.length;
-          const colW = maxW / numCols;
-          const topY = group[0].y - BASELINE_OFFSET;
-          const botY = group[group.length - 1].y - BASELINE_OFFSET + LINE_H;
-          // Outer rect
-          jdoc.rect(x, topY, maxW, botY - topY);
-          // Vertical column lines
-          for (let ci = 1; ci < numCols; ci++) {
-            jdoc.line(x + ci * colW, topY, x + ci * colW, botY);
-          }
-          // Horizontal row separators
-          for (let ri = 0; ri < group.length - 1; ri++) {
-            const rowBotY = group[ri].y - BASELINE_OFFSET + LINE_H;
-            jdoc.line(x, rowBotY, x + maxW, rowBotY);
-          }
-          groupStart = -1;
+          jdoc.text(jdoc.splitTextToSize(text, maxW), x, y);
         }
       }
 
-      // Draw item image if present (right side of description cell)
-      if (rowImg) {
-        const imgH = Math.min(IMG_H_MAX, cell.height - padding * 2);
-        const imgX = cell.x + cell.width - IMG_W - 1;
-        const imgY = cell.y + (cell.height - imgH) / 2;
-        // White background to cover any text overflow
-        jdoc.setFillColor(255, 255, 255);
-        jdoc.rect(cell.x + cell.width - IMG_RESERVE, cell.y + 1, IMG_RESERVE, cell.height - 2, "F");
-        try {
-          const fmt = rowImg.startsWith("data:image/png") ? "PNG" : "JPEG";
-          jdoc.addImage(rowImg, fmt, imgX, imgY, IMG_W, imgH, "", "FAST");
-        } catch (_e) { /* ignore corrupt/unsupported image */ }
+      // Border pass for inline tables (description cells only, not section rows)
+      if (isDesc) {
+        jdoc.setDrawColor(160, 160, 160);
+        jdoc.setLineWidth(0.3);
+        let groupStart = -1;
+        for (let i = 0; i <= plan.length; i++) {
+          const isCol = i < plan.length && plan[i].richLine.cols && plan[i].richLine.cols!.length > 0;
+          if (isCol && groupStart === -1) { groupStart = i; }
+          if (!isCol && groupStart !== -1) {
+            const group = plan.slice(groupStart, i);
+            const numCols = group[0].richLine.cols!.length;
+            const colW = maxW / numCols;
+            const topY = group[0].y - BASELINE_OFFSET;
+            const botY = group[group.length - 1].y - BASELINE_OFFSET + LINE_H;
+            jdoc.rect(x, topY, maxW, botY - topY);
+            for (let ci = 1; ci < numCols; ci++) {
+              jdoc.line(x + ci * colW, topY, x + ci * colW, botY);
+            }
+            for (let ri = 0; ri < group.length - 1; ri++) {
+              jdoc.line(x, group[ri].y - BASELINE_OFFSET + LINE_H, x + maxW, group[ri].y - BASELINE_OFFSET + LINE_H);
+            }
+            groupStart = -1;
+          }
+        }
+        // Draw item image (right side of description cell)
+        if (rowImg) {
+          const imgH = Math.min(IMG_H_MAX, cell.height - padding * 2);
+          const imgX = cell.x + cell.width - IMG_W - 1;
+          const imgY = cell.y + (cell.height - imgH) / 2;
+          jdoc.setFillColor(255, 255, 255);
+          jdoc.rect(cell.x + cell.width - IMG_RESERVE, cell.y + 1, IMG_RESERVE, cell.height - 2, "F");
+          try {
+            const fmt = rowImg.startsWith("data:image/png") ? "PNG" : "JPEG";
+            jdoc.addImage(rowImg, fmt, imgX, imgY, IMG_W, imgH, "", "FAST");
+          } catch (_e) { /* ignore corrupt/unsupported image */ }
+        }
       }
     },
   });
@@ -1066,10 +1073,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   let qtItemCounter = 0;
   const qtTableData = allQtItems.map((item: any) => {
     if (item.type === "section") {
-      qtRichDesc.push([]);
-      const sectionText = htmlToText(item.sectionLabel || "Section");
+      qtRichDesc.push(htmlToRichLines(item.sectionLabel || ""));
       const halign = item.sectionAlign === "center" ? "center" : "left";
-      return [{ content: sectionText, colSpan: qtTotalCols, styles: { fontStyle: "bold", textColor: [24, 33, 47], halign } }];
+      return [{ content: htmlToText(item.sectionLabel || ""), colSpan: qtTotalCols, styles: { halign } }];
     }
     qtItemCounter++;
     qtRichDesc.push(htmlToRichLines(item.description));
@@ -1274,10 +1280,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   let invItemCounter = 0;
   const tableData = allInvItems.map((item: any) => {
     if (item.type === "section") {
-      invRichDesc.push([]);
-      const sectionText = htmlToText(item.sectionLabel || "Section");
+      invRichDesc.push(htmlToRichLines(item.sectionLabel || ""));
       const halign = item.sectionAlign === "center" ? "center" : "left";
-      return [{ content: sectionText, colSpan: invTotalCols, styles: { fontStyle: "bold", textColor: [24, 33, 47], halign } }];
+      return [{ content: htmlToText(item.sectionLabel || ""), colSpan: invTotalCols, styles: { halign } }];
     }
     invItemCounter++;
     invRichDesc.push(htmlToRichLines(item.description));
