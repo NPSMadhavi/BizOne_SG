@@ -561,6 +561,11 @@ function fmtMoneyTotal(currency: string, amount: number): string {
   return fmtMoney(currency, amount);
 }
 
+// Plain number formatter — no currency symbol (used in line-item cells when the currency is already in the column header)
+function fmtNum(amount: number): string {
+  return new Intl.NumberFormat("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+}
+
 function formatDate(d: string | null | undefined): string {
   return fmtDate(d);
 }
@@ -776,14 +781,14 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   const poHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
   if (hasPOUom) poHeaderArr.push("UOM");
-  poHeaderArr.push("Unit Price", "Amount");
+  poHeaderArr.push(`Unit Price (${poCurrency})`, `Amount (${poCurrency})`);
   const poHeaders = poHeaderArr;
 
   const poRichDesc = filteredPOItems.map((item: any) => htmlToRichLines(item.description));
   const tableData = filteredPOItems.map((item, index) => {
     const row: any[] = [index + 1, item.partNumber, htmlToText(item.description), item.qty];
     if (hasPOUom) row.push((item as any).uom || "");
-    row.push(fmtMoney(poCurrency, Number(item.unitPrice)), fmtMoney(poCurrency, Number(item.amount)));
+    row.push(fmtNum(Number(item.unitPrice)), fmtNum(Number(item.amount)));
     return row;
   });
 
@@ -1063,9 +1068,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   if (hasQtPartNo) qtHeaderArr.push("Item / Part Number");
   qtHeaderArr.push("Description", "Qty");
   if (hasQtUom) qtHeaderArr.push("UOM");
-  qtHeaderArr.push("Unit Price");
+  qtHeaderArr.push(`Unit Price (${qtCurrency})`);
   if (hasItemDiscount) qtHeaderArr.push("Disc %");
-  qtHeaderArr.push("Amount");
+  qtHeaderArr.push(`Amount (${qtCurrency})`);
   const qtHeaders = qtHeaderArr;
   const qtTotalCols = qtHeaders.length;
 
@@ -1084,9 +1089,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     if (hasQtPartNo) row.push(item.partNumber || "");
     row.push(htmlToText(item.description), item.qty);
     if (hasQtUom) row.push(item.uom || "");
-    row.push(fmtMoney(qtCurrency, Number(item.unitPrice)));
+    row.push(fmtNum(Number(item.unitPrice)));
     if (hasItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
-    row.push(fmtMoney(qtCurrency, Number(item.amount)));
+    row.push(fmtNum(Number(item.amount)));
     return row;
   });
 
@@ -1113,8 +1118,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
   const qtBankBlockH = calcBlockHeight(doc, qtSettings, 125);
 
-  const qtUnitPriceIdx = qtHeaders.indexOf("Unit Price");
-  const qtAmountIdx = qtHeaders.indexOf("Amount");
+  const qtUnitPriceIdx = qtHeaders.indexOf(`Unit Price (${qtCurrency})`);
+  const qtAmountIdx = qtHeaders.indexOf(`Amount (${qtCurrency})`);
   autoTableRich(doc, {
     startY: qtTableStartY,
     head: [qtHeaders],
@@ -1268,9 +1273,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   if (hasInvPartNo) invHeaderArr.push("Item / Part Number");
   invHeaderArr.push("Description", "Qty");
   if (hasInvUom) invHeaderArr.push("UOM");
-  invHeaderArr.push("Unit Price");
+  invHeaderArr.push(`Unit Price (${invCurrency})`);
   if (hasInvItemDiscount) invHeaderArr.push("Disc %");
-  invHeaderArr.push("Amount");
+  invHeaderArr.push(`Amount (${invCurrency})`);
   const invHeaders = invHeaderArr;
   const invTotalCols = invHeaders.length;
 
@@ -1291,9 +1296,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     if (hasInvPartNo) row.push(item.partNumber || "");
     row.push(htmlToText(item.description), item.qty);
     if (hasInvUom) row.push(item.uom || "");
-    row.push(fmtMoney(invCurrency, Number(item.unitPrice)));
+    row.push(fmtNum(Number(item.unitPrice)));
     if (hasInvItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
-    row.push(fmtMoney(invCurrency, Number(item.amount)));
+    row.push(fmtNum(Number(item.amount)));
     return row;
   });
 
@@ -1311,8 +1316,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
 
-  const invUnitPriceIdx = invHeaders.indexOf("Unit Price");
-  const invAmountIdx = invHeaders.indexOf("Amount");
+  const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${invCurrency})`);
+  const invAmountIdx = invHeaders.indexOf(`Amount (${invCurrency})`);
   autoTableRich(doc, {
     startY: invTableStartY,
     head: [invHeaders],
