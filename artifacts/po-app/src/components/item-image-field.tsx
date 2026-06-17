@@ -38,7 +38,7 @@ export function ItemImageField({ value, onChange }: ItemImageFieldProps) {
 
   if (value) {
     return (
-      <div className="relative group w-24 h-20 flex-shrink-0 rounded border border-border overflow-hidden">
+      <div className="relative group w-20 h-16 flex-shrink-0 rounded border border-border overflow-hidden">
         <img src={value} alt="" className="w-full h-full object-contain bg-muted/10" />
         <button
           type="button"
@@ -52,21 +52,21 @@ export function ItemImageField({ value, onChange }: ItemImageFieldProps) {
   }
 
   return (
-    <div
-      className="w-24 h-20 flex-shrink-0 border-2 border-dashed border-muted-foreground/25 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:border-primary/40 transition-colors"
-      title="Paste or click to add an image"
-      tabIndex={0}
-      onClick={() => inputRef.current?.click()}
-      onPaste={(e) => {
-        const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
-        if (item) { e.preventDefault(); const f = item.getAsFile(); if (f) handleFile(f); }
-      }}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") inputRef.current?.click(); }}
-    >
-      <ImageIcon className="w-4 h-4 text-muted-foreground/40" />
-      <span className="text-[9px] text-muted-foreground/40 font-medium">Image</span>
+    <>
+      <button
+        type="button"
+        title="Attach image to this line item"
+        onClick={() => inputRef.current?.click()}
+        onPaste={(e) => {
+          const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
+          if (item) { e.preventDefault(); const f = item.getAsFile(); if (f) handleFile(f); }
+        }}
+        className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
+      >
+        <ImageIcon className="w-3.5 h-3.5" />
+      </button>
       <input ref={inputRef} type="file" accept="image/*" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
-    </div>
+    </>
   );
 }
