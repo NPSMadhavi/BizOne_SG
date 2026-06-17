@@ -1019,7 +1019,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   // For quotations, use quotationTerms (not invoice termsAndConditions)
   const qtSettings = settings
-    ? { bankDetails: settings.bankDetails, termsAndConditions: (settings as any).quotationTerms || "" }
+    ? { bankDetails: "", termsAndConditions: (settings as any).quotationTerms || "" }
     : null;
 
   const qtExtraRows = qtDocDiscount > 0 ? 1 : 0;
