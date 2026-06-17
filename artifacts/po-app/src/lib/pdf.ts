@@ -115,6 +115,10 @@ function htmlToText(html: string): string {
       return inner.replace(/<li[^>]*>/gi, () => `<li data-n="${++n}">`);
     })
     .replace(/<br\s*\/?>/gi, "\n")
+    // Tiptap wraps list-item content in <p>, producing </p></li>. Collapse to
+    // a single newline so each bullet line doesn't get two newlines (one from
+    // </p> and one from </li>), which was causing autotable to over-estimate row height.
+    .replace(/<\/p>\s*<\/li>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
     .replace(/<li data-n="(\d+)">/gi, (_, n) => `${n}. `)
