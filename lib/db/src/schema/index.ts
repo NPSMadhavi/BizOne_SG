@@ -16,3 +16,6 @@ export * from "./email-contacts";
 export * from "./vendor-invoices";
 export * from "./vendor-payments";
 export * from "./audit-logs";
+export * from "./accounts";
+export * from "./journal-entries";
+export * from "./journal-lines";

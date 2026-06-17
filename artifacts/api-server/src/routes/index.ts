@@ -21,6 +21,7 @@ import vendorInvoicesRouter from "./vendor-invoices";
 import auditLogsRouter from "./audit-logs";
 import agentRouter from "./agent";
 import extractPoRouter from "./extract-po";
+import accountingRouter from "./accounting";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(maintenanceRouter);
 router.use(vendorInvoicesRouter);
 router.use(auditLogsRouter);
 router.use(agentRouter);
+router.use(accountingRouter);
 
 export default router;
