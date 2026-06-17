@@ -506,7 +506,7 @@ export default function QuotationEdit() {
                 <div className="w-72 space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground whitespace-nowrap">Invoice Discount (−)</span>
+                    <span className="text-muted-foreground whitespace-nowrap">Discount (−)</span>
                     <FormField control={form.control} name="discountAmount" render={({ field }) => (
                       <FormItem className="m-0 p-0"><FormControl>
                         <Input inputMode="decimal" className="h-7 w-28 text-sm text-right" placeholder="0.00" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} />

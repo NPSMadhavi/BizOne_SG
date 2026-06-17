@@ -82,6 +82,7 @@ export default function Settings() {
 
   const [bankDetails, setBankDetails] = useState("");
   const [termsAndConditions, setTermsAndConditions] = useState("");
+  const [quotationTerms, setQuotationTerms] = useState("");
   const [docsEditing, setDocsEditing] = useState(false);
 
   const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "1", suffix: "" });
@@ -164,6 +165,7 @@ export default function Settings() {
     if (settings && !docsEditing) {
       setBankDetails((settings as any).bankDetails ?? "");
       setTermsAndConditions((settings as any).termsAndConditions ?? "");
+      setQuotationTerms((settings as any).quotationTerms ?? "");
     }
   }, [settings]);
 
@@ -239,7 +241,7 @@ export default function Settings() {
   const handleSaveDocs = () => {
     setDocsEditing(false);
     updateSettings.mutate(
-      { data: { bankDetails, termsAndConditions } as any },
+      { data: { bankDetails, termsAndConditions, quotationTerms } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
@@ -712,54 +714,85 @@ export default function Settings() {
 
         {/* DOCUMENTS */}
         <TabsContent value="documents">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                Document Settings
-              </CardTitle>
-              <CardDescription>
-                Bank account details and terms &amp; conditions printed at the bottom of all invoices and quotations.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="bankDetails">Bank Account Details</Label>
+          <div className="space-y-5">
+            {/* Bank Details */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Bank Account Details
+                </CardTitle>
+                <CardDescription>
+                  Printed at the bottom of all invoices and quotations.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
                 <Textarea
                   id="bankDetails"
-                  rows={5}
-                  placeholder={"Account No: 1234567890\nAccount Name: Your Company\nIFSC Code: XXXX0001234\nBank: Bank Name\nBranch: Branch Name"}
+                  rows={4}
+                  placeholder={"Account No: 1234567890\nAccount Name: Your Company\nBank: Bank Name\nSwift / IFSC: XXXXXXXX"}
                   value={bankDetails}
                   disabled={!isAdmin}
                   onChange={(e) => { setDocsEditing(true); setBankDetails(e.target.value); }}
                 />
                 <p className="text-xs text-muted-foreground">Each line will appear as a separate line in the PDF.</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="termsAndConditions">Terms &amp; Conditions</Label>
+              </CardContent>
+            </Card>
+
+            {/* Invoice T&C */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Invoice Terms &amp; Conditions</CardTitle>
+                <CardDescription>
+                  Printed at the bottom of <strong>Tax Invoices</strong> only.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
                 <Textarea
                   id="termsAndConditions"
-                  rows={5}
+                  rows={4}
                   placeholder={"All prices are as per the currency stated on this invoice.\nPayment is due as per the payment terms stated above.\nGoods once sold are not Returnable / Exchangeable."}
                   value={termsAndConditions}
                   disabled={!isAdmin}
                   onChange={(e) => { setDocsEditing(true); setTermsAndConditions(e.target.value); }}
                 />
                 <p className="text-xs text-muted-foreground">Each line will be prefixed with a bullet point in the PDF.</p>
+              </CardContent>
+            </Card>
+
+            {/* Quotation T&C */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Quotation Terms &amp; Conditions</CardTitle>
+                <CardDescription>
+                  Printed at the bottom of <strong>Quotations</strong> only. Leave blank to omit from quotation PDFs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Textarea
+                  id="quotationTerms"
+                  rows={4}
+                  placeholder={"This quotation is valid for 30 days from the date of issue.\nPrices are subject to change without prior notice.\nDelivery lead time as stated above is estimated only."}
+                  value={quotationTerms}
+                  disabled={!isAdmin}
+                  onChange={(e) => { setDocsEditing(true); setQuotationTerms(e.target.value); }}
+                />
+                <p className="text-xs text-muted-foreground">Each line will be prefixed with a bullet point in the PDF.</p>
+              </CardContent>
+            </Card>
+
+            {isAdmin && (
+              <div className="flex justify-end">
+                <Button onClick={handleSaveDocs} className="gap-2">
+                  <Save className="h-4 w-4" />
+                  Save Document Settings
+                </Button>
               </div>
-              {isAdmin && (
-                <div className="flex justify-end pt-1">
-                  <Button onClick={handleSaveDocs} className="gap-2">
-                    <Save className="h-4 w-4" />
-                    Save Changes
-                  </Button>
-                </div>
-              )}
-              {!isAdmin && (
-                <p className="text-xs text-muted-foreground">Only administrators can change the document settings.</p>
-              )}
-            </CardContent>
-          </Card>
+            )}
+            {!isAdmin && (
+              <p className="text-xs text-muted-foreground">Only administrators can change the document settings.</p>
+            )}
+          </div>
         </TabsContent>
 
         {/* MAINTENANCE */}

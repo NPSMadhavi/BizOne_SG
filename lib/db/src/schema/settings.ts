@@ -30,6 +30,7 @@ export const settingsTable = pgTable("settings", {
   defaultUom: text("default_uom").default("pcs"),
   bankDetails: text("bank_details"),
   termsAndConditions: text("terms_and_conditions"),
+  quotationTerms: text("quotation_terms"),
 });
 
 export type SettingsRecord = typeof settingsTable.$inferSelect;

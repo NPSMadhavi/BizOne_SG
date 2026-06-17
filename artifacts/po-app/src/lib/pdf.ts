@@ -922,7 +922,7 @@ function renderBottomDocInfo(
 
 // ── QUOTATION PDF ─────────────────────────────────────────────────────────────
 
-export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string; quotationTerms?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   attachPdfFonts(doc);
@@ -1005,9 +1005,14 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
 
+  // For quotations, use quotationTerms (not invoice termsAndConditions)
+  const qtSettings = settings
+    ? { bankDetails: settings.bankDetails, termsAndConditions: (settings as any).quotationTerms || "" }
+    : null;
+
   const qtExtraRows = qtDocDiscount > 0 ? 1 : 0;
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
-  const qtBankBlockH = calcBlockHeight(doc, settings, 125);
+  const qtBankBlockH = calcBlockHeight(doc, qtSettings, 125);
 
   const qtUnitPriceIdx = qtHeaders.indexOf("Unit Price");
   const qtAmountIdx = qtHeaders.indexOf("Amount");
@@ -1081,8 +1086,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text("Total Amount:", labelX, ty);
   doc.text(fmtMoneyTotal(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
-  // Left: bank details + T&C inline (same Y, left of totals)
-  renderInlineDocInfo(doc, settings, marginLeft, totalsY, 125);
+  // Left: bank details + quotation T&C inline (same Y, left of totals)
+  renderInlineDocInfo(doc, qtSettings, marginLeft, totalsY, 125);
 
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];

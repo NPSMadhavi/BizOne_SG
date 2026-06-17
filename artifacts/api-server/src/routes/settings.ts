@@ -68,6 +68,7 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     defaultUom: s.defaultUom ?? "pcs",
     bankDetails: s.bankDetails ?? "",
     termsAndConditions: s.termsAndConditions ?? "",
+    quotationTerms: s.quotationTerms ?? "",
   };
 }
 
@@ -96,7 +97,7 @@ router.put("/", async (req, res) => {
     doPrefix, doCounter, doSuffix,
     grnPrefix, grnCounter, grnSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
-    bankDetails, termsAndConditions,
+    bankDetails, termsAndConditions, quotationTerms,
   } = req.body;
 
   const updateData: Record<string, any> = {};
@@ -131,6 +132,7 @@ router.put("/", async (req, res) => {
   if (defaultUom !== undefined) updateData.defaultUom = defaultUom;
   if (bankDetails !== undefined) updateData.bankDetails = bankDetails;
   if (termsAndConditions !== undefined) updateData.termsAndConditions = termsAndConditions;
+  if (quotationTerms !== undefined) updateData.quotationTerms = quotationTerms;
 
   if (Object.keys(updateData).length === 0) {
     return res.status(400).json({ error: "No fields to update" });
