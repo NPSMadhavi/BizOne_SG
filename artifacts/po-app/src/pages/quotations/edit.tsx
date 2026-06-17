@@ -104,6 +104,16 @@ export default function QuotationEdit() {
   useEffect(() => {
     if (doc && !initialized.current) {
       const items = (doc.items as any[]) || [];
+      // Use post-discount taxable amount as the denominator so the derived
+      // rate doesn't degrade each time the form is saved (cascade bug).
+      const qtTaxBase = Math.max(
+        Number(doc.subtotal) - Number((doc as any).discountAmount || 0), 0
+      );
+      const derivedTaxPct = qtTaxBase > 0
+        ? Math.round((Number(doc.tax) / qtTaxBase) * 1000) / 10
+        : (Number(doc.subtotal) > 0
+          ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10
+          : 9);
       form.reset({
         customerName: doc.customerName,
         customerAddress: doc.customerAddress || "",
@@ -115,7 +125,7 @@ export default function QuotationEdit() {
         notes: doc.notes || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
-        tax: doc.subtotal && Number(doc.subtotal) > 0 ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10 : 9,
+        tax: derivedTaxPct,
         discountAmount: Number((doc as any).discountAmount) || 0,
         isPrivate: (doc as any).isPrivate ?? false,
         items: items.length > 0 ? items.map((i: any) => (

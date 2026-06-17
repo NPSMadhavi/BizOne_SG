@@ -162,6 +162,16 @@ export default function InvoiceEdit() {
   useEffect(() => {
     if (doc && !initialized.current) {
       const items = (doc.items as any[]) || [];
+      // Use post-discount taxable amount as the denominator so the derived
+      // rate doesn't degrade each time the form is saved (cascade bug).
+      const invTaxBase = Math.max(
+        Number(doc.subtotal) - Number((doc as any).discountAmount || 0), 0
+      );
+      const derivedTaxPct = invTaxBase > 0
+        ? Math.round((Number(doc.tax) / invTaxBase) * 1000) / 10
+        : (Number(doc.subtotal) > 0
+          ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10
+          : 9);
       form.reset({
         customerName: doc.customerName,
         customerAddress: doc.customerAddress || "",
@@ -173,7 +183,7 @@ export default function InvoiceEdit() {
         notes: doc.notes || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
-        tax: doc.subtotal && Number(doc.subtotal) > 0 ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10 : 9,
+        tax: derivedTaxPct,
         discountAmount: Number((doc as any).discountAmount) || 0,
         isPrivate: (doc as any).isPrivate ?? false,
         poRefNo: (doc as any).poRefNo || "",

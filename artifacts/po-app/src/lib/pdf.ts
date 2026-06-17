@@ -1163,7 +1163,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   // Pin footer to bottom of whichever page it lands on
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
-  const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 100) : 0;
+  const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 1000) / 10 : 0;
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
@@ -1361,7 +1361,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   // Pin footer to bottom of whichever page it lands on
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
-  const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 100) : 0;
+  const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 1000) / 10 : 0;
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
