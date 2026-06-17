@@ -79,7 +79,7 @@ export default function InvoiceView() {
   };
 
   if (isLoading) return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <Skeleton className="h-10 w-48" />
       <div className="grid md:grid-cols-2 gap-6"><Skeleton className="h-48" /><Skeleton className="h-48" /></div>
       <Skeleton className="h-64" />
@@ -104,7 +104,7 @@ export default function InvoiceView() {
   const canKnockOff = !isVoided && !isPaid;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
