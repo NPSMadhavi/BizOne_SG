@@ -37,6 +37,7 @@ import ChartOfAccounts from "@/pages/accounting/chart-of-accounts";
 import JournalEntriesList from "@/pages/accounting/journal-entries";
 import JournalEntryNew from "@/pages/accounting/journal-entry-new";
 import JournalEntryView from "@/pages/accounting/journal-entry-view";
+import ProfitLoss from "@/pages/accounting/profit-loss";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -57,6 +58,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/address-book": "Address Book",
   "/accounting/chart-of-accounts": "Chart of Accounts",
   "/accounting/journal-entries": "Journal Entries",
+  "/accounting/profit-loss": "Profit & Loss",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -205,6 +207,7 @@ function Router() {
         <Route path="/accounting/journal-entries/new">{() => <ProtectedRoute component={JournalEntryNew} />}</Route>
         <Route path="/accounting/journal-entries/:id">{() => <ProtectedRoute component={JournalEntryView} />}</Route>
         <Route path="/accounting/journal-entries">{() => <ProtectedRoute component={JournalEntriesList} />}</Route>
+        <Route path="/accounting/profit-loss">{() => <ProtectedRoute component={ProfitLoss} />}</Route>
 
         {/* System — admin only */}
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>

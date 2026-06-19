@@ -335,4 +335,93 @@ router.get("/trial-balance", async (req, res): Promise<void> => {
   });
 });
 
+// ─── Profit & Loss Statement ─────────────────────────────────────────────────
+
+router.get("/profit-loss", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  await ensureAccountsSeeded(companyId);
+
+  // All revenue + expense accounts for this company
+  const accounts = await db.select()
+    .from(accountsTable)
+    .where(and(
+      eq(accountsTable.companyId, companyId),
+      eq(accountsTable.isActive, true),
+      sql`${accountsTable.type} IN ('revenue','expense')`,
+    ))
+    .orderBy(asc(accountsTable.code));
+
+  // Posted JE ids in the date range
+  const entries = await db.select({ entryId: journalEntriesTable.id })
+    .from(journalEntriesTable)
+    .where(and(
+      eq(journalEntriesTable.companyId, companyId),
+      eq(journalEntriesTable.status, "posted"),
+      ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
+      ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
+    ));
+
+  const entryIds = entries.map(e => e.entryId);
+  let linesByAccount: Record<number, { debit: number; credit: number }> = {};
+
+  if (entryIds.length > 0) {
+    const lines = await db.select()
+      .from(journalLinesTable)
+      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`);
+    for (const l of lines) {
+      if (!linesByAccount[l.accountId]) linesByAccount[l.accountId] = { debit: 0, credit: 0 };
+      linesByAccount[l.accountId].debit  += parseFloat(l.debit  ?? "0");
+      linesByAccount[l.accountId].credit += parseFloat(l.credit ?? "0");
+    }
+  }
+
+  function netAmount(acct: typeof accounts[0]) {
+    const t = linesByAccount[acct.id] ?? { debit: 0, credit: 0 };
+    // Revenue: positive = credit > debit
+    // Expense: positive = debit > credit
+    return acct.type === "revenue" ? t.credit - t.debit : t.debit - t.credit;
+  }
+
+  function mapAcct(acct: typeof accounts[0]) {
+    return { code: acct.code, name: acct.name, subType: acct.subType, amount: parseFloat(netAmount(acct).toFixed(2)) };
+  }
+
+  const revenue         = accounts.filter(a => a.type === "revenue" && a.subType === "sales").map(mapAcct);
+  const otherIncome     = accounts.filter(a => a.type === "revenue" && a.subType === "other_income").map(mapAcct);
+  const costOfSales     = accounts.filter(a => a.type === "expense" && a.subType === "cost_of_sales").map(mapAcct);
+  const operatingExpenses = accounts.filter(a => a.type === "expense" && a.subType === "operating_expense" && a.code !== "7300").map(mapAcct);
+  const incomeTaxAcct   = accounts.find(a => a.code === "7300");
+
+  const totalRevenue          = revenue.reduce((s, a) => s + a.amount, 0);
+  const totalOtherIncome      = otherIncome.reduce((s, a) => s + a.amount, 0);
+  const totalCostOfSales      = costOfSales.reduce((s, a) => s + a.amount, 0);
+  const grossProfit           = totalRevenue + totalOtherIncome - totalCostOfSales;
+  const totalOperatingExpenses = operatingExpenses.reduce((s, a) => s + a.amount, 0);
+  const operatingProfit       = grossProfit - totalOperatingExpenses;
+  const incomeTax             = incomeTaxAcct ? parseFloat(netAmount(incomeTaxAcct).toFixed(2)) : 0;
+  const netProfit             = operatingProfit - incomeTax;
+
+  res.json({
+    period: { from: fromDate, to: toDate },
+    revenue,
+    otherIncome,
+    totalRevenue: parseFloat((totalRevenue + totalOtherIncome).toFixed(2)),
+    costOfSales,
+    totalCostOfSales: parseFloat(totalCostOfSales.toFixed(2)),
+    grossProfit: parseFloat(grossProfit.toFixed(2)),
+    operatingExpenses,
+    totalOperatingExpenses: parseFloat(totalOperatingExpenses.toFixed(2)),
+    operatingProfit: parseFloat(operatingProfit.toFixed(2)),
+    incomeTax: parseFloat(incomeTax.toFixed(2)),
+    netProfit: parseFloat(netProfit.toFixed(2)),
+  });
+});
+
 export default router;

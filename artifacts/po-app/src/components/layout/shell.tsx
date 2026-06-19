@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   BookOpen,
   ScrollText,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -199,6 +200,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </NavItem>
             <NavItem href="/accounting/journal-entries" icon={ScrollText} active={location.startsWith("/accounting/journal-entries")}>
               Journal Entries
+            </NavItem>
+            <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"}>
+              Profit & Loss
             </NavItem>
           </div>
         </div>
