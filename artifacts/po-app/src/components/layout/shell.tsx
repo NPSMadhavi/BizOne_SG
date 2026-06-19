@@ -203,41 +203,45 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Accounting
           </h4>
           <div className="space-y-1">
+            {/* Core Ledger */}
             <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")}>
               Chart of Accounts
             </NavItem>
             <NavItem href="/accounting/journal-entries" icon={ScrollText} active={location.startsWith("/accounting/journal-entries")}>
               Journal Entries
             </NavItem>
-            <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"}>
-              Profit & Loss
+            <NavItem href="/accounting/general-ledger" icon={BookMarked} active={location === "/accounting/general-ledger"}>
+              General Ledger
             </NavItem>
-            <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"}>
-              GST F5 Return
-            </NavItem>
-            <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"}>
-              AR Aging
-            </NavItem>
-            <NavItem href="/accounting/ap-aging" icon={CreditCard} active={location === "/accounting/ap-aging"}>
-              AP Aging
+            {/* Financial Statements */}
+            <NavItem href="/accounting/trial-balance" icon={Calculator} active={location === "/accounting/trial-balance"}>
+              Trial Balance
             </NavItem>
             <NavItem href="/accounting/balance-sheet" icon={Scale} active={location === "/accounting/balance-sheet"}>
               Balance Sheet
             </NavItem>
-            <NavItem href="/accounting/trial-balance" icon={Calculator} active={location === "/accounting/trial-balance"}>
-              Trial Balance
+            <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"}>
+              Profit & Loss
+            </NavItem>
+            {/* GST / Tax */}
+            <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"}>
+              GST F5 Return
+            </NavItem>
+            <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"}>
+              GST F7 (Amended)
+            </NavItem>
+            {/* Receivables & Payables */}
+            <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"}>
+              AR Aging
             </NavItem>
             <NavItem href="/accounting/customer-statement" icon={UserCheck} active={location === "/accounting/customer-statement"}>
               Customer Statement
             </NavItem>
+            <NavItem href="/accounting/ap-aging" icon={CreditCard} active={location === "/accounting/ap-aging"}>
+              AP Aging
+            </NavItem>
             <NavItem href="/accounting/vendor-statement" icon={Building} active={location === "/accounting/vendor-statement"}>
               Vendor Statement
-            </NavItem>
-            <NavItem href="/accounting/general-ledger" icon={BookMarked} active={location === "/accounting/general-ledger"}>
-              General Ledger
-            </NavItem>
-            <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"}>
-              GST F7 (Amended)
             </NavItem>
           </div>
         </div>
