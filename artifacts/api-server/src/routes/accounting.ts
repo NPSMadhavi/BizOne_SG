@@ -1161,12 +1161,13 @@ router.get("/iaf", async (req, res): Promise<void> => {
     return;
   }
 
+  try {
   await ensureAccountsSeeded(companyId);
 
   // ── Company + settings ───────────────────────────────────────────────────
   const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
   const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
-  const gstRate = parseFloat((settings as any)?.gstRate ?? "9");
+  const gstRate = parseFloat(settings?.gstRate ?? "9");
 
   // ── SA: confirmed invoices in period ────────────────────────────────────
   const invoices = await db.select().from(invoicesTable)
@@ -1303,4 +1304,7 @@ router.get("/iaf", async (req, res): Promise<void> => {
     filename: `IAF_${gstRegNo}_${pFrom}_${pTo}.txt`,
     content: lines.join("\r\n"),
   });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to generate IAF" });
+  }
 });

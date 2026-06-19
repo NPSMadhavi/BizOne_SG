@@ -69,4 +69,11 @@ app.use("/api", router);
 
 seedCompanies().catch(err => logger.error({ err }, "Failed to seed companies"));
 
+// Global JSON error handler — must be 4-argument function to be treated as error middleware
+app.use((err: any, _req: any, res: any, _next: any) => {
+  logger.error({ err }, "Unhandled route error");
+  const status = err.status ?? err.statusCode ?? 500;
+  res.status(status).json({ error: err?.message ?? "Internal server error" });
+});
+
 export default app;
