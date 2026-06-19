@@ -2,8 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
+import { Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { generateTrialBalance_PDF } from "@/lib/pdf";
 
 interface TBRow { id: number; code: string; name: string; type: string; subType: string | null; totalDebit: number; totalCredit: number; balance: number }
 interface TBData { fromDate: string | null; toDate: string | null; rows: TBRow[]; grandDebit: number; grandCredit: number; balanced: boolean }
@@ -22,10 +25,11 @@ function fmtBig(n: number) {
 }
 
 export default function TrialBalancePage() {
-  useAuth();
+  const { selectedCompany } = useAuth();
   const today = new Date().toISOString().split("T")[0];
   const [from, setFrom] = useState(today.slice(0, 7) + "-01");
   const [to, setTo]     = useState(today);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery<TBData>({
     queryKey: ["trial-balance", from, to],
@@ -46,6 +50,21 @@ export default function TrialBalancePage() {
   }, {});
 
   const hasData = data?.rows.some(r => r.totalDebit > 0.005 || r.totalCredit > 0.005);
+
+  async function handleDownloadPDF() {
+    if (!data) return;
+    setPdfLoading(true);
+    try {
+      await generateTrialBalance_PDF(
+        selectedCompany as any,
+        from || null, to || null,
+        data.rows,
+        data.grandDebit, data.grandCredit, data.balanced
+      );
+    } finally {
+      setPdfLoading(false);
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
@@ -70,6 +89,12 @@ export default function TrialBalancePage() {
             )}>
               {data.balanced ? "Balanced ✓" : "Out of balance"}
             </span>
+          )}
+          {hasData && (
+            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900 mb-0.5">
+              {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              Download PDF
+            </Button>
           )}
         </div>
       </div>
@@ -129,18 +154,10 @@ export default function TrialBalancePage() {
               <tfoot>
                 <tr className="bg-gray-900 text-white">
                   <td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-gray-300">Grand Total</td>
-                  <td className="text-right px-4 py-3 font-mono text-base font-bold tabular-nums text-white">
-                    {fmtBig(data.grandDebit)}
-                  </td>
-                  <td className="text-right px-4 py-3 font-mono text-base font-bold tabular-nums text-white">
-                    {fmtBig(data.grandCredit)}
-                  </td>
-                  <td className={cn("text-right px-4 py-3 font-mono text-base font-bold tabular-nums",
-                    !data.balanced ? "text-red-300" : "text-gray-500"
-                  )}>
-                    {!data.balanced
-                      ? `(${fmtBig(Math.abs(data.grandDebit - data.grandCredit))})`
-                      : "—"}
+                  <td className="text-right px-4 py-3 font-mono text-base font-bold tabular-nums text-white">{fmtBig(data.grandDebit)}</td>
+                  <td className="text-right px-4 py-3 font-mono text-base font-bold tabular-nums text-white">{fmtBig(data.grandCredit)}</td>
+                  <td className={cn("text-right px-4 py-3 font-mono text-base font-bold tabular-nums", !data.balanced ? "text-red-300" : "text-gray-500")}>
+                    {!data.balanced ? `(${fmtBig(Math.abs(data.grandDebit - data.grandCredit))})` : "—"}
                   </td>
                 </tr>
               </tfoot>

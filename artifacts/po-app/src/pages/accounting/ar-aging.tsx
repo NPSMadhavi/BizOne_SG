@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { generateARAgingReport_PDF } from "@/lib/pdf";
 
 interface InvLine { id: number; invNumber: string; issueDate: string | null; amount: number; daysPastDue: number }
 interface AgingRow { customerName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: InvLine[] }
@@ -20,10 +22,10 @@ function fmtDate(d: string | null) {
 }
 
 const COLS = [
-  { key: "current",  label: "Current"   },
-  { key: "b1_30",    label: "1–30 days" },
-  { key: "b31_60",   label: "31–60 days"},
-  { key: "b61_90",   label: "61–90 days", warn: true },
+  { key: "current",  label: "Current"    },
+  { key: "b1_30",    label: "1–30 days"  },
+  { key: "b31_60",   label: "31–60 days" },
+  { key: "b61_90",   label: "61–90 days", warn: true   },
   { key: "b91plus",  label: "91+ days",   danger: true },
 ] as const;
 
@@ -35,10 +37,11 @@ function amountCls(key: string, val: number) {
 }
 
 export default function ArAgingPage() {
-  useAuth();
+  const { selectedCompany } = useAuth();
   const today = new Date().toISOString().split("T")[0];
   const [asOf, setAsOf] = useState(today);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery<AgingData>({
     queryKey: ["ar-aging", asOf],
@@ -54,24 +57,45 @@ export default function ArAgingPage() {
     setExpanded(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
   }
 
+  async function handleDownloadPDF() {
+    if (!data) return;
+    setPdfLoading(true);
+    try {
+      await generateARAgingReport_PDF(
+        selectedCompany as any,
+        asOf,
+        data.customers.map(c => ({ name: c.customerName, current: c.current, b1_30: c.b1_30, b31_60: c.b31_60, b61_90: c.b61_90, b91plus: c.b91plus, total: c.total })),
+        data.totals
+      );
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
   const t = data?.totals;
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
 
-      {/* Page header */}
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Receivable</p>
           <h1 className="text-2xl font-bold text-gray-900">Aging Report</h1>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-gray-500">As of Date</Label>
-          <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
+        <div className="flex items-end gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-500">As of Date</Label>
+            <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
+          </div>
+          {data && data.customers.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
+              {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              Download PDF
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Summary strip */}
       {t && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-gray-100">
@@ -128,9 +152,7 @@ export default function ArAgingPage() {
                       onClick={() => toggle(c.customerName)}
                     >
                       <td className="px-3 py-3 text-gray-300">
-                        {expanded.has(c.customerName)
-                          ? <ChevronDown className="h-3.5 w-3.5" />
-                          : <ChevronRight className="h-3.5 w-3.5" />}
+                        {expanded.has(c.customerName) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-800">{c.customerName}</td>
                       {COLS.map(col => (
@@ -148,14 +170,10 @@ export default function ArAgingPage() {
                         <td className="px-4 py-2 pl-10 text-xs text-gray-500 space-x-2">
                           <span className="font-mono font-semibold text-gray-700">{inv.invNumber}</span>
                           <span>{fmtDate(inv.issueDate)}</span>
-                          {inv.daysPastDue > 0
-                            ? <span className="text-red-500">{inv.daysPastDue}d overdue</span>
-                            : <span className="text-gray-400">not yet due</span>}
+                          {inv.daysPastDue > 0 ? <span className="text-red-500">{inv.daysPastDue}d overdue</span> : <span className="text-gray-400">not yet due</span>}
                         </td>
                         <td colSpan={5} />
-                        <td className="text-right px-4 py-2 text-xs font-mono tabular-nums text-gray-500">
-                          S$ {fmt(inv.amount) ?? "0.00"}
-                        </td>
+                        <td className="text-right px-4 py-2 text-xs font-mono tabular-nums text-gray-500">S$ {fmt(inv.amount) ?? "0.00"}</td>
                       </tr>
                     ))}
                   </>
@@ -175,9 +193,7 @@ export default function ArAgingPage() {
                         {fmt((t as any)[col.key]) ?? "—"}
                       </td>
                     ))}
-                    <td className="text-right px-4 py-3 text-base font-bold font-mono tabular-nums text-white">
-                      S$ {fmt(t.total) ?? "0.00"}
-                    </td>
+                    <td className="text-right px-4 py-3 text-base font-bold font-mono tabular-nums text-white">S$ {fmt(t.total) ?? "0.00"}</td>
                   </tr>
                 </tfoot>
               )}

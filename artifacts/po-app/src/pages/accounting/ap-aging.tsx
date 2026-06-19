@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { generateAPAgingReport_PDF } from "@/lib/pdf";
 
 interface PiLine { id: number; piNumber: string; piDate: string | null; balance: number; daysPastDue: number; status: string }
 interface AgingRow { vendorName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: PiLine[] }
@@ -35,10 +37,11 @@ function amountCls(key: string, val: number) {
 }
 
 export default function ApAgingPage() {
-  useAuth();
+  const { selectedCompany } = useAuth();
   const today = new Date().toISOString().split("T")[0];
   const [asOf, setAsOf] = useState(today);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery<AgingData>({
     queryKey: ["ap-aging", asOf],
@@ -54,6 +57,21 @@ export default function ApAgingPage() {
     setExpanded(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
   }
 
+  async function handleDownloadPDF() {
+    if (!data) return;
+    setPdfLoading(true);
+    try {
+      await generateAPAgingReport_PDF(
+        selectedCompany as any,
+        asOf,
+        data.vendors.map(v => ({ name: v.vendorName, current: v.current, b1_30: v.b1_30, b31_60: v.b31_60, b61_90: v.b61_90, b91plus: v.b91plus, total: v.total })),
+        data.totals
+      );
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
   const t = data?.totals;
 
   return (
@@ -64,9 +82,17 @@ export default function ApAgingPage() {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Payable</p>
           <h1 className="text-2xl font-bold text-gray-900">Aging Report</h1>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-gray-500">As of Date</Label>
-          <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
+        <div className="flex items-end gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-500">As of Date</Label>
+            <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
+          </div>
+          {data && data.vendors.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
+              {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              Download PDF
+            </Button>
+          )}
         </div>
       </div>
 
@@ -126,9 +152,7 @@ export default function ApAgingPage() {
                       onClick={() => toggle(v.vendorName)}
                     >
                       <td className="px-3 py-3 text-gray-300">
-                        {expanded.has(v.vendorName)
-                          ? <ChevronDown className="h-3.5 w-3.5" />
-                          : <ChevronRight className="h-3.5 w-3.5" />}
+                        {expanded.has(v.vendorName) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-800">{v.vendorName}</td>
                       {COLS.map(col => (
@@ -136,9 +160,7 @@ export default function ApAgingPage() {
                           {fmt((v as any)[col.key]) ?? "—"}
                         </td>
                       ))}
-                      <td className="text-right px-4 py-3 font-semibold text-sm font-mono tabular-nums text-gray-900">
-                        S$ {fmt(v.total) ?? "0.00"}
-                      </td>
+                      <td className="text-right px-4 py-3 font-semibold text-sm font-mono tabular-nums text-gray-900">S$ {fmt(v.total) ?? "0.00"}</td>
                     </tr>
                     {expanded.has(v.vendorName) && v.invoices.map(pi => (
                       <tr key={pi.id} className="border-b border-gray-100 bg-gray-50/50">
@@ -146,15 +168,11 @@ export default function ApAgingPage() {
                         <td className="px-4 py-2 pl-10 text-xs text-gray-500 space-x-2">
                           <span className="font-mono font-semibold text-gray-700">{pi.piNumber}</span>
                           <span>{fmtDate(pi.piDate)}</span>
-                          {pi.daysPastDue > 0
-                            ? <span className="text-red-500">{pi.daysPastDue}d overdue</span>
-                            : <span className="text-gray-400">not yet due</span>}
+                          {pi.daysPastDue > 0 ? <span className="text-red-500">{pi.daysPastDue}d overdue</span> : <span className="text-gray-400">not yet due</span>}
                           {pi.status === "partial" && <span className="text-gray-400">(partial)</span>}
                         </td>
                         <td colSpan={5} />
-                        <td className="text-right px-4 py-2 text-xs font-mono tabular-nums text-gray-500">
-                          S$ {fmt(pi.balance) ?? "0.00"}
-                        </td>
+                        <td className="text-right px-4 py-2 text-xs font-mono tabular-nums text-gray-500">S$ {fmt(pi.balance) ?? "0.00"}</td>
                       </tr>
                     ))}
                   </>
@@ -174,9 +192,7 @@ export default function ApAgingPage() {
                         {fmt((t as any)[col.key]) ?? "—"}
                       </td>
                     ))}
-                    <td className="text-right px-4 py-3 text-base font-bold font-mono tabular-nums text-white">
-                      S$ {fmt(t.total) ?? "0.00"}
-                    </td>
+                    <td className="text-right px-4 py-3 text-base font-bold font-mono tabular-nums text-white">S$ {fmt(t.total) ?? "0.00"}</td>
                   </tr>
                 </tfoot>
               )}

@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { Printer, Search } from "lucide-react";
+import { Download, Loader2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { generateCustomerStatement_PDF } from "@/lib/pdf";
 
 interface StmtEntry { id: number; invNumber: string; issueDate: string | null; amount: number; status: string; paymentTerms: string | null }
 interface StmtData { customer: string; customerNames: string[]; entries: StmtEntry[]; totalBilled: number; totalPaid: number; balance: number }
@@ -32,6 +33,7 @@ export default function CustomerStatementPage() {
   const [from, setFrom]         = useState(defaultFrom);
   const [to, setTo]             = useState(today);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const { data, isLoading, isError, error } = useQuery<StmtData>({
     queryKey: ["customer-statement", customer, from, to],
@@ -57,23 +59,41 @@ export default function CustomerStatementPage() {
     setShowSuggestions(false);
   }
 
+  async function handleDownloadPDF() {
+    if (!data || !customer) return;
+    setPdfLoading(true);
+    try {
+      await generateCustomerStatement_PDF(
+        selectedCompany as any,
+        customer,
+        from || null,
+        to || null,
+        data.entries,
+        { totalBilled: data.totalBilled, totalPaid: data.totalPaid, balance: data.balance }
+      );
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
   return (
-    <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300 print:p-0 print:space-y-4">
+    <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
       {/* Page header */}
-      <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200 print:hidden">
+      <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Receivable</p>
           <h1 className="text-2xl font-bold text-gray-900">Customer Statement</h1>
         </div>
         {customer && data && data.entries.length > 0 && (
-          <Button variant="outline" size="sm" onClick={() => window.print()} className="border-gray-200 text-gray-600 hover:text-gray-900">
-            <Printer className="h-4 w-4 mr-2" />Print Statement
+          <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
+            {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Download PDF Statement
           </Button>
         )}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 items-end p-4 bg-white border border-gray-200 rounded-lg shadow-sm print:hidden">
+      <div className="flex flex-wrap gap-4 items-end p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
         <div className="flex-1 min-w-52 space-y-1 relative">
           <Label className="text-xs text-gray-500">Customer Name</Label>
           <div className="relative">
@@ -121,16 +141,8 @@ export default function CustomerStatementPage() {
 
       {data && customer && (
         <>
-          {/* Print header */}
-          <div className="hidden print:block mb-6">
-            <h2 className="text-base font-bold">{selectedCompany?.name}</h2>
-            <p className="text-sm text-gray-700 mt-0.5">Statement of Account</p>
-            <p className="text-xs text-gray-500 mt-0.5">Customer: {customer}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Period: {fmtDate(from)} – {fmtDate(to)}</p>
-          </div>
-
           {/* Summary strip */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden print:border-0">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
             <div className="grid grid-cols-3 divide-x divide-gray-100">
               <div className="px-5 py-4 bg-gray-900 text-white rounded-l-lg">
                 <p className="text-xs text-gray-400 mb-1">Total Billed</p>
@@ -150,7 +162,7 @@ export default function CustomerStatementPage() {
           </div>
 
           {/* Invoice table */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden print:border-0">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -169,7 +181,7 @@ export default function CustomerStatementPage() {
                   {data.entries.map(e => (
                     <tr
                       key={e.id}
-                      className="border-b border-gray-100 hover:bg-gray-50/70 cursor-pointer print:hover:bg-transparent"
+                      className="border-b border-gray-100 hover:bg-gray-50/70 cursor-pointer"
                       onClick={() => navigate(`/invoices/${e.id}`)}
                     >
                       <td className="px-4 py-3 text-sm text-gray-500">{fmtDate(e.issueDate)}</td>

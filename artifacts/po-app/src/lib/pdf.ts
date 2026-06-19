@@ -1506,3 +1506,443 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${doDoc.doNumber}.pdf`);
 }
+
+// ── ACCOUNTING REPORT PDF HELPERS ────────────────────────────────────────────
+
+function drawAccountingHeader(
+  doc: jsPDF,
+  logo: LogoData,
+  title: string,
+  subtitle: string,
+  rightLine2: string,
+  info: CompanyInfo
+) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
+  doc.addImage(logo.dataUrl, "PNG", mL, 12, lw, lh);
+  doc.setFontSize(22); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(24, 33, 47);
+  doc.text(title, mR, 20, { align: "right" });
+  doc.setFontSize(9); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(subtitle, mR, 28, { align: "right" });
+  if (rightLine2) doc.text(rightLine2, mR, 34, { align: "right" });
+  doc.setFontSize(11); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+  doc.text(info.name, mL, 40);
+  doc.setFontSize(9); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(100, 100, 100);
+  let cy = 46;
+  if (info.addressLine1) { doc.text(info.addressLine1, mL, cy); cy += 5; }
+  if (info.addressLine2) { doc.text(info.addressLine2, mL, cy); cy += 5; }
+  if (info.registrationNo) doc.text(`Co. Reg. No.: ${info.registrationNo}`, mL, cy);
+  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.4); doc.line(mL, 58, mR, 58);
+}
+
+// ── CUSTOMER STATEMENT PDF ────────────────────────────────────────────────────
+
+export interface StmtPDFEntry {
+  id: number; invNumber: string; issueDate: string | null;
+  amount: number; status: string; paymentTerms: string | null;
+}
+
+export async function generateCustomerStatement_PDF(
+  company: Company | null | undefined,
+  customer: string,
+  from: string | null,
+  to: string | null,
+  entries: StmtPDFEntry[],
+  totals: { totalBilled: number; totalPaid: number; balance: number },
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = from && to ? `${fmtDate(from)} – ${fmtDate(to)}` : from ? `From ${fmtDate(from)}` : to ? `Up to ${fmtDate(to)}` : "All dates";
+
+  drawAccountingHeader(doc, logo, "STATEMENT OF ACCOUNT", `Period: ${periodStr}`, `Prepared for: ${customer}`, info);
+
+  // Recipient box
+  let y = 64;
+  doc.setFillColor(245, 247, 249);
+  doc.roundedRect(mL, y, mR - mL, 16, 1, 1, "F");
+  doc.setFontSize(8); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(100, 100, 100);
+  doc.text("BILL TO", mL + 4, y + 6);
+  doc.setFontSize(11); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(24, 33, 47);
+  doc.text(customer, mL + 4, y + 13);
+  doc.setFontSize(9); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(periodStr, mR - 4, y + 13, { align: "right" });
+
+  // Invoice table
+  const tStartY = y + 22;
+  const tableHeaders = ["Date", "Invoice No.", "Payment Terms", "Status", "Amount (SGD)"];
+  const tableBody = entries.map(e => [
+    fmtDate(e.issueDate),
+    e.invNumber,
+    e.paymentTerms || "—",
+    e.status === "paid" ? "Paid" : e.status === "active" ? "Outstanding" : e.status,
+    fmtNum(e.amount),
+  ]);
+
+  (doc as any).autoTable({
+    startY: tStartY,
+    head: [tableHeaders],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 25 }, 1: { cellWidth: 32 }, 2: { cellWidth: 32 }, 3: { cellWidth: 25 },
+      4: { cellWidth: "auto", halign: "right" as const },
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  // Summary box
+  const sY = (doc as any).lastAutoTable.finalY + 6;
+  const sX = mR - 78; const sW = 78;
+  doc.setFontSize(9); doc.setFont(PDF_FONT, "normal");
+  const drawSRow = (label: string, val: string, ry: number, bold = false) => {
+    doc.setFont(PDF_FONT, bold ? "bold" : "normal"); doc.setTextColor(80, 80, 80);
+    doc.text(label, sX + 4, ry);
+    doc.setTextColor(bold ? 24 : 80, bold ? 33 : 80, bold ? 47 : 80);
+    doc.text(val, sX + sW - 4, ry, { align: "right" });
+  };
+  doc.setFillColor(245, 247, 249); doc.rect(sX, sY, sW, 20, "F");
+  drawSRow("Total Billed:", `S$ ${fmtNum(totals.totalBilled)}`, sY + 7);
+  drawSRow("Total Paid:", `S$ ${fmtNum(totals.totalPaid)}`, sY + 14);
+  doc.setFillColor(24, 33, 47); doc.rect(sX, sY + 20, sW, 10, "F");
+  doc.setFont(PDF_FONT, "bold"); doc.setTextColor(255, 255, 255);
+  doc.setFontSize(9.5);
+  doc.text("Outstanding Balance:", sX + 4, sY + 27);
+  doc.text(`S$ ${fmtNum(totals.balance)}`, sX + sW - 4, sY + 27, { align: "right" });
+
+  buildDocFooter(doc, "Statement of Account");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`SOA_${customer.replace(/[^a-z0-9]/gi, "_")}_${to || "all"}.pdf`);
+}
+
+// ── AR AGING PDF ──────────────────────────────────────────────────────────────
+
+export interface AgingPDFRow {
+  name: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number;
+}
+export interface AgingPDFTotals { current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number }
+
+function buildAgingPDF(
+  doc: jsPDF, logo: LogoData, info: CompanyInfo,
+  title: string, nameCol: string, asOf: string,
+  rows: AgingPDFRow[], totals: AgingPDFTotals
+) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  drawAccountingHeader(doc, logo, title, `As of: ${fmtDate(asOf)}`, "", info);
+
+  // Summary strip
+  const sY = 62;
+  const buckets = [
+    { l: "Current", v: totals.current }, { l: "1–30 Days", v: totals.b1_30 },
+    { l: "31–60 Days", v: totals.b31_60 }, { l: "61–90 Days", v: totals.b61_90 },
+    { l: "91+ Days", v: totals.b91plus }, { l: "Total Outstanding", v: totals.total },
+  ];
+  const colW = (mR - mL) / buckets.length;
+  doc.setFillColor(245, 247, 249); doc.rect(mL, sY, mR - mL, 18, "F");
+  buckets.forEach((b, i) => {
+    const cx = mL + i * colW + colW / 2;
+    doc.setFontSize(7); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(120, 120, 120);
+    doc.text(b.l, cx, sY + 6, { align: "center" });
+    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold");
+    doc.setTextColor(i === 5 ? 24 : 60, i === 5 ? 33 : 60, i === 5 ? 47 : 60);
+    doc.text(`S$ ${fmtNum(b.v)}`, cx, sY + 14, { align: "center" });
+  });
+
+  const tableHeaders = [nameCol, "Current", "1–30 Days", "31–60 Days", "61–90 Days", "91+ Days", "Total (SGD)"];
+  const tableBody = rows.map(r => [
+    r.name,
+    r.current > 0 ? fmtNum(r.current) : "—",
+    r.b1_30 > 0 ? fmtNum(r.b1_30) : "—",
+    r.b31_60 > 0 ? fmtNum(r.b31_60) : "—",
+    r.b61_90 > 0 ? fmtNum(r.b61_90) : "—",
+    r.b91plus > 0 ? fmtNum(r.b91plus) : "—",
+    fmtNum(r.total),
+  ]);
+  tableBody.push([
+    "GRAND TOTAL",
+    totals.current > 0 ? fmtNum(totals.current) : "—",
+    totals.b1_30 > 0 ? fmtNum(totals.b1_30) : "—",
+    totals.b31_60 > 0 ? fmtNum(totals.b31_60) : "—",
+    totals.b61_90 > 0 ? fmtNum(totals.b61_90) : "—",
+    totals.b91plus > 0 ? fmtNum(totals.b91plus) : "—",
+    fmtNum(totals.total),
+  ]);
+  const lastIdx = tableBody.length - 1;
+
+  (doc as any).autoTable({
+    startY: sY + 22,
+    head: [tableHeaders],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8, font: PDF_FONT },
+    bodyStyles: { fontSize: 9, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: "auto" as const },
+      1: { halign: "right" as const, cellWidth: 30 }, 2: { halign: "right" as const, cellWidth: 30 },
+      3: { halign: "right" as const, cellWidth: 30 }, 4: { halign: "right" as const, cellWidth: 30 },
+      5: { halign: "right" as const, cellWidth: 30 }, 6: { halign: "right" as const, cellWidth: 33 },
+    },
+    didParseCell: (data: any) => {
+      if (data.row.index === lastIdx) {
+        data.cell.styles.fillColor = [24, 33, 47];
+        data.cell.styles.textColor = [255, 255, 255];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+}
+
+export async function generateARAgingReport_PDF(
+  company: Company | null | undefined, asOf: string,
+  customers: AgingPDFRow[], totals: AgingPDFTotals,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  buildAgingPDF(doc, logo, info, "AR AGING REPORT", "Customer", asOf, customers, totals);
+  buildDocFooter(doc, "AR Aging Report");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`AR_Aging_${asOf}.pdf`);
+}
+
+export async function generateAPAgingReport_PDF(
+  company: Company | null | undefined, asOf: string,
+  vendors: AgingPDFRow[], totals: AgingPDFTotals,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  buildAgingPDF(doc, logo, info, "AP AGING REPORT", "Vendor", asOf, vendors, totals);
+  buildDocFooter(doc, "AP Aging Report");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`AP_Aging_${asOf}.pdf`);
+}
+
+// ── TRIAL BALANCE PDF ─────────────────────────────────────────────────────────
+
+export interface TBPDFRow {
+  code: string; name: string; type: string; totalDebit: number; totalCredit: number; balance: number;
+}
+const TB_TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense"];
+const TB_TYPE_LABEL: Record<string, string> = {
+  asset: "Assets", liability: "Liabilities", equity: "Equity", revenue: "Revenue", expense: "Expenses",
+};
+
+export async function generateTrialBalance_PDF(
+  company: Company | null | undefined,
+  from: string | null, to: string | null,
+  rows: TBPDFRow[], grandDebit: number, grandCredit: number, balanced: boolean,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = from && to ? `${fmtDate(from)} – ${fmtDate(to)}` : from ? `From ${fmtDate(from)}` : to ? `Up to ${fmtDate(to)}` : "All periods";
+
+  drawAccountingHeader(doc, logo, "TRIAL BALANCE", `Period: ${periodStr}`, balanced ? "Status: Balanced ✓" : "Status: Out of balance", info);
+
+  // Build table with section header rows
+  const tableHeaders = ["Code", "Account Name", "Debit (SGD)", "Credit (SGD)", "Balance (SGD)"];
+  const tableBody: any[][] = [];
+
+  TB_TYPE_ORDER.forEach(type => {
+    const typeRows = rows.filter(r => r.type === type && (r.totalDebit > 0.005 || r.totalCredit > 0.005));
+    if (typeRows.length === 0) return;
+    // Section header row (full width via colSpan trick — we'll style it)
+    tableBody.push([`— ${TB_TYPE_LABEL[type].toUpperCase()} —`, "", "", "", ""]);
+    typeRows.forEach(r => {
+      const bal = r.balance;
+      const balStr = Math.abs(bal) < 0.005 ? "—" : bal < 0 ? `(${fmtNum(Math.abs(bal))})` : fmtNum(bal);
+      tableBody.push([
+        r.code, r.name,
+        r.totalDebit > 0.005 ? fmtNum(r.totalDebit) : "—",
+        r.totalCredit > 0.005 ? fmtNum(r.totalCredit) : "—",
+        balStr,
+      ]);
+    });
+  });
+  // Grand total row
+  tableBody.push([
+    "GRAND TOTAL", "",
+    fmtNum(grandDebit), fmtNum(grandCredit),
+    !balanced ? `(${fmtNum(Math.abs(grandDebit - grandCredit))})` : "—",
+  ]);
+  const totalIdx = tableBody.length - 1;
+
+  (doc as any).autoTable({
+    startY: 64,
+    head: [tableHeaders],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 22 }, 1: { cellWidth: "auto" as const },
+      2: { halign: "right" as const, cellWidth: 38 },
+      3: { halign: "right" as const, cellWidth: 38 },
+      4: { halign: "right" as const, cellWidth: 38 },
+    },
+    didParseCell: (data: any) => {
+      if (data.section !== "body") return;
+      const cell0 = data.row.cells[0]?.raw as string ?? "";
+      const isSectionHdr = cell0.startsWith("—") && cell0.endsWith("—");
+      if (isSectionHdr) {
+        data.cell.styles.fillColor = [237, 240, 245];
+        data.cell.styles.textColor = [60, 70, 90];
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fontSize = 8;
+      }
+      if (data.row.index === totalIdx) {
+        data.cell.styles.fillColor = [24, 33, 47];
+        data.cell.styles.textColor = [255, 255, 255];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  buildDocFooter(doc, "Trial Balance");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`Trial_Balance_${to || from || "all"}.pdf`);
+}
+
+// ── BALANCE SHEET PDF ─────────────────────────────────────────────────────────
+
+export interface BSPDFAccount { code: string; name: string; subType: string | null; amount: number }
+
+export async function generateBalanceSheet_PDF(
+  company: Company | null | undefined,
+  asOf: string,
+  assets: BSPDFAccount[], totalAssets: number,
+  liabilities: BSPDFAccount[], totalLiabilities: number,
+  equity: BSPDFAccount[], retainedEarnings: number, totalEquity: number,
+  totalLiabilitiesAndEquity: number, balanced: boolean,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+
+  drawAccountingHeader(doc, logo, "BALANCE SHEET", `As at: ${fmtDate(asOf)}`, balanced ? "Status: Balanced ✓" : "Status: Out of balance", info);
+
+  const fmtBsAmt = (n: number) => {
+    const abs = Math.abs(n); const s = fmtNum(abs);
+    return n < 0 ? `(${s})` : s;
+  };
+
+  // Build a single combined table with section labels
+  const tableHeaders = ["Code", "Description", "Amount (SGD)"];
+  const tableBody: any[][] = [];
+
+  const addSection = (label: string, rows: BSPDFAccount[], subtotalLabel: string, subtotal: number, isGrand = false) => {
+    tableBody.push([label, "", ""]);
+    rows.filter(r => Math.abs(r.amount) > 0.005).forEach(r => {
+      tableBody.push([r.code, r.name, fmtBsAmt(r.amount)]);
+    });
+    tableBody.push(["", isGrand ? subtotalLabel.toUpperCase() : subtotalLabel, fmtBsAmt(subtotal)]);
+  };
+
+  const ncAssets = assets.filter(a => a.subType === "non_current_asset");
+  const curAssets = assets.filter(a => a.subType !== "non_current_asset");
+  const curLiab = liabilities.filter(a => a.subType !== "non_current_liability");
+  const ncLiab = liabilities.filter(a => a.subType === "non_current_liability");
+
+  tableBody.push(["ASSETS", "", ""]);
+  addSection("Non-Current Assets", ncAssets, "Total Non-Current Assets", ncAssets.reduce((s, a) => s + a.amount, 0));
+  addSection("Current Assets", curAssets, "Total Current Assets", curAssets.reduce((s, a) => s + a.amount, 0));
+  tableBody.push(["", "TOTAL ASSETS", fmtBsAmt(totalAssets)]);
+
+  tableBody.push(["", "", ""]);
+  tableBody.push(["LIABILITIES & EQUITY", "", ""]);
+  addSection("Current Liabilities", curLiab, "Total Current Liabilities", curLiab.reduce((s, a) => s + a.amount, 0));
+  addSection("Non-Current Liabilities", ncLiab, "Total Non-Current Liabilities", ncLiab.reduce((s, a) => s + a.amount, 0));
+  tableBody.push(["", "Total Liabilities", fmtBsAmt(totalLiabilities)]);
+
+  tableBody.push(["Equity", "", ""]);
+  equity.filter(e => Math.abs(e.amount) > 0.005).forEach(e => {
+    tableBody.push([e.code, e.name, fmtBsAmt(e.amount)]);
+  });
+  tableBody.push(["", "Retained Earnings (P&L)", fmtBsAmt(retainedEarnings)]);
+  tableBody.push(["", "Total Equity", fmtBsAmt(totalEquity)]);
+  tableBody.push(["", "TOTAL LIABILITIES & EQUITY", fmtBsAmt(totalLiabilitiesAndEquity)]);
+
+  const totalLEIdx = tableBody.length - 1;
+  const totalAssetsIdx = tableBody.findIndex(r => r[1] === "TOTAL ASSETS");
+
+  (doc as any).autoTable({
+    startY: 64,
+    head: [tableHeaders],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 22 }, 1: { cellWidth: "auto" as const },
+      2: { halign: "right" as const, cellWidth: 45 },
+    },
+    didParseCell: (data: any) => {
+      if (data.section !== "body") return;
+      const r = data.row.index;
+      const cell0 = data.row.cells[0]?.raw as string ?? "";
+      const cell1 = data.row.cells[1]?.raw as string ?? "";
+      const isSectionHdr = cell0 !== "" && cell1 === "" && (cell0 === "ASSETS" || cell0 === "LIABILITIES & EQUITY" || cell0 === "Equity" || cell0 === "Non-Current Assets" || cell0 === "Current Assets" || cell0 === "Current Liabilities" || cell0 === "Non-Current Liabilities");
+      const isSubtotal = cell0 === "" && cell1 !== "" && !cell1.startsWith("TOTAL");
+      const isGrand = r === totalLEIdx || r === totalAssetsIdx;
+      const isEmpty = cell0 === "" && cell1 === "" && data.row.cells[2]?.raw === "";
+
+      if (isSectionHdr) {
+        data.cell.styles.fillColor = [237, 240, 245];
+        data.cell.styles.textColor = [60, 70, 90];
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fontSize = 8;
+      } else if (isGrand) {
+        data.cell.styles.fillColor = [24, 33, 47];
+        data.cell.styles.textColor = [255, 255, 255];
+        data.cell.styles.fontStyle = "bold";
+      } else if (isSubtotal) {
+        data.cell.styles.fillColor = [237, 240, 245];
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.textColor = [40, 40, 40];
+      } else if (isEmpty) {
+        data.cell.styles.fillColor = [255, 255, 255];
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  buildDocFooter(doc, "Balance Sheet");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`Balance_Sheet_${asOf}.pdf`);
+}
