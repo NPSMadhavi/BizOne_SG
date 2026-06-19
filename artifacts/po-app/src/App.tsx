@@ -47,6 +47,7 @@ import CustomerStatement from "@/pages/accounting/customer-statement";
 import GstF7 from "@/pages/accounting/gst-f7";
 import VendorStatement from "@/pages/accounting/vendor-statement";
 import GeneralLedger from "@/pages/accounting/general-ledger";
+import CashFlowStatement from "@/pages/accounting/cash-flow";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -68,6 +69,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/chart-of-accounts": "Chart of Accounts",
   "/accounting/journal-entries": "Journal Entries",
   "/accounting/profit-loss": "Profit & Loss",
+  "/accounting/cash-flow": "Cash Flow Statement",
   "/accounting/gst-f5": "GST F5 Return",
   "/accounting/ar-aging": "AR Aging Report",
   "/accounting/ap-aging": "AP Aging Report",
@@ -226,6 +228,7 @@ function Router() {
         <Route path="/accounting/journal-entries/:id">{() => <ProtectedRoute component={JournalEntryView} />}</Route>
         <Route path="/accounting/journal-entries">{() => <ProtectedRoute component={JournalEntriesList} />}</Route>
         <Route path="/accounting/profit-loss">{() => <ProtectedRoute component={ProfitLoss} />}</Route>
+        <Route path="/accounting/cash-flow">{() => <ProtectedRoute component={CashFlowStatement} />}</Route>
         <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
         <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
         <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>

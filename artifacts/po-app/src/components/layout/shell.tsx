@@ -30,6 +30,7 @@ import {
   FileDiff,
   Building,
   BookMarked,
+  Banknote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -222,6 +223,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </NavItem>
             <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"}>
               Profit & Loss
+            </NavItem>
+            <NavItem href="/accounting/cash-flow" icon={Banknote} active={location === "/accounting/cash-flow"}>
+              Cash Flow
             </NavItem>
             {/* GST / Tax */}
             <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"}>

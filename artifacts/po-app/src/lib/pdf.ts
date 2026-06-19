@@ -2448,3 +2448,151 @@ export async function generateGeneralLedger_PDF(
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`GL_${account.code}_${account.name.replace(/[^a-z0-9]/gi, "_")}_${to || "all"}.pdf`);
 }
+
+// ── CASH FLOW STATEMENT PDF ───────────────────────────────────────────────────
+
+interface CfPDFData {
+  period: { from: string; to: string };
+  netProfit: number; addBackDepreciation: number;
+  workingCapital: {
+    changeAR: number; changeOtherReceivables: number; changeGstInput: number;
+    changeInventory: number; changePrepayments: number; changeDeposits: number;
+    changeAP: number; changeGstOutput: number; changeAccruals: number;
+    changeStaffPayable: number; changeCPF: number;
+  };
+  totalWorkingCapitalChange: number; netOperating: number;
+  investing: { equipment: number; furniture: number; renovation: number };
+  netInvesting: number;
+  financing: { directorsLoan: number; bankLoan: number; shareCapital: number };
+  netFinancing: number;
+  netChange: number; openingCash: number; closingCash: number;
+}
+
+export async function generateCashFlow_PDF(
+  company: Company | null | undefined,
+  data: CfPDFData,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info  = companyToInfo(company);
+  const logo  = await getLogoData(getLogoUrl(company));
+  const periodStr = `${fmtDate(data.period.from)} – ${fmtDate(data.period.to)}`;
+
+  drawAccountingHeader(doc, logo, "CASH FLOW STATEMENT", `Period: ${periodStr}`, "Indirect Method", info);
+
+  const fmtBs = (n: number) => { const s = fmtNum(Math.abs(n)); return n < 0 ? `(${s})` : s; };
+
+  const tableBody: any[][] = [];
+
+  const addSectionHeader = (label: string) => tableBody.push([`\u2014 ${label.toUpperCase()} \u2014`, ""]);
+  const addRow = (label: string, amount: number, indent = false) => {
+    if (Math.abs(amount) < 0.005) return;
+    tableBody.push([indent ? `    ${label}` : label, fmtBs(amount)]);
+  };
+  const addSubtotal = (label: string, amount: number) => tableBody.push([`  ${label}`, fmtBs(amount)]);
+  const addSpacer = () => tableBody.push(["", ""]);
+
+  // A: Operating
+  addSectionHeader("A  ·  Operating Activities");
+  addRow("Net Profit for the period", data.netProfit);
+  if (data.addBackDepreciation > 0) addRow("Add back: Depreciation (non-cash)", data.addBackDepreciation);
+
+  addSectionHeader("Changes in Working Capital");
+  addRow("Trade Receivables (AR)", data.workingCapital.changeAR, true);
+  addRow("Other Receivables", data.workingCapital.changeOtherReceivables, true);
+  addRow("GST Input Tax Recoverable", data.workingCapital.changeGstInput, true);
+  addRow("Inventory / Stock", data.workingCapital.changeInventory, true);
+  addRow("Prepayments", data.workingCapital.changePrepayments, true);
+  addRow("Deposits Paid", data.workingCapital.changeDeposits, true);
+  addRow("Trade Payables (AP)", data.workingCapital.changeAP, true);
+  addRow("GST Output Tax Payable", data.workingCapital.changeGstOutput, true);
+  addRow("Accrued Liabilities", data.workingCapital.changeAccruals, true);
+  addRow("Staff Salaries Payable", data.workingCapital.changeStaffPayable, true);
+  addRow("CPF Contributions Payable", data.workingCapital.changeCPF, true);
+  addSubtotal("Net Cash from Operating Activities (A)", data.netOperating);
+  addSpacer();
+
+  // B: Investing
+  addSectionHeader("B  ·  Investing Activities");
+  addRow("Fixed Assets — Equipment (purchases / disposals)", data.investing.equipment);
+  addRow("Fixed Assets — Furniture & Fittings", data.investing.furniture);
+  addRow("Fixed Assets — Office Renovation", data.investing.renovation);
+  addSubtotal("Net Cash from Investing Activities (B)", data.netInvesting);
+  addSpacer();
+
+  // C: Financing
+  addSectionHeader("C  ·  Financing Activities");
+  addRow("Director's Loan — drawdown / repayment", data.financing.directorsLoan);
+  addRow("Bank Loan — proceeds / repayment", data.financing.bankLoan);
+  addRow("Share Capital — new injection", data.financing.shareCapital);
+  addSubtotal("Net Cash from Financing Activities (C)", data.netFinancing);
+  addSpacer();
+
+  // Totals
+  tableBody.push(["NET CHANGE IN CASH (A + B + C)", fmtBs(data.netChange)]);
+  const netChangeIdx = tableBody.length - 1;
+  addRow("Opening Cash Balance (start of period)", data.openingCash);
+  tableBody.push(["CLOSING CASH BALANCE (end of period)", `SGD ${fmtBs(data.closingCash)}`]);
+  const closingIdx = tableBody.length - 1;
+
+  const sectionHeaderIdxs = tableBody.reduce<number[]>((acc, row, i) => {
+    const c = row[0] as string ?? "";
+    if (c.startsWith("\u2014") && c.endsWith("\u2014")) acc.push(i);
+    return acc;
+  }, []);
+  const subtotalIdxs = tableBody.reduce<number[]>((acc, row, i) => {
+    const c = row[0] as string ?? "";
+    if (c.startsWith("  ") && !c.startsWith("    ")) acc.push(i);
+    return acc;
+  }, []);
+
+  (doc as any).autoTable({
+    startY: 64,
+    head: [["Description", `Amount (SGD)`]],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: "auto" as const },
+      1: { halign: "right" as const, cellWidth: 42 },
+    },
+    didParseCell: (d: any) => {
+      if (d.section !== "body") return;
+      const r = d.row.index;
+      const c = d.row.cells[0]?.raw as string ?? "";
+      if (sectionHeaderIdxs.includes(r)) {
+        d.cell.styles.fillColor = [237, 240, 245];
+        d.cell.styles.textColor = [60, 70, 90];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 8;
+      } else if (subtotalIdxs.includes(r)) {
+        d.cell.styles.fillColor = [220, 228, 240];
+        d.cell.styles.fontStyle = "bold";
+      } else if (r === netChangeIdx) {
+        d.cell.styles.fillColor = [24, 33, 47];
+        d.cell.styles.textColor = [255, 255, 255];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 10;
+      } else if (r === closingIdx) {
+        d.cell.styles.fillColor = [10, 20, 40];
+        d.cell.styles.textColor = [255, 255, 255];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 10.5;
+      } else if (c === "") {
+        d.cell.styles.fillColor = [255, 255, 255];
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  buildDocFooter(doc, "Cash Flow Statement");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`CashFlow_${data.period.from}_to_${data.period.to}.pdf`);
+}

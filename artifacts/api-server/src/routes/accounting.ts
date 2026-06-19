@@ -984,3 +984,163 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
     transactions,
   });
 });
+
+// ─── Cash Flow Statement (Indirect Method) ────────────────────────────────────
+
+router.get("/cash-flow", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  if (!fromDate || !toDate) {
+    res.status(400).json({ error: "from and to dates are required" });
+    return;
+  }
+
+  await ensureAccountsSeeded(companyId);
+
+  const accounts = await db.select()
+    .from(accountsTable)
+    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.isActive, true)))
+    .orderBy(asc(accountsTable.code));
+
+  const byCode = (code: string) => accounts.find(a => a.code === code);
+
+  // ── Period entries (fromDate..toDate inclusive) ──────────────────────────
+  const periodEntries = await db.select({ entryId: journalEntriesTable.id })
+    .from(journalEntriesTable)
+    .where(and(
+      eq(journalEntriesTable.companyId, companyId),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
+      sql`${journalEntriesTable.entryDate} >= ${fromDate}`,
+      sql`${journalEntriesTable.entryDate} <= ${toDate}`,
+    ));
+  const periodIds = periodEntries.map(e => e.entryId);
+
+  // ── Pre-period entries (before fromDate) — for opening cash balance ──────
+  const preEntries = await db.select({ entryId: journalEntriesTable.id })
+    .from(journalEntriesTable)
+    .where(and(
+      eq(journalEntriesTable.companyId, companyId),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
+      sql`${journalEntriesTable.entryDate} < ${fromDate}`,
+    ));
+  const preIds = preEntries.map(e => e.entryId);
+
+  // Build debit/credit movement maps
+  const periodMov: Record<number, { debit: number; credit: number }> = {};
+  if (periodIds.length > 0) {
+    const lines = await db.select().from(journalLinesTable)
+      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${periodIds.join(",")}]::int[]`)})`);
+    for (const l of lines) {
+      if (!periodMov[l.accountId]) periodMov[l.accountId] = { debit: 0, credit: 0 };
+      periodMov[l.accountId].debit  += parseFloat(l.debit  ?? "0");
+      periodMov[l.accountId].credit += parseFloat(l.credit ?? "0");
+    }
+  }
+
+  const preMov: Record<number, { debit: number; credit: number }> = {};
+  if (preIds.length > 0) {
+    const lines = await db.select().from(journalLinesTable)
+      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${preIds.join(",")}]::int[]`)})`);
+    for (const l of lines) {
+      if (!preMov[l.accountId]) preMov[l.accountId] = { debit: 0, credit: 0 };
+      preMov[l.accountId].debit  += parseFloat(l.debit  ?? "0");
+      preMov[l.accountId].credit += parseFloat(l.credit ?? "0");
+    }
+  }
+
+  // CF impact for a balance sheet account over the period.
+  // credit − debit is positive for:
+  //   assets:     asset decreased → cash inflow
+  //   liabilities: liability increased → cash inflow
+  //   equity:     equity increased → cash inflow
+  const cfBs = (code: string): number => {
+    const acct = byCode(code);
+    if (!acct) return 0;
+    const m = periodMov[acct.id] ?? { debit: 0, credit: 0 };
+    return +(m.credit - m.debit).toFixed(2);
+  };
+
+  // Asset balance up to a given movement map (debit − credit for asset accounts)
+  const assetBal = (code: string, mov: typeof preMov): number => {
+    const acct = byCode(code);
+    if (!acct) return 0;
+    const m = mov[acct.id] ?? { debit: 0, credit: 0 };
+    return +(m.debit - m.credit).toFixed(2);
+  };
+
+  // ── Net Profit ─────────────────────────────────────────────────────────────
+  let totalRevenue = 0, totalExpense = 0, depreciation = 0;
+  for (const acct of accounts) {
+    const m = periodMov[acct.id] ?? { debit: 0, credit: 0 };
+    if (acct.type === "revenue") {
+      totalRevenue += m.credit - m.debit;
+    } else if (acct.type === "expense") {
+      const exp = m.debit - m.credit;
+      if (acct.code === "6700") depreciation = exp;
+      totalExpense += exp;
+    }
+  }
+  const netProfit            = +(totalRevenue - totalExpense).toFixed(2);
+  const addBackDepreciation  = +depreciation.toFixed(2);
+
+  // ── Working Capital Changes ─────────────────────────────────────────────────
+  const wc = {
+    changeAR:               cfBs("1100"),
+    changeOtherReceivables: cfBs("1120"),
+    changeGstInput:         cfBs("1110"),
+    changeInventory:        cfBs("1200"),
+    changePrepayments:      cfBs("1300"),
+    changeDeposits:         cfBs("1400"),
+    changeAP:               cfBs("2000"),
+    changeGstOutput:        cfBs("2010"),
+    changeAccruals:         cfBs("2020"),
+    changeStaffPayable:     cfBs("2040"),
+    changeCPF:              cfBs("2050"),
+  };
+  const totalWC     = +Object.values(wc).reduce((s, v) => s + v, 0).toFixed(2);
+  const netOperating = +(netProfit + addBackDepreciation + totalWC).toFixed(2);
+
+  // ── Investing Activities ────────────────────────────────────────────────────
+  const investing = {
+    equipment:  cfBs("1500"),
+    furniture:  cfBs("1600"),
+    renovation: cfBs("1700"),
+  };
+  const netInvesting = +Object.values(investing).reduce((s, v) => s + v, 0).toFixed(2);
+
+  // ── Financing Activities ────────────────────────────────────────────────────
+  const financing = {
+    directorsLoan: cfBs("2100"),
+    bankLoan:      cfBs("2200"),
+    shareCapital:  cfBs("3000"),
+  };
+  const netFinancing = +Object.values(financing).reduce((s, v) => s + v, 0).toFixed(2);
+
+  // ── Cash Reconciliation ─────────────────────────────────────────────────────
+  const netChange   = +(netOperating + netInvesting + netFinancing).toFixed(2);
+  const cashCodes   = ["1000", "1010", "1020", "1030"];
+  const openingCash = +cashCodes.reduce((s, c) => s + assetBal(c, preMov), 0).toFixed(2);
+  const closingCash = +(openingCash + netChange).toFixed(2);
+
+  res.json({
+    period: { from: fromDate, to: toDate },
+    netProfit,
+    addBackDepreciation,
+    workingCapital: wc,
+    totalWorkingCapitalChange: totalWC,
+    netOperating,
+    investing,
+    netInvesting,
+    financing,
+    netFinancing,
+    netChange,
+    openingCash,
+    closingCash,
+  });
+});
