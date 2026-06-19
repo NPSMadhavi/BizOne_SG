@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,9 +77,8 @@ function fmtDateLong(d: string | null) {
 
 const PRINT_STYLE = `
 @media print {
-  body > * { display: none !important; }
-  #gst-f5-print-root { display: block !important; }
-  #gst-f5-print-root * { display: revert; }
+  body > *:not(#gst-f5-print-root) { display: none !important; }
+  #gst-f5-print-root { display: block !important; position: static !important; }
 }
 `;
 
@@ -317,11 +317,12 @@ export default function GstF5Page() {
       {/* Inject print CSS */}
       <style>{PRINT_STYLE}</style>
 
-      {/* Hidden printable form — rendered off-screen when printing */}
-      {showPrint && data && (
-        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", zIndex: 9999, background: "#fff" }} id="gst-f5-print-root">
+      {/* Portal renders directly into document.body so print CSS can isolate it */}
+      {showPrint && data && createPortal(
+        <div id="gst-f5-print-root">
           <PrintableF5 data={data} from={from} to={to} />
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── On-screen UI ── */}
