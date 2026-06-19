@@ -15,52 +15,76 @@ interface BSData {
   balanced: boolean;
 }
 
-function fmt(n: number) {
+function fmtAmt(n: number) {
   const abs = Math.abs(n);
   const s = new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(abs);
   return n < 0 ? `(${s})` : s;
 }
-
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-SG", { day: "2-digit", month: "long", year: "numeric" });
 }
 
+function GroupLabel({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 px-5 py-2.5 bg-gray-50 border-b border-gray-100">
+      <div className="w-0.5 h-4 bg-gray-300 rounded-full" />
+      <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{label}</span>
+    </div>
+  );
+}
+
 interface SectionProps {
-  label: string;
+  groupLabel?: string;
   rows: AcctLine[];
   subtotalLabel: string;
   subtotal: number;
-  isTotal?: boolean;
+  isGrandTotal?: boolean;
 }
 
-function Section({ label, rows, subtotalLabel, subtotal, isTotal }: SectionProps) {
+function Section({ groupLabel, rows, subtotalLabel, subtotal, isGrandTotal }: SectionProps) {
   const active = rows.filter(r => Math.abs(r.amount) > 0.005);
   return (
-    <div className="mb-1">
-      <div className="px-5 py-2 text-xs font-semibold uppercase tracking-widest text-gray-400">{label}</div>
+    <>
+      {groupLabel && <GroupLabel label={groupLabel} />}
       {active.map(r => (
-        <div key={r.code} className="flex justify-between items-baseline px-5 py-1.5 border-b border-gray-100 last:border-0">
-          <span className="text-sm text-gray-600 flex items-baseline gap-2">
+        <div key={r.code} className="flex items-baseline justify-between px-5 py-2 border-b border-gray-100 hover:bg-gray-50/60">
+          <span className="flex items-baseline gap-3 text-sm text-gray-600">
             <span className="font-mono text-xs text-gray-400 w-10 shrink-0">{r.code}</span>
             {r.name}
           </span>
-          <span className={cn("font-mono text-sm tabular-nums ml-4 shrink-0", r.amount < 0 ? "text-red-600" : "text-gray-800")}>
-            {fmt(r.amount)}
+          <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", r.amount < 0 ? "text-red-600" : "text-gray-800")}>
+            {fmtAmt(r.amount)}
           </span>
         </div>
       ))}
       {active.length === 0 && (
-        <div className="px-5 py-2 text-xs text-gray-300 italic">No entries</div>
+        <div className="px-5 py-3 text-xs text-gray-300 italic pl-[4.5rem]">No entries</div>
       )}
       <div className={cn(
-        "flex justify-between items-baseline px-5 py-2 border-t border-gray-300",
-        isTotal ? "bg-gray-900 text-white" : "bg-gray-50"
+        "flex items-baseline justify-between px-5 py-3",
+        isGrandTotal
+          ? "bg-gray-900 text-white"
+          : "bg-gray-50 border-t border-gray-200"
       )}>
-        <span className={cn("text-xs font-semibold uppercase tracking-wide", isTotal ? "text-gray-300" : "text-gray-500")}>{subtotalLabel}</span>
-        <span className={cn("font-mono text-sm font-semibold tabular-nums", isTotal ? "text-white" : subtotal < 0 ? "text-red-600" : "text-gray-900")}>
-          {fmt(subtotal)}
+        <span className={cn("text-xs font-bold uppercase tracking-wider", isGrandTotal ? "text-gray-300" : "text-gray-500")}>
+          {subtotalLabel}
+        </span>
+        <span className={cn(
+          "font-mono tabular-nums shrink-0 ml-6",
+          isGrandTotal ? "text-white text-base font-bold" : subtotal < 0 ? "text-red-600 text-sm font-semibold" : "text-gray-900 text-sm font-semibold"
+        )}>
+          {fmtAmt(subtotal)}
         </span>
       </div>
+    </>
+  );
+}
+
+function SubtotalBar({ label, amount }: { label: string; amount: number }) {
+  return (
+    <div className="flex items-baseline justify-between px-5 py-2.5 bg-gray-100 border-t-2 border-gray-200">
+      <span className="text-xs font-bold uppercase tracking-wider text-gray-500">{label}</span>
+      <span className={cn("font-mono text-sm font-semibold tabular-nums ml-6", amount < 0 ? "text-red-600" : "text-gray-900")}>{fmtAmt(amount)}</span>
     </div>
   );
 }
@@ -88,10 +112,10 @@ export default function BalanceSheetPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
       {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4">
+      <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1">Financial Statements</p>
-          <h1 className="text-xl font-semibold text-gray-900">Balance Sheet</h1>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Financial Statements</p>
+          <h1 className="text-2xl font-bold text-gray-900">Balance Sheet</h1>
         </div>
         <div className="flex items-end gap-4">
           <div className="space-y-1">
@@ -99,8 +123,13 @@ export default function BalanceSheetPage() {
             <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
           </div>
           {data && (
-            <span className={cn("text-xs font-medium px-2.5 py-1 rounded border mb-0.5", data.balanced ? "border-green-200 text-green-700 bg-green-50" : "border-red-200 text-red-700 bg-red-50")}>
-              {data.balanced ? "Balanced" : "Out of balance"}
+            <span className={cn(
+              "text-xs font-semibold px-2.5 py-1 rounded border mb-0.5",
+              data.balanced
+                ? "border-green-200 text-green-700 bg-green-50"
+                : "border-red-200 text-red-700 bg-red-50"
+            )}>
+              {data.balanced ? "Balanced ✓" : "Out of balance"}
             </span>
           )}
         </div>
@@ -111,95 +140,85 @@ export default function BalanceSheetPage() {
 
       {data && (
         <>
-          {/* Period label */}
-          <p className="text-xs text-gray-400">As at {fmtDate(data.asOf)} · All amounts in SGD</p>
+          <p className="text-xs text-gray-400">As at {fmtDate(data.asOf)} · All amounts in SGD · Accounts with zero balance are hidden.</p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* ASSETS */}
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-200">
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-900">Assets</h2>
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 bg-white">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-gray-800">Assets</h2>
               </div>
               <Section
-                label="Non-Current Assets"
+                groupLabel="Non-Current Assets"
                 rows={ncAssets}
                 subtotalLabel="Total Non-Current Assets"
                 subtotal={ncAssets.reduce((s, a) => s + a.amount, 0)}
               />
-              <div className="border-t border-gray-100 mt-1" />
               <Section
-                label="Current Assets"
+                groupLabel="Current Assets"
                 rows={curAssets}
                 subtotalLabel="Total Current Assets"
                 subtotal={curAssets.reduce((s, a) => s + a.amount, 0)}
               />
               <Section
-                label=""
                 rows={[]}
                 subtotalLabel="Total Assets"
                 subtotal={data.totalAssets}
-                isTotal
+                isGrandTotal
               />
             </div>
 
             {/* LIABILITIES + EQUITY */}
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-200">
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-900">Liabilities &amp; Equity</h2>
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 bg-white">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-gray-800">Liabilities &amp; Equity</h2>
               </div>
+
               <Section
-                label="Current Liabilities"
+                groupLabel="Current Liabilities"
                 rows={curLiab}
                 subtotalLabel="Total Current Liabilities"
                 subtotal={curLiab.reduce((s, a) => s + a.amount, 0)}
               />
-              <div className="border-t border-gray-100 mt-1" />
               <Section
-                label="Non-Current Liabilities"
+                groupLabel="Non-Current Liabilities"
                 rows={ncLiab}
                 subtotalLabel="Total Non-Current Liabilities"
                 subtotal={ncLiab.reduce((s, a) => s + a.amount, 0)}
               />
-              <div className="flex justify-between px-5 py-2 bg-gray-50 border-t border-gray-200">
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Liabilities</span>
-                <span className="font-mono text-sm font-semibold tabular-nums text-gray-900">{fmt(data.totalLiabilities)}</span>
-              </div>
+              <SubtotalBar label="Total Liabilities" amount={data.totalLiabilities} />
 
               {/* Equity */}
-              <div className="border-t border-gray-200 mt-2" />
-              <div className="px-5 py-2 text-xs font-semibold uppercase tracking-widest text-gray-400">Equity</div>
+              <GroupLabel label="Equity" />
               {data.equity.filter(e => Math.abs(e.amount) > 0.005).map(e => (
-                <div key={e.code} className="flex justify-between items-baseline px-5 py-1.5 border-b border-gray-100">
-                  <span className="text-sm text-gray-600 flex items-baseline gap-2">
+                <div key={e.code} className="flex items-baseline justify-between px-5 py-2 border-b border-gray-100 hover:bg-gray-50/60">
+                  <span className="flex items-baseline gap-3 text-sm text-gray-600">
                     <span className="font-mono text-xs text-gray-400 w-10 shrink-0">{e.code}</span>
                     {e.name}
                   </span>
-                  <span className={cn("font-mono text-sm tabular-nums ml-4", e.amount < 0 ? "text-red-600" : "text-gray-800")}>{fmt(e.amount)}</span>
+                  <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", e.amount < 0 ? "text-red-600" : "text-gray-800")}>{fmtAmt(e.amount)}</span>
                 </div>
               ))}
-              <div className="flex justify-between items-baseline px-5 py-1.5 border-b border-gray-100">
-                <span className="text-sm text-gray-600 italic">Retained Earnings (cumulative P&amp;L)</span>
-                <span className={cn("font-mono text-sm tabular-nums ml-4", data.retainedEarnings < 0 ? "text-red-600" : "text-gray-800")}>{fmt(data.retainedEarnings)}</span>
+              <div className="flex items-baseline justify-between px-5 py-2 border-b border-gray-100 hover:bg-gray-50/60">
+                <span className="flex items-baseline gap-3 text-sm text-gray-500 italic">
+                  <span className="w-10 shrink-0" />
+                  Retained Earnings
+                </span>
+                <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", data.retainedEarnings < 0 ? "text-red-600" : "text-gray-800")}>{fmtAmt(data.retainedEarnings)}</span>
               </div>
-              <div className="flex justify-between px-5 py-2 bg-gray-50 border-t border-gray-200">
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Equity</span>
-                <span className={cn("font-mono text-sm font-semibold tabular-nums", data.totalEquity < 0 ? "text-red-600" : "text-gray-900")}>{fmt(data.totalEquity)}</span>
-              </div>
+              <SubtotalBar label="Total Equity" amount={data.totalEquity} />
 
               {/* Grand total */}
-              <div className="flex justify-between items-baseline px-5 py-3 bg-gray-900 border-t border-gray-200">
-                <span className="text-xs font-semibold uppercase tracking-widest text-gray-300">Total Liabilities &amp; Equity</span>
-                <span className="font-mono text-sm font-semibold text-white tabular-nums">{fmt(data.totalLiabilitiesAndEquity)}</span>
+              <div className="flex items-baseline justify-between px-5 py-3 bg-gray-900">
+                <span className="text-xs font-bold uppercase tracking-widest text-gray-300">Total Liabilities &amp; Equity</span>
+                <span className="font-mono text-base font-bold text-white tabular-nums ml-6">{fmtAmt(data.totalLiabilitiesAndEquity)}</span>
               </div>
             </div>
           </div>
 
           {!data.balanced && (
-            <p className="text-xs text-red-500">
-              Difference: {fmt(Math.abs(data.totalAssets - data.totalLiabilitiesAndEquity))} — check for unposted journal entries or missing account classifications.
-            </p>
+            <p className="text-xs text-red-500">Difference: {fmtAmt(Math.abs(data.totalAssets - data.totalLiabilitiesAndEquity))} — check for unposted journal entries or missing account classifications.</p>
           )}
-          <p className="text-xs text-gray-400">Retained Earnings = cumulative net P&amp;L from all posted journal entries up to the selected date. Accounts with zero balance are hidden.</p>
         </>
       )}
     </div>

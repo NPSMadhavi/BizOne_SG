@@ -9,17 +9,16 @@ interface TBRow { id: number; code: string; name: string; type: string; subType:
 interface TBData { fromDate: string | null; toDate: string | null; rows: TBRow[]; grandDebit: number; grandCredit: number; balanced: boolean }
 
 const TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense"];
-const TYPE_LABEL: Record<string, string> = { asset: "Assets", liability: "Liabilities", equity: "Equity", revenue: "Revenue", expense: "Expenses" };
+const TYPE_LABEL: Record<string, string> = {
+  asset: "Assets", liability: "Liabilities", equity: "Equity", revenue: "Revenue", expense: "Expenses",
+};
 
-function fmt(n: number) {
-  if (Math.abs(n) < 0.005) return "—";
+function fmtAmt(n: number) {
+  if (Math.abs(n) < 0.005) return null;
   return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
-
-function fmtBalance(n: number) {
-  if (Math.abs(n) < 0.005) return <span className="text-gray-300">—</span>;
-  const s = new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
-  return <span className={n < 0 ? "text-red-600" : ""}>{n < 0 ? `(${s})` : s}</span>;
+function fmtBig(n: number) {
+  return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
 
 export default function TrialBalancePage() {
@@ -46,14 +45,14 @@ export default function TrialBalancePage() {
     return acc;
   }, {});
 
-  const hasData = data && data.rows.some(r => r.totalDebit > 0.005 || r.totalCredit > 0.005);
+  const hasData = data?.rows.some(r => r.totalDebit > 0.005 || r.totalCredit > 0.005);
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
-      <div className="flex items-end justify-between flex-wrap gap-4">
+      <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1">General Ledger</p>
-          <h1 className="text-xl font-semibold text-gray-900">Trial Balance</h1>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">General Ledger</p>
+          <h1 className="text-2xl font-bold text-gray-900">Trial Balance</h1>
         </div>
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1">
@@ -65,8 +64,11 @@ export default function TrialBalancePage() {
             <Input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)} className="w-36 text-sm h-8 border-gray-200" />
           </div>
           {data && (
-            <span className={cn("text-xs font-medium px-2.5 py-1 rounded border mb-0.5", data.balanced ? "border-green-200 text-green-700 bg-green-50" : "border-red-200 text-red-700 bg-red-50")}>
-              {data.balanced ? "Balanced" : "Out of balance"}
+            <span className={cn(
+              "text-xs font-semibold px-2.5 py-1 rounded border mb-0.5",
+              data.balanced ? "border-green-200 text-green-700 bg-green-50" : "border-red-200 text-red-700 bg-red-50"
+            )}>
+              {data.balanced ? "Balanced ✓" : "Out of balance"}
             </span>
           )}
         </div>
@@ -76,16 +78,16 @@ export default function TrialBalancePage() {
       {isError   && <div className="text-center py-16 text-sm text-red-500">{(error as Error).message}</div>}
 
       {data && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Code</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Debit</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Credit</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Balance</th>
+                <tr className="border-b-2 border-gray-200 bg-gray-50">
+                  <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider w-24">Code</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Account Name</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider w-44">Debit</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider w-44">Credit</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider w-44">Balance</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,17 +98,28 @@ export default function TrialBalancePage() {
                   grouped[type].length > 0 ? (
                     <>
                       <tr key={`hdr-${type}`}>
-                        <td colSpan={5} className="px-4 py-2 text-xs font-semibold uppercase tracking-widest text-gray-400 bg-gray-50/80 border-b border-t border-gray-100">
-                          {TYPE_LABEL[type]}
+                        <td colSpan={5} className="px-4 py-2.5 border-b border-t border-gray-100 bg-gray-50">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-0.5 h-3.5 bg-gray-400 rounded-full" />
+                            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{TYPE_LABEL[type]}</span>
+                          </div>
                         </td>
                       </tr>
                       {grouped[type].map(row => (
                         <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/60">
                           <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{row.code}</td>
-                          <td className="px-4 py-2.5 text-gray-700">{row.name}</td>
-                          <td className="text-right px-4 py-2.5 font-mono tabular-nums text-gray-800">{fmt(row.totalDebit)}</td>
-                          <td className="text-right px-4 py-2.5 font-mono tabular-nums text-gray-800">{fmt(row.totalCredit)}</td>
-                          <td className="text-right px-4 py-2.5 font-mono tabular-nums">{fmtBalance(row.balance)}</td>
+                          <td className="px-4 py-2.5 text-sm text-gray-700">{row.name}</td>
+                          <td className="text-right px-4 py-2.5 font-mono text-sm tabular-nums text-gray-800">
+                            {fmtAmt(row.totalDebit) ?? <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="text-right px-4 py-2.5 font-mono text-sm tabular-nums text-gray-800">
+                            {fmtAmt(row.totalCredit) ?? <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className={cn("text-right px-4 py-2.5 font-mono text-sm tabular-nums", row.balance < 0 ? "text-red-600" : "text-gray-800")}>
+                            {fmtAmt(Math.abs(row.balance))
+                              ? <>{row.balance < 0 ? `(${fmtAmt(Math.abs(row.balance))})` : fmtAmt(row.balance)}</>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
                         </tr>
                       ))}
                     </>
@@ -114,17 +127,19 @@ export default function TrialBalancePage() {
                 )}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-50 border-t-2 border-gray-300">
-                  <td colSpan={2} className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grand Total</td>
-                  <td className="text-right px-4 py-3 font-mono font-semibold text-gray-900 tabular-nums">
-                    {new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.grandDebit)}
+                <tr className="bg-gray-900 text-white">
+                  <td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-gray-300">Grand Total</td>
+                  <td className="text-right px-4 py-3 font-mono text-base font-bold tabular-nums text-white">
+                    {fmtBig(data.grandDebit)}
                   </td>
-                  <td className="text-right px-4 py-3 font-mono font-semibold text-gray-900 tabular-nums">
-                    {new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.grandCredit)}
+                  <td className="text-right px-4 py-3 font-mono text-base font-bold tabular-nums text-white">
+                    {fmtBig(data.grandCredit)}
                   </td>
-                  <td className={cn("text-right px-4 py-3 font-mono font-semibold tabular-nums", !data.balanced ? "text-red-600" : "text-gray-400")}>
+                  <td className={cn("text-right px-4 py-3 font-mono text-base font-bold tabular-nums",
+                    !data.balanced ? "text-red-300" : "text-gray-500"
+                  )}>
                     {!data.balanced
-                      ? `(${new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(data.grandDebit - data.grandCredit))})`
+                      ? `(${fmtBig(Math.abs(data.grandDebit - data.grandCredit))})`
                       : "—"}
                   </td>
                 </tr>
