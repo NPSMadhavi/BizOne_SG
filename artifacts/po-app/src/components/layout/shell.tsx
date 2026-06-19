@@ -353,6 +353,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <NavItem href="/accounting/gst-io" icon={ListFilter} active={location === "/accounting/gst-io"} inGroup>
           GST IO Listing
         </NavItem>
+        <NavItem href="/accounting/wht" icon={Receipt} active={location === "/accounting/wht"} inGroup>
+          Withholding Tax
+        </NavItem>
         <NavItem href="/accounting/iaf" icon={Archive} active={location === "/accounting/iaf"} inGroup>
           IRAS Audit File
         </NavItem>
