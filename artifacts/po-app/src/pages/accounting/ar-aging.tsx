@@ -1,31 +1,44 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/auth-context";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useLocation } from "wouter";
 
 interface InvLine { id: number; invNumber: string; issueDate: string | null; amount: number; daysPastDue: number }
 interface AgingRow { customerName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: InvLine[] }
 interface AgingData { asOf: string; customers: AgingRow[]; totals: { current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number } }
 
-const BUCKETS = [
-  { key: "current",  label: "Current",    color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
-  { key: "b1_30",    label: "1–30 days",  color: "text-amber-700",   bg: "bg-amber-50 border-amber-200" },
-  { key: "b31_60",   label: "31–60 days", color: "text-orange-700",  bg: "bg-orange-50 border-orange-200" },
-  { key: "b61_90",   label: "61–90 days", color: "text-red-600",     bg: "bg-red-50 border-red-200" },
-  { key: "b91plus",  label: "91+ days",   color: "text-red-900",     bg: "bg-red-100 border-red-300" },
+function fmt(n: number) { return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n); }
+function fmtDate(d: string | null) { if (!d) return "—"; return new Date(d + "T00:00:00").toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" }); }
+
+function Stat({ label, value, warn, danger }: { label: string; value: string; warn?: boolean; danger?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-0.5 whitespace-nowrap">{label}</p>
+      <p className={cn("font-mono text-sm font-medium tabular-nums", warn && "text-orange-600", danger && "text-red-600", !warn && !danger && "text-gray-900")}>{value}</p>
+    </div>
+  );
+}
+
+const COLS = [
+  { key: "current",  label: "Current",    hClass: "" },
+  { key: "b1_30",    label: "1–30 days",  hClass: "" },
+  { key: "b31_60",   label: "31–60 days", hClass: "" },
+  { key: "b61_90",   label: "61–90 days", hClass: "text-orange-500" },
+  { key: "b91plus",  label: "91+ days",   hClass: "text-red-500" },
 ] as const;
 
-function fmtAmt(n: number) { return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n); }
-function fmtDate(d: string | null) { if (!d) return "—"; return new Date(d + "T00:00:00").toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" }); }
+function cellClass(key: string, val: number) {
+  if (val <= 0) return "text-gray-200";
+  if (key === "b61_90") return "text-orange-600";
+  if (key === "b91plus") return "text-red-600 font-medium";
+  return "text-gray-800";
+}
 
 export default function ArAgingPage() {
   useAuth();
-  const [, navigate] = useLocation();
   const today = new Date().toISOString().split("T")[0];
   const [asOf, setAsOf] = useState(today);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -47,114 +60,110 @@ export default function ArAgingPage() {
   const t = data?.totals;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-start justify-between flex-wrap gap-4">
+    <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
+      {/* Header */}
+      <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">AR Aging Report</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Outstanding receivables grouped by overdue age bucket</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1">Accounts Receivable</p>
+          <h1 className="text-xl font-semibold text-gray-900">Aging Report</h1>
         </div>
-        <div className="flex items-end gap-2">
-          <div className="space-y-1">
-            <Label className="text-xs">As of Date</Label>
-            <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm" />
-          </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">As of Date</Label>
+          <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary strip */}
       {t && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {BUCKETS.map(b => (
-            <Card key={b.key} className={cn("border", b.bg)}>
-              <CardContent className="p-3">
-                <p className={cn("text-xs font-semibold mb-1", b.color)}>{b.label}</p>
-                <p className={cn("font-mono font-bold text-sm", b.color)}>S$ {fmtAmt((t as any)[b.key])}</p>
-              </CardContent>
-            </Card>
-          ))}
-          <Card className="border bg-slate-50 border-slate-200">
-            <CardContent className="p-3">
-              <p className="text-xs font-semibold text-slate-700 mb-1">Total Outstanding</p>
-              <p className="font-mono font-bold text-sm text-slate-900">S$ {fmtAmt(t.total)}</p>
-            </CardContent>
-          </Card>
+        <div className="flex flex-wrap items-center gap-6 px-5 py-4 bg-white border border-gray-200 rounded-lg">
+          <div>
+            <p className="text-xs text-gray-400 mb-0.5">Total Outstanding</p>
+            <p className="font-mono text-base font-semibold text-gray-900 tabular-nums">S$ {fmt(t.total)}</p>
+          </div>
+          <div className="w-px h-8 bg-gray-200 self-stretch hidden sm:block" />
+          <Stat label="Current" value={`S$ ${fmt(t.current)}`} />
+          <Stat label="1–30 days" value={`S$ ${fmt(t.b1_30)}`} />
+          <Stat label="31–60 days" value={`S$ ${fmt(t.b31_60)}`} />
+          <Stat label="61–90 days" value={`S$ ${fmt(t.b61_90)}`} warn={t.b61_90 > 0} />
+          <Stat label="91+ days" value={`S$ ${fmt(t.b91plus)}`} danger={t.b91plus > 0} />
         </div>
       )}
 
-      {/* Table */}
-      {isLoading && <div className="text-center py-12 text-muted-foreground text-sm">Loading…</div>}
-      {isError   && <div className="text-center py-12 text-red-600 text-sm">{(error as Error).message}</div>}
+      {isLoading && <div className="text-center py-16 text-sm text-gray-400">Loading…</div>}
+      {isError   && <div className="text-center py-16 text-sm text-red-500">{(error as Error).message}</div>}
 
       {data && (
-        <Card>
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-muted/40 border-b">
-                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground w-8"></th>
-                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground">Customer</th>
-                  {BUCKETS.map(b => <th key={b.key} className={cn("text-right px-4 py-2.5 font-semibold text-xs", b.color)}>{b.label}</th>)}
-                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground">Total</th>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="w-8 px-4 py-3"></th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                  {COLS.map(c => (
+                    <th key={c.key} className={cn("text-right px-4 py-3 text-xs font-medium uppercase tracking-wider", c.hClass || "text-gray-500")}>{c.label}</th>
+                  ))}
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {data.customers.length === 0 && (
-                  <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">No outstanding invoices as of {fmtDate(asOf)}.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-16 text-sm text-gray-400">No outstanding receivables as of {fmtDate(asOf)}.</td></tr>
                 )}
                 {data.customers.map(c => (
                   <>
                     <tr
                       key={c.customerName}
-                      className="border-b hover:bg-muted/30 cursor-pointer"
+                      className="border-b border-gray-100 hover:bg-gray-50/70 cursor-pointer"
                       onClick={() => toggle(c.customerName)}
                     >
-                      <td className="px-4 py-2.5 text-muted-foreground">
+                      <td className="px-4 py-3 text-gray-300">
                         {expanded.has(c.customerName) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
-                      <td className="px-4 py-2.5 font-medium">{c.customerName}</td>
-                      {BUCKETS.map(b => (
-                        <td key={b.key} className={cn("text-right px-4 py-2.5 font-mono text-xs tabular-nums", (c as any)[b.key] > 0 ? b.color : "text-muted-foreground/30")}>
-                          {(c as any)[b.key] > 0 ? fmtAmt((c as any)[b.key]) : "—"}
+                      <td className="px-4 py-3 font-medium text-gray-800">{c.customerName}</td>
+                      {COLS.map(col => (
+                        <td key={col.key} className={cn("text-right px-4 py-3 font-mono tabular-nums", cellClass(col.key, (c as any)[col.key]))}>
+                          {(c as any)[col.key] > 0 ? fmt((c as any)[col.key]) : "—"}
                         </td>
                       ))}
-                      <td className="text-right px-4 py-2.5 font-mono font-semibold text-sm tabular-nums">S$ {fmtAmt(c.total)}</td>
+                      <td className="text-right px-4 py-3 font-mono font-semibold text-gray-900 tabular-nums">S$ {fmt(c.total)}</td>
                     </tr>
                     {expanded.has(c.customerName) && c.invoices.map(inv => (
-                      <tr key={inv.id} className="bg-muted/10 border-b text-xs">
+                      <tr key={inv.id} className="border-b border-gray-100 bg-gray-50/40">
                         <td></td>
-                        <td className="px-4 py-1.5 pl-8 text-muted-foreground">
-                          <span className="font-mono font-medium text-foreground">{inv.invNumber}</span>
-                          <span className="ml-2">· {fmtDate(inv.issueDate)}</span>
-                          {inv.daysPastDue > 0 && <span className="ml-2 text-red-600">{inv.daysPastDue}d overdue</span>}
-                          {inv.daysPastDue <= 0 && <span className="ml-2 text-emerald-600">not yet due</span>}
+                        <td className="px-4 py-2 pl-9 text-xs text-gray-500">
+                          <span className="font-mono font-medium text-gray-700 mr-2">{inv.invNumber}</span>
+                          <span className="mr-2">{fmtDate(inv.issueDate)}</span>
+                          {inv.daysPastDue > 0 && <span className="text-red-500">{inv.daysPastDue}d overdue</span>}
+                          {inv.daysPastDue <= 0 && <span className="text-gray-400">not yet due</span>}
                         </td>
-                        <td colSpan={4} />
-                        <td className="text-right px-4 py-1.5 font-mono tabular-nums text-muted-foreground">S$ {fmtAmt(inv.amount)}</td>
+                        <td colSpan={5} />
+                        <td className="text-right px-4 py-2 font-mono text-xs text-gray-500 tabular-nums">S$ {fmt(inv.amount)}</td>
                       </tr>
                     ))}
                   </>
                 ))}
               </tbody>
-              {data.customers.length > 0 && (
+              {data.customers.length > 0 && t && (
                 <tfoot>
-                  <tr className="bg-muted/50 border-t-2 font-semibold">
+                  <tr className="bg-gray-50 border-t border-gray-200">
                     <td></td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground uppercase tracking-wider">Total</td>
-                    {BUCKETS.map(b => (
-                      <td key={b.key} className={cn("text-right px-4 py-2.5 font-mono text-xs tabular-nums", b.color)}>
-                        {(t as any)[b.key] > 0 ? fmtAmt((t as any)[b.key]) : "—"}
+                    <td className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</td>
+                    {COLS.map(col => (
+                      <td key={col.key} className={cn("text-right px-4 py-3 font-mono font-semibold tabular-nums", col.key === "b91plus" && t.b91plus > 0 ? "text-red-600" : col.key === "b61_90" && t.b61_90 > 0 ? "text-orange-600" : "text-gray-700")}>
+                        {(t as any)[col.key] > 0 ? fmt((t as any)[col.key]) : "—"}
                       </td>
                     ))}
-                    <td className="text-right px-4 py-2.5 font-mono text-sm tabular-nums">S$ {fmtAmt(t!.total)}</td>
+                    <td className="text-right px-4 py-3 font-mono font-bold text-gray-900 tabular-nums">S$ {fmt(t.total)}</td>
                   </tr>
                 </tfoot>
               )}
             </table>
           </div>
-        </Card>
+        </div>
       )}
 
-      <p className="text-xs text-muted-foreground">Due dates computed from invoice date + payment terms (default 30 days). Only active (non-void, non-paid) invoices are shown.</p>
+      <p className="text-xs text-gray-400">Due date = invoice date + payment terms (default 30 days). Only active (non-void, non-paid) invoices are included.</p>
     </div>
   );
 }

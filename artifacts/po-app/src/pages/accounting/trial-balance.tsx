@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -12,24 +10,31 @@ interface TBData { fromDate: string | null; toDate: string | null; rows: TBRow[]
 
 const TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense"];
 const TYPE_LABEL: Record<string, string> = { asset: "Assets", liability: "Liabilities", equity: "Equity", revenue: "Revenue", expense: "Expenses" };
-const TYPE_COLOR: Record<string, string> = { asset: "text-blue-700", liability: "text-slate-700", equity: "text-purple-700", revenue: "text-emerald-700", expense: "text-red-700" };
 
-function fmtAmt(n: number) { return n === 0 ? "—" : new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n); }
+function fmt(n: number) {
+  if (Math.abs(n) < 0.005) return "—";
+  return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
+function fmtBalance(n: number) {
+  if (Math.abs(n) < 0.005) return <span className="text-gray-300">—</span>;
+  const s = new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
+  return <span className={n < 0 ? "text-red-600" : ""}>{n < 0 ? `(${s})` : s}</span>;
+}
 
 export default function TrialBalancePage() {
   useAuth();
   const today = new Date().toISOString().split("T")[0];
-  const thisMonth = today.slice(0, 7);
-  const [from, setFrom] = useState(thisMonth + "-01");
+  const [from, setFrom] = useState(today.slice(0, 7) + "-01");
   const [to, setTo]     = useState(today);
 
   const { data, isLoading, isError, error } = useQuery<TBData>({
     queryKey: ["trial-balance", from, to],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (from) params.set("from", from);
-      if (to)   params.set("to", to);
-      const r = await fetch(`/api/trial-balance?${params}`, { credentials: "include" });
+      const p = new URLSearchParams();
+      if (from) p.set("from", from);
+      if (to)   p.set("to", to);
+      const r = await fetch(`/api/trial-balance?${p}`, { credentials: "include" });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed to load"); }
       return r.json();
     },
@@ -37,96 +42,96 @@ export default function TrialBalancePage() {
   });
 
   const grouped = TYPE_ORDER.reduce<Record<string, TBRow[]>>((acc, t) => {
-    acc[t] = data?.rows.filter(r => r.type === t && (Math.abs(r.totalDebit) > 0.005 || Math.abs(r.totalCredit) > 0.005)) ?? [];
+    acc[t] = data?.rows.filter(r => r.type === t && (r.totalDebit > 0.005 || r.totalCredit > 0.005)) ?? [];
     return acc;
   }, {});
 
+  const hasData = data && data.rows.some(r => r.totalDebit > 0.005 || r.totalCredit > 0.005);
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-start justify-between flex-wrap gap-4">
+    <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
+      <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Trial Balance</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">All accounts with total debits, credits, and net balance for the period</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1">General Ledger</p>
+          <h1 className="text-xl font-semibold text-gray-900">Trial Balance</h1>
         </div>
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1">
-            <Label className="text-xs">From</Label>
-            <Input type="date" value={from} max={to || today} onChange={e => setFrom(e.target.value)} className="w-36 text-sm" />
+            <Label className="text-xs text-gray-500">From</Label>
+            <Input type="date" value={from} max={to || today} onChange={e => setFrom(e.target.value)} className="w-36 text-sm h-8 border-gray-200" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">To</Label>
-            <Input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)} className="w-36 text-sm" />
+            <Label className="text-xs text-gray-500">To</Label>
+            <Input type="date" value={to} min={from} max={today} onChange={e => setTo(e.target.value)} className="w-36 text-sm h-8 border-gray-200" />
           </div>
           {data && (
-            <Badge variant={data.balanced ? "default" : "destructive"} className="mb-0.5">
-              {data.balanced ? "✓ Balanced" : "⚠ Out of balance"}
-            </Badge>
+            <span className={cn("text-xs font-medium px-2.5 py-1 rounded border mb-0.5", data.balanced ? "border-green-200 text-green-700 bg-green-50" : "border-red-200 text-red-700 bg-red-50")}>
+              {data.balanced ? "Balanced" : "Out of balance"}
+            </span>
           )}
         </div>
       </div>
 
-      {isLoading && <div className="text-center py-12 text-muted-foreground text-sm">Loading…</div>}
-      {isError   && <div className="text-center py-12 text-red-600 text-sm">{(error as Error).message}</div>}
+      {isLoading && <div className="text-center py-16 text-sm text-gray-400">Loading…</div>}
+      {isError   && <div className="text-center py-16 text-sm text-red-500">{(error as Error).message}</div>}
 
       {data && (
-        <Card>
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-muted/40 border-b">
-                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground w-24">Code</th>
-                  <th className="text-left px-4 py-2.5 font-semibold text-xs text-muted-foreground">Account Name</th>
-                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground w-36">Debit (SGD)</th>
-                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground w-36">Credit (SGD)</th>
-                  <th className="text-right px-4 py-2.5 font-semibold text-xs text-muted-foreground w-36">Balance</th>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Code</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Debit</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Credit</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Balance</th>
                 </tr>
               </thead>
               <tbody>
-                {TYPE_ORDER.map(type => (
-                  grouped[type].length > 0 && (
+                {!hasData && (
+                  <tr><td colSpan={5} className="text-center py-16 text-sm text-gray-400">No journal entries for this period.</td></tr>
+                )}
+                {TYPE_ORDER.map(type =>
+                  grouped[type].length > 0 ? (
                     <>
-                      <tr key={`hdr-${type}`} className="bg-muted/20">
-                        <td colSpan={5} className={cn("px-4 py-1.5 text-xs font-semibold uppercase tracking-wider", TYPE_COLOR[type])}>
+                      <tr key={`hdr-${type}`}>
+                        <td colSpan={5} className="px-4 py-2 text-xs font-semibold uppercase tracking-widest text-gray-400 bg-gray-50/80 border-b border-t border-gray-100">
                           {TYPE_LABEL[type]}
                         </td>
                       </tr>
                       {grouped[type].map(row => (
-                        <tr key={row.id} className="border-b hover:bg-muted/20">
-                          <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{row.code}</td>
-                          <td className="px-4 py-2">{row.name}</td>
-                          <td className="text-right px-4 py-2 font-mono tabular-nums text-xs">{fmtAmt(row.totalDebit)}</td>
-                          <td className="text-right px-4 py-2 font-mono tabular-nums text-xs">{fmtAmt(row.totalCredit)}</td>
-                          <td className={cn("text-right px-4 py-2 font-mono tabular-nums text-xs", row.balance < 0 ? "text-red-600" : row.balance > 0 ? "text-foreground" : "text-muted-foreground")}>
-                            {row.balance !== 0 ? (row.balance < 0 ? `(${new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(row.balance))})` : new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(row.balance)) : "—"}
-                          </td>
+                        <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{row.code}</td>
+                          <td className="px-4 py-2.5 text-gray-700">{row.name}</td>
+                          <td className="text-right px-4 py-2.5 font-mono tabular-nums text-gray-800">{fmt(row.totalDebit)}</td>
+                          <td className="text-right px-4 py-2.5 font-mono tabular-nums text-gray-800">{fmt(row.totalCredit)}</td>
+                          <td className="text-right px-4 py-2.5 font-mono tabular-nums">{fmtBalance(row.balance)}</td>
                         </tr>
                       ))}
                     </>
-                  )
-                ))}
-                {data.rows.every(r => Math.abs(r.totalDebit) < 0.005 && Math.abs(r.totalCredit) < 0.005) && (
-                  <tr><td colSpan={5} className="text-center py-12 text-muted-foreground">No journal entries found for this period.</td></tr>
+                  ) : null
                 )}
               </tbody>
               <tfoot>
-                <tr className="bg-muted/50 border-t-2 font-semibold">
-                  <td colSpan={2} className="px-4 py-2.5 text-xs text-muted-foreground uppercase tracking-wider">Grand Total</td>
-                  <td className="text-right px-4 py-2.5 font-mono tabular-nums text-sm">
+                <tr className="bg-gray-50 border-t-2 border-gray-300">
+                  <td colSpan={2} className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grand Total</td>
+                  <td className="text-right px-4 py-3 font-mono font-semibold text-gray-900 tabular-nums">
                     {new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.grandDebit)}
                   </td>
-                  <td className="text-right px-4 py-2.5 font-mono tabular-nums text-sm">
+                  <td className="text-right px-4 py-3 font-mono font-semibold text-gray-900 tabular-nums">
                     {new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.grandCredit)}
                   </td>
-                  <td className={cn("text-right px-4 py-2.5 font-mono tabular-nums text-sm", !data.balanced ? "text-red-600" : "text-muted-foreground")}>
+                  <td className={cn("text-right px-4 py-3 font-mono font-semibold tabular-nums", !data.balanced ? "text-red-600" : "text-gray-400")}>
                     {!data.balanced
-                      ? `Diff: ${new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(data.grandDebit - data.grandCredit))}`
-                      : "0.00"}
+                      ? `(${new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(data.grandDebit - data.grandCredit))})`
+                      : "—"}
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
-        </Card>
+        </div>
       )}
     </div>
   );
