@@ -46,7 +46,7 @@ export default function NewVendorInvoiceDialog({
   const [notes, setNotes] = useState("");
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>(prefillPoId ? [prefillPoId] : []);
   const [amountAutoFilled, setAmountAutoFilled] = useState(false);
-  const [expenseAccountId, setExpenseAccountId] = useState<string>("");
+  const [expenseAccountId, setExpenseAccountId] = useState<string>("none");
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -174,7 +174,7 @@ export default function NewVendorInvoiceDialog({
     setNotes("");
     setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
     setDropdownOpen(false);
-    setExpenseAccountId("");
+    setExpenseAccountId("none");
   };
 
   const handleSave = async () => {
@@ -197,7 +197,7 @@ export default function NewVendorInvoiceDialog({
           currency,
           totalAmount: parseFloat(amount),
           notes: notes || null,
-          expenseAccountId: expenseAccountId ? parseInt(expenseAccountId) : null,
+          expenseAccountId: (expenseAccountId && expenseAccountId !== "none") ? parseInt(expenseAccountId) : null,
         }),
       });
       if (!res.ok) {
@@ -205,7 +205,7 @@ export default function NewVendorInvoiceDialog({
         throw new Error(err.error || "Failed to save");
       }
       const created = await res.json();
-      const hasJE = !!expenseAccountId;
+      const hasJE = !!expenseAccountId && expenseAccountId !== "none";
       toast({
         title: "Vendor PI Recorded",
         description: hasJE
@@ -407,7 +407,7 @@ export default function NewVendorInvoiceDialog({
                 <SelectValue placeholder="Select expense account (optional)…" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— None (no journal entry) —</SelectItem>
+                <SelectItem value="none">— None (no journal entry) —</SelectItem>
                 {expenseAccounts.map((a: any) => (
                   <SelectItem key={a.id} value={String(a.id)}>
                     <span className="font-mono text-xs text-muted-foreground mr-2">{a.code}</span>
@@ -416,7 +416,7 @@ export default function NewVendorInvoiceDialog({
                 ))}
               </SelectContent>
             </Select>
-            {expenseAccountId ? (
+            {expenseAccountId && expenseAccountId !== "none" ? (
               <p className="text-xs text-emerald-700 flex items-center gap-1">
                 ✓ Will auto-post: DR {expenseAccounts.find((a: any) => String(a.id) === expenseAccountId)?.name} / CR Accounts Payable
               </p>
