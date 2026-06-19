@@ -44,6 +44,9 @@ import ApAging from "@/pages/accounting/ap-aging";
 import BalanceSheet from "@/pages/accounting/balance-sheet";
 import TrialBalance from "@/pages/accounting/trial-balance";
 import CustomerStatement from "@/pages/accounting/customer-statement";
+import GstF7 from "@/pages/accounting/gst-f7";
+import VendorStatement from "@/pages/accounting/vendor-statement";
+import GeneralLedger from "@/pages/accounting/general-ledger";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -71,6 +74,9 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/balance-sheet": "Balance Sheet",
   "/accounting/trial-balance": "Trial Balance",
   "/accounting/customer-statement": "Customer Statement",
+  "/accounting/gst-f7": "GST F7 Amended Return",
+  "/accounting/vendor-statement": "Vendor Statement",
+  "/accounting/general-ledger": "General Ledger",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -226,6 +232,9 @@ function Router() {
         <Route path="/accounting/balance-sheet">{() => <ProtectedRoute component={BalanceSheet} />}</Route>
         <Route path="/accounting/trial-balance">{() => <ProtectedRoute component={TrialBalance} />}</Route>
         <Route path="/accounting/customer-statement">{() => <ProtectedRoute component={CustomerStatement} />}</Route>
+        <Route path="/accounting/gst-f7">{() => <ProtectedRoute component={GstF7} />}</Route>
+        <Route path="/accounting/vendor-statement">{() => <ProtectedRoute component={VendorStatement} />}</Route>
+        <Route path="/accounting/general-ledger">{() => <ProtectedRoute component={GeneralLedger} />}</Route>
 
         {/* System — admin only */}
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>

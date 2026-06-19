@@ -27,6 +27,9 @@ import {
   Scale,
   Calculator,
   UserCheck,
+  FileDiff,
+  Building,
+  BookMarked,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -226,6 +229,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </NavItem>
             <NavItem href="/accounting/customer-statement" icon={UserCheck} active={location === "/accounting/customer-statement"}>
               Customer Statement
+            </NavItem>
+            <NavItem href="/accounting/vendor-statement" icon={Building} active={location === "/accounting/vendor-statement"}>
+              Vendor Statement
+            </NavItem>
+            <NavItem href="/accounting/general-ledger" icon={BookMarked} active={location === "/accounting/general-ledger"}>
+              General Ledger
+            </NavItem>
+            <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"}>
+              GST F7 (Amended)
             </NavItem>
           </div>
         </div>

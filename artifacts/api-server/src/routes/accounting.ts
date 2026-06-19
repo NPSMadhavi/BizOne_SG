@@ -768,3 +768,219 @@ router.get("/customer-statement", async (req, res): Promise<void> => {
 });
 
 export default router;
+
+// ─── GST F7 (Amended Return) ─────────────────────────────────────────────────
+
+router.get("/gst-f7", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId  = req.session.companyId!;
+  const fromDate   = (req.query.from  as string) || null;
+  const toDate     = (req.query.to    as string) || null;
+  const origFromDate = (req.query.origFrom as string) || null;
+  const origToDate   = (req.query.origTo   as string) || null;
+
+  await ensureAccountsSeeded(companyId);
+
+  const [company]  = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+  const gstRate    = parseFloat((settings as any)?.gstRate ?? "9");
+
+  async function computeF5Boxes(fDate: string | null, tDate: string | null) {
+    const invRows = await db.select({
+      subtotal: invoicesTable.subtotal, discountAmount: invoicesTable.discountAmount, tax: invoicesTable.tax,
+    })
+    .from(invoicesTable)
+    .where(and(
+      eq(invoicesTable.companyId, companyId),
+      sql`${invoicesTable.status} NOT IN ('draft','void')`,
+      sql`CAST(${invoicesTable.tax} AS numeric) > 0`,
+      ...(fDate ? [sql`${invoicesTable.issueDate} >= ${fDate}`] : []),
+      ...(tDate ? [sql`${invoicesTable.issueDate} <= ${tDate}`] : []),
+    ));
+    const box1 = invRows.reduce((s, r) => s + parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0"), 0);
+    const box6 = invRows.reduce((s, r) => s + parseFloat(r.tax ?? "0"), 0);
+
+    const viRows = await db.select({ totalAmount: vendorInvoicesTable.totalAmount })
+      .from(vendorInvoicesTable)
+      .where(and(
+        eq(vendorInvoicesTable.companyId, companyId),
+        ...(fDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fDate}`] : []),
+        ...(tDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${tDate}`] : []),
+      ));
+    const box4 = viRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+
+    const [gstInputAcct] = await db.select().from(accountsTable)
+      .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, "1110"))).limit(1);
+    let box7 = 0;
+    if (gstInputAcct) {
+      const entries = await db.select({ entryId: journalEntriesTable.id }).from(journalEntriesTable)
+        .where(and(eq(journalEntriesTable.companyId, companyId), eq(journalEntriesTable.status, "posted"),
+          ...(fDate ? [sql`${journalEntriesTable.entryDate} >= ${fDate}`] : []),
+          ...(tDate ? [sql`${journalEntriesTable.entryDate} <= ${tDate}`] : []),
+        ));
+      const eIds = entries.map(e => e.entryId);
+      if (eIds.length > 0) {
+        const lines = await db.select().from(journalLinesTable)
+          .where(and(eq(journalLinesTable.accountId, gstInputAcct.id), sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${eIds.join(",")}]::int[]`)})`));
+        box7 = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
+      }
+    }
+    return { box1, box2: 0, box3: 0, box4, box5: 0, box6, box7, box8: box6 - box7 };
+  }
+
+  const [original, amended] = await Promise.all([
+    computeF5Boxes(origFromDate, origToDate),
+    computeF5Boxes(fromDate, toDate),
+  ]);
+
+  const delta = {
+    box1: amended.box1 - original.box1, box2: 0, box3: 0,
+    box4: amended.box4 - original.box4, box5: 0,
+    box6: amended.box6 - original.box6, box7: amended.box7 - original.box7,
+    box8: amended.box8 - original.box8,
+  };
+
+  res.json({
+    originalPeriod: { from: origFromDate, to: origToDate },
+    amendedPeriod:  { from: fromDate,     to: toDate     },
+    company: { name: company?.name, gstRegistrationNo: company?.registrationNo, address: company?.address },
+    gstRate,
+    original: { box1: +original.box1.toFixed(2), box2: 0, box3: 0, box4: +original.box4.toFixed(2), box5: 0, box6: +original.box6.toFixed(2), box7: +original.box7.toFixed(2), box8: +original.box8.toFixed(2) },
+    amended:  { box1: +amended.box1.toFixed(2),  box2: 0, box3: 0, box4: +amended.box4.toFixed(2),  box5: 0, box6: +amended.box6.toFixed(2),  box7: +amended.box7.toFixed(2),  box8: +amended.box8.toFixed(2) },
+    delta:    { box1: +delta.box1.toFixed(2),    box2: 0, box3: 0, box4: +delta.box4.toFixed(2),    box5: 0, box6: +delta.box6.toFixed(2),    box7: +delta.box7.toFixed(2),    box8: +delta.box8.toFixed(2) },
+  });
+});
+
+// ─── Vendor Statement ─────────────────────────────────────────────────────────
+
+router.get("/vendor-statement", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+
+  const companyId = req.session.companyId!;
+  const vendor    = (req.query.vendor as string) || "";
+  const fromDate  = (req.query.from   as string) || null;
+  const toDate    = (req.query.to     as string) || null;
+
+  const nameRows = await db.selectDistinct({ name: vendorInvoicesTable.vendorName })
+    .from(vendorInvoicesTable)
+    .where(and(eq(vendorInvoicesTable.companyId, companyId), sql`${vendorInvoicesTable.vendorName} IS NOT NULL`))
+    .orderBy(asc(vendorInvoicesTable.vendorName));
+  const vendorNames = nameRows.map(r => r.name).filter(Boolean) as string[];
+
+  if (!vendor) { res.json({ vendor: "", vendorNames, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 }); return; }
+
+  const piRows = await db.select()
+    .from(vendorInvoicesTable)
+    .where(and(
+      eq(vendorInvoicesTable.companyId, companyId),
+      sql`LOWER(${vendorInvoicesTable.vendorName}) = LOWER(${vendor})`,
+      ...(fromDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`] : []),
+      ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`]   : []),
+    ))
+    .orderBy(asc(vendorInvoicesTable.piDate), asc(vendorInvoicesTable.id));
+
+  const totalBilled = piRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+  const totalPaid   = piRows.filter(r => r.status === "paid").reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+
+  res.json({
+    vendor, vendorNames,
+    entries: piRows.map(r => ({
+      id: r.id, piNumber: r.piNumber, piDate: r.piDate,
+      amount: +parseFloat(r.totalAmount ?? "0").toFixed(2),
+      paidAmount: +parseFloat(r.paidAmount ?? "0").toFixed(2),
+      balance: +Math.max(0, parseFloat(r.totalAmount ?? "0") - parseFloat(r.paidAmount ?? "0")).toFixed(2),
+      status: r.status, currency: r.currency,
+    })),
+    totalBilled: +totalBilled.toFixed(2),
+    totalPaid:   +totalPaid.toFixed(2),
+    balance:     +(totalBilled - totalPaid).toFixed(2),
+  });
+});
+
+// ─── General Ledger ───────────────────────────────────────────────────────────
+
+router.get("/general-ledger", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const accountId = req.query.accountId ? parseInt(req.query.accountId as string, 10) : null;
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  await ensureAccountsSeeded(companyId);
+
+  const accounts = await db.select()
+    .from(accountsTable)
+    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.isActive, true)))
+    .orderBy(asc(accountsTable.code));
+
+  if (!accountId) {
+    res.json({ accounts: accounts.map(a => ({ id: a.id, code: a.code, name: a.name, type: a.type })), transactions: [], openingBalance: 0, closingBalance: 0 });
+    return;
+  }
+
+  const [account] = accounts.filter(a => a.id === accountId);
+  if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+
+  // Opening balance: all posted entries BEFORE fromDate
+  let openingDebit = 0, openingCredit = 0;
+  if (fromDate) {
+    const obEntries = await db.select({ entryId: journalEntriesTable.id })
+      .from(journalEntriesTable)
+      .where(and(eq(journalEntriesTable.companyId, companyId), eq(journalEntriesTable.status, "posted"), sql`${journalEntriesTable.entryDate} < ${fromDate}`));
+    const obIds = obEntries.map(e => e.entryId);
+    if (obIds.length > 0) {
+      const obLines = await db.select().from(journalLinesTable)
+        .where(and(eq(journalLinesTable.accountId, accountId), sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${obIds.join(",")}]::int[]`)})`));
+      openingDebit  = obLines.reduce((s, l) => s + parseFloat(l.debit  ?? "0"), 0);
+      openingCredit = obLines.reduce((s, l) => s + parseFloat(l.credit ?? "0"), 0);
+    }
+  }
+  const openingBalance = openingDebit - openingCredit;
+
+  // Period entries
+  const entries = await db.select({ entryId: journalEntriesTable.id, entryDate: journalEntriesTable.entryDate, reference: journalEntriesTable.reference, description: journalEntriesTable.description })
+    .from(journalEntriesTable)
+    .where(and(
+      eq(journalEntriesTable.companyId, companyId),
+      eq(journalEntriesTable.status, "posted"),
+      ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
+      ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
+    ))
+    .orderBy(asc(journalEntriesTable.entryDate), asc(journalEntriesTable.id));
+
+  const entryIds = entries.map(e => e.entryId);
+  let lines: any[] = [];
+  if (entryIds.length > 0) {
+    lines = await db.select().from(journalLinesTable)
+      .where(and(eq(journalLinesTable.accountId, accountId), sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`));
+  }
+
+  const linesByEntry: Record<number, typeof lines[0]> = {};
+  for (const l of lines) linesByEntry[l.journalEntryId] = l;
+
+  let running = openingBalance;
+  const transactions = entries
+    .filter(e => linesByEntry[e.entryId])
+    .map(e => {
+      const l = linesByEntry[e.entryId];
+      const debit  = parseFloat(l.debit  ?? "0");
+      const credit = parseFloat(l.credit ?? "0");
+      running += debit - credit;
+      return { journalEntryId: e.entryId, date: e.entryDate, reference: e.reference, description: e.description || l.description, debit: +debit.toFixed(2), credit: +credit.toFixed(2), balance: +running.toFixed(2) };
+    });
+
+  res.json({
+    account: { id: account.id, code: account.code, name: account.name, type: account.type, subType: account.subType },
+    accounts: accounts.map(a => ({ id: a.id, code: a.code, name: a.name, type: a.type })),
+    openingBalance: +openingBalance.toFixed(2),
+    closingBalance: +running.toFixed(2),
+    transactions,
+  });
+});

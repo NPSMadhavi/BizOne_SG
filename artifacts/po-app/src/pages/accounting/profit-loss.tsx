@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,24 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/auth-context";
-import { ArrowLeft, Printer, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
-import { useLocation } from "wouter";
+import { Download, Loader2, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { generateProfitLoss_PDF } from "@/lib/pdf";
 
 interface PnlAccount { code: string; name: string; amount: number; }
 interface PnlData {
   period: { from: string | null; to: string | null };
-  revenue: PnlAccount[];
-  otherIncome: PnlAccount[];
-  totalRevenue: number;
-  costOfSales: PnlAccount[];
-  totalCostOfSales: number;
-  grossProfit: number;
-  operatingExpenses: PnlAccount[];
-  totalOperatingExpenses: number;
-  operatingProfit: number;
-  incomeTax: number;
-  netProfit: number;
+  revenue: PnlAccount[]; otherIncome: PnlAccount[]; totalRevenue: number;
+  costOfSales: PnlAccount[]; totalCostOfSales: number; grossProfit: number;
+  operatingExpenses: PnlAccount[]; totalOperatingExpenses: number;
+  operatingProfit: number; incomeTax: number; netProfit: number;
 }
 
 function currentYear() {
@@ -37,11 +30,10 @@ function fmtSGD(n: number) {
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
-  const dt = new Date(d + "T00:00:00");
-  return dt.toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(d + "T00:00:00").toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-interface RowProps { label: string; code?: string; amount: number; bold?: boolean; indent?: boolean; separator?: boolean; highlight?: "green" | "red" | "blue" | "muted"; }
+interface RowProps { label: string; code?: string; amount: number; bold?: boolean; indent?: boolean; highlight?: "green" | "red" | "blue" | "muted"; }
 
 function PnlRow({ label, code, amount, bold, indent, highlight }: RowProps) {
   const isZero = Math.abs(amount) < 0.005;
@@ -89,13 +81,12 @@ function SubtotalRow({ label, amount, highlight }: { label: string; amount: numb
 }
 
 export default function ProfitLoss() {
-  const [, setLocation] = useLocation();
   const { selectedCompany } = useAuth();
   const defaults = currentYear();
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo]     = useState(defaults.to);
   const [applied, setApplied] = useState(defaults);
-  const printRef = useRef<HTMLDivElement>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const { data, isLoading, isFetching, error } = useQuery<PnlData>({
     queryKey: ["profit-loss", applied.from, applied.to],
@@ -110,8 +101,15 @@ export default function ProfitLoss() {
   });
 
   function handleApply() { setApplied({ from, to }); }
-  function handlePrint() {
-    window.print();
+
+  async function handleDownloadPDF() {
+    if (!data) return;
+    setPdfLoading(true);
+    try {
+      await generateProfitLoss_PDF(selectedCompany as any, data);
+    } finally {
+      setPdfLoading(false);
+    }
   }
 
   const loading = isLoading || isFetching;
@@ -119,46 +117,44 @@ export default function ProfitLoss() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/accounting/journal-entries")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Profit & Loss</h1>
-            <p className="text-muted-foreground mt-1">Income Statement — {selectedCompany?.name}</p>
-          </div>
+      <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Financial Statements</p>
+          <h1 className="text-2xl font-bold text-gray-900">Profit &amp; Loss</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Income Statement — {selectedCompany?.name}</p>
         </div>
-        <Button variant="outline" className="gap-2 print:hidden" onClick={handlePrint}>
-          <Printer className="h-4 w-4" />
-          Print
-        </Button>
+        {data && (
+          <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
+            {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Download PDF
+          </Button>
+        )}
       </div>
 
       {/* Date filter */}
-      <Card className="print:hidden">
+      <Card>
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
               <Label className="text-xs">From</Label>
-              <Input type="date" className="w-40" value={from} onChange={e => setFrom(e.target.value)} />
+              <Input type="date" className="w-40 h-8 text-sm border-gray-200" value={from} onChange={e => setFrom(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">To</Label>
-              <Input type="date" className="w-40" value={to} onChange={e => setTo(e.target.value)} />
+              <Input type="date" className="w-40 h-8 text-sm border-gray-200" value={to} onChange={e => setTo(e.target.value)} />
             </div>
-            <Button onClick={handleApply} disabled={loading} className="gap-2">
+            <Button onClick={handleApply} disabled={loading} size="sm" className="gap-2">
               {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
               Apply
             </Button>
-            <div className="flex gap-2 ml-auto">
+            <div className="flex gap-2 ml-auto flex-wrap">
               {[
-                { label: "This Year", ...currentYear() },
-                { label: "Last Year", from: `${new Date().getFullYear()-1}-01-01`, to: `${new Date().getFullYear()-1}-12-31` },
+                { label: "This Year",  ...currentYear() },
+                { label: "Last Year",  from: `${new Date().getFullYear()-1}-01-01`, to: `${new Date().getFullYear()-1}-12-31` },
                 { label: "This Month", from: new Date().toISOString().slice(0,7)+"-01", to: new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).toISOString().slice(0,10) },
                 { label: "Last Month", from: new Date(new Date().getFullYear(), new Date().getMonth()-1, 1).toISOString().slice(0,10), to: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0,10) },
               ].map(q => (
-                <Button key={q.label} variant="outline" size="sm" onClick={() => { setFrom(q.from); setTo(q.to); setApplied({ from: q.from, to: q.to }); }}>
+                <Button key={q.label} variant="outline" size="sm" className="text-xs h-8" onClick={() => { setFrom(q.from); setTo(q.to); setApplied({ from: q.from, to: q.to }); }}>
                   {q.label}
                 </Button>
               ))}
@@ -171,23 +167,18 @@ export default function ProfitLoss() {
 
       {/* P&L Statement */}
       {data && (
-        <Card ref={printRef as any}>
+        <Card>
           <CardHeader className="pb-2 text-center border-b">
             <div className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Income Statement</div>
             <CardTitle className="text-xl">{selectedCompany?.name}</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {fmtDate(data.period.from)} — {fmtDate(data.period.to)}
-            </p>
+            <p className="text-sm text-muted-foreground">{fmtDate(data.period.from)} — {fmtDate(data.period.to)}</p>
           </CardHeader>
           <CardContent className="pt-4 space-y-0">
-
-            {/* ── Revenue ── */}
             <SectionHeader title="Revenue" />
             {data.revenue.map(a => <PnlRow key={a.code} code={a.code} label={a.name} amount={a.amount} indent />)}
             {data.otherIncome.map(a => <PnlRow key={a.code} code={a.code} label={a.name} amount={a.amount} indent />)}
             <SubtotalRow label="Total Revenue" amount={data.totalRevenue} highlight="muted" />
 
-            {/* ── Cost of Sales ── */}
             {(data.costOfSales.length > 0 || true) && (
               <>
                 <SectionHeader title="Less: Cost of Sales" />
@@ -199,18 +190,11 @@ export default function ProfitLoss() {
               </>
             )}
 
-            {/* ── Gross Profit ── */}
             <div className="pt-2">
               <Separator />
-              <PnlRow
-                label="Gross Profit"
-                amount={data.grossProfit}
-                bold
-                highlight={data.grossProfit >= 0 ? "green" : "red"}
-              />
+              <PnlRow label="Gross Profit" amount={data.grossProfit} bold highlight={data.grossProfit >= 0 ? "green" : "red"} />
             </div>
 
-            {/* ── Operating Expenses ── */}
             <SectionHeader title="Less: Operating Expenses" />
             {data.operatingExpenses.length > 0
               ? data.operatingExpenses.map(a => <PnlRow key={a.code} code={a.code} label={a.name} amount={a.amount} indent />)
@@ -218,18 +202,11 @@ export default function ProfitLoss() {
             }
             <SubtotalRow label="Total Operating Expenses" amount={data.totalOperatingExpenses} />
 
-            {/* ── Operating Profit ── */}
             <div className="pt-2">
               <Separator />
-              <PnlRow
-                label="Operating Profit (EBIT)"
-                amount={data.operatingProfit}
-                bold
-                highlight={data.operatingProfit >= 0 ? "muted" : "red"}
-              />
+              <PnlRow label="Operating Profit (EBIT)" amount={data.operatingProfit} bold highlight={data.operatingProfit >= 0 ? "muted" : "red"} />
             </div>
 
-            {/* ── Income Tax ── */}
             {data.incomeTax !== 0 && (
               <>
                 <SectionHeader title="Less: Income Tax" />
@@ -237,14 +214,12 @@ export default function ProfitLoss() {
               </>
             )}
 
-            {/* ── Net Profit ── */}
             <div className="pt-3 pb-2">
               <Separator className="mb-2" />
               <Separator />
               <PnlRow
                 label={data.netProfit >= 0 ? "Net Profit After Tax" : "Net Loss After Tax"}
-                amount={data.netProfit}
-                bold
+                amount={data.netProfit} bold
                 highlight={data.netProfit >= 0 ? "green" : "red"}
               />
             </div>

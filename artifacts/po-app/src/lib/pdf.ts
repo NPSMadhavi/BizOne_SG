@@ -1946,3 +1946,505 @@ export async function generateBalanceSheet_PDF(
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`Balance_Sheet_${asOf}.pdf`);
 }
+
+// ── GST F7 PDF ────────────────────────────────────────────────────────────────
+
+const BOX_LABELS_PDF: Record<number, string> = {
+  1: "Total value of standard-rated supplies",
+  2: "Total value of zero-rated supplies",
+  3: "Total value of exempt supplies",
+  4: "Total value of taxable purchases",
+  5: "Total value of out-of-scope supplies",
+  6: "Output tax due",
+  7: "Less: Input tax and refunds claimed",
+  8: "Net GST to be paid / claimed",
+};
+
+export async function generateGstF7_PDF(
+  company: Company | null | undefined,
+  data: {
+    originalPeriod: { from: string | null; to: string | null };
+    amendedPeriod:  { from: string | null; to: string | null };
+    company: { name: string; gstRegistrationNo: string | null };
+    gstRate: number;
+    original: Record<string, number>;
+    amended:  Record<string, number>;
+    delta:    Record<string, number>;
+  },
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = `${fmtDate(data.originalPeriod.from)} – ${fmtDate(data.originalPeriod.to)}`;
+
+  drawAccountingHeader(doc, logo, "GST F7 — AMENDED RETURN", `Original period: ${periodStr}`, `Amended period: ${fmtDate(data.amendedPeriod.from)} – ${fmtDate(data.amendedPeriod.to)}`, info);
+
+  // Company strip
+  const sY = 62;
+  doc.setFillColor(245, 247, 249); doc.rect(mL, sY, mR - mL, 12, "F");
+  doc.setFontSize(8); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(24, 33, 47);
+  doc.text("Inland Revenue Authority of Singapore — GST Return F7 (Disclosure of Errors/Omissions)", mL + 4, sY + 5);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(`GST Reg. No.: ${data.company.gstRegistrationNo || "—"}   GST Rate: ${data.gstRate}%`, mL + 4, sY + 10);
+
+  const sections = [
+    { label: "PART I — VALUE OF SUPPLIES", boxes: [1, 2, 3, 5] },
+    { label: "PART II — PURCHASES & IMPORTS", boxes: [4] },
+    { label: "PART III — GST COMPUTATION", boxes: [6, 7, 8] },
+  ];
+
+  const tableBody: any[][] = [];
+  for (const s of sections) {
+    tableBody.push([s.label, "", "", ""]);
+    for (const n of s.boxes) {
+      const orig = data.original[`box${n}`] ?? 0;
+      const amd  = data.amended[`box${n}`]  ?? 0;
+      const diff = data.delta[`box${n}`]    ?? 0;
+      const diffStr = Math.abs(diff) < 0.005 ? "—" : (diff > 0 ? `+${fmtNum(Math.abs(diff))}` : `(${fmtNum(Math.abs(diff))})`);
+      tableBody.push([`Box ${n}  ${BOX_LABELS_PDF[n]}`, fmtNum(orig), fmtNum(amd), diffStr]);
+    }
+  }
+  const lastIdx = tableBody.length; // grand-total handled via tfoot
+
+  (doc as any).autoTable({
+    startY: sY + 16,
+    head: [["Description", "Original (S$)", "Amended (S$)", "Difference (S$)"]],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [26, 54, 93], textColor: 255, fontStyle: "bold", fontSize: 8, font: PDF_FONT },
+    bodyStyles: { fontSize: 9, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: "auto" as const },
+      1: { halign: "right" as const, cellWidth: 38 },
+      2: { halign: "right" as const, cellWidth: 38 },
+      3: { halign: "right" as const, cellWidth: 38 },
+    },
+    didParseCell: (data2: any) => {
+      if (data2.section !== "body") return;
+      const raw = data2.row.cells[0]?.raw as string ?? "";
+      const isSection = raw.startsWith("PART");
+      const isB8 = raw.startsWith("Box 8");
+      if (isSection) {
+        data2.cell.styles.fillColor = [26, 54, 93];
+        data2.cell.styles.textColor = [255, 255, 255];
+        data2.cell.styles.fontStyle = "bold";
+        data2.cell.styles.fontSize = 8;
+      }
+      if (isB8) {
+        data2.cell.styles.fillColor = [24, 33, 47];
+        data2.cell.styles.textColor = [255, 255, 255];
+        data2.cell.styles.fontStyle = "bold";
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  buildDocFooter(doc, "GST F7 Amended Return");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`GST_F7_Amended_${data.amendedPeriod.to || "all"}.pdf`);
+}
+
+// ── VENDOR STATEMENT PDF ─────────────────────────────────────────────────────
+
+export interface VendorStmtPDFEntry {
+  id: number; piNumber: string; piDate: string | null;
+  amount: number; paidAmount: number; balance: number; status: string; currency: string;
+}
+
+export async function generateVendorStatement_PDF(
+  company: Company | null | undefined,
+  vendor: string,
+  from: string | null,
+  to: string | null,
+  entries: VendorStmtPDFEntry[],
+  totals: { totalBilled: number; totalPaid: number; balance: number },
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = from && to ? `${fmtDate(from)} – ${fmtDate(to)}` : from ? `From ${fmtDate(from)}` : to ? `Up to ${fmtDate(to)}` : "All dates";
+
+  drawAccountingHeader(doc, logo, "VENDOR STATEMENT", `Period: ${periodStr}`, `Vendor: ${vendor}`, info);
+
+  let y = 64;
+  doc.setFillColor(245, 247, 249); doc.roundedRect(mL, y, mR - mL, 16, 1, 1, "F");
+  doc.setFontSize(8); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(100, 100, 100);
+  doc.text("VENDOR", mL + 4, y + 6);
+  doc.setFontSize(11); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(24, 33, 47);
+  doc.text(vendor, mL + 4, y + 13);
+  doc.setFontSize(9); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(periodStr, mR - 4, y + 13, { align: "right" });
+
+  const tableHeaders = ["Date", "PI Number", "Currency", "Status", "Total", "Paid", "Balance"];
+  const tableBody = entries.map(e => [
+    fmtDate(e.piDate),
+    e.piNumber,
+    e.currency || "SGD",
+    e.status === "paid" ? "Paid" : e.status === "partial" ? "Partial" : "Pending",
+    fmtNum(e.amount),
+    fmtNum(e.paidAmount),
+    fmtNum(e.balance),
+  ]);
+
+  (doc as any).autoTable({
+    startY: y + 22,
+    head: [tableHeaders],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 24 }, 1: { cellWidth: 30 }, 2: { cellWidth: 18 }, 3: { cellWidth: 20 },
+      4: { halign: "right" as const, cellWidth: 28 },
+      5: { halign: "right" as const, cellWidth: 28 },
+      6: { halign: "right" as const, cellWidth: "auto" as const },
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  const sY = (doc as any).lastAutoTable.finalY + 6;
+  const sX = mR - 78; const sW = 78;
+  doc.setFontSize(9); doc.setFont(PDF_FONT, "normal");
+  const drawSRow = (label: string, val: string, ry: number, bold = false) => {
+    doc.setFont(PDF_FONT, bold ? "bold" : "normal"); doc.setTextColor(80, 80, 80);
+    doc.text(label, sX + 4, ry);
+    doc.setTextColor(bold ? 24 : 80, bold ? 33 : 80, bold ? 47 : 80);
+    doc.text(val, sX + sW - 4, ry, { align: "right" });
+  };
+  doc.setFillColor(245, 247, 249); doc.rect(sX, sY, sW, 20, "F");
+  drawSRow("Total Billed:", `S$ ${fmtNum(totals.totalBilled)}`, sY + 7);
+  drawSRow("Total Paid:",   `S$ ${fmtNum(totals.totalPaid)}`,   sY + 14);
+  doc.setFillColor(24, 33, 47); doc.rect(sX, sY + 20, sW, 10, "F");
+  doc.setFont(PDF_FONT, "bold"); doc.setTextColor(255, 255, 255); doc.setFontSize(9.5);
+  doc.text("Outstanding Balance:", sX + 4, sY + 27);
+  doc.text(`S$ ${fmtNum(totals.balance)}`, sX + sW - 4, sY + 27, { align: "right" });
+
+  buildDocFooter(doc, "Vendor Statement");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`Vendor_SOA_${vendor.replace(/[^a-z0-9]/gi, "_")}_${to || "all"}.pdf`);
+}
+
+// ── PROFIT & LOSS PDF ─────────────────────────────────────────────────────────
+
+interface PnlPDFAccount { code: string; name: string; amount: number }
+interface PnlPDFData {
+  period: { from: string | null; to: string | null };
+  revenue: PnlPDFAccount[]; otherIncome: PnlPDFAccount[]; totalRevenue: number;
+  costOfSales: PnlPDFAccount[]; totalCostOfSales: number; grossProfit: number;
+  operatingExpenses: PnlPDFAccount[]; totalOperatingExpenses: number;
+  operatingProfit: number; incomeTax: number; netProfit: number;
+}
+
+export async function generateProfitLoss_PDF(
+  company: Company | null | undefined,
+  data: PnlPDFData,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = data.period.from && data.period.to ? `${fmtDate(data.period.from)} – ${fmtDate(data.period.to)}` : "All periods";
+
+  drawAccountingHeader(doc, logo, "PROFIT & LOSS", `Period: ${periodStr}`, "", info);
+
+  const tableBody: any[][] = [];
+  const fmtBs = (n: number) => { const s = fmtNum(Math.abs(n)); return n < 0 ? `(${s})` : s; };
+
+  const addGroup = (label: string, rows: PnlPDFAccount[], subtotalLabel: string, subtotal: number) => {
+    tableBody.push([`— ${label.toUpperCase()} —`, "", ""]);
+    rows.forEach(r => tableBody.push([r.code, r.name, fmtBs(r.amount)]));
+    if (rows.length === 0) tableBody.push(["", "No entries", "—"]);
+    tableBody.push(["", subtotalLabel, fmtBs(subtotal)]);
+  };
+
+  addGroup("Revenue", [...data.revenue, ...data.otherIncome], "Total Revenue", data.totalRevenue);
+  addGroup("Cost of Sales", data.costOfSales, "Total Cost of Sales", data.totalCostOfSales);
+
+  // Gross profit separator
+  tableBody.push(["GROSS PROFIT", "", fmtBs(data.grossProfit)]);
+
+  addGroup("Operating Expenses", data.operatingExpenses, "Total Operating Expenses", data.totalOperatingExpenses);
+  tableBody.push(["OPERATING PROFIT", "", fmtBs(data.operatingProfit)]);
+
+  if (Math.abs(data.incomeTax) > 0.005) {
+    tableBody.push(["7300", "Income Tax Expense", fmtBs(data.incomeTax)]);
+  }
+  tableBody.push([data.netProfit >= 0 ? "NET PROFIT" : "NET LOSS", "", fmtBs(data.netProfit)]);
+  const netIdx = tableBody.length - 1;
+
+  const grossIdx = tableBody.findIndex(r => r[0] === "GROSS PROFIT");
+  const opIdx    = tableBody.findIndex(r => r[0] === "OPERATING PROFIT");
+
+  (doc as any).autoTable({
+    startY: 64,
+    head: [["Code", "Account", "Amount (SGD)"]],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 22 }, 1: { cellWidth: "auto" as const },
+      2: { halign: "right" as const, cellWidth: 45 },
+    },
+    didParseCell: (d: any) => {
+      if (d.section !== "body") return;
+      const r = d.row.index;
+      const c0 = d.row.cells[0]?.raw as string ?? "";
+      const c1 = d.row.cells[1]?.raw as string ?? "";
+      const isSection = c0.startsWith("—") && c0.endsWith("—");
+      const isSubtotal = c0 === "" && c1.startsWith("Total");
+      const isGross = r === grossIdx;
+      const isOp    = r === opIdx;
+      const isNet   = r === netIdx;
+
+      if (isSection) {
+        d.cell.styles.fillColor = [237, 240, 245];
+        d.cell.styles.textColor = [60, 70, 90];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 8;
+      } else if (isSubtotal) {
+        d.cell.styles.fillColor = [237, 240, 245];
+        d.cell.styles.fontStyle = "bold";
+      } else if (isGross || isOp) {
+        d.cell.styles.fillColor = [220, 225, 235];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 9.5;
+      } else if (isNet) {
+        d.cell.styles.fillColor = [24, 33, 47];
+        d.cell.styles.textColor = [255, 255, 255];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 10;
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  buildDocFooter(doc, "Profit & Loss Statement");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`PnL_${data.period.to || "all"}.pdf`);
+}
+
+// ── GST F5 PDF ────────────────────────────────────────────────────────────────
+
+interface F5PDFData {
+  period: { from: string | null; to: string | null };
+  company: { name: string; gstRegistrationNo: string | null; address: string | null };
+  gstRate: number;
+  box1: number; box2: number; box3: number; box4: number; box5: number;
+  box6: number; box7: number; box8: number;
+}
+
+const F5_PARTS = [
+  { part: "PART I — DECLARATION OF TOTAL VALUE OF SUPPLIES", boxes: [1, 2, 3, 5] },
+  { part: "PART II — DECLARATION OF TOTAL VALUE OF PURCHASES AND IMPORTS", boxes: [4] },
+  { part: "PART III — GST COMPUTATION", boxes: [6, 7, 8] },
+] as const;
+
+const F5_BOX_LABELS: Record<number, string> = {
+  1: "Total value of standard-rated supplies",
+  2: "Total value of zero-rated supplies",
+  3: "Total value of exempt supplies",
+  4: "Total value of taxable purchases and expenses",
+  5: "Total value of out-of-scope supplies",
+  6: "Output tax due",
+  7: "Less: Input tax and refunds claimed",
+  8: "Net GST to be paid to / claimed from Comptroller",
+};
+
+export async function generateGstF5_PDF(
+  company: Company | null | undefined,
+  data: F5PDFData,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = data.period.from && data.period.to ? `${fmtDate(data.period.from)} – ${fmtDate(data.period.to)}` : "All periods";
+
+  drawAccountingHeader(doc, logo, "GST RETURN (FORM F5)", `Accounting period: ${periodStr}`, `GST Reg. No.: ${data.company.gstRegistrationNo || "—"}`, info);
+
+  // IRAS sub-header
+  const sY = 62;
+  doc.setFillColor(26, 54, 93); doc.rect(mL, sY, mR - mL, 8, "F");
+  doc.setFontSize(7.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(255, 255, 255);
+  doc.text("Inland Revenue Authority of Singapore  ·  Computer-generated working paper — file at mytax.iras.gov.sg", mL + 4, sY + 5.5);
+
+  const boxVal = (n: number) => (data as any)[`box${n}`] as number ?? 0;
+  const b8 = boxVal(8);
+
+  const tableBody: any[][] = [];
+  for (const { part, boxes } of F5_PARTS) {
+    tableBody.push([part, "", ""]);
+    for (const n of boxes) {
+      const val = n === 8 ? Math.abs(b8) : boxVal(n);
+      const label = n === 8
+        ? (b8 > 0.005 ? "Net GST payable to Comptroller" : b8 < -0.005 ? "Net GST claimable from Comptroller" : "Net GST (payable / claimable)")
+        : F5_BOX_LABELS[n];
+      tableBody.push([`Box ${n}`, label, fmtNum(val)]);
+    }
+  }
+  const b8Idx = tableBody.length - 1;
+
+  (doc as any).autoTable({
+    startY: sY + 12,
+    head: [["Box", "Description", `Amount (S$) — GST Rate ${data.gstRate}%`]],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [26, 54, 93], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 18, halign: "center" as const },
+      1: { cellWidth: "auto" as const },
+      2: { halign: "right" as const, cellWidth: 45 },
+    },
+    didParseCell: (d: any) => {
+      if (d.section !== "body") return;
+      const raw = d.row.cells[0]?.raw as string ?? "";
+      const isPart = !raw.startsWith("Box");
+      const isB8   = d.row.index === b8Idx;
+      if (isPart) {
+        d.cell.styles.fillColor = [26, 54, 93];
+        d.cell.styles.textColor = [255, 255, 255];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 7.5;
+      } else if (isB8) {
+        d.cell.styles.fillColor = [24, 33, 47];
+        d.cell.styles.textColor = [255, 255, 255];
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.fontSize  = 10;
+      }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  // Declaration box
+  const declY = (doc as any).lastAutoTable.finalY + 8;
+  doc.setFillColor(245, 247, 249); doc.rect(mL, declY, mR - mL, 22, "F");
+  doc.setDrawColor(200, 200, 200); doc.rect(mL, declY, mR - mL, 22);
+  doc.setFontSize(7.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(60, 60, 60);
+  doc.text("Declaration", mL + 4, declY + 5);
+  doc.setFont(PDF_FONT, "normal");
+  doc.text("I declare that the information provided in this GST Return is true and correct to the best of my knowledge and belief.", mL + 4, declY + 10);
+  doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
+  const sigW = (mR - mL - 8) / 3;
+  ["Signature", "Name & Designation", "Date"].forEach((f, i) => {
+    const sx = mL + 4 + i * (sigW + 4);
+    doc.line(sx, declY + 19, sx + sigW, declY + 19);
+    doc.setFontSize(7); doc.setTextColor(130, 130, 130);
+    doc.text(f, sx, declY + 22);
+  });
+
+  buildDocFooter(doc, "GST F5 Return");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`GST_F5_${data.period.to || "all"}.pdf`);
+}
+
+// ── GENERAL LEDGER PDF ────────────────────────────────────────────────────────
+
+interface GLTxPDF { date: string; reference: string | null; description: string | null; debit: number; credit: number; balance: number }
+
+export async function generateGeneralLedger_PDF(
+  company: Company | null | undefined,
+  account: { code: string; name: string; type: string; subType: string | null },
+  from: string | null,
+  to: string | null,
+  openingBalance: number,
+  closingBalance: number,
+  transactions: GLTxPDF[],
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const mL = 14; const mR = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const periodStr = from && to ? `${fmtDate(from)} – ${fmtDate(to)}` : from ? `From ${fmtDate(from)}` : to ? `Up to ${fmtDate(to)}` : "All periods";
+
+  drawAccountingHeader(doc, logo, "GENERAL LEDGER", `Account: ${account.code} – ${account.name}`, `Period: ${periodStr}`, info);
+
+  // Opening / closing balance strip
+  const sY = 62;
+  const colW2 = (mR - mL) / 2;
+  doc.setFillColor(245, 247, 249); doc.rect(mL, sY, mR - mL, 14, "F");
+  const drawBalBox = (label: string, val: number, x: number) => {
+    doc.setFontSize(7); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(120, 120, 120);
+    doc.text(label, x + 4, sY + 5);
+    doc.setFontSize(10); doc.setFont(PDF_FONT, "bold");
+    doc.setTextColor(val < 0 ? 180 : 24, val < 0 ? 40 : 33, val < 0 ? 40 : 47);
+    const s = fmtNum(Math.abs(val)); const str = val < 0 ? `(${s})` : s;
+    doc.text(str, x + 4, sY + 12);
+  };
+  drawBalBox("Opening Balance", openingBalance, mL);
+  drawBalBox("Closing Balance", closingBalance, mL + colW2);
+
+  const fmtBalStr = (n: number) => { const s = fmtNum(Math.abs(n)); return n < 0 ? `(${s})` : s; };
+
+  const tableBody: any[][] = [
+    [fmtDate(from), "B/F", "Opening Balance", "—", "—", fmtBalStr(openingBalance)],
+    ...transactions.map(tx => [
+      fmtDate(tx.date),
+      tx.reference || "—",
+      tx.description || "—",
+      tx.debit > 0.005 ? fmtNum(tx.debit) : "—",
+      tx.credit > 0.005 ? fmtNum(tx.credit) : "—",
+      fmtBalStr(tx.balance),
+    ]),
+  ];
+  tableBody.push(["", "", "Closing Balance", "", "", fmtBalStr(closingBalance)]);
+  const closingIdx = tableBody.length - 1;
+
+  (doc as any).autoTable({
+    startY: sY + 18,
+    head: [["Date", "Reference", "Description", "Debit (S$)", "Credit (S$)", "Balance (S$)"]],
+    body: tableBody,
+    theme: "striped",
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, font: PDF_FONT },
+    bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255], font: PDF_FONT },
+    alternateRowStyles: { fillColor: [245, 247, 249] },
+    styles: { cellPadding: 3, font: PDF_FONT },
+    columnStyles: {
+      0: { cellWidth: 24 }, 1: { cellWidth: 28 }, 2: { cellWidth: "auto" as const },
+      3: { halign: "right" as const, cellWidth: 32 },
+      4: { halign: "right" as const, cellWidth: 32 },
+      5: { halign: "right" as const, cellWidth: 36 },
+    },
+    didParseCell: (d: any) => {
+      if (d.section !== "body") return;
+      if (d.row.index === 0) { d.cell.styles.fillColor = [237, 240, 245]; d.cell.styles.textColor = [80, 80, 80]; d.cell.styles.fontStyle = "italic"; }
+      if (d.row.index === closingIdx) { d.cell.styles.fillColor = [24, 33, 47]; d.cell.styles.textColor = [255, 255, 255]; d.cell.styles.fontStyle = "bold"; }
+    },
+    margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
+  });
+
+  buildDocFooter(doc, "General Ledger");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`GL_${account.code}_${account.name.replace(/[^a-z0-9]/gi, "_")}_${to || "all"}.pdf`);
+}
