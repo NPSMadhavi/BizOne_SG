@@ -14,6 +14,7 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   paidAmount: decimal("paid_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   status: text("status").notNull().default("pending"),
   notes: text("notes"),
+  expenseAccountId: integer("expense_account_id"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Check, ChevronsUpDown, X, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -22,6 +23,8 @@ interface Props {
   prefillAmount?: number;
   prefillCurrency?: string;
 }
+
+const EXPENSE_ACCOUNT_TYPES = ["expense"];
 
 export default function NewVendorInvoiceDialog({
   open, onOpenChange, onCreated,
@@ -43,6 +46,7 @@ export default function NewVendorInvoiceDialog({
   const [notes, setNotes] = useState("");
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>(prefillPoId ? [prefillPoId] : []);
   const [amountAutoFilled, setAmountAutoFilled] = useState(false);
+  const [expenseAccountId, setExpenseAccountId] = useState<string>("");
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -66,6 +70,22 @@ export default function NewVendorInvoiceDialog({
     },
     enabled: open && !prefillPoId,
   });
+
+  const { data: allAccounts = [] } = useQuery<any[]>({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const expenseAccounts = useMemo(() =>
+    allAccounts.filter((a: any) => a.type === "expense" && a.isActive)
+      .sort((a: any, b: any) => a.code.localeCompare(b.code)),
+    [allAccounts]
+  );
 
   const filteredVendors = useMemo(() => {
     if (!vendorSearch.trim()) return vendors.slice(0, 50);
@@ -154,6 +174,7 @@ export default function NewVendorInvoiceDialog({
     setNotes("");
     setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
     setDropdownOpen(false);
+    setExpenseAccountId("");
   };
 
   const handleSave = async () => {
@@ -176,6 +197,7 @@ export default function NewVendorInvoiceDialog({
           currency,
           totalAmount: parseFloat(amount),
           notes: notes || null,
+          expenseAccountId: expenseAccountId ? parseInt(expenseAccountId) : null,
         }),
       });
       if (!res.ok) {
@@ -183,7 +205,13 @@ export default function NewVendorInvoiceDialog({
         throw new Error(err.error || "Failed to save");
       }
       const created = await res.json();
-      toast({ title: "Vendor PI Recorded", description: `${piNumber} has been saved.` });
+      const hasJE = !!expenseAccountId;
+      toast({
+        title: "Vendor PI Recorded",
+        description: hasJE
+          ? `${piNumber} saved — journal entry posted automatically.`
+          : `${piNumber} has been saved.`,
+      });
       onOpenChange(false);
       if (onCreated) onCreated(created);
       resetForm();
@@ -365,6 +393,38 @@ export default function NewVendorInvoiceDialog({
               <Label>Currency</Label>
               <Input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="SGD" />
             </div>
+          </div>
+
+          {/* GL / Expense Account */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+              Expense Account (GL)
+              <span className="text-xs font-normal text-muted-foreground ml-1">— for auto journal entry</span>
+            </Label>
+            <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select expense account (optional)…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">— None (no journal entry) —</SelectItem>
+                {expenseAccounts.map((a: any) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    <span className="font-mono text-xs text-muted-foreground mr-2">{a.code}</span>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {expenseAccountId ? (
+              <p className="text-xs text-emerald-700 flex items-center gap-1">
+                ✓ Will auto-post: DR {expenseAccounts.find((a: any) => String(a.id) === expenseAccountId)?.name} / CR Accounts Payable
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Leave blank to record manually via Journal Entries later.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

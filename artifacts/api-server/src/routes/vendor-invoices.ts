@@ -2,6 +2,12 @@ import { Router, type IRouter } from "express";
 import { db, vendorInvoicesTable, vendorPaymentsTable, usersTable } from "@workspace/db";
 import { logAudit } from "../lib/audit.js";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import {
+  postVendorInvoiceJE,
+  reverseVendorInvoiceJE,
+  postPaymentJE,
+  reversePaymentJE,
+} from "../lib/vendor-invoice-auto-post.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -79,8 +85,9 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
 
-  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes } = req.body;
+  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId } = req.body;
   if (!piNumber?.trim()) { res.status(400).json({ error: "Vendor PI number is required" }); return; }
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
   if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
@@ -99,10 +106,18 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     paidAmount: "0",
     status: "pending",
     notes: notes || null,
-    createdBy: req.session.userId!,
+    expenseAccountId: expenseAccountId ? parseInt(expenseAccountId) : null,
+    createdBy: userId,
   }).returning();
 
   logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
+
+  await postVendorInvoiceJE(
+    { id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName, piDate: doc.piDate, totalAmount: parseFloat(totalAmount), expenseAccountId: doc.expenseAccountId },
+    userId,
+    req.log,
+  );
+
   res.status(201).json(parsePI(doc));
 });
 
@@ -156,6 +171,13 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const isAdmin = req.session.isAdmin ?? false;
   if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
   const id = parseInt(req.params.id);
+  const userId = req.session.userId!;
+
+  const [toDelete] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!toDelete) { res.status(404).json({ error: "Not found" }); return; }
+
+  await reverseVendorInvoiceJE(id, toDelete.companyId, toDelete.piNumber, toDelete.vendorName, userId, req.log);
+
   const [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
   logAudit({ req, action: "delete", entityType: "vendor_invoice", entityId: id, entityLabel: deleted?.piNumber });
   res.json({ success: true });
@@ -181,6 +203,7 @@ router.post("/vendor-invoices/:id/payments", async (req, res): Promise<void> => 
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
@@ -201,11 +224,19 @@ router.post("/vendor-invoices/:id/payments", async (req, res): Promise<void> => 
     reference: reference || null,
     paymentMethod: paymentMethod || "bank_transfer",
     notes: notes || null,
-    createdBy: req.session.userId!,
+    createdBy: userId,
   }).returning();
 
   await recalcPI(id, companyId);
   const [updatedPI] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+
+  await postPaymentJE(
+    { id: payment.id, vendorInvoiceId: id, companyId, paymentDate, amount: parseFloat(amount), reference: reference || null },
+    existing.piNumber,
+    existing.vendorName,
+    userId,
+    req.log,
+  );
 
   logAudit({ req, action: "payment:add", entityType: "vendor_invoice", entityId: id, entityLabel: updatedPI?.piNumber, details: { amount: payment.amount, reference: payment.reference } });
   res.status(201).json({
@@ -244,9 +275,12 @@ router.delete("/vendor-invoices/:id/payments/:paymentId", async (req, res): Prom
   if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
   const id = parseInt(req.params.id);
   const paymentId = parseInt(req.params.paymentId);
+  const userId = req.session.userId!;
 
   const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
-  if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+  if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+  await reversePaymentJE(paymentId, existing.companyId, existing.piNumber, existing.vendorName, userId, req.log);
 
   await db.delete(vendorPaymentsTable).where(eq(vendorPaymentsTable.id, paymentId));
   await recalcPI(id, existing.companyId);

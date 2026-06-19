@@ -1,3 +1,4 @@
 - [Invoice section rows + poRefNo](invoice-section-rows.md) — section items stored as `{type:"section",sectionLabel:"..."}` in JSONB; excluded from subtotal, doSubmit, auto-append
 - [Pre-existing TS errors in po-app](preexisting-ts-errors.md) — deliveryAddress setValue + form.handleSubmit(onSubmit) signature errors are pre-existing; don't investigate
 - [Item image feature](item-image-feature.md) — per-line-item image field in all 8 forms + 4 view pages + PDF rendering via autoTableRich 5th param
+- [Vendor invoice auto-posting](vendor-invoice-auto-post.md) — accrual JEs for AP: create→DR expense/CR AP(2000), payment→DR AP/CR bank(1010), delete→reversal; expenseAccountId nullable on vendor_invoices table
