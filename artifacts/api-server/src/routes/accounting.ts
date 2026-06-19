@@ -358,12 +358,14 @@ router.get("/profit-loss", async (req, res): Promise<void> => {
     ))
     .orderBy(asc(accountsTable.code));
 
-  // Posted JE ids in the date range
+  // Include both 'posted' and 'reversed' entries so that a voided invoice
+  // (original reversed + reversal posted) nets to zero rather than showing
+  // only the reversal (which would produce a negative revenue line).
   const entries = await db.select({ entryId: journalEntriesTable.id })
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.status, "posted"),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
       ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
       ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
     ));
