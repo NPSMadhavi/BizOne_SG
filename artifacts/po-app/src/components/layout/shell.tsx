@@ -204,6 +204,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"}>
               Profit & Loss
             </NavItem>
+            <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"}>
+              GST F5 Return
+            </NavItem>
           </div>
         </div>
       )}

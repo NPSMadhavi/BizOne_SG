@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable } from "@workspace/db";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, settingsTable } from "@workspace/db";
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
@@ -423,6 +423,124 @@ router.get("/profit-loss", async (req, res): Promise<void> => {
     operatingProfit: parseFloat(operatingProfit.toFixed(2)),
     incomeTax: parseFloat(incomeTax.toFixed(2)),
     netProfit: parseFloat(netProfit.toFixed(2)),
+  });
+});
+
+// ─── GST F5 Return (Singapore) ───────────────────────────────────────────────
+
+router.get("/gst-f5", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  await ensureAccountsSeeded(companyId);
+
+  const [company]  = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+  const gstRate    = parseFloat((settings as any)?.gstRate ?? "9");
+
+  // ─ Box 1 + Box 6: standard-rated sales invoices (non-draft, non-void, GST > 0) ─
+  const invRows = await db.select({
+    id:             invoicesTable.id,
+    invNumber:      invoicesTable.invNumber,
+    customerName:   invoicesTable.customerName,
+    issueDate:      invoicesTable.issueDate,
+    subtotal:       invoicesTable.subtotal,
+    discountAmount: invoicesTable.discountAmount,
+    tax:            invoicesTable.tax,
+    totalAmount:    invoicesTable.totalAmount,
+    status:         invoicesTable.status,
+  })
+  .from(invoicesTable)
+  .where(and(
+    eq(invoicesTable.companyId, companyId),
+    sql`${invoicesTable.status} NOT IN ('draft', 'void')`,
+    sql`CAST(${invoicesTable.tax} AS numeric) > 0`,
+    ...(fromDate ? [sql`${invoicesTable.issueDate} >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
+  ));
+
+  const box1 = invRows.reduce((s, r) =>
+    s + parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0"), 0);
+  const box6 = invRows.reduce((s, r) => s + parseFloat(r.tax ?? "0"), 0);
+
+  // ─ Box 4: taxable purchases from vendor invoices ─
+  const viRows = await db.select({
+    id:          vendorInvoicesTable.id,
+    piNumber:    vendorInvoicesTable.piNumber,
+    vendorName:  vendorInvoicesTable.vendorName,
+    piDate:      vendorInvoicesTable.piDate,
+    totalAmount: vendorInvoicesTable.totalAmount,
+    currency:    vendorInvoicesTable.currency,
+  })
+  .from(vendorInvoicesTable)
+  .where(and(
+    eq(vendorInvoicesTable.companyId, companyId),
+    ...(fromDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt}, 'YYYY-MM-DD')) >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt}, 'YYYY-MM-DD')) <= ${toDate}`]   : []),
+  ));
+
+  const box4 = viRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+
+  // ─ Box 7: input tax from GL account 1110 (GST Input Tax Recoverable) ─
+  const [gstInputAcct] = await db.select().from(accountsTable)
+    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, "1110"))).limit(1);
+
+  let box7 = 0;
+  if (gstInputAcct) {
+    const jeWhere = and(
+      eq(journalEntriesTable.companyId, companyId),
+      eq(journalEntriesTable.status,    "posted"),
+      ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
+      ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
+    );
+    const entries  = await db.select({ entryId: journalEntriesTable.id }).from(journalEntriesTable).where(jeWhere);
+    const entryIds = entries.map(e => e.entryId);
+    if (entryIds.length > 0) {
+      const lines = await db.select().from(journalLinesTable).where(and(
+        eq(journalLinesTable.accountId, gstInputAcct.id),
+        sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`,
+      ));
+      box7 = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
+    }
+  }
+
+  const box8 = box6 - box7;
+
+  res.json({
+    period:  { from: fromDate, to: toDate },
+    company: { name: company?.name, gstRegistrationNo: company?.registrationNo, address: company?.address },
+    gstRate,
+    box1: parseFloat(box1.toFixed(2)),
+    box2: 0,
+    box3: 0,
+    box4: parseFloat(box4.toFixed(2)),
+    box5: 0,
+    box6: parseFloat(box6.toFixed(2)),
+    box7: parseFloat(box7.toFixed(2)),
+    box8: parseFloat(box8.toFixed(2)),
+    invoices: invRows.map(r => ({
+      id:           r.id,
+      invNumber:    r.invNumber,
+      customerName: r.customerName,
+      issueDate:    r.issueDate,
+      netAmount:    parseFloat((parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")).toFixed(2)),
+      gstAmount:    parseFloat(parseFloat(r.tax ?? "0").toFixed(2)),
+      totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+      status:       r.status,
+    })),
+    vendorInvoices: viRows.map(r => ({
+      id:          r.id,
+      piNumber:    r.piNumber,
+      vendorName:  r.vendorName,
+      piDate:      r.piDate,
+      totalAmount: parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+      currency:    r.currency,
+    })),
   });
 });
 
