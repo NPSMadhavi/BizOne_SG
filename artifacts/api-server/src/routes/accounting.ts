@@ -544,4 +544,227 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   });
 });
 
+// ─── AR Aging Report ─────────────────────────────────────────────────────────
+
+router.get("/ar-aging", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const asOf = (req.query.asOf as string) || new Date().toISOString().split("T")[0];
+  const asOfMs = new Date(asOf + "T00:00:00").getTime();
+
+  const rows = await db.select({
+    id: invoicesTable.id, invNumber: invoicesTable.invNumber,
+    customerName: invoicesTable.customerName, issueDate: invoicesTable.issueDate,
+    totalAmount: invoicesTable.totalAmount, status: invoicesTable.status,
+    paymentTerms: invoicesTable.paymentTerms,
+  })
+  .from(invoicesTable)
+  .where(and(
+    eq(invoicesTable.companyId, companyId),
+    sql`${invoicesTable.status} NOT IN ('draft', 'void', 'paid')`,
+    sql`COALESCE(${invoicesTable.issueDate}, to_char(${invoicesTable.createdAt}::date, 'YYYY-MM-DD')) <= ${asOf}`,
+  ));
+
+  function termsDays(pt: string | null): number {
+    const s = (pt ?? "").toLowerCase();
+    if (s.includes("cod") || s.includes("advance")) return 0;
+    if (s.includes("7"))  return 7;
+    if (s.includes("14")) return 14;
+    return 30;
+  }
+
+  const byCustomer: Record<string, { customerName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: any[] }> = {};
+
+  for (const inv of rows) {
+    const name   = inv.customerName || "Unknown";
+    const amount = parseFloat(inv.totalAmount ?? "0");
+    const dueMs  = new Date((inv.issueDate || asOf) + "T00:00:00").getTime() + termsDays(inv.paymentTerms) * 86_400_000;
+    const days   = Math.floor((asOfMs - dueMs) / 86_400_000);
+    if (!byCustomer[name]) byCustomer[name] = { customerName: name, current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0, invoices: [] };
+    if      (days <= 0)  byCustomer[name].current  += amount;
+    else if (days <= 30) byCustomer[name].b1_30    += amount;
+    else if (days <= 60) byCustomer[name].b31_60   += amount;
+    else if (days <= 90) byCustomer[name].b61_90   += amount;
+    else                 byCustomer[name].b91plus  += amount;
+    byCustomer[name].total += amount;
+    byCustomer[name].invoices.push({ id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate, amount, daysPastDue: days });
+  }
+
+  const customers = Object.values(byCustomer).sort((a, b) => b.total - a.total)
+    .map(c => ({ ...c, current: +c.current.toFixed(2), b1_30: +c.b1_30.toFixed(2), b31_60: +c.b31_60.toFixed(2), b61_90: +c.b61_90.toFixed(2), b91plus: +c.b91plus.toFixed(2), total: +c.total.toFixed(2) }));
+
+  const totals = customers.reduce((s, c) => ({
+    current: s.current + c.current, b1_30: s.b1_30 + c.b1_30, b31_60: s.b31_60 + c.b31_60,
+    b61_90: s.b61_90 + c.b61_90, b91plus: s.b91plus + c.b91plus, total: s.total + c.total,
+  }), { current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0 });
+
+  res.json({ asOf, customers, totals });
+});
+
+// ─── AP Aging Report ─────────────────────────────────────────────────────────
+
+router.get("/ap-aging", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const asOf   = (req.query.asOf as string) || new Date().toISOString().split("T")[0];
+  const asOfMs = new Date(asOf + "T00:00:00").getTime();
+  const TERMS  = 30;
+
+  const rows = await db.select({
+    id: vendorInvoicesTable.id, piNumber: vendorInvoicesTable.piNumber,
+    vendorName: vendorInvoicesTable.vendorName, piDate: vendorInvoicesTable.piDate,
+    totalAmount: vendorInvoicesTable.totalAmount, paidAmount: vendorInvoicesTable.paidAmount,
+    status: vendorInvoicesTable.status,
+  })
+  .from(vendorInvoicesTable)
+  .where(and(
+    eq(vendorInvoicesTable.companyId, companyId),
+    sql`${vendorInvoicesTable.status} != 'paid'`,
+    sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt}::date, 'YYYY-MM-DD')) <= ${asOf}`,
+  ));
+
+  const byVendor: Record<string, { vendorName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: any[] }> = {};
+
+  for (const vi of rows) {
+    const name    = vi.vendorName || "Unknown";
+    const balance = parseFloat(vi.totalAmount ?? "0") - parseFloat(vi.paidAmount ?? "0");
+    if (balance < 0.005) continue;
+    const dueMs = new Date((vi.piDate || asOf) + "T00:00:00").getTime() + TERMS * 86_400_000;
+    const days  = Math.floor((asOfMs - dueMs) / 86_400_000);
+    if (!byVendor[name]) byVendor[name] = { vendorName: name, current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0, invoices: [] };
+    if      (days <= 0)  byVendor[name].current  += balance;
+    else if (days <= 30) byVendor[name].b1_30    += balance;
+    else if (days <= 60) byVendor[name].b31_60   += balance;
+    else if (days <= 90) byVendor[name].b61_90   += balance;
+    else                 byVendor[name].b91plus  += balance;
+    byVendor[name].total += balance;
+    byVendor[name].invoices.push({ id: vi.id, piNumber: vi.piNumber, piDate: vi.piDate, balance: +balance.toFixed(2), daysPastDue: days, status: vi.status });
+  }
+
+  const vendors = Object.values(byVendor).sort((a, b) => b.total - a.total)
+    .map(v => ({ ...v, current: +v.current.toFixed(2), b1_30: +v.b1_30.toFixed(2), b31_60: +v.b31_60.toFixed(2), b61_90: +v.b61_90.toFixed(2), b91plus: +v.b91plus.toFixed(2), total: +v.total.toFixed(2) }));
+
+  const totals = vendors.reduce((s, v) => ({
+    current: s.current + v.current, b1_30: s.b1_30 + v.b1_30, b31_60: s.b31_60 + v.b31_60,
+    b61_90: s.b61_90 + v.b61_90, b91plus: s.b91plus + v.b91plus, total: s.total + v.total,
+  }), { current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0 });
+
+  res.json({ asOf, vendors, totals });
+});
+
+// ─── Balance Sheet ────────────────────────────────────────────────────────────
+
+router.get("/balance-sheet", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const asOf = (req.query.asOf as string) || new Date().toISOString().split("T")[0];
+
+  await ensureAccountsSeeded(companyId);
+
+  const allAccounts = await db.select().from(accountsTable)
+    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.isActive, true)))
+    .orderBy(asc(accountsTable.code));
+
+  const entries = await db.select({ entryId: journalEntriesTable.id })
+    .from(journalEntriesTable)
+    .where(and(
+      eq(journalEntriesTable.companyId, companyId),
+      sql`${journalEntriesTable.status} IN ('posted', 'reversed')`,
+      sql`${journalEntriesTable.entryDate} <= ${asOf}`,
+    ));
+
+  const linesByAccount: Record<number, { debit: number; credit: number }> = {};
+  if (entries.length > 0) {
+    const ids = entries.map(e => e.entryId);
+    const lines = await db.select().from(journalLinesTable)
+      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${ids.join(",")}]::int[]`)})`);
+    for (const l of lines) {
+      if (!linesByAccount[l.accountId]) linesByAccount[l.accountId] = { debit: 0, credit: 0 };
+      linesByAccount[l.accountId].debit  += parseFloat(l.debit  ?? "0");
+      linesByAccount[l.accountId].credit += parseFloat(l.credit ?? "0");
+    }
+  }
+
+  const bal    = (a: typeof allAccounts[0]) => { const t = linesByAccount[a.id] ?? { debit: 0, credit: 0 }; return a.type === "asset" ? t.debit - t.credit : t.credit - t.debit; };
+  const mapA   = (a: typeof allAccounts[0]) => ({ code: a.code, name: a.name, subType: a.subType, amount: parseFloat(bal(a).toFixed(2)) });
+
+  const assets      = allAccounts.filter(a => a.type === "asset").map(mapA);
+  const liabilities = allAccounts.filter(a => a.type === "liability").map(mapA);
+  const equity      = allAccounts.filter(a => a.type === "equity").map(mapA);
+
+  const retainedEarnings = allAccounts
+    .filter(a => a.type === "revenue" || a.type === "expense")
+    .reduce((s, a) => { const t = linesByAccount[a.id] ?? { debit: 0, credit: 0 }; return s + (a.type === "revenue" ? t.credit - t.debit : t.debit - t.credit); }, 0);
+
+  const totalAssets      = assets.reduce((s, a) => s + a.amount, 0);
+  const totalLiabilities = liabilities.reduce((s, a) => s + a.amount, 0);
+  const totalEquity      = equity.reduce((s, a) => s + a.amount, 0) + retainedEarnings;
+
+  res.json({
+    asOf,
+    assets, totalAssets: parseFloat(totalAssets.toFixed(2)),
+    liabilities, totalLiabilities: parseFloat(totalLiabilities.toFixed(2)),
+    equity, retainedEarnings: parseFloat(retainedEarnings.toFixed(2)),
+    totalEquity: parseFloat(totalEquity.toFixed(2)),
+    totalLiabilitiesAndEquity: parseFloat((totalLiabilities + totalEquity).toFixed(2)),
+    balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+  });
+});
+
+// ─── Customer Statement ───────────────────────────────────────────────────────
+
+router.get("/customer-statement", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const customer  = (req.query.customer as string) || "";
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  const nameRows = await db.selectDistinct({ name: invoicesTable.customerName })
+    .from(invoicesTable)
+    .where(and(eq(invoicesTable.companyId, companyId), sql`${invoicesTable.status} != 'draft'`, sql`${invoicesTable.customerName} IS NOT NULL`))
+    .orderBy(asc(invoicesTable.customerName));
+  const customerNames = nameRows.map(r => r.name).filter(Boolean) as string[];
+
+  if (!customer) { res.json({ customer: "", customerNames, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 }); return; }
+
+  const invRows = await db.select({
+    id: invoicesTable.id, invNumber: invoicesTable.invNumber,
+    issueDate: invoicesTable.issueDate, totalAmount: invoicesTable.totalAmount,
+    status: invoicesTable.status, paymentTerms: invoicesTable.paymentTerms,
+  })
+  .from(invoicesTable)
+  .where(and(
+    eq(invoicesTable.companyId, companyId),
+    sql`LOWER(${invoicesTable.customerName}) = LOWER(${customer})`,
+    sql`${invoicesTable.status} NOT IN ('draft', 'void')`,
+    ...(fromDate ? [sql`${invoicesTable.issueDate} >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
+  ))
+  .orderBy(asc(invoicesTable.issueDate), asc(invoicesTable.id));
+
+  const totalBilled = invRows.reduce((s, i) => s + parseFloat(i.totalAmount ?? "0"), 0);
+  const totalPaid   = invRows.filter(i => i.status === "paid").reduce((s, i) => s + parseFloat(i.totalAmount ?? "0"), 0);
+
+  res.json({
+    customer, customerNames,
+    entries: invRows.map(inv => ({ id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate, amount: parseFloat(parseFloat(inv.totalAmount ?? "0").toFixed(2)), status: inv.status, paymentTerms: inv.paymentTerms })),
+    totalBilled: parseFloat(totalBilled.toFixed(2)),
+    totalPaid:   parseFloat(totalPaid.toFixed(2)),
+    balance:     parseFloat((totalBilled - totalPaid).toFixed(2)),
+  });
+});
+
 export default router;

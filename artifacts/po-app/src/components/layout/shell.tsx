@@ -22,6 +22,11 @@ import {
   BookOpen,
   ScrollText,
   TrendingUp,
+  Clock,
+  CreditCard,
+  Scale,
+  Calculator,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -206,6 +211,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </NavItem>
             <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"}>
               GST F5 Return
+            </NavItem>
+            <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"}>
+              AR Aging
+            </NavItem>
+            <NavItem href="/accounting/ap-aging" icon={CreditCard} active={location === "/accounting/ap-aging"}>
+              AP Aging
+            </NavItem>
+            <NavItem href="/accounting/balance-sheet" icon={Scale} active={location === "/accounting/balance-sheet"}>
+              Balance Sheet
+            </NavItem>
+            <NavItem href="/accounting/trial-balance" icon={Calculator} active={location === "/accounting/trial-balance"}>
+              Trial Balance
+            </NavItem>
+            <NavItem href="/accounting/customer-statement" icon={UserCheck} active={location === "/accounting/customer-statement"}>
+              Customer Statement
             </NavItem>
           </div>
         </div>

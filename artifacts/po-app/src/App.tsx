@@ -39,6 +39,11 @@ import JournalEntryNew from "@/pages/accounting/journal-entry-new";
 import JournalEntryView from "@/pages/accounting/journal-entry-view";
 import ProfitLoss from "@/pages/accounting/profit-loss";
 import GstF5 from "@/pages/accounting/gst-f5";
+import ArAging from "@/pages/accounting/ar-aging";
+import ApAging from "@/pages/accounting/ap-aging";
+import BalanceSheet from "@/pages/accounting/balance-sheet";
+import TrialBalance from "@/pages/accounting/trial-balance";
+import CustomerStatement from "@/pages/accounting/customer-statement";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -61,6 +66,11 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/journal-entries": "Journal Entries",
   "/accounting/profit-loss": "Profit & Loss",
   "/accounting/gst-f5": "GST F5 Return",
+  "/accounting/ar-aging": "AR Aging Report",
+  "/accounting/ap-aging": "AP Aging Report",
+  "/accounting/balance-sheet": "Balance Sheet",
+  "/accounting/trial-balance": "Trial Balance",
+  "/accounting/customer-statement": "Customer Statement",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -211,6 +221,11 @@ function Router() {
         <Route path="/accounting/journal-entries">{() => <ProtectedRoute component={JournalEntriesList} />}</Route>
         <Route path="/accounting/profit-loss">{() => <ProtectedRoute component={ProfitLoss} />}</Route>
         <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
+        <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
+        <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>
+        <Route path="/accounting/balance-sheet">{() => <ProtectedRoute component={BalanceSheet} />}</Route>
+        <Route path="/accounting/trial-balance">{() => <ProtectedRoute component={TrialBalance} />}</Route>
+        <Route path="/accounting/customer-statement">{() => <ProtectedRoute component={CustomerStatement} />}</Route>
 
         {/* System — admin only */}
         <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
