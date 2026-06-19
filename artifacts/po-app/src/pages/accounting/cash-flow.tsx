@@ -86,7 +86,7 @@ export default function CashFlowStatement() {
   const { data, isLoading } = useQuery<CashFlowData>({
     queryKey: ["cash-flow", fromDate, toDate],
     queryFn: () =>
-      fetch(`/api/accounting/cash-flow?from=${fromDate}&to=${toDate}`, { credentials: "include" })
+      fetch(`/api/cash-flow?from=${fromDate}&to=${toDate}`, { credentials: "include" })
         .then(async r => { if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); } return r.json(); }),
     enabled: !!fromDate && !!toDate,
   });

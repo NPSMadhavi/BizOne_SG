@@ -42,7 +42,7 @@ export default function IafPage() {
   const { data, isLoading, error } = useQuery<IafData>({
     queryKey: ["iaf", fromDate, toDate],
     queryFn: () =>
-      fetch(`/api/accounting/iaf?from=${fromDate}&to=${toDate}`, { credentials: "include" })
+      fetch(`/api/iaf?from=${fromDate}&to=${toDate}`, { credentials: "include" })
         .then(async r => { if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); } return r.json(); }),
     enabled: !!fromDate && !!toDate,
   });
