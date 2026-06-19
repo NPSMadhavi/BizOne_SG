@@ -154,7 +154,7 @@ export default function Dashboard() {
 
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(v);
 
-  const totalInvoiceRevenue = invStats?.totalValue ?? 0;
+  const totalInvoiceRevenue = (invStats as any)?.confirmedValue ?? invStats?.totalValue ?? 0;
   const pendingDrafts = (poStats?.draft ?? 0) + (qtStats?.draft ?? 0) + (invStats?.draft ?? 0) + (doStats?.draft ?? 0);
   const stockTotal = stockItems?.length ?? 0;
   const lowStockCount = stockItems?.filter(i => Number(i.stockQty) <= 5 && Number(i.stockQty) >= 0).length ?? 0;

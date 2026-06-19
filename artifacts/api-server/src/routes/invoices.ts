@@ -79,12 +79,14 @@ router.get("/invoices/stats", async (req, res): Promise<void> => {
     ? await db.select().from(invoicesTable).where(eq(invoicesTable.companyId, companyId))
     : await db.select().from(invoicesTable);
   const visible = visibilityFilter(all, userId, isAdmin, isExternal);
+  const confirmedInvoices = visible.filter(x => x.status === "confirmed");
   res.json({
     total: visible.length,
-    confirmed: visible.filter(x => x.status === "confirmed").length,
+    confirmed: confirmedInvoices.length,
     draft: visible.filter(x => x.status === "draft").length,
     cancelled: visible.filter(x => x.status === "cancelled").length,
     totalValue: visible.reduce((s, x) => s + parseFloat(x.totalAmount ?? "0"), 0),
+    confirmedValue: confirmedInvoices.reduce((s, x) => s + parseFloat(x.totalAmount ?? "0"), 0),
   });
 });
 
