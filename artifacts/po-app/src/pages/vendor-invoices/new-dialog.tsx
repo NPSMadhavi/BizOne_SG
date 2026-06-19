@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
-import { Check, ChevronsUpDown, X, BookOpen } from "lucide-react";
+import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -161,6 +161,17 @@ export default function NewVendorInvoiceDialog({
     : pos.filter((p: any) => selectedPoIds.includes(p.id));
 
   const poNumbers = selectedPos.map((p: any) => p.poNumber).join(", ");
+
+  const poTotal = useMemo(() => {
+    if (prefillPoId) return prefillAmount || 0;
+    if (selectedPoIds.length === 0) return 0;
+    return pos.filter((p: any) => selectedPoIds.includes(p.id))
+      .reduce((sum: number, p: any) => sum + parseFloat(p.totalAmount || "0"), 0);
+  }, [prefillPoId, prefillAmount, selectedPoIds, pos]);
+
+  const enteredAmount = parseFloat(amount) || 0;
+  const poOverrun = poTotal > 0 && enteredAmount > poTotal + 0.005;
+  const overrunBy = poOverrun ? enteredAmount - poTotal : 0;
 
   const resetForm = () => {
     setPiNumber("");
@@ -383,10 +394,25 @@ export default function NewVendorInvoiceDialog({
                 value={amount}
                 onChange={e => { setAmount(e.target.value); setAmountAutoFilled(false); }}
               />
-              {amountAutoFilled && (
+              {amountAutoFilled && !poOverrun && (
                 <p className="text-xs text-primary flex items-center gap-1">
                   <Check className="h-3 w-3" /> Auto-calculated from selected PO(s) — edit if needed
                 </p>
+              )}
+              {poOverrun && (
+                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 mt-1">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800">
+                    <span className="font-semibold">Amount exceeds linked PO total</span>
+                    {" "}by{" "}
+                    <span className="font-mono font-semibold">
+                      {currency} {overrunBy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    {" "}(PO total:{" "}
+                    <span className="font-mono">{currency} {poTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    ). Ensure a PO variation/amendment is approved before payment.
+                  </div>
+                </div>
               )}
             </div>
             <div className="space-y-1.5">
