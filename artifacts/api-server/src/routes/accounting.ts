@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, settingsTable } from "@workspace/db";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable } from "@workspace/db";
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
@@ -1142,5 +1142,165 @@ router.get("/cash-flow", async (req, res): Promise<void> => {
     netChange,
     openingCash,
     closingCash,
+  });
+});
+
+// ─── IRAS Audit File (IAF) ────────────────────────────────────────────────────
+
+router.get("/iaf", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  if (!fromDate || !toDate) {
+    res.status(400).json({ error: "from and to dates are required" });
+    return;
+  }
+
+  await ensureAccountsSeeded(companyId);
+
+  // ── Company + settings ───────────────────────────────────────────────────
+  const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+  const gstRate = parseFloat((settings as any)?.gstRate ?? "9");
+
+  // ── SA: confirmed invoices in period ────────────────────────────────────
+  const invoices = await db.select().from(invoicesTable)
+    .where(and(
+      eq(invoicesTable.companyId, companyId),
+      sql`${invoicesTable.status} NOT IN ('draft','void')`,
+      sql`COALESCE(${invoicesTable.issueDate}, TO_CHAR(${invoicesTable.createdAt}, 'YYYY-MM-DD')) >= ${fromDate}`,
+      sql`COALESCE(${invoicesTable.issueDate}, TO_CHAR(${invoicesTable.createdAt}, 'YYYY-MM-DD')) <= ${toDate}`,
+    ))
+    .orderBy(asc(invoicesTable.issueDate));
+
+  // ── PA: vendor invoices in period ────────────────────────────────────────
+  const vendorInvs = await db.select().from(vendorInvoicesTable)
+    .where(and(
+      eq(vendorInvoicesTable.companyId, companyId),
+      sql`COALESCE(${vendorInvoicesTable.piDate}, TO_CHAR(${vendorInvoicesTable.createdAt}, 'YYYY-MM-DD')) >= ${fromDate}`,
+      sql`COALESCE(${vendorInvoicesTable.piDate}, TO_CHAR(${vendorInvoicesTable.createdAt}, 'YYYY-MM-DD')) <= ${toDate}`,
+    ))
+    .orderBy(asc(vendorInvoicesTable.piDate));
+
+  // vendor GST lookup by name (best-effort)
+  const allVendors = await db.select().from(vendorsTable).where(eq(vendorsTable.companyId, companyId));
+  const vendorMap = new Map(allVendors.map(v => [v.name.toLowerCase().trim(), v]));
+
+  // ── GA: posted journal entries + lines in period ────────────────────────
+  const entries = await db.select().from(journalEntriesTable)
+    .where(and(
+      eq(journalEntriesTable.companyId, companyId),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
+      sql`${journalEntriesTable.entryDate} >= ${fromDate}`,
+      sql`${journalEntriesTable.entryDate} <= ${toDate}`,
+    ))
+    .orderBy(asc(journalEntriesTable.entryDate));
+
+  const entryIds = entries.map(e => e.id);
+  let jLines: { journalEntryId: number; accountId: number; debit: string | null; credit: string | null; description: string | null }[] = [];
+  if (entryIds.length > 0) {
+    jLines = await db.select({
+      journalEntryId: journalLinesTable.journalEntryId,
+      accountId:      journalLinesTable.accountId,
+      debit:          journalLinesTable.debit,
+      credit:         journalLinesTable.credit,
+      description:    journalLinesTable.description,
+    }).from(journalLinesTable)
+      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`);
+  }
+
+  const accounts = await db.select().from(accountsTable).where(eq(accountsTable.companyId, companyId));
+  const accountMap = new Map(accounts.map(a => [a.id, a]));
+  const entryMap   = new Map(entries.map(e => [e.id, e]));
+
+  // ── Build IAF text ──────────────────────────────────────────────────────
+  const today    = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const pFrom    = fromDate.replace(/-/g, "");
+  const pTo      = toDate.replace(/-/g, "");
+  const gstRegNo = company.registrationNo || "NA";
+
+  const safe    = (s: string | null | undefined) => (s || "").replace(/[\|]/g, " ").replace(/\r?\n/g, " ").trim() || "NA";
+  const fmtD    = (d: string | null | undefined) => (d || "").replace(/-/g, "").slice(0, 8) || today;
+  const fmtA    = (n: number) => n.toFixed(2);
+  const acctType = (t: string | null | undefined) => {
+    switch (t) {
+      case "asset":     return "A";
+      case "liability": return "L";
+      case "equity":    return "E";
+      case "revenue":   return "I";
+      case "expense":   return "X";
+      default:          return "A";
+    }
+  };
+
+  const lines: string[] = [];
+  lines.push(`AF|${today}|${safe(company.name)}|${safe(gstRegNo)}|${pFrom}|${pTo}|SGD|GST|`);
+
+  // SA records
+  let saCount = 0, saNet = 0, saGst = 0;
+  for (const inv of invoices) {
+    const docDate = fmtD(inv.issueDate ?? inv.createdAt?.toISOString().slice(0, 10) ?? null);
+    const total   = parseFloat(inv.totalAmount ?? "0");
+    const gst     = parseFloat(inv.tax ?? "0");
+    const net     = total - gst;
+    const currency = inv.currency || "SGD";
+    const txCode  = gst > 0.005 ? "SR" : "ZR";
+    lines.push(`SA|SI|${docDate}|${safe(inv.invNumber)}|${safe(inv.customerName)}|NA|${txCode}|${fmtA(net)}|${fmtA(gst)}|${fmtA(net)}|${fmtA(gst)}|${currency}|1.00|`);
+    saCount++; saNet += net; saGst += gst;
+  }
+
+  // PA records
+  let paCount = 0, paNet = 0, paGst = 0;
+  for (const vi of vendorInvs) {
+    const docDate = fmtD(vi.piDate ?? vi.createdAt?.toISOString().slice(0, 10) ?? null);
+    const gross   = parseFloat(vi.totalAmount ?? "0");
+    const vendor  = vendorMap.get(vi.vendorName.toLowerCase().trim());
+    let net: number, gst: number, txCode: string, vendorGstNo: string;
+    if (vendor?.gstRegistered) {
+      net = gross / (1 + gstRate / 100);
+      gst = gross - net;
+      txCode     = "SR";
+      vendorGstNo = safe(vendor.gstNo);
+    } else {
+      net = gross; gst = 0;
+      txCode     = "NR";
+      vendorGstNo = "NA";
+    }
+    lines.push(`PA|PI|${docDate}|${safe(vi.piNumber)}|${safe(vi.vendorName)}|${vendorGstNo}|${txCode}|${fmtA(net)}|${fmtA(gst)}|${fmtA(net)}|${fmtA(gst)}|SGD|1.00|`);
+    paCount++; paNet += net; paGst += gst;
+  }
+
+  // GA records
+  let gaCount = 0, totalDebit = 0, totalCredit = 0;
+  for (const jl of jLines) {
+    const entry   = entryMap.get(jl.journalEntryId);
+    const account = accountMap.get(jl.accountId);
+    if (!entry || !account) continue;
+    const debit  = parseFloat(jl.debit  ?? "0");
+    const credit = parseFloat(jl.credit ?? "0");
+    const docDate = fmtD(entry.entryDate);
+    const desc    = safe(jl.description || entry.description || "");
+    lines.push(`GA|${docDate}|${safe(account.code)}|${safe(account.name)}|${safe(entry.reference)}|${desc}|${fmtA(debit)}|${fmtA(credit)}|${acctType(account.type)}|`);
+    gaCount++; totalDebit += debit; totalCredit += credit;
+  }
+
+  // Footer summary
+  lines.push(`AF|${saCount}|${fmtA(saNet)}|${fmtA(saGst)}|${paCount}|${fmtA(paNet)}|${fmtA(paGst)}|${gaCount}|${fmtA(totalDebit)}|${fmtA(totalCredit)}|`);
+
+  res.json({
+    saCount,
+    paCount,
+    gaCount,
+    saNet:  +saNet.toFixed(2),
+    saGst:  +saGst.toFixed(2),
+    paNet:  +paNet.toFixed(2),
+    paGst:  +paGst.toFixed(2),
+    filename: `IAF_${gstRegNo}_${pFrom}_${pTo}.txt`,
+    content: lines.join("\r\n"),
   });
 });

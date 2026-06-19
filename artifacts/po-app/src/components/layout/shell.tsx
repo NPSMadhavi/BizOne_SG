@@ -31,6 +31,7 @@ import {
   Building,
   BookMarked,
   Banknote,
+  Archive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -233,6 +234,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </NavItem>
             <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"}>
               GST F7 (Amended)
+            </NavItem>
+            <NavItem href="/accounting/iaf" icon={Archive} active={location === "/accounting/iaf"}>
+              IRAS Audit File
             </NavItem>
             {/* Receivables & Payables */}
             <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"}>
