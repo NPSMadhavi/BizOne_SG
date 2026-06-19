@@ -78,7 +78,7 @@ export default function JournalEntryView() {
   });
 
   if (isLoading) return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <Skeleton className="h-10 w-48" />
       <Skeleton className="h-32" />
       <Skeleton className="h-64" />
@@ -93,7 +93,7 @@ export default function JournalEntryView() {
   const isManual    = entry.refType === "manual";
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
