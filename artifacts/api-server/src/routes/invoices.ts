@@ -3,6 +3,7 @@ import { db, invoicesTable, usersTable, customersTable, deliveryOrdersTable, sto
 import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
+import { postInvoiceJE, reverseInvoiceJE } from "../lib/invoice-auto-post.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -272,6 +273,23 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     } catch (autoDoErr: any) {
       req.log.error({ err: autoDoErr }, "Auto-DO / serial reservation failed (non-fatal)");
     }
+
+    // Auto-post IRAS-compliant journal entry for Singapore companies
+    await postInvoiceJE(
+      {
+        id: updated.id,
+        companyId,
+        invNumber: updated.invNumber,
+        customerName: updated.customerName,
+        issueDate: updated.issueDate,
+        totalAmount: updated.totalAmount,
+        subtotal: updated.subtotal,
+        discountAmount: updated.discountAmount,
+        tax: updated.tax,
+      },
+      req.session.userId!,
+      req.log,
+    );
   }
 
   logAudit({ req, action: isNewlyConfirmed ? "status:confirmed" : "update", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
@@ -296,6 +314,14 @@ router.post("/invoices/:id/void", async (req, res): Promise<void> => {
     .set({ status: "void", voidReason: String(voidReason).trim() })
     .where(eq(invoicesTable.id, id))
     .returning();
+
+  // Reverse the accounting entry if one was posted (Singapore companies only)
+  await reverseInvoiceJE(
+    { id, companyId: existing.companyId, invNumber: existing.invNumber, customerName: existing.customerName },
+    req.session.userId!,
+    req.log,
+  );
+
   logAudit({ req, action: "void", entityType: "invoice", entityId: id, entityLabel: updated.invNumber, details: { voidReason } });
   res.json(parseDoc(updated));
 });
