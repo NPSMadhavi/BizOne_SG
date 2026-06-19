@@ -76,9 +76,11 @@ function fmtDateLong(d: string | null) {
 // ─── Print CSS ───────────────────────────────────────────────────────────────
 
 const PRINT_STYLE = `
+@page { size: A4 portrait; margin: 8mm 10mm; }
 @media print {
   body > *:not(#gst-f5-print-root) { display: none !important; }
-  #gst-f5-print-root { display: block !important; position: static !important; }
+  #gst-f5-print-root { display: block !important; width: 100% !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
 }
 `;
 
@@ -100,170 +102,105 @@ function PrintableF5({ data, from, to }: { data: F5Data; from: string; to: strin
     return 0;
   };
 
+  const cellPad = "3px 7px";
+  const thPad   = "3px 7px";
+
   return (
-    <div id="gst-f5-print-root" style={{ fontFamily: "Arial, sans-serif", fontSize: "11pt", color: "#000", maxWidth: "210mm", margin: "0 auto", padding: "12mm 15mm", background: "#fff" }}>
+    <div id="gst-f5-print-root" style={{ fontFamily: "Arial, sans-serif", fontSize: "9pt", color: "#000", width: "100%", background: "#fff" }}>
       {/* Header */}
-      <div style={{ textAlign: "center", borderBottom: "3px solid #1a365d", paddingBottom: "10px", marginBottom: "16px" }}>
-        <div style={{ fontSize: "8pt", color: "#555", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "4px" }}>Inland Revenue Authority of Singapore</div>
-        <div style={{ fontSize: "16pt", fontWeight: "bold", color: "#1a365d" }}>GST RETURN (FORM F5)</div>
-        <div style={{ fontSize: "8pt", color: "#555", marginTop: "3px" }}>This is a computer-generated working paper — file your return at myTax Portal (mytax.iras.gov.sg)</div>
+      <div style={{ textAlign: "center", borderBottom: "2px solid #1a365d", paddingBottom: "6px", marginBottom: "8px" }}>
+        <div style={{ fontSize: "7pt", color: "#555", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "2px" }}>Inland Revenue Authority of Singapore</div>
+        <div style={{ fontSize: "14pt", fontWeight: "bold", color: "#1a365d" }}>GST RETURN (FORM F5)</div>
+        <div style={{ fontSize: "7pt", color: "#555", marginTop: "2px" }}>Computer-generated working paper — file your return at myTax Portal (mytax.iras.gov.sg)</div>
       </div>
 
       {/* Company + Period */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px", padding: "10px 12px", background: "#f5f7fa", border: "1px solid #d0d9e8", borderRadius: "4px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "10px", padding: "6px 10px", background: "#f5f7fa", border: "1px solid #d0d9e8", borderRadius: "3px" }}>
         <div>
-          <div style={{ fontSize: "8pt", color: "#555", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>GST-Registered Business</div>
-          <div style={{ fontWeight: "bold", fontSize: "12pt" }}>{data.company.name}</div>
+          <div style={{ fontSize: "7pt", color: "#555", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "2px" }}>GST-Registered Business</div>
+          <div style={{ fontWeight: "bold", fontSize: "10pt" }}>{data.company.name}</div>
           {data.company.gstRegistrationNo && (
-            <div style={{ fontSize: "9pt", color: "#333", marginTop: "3px" }}>GST Reg. No.: <strong>{data.company.gstRegistrationNo}</strong></div>
+            <div style={{ fontSize: "8pt", color: "#333", marginTop: "2px" }}>GST Reg. No.: <strong>{data.company.gstRegistrationNo}</strong></div>
           )}
           {data.company.address && (
-            <div style={{ fontSize: "8pt", color: "#666", marginTop: "3px" }}>{data.company.address}</div>
+            <div style={{ fontSize: "7pt", color: "#666", marginTop: "2px" }}>{data.company.address}</div>
           )}
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: "8pt", color: "#555", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Accounting Period</div>
-          <div style={{ fontWeight: "bold", fontSize: "11pt" }}>{fmtDateLong(from)}</div>
-          <div style={{ fontSize: "10pt", color: "#555" }}>to</div>
-          <div style={{ fontWeight: "bold", fontSize: "11pt" }}>{fmtDateLong(to)}</div>
-          <div style={{ fontSize: "8pt", color: "#666", marginTop: "6px" }}>GST Rate: {data.gstRate}%</div>
+          <div style={{ fontSize: "7pt", color: "#555", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "2px" }}>Accounting Period</div>
+          <div style={{ fontWeight: "bold", fontSize: "10pt" }}>{fmtDateLong(from)} – {fmtDateLong(to)}</div>
+          <div style={{ fontSize: "7pt", color: "#666", marginTop: "3px" }}>GST Rate: {data.gstRate}%</div>
         </div>
       </div>
 
-      {/* Section A: Supplies */}
-      <div style={{ marginBottom: "18px" }}>
-        <div style={{ background: "#1a365d", color: "#fff", fontWeight: "bold", fontSize: "9pt", letterSpacing: "1px", padding: "5px 10px", marginBottom: "0" }}>
-          PART I — DECLARATION OF TOTAL VALUE OF SUPPLIES
+      {/* Shared table header row */}
+      {([
+        { part: "PART I — DECLARATION OF TOTAL VALUE OF SUPPLIES",           boxes: [1, 2, 3, 5] },
+        { part: "PART II — DECLARATION OF TOTAL VALUE OF PURCHASES AND IMPORTS", boxes: [4] },
+        { part: "PART III — GST COMPUTATION",                                boxes: [6, 7, 8] },
+      ] as const).map(({ part, boxes }) => (
+        <div key={part} style={{ marginBottom: "8px" }}>
+          <div style={{ background: "#1a365d", color: "#fff", fontWeight: "bold", fontSize: "8pt", letterSpacing: "0.5px", padding: "3px 8px" }}>
+            {part}
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "32px" }} />
+              <col />
+              <col style={{ width: "110px" }} />
+            </colgroup>
+            <thead>
+              <tr style={{ background: "#e8edf5", fontSize: "7.5pt", color: "#333" }}>
+                <th style={{ border: "1px solid #b8c8d8", padding: thPad, textAlign: "center" }}>Box</th>
+                <th style={{ border: "1px solid #b8c8d8", padding: thPad, textAlign: "left" }}>Description</th>
+                <th style={{ border: "1px solid #b8c8d8", padding: thPad, textAlign: "right" }}>Amount (S$)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {boxes.map(n => {
+                const box  = IRAS_BOXES.find(b => b.num === n)!;
+                const val  = boxValue(n);
+                const isB8 = n === 8;
+                const b8PayStr = box8Payable ? "Net GST to be paid to Comptroller of GST" : box8Refund ? "Net GST to be claimed from Comptroller of GST" : "Net GST (payable / claimable)";
+                return (
+                  <tr key={n} style={{
+                    background: isB8 ? (box8Payable ? "#fffbeb" : box8Refund ? "#f0fdf4" : "#f5f5f5") : n % 2 === 0 ? "#fafbfd" : "#fff",
+                  }}>
+                    <td style={{ border: isB8 ? "2px solid #1a365d" : "1px solid #ccd6e2", padding: cellPad, textAlign: "center", fontWeight: "bold", fontSize: isB8 ? "10pt" : "9pt", color: "#1a365d" }}>{n}</td>
+                    <td style={{ border: isB8 ? "2px solid #1a365d" : "1px solid #ccd6e2", padding: cellPad }}>
+                      <div style={{ fontWeight: isB8 ? "700" : "600", fontSize: "8.5pt" }}>{isB8 ? b8PayStr : box.label}</div>
+                      <div style={{ fontSize: "7pt", color: "#666", marginTop: "1px" }}>{isB8 ? `Box 6 minus Box 7. ${box8Payable ? "Make payment by due date via myTax Portal." : box8Refund ? "Submit claim via myTax Portal." : ""}` : box.desc}</div>
+                    </td>
+                    <td style={{ border: isB8 ? "2px solid #1a365d" : "1px solid #ccd6e2", padding: cellPad, textAlign: "right", fontFamily: "monospace", fontSize: isB8 ? "11pt" : "9pt", fontWeight: isB8 ? "bold" : "normal", color: isB8 ? (box8Payable ? "#92400e" : box8Refund ? "#14532d" : "#000") : val === 0 ? "#aaa" : "#000" }}>
+                      {fmtAmt(isB8 ? Math.abs(data.box8) : val)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#e8edf5", fontSize: "8pt", color: "#333" }}>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", width: "38px", textAlign: "center" }}>Box</th>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", textAlign: "left" }}>Description</th>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", width: "130px", textAlign: "right" }}>Amount (S$)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[1, 2, 3, 5].map(n => {
-              const box = IRAS_BOXES.find(b => b.num === n)!;
-              const val = boxValue(n);
-              return (
-                <tr key={n} style={{ background: n % 2 === 0 ? "#fafbfd" : "#fff" }}>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px", textAlign: "center", fontWeight: "bold", color: "#1a365d" }}>{n}</td>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px" }}>
-                    <div style={{ fontWeight: "600", fontSize: "9.5pt" }}>{box.label}</div>
-                    <div style={{ fontSize: "7.5pt", color: "#666", marginTop: "2px" }}>{box.desc}</div>
-                  </td>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px", textAlign: "right", fontFamily: "monospace", fontSize: "10pt", color: val === 0 ? "#aaa" : "#000" }}>
-                    {fmtAmt(val)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Section B: Purchases */}
-      <div style={{ marginBottom: "18px" }}>
-        <div style={{ background: "#1a365d", color: "#fff", fontWeight: "bold", fontSize: "9pt", letterSpacing: "1px", padding: "5px 10px" }}>
-          PART II — DECLARATION OF TOTAL VALUE OF PURCHASES AND IMPORTS
-        </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#e8edf5", fontSize: "8pt", color: "#333" }}>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", width: "38px", textAlign: "center" }}>Box</th>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", textAlign: "left" }}>Description</th>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", width: "130px", textAlign: "right" }}>Amount (S$)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[4].map(n => {
-              const box = IRAS_BOXES.find(b => b.num === n)!;
-              const val = boxValue(n);
-              return (
-                <tr key={n}>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px", textAlign: "center", fontWeight: "bold", color: "#1a365d" }}>{n}</td>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px" }}>
-                    <div style={{ fontWeight: "600", fontSize: "9.5pt" }}>{box.label}</div>
-                    <div style={{ fontSize: "7.5pt", color: "#666", marginTop: "2px" }}>{box.desc}</div>
-                  </td>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px", textAlign: "right", fontFamily: "monospace", fontSize: "10pt", color: val === 0 ? "#aaa" : "#000" }}>
-                    {fmtAmt(val)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Section C: GST Computation */}
-      <div style={{ marginBottom: "18px" }}>
-        <div style={{ background: "#1a365d", color: "#fff", fontWeight: "bold", fontSize: "9pt", letterSpacing: "1px", padding: "5px 10px" }}>
-          PART III — GST COMPUTATION
-        </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#e8edf5", fontSize: "8pt", color: "#333" }}>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", width: "38px", textAlign: "center" }}>Box</th>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", textAlign: "left" }}>Description</th>
-              <th style={{ border: "1px solid #b8c8d8", padding: "5px 8px", width: "130px", textAlign: "right" }}>Amount (S$)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[6, 7].map(n => {
-              const box = IRAS_BOXES.find(b => b.num === n)!;
-              const val = boxValue(n);
-              return (
-                <tr key={n} style={{ background: n === 7 ? "#fafbfd" : "#fff" }}>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px", textAlign: "center", fontWeight: "bold", color: "#1a365d" }}>{n}</td>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px" }}>
-                    <div style={{ fontWeight: "600", fontSize: "9.5pt" }}>{box.label}</div>
-                    <div style={{ fontSize: "7.5pt", color: "#666", marginTop: "2px" }}>{box.desc}</div>
-                  </td>
-                  <td style={{ border: "1px solid #ccd6e2", padding: "7px 8px", textAlign: "right", fontFamily: "monospace", fontSize: "10pt", color: val === 0 ? "#aaa" : "#000" }}>
-                    {fmtAmt(val)}
-                  </td>
-                </tr>
-              );
-            })}
-            {/* Box 8 highlighted */}
-            <tr style={{ background: box8Payable ? "#fffbeb" : box8Refund ? "#f0fdf4" : "#f5f5f5" }}>
-              <td style={{ border: "2px solid #1a365d", padding: "9px 8px", textAlign: "center", fontWeight: "bold", fontSize: "11pt", color: "#1a365d" }}>8</td>
-              <td style={{ border: "2px solid #1a365d", padding: "9px 8px" }}>
-                <div style={{ fontWeight: "700", fontSize: "10pt" }}>
-                  {box8Payable ? "Net GST to be paid to Comptroller of GST" : box8Refund ? "Net GST to be claimed from Comptroller of GST" : "Net GST (payable / claimable)"}
-                </div>
-                <div style={{ fontSize: "7.5pt", color: "#555", marginTop: "2px" }}>Box 6 minus Box 7. {box8Payable ? "Make payment by the due date via myTax Portal." : box8Refund ? "Submit claim via myTax Portal." : ""}</div>
-              </td>
-              <td style={{ border: "2px solid #1a365d", padding: "9px 8px", textAlign: "right", fontFamily: "monospace", fontSize: "13pt", fontWeight: "bold", color: box8Payable ? "#92400e" : box8Refund ? "#14532d" : "#000" }}>
-                {fmtAmt(Math.abs(data.box8))}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      ))}
 
       {/* Declaration */}
-      <div style={{ border: "1px solid #b8c8d8", padding: "12px 14px", background: "#f5f7fa", borderRadius: "4px", marginBottom: "18px" }}>
-        <div style={{ fontWeight: "bold", fontSize: "9pt", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Declaration</div>
-        <div style={{ fontSize: "8.5pt", color: "#333", lineHeight: "1.5" }}>
+      <div style={{ border: "1px solid #b8c8d8", padding: "7px 10px", background: "#f5f7fa", borderRadius: "3px", marginBottom: "8px" }}>
+        <div style={{ fontWeight: "bold", fontSize: "8pt", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Declaration</div>
+        <div style={{ fontSize: "7.5pt", color: "#333", lineHeight: "1.4" }}>
           I declare that the information provided in this GST Return is true and correct to the best of my knowledge and belief.
           I understand that penalties may be imposed for any false declaration.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px", marginTop: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginTop: "18px" }}>
           {["Signature", "Name & Designation", "Date"].map(f => (
             <div key={f}>
-              <div style={{ borderBottom: "1px solid #888", height: "24px", marginBottom: "4px" }} />
-              <div style={{ fontSize: "7.5pt", color: "#666" }}>{f}</div>
+              <div style={{ borderBottom: "1px solid #888", height: "20px", marginBottom: "3px" }} />
+              <div style={{ fontSize: "7pt", color: "#666" }}>{f}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{ fontSize: "7pt", color: "#888", textAlign: "center", borderTop: "1px solid #ddd", paddingTop: "8px" }}>
+      <div style={{ fontSize: "6.5pt", color: "#888", textAlign: "center", borderTop: "1px solid #ddd", paddingTop: "5px" }}>
         Generated by RSV Infotech Document Management System · For reference only · File at mytax.iras.gov.sg ·{" "}
         Printed: {new Date().toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
       </div>
