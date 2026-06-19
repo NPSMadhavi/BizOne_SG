@@ -49,6 +49,7 @@ import VendorStatement from "@/pages/accounting/vendor-statement";
 import GeneralLedger from "@/pages/accounting/general-ledger";
 import CashFlowStatement from "@/pages/accounting/cash-flow";
 import IafPage from "@/pages/accounting/iaf";
+import GstIoListing from "@/pages/accounting/gst-io";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -232,6 +233,7 @@ function Router() {
         <Route path="/accounting/profit-loss">{() => <ProtectedRoute component={ProfitLoss} />}</Route>
         <Route path="/accounting/cash-flow">{() => <ProtectedRoute component={CashFlowStatement} />}</Route>
         <Route path="/accounting/iaf">{() => <ProtectedRoute component={IafPage} />}</Route>
+        <Route path="/accounting/gst-io">{() => <ProtectedRoute component={GstIoListing} />}</Route>
         <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
         <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
         <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>

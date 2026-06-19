@@ -1145,6 +1145,120 @@ router.get("/cash-flow", async (req, res): Promise<void> => {
   });
 });
 
+// ─── GST Input / Output Tax Listing ─────────────────────────────────────────
+
+router.get("/gst-io-listing", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const fromDate  = (req.query.from as string) || null;
+  const toDate    = (req.query.to   as string) || null;
+
+  if (!fromDate || !toDate) {
+    res.status(400).json({ error: "from and to dates are required" });
+    return;
+  }
+
+  try {
+    const [company]  = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+    const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+    const gstRate    = parseFloat(settings?.gstRate ?? "9");
+
+    // ── Output Tax: confirmed/paid invoices in period ──────────────────────
+    const invRows = await db.select({
+      id:             invoicesTable.id,
+      invNumber:      invoicesTable.invNumber,
+      customerName:   invoicesTable.customerName,
+      issueDate:      invoicesTable.issueDate,
+      createdAt:      invoicesTable.createdAt,
+      subtotal:       invoicesTable.subtotal,
+      discountAmount: invoicesTable.discountAmount,
+      tax:            invoicesTable.tax,
+      totalAmount:    invoicesTable.totalAmount,
+      status:         invoicesTable.status,
+    }).from(invoicesTable).where(and(
+      eq(invoicesTable.companyId, companyId),
+      sql`${invoicesTable.status} NOT IN ('draft','void')`,
+      sql`COALESCE(${invoicesTable.issueDate}, to_char(${invoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`,
+      sql`COALESCE(${invoicesTable.issueDate}, to_char(${invoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`,
+    )).orderBy(asc(invoicesTable.issueDate), asc(invoicesTable.id));
+
+    const outputLines = invRows.map(r => {
+      const taxableAmt = +(parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")).toFixed(2);
+      const gstAmt     = +parseFloat(r.tax ?? "0").toFixed(2);
+      const totalAmt   = +parseFloat(r.totalAmount ?? "0").toFixed(2);
+      const date       = r.issueDate ?? r.createdAt?.toISOString().slice(0, 10) ?? "";
+      return {
+        date, docNo: r.invNumber ?? "", party: r.customerName ?? "",
+        taxType: gstAmt > 0 ? "SR" : "ZR" as "SR" | "ZR",
+        taxableAmt, gstAmt, totalAmt, status: r.status ?? "",
+      };
+    });
+
+    // ── Input Tax: vendor invoices in period ───────────────────────────────
+    const viRows = await db.select({
+      id:          vendorInvoicesTable.id,
+      piNumber:    vendorInvoicesTable.piNumber,
+      vendorName:  vendorInvoicesTable.vendorName,
+      piDate:      vendorInvoicesTable.piDate,
+      createdAt:   vendorInvoicesTable.createdAt,
+      totalAmount: vendorInvoicesTable.totalAmount,
+      currency:    vendorInvoicesTable.currency,
+    }).from(vendorInvoicesTable).where(and(
+      eq(vendorInvoicesTable.companyId, companyId),
+      sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`,
+      sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`,
+    )).orderBy(asc(vendorInvoicesTable.piDate), asc(vendorInvoicesTable.id));
+
+    // Vendor GST status lookup
+    const allVendors = await db.select({ name: vendorsTable.name, gstRegistered: vendorsTable.gstRegistered, country: vendorsTable.country })
+      .from(vendorsTable).where(eq(vendorsTable.companyId, companyId));
+    const vendorMap = new Map(allVendors.map(v => [v.name?.toLowerCase() ?? "", v]));
+
+    const inputLines = viRows.map(r => {
+      const totalAmt   = +parseFloat(r.totalAmount ?? "0").toFixed(2);
+      const date       = r.piDate ?? r.createdAt?.toISOString().slice(0, 10) ?? "";
+      const vendor     = vendorMap.get((r.vendorName ?? "").toLowerCase());
+      const isOverseas = vendor?.country && vendor.country.toLowerCase() !== "singapore";
+      const isReg      = !!vendor?.gstRegistered;
+      const hasGst     = !isOverseas && isReg && (r.currency ?? "SGD") === "SGD";
+      const gstAmt     = hasGst ? +(totalAmt * gstRate / (100 + gstRate)).toFixed(2) : 0;
+      const taxableAmt = hasGst ? +(totalAmt - gstAmt).toFixed(2) : totalAmt;
+      const taxType    = hasGst ? "TX" : (isOverseas ? "NR" : "EP");
+      return { date, docNo: r.piNumber ?? "", party: r.vendorName ?? "", taxType, taxableAmt, gstAmt, totalAmt, currency: r.currency ?? "SGD" };
+    });
+
+    // ── Summary ────────────────────────────────────────────────────────────
+    const srLines   = outputLines.filter(l => l.taxType === "SR");
+    const outputSR  = srLines.reduce((s, l) => s + l.taxableAmt, 0);
+    const outGst    = srLines.reduce((s, l) => s + l.gstAmt, 0);
+    const outputZR  = outputLines.filter(l => l.taxType === "ZR").reduce((s, l) => s + l.taxableAmt, 0);
+    const txLines   = inputLines.filter(l => l.taxType === "TX");
+    const inputTX   = txLines.reduce((s, l) => s + l.taxableAmt, 0);
+    const inGst     = txLines.reduce((s, l) => s + l.gstAmt, 0);
+
+    res.json({
+      period:  { from: fromDate, to: toDate },
+      company: { name: company?.name ?? "", gstRegistrationNo: company?.registrationNo ?? "", address: company?.address ?? "" },
+      gstRate,
+      outputLines,
+      inputLines,
+      summary: {
+        outputSR:    +outputSR.toFixed(2),
+        outputSRGst: +outGst.toFixed(2),
+        outputZR:    +outputZR.toFixed(2),
+        inputTX:     +inputTX.toFixed(2),
+        inputTXGst:  +inGst.toFixed(2),
+        netGst:      +(outGst - inGst).toFixed(2),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to generate GST IO listing" });
+  }
+});
+
 // ─── IRAS Audit File (IAF) ────────────────────────────────────────────────────
 
 router.get("/iaf", async (req, res): Promise<void> => {

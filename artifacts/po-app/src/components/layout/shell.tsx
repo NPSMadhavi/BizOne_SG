@@ -33,6 +33,7 @@ import {
   Banknote,
   Archive,
   ChevronDown,
+  ListFilter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -348,6 +349,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </NavItem>
         <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"} inGroup>
           GST F7 (Amended)
+        </NavItem>
+        <NavItem href="/accounting/gst-io" icon={ListFilter} active={location === "/accounting/gst-io"} inGroup>
+          GST IO Listing
         </NavItem>
         <NavItem href="/accounting/iaf" icon={Archive} active={location === "/accounting/iaf"} inGroup>
           IRAS Audit File
