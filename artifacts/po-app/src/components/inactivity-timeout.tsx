@@ -78,6 +78,21 @@ export function InactivityTimeout() {
     resetTimer();
   }, [clearAll, resetTimer]);
 
+  // When the user logs back in after a timeout, clear any stale timed-out
+  // dialog state (component stays mounted across logout so state persists).
+  const prevUserIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const currentId = user?.id ?? null;
+    if (currentId !== null && prevUserIdRef.current !== currentId) {
+      setShowWarning(false);
+      setShowTimedOut(false);
+      setCountdown(30);
+      warningActiveRef.current = false;
+      timedOutRef.current = false;
+    }
+    prevUserIdRef.current = currentId;
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     const events = ["mousemove", "keydown", "click", "touchstart", "scroll", "wheel"];
