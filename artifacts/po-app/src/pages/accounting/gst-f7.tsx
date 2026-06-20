@@ -167,7 +167,7 @@ export default function GstF7Page() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-12">
+    <div className="space-y-6 pb-12">
 
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-border">

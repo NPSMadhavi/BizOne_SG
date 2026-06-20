@@ -115,7 +115,7 @@ export default function GstF5Page() {
   const box8Highlight = data ? (data.box8 > 0.005 ? "payable" : data.box8 < -0.005 ? "refund" : undefined) : undefined;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-12">
+    <div className="space-y-6 pb-12">
 
         {/* Header */}
         <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">

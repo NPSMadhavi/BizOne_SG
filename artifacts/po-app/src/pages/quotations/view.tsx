@@ -51,7 +51,7 @@ export default function QuotationView() {
   };
 
   if (isLoading) return (
-    <div className="space-y-6 max-w-[1600px] mx-auto">
+    <div className="space-y-6">
       <Skeleton className="h-10 w-48" />
       <div className="grid md:grid-cols-2 gap-6">
         <Skeleton className="h-48" /><Skeleton className="h-48" />
@@ -74,7 +74,7 @@ export default function QuotationView() {
   const qtColCount = 2 + (hasQtPartNo ? 1 : 0) + (hasQtUom ? 1 : 0) + (hasItemDiscount ? 1 : 0) + 3;
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/quotations")}><ArrowLeft className="h-4 w-4" /></Button>

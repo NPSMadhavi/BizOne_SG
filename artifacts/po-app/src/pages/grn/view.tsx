@@ -185,7 +185,7 @@ export default function GrnView() {
   const receivedCount = items.filter((i) => i.received).length;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => setLocation("/grn")} className="h-9 w-9">
           <ArrowLeft className="h-4 w-4" />

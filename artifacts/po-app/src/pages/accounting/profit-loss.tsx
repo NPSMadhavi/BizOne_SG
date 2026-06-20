@@ -115,7 +115,7 @@ export default function ProfitLoss() {
   const loading = isLoading || isFetching;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>

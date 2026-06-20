@@ -101,7 +101,7 @@ export default function CashFlowStatement() {
   const isActive = (f: string, t: string) => fromDate === f && toDate === t;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Cash Flow Statement</h1>

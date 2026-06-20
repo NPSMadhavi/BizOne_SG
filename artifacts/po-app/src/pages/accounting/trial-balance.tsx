@@ -67,7 +67,7 @@ export default function TrialBalancePage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5 pb-20 animate-in fade-in duration-300">
+    <div className="space-y-5 pb-20 animate-in fade-in duration-300">
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">General Ledger</p>

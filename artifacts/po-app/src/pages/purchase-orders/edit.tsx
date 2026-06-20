@@ -249,7 +249,7 @@ export default function PurchaseOrderEdit() {
 
   if (isLoading || !initialized) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-64 w-full" />
         <Skeleton className="h-64 w-full" />
@@ -260,7 +260,7 @@ export default function PurchaseOrderEdit() {
   if (!po) return <div>Purchase order not found.</div>;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/purchase-orders/${id}`)}>
           <ArrowLeft className="h-4 w-4" />

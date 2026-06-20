@@ -5,9 +5,10 @@ description: Consistent max-width rules for all pages — user preference, enfor
 
 ## Rule
 
-**Report / list / view / dashboard pages** → `max-w-7xl mx-auto`
-**Form pages (new / edit with many fields)** → `max-w-[1600px] mx-auto`
+**All pages (reports, lists, forms, views)** → NO `max-w-*` and NO `mx-auto` on the page root container.
 
-**Why:** User explicitly complained about large white spaces on left and right caused by narrower constraints (max-w-3xl, max-w-4xl, max-w-5xl, max-w-6xl). All pages were standardised in one pass.
+The shell's `<main className="flex-1 min-w-0 p-4 md:p-6 xl:p-8 overflow-auto">` already provides all edge padding. Pages must fill the full available content width.
 
-**How to apply:** Every new page must use one of these two values on its root wrapper div. Never use max-w-3xl / max-w-4xl / max-w-5xl / max-w-6xl at the page root level. Dialogs and inner components are exempt.
+**Why:** User complained twice about gutters. First pass standardised to max-w-7xl / max-w-[1600px] — still left whitespace. Second pass stripped all max-w-* + mx-auto from every page root in one sed sweep (~50 files). Pages now fill the shell's content area completely.
+
+**How to apply:** New page root divs must NOT have `max-w-*` or `mx-auto`. Use `space-y-6 animate-in fade-in ...` (or similar) only. Dialogs, search bars, and inner sub-components are exempt (max-w-md, max-w-sm, max-w-lg etc. are fine inside cards/dialogs).
