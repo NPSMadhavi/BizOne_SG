@@ -209,7 +209,7 @@ function UserMenu() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, hasModuleAccess, selectedCompany } = useAuth();
+  const { user, isAdmin, hasModuleAccess, selectedCompany } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [openGroup, setOpenGroup] = React.useState<string | null>(null);
 
