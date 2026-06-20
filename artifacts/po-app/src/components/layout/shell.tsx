@@ -12,6 +12,7 @@ import {
   Receipt,
   Truck,
   Building2,
+  RefreshCw,
   ClipboardList,
   Package,
   Users2,
@@ -45,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import logo from "@assets/logo_1776054030755.png";
@@ -174,6 +176,8 @@ function CompanyBadge() {
 
 function UserMenu() {
   const { user, logout, isAdmin } = useAuth();
+  const [, setLocation] = useLocation();
+  const hasMultiple = (user?.companies?.length ?? 0) > 1;
   if (!user) return null;
 
   return (
@@ -192,7 +196,24 @@ function UserMenu() {
           <ChevronUp className="h-4 w-4 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-52 mb-1">
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        sideOffset={4}
+        className="w-[var(--radix-dropdown-menu-trigger-width)]"
+      >
+        {hasMultiple && (
+          <>
+            <DropdownMenuItem
+              onClick={() => setLocation("/select-company")}
+              className="gap-2 cursor-pointer"
+            >
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+              Switch Company
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem
           onClick={() => logout()}
           className="text-destructive focus:text-destructive focus:bg-destructive/10 gap-2 cursor-pointer"
