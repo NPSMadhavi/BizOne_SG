@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  LayoutDashboard, FileText, Settings, LogOut, RefreshCw,
+  LayoutDashboard, FileText, Settings, LogOut,
   Building2, ChevronUp, Users,
 } from "lucide-react";
 
@@ -42,20 +42,15 @@ export function OptionA() {
           ))}
         </div>
 
-        {/* Company badge */}
+        {/* Company badge — name + country only, no switch icon */}
         <div className="px-3 pb-1">
-          <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2">
-            <div>
-              <div className="text-xs font-medium">RSV Infotech P…</div>
-              <div className="text-[10px] text-muted-foreground">Singapore</div>
-            </div>
-            <button className="text-muted-foreground hover:text-foreground">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
+          <div className="bg-muted/50 rounded-lg px-3 py-2">
+            <div className="text-xs font-medium">RSV Infotech Pte. Ltd.</div>
+            <div className="text-[10px] text-muted-foreground">Singapore</div>
           </div>
         </div>
 
-        {/* User row — clickable → dropdown */}
+        {/* User row — clickable → dropdown with Logout only */}
         <div className="border-t border-border/50 relative">
           <button
             onClick={() => setOpen((v) => !v)}
@@ -75,15 +70,10 @@ export function OptionA() {
             />
           </button>
 
-          {/* Popover */}
+          {/* Popover — Logout only */}
           {open && (
             <div className="absolute bottom-full left-3 right-3 mb-1 bg-popover border border-border rounded-lg shadow-lg py-1 z-50">
-              <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted text-left">
-                <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                Switch Company
-              </button>
-              <div className="h-px bg-border mx-2 my-1" />
-              <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-destructive/10 text-destructive text-left rounded-b-lg">
+              <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-destructive/10 text-destructive text-left rounded-lg">
                 <LogOut className="h-4 w-4" />
                 Logout
               </button>
