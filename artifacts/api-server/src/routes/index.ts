@@ -23,6 +23,7 @@ import agentRouter from "./agent";
 import extractPoRouter from "./extract-po";
 import accountingRouter from "./accounting";
 import whtRouter from "./wht";
+import taxFilingsRouter from "./tax-filings";
 import aiInvoiceRouter from "./ai/generate-invoice";
 import aiFormatRouter from "./ai/format-invoice";
 
@@ -52,6 +53,7 @@ router.use(auditLogsRouter);
 router.use(agentRouter);
 router.use(accountingRouter);
 router.use(whtRouter);
+router.use(taxFilingsRouter);
 router.use(aiInvoiceRouter);
 router.use(aiFormatRouter);
 

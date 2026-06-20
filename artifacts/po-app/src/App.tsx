@@ -51,6 +51,8 @@ import CashFlowStatement from "@/pages/accounting/cash-flow";
 import IafPage from "@/pages/accounting/iaf";
 import GstIoListing from "@/pages/accounting/gst-io";
 import WhtRegister from "@/pages/accounting/wht";
+import EciPage from "@/pages/accounting/eci";
+import FormCsPage from "@/pages/accounting/form-cs";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { InactivityTimeout } from "@/components/inactivity-timeout";
@@ -236,6 +238,8 @@ function Router() {
         <Route path="/accounting/iaf">{() => <ProtectedRoute component={IafPage} />}</Route>
         <Route path="/accounting/gst-io">{() => <ProtectedRoute component={GstIoListing} />}</Route>
         <Route path="/accounting/wht">{() => <ProtectedRoute component={WhtRegister} />}</Route>
+        <Route path="/accounting/eci">{() => <ProtectedRoute component={EciPage} />}</Route>
+        <Route path="/accounting/form-cs">{() => <ProtectedRoute component={FormCsPage} />}</Route>
         <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
         <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
         <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>
