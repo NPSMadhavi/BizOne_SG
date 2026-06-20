@@ -12,7 +12,6 @@ import {
   Receipt,
   Truck,
   Building2,
-  RefreshCw,
   ClipboardList,
   Package,
   Users2,
@@ -33,6 +32,7 @@ import {
   Banknote,
   Archive,
   ChevronDown,
+  ChevronUp,
   ListFilter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,12 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import logo from "@assets/logo_1776054030755.png";
 import { AgentPanel } from "@/components/agent-panel";
 
@@ -150,34 +156,52 @@ function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible =
 // ── CompanyBadge ──────────────────────────────────────────────────────────────
 
 function CompanyBadge() {
-  const { selectedCompany, user } = useAuth();
-  const [, setLocation] = useLocation();
-  const hasMultiple = (user?.companies?.length ?? 0) > 1;
+  const { selectedCompany } = useAuth();
 
   if (!selectedCompany) return null;
 
   return (
-    <div className="mx-3 mb-3 px-3 py-2 rounded-lg bg-primary/5 border border-primary/15">
+    <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/15">
       <div className="flex items-center gap-2">
-        <Building2 className="h-3.5 w-3.5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-primary truncate">{selectedCompany.name}</p>
-          <p className="text-xs text-muted-foreground">{selectedCompany.country}</p>
-        </div>
-        {hasMultiple && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 shrink-0 text-xs text-muted-foreground hover:text-primary gap-1"
-            title="Switch company"
-            onClick={() => setLocation("/select-company")}
-          >
-            <RefreshCw className="h-3 w-3" />
-            <span>Switch</span>
-          </Button>
-        )}
+        <Building2 className="h-3 w-3 text-primary shrink-0" />
+        <p className="text-xs text-muted-foreground">{selectedCompany.country}</p>
       </div>
     </div>
+  );
+}
+
+// ── UserMenu ───────────────────────────────────────────────────────────────────
+
+function UserMenu() {
+  const { user, logout, isAdmin } = useAuth();
+  if (!user) return null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors outline-none">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-full bg-primary/15 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
+              {user.username.charAt(0).toUpperCase()}
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-medium leading-tight">{user.username}</div>
+              {isAdmin && <div className="text-[11px] text-muted-foreground leading-tight capitalize">{user.role}</div>}
+            </div>
+          </div>
+          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-52 mb-1">
+        <DropdownMenuItem
+          onClick={() => logout()}
+          className="text-destructive focus:text-destructive focus:bg-destructive/10 gap-2 cursor-pointer"
+        >
+          <LogOut className="h-4 w-4" />
+          Logout
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -185,7 +209,7 @@ function CompanyBadge() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, logout, isAdmin, hasModuleAccess, selectedCompany } = useAuth();
+  const { user, hasModuleAccess, selectedCompany } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [openGroup, setOpenGroup] = React.useState<string | null>(null);
 
@@ -421,23 +445,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <div className="flex-1 min-h-0 overflow-y-auto p-3">
               {navItems}
             </div>
-            <div className="shrink-0 border-t border-border/50 bg-muted/10">
+            <div className="shrink-0 border-t border-border/50 bg-muted/10 pt-2">
               <CompanyBadge />
-              <div className="flex items-center justify-between px-4 py-3">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">{user.username}</span>
-                  {isAdmin && <span className="text-xs text-muted-foreground capitalize">{user.role}</span>}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { logout(); }}
-                  className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </Button>
-              </div>
+              <UserMenu />
             </div>
           </SheetContent>
         </Sheet>
@@ -451,25 +461,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="flex-1 p-3 overflow-y-auto">
           {navItems}
         </div>
-        <div className="border-t border-border/50 bg-muted/10">
+        <div className="border-t border-border/50 bg-muted/10 pt-2">
           <CompanyBadge />
-          <div className="px-4 pb-4">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">{user.username}</span>
-                {isAdmin && <span className="text-xs text-muted-foreground capitalize">{user.role}</span>}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => logout()}
-                title="Logout"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <UserMenu />
         </div>
       </aside>
 
