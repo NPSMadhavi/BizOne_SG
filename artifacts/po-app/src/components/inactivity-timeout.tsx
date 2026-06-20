@@ -12,14 +12,23 @@ export function InactivityTimeout() {
   const [showWarning, setShowWarning] = useState(false);
   const [showTimedOut, setShowTimedOut] = useState(false);
   const [countdown, setCountdown] = useState(30);
+
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Use refs for flag state so resetTimer stays stable (doesn't change
+  // reference when the dialog opens, preventing the useEffect cleanup from
+  // accidentally clearing the 30-second logout timer).
+  const warningActiveRef = useRef(false);
+  const timedOutRef = useRef(false);
+  const logoutRef = useRef(logout);
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
+
   const clearAll = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (warnTimerRef.current) clearTimeout(warnTimerRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (warnTimerRef.current) { clearTimeout(warnTimerRef.current); warnTimerRef.current = null; }
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
   }, []);
 
   const startCountdown = useCallback(() => {
@@ -38,25 +47,32 @@ export function InactivityTimeout() {
 
   const doLogout = useCallback(() => {
     clearAll();
+    warningActiveRef.current = false;
+    timedOutRef.current = true;
     setShowWarning(false);
     setShowTimedOut(true);
-    logout();
-  }, [clearAll, logout]);
+    logoutRef.current();
+  }, [clearAll]);
 
+  // resetTimer only depends on stable values — no showWarning/showTimedOut
+  // state in deps, so the useEffect below never re-runs when the dialog opens.
   const resetTimer = useCallback(() => {
     if (!user) return;
-    if (showWarning || showTimedOut) return;
+    if (warningActiveRef.current || timedOutRef.current) return;
     clearAll();
     warnTimerRef.current = setTimeout(() => {
+      warningActiveRef.current = true;
       setShowWarning(true);
       startCountdown();
+      // This timer MUST survive; it is only cleared by handleStayActive or doLogout.
       timerRef.current = setTimeout(() => {
         doLogout();
       }, WARN_BEFORE_MS);
     }, INACTIVITY_MS - WARN_BEFORE_MS);
-  }, [user, showWarning, showTimedOut, clearAll, startCountdown, doLogout]);
+  }, [user, clearAll, startCountdown, doLogout]);
 
   const handleStayActive = useCallback(() => {
+    warningActiveRef.current = false;
     setShowWarning(false);
     clearAll();
     resetTimer();
@@ -86,18 +102,14 @@ export function InactivityTimeout() {
               Session About to Expire
             </DialogTitle>
             <DialogDescription>
-              You've been inactive for a while. Your session will automatically end in{" "}
+              You've been inactive for 5 minutes. Your session will automatically end in{" "}
               <span className="font-semibold text-foreground">{countdown} second{countdown !== 1 ? "s" : ""}</span>.
               Any unsaved stock reservations will be released.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2 justify-end mt-2">
-            <Button onClick={handleStayActive}>
-              Stay Logged In
-            </Button>
-            <Button variant="outline" onClick={doLogout}>
-              Log Out Now
-            </Button>
+            <Button onClick={handleStayActive}>Stay Logged In</Button>
+            <Button variant="outline" onClick={doLogout}>Log Out Now</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -110,11 +122,11 @@ export function InactivityTimeout() {
               Session Timed Out
             </DialogTitle>
             <DialogDescription>
-              Your session has expired due to inactivity (5 minutes). Any reserved stock items have been released. Please log in again to continue.
+              Your session expired after 5 minutes of inactivity. Any reserved stock items have been released. Please log in again to continue.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end mt-2">
-            <Button onClick={() => setShowTimedOut(false)}>
+            <Button onClick={() => { timedOutRef.current = false; setShowTimedOut(false); }}>
               OK, Log In
             </Button>
           </div>
