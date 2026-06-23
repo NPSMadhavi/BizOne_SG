@@ -1176,7 +1176,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     },
   }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)));
 
-  let qtCurrentY = (doc as any).lastAutoTable.finalY + 8;
+  let qtCurrentY = (doc as any).lastAutoTable.finalY + 4;
 
   if (qt.notes) {
     const noteLines = doc.splitTextToSize(qt.notes, 120);
@@ -1193,7 +1193,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
   let qtOverflowPage = false;
-  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; qtOverflowPage = true; }
+  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; qtOverflowPage = true; }
 
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 1000) / 10 : 0;
@@ -1391,7 +1391,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     },
   }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)));
 
-  let invCurrentY = (doc as any).lastAutoTable.finalY + 8;
+  let invCurrentY = (doc as any).lastAutoTable.finalY + 4;
 
   if (inv.notes) {
     const noteLines = doc.splitTextToSize(inv.notes, 120);
@@ -1407,7 +1407,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const invCombinedH = Math.max(invBoxH, invBankBlockH);
   let invOverflowPage = false;
-  if (invCurrentY + invCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); invCurrentY = 20; invOverflowPage = true; }
+  if (invCurrentY + invCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; invOverflowPage = true; }
 
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 1000) / 10 : 0;
