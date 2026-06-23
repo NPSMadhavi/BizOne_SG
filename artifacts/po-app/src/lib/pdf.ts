@@ -804,14 +804,20 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   });
 
   const poTableWidth = marginRight - marginLeft;
+  // Measure at header font so column widths are exactly as tight as needed (single-line)
+  doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold");
+  const _poUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(poCurrency)})`) + 5); // 4 mm pad + 1 safety
+  const _poAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(poCurrency)})`)     + 5);
+  const _poQtyW = Math.ceil(doc.getTextWidth("Qty")                                    + 9); // 8 mm default pad + 1
+  doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" }, // #
     { fixed: hasPOUom ? 26 : 32 },   // part no
-    { auto: true },                   // description (takes all freed space)
-    { fixed: 15, halign: "center" }, // qty — wide enough for "Qty" in one line
+    { auto: true },                   // description
+    { fixed: _poQtyW, halign: "center" }, // qty
     ...(hasPOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
-    { fixed: 30, halign: "right" },  // unit price — wide enough for "Unit Price (S$)" on one line
-    { fixed: 26, halign: "right" },  // amount
+    { fixed: _poUpW,  halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
+    { fixed: _poAmtW, halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const poColStyles = smartColWidths(doc, poHeaders, tableData, poTableWidth, poFixedMap);
 
@@ -1117,15 +1123,21 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtTableWidth = marginRight - marginLeft;
   const qtDescColIdx = hasQtPartNo ? 2 : 1;
+  // Measure at header font so column widths are exactly as tight as needed (single-line)
+  doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold");
+  const _qtUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(qtCurrency)})`) + 5);
+  const _qtAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(qtCurrency)})`)     + 5);
+  const _qtQtyW = Math.ceil(doc.getTextWidth("Qty")                                    + 9);
+  doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" },                                  // #
     ...(hasQtPartNo ? [{ fixed: 25 }] : []),                          // part no (conditional)
     { auto: true },                                                    // description
-    { fixed: 15, halign: "center" },                                   // qty — wide enough for "Qty" on one line
+    { fixed: _qtQtyW, halign: "center" },                             // qty
     ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: hasQtPartNo ? 28 : 32, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price — wide enough for "Unit Price (S$)" on one line
-    ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasQtPartNo ? 24 : 27, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
+    { fixed: _qtUpW,  halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
+    ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                                // disc %
+    { fixed: _qtAmtW, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
 
@@ -1335,15 +1347,21 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invDescColIdx = hasInvPartNo ? 2 : 1;
 
+  // Measure at header font so column widths are exactly as tight as needed (single-line)
+  doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold");
+  const _invUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(invCurrency)})`) + 5);
+  const _invAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(invCurrency)})`)     + 5);
+  const _invQtyW = Math.ceil(doc.getTextWidth("Qty")                                     + 9);
+  doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" },                               // #
     ...(hasInvPartNo ? [{ fixed: 25 }] : []),                      // part no
     { auto: true },                                                 // description
-    { fixed: 15, halign: "center" },                               // qty — wide enough for "Qty" on one line
+    { fixed: _invQtyW, halign: "center" },                         // qty
     ...(hasInvUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: hasInvPartNo ? 28 : 32, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },   // unit price — wide enough for "Unit Price (S$)" on one line
-    ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasInvPartNo ? 24 : 27, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },   // amount
+    { fixed: _invUpW,  halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
+    ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                               // disc %
+    { fixed: _invAmtW, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
 
