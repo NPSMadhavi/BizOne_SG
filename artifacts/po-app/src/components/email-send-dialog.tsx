@@ -254,6 +254,9 @@ export function EmailSendDialog({
           <div className="space-y-1.5">
             <Label htmlFor="email-body">Message</Label>
             <Textarea id="email-body" rows={6} value={body} onChange={e => setBody(e.target.value)} className="resize-none" />
+            <div className="border-t border-dashed pt-2 mt-1 text-xs text-muted-foreground italic">
+              Sent from <span className="font-semibold not-italic text-foreground/60">bizOneSG</span> – Smarter Accounting. Better Business.
+            </div>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
             <Paperclip className="h-4 w-4 shrink-0" />
