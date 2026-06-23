@@ -827,6 +827,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   const poUnitPriceIdx = poHeaders.indexOf(`Unit Price (${currSymbol(poCurrency)})`);
   const poAmountIdx = poHeaders.indexOf(`Amount (${currSymbol(poCurrency)})`);
+  const poQtyIdx = poHeaders.indexOf("Qty");
 
   autoTableRich(doc, {
     startY: 113,
@@ -840,7 +841,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {
-      if (data.section === "head" && (data.column.index === poUnitPriceIdx || data.column.index === poAmountIdx)) {
+      if ([poQtyIdx, poUnitPriceIdx, poAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
       }
     },
@@ -1152,6 +1153,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtUnitPriceIdx = qtHeaders.indexOf(`Unit Price (${currSymbol(qtCurrency)})`);
   const qtAmountIdx = qtHeaders.indexOf(`Amount (${currSymbol(qtCurrency)})`);
+  const qtQtyIdx = qtHeaders.indexOf("Qty");
   // Compact padding heuristic: if a normal-padding table would barely push the
   // totals to page 2, switch to tighter padding to keep everything on one page.
   const qtAvailH = pageHeight - qtTableStartY - Math.max(qtBoxH, qtBankBlockH) - FOOTER_RESERVE - 12;
@@ -1170,7 +1172,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {
-      if (data.section === "head" && (data.column.index === qtUnitPriceIdx || data.column.index === qtAmountIdx)) {
+      if ([qtQtyIdx, qtUnitPriceIdx, qtAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
       }
     },
@@ -1367,6 +1369,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${currSymbol(invCurrency)})`);
   const invAmountIdx = invHeaders.indexOf(`Amount (${currSymbol(invCurrency)})`);
+  const invQtyIdx = invHeaders.indexOf("Qty");
   // Compact padding heuristic: if a normal-padding table would barely push the
   // totals to page 2, switch to tighter padding to keep everything on one page.
   const invAvailH = pageHeight - invTableStartY - Math.max(invBoxH, invBankBlockH) - FOOTER_RESERVE - 12;
@@ -1385,7 +1388,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didParseCell: (data: any) => {
-      if (data.section === "head" && (data.column.index === invUnitPriceIdx || data.column.index === invAmountIdx)) {
+      if ([invQtyIdx, invUnitPriceIdx, invAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
       }
     },
