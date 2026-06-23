@@ -808,7 +808,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold");
   const _poUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(poCurrency)})`) + 5); // 4 mm pad + 1 safety
   const _poAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(poCurrency)})`)     + 5);
-  const _poQtyW = Math.ceil(doc.getTextWidth("Qty")                                    + 9); // 8 mm default pad + 1
+  const _poQtyW = Math.max(Math.ceil(doc.getTextWidth("Qty") + 5), 14); // head pad 4mm + 1 safety; min 14mm for body
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" }, // #
@@ -833,7 +833,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     head: [poHeaders],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, cellPadding: { top: 3, bottom: 3, left: 2, right: 2 } },
     bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [245, 247, 249] },
     styles: { cellPadding: 4 },
@@ -1127,7 +1127,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold");
   const _qtUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(qtCurrency)})`) + 5);
   const _qtAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(qtCurrency)})`)     + 5);
-  const _qtQtyW = Math.ceil(doc.getTextWidth("Qty")                                    + 9);
+  const _qtQtyW = Math.max(Math.ceil(doc.getTextWidth("Qty") + 5), 14); // head pad 4mm + 1 safety; min 14mm for body
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" },                                  // #
@@ -1163,7 +1163,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     head: [qtHeaders],
     body: qtTableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, cellPadding: { top: 3, bottom: 3, left: 2, right: 2 } },
     bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [245, 247, 249] },
     styles: { cellPadding: qtUseCompact ? 2 : 4 },
@@ -1351,7 +1351,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.setFontSize(8.5); doc.setFont(PDF_FONT, "bold");
   const _invUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(invCurrency)})`) + 5);
   const _invAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(invCurrency)})`)     + 5);
-  const _invQtyW = Math.ceil(doc.getTextWidth("Qty")                                     + 9);
+  const _invQtyW = Math.max(Math.ceil(doc.getTextWidth("Qty") + 5), 14); // head pad 4mm + 1 safety; min 14mm for body
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" },                               // #
@@ -1378,7 +1378,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     head: [invHeaders],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5 },
+    headStyles: { fillColor: [24, 33, 47], textColor: 255, fontStyle: "bold", fontSize: 8.5, cellPadding: { top: 3, bottom: 3, left: 2, right: 2 } },
     bodyStyles: { fontSize: 9.5, valign: "top", fillColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [245, 247, 249] },
     styles: { cellPadding: invUseCompact ? 2 : 4 },
