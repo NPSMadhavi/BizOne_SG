@@ -53,11 +53,19 @@ router.post("/send-email", async (req, res): Promise<void> => {
   try {
     const transporter = createTransporter(settings);
 
+    const plainFooter = "\n\n--\nSent from bizOneSG – Smarter Accounting. Better Business.";
+    const htmlBody = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#333;line-height:1.6;max-width:600px;margin:0 auto;padding:20px;">
+<p style="white-space:pre-wrap;">${body.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</p>
+<hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0;" />
+<p style="font-size:12px;color:#888;margin:0;">Sent from <strong style="color:#555;">bizOneSG</strong> &ndash; Smarter Accounting. Better Business.</p>
+</body></html>`;
+
     await transporter.sendMail({
       from: settings.smtpFrom || settings.smtpUser,
       to,
       subject,
-      text: body,
+      text: body + plainFooter,
+      html: htmlBody,
       attachments: [
         {
           filename,
