@@ -814,7 +814,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     { fixed: 13, halign: "center" }, // #
     { fixed: hasPOUom ? 26 : 32 },   // part no
     { auto: true },                   // description
-    { fixed: _poQtyW, halign: "center" }, // qty
+    { fixed: _poQtyW, halign: "right" }, // qty
     ...(hasPOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
     { fixed: _poUpW,  halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
     { fixed: _poAmtW, halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
@@ -1133,7 +1133,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     { fixed: 13, halign: "center" },                                  // #
     ...(hasQtPartNo ? [{ fixed: 25 }] : []),                          // part no (conditional)
     { auto: true },                                                    // description
-    { fixed: _qtQtyW, halign: "center" },                             // qty
+    { fixed: _qtQtyW, halign: "right" },                              // qty
     ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
     { fixed: _qtUpW,  halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
     ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                                // disc %
@@ -1357,7 +1357,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     { fixed: 13, halign: "center" },                               // #
     ...(hasInvPartNo ? [{ fixed: 25 }] : []),                      // part no
     { auto: true },                                                 // description
-    { fixed: _invQtyW, halign: "center" },                         // qty
+    { fixed: _invQtyW, halign: "right" },                          // qty
     ...(hasInvUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
     { fixed: _invUpW,  halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
     ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                               // disc %
