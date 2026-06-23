@@ -570,6 +570,13 @@ function fmtNum(amount: number): string {
   return new Intl.NumberFormat("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 }
 
+function currSymbol(currency: string): string {
+  const map: Record<string, string> = {
+    SGD: "S$", USD: "US$", EUR: "€", GBP: "£", MYR: "RM", INR: "₹",
+  };
+  return map[currency] ?? currency;
+}
+
 function formatDate(d: string | null | undefined): string {
   return fmtDate(d);
 }
@@ -785,7 +792,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   const poHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
   if (hasPOUom) poHeaderArr.push("UOM");
-  poHeaderArr.push(`Unit Price (${poCurrency})`, `Amount (${poCurrency})`);
+  poHeaderArr.push(`Unit Price (${currSymbol(poCurrency)})`, `Amount (${currSymbol(poCurrency)})`);
   const poHeaders = poHeaderArr;
 
   const poRichDesc = filteredPOItems.map((item: any) => htmlToRichLines(item.description));
@@ -797,20 +804,23 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   });
 
   const poTableWidth = marginRight - marginLeft;
-  const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+  const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" }, // #
     { fixed: hasPOUom ? 26 : 32 },   // part no
-    { auto: true },                   // description
-    { fixed: 18, halign: "center" }, // qty
+    { auto: true },                   // description (takes all freed space)
+    { fixed: 12, halign: "center" }, // qty (tighter)
     ...(hasPOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
-    { fixed: 27, halign: "right" },  // unit price
-    { fixed: 27, halign: "right" },  // amount
+    { fixed: 22, halign: "right" },  // unit price (smaller — symbol header is short)
+    { fixed: 22, halign: "right" },  // amount
   ];
   const poColStyles = smartColWidths(doc, poHeaders, tableData, poTableWidth, poFixedMap);
 
   const pageHeight = doc.internal.pageSize.getHeight();
   const totalsBlockH = 28; // subtotal + tax + rule + total ≈ 28 mm
   const notesLineH = 5;
+
+  const poUnitPriceIdx = poHeaders.indexOf(`Unit Price (${currSymbol(poCurrency)})`);
+  const poAmountIdx = poHeaders.indexOf(`Amount (${currSymbol(poCurrency)})`);
 
   autoTableRich(doc, {
     startY: 113,
@@ -823,6 +833,11 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     styles: { cellPadding: 4 },
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
+    didParseCell: (data: any) => {
+      if (data.section === "head" && (data.column.index === poUnitPriceIdx || data.column.index === poAmountIdx)) {
+        data.cell.styles.halign = "right";
+      }
+    },
   }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;
@@ -1073,9 +1088,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   if (hasQtPartNo) qtHeaderArr.push("Item / Part Number");
   qtHeaderArr.push("Description", "Qty");
   if (hasQtUom) qtHeaderArr.push("UOM");
-  qtHeaderArr.push(`Unit Price (${qtCurrency})`);
+  qtHeaderArr.push(`Unit Price (${currSymbol(qtCurrency)})`);
   if (hasItemDiscount) qtHeaderArr.push("Disc %");
-  qtHeaderArr.push(`Amount (${qtCurrency})`);
+  qtHeaderArr.push(`Amount (${currSymbol(qtCurrency)})`);
   const qtHeaders = qtHeaderArr;
   const qtTotalCols = qtHeaders.length;
 
@@ -1102,15 +1117,15 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtTableWidth = marginRight - marginLeft;
   const qtDescColIdx = hasQtPartNo ? 2 : 1;
-  const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+  const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" },                                  // #
     ...(hasQtPartNo ? [{ fixed: 25 }] : []),                          // part no (conditional)
     { auto: true },                                                    // description
-    { fixed: 18, halign: "center" },                                   // qty
+    { fixed: 12, halign: "center" },                                   // qty (tighter)
     ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: hasQtPartNo ? 27 : 30, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
+    { fixed: hasQtPartNo ? 22 : 25, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
     ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasQtPartNo ? 27 : 30, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
+    { fixed: hasQtPartNo ? 22 : 25, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
 
@@ -1123,8 +1138,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
   const qtBankBlockH = calcBlockHeight(doc, qtSettings, 125);
 
-  const qtUnitPriceIdx = qtHeaders.indexOf(`Unit Price (${qtCurrency})`);
-  const qtAmountIdx = qtHeaders.indexOf(`Amount (${qtCurrency})`);
+  const qtUnitPriceIdx = qtHeaders.indexOf(`Unit Price (${currSymbol(qtCurrency)})`);
+  const qtAmountIdx = qtHeaders.indexOf(`Amount (${currSymbol(qtCurrency)})`);
   // Compact padding heuristic: if a normal-padding table would barely push the
   // totals to page 2, switch to tighter padding to keep everything on one page.
   const qtAvailH = pageHeight - qtTableStartY - Math.max(qtBoxH, qtBankBlockH) - FOOTER_RESERVE - 12;
@@ -1289,9 +1304,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   if (hasInvPartNo) invHeaderArr.push("Item / Part Number");
   invHeaderArr.push("Description", "Qty");
   if (hasInvUom) invHeaderArr.push("UOM");
-  invHeaderArr.push(`Unit Price (${invCurrency})`);
+  invHeaderArr.push(`Unit Price (${currSymbol(invCurrency)})`);
   if (hasInvItemDiscount) invHeaderArr.push("Disc %");
-  invHeaderArr.push(`Amount (${invCurrency})`);
+  invHeaderArr.push(`Amount (${currSymbol(invCurrency)})`);
   const invHeaders = invHeaderArr;
   const invTotalCols = invHeaders.length;
 
@@ -1320,20 +1335,20 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   const invDescColIdx = hasInvPartNo ? 2 : 1;
 
-  const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
+  const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
     { fixed: 13, halign: "center" },                               // #
     ...(hasInvPartNo ? [{ fixed: 25 }] : []),                      // part no
     { auto: true },                                                 // description
-    { fixed: 18, halign: "center" },                               // qty
+    { fixed: 12, halign: "center" },                               // qty (tighter)
     ...(hasInvUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: hasInvPartNo ? 27 : 30, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },   // unit price
+    { fixed: hasInvPartNo ? 22 : 25, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },   // unit price
     ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []), // disc %
-    { fixed: hasInvPartNo ? 27 : 30, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },   // amount
+    { fixed: hasInvPartNo ? 22 : 25, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },   // amount
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
 
-  const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${invCurrency})`);
-  const invAmountIdx = invHeaders.indexOf(`Amount (${invCurrency})`);
+  const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${currSymbol(invCurrency)})`);
+  const invAmountIdx = invHeaders.indexOf(`Amount (${currSymbol(invCurrency)})`);
   // Compact padding heuristic: if a normal-padding table would barely push the
   // totals to page 2, switch to tighter padding to keep everything on one page.
   const invAvailH = pageHeight - invTableStartY - Math.max(invBoxH, invBankBlockH) - FOOTER_RESERVE - 12;
