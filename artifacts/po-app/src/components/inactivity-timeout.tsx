@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, Clock } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
-const INACTIVITY_MS = 5 * 60 * 1000;
+const INACTIVITY_MS = 10 * 60 * 1000;
 const WARN_BEFORE_MS = 30 * 1000;
 
 export function InactivityTimeout() {
@@ -117,7 +117,7 @@ export function InactivityTimeout() {
               Session About to Expire
             </DialogTitle>
             <DialogDescription>
-              You've been inactive for 5 minutes. Your session will automatically end in{" "}
+              You've been inactive for 10 minutes. Your session will automatically end in{" "}
               <span className="font-semibold text-foreground">{countdown} second{countdown !== 1 ? "s" : ""}</span>.
               Any unsaved stock reservations will be released.
             </DialogDescription>
@@ -137,7 +137,7 @@ export function InactivityTimeout() {
               Session Timed Out
             </DialogTitle>
             <DialogDescription>
-              Your session expired after 5 minutes of inactivity. Any reserved stock items have been released. Please log in again to continue.
+              Your session expired after 10 minutes of inactivity. Any reserved stock items have been released. Please log in again to continue.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end mt-2">
