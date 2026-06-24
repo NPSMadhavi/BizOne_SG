@@ -423,7 +423,7 @@ function drawNotesHtml(
 
   let y = startY;
   for (const nl of nlines) {
-    if (!nl.text) { y += lineH * 0.45; continue; }
+    if (!nl.text) { y += lineH; continue; }
     const style = nl.b && nl.i ? "bolditalic" : nl.b ? "bold" : nl.i ? "italic" : "normal";
     doc.setFont(font, style);
     const wrappedLines = doc.splitTextToSize(nl.text, nl.wi) as string[];
