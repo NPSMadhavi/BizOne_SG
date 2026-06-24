@@ -453,9 +453,24 @@ function autoTableRich(
   // (unfinalized) width for auto-sized columns and can be near-zero.
   const knownDescWidth: number | undefined = opts.columnStyles?.[descColIdx]?.cellWidth;
 
+  // Clear description-column text from each body row so autotable measures 0 height
+  // for those cells. Without this, autotable counts \n characters in the plain-text
+  // content (including inter-element whitespace from Tiptap HTML) and allocates more
+  // height than our minCellHeight predicts, leaving a blank gap below the drawn text.
+  const cleanedBody = (restOpts.body ?? []).map((row: any) => {
+    if (!Array.isArray(row)) return row;
+    // Section rows: single object with colSpan — clear content entirely
+    if (row.length === 1 && row[0] !== null && typeof row[0] === "object" && (row[0].colSpan ?? 1) > 1) {
+      return [{ ...row[0], content: "" }];
+    }
+    // Regular rows: clear the description column
+    return row.map((cell: any, ci: number) => ci === descColIdx ? "" : cell);
+  });
+
   (doc as any).autoTable({
     styles: { font: PDF_FONT },
     ...restOpts,
+    body: cleanedBody,
     headStyles: { font: PDF_FONT, ...(hs ?? {}) },
     bodyStyles: { font: PDF_FONT, ...(bs ?? {}) },
     // Pre-set minCellHeight for description cells AND full-width section rows
