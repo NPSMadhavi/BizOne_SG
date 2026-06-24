@@ -828,6 +828,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const poUnitPriceIdx = poHeaders.indexOf(`Unit Price (${currSymbol(poCurrency)})`);
   const poAmountIdx = poHeaders.indexOf(`Amount (${currSymbol(poCurrency)})`);
   const poQtyIdx = poHeaders.indexOf("Qty");
+  const poTablePages: number[] = [];
 
   autoTableRich(doc, {
     startY: 113,
@@ -841,6 +842,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     rowPageBreak: "avoid",
+    didDrawPage: (_d: any) => { poTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
     didParseCell: (data: any) => {
       if ([poQtyIdx, poUnitPriceIdx, poAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
@@ -848,7 +850,21 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     },
   }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
 
-  let currentY = (doc as any).lastAutoTable.finalY + 8;
+  const poFinalY = (doc as any).lastAutoTable.finalY;
+  { const _uniq = [...new Set(poTablePages)];
+    if (_uniq.length > 1) {
+      const _retPg = (doc as any).internal.getCurrentPageInfo().pageNumber;
+      for (const _pg of _uniq.slice(0, -1)) {
+        doc.setPage(_pg);
+        doc.setFontSize(7.5); doc.setFont(PDF_FONT, "italic"); doc.setTextColor(140, 140, 140);
+        doc.text("Continued on next page \u2192", marginRight, pageHeight - FOOTER_RESERVE - 2, { align: "right" });
+      }
+      doc.setPage(_retPg);
+      doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(0, 0, 0);
+    }
+  }
+
+  let currentY = poFinalY + 16;
 
   // Notes — full-width, paginated
   if (po.notes) {
@@ -1163,6 +1179,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtEstNormal = 9 + regularQtItems.length * 10;
   const qtEstCompact = 9 + regularQtItems.length * 7;
   const qtUseCompact = qtEstNormal > qtAvailH && qtEstCompact <= qtAvailH;
+  const qtTablePages: number[] = [];
   autoTableRich(doc, {
     startY: qtTableStartY,
     head: [qtHeaders],
@@ -1175,6 +1192,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     rowPageBreak: "avoid",
+    didDrawPage: (_d: any) => { qtTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
     didParseCell: (data: any) => {
       if ([qtQtyIdx, qtUnitPriceIdx, qtAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
@@ -1182,7 +1200,21 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     },
   }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)));
 
-  let qtCurrentY = (doc as any).lastAutoTable.finalY + 4;
+  const qtFinalY = (doc as any).lastAutoTable.finalY;
+  { const _uniq = [...new Set(qtTablePages)];
+    if (_uniq.length > 1) {
+      const _retPg = (doc as any).internal.getCurrentPageInfo().pageNumber;
+      for (const _pg of _uniq.slice(0, -1)) {
+        doc.setPage(_pg);
+        doc.setFontSize(7.5); doc.setFont(PDF_FONT, "italic"); doc.setTextColor(140, 140, 140);
+        doc.text("Continued on next page \u2192", marginRight, pageHeight - FOOTER_RESERVE - 2, { align: "right" });
+      }
+      doc.setPage(_retPg);
+      doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(0, 0, 0);
+    }
+  }
+
+  let qtCurrentY = qtFinalY + 12;
 
   if (qt.notes) {
     const notesWidth = marginRight - marginLeft;
@@ -1384,6 +1416,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invEstNormal = 9 + regularInvItems.length * 10;
   const invEstCompact = 9 + regularInvItems.length * 7;
   const invUseCompact = invEstNormal > invAvailH && invEstCompact <= invAvailH;
+  const invTablePages: number[] = [];
   autoTableRich(doc, {
     startY: invTableStartY,
     head: [invHeaders],
@@ -1396,6 +1429,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     rowPageBreak: "avoid",
+    didDrawPage: (_d: any) => { invTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
     didParseCell: (data: any) => {
       if ([invQtyIdx, invUnitPriceIdx, invAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
@@ -1403,7 +1437,21 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     },
   }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)));
 
-  let invCurrentY = (doc as any).lastAutoTable.finalY + 4;
+  const invFinalY = (doc as any).lastAutoTable.finalY;
+  { const _uniq = [...new Set(invTablePages)];
+    if (_uniq.length > 1) {
+      const _retPg = (doc as any).internal.getCurrentPageInfo().pageNumber;
+      for (const _pg of _uniq.slice(0, -1)) {
+        doc.setPage(_pg);
+        doc.setFontSize(7.5); doc.setFont(PDF_FONT, "italic"); doc.setTextColor(140, 140, 140);
+        doc.text("Continued on next page \u2192", marginRight, pageHeight - FOOTER_RESERVE - 2, { align: "right" });
+      }
+      doc.setPage(_retPg);
+      doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(0, 0, 0);
+    }
+  }
+
+  let invCurrentY = invFinalY + 12;
 
   if (inv.notes) {
     const notesWidth = marginRight - marginLeft;
@@ -1530,6 +1578,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     ...(hasDOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
   ];
   const doColStyles = smartColWidths(doc, doHeaders, doTableData, doTableWidth, doFixedMap);
+  const doTablePages: number[] = [];
 
   autoTableRich(doc, {
     startY: 113,
@@ -1543,12 +1592,29 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     columnStyles: doColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     rowPageBreak: "avoid",
+    didDrawPage: (_d: any) => { doTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
   }, doDescColIdx, doRichDesc, filteredDOItems.map((item: any) => (item as any).itemImage || null));
+
+  const doFinalY = (doc as any).lastAutoTable.finalY;
+  { const doPageH = doc.internal.pageSize.getHeight();
+    const doMR = doc.internal.pageSize.getWidth() - 14;
+    const _uniq = [...new Set(doTablePages)];
+    if (_uniq.length > 1) {
+      const _retPg = (doc as any).internal.getCurrentPageInfo().pageNumber;
+      for (const _pg of _uniq.slice(0, -1)) {
+        doc.setPage(_pg);
+        doc.setFontSize(7.5); doc.setFont(PDF_FONT, "italic"); doc.setTextColor(140, 140, 140);
+        doc.text("Continued on next page \u2192", doMR, doPageH - FOOTER_RESERVE - 2, { align: "right" });
+      }
+      doc.setPage(_retPg);
+      doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(0, 0, 0);
+    }
+  }
 
   if (doDoc.notes) {
     const doPageH = doc.internal.pageSize.getHeight();
     const doNotesWidth = doc.internal.pageSize.getWidth() - 28;
-    let doNotesY = (doc as any).lastAutoTable.finalY + 8;
+    let doNotesY = doFinalY + 16;
     const doNoteLines = doc.splitTextToSize(doDoc.notes, doNotesWidth);
     if (doNotesY + 14 > doPageH - FOOTER_RESERVE) { doc.addPage(); doNotesY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
