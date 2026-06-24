@@ -327,7 +327,8 @@ function drawNotesHtml(
   const src = /<[a-z]/i.test(html) ? html : `<p>${html.replace(/\n/g, "<br>")}</p>`;
   const dom = new DOMParser().parseFromString(src, "text/html");
 
-  interface NLine { text: string; b: boolean; i: boolean; xi: number; wi: number; align?: string; }
+  interface NSeg { text: string; b: boolean; i: boolean; }
+  interface NLine { text: string; b: boolean; i: boolean; xi: number; wi: number; align?: string; segs?: NSeg[]; }
   const INDENT_MM = [0, 4, 9];
 
   type Run = { t: string; b: boolean; i: boolean };
@@ -369,13 +370,32 @@ function drawNotesHtml(
       const tot = seg.reduce((s, r) => s + r.t.length, 0);
       const boldPct = tot > 0 ? seg.filter(r => r.b).reduce((s, r) => s + r.t.length, 0) / tot : 0;
       const italPct = tot > 0 ? seg.filter(r => r.i).reduce((s, r) => s + r.t.length, 0) / tot : 0;
-      nlines.push({ text, b: boldPct > 0.5, i: italPct > 0.5, xi, wi, align });
+      // Detect mixed bold/italic within this line and build per-segment info
+      const hasMixed = seg.some(r => r.b) !== seg.every(r => r.b) || seg.some(r => r.i) !== seg.every(r => r.i);
+      let segs: NSeg[] | undefined;
+      if (hasMixed) {
+        segs = [];
+        // Prepend the list prefix as a plain segment for the first line
+        if (si === 0 && prefix) segs.push({ text: prefix, b: false, i: false });
+        // Merge consecutive runs with identical bold/italic into segments
+        for (const r of seg) {
+          if (segs.length > 0 && segs[segs.length - 1].b === r.b && segs[segs.length - 1].i === r.i) {
+            segs[segs.length - 1] = { ...segs[segs.length - 1], text: segs[segs.length - 1].text + r.t };
+          } else {
+            segs.push({ text: r.t, b: r.b, i: r.i });
+          }
+        }
+        segs = segs.filter(s => s.text);
+      }
+      nlines.push({ text, b: boldPct > 0.5, i: italPct > 0.5, xi, wi, align, segs });
     }
   }
 
   function walkList(el: Element, indent: number) {
     const isOl = el.tagName.toLowerCase() === "ol";
-    let n = 0;
+    // Respect the <ol start="N"> attribute so lists split by blank paragraphs
+    // continue numbering correctly in the PDF (e.g. item 8 doesn't reset to 1).
+    let n = isOl ? (parseInt((el as HTMLElement).getAttribute("start") || "1", 10) - 1) : 0;
     for (const li of Array.from(el.children)) {
       if (li.tagName.toLowerCase() !== "li") continue;
       n++;
@@ -424,23 +444,61 @@ function drawNotesHtml(
   let y = startY;
   for (const nl of nlines) {
     if (!nl.text) { y += lineH; continue; }
-    const style = nl.b && nl.i ? "bolditalic" : nl.b ? "bold" : nl.i ? "italic" : "normal";
-    doc.setFont(font, style);
-    const wrappedLines = doc.splitTextToSize(nl.text, nl.wi) as string[];
-    for (let wi = 0; wi < wrappedLines.length; wi++) {
-      const wl = wrappedLines[wi];
-      const isLast = wi === wrappedLines.length - 1;
-      if (y + lineH > pageH - footerReserve) { doc.addPage(); y = 20; }
-      if (nl.align === "justify" && !isLast) {
-        doc.text(wl, nl.xi, y, { align: "justify", maxWidth: nl.wi });
-      } else if (nl.align === "center") {
-        doc.text(wl, nl.xi + nl.wi / 2, y, { align: "center" });
-      } else if (nl.align === "right") {
-        doc.text(wl, nl.xi + nl.wi, y, { align: "right" });
-      } else {
-        doc.text(wl, nl.xi, y);
+
+    if (nl.segs && nl.segs.length > 1) {
+      // Inline mixed-bold/italic rendering.
+      // Build a per-character style map so we can split each wrapped line
+      // into styled runs (e.g. "8. " plain + "Customer Data…:" bold + rest plain).
+      const charStyles: Array<{ b: boolean; i: boolean }> = [];
+      for (const seg of nl.segs) {
+        for (let ci = 0; ci < seg.text.length; ci++) charStyles.push({ b: seg.b, i: seg.i });
       }
-      y += lineH;
+      // Use normal font for word-wrap measurement (slight width inaccuracy is OK).
+      doc.setFont(font, "normal");
+      const wrappedLines = doc.splitTextToSize(nl.text, nl.wi) as string[];
+      let charPos = 0;
+      for (const wl of wrappedLines) {
+        if (y + lineH > pageH - footerReserve) { doc.addPage(); y = 20; }
+        let lineX = nl.xi;
+        let ci = 0;
+        while (ci < wl.length) {
+          const cs = charStyles[Math.min(charPos + ci, charStyles.length - 1)] ?? { b: false, i: false };
+          const start = ci;
+          while (ci < wl.length) {
+            const ccs = charStyles[Math.min(charPos + ci, charStyles.length - 1)] ?? { b: false, i: false };
+            if (ccs.b !== cs.b || ccs.i !== cs.i) break;
+            ci++;
+          }
+          const runText = wl.substring(start, ci);
+          const rstyle = cs.b && cs.i ? "bolditalic" : cs.b ? "bold" : cs.i ? "italic" : "normal";
+          doc.setFont(font, rstyle);
+          doc.text(runText, lineX, y);
+          lineX += doc.getTextWidth(runText);
+        }
+        // Advance charPos past this wrapped line and any whitespace separator.
+        charPos += wl.length;
+        while (charPos < nl.text.length && nl.text[charPos] === " ") charPos++;
+        y += lineH;
+      }
+    } else {
+      const style = nl.b && nl.i ? "bolditalic" : nl.b ? "bold" : nl.i ? "italic" : "normal";
+      doc.setFont(font, style);
+      const wrappedLines = doc.splitTextToSize(nl.text, nl.wi) as string[];
+      for (let wi = 0; wi < wrappedLines.length; wi++) {
+        const wl = wrappedLines[wi];
+        const isLast = wi === wrappedLines.length - 1;
+        if (y + lineH > pageH - footerReserve) { doc.addPage(); y = 20; }
+        if (nl.align === "justify" && !isLast) {
+          doc.text(wl, nl.xi, y, { align: "justify", maxWidth: nl.wi });
+        } else if (nl.align === "center") {
+          doc.text(wl, nl.xi + nl.wi / 2, y, { align: "center" });
+        } else if (nl.align === "right") {
+          doc.text(wl, nl.xi + nl.wi, y, { align: "right" });
+        } else {
+          doc.text(wl, nl.xi, y);
+        }
+        y += lineH;
+      }
     }
   }
   doc.setFont(font, "normal");
