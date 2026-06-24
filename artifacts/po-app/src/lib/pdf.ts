@@ -1563,6 +1563,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     alternateRowStyles: { fillColor: [245, 247, 249] },
     styles: { cellPadding: invUseCompact ? 2 : 4 },
     columnStyles: invColumnStyles,
+    rowPageBreak: "avoid",
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
     didDrawPage: (_d: any) => { invTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
     didParseCell: (data: any) => {
