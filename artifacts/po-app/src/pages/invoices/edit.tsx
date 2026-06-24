@@ -713,7 +713,7 @@ export default function InvoiceEdit() {
             <CardHeader className="pb-4"><CardTitle className="text-lg">Notes / Terms &amp; Conditions</CardTitle></CardHeader>
             <CardContent>
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><Textarea placeholder="Terms, conditions, or special instructions..." className="resize-none" rows={4} {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
               )} />
             </CardContent>
           </Card>

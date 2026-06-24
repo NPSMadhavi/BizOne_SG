@@ -569,7 +569,7 @@ export default function QuotationEdit() {
             <CardHeader className="pb-4"><CardTitle className="text-lg">Notes</CardTitle></CardHeader>
             <CardContent>
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
+                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl></FormItem>
               )} />
             </CardContent>
           </Card>

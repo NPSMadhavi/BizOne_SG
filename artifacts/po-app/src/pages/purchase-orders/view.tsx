@@ -343,7 +343,7 @@ export default function PurchaseOrderView() {
         <Card>
           <CardHeader><CardTitle className="text-sm">Notes</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{po.notes}</p>
+            <div className="text-sm text-muted-foreground prose prose-sm max-w-none [&_p]:my-1 [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5" dangerouslySetInnerHTML={{ __html: (po as any).notes || "" }} />
           </CardContent>
         </Card>
       )}

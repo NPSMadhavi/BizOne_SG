@@ -624,11 +624,7 @@ export default function PurchaseOrderEdit() {
                       <FormItem>
                         <FormLabel className="text-muted-foreground">Additional Notes</FormLabel>
                         <FormControl>
-                          <Textarea
-                            placeholder="Any special instructions or terms..."
-                            className="resize-none h-24"
-                            {...field}
-                          />
+                          <RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Any special instructions or terms..." className="min-h-[96px]" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

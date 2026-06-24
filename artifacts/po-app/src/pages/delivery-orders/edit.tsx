@@ -227,7 +227,7 @@ export default function DeliveryOrderEdit() {
                 )} />
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem><FormLabel>Notes</FormLabel>
-                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
+                    <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Special delivery instructions..." className="min-h-[96px]" /></FormControl></FormItem>
                 )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>

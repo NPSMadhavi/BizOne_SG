@@ -304,6 +304,117 @@ function smartColWidths(
   return styles;
 }
 
+/**
+ * Draw rich HTML content (bold, italic, bullet lists, numbered lists, nesting)
+ * as notes text directly in the PDF. Returns the final Y after the last line.
+ */
+function drawNotesHtml(
+  doc: jsPDF,
+  html: string,
+  x: number,
+  startY: number,
+  maxWidth: number,
+  lineH: number,
+  pageH: number,
+  footerReserve: number,
+  font: string,
+): number {
+  if (!html?.trim()) return startY;
+  // Treat plain text (no HTML tags) by wrapping in <p>
+  const src = /<[a-z]/i.test(html) ? html : `<p>${html.replace(/\n/g, "<br>")}</p>`;
+  const dom = new DOMParser().parseFromString(src, "text/html");
+
+  interface NLine { text: string; b: boolean; i: boolean; xi: number; wi: number; }
+  const INDENT_MM = [0, 4, 9];
+
+  type Run = { t: string; b: boolean; i: boolean };
+  function collectRuns(node: Node, b: boolean, i: boolean): Run[] {
+    if (node.nodeType === 3) {
+      const t = (node.textContent ?? "").replace(/\u00a0/g, " ");
+      return t ? [{ t, b, i }] : [];
+    }
+    if (node.nodeType !== 1) return [];
+    const el = node as Element;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "br") return [{ t: "\n", b, i }];
+    const nb = b || tag === "strong" || tag === "b";
+    const ni = i || tag === "em" || tag === "i";
+    return Array.from(el.childNodes).flatMap(c => collectRuns(c, nb, ni));
+  }
+
+  const nlines: NLine[] = [];
+  function pushBlock(el: Element, prefix: string, indent: number) {
+    const rr: Run[] = [];
+    for (const ch of Array.from(el.childNodes)) {
+      const ct = (ch as Element).tagName?.toLowerCase();
+      if (ct !== "ul" && ct !== "ol") rr.push(...collectRuns(ch, false, false));
+    }
+    if (!rr.length && !prefix) { nlines.push({ text: "", b: false, i: false, xi: x, wi: maxWidth }); return; }
+    // split on hard breaks
+    const segments: Run[][] = [[]];
+    for (const r of rr) {
+      if (r.t === "\n") segments.push([]);
+      else segments[segments.length - 1].push(r);
+    }
+    const xi = x + (INDENT_MM[Math.min(indent, 2)] ?? 9);
+    const wi = maxWidth - (INDENT_MM[Math.min(indent, 2)] ?? 9);
+    for (let si = 0; si < segments.length; si++) {
+      const seg = segments[si];
+      const rawText = seg.map(r => r.t).join("").replace(/\s+/g, " ").trim();
+      const text = si === 0 ? prefix + rawText : rawText;
+      if (!text.trim()) continue;
+      const tot = seg.reduce((s, r) => s + r.t.length, 0);
+      const boldPct = tot > 0 ? seg.filter(r => r.b).reduce((s, r) => s + r.t.length, 0) / tot : 0;
+      const italPct = tot > 0 ? seg.filter(r => r.i).reduce((s, r) => s + r.t.length, 0) / tot : 0;
+      nlines.push({ text, b: boldPct > 0.5, i: italPct > 0.5, xi, wi });
+    }
+  }
+
+  function walkList(el: Element, indent: number) {
+    const isOl = el.tagName.toLowerCase() === "ol";
+    let n = 0;
+    for (const li of Array.from(el.children)) {
+      if (li.tagName.toLowerCase() !== "li") continue;
+      n++;
+      const prefix = isOl ? `${n}. ` : indent === 1 ? "\u2022 " : "\u25E6 ";
+      const contentEl = (li.querySelector(":scope > p") as Element) ?? li;
+      pushBlock(contentEl, prefix, indent);
+      for (const ch of Array.from(li.children)) {
+        const ct = ch.tagName.toLowerCase();
+        if (ct === "ul" || ct === "ol") walkList(ch, indent + 1);
+      }
+    }
+  }
+
+  for (const child of Array.from(dom.body.childNodes)) {
+    if (child.nodeType !== 1) {
+      const t = (child.textContent ?? "").trim();
+      if (t) nlines.push({ text: t, b: false, i: false, xi: x, wi: maxWidth });
+      continue;
+    }
+    const el = child as Element;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "p" || tag === "div" || /^h\d$/.test(tag)) pushBlock(el, "", 0);
+    else if (tag === "ul" || tag === "ol") walkList(el, 1);
+    else pushBlock(el, "", 0);
+  }
+
+  let y = startY;
+  for (const nl of nlines) {
+    if (!nl.text) { y += lineH * 0.45; continue; }
+    const style = nl.b && nl.i ? "bolditalic" : nl.b ? "bold" : nl.i ? "italic" : "normal";
+    doc.setFont(font, style);
+    for (const wl of doc.splitTextToSize(nl.text, nl.wi)) {
+      if (y + lineH > pageH - footerReserve) { doc.addPage(); y = 20; }
+      doc.text(wl, nl.xi, y);
+      y += lineH;
+    }
+  }
+  doc.setFont(font, "normal");
+  doc.setTextColor(0, 0, 0);
+  return y + 2;
+}
+
 function autoTableRich(
   doc: jsPDF,
   opts: any,
@@ -866,21 +977,13 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   let currentY = poFinalY + 16;
 
-  // Notes — full-width, paginated
+  // Notes — rich HTML, paginated
   if (po.notes) {
-    const notesWidth = marginRight - marginLeft;
-    const noteLines = doc.splitTextToSize(po.notes, notesWidth);
     if (currentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); currentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, currentY);
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    currentY += 6;
-    for (const line of noteLines) {
-      if (currentY + notesLineH > pageHeight - FOOTER_RESERVE) { doc.addPage(); currentY = 20; }
-      doc.text(line, marginLeft, currentY);
-      currentY += notesLineH;
-    }
-    currentY += 4;
+    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    currentY = drawNotesHtml(doc, po.notes, marginLeft, currentY + 6, marginRight - marginLeft, notesLineH, pageHeight, FOOTER_RESERVE, PDF_FONT);
   }
 
   // Totals — if they don't fit on this page, push to a new page
@@ -1217,19 +1320,11 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   let qtCurrentY = qtFinalY + 12;
 
   if (qt.notes) {
-    const notesWidth = marginRight - marginLeft;
-    const noteLines = doc.splitTextToSize(qt.notes, notesWidth);
     if (qtCurrentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); qtCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, qtCurrentY);
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    qtCurrentY += 6;
-    for (const line of noteLines) {
-      if (qtCurrentY + 5 > pageHeight - FOOTER_RESERVE) { doc.addPage(); qtCurrentY = 20; }
-      doc.text(line, marginLeft, qtCurrentY);
-      qtCurrentY += 5;
-    }
-    qtCurrentY += 4;
+    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    qtCurrentY = drawNotesHtml(doc, qt.notes, marginLeft, qtCurrentY + 6, marginRight - marginLeft, 5, pageHeight, FOOTER_RESERVE, PDF_FONT);
   }
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
@@ -1454,19 +1549,11 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   let invCurrentY = invFinalY + 12;
 
   if (inv.notes) {
-    const notesWidth = marginRight - marginLeft;
-    const noteLines = doc.splitTextToSize(inv.notes, notesWidth);
     if (invCurrentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); invCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, invCurrentY);
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    invCurrentY += 6;
-    for (const line of noteLines) {
-      if (invCurrentY + 5 > pageHeight - FOOTER_RESERVE) { doc.addPage(); invCurrentY = 20; }
-      doc.text(line, marginLeft, invCurrentY);
-      invCurrentY += 5;
-    }
-    invCurrentY += 4;
+    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    invCurrentY = drawNotesHtml(doc, inv.notes, marginLeft, invCurrentY + 6, marginRight - marginLeft, 5, pageHeight, FOOTER_RESERVE, PDF_FONT);
   }
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
@@ -1615,17 +1702,11 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     const doPageH = doc.internal.pageSize.getHeight();
     const doNotesWidth = doc.internal.pageSize.getWidth() - 28;
     let doNotesY = doFinalY + 16;
-    const doNoteLines = doc.splitTextToSize(doDoc.notes, doNotesWidth);
     if (doNotesY + 14 > doPageH - FOOTER_RESERVE) { doc.addPage(); doNotesY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, doNotesY);
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doNotesY += 6;
-    for (const line of doNoteLines) {
-      if (doNotesY + 5 > doPageH - FOOTER_RESERVE) { doc.addPage(); doNotesY = 20; }
-      doc.text(line, marginLeft, doNotesY);
-      doNotesY += 5;
-    }
+    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    drawNotesHtml(doc, doDoc.notes, marginLeft, doNotesY + 6, doNotesWidth, 5, doPageH, FOOTER_RESERVE, PDF_FONT);
   }
 
   buildDoFooter(doc);
