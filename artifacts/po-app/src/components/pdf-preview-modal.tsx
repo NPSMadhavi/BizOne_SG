@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, Printer } from "lucide-react";
+import { Download, Printer, Sparkles } from "lucide-react";
 import { EmailSendDialog } from "@/components/email-send-dialog";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -10,16 +10,50 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-interface PdfPreviewModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  generatePdf: (opts?: { returnBase64?: boolean }) => Promise<string | void>;
-  pdfFilename: string;
-  defaultEmailTo?: string;
-  defaultEmailSubject?: string;
-  defaultEmailBody?: string;
-  onEdit?: () => void;
+const AI_STEPS = [
+  "Analyzing document structure...",
+  "Computing layout geometry...",
+  "Measuring column widths...",
+  "Optimizing page distribution...",
+  "Rendering typography...",
+  "Applying smart pagination...",
+  "Finalizing document...",
+];
+
+function AiPreloader() {
+  const [stepIdx, setStepIdx] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setStepIdx(i => (i + 1) % AI_STEPS.length);
+    }, 420);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-5">
+      <div className="relative flex items-center justify-center">
+        <div className="h-14 w-14 rounded-full border-[3px] border-primary/15 border-t-primary animate-spin" />
+        <Sparkles className="absolute h-5 w-5 text-primary" />
+      </div>
+      <div className="text-center space-y-1.5">
+        <p className="text-sm font-semibold text-foreground tracking-tight">AI Layout Engine</p>
+        <p className="text-xs text-muted-foreground min-h-[16px] transition-all duration-300">
+          {AI_STEPS[stepIdx]}
+        </p>
+      </div>
+      <div className="flex gap-1.5">
+        {AI_STEPS.map((_, i) => (
+          <div
+            key={i}
+            className={`h-1 rounded-full transition-all duration-300 ${
+              i <= stepIdx ? "w-5 bg-primary" : "w-2 bg-muted"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PdfCanvasRenderer({ base64 }: { base64: string }) {
@@ -75,12 +109,24 @@ function PdfCanvasRenderer({ base64 }: { base64: string }) {
     <div className="relative w-full h-full overflow-y-auto bg-muted/40 p-4">
       {rendering && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/40 z-10">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <AiPreloader />
         </div>
       )}
       <div ref={containerRef} className="max-w-[820px] mx-auto" />
     </div>
   );
+}
+
+interface PdfPreviewModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  generatePdf: (opts?: { returnBase64?: boolean }) => Promise<string | void>;
+  pdfFilename: string;
+  defaultEmailTo?: string;
+  defaultEmailSubject?: string;
+  defaultEmailBody?: string;
+  onEdit?: () => void;
 }
 
 export function PdfPreviewModal({
@@ -183,9 +229,7 @@ export function PdfPreviewModal({
         </DialogHeader>
         <div className="flex-1 overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <AiPreloader />
           ) : pdfBase64 ? (
             <PdfCanvasRenderer base64={pdfBase64} />
           ) : (

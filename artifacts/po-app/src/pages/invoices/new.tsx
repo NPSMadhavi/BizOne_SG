@@ -29,7 +29,6 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { AiInvoiceDialog, type AiGeneratedInvoice } from "@/components/ai-invoice-dialog";
-import { AiFormatSheet } from "@/components/ai-format-sheet";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -92,8 +91,6 @@ export default function InvoiceNew() {
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiFormatOpen, setAiFormatOpen] = useState(false);
-  const [pendingAiValues, setPendingAiValues] = useState<z.infer<typeof schema> | null>(null);
 
   const allReservedIds = useRef<Set<number>>(new Set());
 
@@ -786,10 +783,7 @@ export default function InvoiceNew() {
               type="button"
               disabled={isSubmitting}
               className="gap-2"
-              onClick={form.handleSubmit(v => {
-                setPendingAiValues(v);
-                setAiFormatOpen(true);
-              })}
+              onClick={form.handleSubmit(v => onSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save"}
@@ -878,18 +872,6 @@ export default function InvoiceNew() {
         }}
       />
 
-      <AiFormatSheet
-        open={aiFormatOpen}
-        onOpenChange={setAiFormatOpen}
-        items={pendingAiValues?.items ?? []}
-        currency={pendingAiValues?.currency ?? "SGD"}
-        onConfirm={(chosenItems) => {
-          if (!pendingAiValues) return;
-          setAiFormatOpen(false);
-          onSubmit({ ...pendingAiValues, items: chosenItems }, true);
-          setPendingAiValues(null);
-        }}
-      />
       <AiInvoiceDialog
         open={aiOpen}
         onOpenChange={setAiOpen}

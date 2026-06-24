@@ -840,6 +840,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     styles: { cellPadding: 4 },
     columnStyles: poColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
+    rowPageBreak: "avoid",
     didParseCell: (data: any) => {
       if ([poQtyIdx, poUnitPriceIdx, poAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
@@ -849,19 +850,21 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   let currentY = (doc as any).lastAutoTable.finalY + 8;
 
-  // Notes — check if they fit on this page; if not, new page
+  // Notes — full-width, paginated
   if (po.notes) {
-    const noteLines = doc.splitTextToSize(po.notes, 120);
-    const notesH = 8 + noteLines.length * notesLineH;
-    if (currentY + notesH + totalsBlockH + FOOTER_RESERVE > pageHeight) {
-      doc.addPage();
-      currentY = 20;
-    }
+    const notesWidth = marginRight - marginLeft;
+    const noteLines = doc.splitTextToSize(po.notes, notesWidth);
+    if (currentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); currentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, currentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(noteLines, marginLeft, currentY + 6);
-    currentY += notesH + 4;
+    currentY += 6;
+    for (const line of noteLines) {
+      if (currentY + notesLineH > pageHeight - FOOTER_RESERVE) { doc.addPage(); currentY = 20; }
+      doc.text(line, marginLeft, currentY);
+      currentY += notesLineH;
+    }
+    currentY += 4;
   }
 
   // Totals — if they don't fit on this page, push to a new page
@@ -1171,6 +1174,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     styles: { cellPadding: qtUseCompact ? 2 : 4 },
     columnStyles: qtColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
+    rowPageBreak: "avoid",
     didParseCell: (data: any) => {
       if ([qtQtyIdx, qtUnitPriceIdx, qtAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
@@ -1181,15 +1185,19 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   let qtCurrentY = (doc as any).lastAutoTable.finalY + 4;
 
   if (qt.notes) {
-    const noteLines = doc.splitTextToSize(qt.notes, 120);
-    const notesH = 8 + noteLines.length * 5;
-    const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
-    if (qtCurrentY + notesH + qtCombinedH + FOOTER_RESERVE > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+    const notesWidth = marginRight - marginLeft;
+    const noteLines = doc.splitTextToSize(qt.notes, notesWidth);
+    if (qtCurrentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); qtCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, qtCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(noteLines, marginLeft, qtCurrentY + 6);
-    qtCurrentY += notesH + 4;
+    qtCurrentY += 6;
+    for (const line of noteLines) {
+      if (qtCurrentY + 5 > pageHeight - FOOTER_RESERVE) { doc.addPage(); qtCurrentY = 20; }
+      doc.text(line, marginLeft, qtCurrentY);
+      qtCurrentY += 5;
+    }
+    qtCurrentY += 4;
   }
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
@@ -1387,6 +1395,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     styles: { cellPadding: invUseCompact ? 2 : 4 },
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
+    rowPageBreak: "avoid",
     didParseCell: (data: any) => {
       if ([invQtyIdx, invUnitPriceIdx, invAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
@@ -1397,14 +1406,19 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   let invCurrentY = (doc as any).lastAutoTable.finalY + 4;
 
   if (inv.notes) {
-    const noteLines = doc.splitTextToSize(inv.notes, 120);
-    const notesH = 8 + noteLines.length * 5;
-    if (invCurrentY + notesH + invBoxH + FOOTER_RESERVE + invBankBlockH > pageHeight) { doc.addPage(); invCurrentY = 20; }
+    const notesWidth = marginRight - marginLeft;
+    const noteLines = doc.splitTextToSize(inv.notes, notesWidth);
+    if (invCurrentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); invCurrentY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
     doc.text("Notes:", marginLeft, invCurrentY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(noteLines, marginLeft, invCurrentY + 6);
-    invCurrentY += notesH + 4;
+    invCurrentY += 6;
+    for (const line of noteLines) {
+      if (invCurrentY + 5 > pageHeight - FOOTER_RESERVE) { doc.addPage(); invCurrentY = 20; }
+      doc.text(line, marginLeft, invCurrentY);
+      invCurrentY += 5;
+    }
+    invCurrentY += 4;
   }
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
@@ -1528,14 +1542,24 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     styles: { cellPadding: 4 },
     columnStyles: doColStyles,
     margin: { top: 20, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
+    rowPageBreak: "avoid",
   }, doDescColIdx, doRichDesc, filteredDOItems.map((item: any) => (item as any).itemImage || null));
 
   if (doDoc.notes) {
-    const notesY = (doc as any).lastAutoTable.finalY + 8;
+    const doPageH = doc.internal.pageSize.getHeight();
+    const doNotesWidth = doc.internal.pageSize.getWidth() - 28;
+    let doNotesY = (doc as any).lastAutoTable.finalY + 8;
+    const doNoteLines = doc.splitTextToSize(doDoc.notes, doNotesWidth);
+    if (doNotesY + 14 > doPageH - FOOTER_RESERVE) { doc.addPage(); doNotesY = 20; }
     doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, notesY);
+    doc.text("Notes:", marginLeft, doNotesY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
-    doc.text(doc.splitTextToSize(doDoc.notes, 120), marginLeft, notesY + 6);
+    doNotesY += 6;
+    for (const line of doNoteLines) {
+      if (doNotesY + 5 > doPageH - FOOTER_RESERVE) { doc.addPage(); doNotesY = 20; }
+      doc.text(line, marginLeft, doNotesY);
+      doNotesY += 5;
+    }
   }
 
   buildDoFooter(doc);

@@ -29,7 +29,6 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
-import { AiFormatSheet } from "@/components/ai-format-sheet";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -93,8 +92,6 @@ export default function InvoiceEdit() {
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
-  const [aiFormatOpen, setAiFormatOpen] = useState(false);
-  const [pendingAiValues, setPendingAiValues] = useState<z.infer<typeof schema> | null>(null);
 
   const newlyReservedIds = useRef<Set<number>>(new Set());
 
@@ -738,10 +735,7 @@ export default function InvoiceEdit() {
               disabled={isSubmitting}
               variant="secondary"
               className="gap-2"
-              onClick={form.handleSubmit(v => {
-                setPendingAiValues(v);
-                setAiFormatOpen(true);
-              })}
+              onClick={form.handleSubmit(v => doSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
               Save & Preview
@@ -808,18 +802,6 @@ export default function InvoiceEdit() {
         }}
       />
 
-      <AiFormatSheet
-        open={aiFormatOpen}
-        onOpenChange={setAiFormatOpen}
-        items={pendingAiValues?.items ?? []}
-        currency={pendingAiValues?.currency ?? "SGD"}
-        onConfirm={(chosenItems) => {
-          if (!pendingAiValues) return;
-          setAiFormatOpen(false);
-          onSubmit({ ...pendingAiValues, items: chosenItems }, true);
-          setPendingAiValues(null);
-        }}
-      />
       <CurrencyMismatchDialog
         open={currencyDialogOpen}
         entityName={directoryCurrencyName}
