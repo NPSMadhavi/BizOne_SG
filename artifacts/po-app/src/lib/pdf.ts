@@ -427,6 +427,12 @@ function autoTableRich(
   const IMG_H_MAX = 18;   // mm max image height
 
   const { headStyles: hs, bodyStyles: bs, didParseCell: userDidParseCell, ...restOpts } = opts;
+
+  // Use the pre-computed column width from columnStyles rather than data.cell.width,
+  // because data.cell.width at didParseCell time reflects autotable's preliminary
+  // (unfinalized) width for auto-sized columns and can be near-zero.
+  const knownDescWidth: number | undefined = opts.columnStyles?.[descColIdx]?.cellWidth;
+
   (doc as any).autoTable({
     styles: { font: PDF_FONT },
     ...restOpts,
@@ -443,8 +449,14 @@ function autoTableRich(
       if (!richLines || richLines.length === 0) return;
       const scaleFactor = (doc.internal as any).scaleFactor || 2.8346;
       const LINE_H = (9.5 * 1.15) / scaleFactor;
-      const padding = 4;
-      const maxW = data.cell.width - padding * 2;
+      // Resolve padding from cell styles (number = uniform, object = per-side)
+      const cp = data.cell.styles?.cellPadding;
+      const hPad = typeof cp === "number" ? cp * 2 : ((cp?.left ?? 4) + (cp?.right ?? 4));
+      const vPad = typeof cp === "number" ? cp * 2 : ((cp?.top ?? 4) + (cp?.bottom ?? 4));
+      // Use the pre-computed column width; fall back to data.cell.width only when
+      // knownDescWidth is not available. Guard against near-zero values either way.
+      const rawW = typeof knownDescWidth === "number" ? knownDescWidth : data.cell.width;
+      const maxW = Math.max(20, rawW - hPad);
       doc.setFontSize(9.5);
       let totalH = 0;
       for (const rl of richLines) {
@@ -456,7 +468,7 @@ function autoTableRich(
           totalH += doc.splitTextToSize(rl.text, maxW).length * LINE_H;
         }
       }
-      const needed = totalH + padding * 2;
+      const needed = totalH + vPad;
       if (!data.cell.styles.minCellHeight || data.cell.styles.minCellHeight < needed) {
         data.cell.styles.minCellHeight = needed;
       }
