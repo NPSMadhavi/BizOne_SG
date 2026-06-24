@@ -26,7 +26,7 @@ function AiPreloader() {
   useEffect(() => {
     const timer = setInterval(() => {
       setStepIdx(i => (i + 1) % AI_STEPS.length);
-    }, 420);
+    }, 441);
     return () => clearInterval(timer);
   }, []);
 
@@ -92,7 +92,7 @@ function PdfCanvasRenderer({ base64 }: { base64: string }) {
           container.appendChild(canvas);
 
           const ctx = canvas.getContext("2d")!;
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          await page.render({ canvasContext: ctx, viewport, canvas }).promise;
           if (cancelled) return;
         }
       } catch (e) {
