@@ -291,13 +291,12 @@ export default function InvoiceEdit() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i as any).isFoc ? "0.00" : (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    const saveStatus = openPreview ? "confirmed" : values.status;
-    updateMutation.mutate({ id, data: { ...values, status: saveStatus, discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
+    updateMutation.mutate({ id, data: { ...values, status: "confirmed", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         setIsSubmitting(false);
         if (openPreview) { setPreviewOpen(true); }
-        else { toast({ title: "Draft saved." }); }
+        else { toast({ title: "Invoice saved." }); }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
@@ -832,6 +831,10 @@ export default function InvoiceEdit() {
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
         onEdit={() => { setPreviewOpen(false); }}
+        onEmailSent={async () => {
+          await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include" });
+          await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+        }}
       />
     </div>
   );

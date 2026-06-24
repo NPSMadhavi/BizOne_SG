@@ -23,6 +23,7 @@ export default function InvoiceList() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "confirmed": return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
+      case "sent": return <Badge className="bg-violet-600 hover:bg-violet-700">Sent</Badge>;
       case "draft": return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
       case "void": return <Badge className="bg-gray-500 hover:bg-gray-600">Void</Badge>;

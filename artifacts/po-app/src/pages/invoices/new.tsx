@@ -302,14 +302,14 @@ export default function InvoiceNew() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i as any).isFoc ? "0.00" : (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
+    createMutation.mutate({ data: { ...values, status: "confirmed", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {
           setSavedDoc(data);
           setPreviewOpen(true);
         } else {
-          toast({ title: "Draft saved." });
+          toast({ title: "Invoice saved." });
           setLocation("/invoices");
         }
       },
@@ -777,7 +777,7 @@ export default function InvoiceNew() {
               onClick={form.handleSubmit(v => doSubmit(v, false))}
             >
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save as Draft"}
+              {isSubmitting ? "Saving..." : "Save"}
             </Button>
             <Button
               type="button"
@@ -895,6 +895,10 @@ export default function InvoiceNew() {
           defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
           defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
           onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
+          onEmailSent={async () => {
+            await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include" });
+            setSavedDoc((prev: any) => prev ? { ...prev, status: "sent" } : prev);
+          }}
         />
       )}
     </div>

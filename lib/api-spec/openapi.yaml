@@ -1415,7 +1415,7 @@ components:
           type: string
         status:
           type: string
-          enum: [draft, confirmed, cancelled, void, paid]
+          enum: [draft, confirmed, sent, cancelled, void, paid]
         poRefNo:
           type: string
         voidReason:

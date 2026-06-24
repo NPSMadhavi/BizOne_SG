@@ -11,6 +11,7 @@ export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
 export const InvoiceStatus = {
   draft: "draft",
   confirmed: "confirmed",
+  sent: "sent",
   cancelled: "cancelled",
   void: "void",
   paid: "paid",

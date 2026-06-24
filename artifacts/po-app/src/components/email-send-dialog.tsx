@@ -19,6 +19,7 @@ interface EmailSendDialogProps {
   generatePdf: () => Promise<string>;
   triggerSize?: "default" | "sm" | "lg" | "icon";
   triggerLabel?: string;
+  onSuccess?: () => void;
 }
 
 interface EmailContact {
@@ -63,6 +64,7 @@ export function EmailSendDialog({
   generatePdf,
   triggerSize = "default",
   triggerLabel,
+  onSuccess,
 }: EmailSendDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -177,6 +179,7 @@ export function EmailSendDialog({
       await trackEmails(finalRecipients);
       toast({ title: "Email sent", description: `Email sent to ${finalRecipients.join(", ")}.` });
       setOpen(false);
+      onSuccess?.();
     } catch (err: any) {
       toast({ title: "Failed to send", description: err.message || "Email could not be sent.", variant: "destructive" });
     } finally {

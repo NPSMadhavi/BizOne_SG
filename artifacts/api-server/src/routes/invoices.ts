@@ -181,7 +181,7 @@ async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
   let newStatus: string;
   if (paidAmount >= totalAmount - 0.005) newStatus = "paid";
   else if (paidAmount > 0.004) newStatus = "partial";
-  else newStatus = "confirmed";
+  else newStatus = inv.status === "sent" ? "sent" : "confirmed";
 
   if (newStatus !== inv.status) {
     await db.update(invoicesTable).set({ status: newStatus }).where(eq(invoicesTable.id, invoiceId));
@@ -408,6 +408,28 @@ router.post("/invoices/:id/knock-off", async (req, res): Promise<void> => {
     .returning();
 
   logAudit({ req, action: "knock-off", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
+  res.json(parseDoc(updated));
+});
+
+// ── Mark Sent ─────────────────────────────────────────────────────────────────
+
+router.post("/invoices/:id/mark-sent", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const companyId = req.session.companyId!;
+  const [existing] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
+  if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (existing.status === "void") { res.status(400).json({ error: "Cannot mark a voided invoice as sent" }); return; }
+
+  if (existing.status === "confirmed") {
+    await db.update(invoicesTable).set({ status: "sent" }).where(eq(invoicesTable.id, id));
+  }
+
+  const [updated] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  logAudit({ req, action: "mark-sent", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
   res.json(parseDoc(updated));
 });
 

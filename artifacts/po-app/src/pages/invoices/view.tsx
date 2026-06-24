@@ -95,6 +95,7 @@ export default function InvoiceView() {
   const getStatusBadge = (s: string) => {
     switch (s) {
       case "confirmed": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Confirmed</Badge>;
+      case "sent":      return <Badge className="bg-violet-600 hover:bg-violet-700 text-sm py-1">Sent</Badge>;
       case "draft":     return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
       case "void":      return <Badge className="bg-gray-500 hover:bg-gray-600 text-sm py-1">Void</Badge>;
@@ -553,6 +554,10 @@ export default function InvoiceView() {
         defaultEmailSubject={`Invoice ${doc.invNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${doc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
+        onEmailSent={async () => {
+          await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include" });
+          await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+        }}
       />
 
       {/* Record Payment Dialog */}
