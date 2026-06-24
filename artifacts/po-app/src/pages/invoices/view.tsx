@@ -556,7 +556,7 @@ export default function InvoiceView() {
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
         onEmailSent={async () => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include" });
-          await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+          await qc.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         }}
       />
 

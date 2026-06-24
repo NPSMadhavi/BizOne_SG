@@ -1004,10 +1004,9 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     currentY = 20;
   }
 
-  // Pin totals to bottom of whichever page they land on
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = Math.max(currentY, pageHeight - FOOTER_RESERVE - totalsBlockH - 4);
+  const totalsY = currentY;
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
@@ -1341,18 +1340,14 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
-  let qtOverflowPage = false;
-  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; qtOverflowPage = true; }
+  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; }
 
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 1000) / 10 : 0;
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const qtSepY = pageHeight - FOOTER_RESERVE + 2;
-  // When content overflowed to a new page, place totals right after the table
-  // instead of pinning to the bottom (avoids a large whitespace gap).
-  const totalsY = qtOverflowPage ? qtCurrentY + 4 : Math.max(qtCurrentY + 4, qtSepY - qtCombinedH);
+  const totalsY = qtCurrentY + 4;
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1535,7 +1530,6 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     styles: { cellPadding: invUseCompact ? 2 : 4 },
     columnStyles: invColumnStyles,
     margin: { top: 12, left: marginLeft, right: 14, bottom: FOOTER_RESERVE },
-    rowPageBreak: "avoid",
     didDrawPage: (_d: any) => { invTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
     didParseCell: (data: any) => {
       if ([invQtyIdx, invUnitPriceIdx, invAmountIdx].includes(data.column.index)) {
@@ -1570,18 +1564,15 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const invCombinedH = Math.max(invBoxH, invBankBlockH);
-  let invOverflowPage = false;
-  if (invCurrentY + invCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; invOverflowPage = true; }
+  if (invCurrentY + invCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; }
 
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 1000) / 10 : 0;
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const invSepY = pageHeight - FOOTER_RESERVE + 2;
-  // When content overflowed to a new page, place totals right after the table
-  // instead of pinning to the bottom (avoids a large whitespace gap).
-  const totalsY = invOverflowPage ? invCurrentY + 4 : Math.max(invCurrentY + 4, invSepY - invCombinedH);
+  // Always draw totals immediately after the last item — no bottom-pinning.
+  const totalsY = invCurrentY + 4;
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);

@@ -4,4 +4,4 @@
 - [Vendor invoice auto-posting](vendor-invoice-auto-post.md) — accrual JEs for AP: create→DR expense/CR AP(2000), payment→DR AP/CR bank(1010), delete→reversal; expenseAccountId nullable on vendor_invoices table
 - [AR payment tracking](ar-payment-tracking.md) — invoice_payments table mirrors vendor_payments; status auto-computes (confirmed→partial→paid); JE: DR Bank(1010)/CR AR(1100); knock-off now creates a payment record too
 - [Page layout max-widths](page-layout-widths.md) — report/list/view → max-w-7xl; form new/edit → max-w-[1600px]; never use narrower values at page root
-- [autoTableRich minCellHeight bug](autotable-rich-height.md) — data.cell.width is near-zero in didParseCell for auto columns; use opts.columnStyles[descColIdx].cellWidth instead
+- [PDF gap root cause](pdf-gap-root-cause.md) — two causes: (1) totals bottom-pinned with Math.max(currentY, invSepY-combinedH) creates gap between last item and totals; (2) rowPageBreak:"avoid" creates gaps at page bottoms. Fix: remove rowPageBreak:avoid, draw totals at currentY+4 always.
