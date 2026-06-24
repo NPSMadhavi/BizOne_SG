@@ -1133,7 +1133,8 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = currentY;
+  const poPinnedY = pageHeight - FOOTER_RESERVE - totalsBlockH;
+  const totalsY = Math.max(currentY, poPinnedY);
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
@@ -1474,7 +1475,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtGstLabel = qtTaxRate > 0 ? `GST (${qtTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  const totalsY = qtCurrentY + 4;
+  const qtPinnedY = pageHeight - FOOTER_RESERVE - qtCombinedH - 4;
+  const totalsY = Math.max(qtCurrentY + 4, qtPinnedY);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1699,8 +1701,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invGstLabel = invTaxRate > 0 ? `GST (${invTaxRate}%):` : "GST:";
   const labelX = 146;
   const valueX = marginRight - 4;
-  // Always draw totals immediately after the last item — no bottom-pinning.
-  const totalsY = invCurrentY + 4;
+  const invPinnedY = pageHeight - FOOTER_RESERVE - invCombinedH - 4;
+  const totalsY = Math.max(invCurrentY + 4, invPinnedY);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
