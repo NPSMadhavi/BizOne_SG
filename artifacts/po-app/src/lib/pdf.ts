@@ -396,8 +396,15 @@ function drawNotesHtml(
     // Respect the <ol start="N"> attribute so lists split by blank paragraphs
     // continue numbering correctly in the PDF (e.g. item 8 doesn't reset to 1).
     let n = isOl ? (parseInt((el as HTMLElement).getAttribute("start") || "1", 10) - 1) : 0;
+    const indentOff = INDENT_MM[Math.min(indent, 2)] ?? 4;
     for (const li of Array.from(el.children)) {
       if (li.tagName.toLowerCase() !== "li") continue;
+      // Empty list items (from pressing Enter to create spacing) → blank line,
+      // counter does NOT increment so numbering of real items stays correct.
+      if (!(li.textContent ?? "").trim()) {
+        nlines.push({ text: "", b: false, i: false, xi: x + indentOff, wi: maxWidth - indentOff });
+        continue;
+      }
       n++;
       const prefix = isOl ? `${n}. ` : indent === 1 ? "\u2022 " : "\u25E6 ";
       const paragraphs = Array.from(li.children).filter(
