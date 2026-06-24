@@ -88,7 +88,7 @@ function EditorCore({
   const [formatting, setFormatting] = useState(false);
 
   const contentHeightClass = tall
-    ? "min-h-[400px] overflow-y-auto"
+    ? "min-h-full"
     : "min-h-[60px] max-h-[200px] overflow-y-auto";
 
   const editor = useEditor({
@@ -278,7 +278,7 @@ function EditorCore({
   return (
     <>
       <div className={cn("rounded-md border bg-background", className)}>
-        <div className="flex items-center border-b px-1 py-1 gap-0.5 flex-wrap">
+        <div className="flex items-center border-b px-1 py-1 gap-0.5 flex-wrap shrink-0">
           <Toggle size="sm" pressed={editor.isActive("bold")} onPressedChange={() => editor.chain().focus().toggleBold().run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Bold"><Bold className="h-3 w-3" /></Toggle>
           <Toggle size="sm" pressed={editor.isActive("italic")} onPressedChange={() => editor.chain().focus().toggleItalic().run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Italic"><Italic className="h-3 w-3" /></Toggle>
           <Toggle size="sm" pressed={editor.isActive("underline")} onPressedChange={() => editor.chain().focus().toggleUnderline().run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Underline"><UnderlineIcon className="h-3 w-3" /></Toggle>
@@ -321,7 +321,7 @@ function EditorCore({
           )}
         </div>
 
-        <div className="relative">
+        <div className={cn("relative", tall && "flex-1 min-h-0 overflow-y-auto")}>
           {isEmpty && (
             <div className="absolute top-0 left-0 px-2.5 py-2 text-sm text-muted-foreground/50 pointer-events-none select-none">
               {placeholder}

@@ -380,8 +380,21 @@ function drawNotesHtml(
       if (li.tagName.toLowerCase() !== "li") continue;
       n++;
       const prefix = isOl ? `${n}. ` : indent === 1 ? "\u2022 " : "\u25E6 ";
-      const contentEl = (li.querySelector(":scope > p") as Element) ?? li;
-      pushBlock(contentEl, prefix, indent);
+      const paragraphs = Array.from(li.children).filter(
+        (c) => c.tagName.toLowerCase() === "p"
+      ) as Element[];
+      if (paragraphs.length > 0) {
+        // First paragraph gets the list prefix; subsequent paragraphs are
+        // continuation content within the same list item (e.g. a body paragraph
+        // after a bold heading) — render them with the same indent, no prefix.
+        pushBlock(paragraphs[0], prefix, indent);
+        for (let pi = 1; pi < paragraphs.length; pi++) {
+          pushBlock(paragraphs[pi], "", indent);
+        }
+      } else {
+        // No <p> wrapper — process the <li> element directly
+        pushBlock(li as Element, prefix, indent);
+      }
       for (const ch of Array.from(li.children)) {
         const ct = ch.tagName.toLowerCase();
         if (ct === "ul" || ct === "ol") walkList(ch, indent + 1);
