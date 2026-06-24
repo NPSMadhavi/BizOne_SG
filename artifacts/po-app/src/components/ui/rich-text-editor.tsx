@@ -2,9 +2,10 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { Underline } from "@tiptap/extension-underline";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
+import TextAlign from "@tiptap/extension-text-align";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { Image } from "@tiptap/extension-image";
-import { Bold, Italic, UnderlineIcon, List, ListOrdered, Maximize2, Sparkles, Loader2 } from "lucide-react";
+import { Bold, Italic, UnderlineIcon, List, ListOrdered, Maximize2, Sparkles, Loader2, AlignLeft, AlignCenter, AlignRight, AlignJustify } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import {
   Select,
@@ -96,6 +97,7 @@ function EditorCore({
       Underline,
       TextStyle,
       FontSize,
+      TextAlign.configure({ types: ["paragraph", "listItem"] }),
       Table.configure({ resizable: false }),
       TableRow,
       TableHeader,
@@ -283,6 +285,11 @@ function EditorCore({
           <div className="w-px h-4 bg-border mx-0.5" />
           <Toggle size="sm" pressed={editor.isActive("bulletList")} onPressedChange={() => smartToggleList("bulletList")} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Bullet list"><List className="h-3 w-3" /></Toggle>
           <Toggle size="sm" pressed={editor.isActive("orderedList")} onPressedChange={() => smartToggleList("orderedList")} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Numbered list (type '1. ' at line start to auto-convert)"><ListOrdered className="h-3 w-3" /></Toggle>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <Toggle size="sm" pressed={editor.isActive({ textAlign: "left" }) || !editor.isActive({ textAlign: "center" }) && !editor.isActive({ textAlign: "right" }) && !editor.isActive({ textAlign: "justify" })} onPressedChange={() => editor.chain().focus().setTextAlign("left").run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Align left"><AlignLeft className="h-3 w-3" /></Toggle>
+          <Toggle size="sm" pressed={editor.isActive({ textAlign: "center" })} onPressedChange={() => editor.chain().focus().setTextAlign("center").run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Align center"><AlignCenter className="h-3 w-3" /></Toggle>
+          <Toggle size="sm" pressed={editor.isActive({ textAlign: "right" })} onPressedChange={() => editor.chain().focus().setTextAlign("right").run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Align right"><AlignRight className="h-3 w-3" /></Toggle>
+          <Toggle size="sm" pressed={editor.isActive({ textAlign: "justify" })} onPressedChange={() => editor.chain().focus().setTextAlign("justify").run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Justify"><AlignJustify className="h-3 w-3" /></Toggle>
           <div className="w-px h-4 bg-border mx-0.5" />
           <Select value={currentFontSize} onValueChange={(size) => editor.chain().focus().setFontSize(size).run()}>
             <SelectTrigger className="h-6 w-20 text-xs px-1.5 py-0 border-0 bg-transparent hover:bg-muted focus:ring-0"><SelectValue /></SelectTrigger>

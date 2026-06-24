@@ -132,7 +132,7 @@ function htmlToText(html: string): string {
     .trim();
 }
 
-interface RichLine { text: string; bold: boolean; italic: boolean; cols?: string[]; }
+interface RichLine { text: string; bold: boolean; italic: boolean; cols?: string[]; align?: string; }
 
 function htmlToRichLines(html: string): RichLine[] {
   if (!html) return [];
@@ -168,7 +168,7 @@ function htmlToRichLines(html: string): RichLine[] {
 
   // Convert a run array into a finished RichLine.
   // Bold/italic = true when more than half the characters carry that mark.
-  function runsToLine(rr: Run[], prefix = ""): RichLine | null {
+  function runsToLine(rr: Run[], prefix = "", align?: string): RichLine | null {
     const text = (prefix + rr.map(r => r.t).join("")).replace(/[ \t]+/g, " ").trim();
     if (!text) return null;
     const tot = rr.reduce((s, r) => s + r.t.length, 0);
@@ -178,11 +178,14 @@ function htmlToRichLines(html: string): RichLine[] {
       text,
       bold: tot > 0 && boldLen > tot / 2,
       italic: tot > 0 && italLen > tot / 2,
+      ...(align ? { align } : {}),
     };
   }
 
   // Add lines from a block element, splitting on <br> sentinels, with optional prefix.
   function addBlock(el: Element, prefix = "") {
+    const ta = (el as HTMLElement).style?.textAlign;
+    const align = (ta === "justify" || ta === "center" || ta === "right") ? ta : undefined;
     const rr = collectRuns(el, false, false);
     // Empty block (<p></p> or <p><br></p>) → blank line representing a paragraph gap
     const onlyBreak = rr.length === 1 && rr[0].t === "\n";
@@ -195,7 +198,7 @@ function htmlToRichLines(html: string): RichLine[] {
     let firstSeg = true;
     for (const r of rr) {
       if (r.t === "\n") {
-        const line = runsToLine(seg, firstSeg ? prefix : "");
+        const line = runsToLine(seg, firstSeg ? prefix : "", align);
         if (line) out.push(line);
         else if (!firstSeg) out.push({ text: "", bold: false, italic: false }); // hard-break gap
         seg = [];
@@ -204,7 +207,7 @@ function htmlToRichLines(html: string): RichLine[] {
         seg.push(r);
       }
     }
-    const line = runsToLine(seg, firstSeg ? prefix : "");
+    const line = runsToLine(seg, firstSeg ? prefix : "", align);
     if (line) out.push(line);
   }
 
@@ -324,7 +327,7 @@ function drawNotesHtml(
   const src = /<[a-z]/i.test(html) ? html : `<p>${html.replace(/\n/g, "<br>")}</p>`;
   const dom = new DOMParser().parseFromString(src, "text/html");
 
-  interface NLine { text: string; b: boolean; i: boolean; xi: number; wi: number; }
+  interface NLine { text: string; b: boolean; i: boolean; xi: number; wi: number; align?: string; }
   const INDENT_MM = [0, 4, 9];
 
   type Run = { t: string; b: boolean; i: boolean };
@@ -343,13 +346,13 @@ function drawNotesHtml(
   }
 
   const nlines: NLine[] = [];
-  function pushBlock(el: Element, prefix: string, indent: number) {
+  function pushBlock(el: Element, prefix: string, indent: number, align?: string) {
     const rr: Run[] = [];
     for (const ch of Array.from(el.childNodes)) {
       const ct = (ch as Element).tagName?.toLowerCase();
       if (ct !== "ul" && ct !== "ol") rr.push(...collectRuns(ch, false, false));
     }
-    if (!rr.length && !prefix) { nlines.push({ text: "", b: false, i: false, xi: x, wi: maxWidth }); return; }
+    if (!rr.length && !prefix) { nlines.push({ text: "", b: false, i: false, xi: x, wi: maxWidth, align }); return; }
     // split on hard breaks
     const segments: Run[][] = [[]];
     for (const r of rr) {
@@ -366,7 +369,7 @@ function drawNotesHtml(
       const tot = seg.reduce((s, r) => s + r.t.length, 0);
       const boldPct = tot > 0 ? seg.filter(r => r.b).reduce((s, r) => s + r.t.length, 0) / tot : 0;
       const italPct = tot > 0 ? seg.filter(r => r.i).reduce((s, r) => s + r.t.length, 0) / tot : 0;
-      nlines.push({ text, b: boldPct > 0.5, i: italPct > 0.5, xi, wi });
+      nlines.push({ text, b: boldPct > 0.5, i: italPct > 0.5, xi, wi, align });
     }
   }
 
@@ -394,9 +397,15 @@ function drawNotesHtml(
     }
     const el = child as Element;
     const tag = el.tagName.toLowerCase();
-    if (tag === "p" || tag === "div" || /^h\d$/.test(tag)) pushBlock(el, "", 0);
-    else if (tag === "ul" || tag === "ol") walkList(el, 1);
-    else pushBlock(el, "", 0);
+    if (tag === "p" || tag === "div" || /^h\d$/.test(tag)) {
+      const ta = (el as HTMLElement).style?.textAlign;
+      const align = (ta === "justify" || ta === "center" || ta === "right") ? ta : undefined;
+      pushBlock(el, "", 0, align);
+    } else if (tag === "ul" || tag === "ol") {
+      walkList(el, 1);
+    } else {
+      pushBlock(el, "", 0);
+    }
   }
 
   let y = startY;
@@ -404,9 +413,20 @@ function drawNotesHtml(
     if (!nl.text) { y += lineH * 0.45; continue; }
     const style = nl.b && nl.i ? "bolditalic" : nl.b ? "bold" : nl.i ? "italic" : "normal";
     doc.setFont(font, style);
-    for (const wl of doc.splitTextToSize(nl.text, nl.wi)) {
+    const wrappedLines = doc.splitTextToSize(nl.text, nl.wi) as string[];
+    for (let wi = 0; wi < wrappedLines.length; wi++) {
+      const wl = wrappedLines[wi];
+      const isLast = wi === wrappedLines.length - 1;
       if (y + lineH > pageH - footerReserve) { doc.addPage(); y = 20; }
-      doc.text(wl, nl.xi, y);
+      if (nl.align === "justify" && !isLast) {
+        doc.text(wl, nl.xi, y, { align: "justify", maxWidth: nl.wi });
+      } else if (nl.align === "center") {
+        doc.text(wl, nl.xi + nl.wi / 2, y, { align: "center" });
+      } else if (nl.align === "right") {
+        doc.text(wl, nl.xi + nl.wi, y, { align: "right" });
+      } else {
+        doc.text(wl, nl.xi, y);
+      }
       y += lineH;
     }
   }
@@ -545,7 +565,21 @@ function autoTableRich(
         } else if (text) {
           const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
           jdoc.setFont(PDF_FONT, style);
-          jdoc.text(jdoc.splitTextToSize(text, maxW), x, y);
+          const lines: string[] = jdoc.splitTextToSize(text, maxW);
+          const alignment = richLine.align ?? "left";
+          lines.forEach((line: string, li: number) => {
+            const lineY = y + li * LINE_H;
+            const isLast = li === lines.length - 1;
+            if (alignment === "justify" && !isLast) {
+              jdoc.text(line, x, lineY, { align: "justify", maxWidth: maxW });
+            } else if (alignment === "center") {
+              jdoc.text(line, x + maxW / 2, lineY, { align: "center" });
+            } else if (alignment === "right") {
+              jdoc.text(line, x + maxW, lineY, { align: "right" });
+            } else {
+              jdoc.text(line, x, lineY);
+            }
+          });
         }
       }
 
