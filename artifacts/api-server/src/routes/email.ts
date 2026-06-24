@@ -54,8 +54,24 @@ router.post("/send-email", async (req, res): Promise<void> => {
     const transporter = createTransporter(settings);
 
     const plainFooter = "\n\n--\nSent from bizOneSG – Smarter Accounting. Better Business.";
+
+    // Convert plain-text body to email-safe HTML.
+    // white-space:pre-wrap is ignored by Outlook and many mobile clients,
+    // so we convert paragraph breaks (\n\n) to <p> tags and single line
+    // breaks (\n) to <br> tags — universally supported by all email clients.
+    function textToEmailHtml(text: string): string {
+      const escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return escaped
+        .split(/\n{2,}/)                           // split on blank lines → paragraphs
+        .map(para => `<p style="margin:0 0 12px 0;">${para.replace(/\n/g, "<br>")}</p>`)
+        .join("\n");
+    }
+
     const htmlBody = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#333;line-height:1.6;max-width:600px;margin:0 auto;padding:20px;">
-<p style="white-space:pre-wrap;">${body.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</p>
+${textToEmailHtml(body)}
 <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0;" />
 <p style="font-size:12px;color:#888;margin:0;">Sent from <strong style="color:#555;">bizOneSG</strong> &ndash; Smarter Accounting. Better Business.</p>
 </body></html>`;
