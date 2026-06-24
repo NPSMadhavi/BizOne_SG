@@ -457,8 +457,8 @@ function autoTableRich(
         }
       }
       const needed = totalH + padding * 2;
-      if (!data.cell.minCellHeight || data.cell.minCellHeight < needed) {
-        data.cell.minCellHeight = needed;
+      if (!data.cell.styles.minCellHeight || data.cell.styles.minCellHeight < needed) {
+        data.cell.styles.minCellHeight = needed;
       }
     },
     willDrawCell: (data: any) => {
