@@ -4,7 +4,7 @@ import { Underline } from "@tiptap/extension-underline";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { Image } from "@tiptap/extension-image";
-import { Bold, Italic, UnderlineIcon, List, ListOrdered, Maximize2 } from "lucide-react";
+import { Bold, Italic, UnderlineIcon, List, ListOrdered, Maximize2, Sparkles, Loader2 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import {
   Select,
@@ -84,6 +84,7 @@ function EditorCore({
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const [expanded, setExpanded] = useState(false);
   const [expandedHtml, setExpandedHtml] = useState("");
+  const [formatting, setFormatting] = useState(false);
 
   const contentHeightClass = tall
     ? "min-h-[400px] overflow-y-auto"
@@ -242,6 +243,26 @@ function EditorCore({
     })[type === "orderedList" ? "toggleOrderedList" : "toggleBulletList"]().run();
   };
 
+  const autoFormat = async (currentHtml: string, applyFn: (html: string) => void) => {
+    if (!currentHtml.trim() || formatting) return;
+    setFormatting(true);
+    try {
+      const res = await fetch("/api/ai/format-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html: currentHtml }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Request failed");
+      const data = await res.json();
+      if (data.html) applyFn(data.html);
+    } catch {
+      // silently ignore — user can retry
+    } finally {
+      setFormatting(false);
+    }
+  };
+
   const openExpanded = () => {
     setExpandedHtml(value);
     setExpanded(true);
@@ -267,6 +288,17 @@ function EditorCore({
             <SelectTrigger className="h-6 w-20 text-xs px-1.5 py-0 border-0 bg-transparent hover:bg-muted focus:ring-0"><SelectValue /></SelectTrigger>
             <SelectContent>{FONT_SIZES.map((s) => <SelectItem key={s.value} value={s.value} className="text-xs">{s.label}</SelectItem>)}</SelectContent>
           </Select>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <button
+            type="button"
+            disabled={formatting}
+            onClick={() => autoFormat(editor.getHTML(), (html) => { editor.commands.setContent(html); onChange(html); })}
+            title="AI Auto-Format"
+            className="flex items-center gap-1 h-6 px-1.5 rounded text-xs font-medium text-violet-600 hover:bg-violet-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {formatting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            <span className="hidden sm:inline">Format</span>
+          </button>
           {expandable && (
             <>
               <div className="w-px h-4 bg-border mx-0.5" />

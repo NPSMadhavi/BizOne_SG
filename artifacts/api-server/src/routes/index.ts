@@ -26,6 +26,7 @@ import whtRouter from "./wht";
 import taxFilingsRouter from "./tax-filings";
 import aiInvoiceRouter from "./ai/generate-invoice";
 import aiFormatRouter from "./ai/format-invoice";
+import aiFormatTextRouter from "./ai/format-text";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(whtRouter);
 router.use(taxFilingsRouter);
 router.use(aiInvoiceRouter);
 router.use(aiFormatRouter);
+router.use(aiFormatTextRouter);
 
 export default router;
