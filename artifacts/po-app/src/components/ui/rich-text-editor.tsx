@@ -4,7 +4,7 @@ import { Underline } from "@tiptap/extension-underline";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { Image } from "@tiptap/extension-image";
-import { Bold, Italic, UnderlineIcon, List, ListOrdered, Maximize2, Minimize2 } from "lucide-react";
+import { Bold, Italic, UnderlineIcon, List, ListOrdered, Maximize2 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import {
   Select,
@@ -296,17 +296,7 @@ function EditorCore({
         <Dialog open={expanded} onOpenChange={(open) => { if (!open) closeExpanded(true); }}>
           <DialogContent className="max-w-4xl w-[90vw] flex flex-col gap-0 p-0 overflow-hidden" style={{ height: "80vh" }}>
             <DialogHeader className="px-4 pt-4 pb-2 border-b shrink-0">
-              <div className="flex items-center justify-between">
-                <DialogTitle className="text-base">Edit Notes</DialogTitle>
-                <button
-                  type="button"
-                  onClick={() => closeExpanded(true)}
-                  title="Collapse"
-                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </button>
-              </div>
+              <DialogTitle className="text-base">Edit Notes</DialogTitle>
             </DialogHeader>
 
             <div className="flex-1 overflow-hidden px-4 py-3">
