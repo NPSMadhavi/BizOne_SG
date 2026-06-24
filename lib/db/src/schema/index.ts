@@ -21,3 +21,4 @@ export * from "./journal-entries";
 export * from "./journal-lines";
 export * from "./wht-records";
 export * from "./tax-filings";
+export * from "./invoice-payments";

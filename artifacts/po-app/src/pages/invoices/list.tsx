@@ -26,6 +26,7 @@ export default function InvoiceList() {
       case "draft": return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
       case "void": return <Badge className="bg-gray-500 hover:bg-gray-600">Void</Badge>;
+      case "partial": return <Badge className="bg-amber-500 hover:bg-amber-600">Partial</Badge>;
       case "paid": return <Badge className="bg-blue-600 hover:bg-blue-700">Paid</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
     }

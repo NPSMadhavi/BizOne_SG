@@ -6,13 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2 } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -26,16 +30,49 @@ function isoToReadable(dateStr: string | null | undefined): string {
   return fmtDate(dateStr);
 }
 
+const PAYMENT_METHODS = [
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "cheque",        label: "Cheque" },
+  { value: "cash",          label: "Cash" },
+  { value: "paynow",        label: "PayNow / PayLah" },
+  { value: "swift",         label: "SWIFT / TT" },
+  { value: "credit_card",   label: "Credit Card" },
+  { value: "other",         label: "Other" },
+];
+
+function methodLabel(val: string) {
+  return PAYMENT_METHODS.find(m => m.value === val)?.label ?? val;
+}
+
 export default function InvoiceView() {
   const params = useParams();
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany, isAdmin } = useAuth();
+  const qc = useQueryClient();
+
   const [previewOpen, setPreviewOpen] = useState(false);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [voidSubmitting, setVoidSubmitting] = useState(false);
+
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("bank_transfer");
+  const [payRef, setPayRef] = useState("");
+  const [payNotes, setPayNotes] = useState("");
+  const [paySubmitting, setPaySubmitting] = useState(false);
+
+  const [editPaymentOpen, setEditPaymentOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<any>(null);
+  const [epDate, setEpDate] = useState("");
+  const [epAmount, setEpAmount] = useState("");
+  const [epMethod, setEpMethod] = useState("bank_transfer");
+  const [epRef, setEpRef] = useState("");
+  const [epNotes, setEpNotes] = useState("");
+  const [epSubmitting, setEpSubmitting] = useState(false);
 
   const { data: doc, isLoading, refetch } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
@@ -50,14 +87,20 @@ export default function InvoiceView() {
 
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: (doc as any)?.currency || "SGD" }).format(v);
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+    refetch();
+  };
+
   const getStatusBadge = (s: string) => {
     switch (s) {
       case "confirmed": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Confirmed</Badge>;
-      case "draft": return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
+      case "draft":     return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
-      case "void": return <Badge className="bg-gray-500 hover:bg-gray-600 text-sm py-1">Void</Badge>;
-      case "paid": return <Badge className="bg-blue-600 hover:bg-blue-700 text-sm py-1">Paid (Knocked Off)</Badge>;
-      default: return <Badge variant="outline" className="text-sm py-1">{s}</Badge>;
+      case "void":      return <Badge className="bg-gray-500 hover:bg-gray-600 text-sm py-1">Void</Badge>;
+      case "partial":   return <Badge className="bg-amber-500 hover:bg-amber-600 text-sm py-1">Partial</Badge>;
+      case "paid":      return <Badge className="bg-blue-600 hover:bg-blue-700 text-sm py-1">Paid</Badge>;
+      default:          return <Badge variant="outline" className="text-sm py-1">{s}</Badge>;
     }
   };
 
@@ -69,13 +112,88 @@ export default function InvoiceView() {
         toast({ title: "Invoice Voided", description: "The invoice has been voided." });
         setVoidDialogOpen(false);
         setVoidReason("");
-        refetch();
+        invalidate();
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err.message || "Failed to void invoice", variant: "destructive" });
       },
       onSettled: () => setVoidSubmitting(false),
     });
+  };
+
+  const openPaymentDialog = () => {
+    const balance = (doc as any)?.balance ?? 0;
+    setPayDate(new Date().toISOString().split("T")[0]);
+    setPayAmount(balance > 0 ? balance.toFixed(2) : "");
+    setPayMethod("bank_transfer");
+    setPayRef("");
+    setPayNotes("");
+    setPaymentOpen(true);
+  };
+
+  const handleAddPayment = async () => {
+    const amtNum = parseFloat(payAmount);
+    if (isNaN(amtNum) || amtNum <= 0) {
+      toast({ title: "Error", description: "Enter a valid payment amount", variant: "destructive" }); return;
+    }
+    setPaySubmitting(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ paymentDate: payDate, amount: amtNum, reference: payRef || null, paymentMethod: payMethod, notes: payNotes || null }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      toast({ title: "Payment Recorded", description: `${fmt(amtNum)} recorded.` });
+      setPaymentOpen(false);
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setPaySubmitting(false);
+    }
+  };
+
+  const openEditPayment = (p: any) => {
+    setEditingPayment(p);
+    setEpDate(p.paymentDate ? p.paymentDate.split("T")[0] : new Date().toISOString().split("T")[0]);
+    setEpAmount(String(p.amount));
+    setEpMethod(p.paymentMethod || "bank_transfer");
+    setEpRef(p.reference || "");
+    setEpNotes(p.notes || "");
+    setEditPaymentOpen(true);
+  };
+
+  const handleEditPaymentSave = async () => {
+    setEpSubmitting(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}/payments/${editingPayment.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ paymentDate: epDate, amount: parseFloat(epAmount), reference: epRef || null, paymentMethod: epMethod, notes: epNotes || null }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      toast({ title: "Payment Updated" });
+      setEditPaymentOpen(false);
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setEpSubmitting(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId: number) => {
+    try {
+      const res = await fetch(`/api/invoices/${id}/payments/${paymentId}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to delete payment");
+      toast({ title: "Payment Deleted" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
   };
 
   if (isLoading) return (
@@ -98,10 +216,19 @@ export default function InvoiceView() {
   const hasPartNo = regularItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
   const hasInvUom = regularItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
   const totalViewCols = 3 + (hasPartNo ? 1 : 0) + (hasItemDiscount ? 1 : 0) + (hasInvUom ? 1 : 0) + 2;
-  const isVoided = doc.status === "void";
-  const isPaid = doc.status === "paid";
+
+  const payments: any[] = (doc as any).payments || [];
+  const paidAmount: number = (doc as any).paidAmount ?? 0;
+  const balance: number = (doc as any).balance ?? total;
+  const progress = total > 0 ? Math.min(100, (paidAmount / total) * 100) : 0;
+
+  const docStatus = (doc as any).status as string;
+  const isVoided = docStatus === "void";
+  const isPaid = docStatus === "paid";
+  const isPartial = docStatus === "partial";
   const canVoid = !isVoided && !isPaid;
   const canKnockOff = !isVoided && !isPaid;
+  const canRecordPayment = !isVoided && !isPaid && docStatus !== "draft";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
@@ -125,23 +252,28 @@ export default function InvoiceView() {
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-4 w-4" />Preview
           </Button>
-          {!isVoided && !isPaid && (
+          {!isVoided && !isPaid && !isPartial && (
             <Button variant="outline" className="gap-2" onClick={() => setLocation(`/invoices/${id}/edit`)}>
               <Pencil className="h-4 w-4" />Edit
+            </Button>
+          )}
+          {canRecordPayment && (
+            <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={openPaymentDialog}>
+              <Plus className="h-4 w-4" />Record Payment
             </Button>
           )}
           {canKnockOff && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50">
-                  <CheckCircle2 className="h-4 w-4" />Invoice Knock-Off
+                  <CheckCircle2 className="h-4 w-4" />Quick Knock-Off
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Mark as Paid?</AlertDialogTitle>
+                  <AlertDialogTitle>Mark as Fully Paid?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will mark {doc.invNumber} as paid / knocked off. This action cannot be undone.
+                    This will mark {doc.invNumber} as fully paid and record a payment entry for the remaining balance of {fmt(balance)}. Use "Record Payment" for partial payments.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -150,8 +282,8 @@ export default function InvoiceView() {
                     className="bg-blue-600 hover:bg-blue-700"
                     onClick={() => knockOffMutation.mutate({ id }, {
                       onSuccess: () => {
-                        toast({ title: "Knocked Off", description: "Invoice marked as paid." });
-                        refetch();
+                        toast({ title: "Knocked Off", description: "Invoice marked as fully paid." });
+                        invalidate();
                       },
                       onError: (err: any) => toast({ title: "Error", description: err.message || "Failed", variant: "destructive" }),
                     })}
@@ -308,6 +440,109 @@ export default function InvoiceView() {
         </div>
       </Card>
 
+      {/* ── Payment Tracking Panel ── */}
+      {doc.status !== "draft" && doc.status !== "void" && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-base">Payment Tracking</CardTitle>
+              <span className="text-sm font-normal text-muted-foreground">{payments.length} payment{payments.length !== 1 ? "s" : ""}</span>
+            </div>
+            {canRecordPayment && (
+              <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" onClick={openPaymentDialog}>
+                <Plus className="h-3.5 w-3.5" />Record Payment
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Summary row */}
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="bg-muted/40 rounded-lg p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Invoice Total</p>
+                <p className="font-semibold">{fmt(total)}</p>
+              </div>
+              <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Amount Received</p>
+                <p className="font-semibold text-emerald-700">{fmt(paidAmount)}</p>
+              </div>
+              <div className={cn("rounded-lg p-3 text-center", balance > 0.004 ? "bg-amber-50" : "bg-blue-50")}>
+                <p className="text-xs text-muted-foreground mb-1">Outstanding Balance</p>
+                <p className={cn("font-semibold", balance > 0.004 ? "text-amber-700" : "text-blue-600")}>{fmt(balance)}</p>
+              </div>
+            </div>
+
+            {total > 0 && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Payment Progress</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <Progress value={progress} className="h-2" />
+              </div>
+            )}
+
+            {/* Payment history */}
+            {payments.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 border-b text-xs text-muted-foreground uppercase">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left">Date</th>
+                      <th className="px-4 py-2.5 text-left">Method</th>
+                      <th className="px-4 py-2.5 text-left">Reference</th>
+                      <th className="px-4 py-2.5 text-right">Amount</th>
+                      {isAdmin && <th className="px-4 py-2.5 text-right">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {payments.map((p: any) => (
+                      <tr key={p.id} className="hover:bg-muted/20">
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{isoToReadable(p.paymentDate)}</td>
+                        <td className="px-4 py-3">{methodLabel(p.paymentMethod || "bank_transfer")}</td>
+                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{p.reference || "—"}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-emerald-700">{fmt(p.amount)}</td>
+                        {isAdmin && (
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEditPayment(p)}>Edit</Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">Delete</Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will delete the {fmt(p.amount)} payment and reverse the accounting entry. Invoice status will be recalculated.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => handleDeletePayment(p.id)}>
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground text-sm border rounded-lg bg-muted/20">
+                No payments recorded yet.
+                {canRecordPayment && <span className="block mt-1">Click <strong>Record Payment</strong> to log a receipt.</span>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <PdfPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
@@ -320,6 +555,103 @@ export default function InvoiceView() {
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
       />
 
+      {/* Record Payment Dialog */}
+      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Payment — {doc.invNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Payment Date <span className="text-destructive">*</span></Label>
+                <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Amount ({(doc as any).currency || "SGD"}) <span className="text-destructive">*</span></Label>
+                <Input type="number" step="0.01" min="0.01" placeholder="0.00" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Method</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reference / Bank Ref</Label>
+              <Input placeholder="e.g. CHQ0012345, UTR12345678" value={payRef} onChange={e => setPayRef(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea placeholder="Optional notes" rows={2} value={payNotes} onChange={e => setPayNotes(e.target.value)} />
+            </div>
+            <div className="flex justify-between text-sm text-muted-foreground bg-muted/40 rounded-lg px-3 py-2">
+              <span>Outstanding balance</span>
+              <span className="font-semibold text-amber-700">{fmt(balance)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700"
+              disabled={paySubmitting || !payDate || !payAmount}
+              onClick={handleAddPayment}
+            >
+              {paySubmitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : "Record Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Payment Dialog */}
+      <Dialog open={editPaymentOpen} onOpenChange={setEditPaymentOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Payment Date</Label>
+                <Input type="date" value={epDate} onChange={e => setEpDate(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Amount</Label>
+                <Input type="number" step="0.01" min="0.01" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Method</Label>
+              <Select value={epMethod} onValueChange={setEpMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reference</Label>
+              <Input placeholder="Bank reference / cheque no." value={epRef} onChange={e => setEpRef(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea placeholder="Optional notes" rows={2} value={epNotes} onChange={e => setEpNotes(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentOpen(false)}>Cancel</Button>
+            <Button disabled={epSubmitting} onClick={handleEditPaymentSave}>
+              {epSubmitting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Void Invoice Dialog */}
       <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

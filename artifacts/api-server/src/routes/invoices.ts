@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { db, invoicesTable, usersTable, customersTable, deliveryOrdersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
+import { db, invoicesTable, invoicePaymentsTable, usersTable, customersTable, deliveryOrdersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { postInvoiceJE, reverseInvoiceJE } from "../lib/invoice-auto-post.js";
+import { postARPaymentJE, reverseARPaymentJE } from "../lib/invoice-payment-je.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -159,6 +160,34 @@ router.post("/invoices", async (req, res): Promise<void> => {
   res.status(201).json(parseDoc(doc));
 });
 
+async function getPaymentsForInvoice(invoiceId: number) {
+  return db.select().from(invoicePaymentsTable)
+    .where(eq(invoicePaymentsTable.invoiceId, invoiceId))
+    .orderBy(desc(invoicePaymentsTable.createdAt));
+}
+
+function parsePayment(p: any) {
+  return { ...p, amount: parseFloat(p.amount ?? "0"), createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt };
+}
+
+async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
+  const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invoiceId));
+  if (!inv || inv.status === "void" || inv.status === "draft") return;
+
+  const payments = await getPaymentsForInvoice(invoiceId);
+  const paidAmount = payments.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+  const totalAmount = parseFloat(inv.totalAmount ?? "0");
+
+  let newStatus: string;
+  if (paidAmount >= totalAmount - 0.005) newStatus = "paid";
+  else if (paidAmount > 0.004) newStatus = "partial";
+  else newStatus = "confirmed";
+
+  if (newStatus !== inv.status) {
+    await db.update(invoicesTable).set({ status: newStatus }).where(eq(invoicesTable.id, invoiceId));
+  }
+}
+
 router.get("/invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
@@ -177,7 +206,17 @@ router.get("/invoices/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Access denied" }); return;
   }
 
-  res.json(parseDoc(doc));
+  const payments = await getPaymentsForInvoice(id);
+  const paidAmount = payments.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+  const totalAmount = parseFloat(doc.totalAmount ?? "0");
+  const balance = Math.max(0, totalAmount - paidAmount);
+
+  res.json({
+    ...parseDoc(doc),
+    payments: payments.map(parsePayment),
+    paidAmount,
+    balance,
+  });
 });
 
 router.put("/invoices/:id", async (req, res): Promise<void> => {
@@ -338,12 +377,125 @@ router.post("/invoices/:id/knock-off", async (req, res): Promise<void> => {
   if (existing.status === "void") { res.status(400).json({ error: "Cannot knock off a voided invoice" }); return; }
   if (existing.status === "paid") { res.status(400).json({ error: "Invoice is already marked as paid" }); return; }
 
+  const companyId = existing.companyId;
+  const existingPayments = await getPaymentsForInvoice(id);
+  const alreadyPaid = existingPayments.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+  const totalAmount = parseFloat(existing.totalAmount ?? "0");
+  const balance = Math.max(0, totalAmount - alreadyPaid);
+
+  const today = new Date().toISOString().split("T")[0];
+
+  if (balance > 0.004) {
+    const [payment] = await db.insert(invoicePaymentsTable).values({
+      companyId,
+      invoiceId: id,
+      paymentDate: today,
+      amount: balance.toFixed(2),
+      reference: "Knocked off",
+      paymentMethod: "knock_off",
+      createdBy: req.session.userId!,
+    }).returning();
+
+    await postARPaymentJE(
+      { id: payment.id, invoiceId: id, companyId, paymentDate: today, amount: balance, reference: "Knocked off" },
+      existing.invNumber, existing.customerName, req.session.userId!, req.log,
+    );
+  }
+
   const [updated] = await db.update(invoicesTable)
     .set({ status: "paid" })
     .where(eq(invoicesTable.id, id))
     .returning();
+
   logAudit({ req, action: "knock-off", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
   res.json(parseDoc(updated));
+});
+
+// ── AR Payment CRUD ───────────────────────────────────────────────────────────
+
+router.get("/invoices/:id/payments", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const payments = await getPaymentsForInvoice(id);
+  res.json(payments.map(parsePayment));
+});
+
+router.post("/invoices/:id/payments", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!inv) { res.status(404).json({ error: "Invoice not found" }); return; }
+  if (inv.status === "void") { res.status(400).json({ error: "Cannot record payment on a voided invoice" }); return; }
+  if (inv.status === "draft") { res.status(400).json({ error: "Cannot record payment on a draft invoice. Confirm it first." }); return; }
+
+  const { paymentDate, amount, reference, paymentMethod, notes } = req.body;
+  if (!paymentDate) { res.status(400).json({ error: "Payment date is required" }); return; }
+  const amtNum = parseFloat(amount);
+  if (isNaN(amtNum) || amtNum <= 0) { res.status(400).json({ error: "Valid payment amount is required" }); return; }
+
+  const companyId = inv.companyId;
+
+  const [payment] = await db.insert(invoicePaymentsTable).values({
+    companyId,
+    invoiceId: id,
+    paymentDate,
+    amount: amtNum.toFixed(2),
+    reference: reference || null,
+    paymentMethod: paymentMethod || "bank_transfer",
+    notes: notes || null,
+    createdBy: req.session.userId!,
+  }).returning();
+
+  await postARPaymentJE(
+    { id: payment.id, invoiceId: id, companyId, paymentDate, amount: amtNum, reference: reference || null },
+    inv.invNumber, inv.customerName, req.session.userId!, req.log,
+  );
+
+  await recomputeInvoiceStatus(id);
+
+  logAudit({ req, action: "payment:add", entityType: "invoice", entityId: id, entityLabel: inv.invNumber, details: { amount: payment.amount, reference: payment.reference } });
+  res.status(201).json({ payment: parsePayment(payment) });
+});
+
+router.put("/invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  const paymentId = parseInt(req.params.paymentId);
+  if (isNaN(id) || isNaN(paymentId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const { paymentDate, amount, reference, paymentMethod, notes } = req.body;
+  const updates: any = {};
+  if (paymentDate !== undefined) updates.paymentDate = paymentDate;
+  if (amount !== undefined) updates.amount = parseFloat(amount).toFixed(2);
+  if (reference !== undefined) updates.reference = reference;
+  if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
+  if (notes !== undefined) updates.notes = notes;
+
+  await db.update(invoicePaymentsTable).set(updates).where(eq(invoicePaymentsTable.id, paymentId));
+  await recomputeInvoiceStatus(id);
+
+  res.json({ success: true });
+});
+
+router.delete("/invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  const paymentId = parseInt(req.params.paymentId);
+  if (isNaN(id) || isNaN(paymentId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!inv) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  await reverseARPaymentJE(paymentId, inv.companyId, inv.invNumber, inv.customerName, req.session.userId!, req.log);
+  await db.delete(invoicePaymentsTable).where(eq(invoicePaymentsTable.id, paymentId));
+  await recomputeInvoiceStatus(id);
+
+  logAudit({ req, action: "payment:delete", entityType: "invoice", entityId: id, entityLabel: inv.invNumber });
+  res.json({ success: true });
 });
 
 router.delete("/invoices/:id", async (req, res): Promise<void> => {

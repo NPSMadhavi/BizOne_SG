@@ -2,4 +2,5 @@
 - [Pre-existing TS errors in po-app](preexisting-ts-errors.md) — deliveryAddress setValue + form.handleSubmit(onSubmit) signature errors are pre-existing; don't investigate
 - [Item image feature](item-image-feature.md) — per-line-item image field in all 8 forms + 4 view pages + PDF rendering via autoTableRich 5th param
 - [Vendor invoice auto-posting](vendor-invoice-auto-post.md) — accrual JEs for AP: create→DR expense/CR AP(2000), payment→DR AP/CR bank(1010), delete→reversal; expenseAccountId nullable on vendor_invoices table
+- [AR payment tracking](ar-payment-tracking.md) — invoice_payments table mirrors vendor_payments; status auto-computes (confirmed→partial→paid); JE: DR Bank(1010)/CR AR(1100); knock-off now creates a payment record too
 - [Page layout max-widths](page-layout-widths.md) — report/list/view → max-w-7xl; form new/edit → max-w-[1600px]; never use narrower values at page root
