@@ -945,7 +945,7 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
   const openingBalance = openingDebit - openingCredit;
 
   // Period entries
-  const entries = await db.select({ entryId: journalEntriesTable.id, entryDate: journalEntriesTable.entryDate, reference: journalEntriesTable.reference, description: journalEntriesTable.description })
+  const entries = await db.select({ entryId: journalEntriesTable.id, entryDate: journalEntriesTable.entryDate, reference: journalEntriesTable.refNumber, description: journalEntriesTable.description })
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
