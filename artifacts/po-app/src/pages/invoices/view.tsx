@@ -574,7 +574,7 @@ export default function InvoiceView() {
               </div>
               <div className="space-y-1.5">
                 <Label>Amount ({(doc as any).currency || "SGD"}) <span className="text-destructive">*</span></Label>
-                <Input type="number" step="0.01" min="0.01" placeholder="0.00" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
+                <Input type="text" inputMode="decimal" placeholder="0.00" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -626,7 +626,7 @@ export default function InvoiceView() {
               </div>
               <div className="space-y-1.5">
                 <Label>Amount</Label>
-                <Input type="number" step="0.01" min="0.01" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
+                <Input type="text" inputMode="decimal" placeholder="0.00" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">

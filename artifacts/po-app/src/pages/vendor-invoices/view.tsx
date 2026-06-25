@@ -448,7 +448,7 @@ export default function VendorInvoiceView() {
               </div>
               <div className="space-y-1.5">
                 <Label>Amount <span className="text-destructive">*</span></Label>
-                <Input type="number" min="0" step="0.01" placeholder="0.00" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
+                <Input type="text" inputMode="decimal" placeholder="0.00" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -503,7 +503,7 @@ export default function VendorInvoiceView() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>PI Amount <span className="text-destructive">*</span></Label>
-                <Input type="number" min="0" step="0.01" placeholder="0.00" value={editAmount} onChange={e => setEditAmount(e.target.value)} />
+                <Input type="text" inputMode="decimal" placeholder="0.00" value={editAmount} onChange={e => setEditAmount(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Currency</Label>
@@ -551,7 +551,7 @@ export default function VendorInvoiceView() {
               <div className="space-y-1.5">
                 <Label>Amount <span className="text-destructive">*</span></Label>
                 <Input
-                  type="number" min="0" step="0.01" placeholder="0.00"
+                  type="text" inputMode="decimal" placeholder="0.00"
                   value={payAmount} onChange={e => setPayAmount(e.target.value)}
                 />
               </div>
