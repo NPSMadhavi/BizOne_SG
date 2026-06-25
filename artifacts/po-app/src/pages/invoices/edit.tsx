@@ -831,8 +831,8 @@ export default function InvoiceEdit() {
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
         onEdit={() => { setPreviewOpen(false); }}
-        onEmailSent={async () => {
-          await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include" });
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         }}
       />

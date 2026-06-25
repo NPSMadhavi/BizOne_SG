@@ -127,7 +127,7 @@ interface PdfPreviewModalProps {
   defaultEmailSubject?: string;
   defaultEmailBody?: string;
   onEdit?: () => void;
-  onEmailSent?: () => void;
+  onEmailSent?: (recipients: string[]) => void;
 }
 
 export function PdfPreviewModal({
@@ -226,7 +226,7 @@ export function PdfPreviewModal({
               pdfFilename={pdfFilename}
               generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
               triggerSize="sm"
-              onSuccess={onEmailSent}
+              onSuccess={(recipients) => onEmailSent?.(recipients)}
             />
           </div>
         </DialogHeader>

@@ -29,7 +29,7 @@ export default function DeliveryOrderView() {
   const { selectedCompany, isAdmin } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const { data: doc, isLoading } = useGetDeliveryOrder(id, {
+  const { data: doc, isLoading, refetch } = useGetDeliveryOrder(id, {
     query: { queryKey: getGetDeliveryOrderQueryKey(id), enabled: !!id },
   });
 
@@ -165,6 +165,10 @@ export default function DeliveryOrderView() {
         defaultEmailSubject={`Delivery Order ${doc.doNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${doc.doNumber}.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${id}/edit`); }}
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/delivery-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await refetch();
+        }}
       />
     </div>
   );

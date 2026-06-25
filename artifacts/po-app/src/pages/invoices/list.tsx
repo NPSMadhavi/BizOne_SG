@@ -5,9 +5,24 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, ArrowRight } from "lucide-react";
+import { Search, Plus, ArrowRight, MailCheck } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+
+function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
+  if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
+  const emails = emailSentTo.split(",").map(e => e.trim()).filter(Boolean);
+  if (emails.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex items-center gap-1.5" title={emails.join(", ")}>
+      <MailCheck className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+      <span className="truncate max-w-[140px] text-xs text-muted-foreground">{emails[0]}</span>
+      {emails.length > 1 && (
+        <Badge variant="secondary" className="text-xs py-0 px-1 shrink-0">+{emails.length - 1}</Badge>
+      )}
+    </div>
+  );
+}
 
 export default function InvoiceList() {
   const [, setLocation] = useLocation();
@@ -70,9 +85,9 @@ export default function InvoiceList() {
                 <th className="px-6 py-4 font-medium">INV Number</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
-                <th className="px-6 py-4 font-medium">Created By</th>
                 <th className="px-6 py-4 font-medium text-right">Amount</th>
                 <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium">Sent To</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
@@ -101,9 +116,9 @@ export default function InvoiceList() {
                     <td className="px-6 py-4 font-medium text-primary">{doc.invNumber}</td>
                     <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{(doc as any).createdByUsername || "—"}</td>
                     <td className="px-6 py-4 text-right font-medium">{formatCurrency(Number(doc.totalAmount))}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
+                    <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo} /></td>
                     <td className="px-6 py-4 text-right">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                         <ArrowRight className="h-4 w-4" />

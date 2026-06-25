@@ -895,9 +895,9 @@ export default function InvoiceNew() {
           defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
           defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
           onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
-          onEmailSent={async () => {
-            await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include" });
-            setSavedDoc((prev: any) => prev ? { ...prev, status: "sent" } : prev);
+          onEmailSent={async (recipients) => {
+            await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+            setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: recipients.join(", ") } : prev);
           }}
         />
       )}

@@ -29,7 +29,7 @@ export default function PurchaseOrderView() {
 
   const queryClient = useQueryClient();
 
-  const { data: po, isLoading } = useGetPurchaseOrder(id, {
+  const { data: po, isLoading, refetch: refetchPO } = useGetPurchaseOrder(id, {
     query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
   });
 
@@ -425,6 +425,10 @@ export default function PurchaseOrderView() {
         defaultEmailSubject={`Purchase Order ${po.poNumber}`}
         defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}${(po as any).quoteRefNo ? ` with the sales reference number ${(po as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/purchase-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await refetchPO();
+        }}
       />
     </div>
   );

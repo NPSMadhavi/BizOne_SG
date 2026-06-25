@@ -554,8 +554,8 @@ export default function InvoiceView() {
         defaultEmailSubject={`Invoice ${doc.invNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${doc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
-        onEmailSent={async () => {
-          await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include" });
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await qc.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         }}
       />

@@ -424,8 +424,13 @@ router.post("/invoices/:id/mark-sent", async (req, res): Promise<void> => {
   if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
   if (existing.status === "void") { res.status(400).json({ error: "Cannot mark a voided invoice as sent" }); return; }
 
-  if (existing.status === "confirmed") {
-    await db.update(invoicesTable).set({ status: "sent" }).where(eq(invoicesTable.id, id));
+  const sentTo: string[] = Array.isArray(req.body.sentTo) ? req.body.sentTo : [];
+  const updateData: Record<string, any> = {};
+  if (existing.status === "confirmed") updateData.status = "sent";
+  if (sentTo.length > 0) updateData.emailSentTo = sentTo.join(", ");
+
+  if (Object.keys(updateData).length > 0) {
+    await db.update(invoicesTable).set(updateData).where(eq(invoicesTable.id, id));
   }
 
   const [updated] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));

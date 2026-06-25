@@ -14,6 +14,7 @@ export const deliveryOrdersTable = pgTable("delivery_orders", {
   isPrivate: boolean("is_private").default(false).notNull(),
   items: jsonb("items").notNull().default([]),
   status: text("status").notNull().default("draft"),
+  emailSentTo: text("email_sent_to"),
   invId: integer("inv_id"),
   invNumber: text("inv_number"),
   createdBy: integer("created_by").notNull(),

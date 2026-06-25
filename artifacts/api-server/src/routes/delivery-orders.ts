@@ -189,6 +189,30 @@ router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
   res.json(parseDoc(updated));
 });
 
+router.post("/delivery-orders/:id/mark-sent", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const companyId = req.session.companyId!;
+  const [existing] = await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Delivery order not found" }); return; }
+  if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const sentTo: string[] = Array.isArray(req.body.sentTo) ? req.body.sentTo : [];
+  const updateData: Record<string, any> = {};
+  if (existing.status === "confirmed") updateData.status = "sent";
+  if (sentTo.length > 0) updateData.emailSentTo = sentTo.join(", ");
+
+  if (Object.keys(updateData).length > 0) {
+    await db.update(deliveryOrdersTable).set(updateData).where(eq(deliveryOrdersTable.id, id));
+  }
+
+  const [updated] = await db.select().from(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id));
+  logAudit({ req, action: "mark-sent", entityType: "delivery_order", entityId: id, entityLabel: updated.doNumber });
+  res.json(updated);
+});
+
 router.delete("/delivery-orders/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const isAdmin = req.session.isAdmin ?? false;

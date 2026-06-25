@@ -189,6 +189,30 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
   res.json(parseDoc(updated));
 });
 
+router.post("/quotations/:id/mark-sent", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const companyId = req.session.companyId!;
+  const [existing] = await db.select().from(quotationsTable).where(eq(quotationsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Quotation not found" }); return; }
+  if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const sentTo: string[] = Array.isArray(req.body.sentTo) ? req.body.sentTo : [];
+  const updateData: Record<string, any> = {};
+  if (existing.status === "confirmed") updateData.status = "sent";
+  if (sentTo.length > 0) updateData.emailSentTo = sentTo.join(", ");
+
+  if (Object.keys(updateData).length > 0) {
+    await db.update(quotationsTable).set(updateData).where(eq(quotationsTable.id, id));
+  }
+
+  const [updated] = await db.select().from(quotationsTable).where(eq(quotationsTable.id, id));
+  logAudit({ req, action: "mark-sent", entityType: "quotation", entityId: id, entityLabel: updated.qtNumber });
+  res.json(updated);
+});
+
 router.delete("/quotations/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const isAdmin = req.session.isAdmin ?? false;

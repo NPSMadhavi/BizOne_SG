@@ -6,10 +6,25 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, ArrowRight } from "lucide-react";
+import { Search, Plus, ArrowRight, MailCheck } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
+
+function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
+  if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
+  const emails = emailSentTo.split(",").map(e => e.trim()).filter(Boolean);
+  if (emails.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex items-center gap-1.5" title={emails.join(", ")}>
+      <MailCheck className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+      <span className="truncate max-w-[140px] text-xs text-muted-foreground">{emails[0]}</span>
+      {emails.length > 1 && (
+        <Badge variant="secondary" className="text-xs py-0 px-1 shrink-0">+{emails.length - 1}</Badge>
+      )}
+    </div>
+  );
+}
 
 function piStatusBadge(status: string) {
   switch (status) {
@@ -52,6 +67,7 @@ export default function PurchaseOrderList() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "confirmed": return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
+      case "sent":      return <Badge className="bg-violet-600 hover:bg-violet-700">Sent</Badge>;
       case "draft":     return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
       default:          return <Badge variant="outline">{status}</Badge>;
@@ -95,9 +111,9 @@ export default function PurchaseOrderList() {
                 <th className="px-6 py-4 font-medium">PO Number</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Vendor</th>
-                <th className="px-6 py-4 font-medium">Created By</th>
                 <th className="px-6 py-4 font-medium text-right">Amount</th>
                 <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium">Sent To</th>
                 <th className="px-6 py-4 font-medium">Vendor PI</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
@@ -138,9 +154,9 @@ export default function PurchaseOrderList() {
                       <td className="px-6 py-4 font-medium text-primary">{po.poNumber}</td>
                       <td className="px-6 py-4 text-muted-foreground">{fmtDate(po.createdAt)}</td>
                       <td className="px-6 py-4 font-medium">{po.vendorName}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{(po as any).createdByUsername || "—"}</td>
                       <td className="px-6 py-4 text-right font-medium">{formatCurrency(po.totalAmount, (po as any).currency || "SGD")}</td>
                       <td className="px-6 py-4 text-center">{getStatusBadge(po.status)}</td>
+                      <td className="px-6 py-4"><SentToCell emailSentTo={(po as any).emailSentTo} /></td>
                       <td className="px-6 py-4">
                         {pis.length === 0 ? (
                           <span className="text-muted-foreground">—</span>

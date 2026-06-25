@@ -29,7 +29,7 @@ export default function QuotationView() {
   const { selectedCompany, isAdmin } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const { data: doc, isLoading } = useGetQuotation(id, {
+  const { data: doc, isLoading, refetch } = useGetQuotation(id, {
     query: { queryKey: getGetQuotationQueryKey(id), enabled: !!id },
   });
 
@@ -219,6 +219,10 @@ export default function QuotationView() {
         defaultEmailSubject={`Quotation ${doc.qtNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached our Quotation ${doc.qtNumber} for your consideration.\n\nDo not hesitate to contact us if you have any questions.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${id}/edit`); }}
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await refetch();
+        }}
       />
     </div>
   );
