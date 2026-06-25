@@ -4,5 +4,6 @@
 - [Vendor invoice auto-posting](vendor-invoice-auto-post.md) — accrual JEs for AP: create→DR expense/CR AP(2000), payment→DR AP/CR bank(1010), delete→reversal; expenseAccountId nullable on vendor_invoices table
 - [AR payment tracking](ar-payment-tracking.md) — invoice_payments table mirrors vendor_payments; status auto-computes (confirmed→partial→paid); JE: DR Bank(1010)/CR AR(1100); knock-off now creates a payment record too
 - [Page layout max-widths](page-layout-widths.md) — report/list/view → max-w-7xl; form new/edit → max-w-[1600px]; never use narrower values at page root
+- [Module permission system](module-permissions.md) — hierarchical: Documents/Directory/Accounting groups; accounting gated by isSingapore AND hasAnyAccounting; empty-modules fallback = DEFAULT_MODULES only (not all modules)
 - [PDF gap root cause](pdf-gap-root-cause.md) — 3 causes fixed: totals bottom-pinning; rowPageBreak:"avoid" blank cells; htmlToText \n in description fighting minCellHeight. Fix: keep rowPageBreak:avoid, draw totals at currentY+4, clear desc column in cleanedBody.
 - [drawNotesHtml walkList multi-paragraph li](pdf-notes-walkList.md) — walkList only processed first <p> per <li>; continuation paragraphs (e.g. bold heading + body) were silently dropped. Fix: iterate all <p> children, first gets prefix, rest get same indent with no prefix.

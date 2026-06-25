@@ -1,5 +1,5 @@
 import { useAuth } from "@/contexts/auth-context";
-import { ALL_MODULES, DEFAULT_MODULES, MODULE_LABELS, type AppModule } from "@/contexts/auth-context";
+import { DEFAULT_MODULES, MODULE_LABELS, MODULE_GROUPS, type AppModule, type ModuleGroup } from "@/contexts/auth-context";
 import {
   useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser,
   useListCompanies, getListCompaniesQueryKey, type User, type Company,
@@ -28,15 +28,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Trash2, UserPlus, ShieldAlert, Edit, Building2, ChevronRight } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
-const MODULE_ICONS: Record<AppModule, string> = {
-  dashboard: "📊",
-  purchase_orders: "📋",
-  quotations: "📝",
-  invoices: "🧾",
-  delivery_orders: "🚚",
-  grn: "📦",
-  stock_items: "🗄️",
-};
 
 export interface CompanyAccessEntry {
   companyId: number;
@@ -84,20 +75,23 @@ function CompanyModuleSelector({
     }));
   };
 
-  const toggleAllModules = (companyId: number, checked: boolean) => {
+  const toggleGroupModules = (companyId: number, groupMods: string[], checked: boolean) => {
     onChange(value.map(entry => {
       if (entry.companyId !== companyId) return entry;
-      return { ...entry, modules: checked ? [...ALL_MODULES] : [] };
+      const mods = checked
+        ? [...new Set([...entry.modules, ...groupMods])]
+        : entry.modules.filter(m => !groupMods.includes(m));
+      return { ...entry, modules: mods };
     }));
   };
 
   return (
-    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+    <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
       {companies.map(company => {
         const isSelected = selectedCompanyIds.includes(company.id);
         const entry = value.find(v => v.companyId === company.id);
-        const allChecked = entry ? ALL_MODULES.every(m => entry.modules.includes(m)) : false;
-        const someChecked = entry ? ALL_MODULES.some(m => entry.modules.includes(m)) : false;
+        const isSg = company.country?.toLowerCase() === "singapore";
+        const visibleGroups = MODULE_GROUPS.filter((g: ModuleGroup) => !g.sgOnly || isSg);
 
         return (
           <div key={company.id} className="rounded-lg border bg-card overflow-hidden">
@@ -119,32 +113,43 @@ function CompanyModuleSelector({
             </div>
 
             {isSelected && (
-              <div className="px-3 py-2 bg-muted/30 space-y-1.5">
-                <div className="flex items-center gap-2 pb-1.5 border-b border-border/50">
-                  <Checkbox
-                    id={`all-modules-${company.id}`}
-                    checked={allChecked}
-                    onCheckedChange={(checked) => toggleAllModules(company.id, !!checked)}
-                  />
-                  <label htmlFor={`all-modules-${company.id}`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer">
-                    All Modules
-                  </label>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                  {ALL_MODULES.map(mod => (
-                    <div key={mod} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`${company.id}-${mod}`}
-                        checked={entry?.modules.includes(mod) ?? false}
-                        onCheckedChange={() => toggleModule(company.id, mod)}
-                      />
-                      <label htmlFor={`${company.id}-${mod}`} className="text-xs cursor-pointer flex items-center gap-1">
-                        <span>{MODULE_ICONS[mod as AppModule]}</span>
-                        <span>{MODULE_LABELS[mod as AppModule]}</span>
-                      </label>
+              <div className="px-3 py-3 bg-muted/30 space-y-4">
+                {visibleGroups.map((group: ModuleGroup) => {
+                  const groupMods = group.modules as string[];
+                  const allInGroup = groupMods.every(m => entry?.modules.includes(m));
+                  const someInGroup = groupMods.some(m => entry?.modules.includes(m));
+                  return (
+                    <div key={group.id}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Checkbox
+                          id={`group-${company.id}-${group.id}`}
+                          checked={someInGroup && !allInGroup ? "indeterminate" : allInGroup}
+                          onCheckedChange={(checked) => toggleGroupModules(company.id, groupMods, !!checked)}
+                        />
+                        <label
+                          htmlFor={`group-${company.id}-${group.id}`}
+                          className="text-xs font-semibold text-foreground uppercase tracking-wider cursor-pointer"
+                        >
+                          {group.label}
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5 pl-6">
+                        {group.modules.map(mod => (
+                          <div key={mod} className="flex items-center gap-1.5">
+                            <Checkbox
+                              id={`${company.id}-${mod}`}
+                              checked={entry?.modules.includes(mod) ?? false}
+                              onCheckedChange={() => toggleModule(company.id, mod)}
+                            />
+                            <label htmlFor={`${company.id}-${mod}`} className="text-xs cursor-pointer leading-tight">
+                              {MODULE_LABELS[mod as AppModule] ?? mod}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -454,11 +459,14 @@ export default function Admin() {
                                 {c.name}
                               </Badge>
                               <div className="flex flex-wrap gap-1">
-                                {((c as any).modules as string[] ?? ALL_MODULES).map(mod => (
+                                {((c as any).modules as string[] ?? [...DEFAULT_MODULES]).slice(0, 6).map(mod => (
                                   <span key={mod} className="text-xs bg-muted rounded px-1 py-0.5 text-muted-foreground">
-                                    {MODULE_ICONS[mod as AppModule]} {MODULE_LABELS[mod as AppModule]}
+                                    {MODULE_LABELS[mod as AppModule] ?? mod}
                                   </span>
                                 ))}
+                                {((c as any).modules as string[] ?? []).length > 6 && (
+                                  <span className="text-xs text-muted-foreground">+{((c as any).modules as string[]).length - 6} more</span>
+                                )}
                               </div>
                             </div>
                           )) : (

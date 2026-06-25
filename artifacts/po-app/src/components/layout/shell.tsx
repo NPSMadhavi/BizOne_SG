@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth, type AppModule } from "@/contexts/auth-context";
+import { useAuth, type AppModule, MODULE_GROUPS } from "@/contexts/auth-context";
 import {
   LayoutDashboard,
   FileText,
@@ -253,6 +253,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }
 
   const isSingapore = selectedCompany?.country?.toLowerCase() === "singapore";
+  const accountingGroupModules = MODULE_GROUPS.find(g => g.id === "accounting")?.modules ?? [];
+  const hasAnyAccounting = isAdmin || accountingGroupModules.some(m => hasModuleAccess(m as AppModule));
   const hasDocuments =
     hasModuleAccess("purchase_orders") ||
     hasModuleAccess("quotations") ||
@@ -359,69 +361,105 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </NavGroup>
 
-      {/* ── ACCOUNTING (Singapore only) ─────────────────────── */}
+      {/* ── ACCOUNTING (Singapore only, module-gated) ───────── */}
       <NavGroup
         id="accounting"
         label="Accounting"
         icon={BookOpen}
         isOpen={openGroup === "accounting"}
         onToggle={toggleGroup}
-        visible={isSingapore}
+        visible={isSingapore && hasAnyAccounting}
       >
-        <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")} inGroup>
-          Chart of Accounts
-        </NavItem>
-        <NavItem href="/accounting/journal-entries" icon={ScrollText} active={location.startsWith("/accounting/journal-entries")} inGroup>
-          Journal Entries
-        </NavItem>
-        <NavItem href="/accounting/general-ledger" icon={BookMarked} active={location === "/accounting/general-ledger"} inGroup>
-          General Ledger
-        </NavItem>
-        <NavItem href="/accounting/trial-balance" icon={Calculator} active={location === "/accounting/trial-balance"} inGroup>
-          Trial Balance
-        </NavItem>
-        <NavItem href="/accounting/balance-sheet" icon={Scale} active={location === "/accounting/balance-sheet"} inGroup>
-          Balance Sheet
-        </NavItem>
-        <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"} inGroup>
-          Profit & Loss
-        </NavItem>
-        <NavItem href="/accounting/cash-flow" icon={Banknote} active={location === "/accounting/cash-flow"} inGroup>
-          Cash Flow
-        </NavItem>
-        <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"} inGroup>
-          GST F5 Return
-        </NavItem>
-        <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"} inGroup>
-          GST F7 (Amended)
-        </NavItem>
-        <NavItem href="/accounting/gst-io" icon={ListFilter} active={location === "/accounting/gst-io"} inGroup>
-          GST IO Listing
-        </NavItem>
-        <NavItem href="/accounting/wht" icon={Receipt} active={location === "/accounting/wht"} inGroup>
-          Withholding Tax
-        </NavItem>
-        <NavItem href="/accounting/eci" icon={Calculator} active={location === "/accounting/eci"} inGroup>
-          ECI
-        </NavItem>
-        <NavItem href="/accounting/form-cs" icon={FileText} active={location === "/accounting/form-cs"} inGroup>
-          Form C-S
-        </NavItem>
-        <NavItem href="/accounting/iaf" icon={Archive} active={location === "/accounting/iaf"} inGroup>
-          IRAS Audit File
-        </NavItem>
-        <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"} inGroup>
-          AR Aging
-        </NavItem>
-        <NavItem href="/accounting/customer-statement" icon={UserCheck} active={location === "/accounting/customer-statement"} inGroup>
-          Customer Statement
-        </NavItem>
-        <NavItem href="/accounting/ap-aging" icon={CreditCard} active={location === "/accounting/ap-aging"} inGroup>
-          AP Aging
-        </NavItem>
-        <NavItem href="/accounting/vendor-statement" icon={Building} active={location === "/accounting/vendor-statement"} inGroup>
-          Vendor Statement
-        </NavItem>
+        {hasModuleAccess("accounting_coa") && (
+          <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")} inGroup>
+            Chart of Accounts
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_je") && (
+          <NavItem href="/accounting/journal-entries" icon={ScrollText} active={location.startsWith("/accounting/journal-entries")} inGroup>
+            Journal Entries
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_gl") && (
+          <NavItem href="/accounting/general-ledger" icon={BookMarked} active={location === "/accounting/general-ledger"} inGroup>
+            General Ledger
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_tb") && (
+          <NavItem href="/accounting/trial-balance" icon={Calculator} active={location === "/accounting/trial-balance"} inGroup>
+            Trial Balance
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_bs") && (
+          <NavItem href="/accounting/balance-sheet" icon={Scale} active={location === "/accounting/balance-sheet"} inGroup>
+            Balance Sheet
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_pl") && (
+          <NavItem href="/accounting/profit-loss" icon={TrendingUp} active={location === "/accounting/profit-loss"} inGroup>
+            Profit & Loss
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_cf") && (
+          <NavItem href="/accounting/cash-flow" icon={Banknote} active={location === "/accounting/cash-flow"} inGroup>
+            Cash Flow
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_gst_f5") && (
+          <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"} inGroup>
+            GST F5 Return
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_gst_f7") && (
+          <NavItem href="/accounting/gst-f7" icon={FileDiff} active={location === "/accounting/gst-f7"} inGroup>
+            GST F7 (Amended)
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_gst_io") && (
+          <NavItem href="/accounting/gst-io" icon={ListFilter} active={location === "/accounting/gst-io"} inGroup>
+            GST IO Listing
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_wht") && (
+          <NavItem href="/accounting/wht" icon={Receipt} active={location === "/accounting/wht"} inGroup>
+            Withholding Tax
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_eci") && (
+          <NavItem href="/accounting/eci" icon={Calculator} active={location === "/accounting/eci"} inGroup>
+            ECI
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_formcs") && (
+          <NavItem href="/accounting/form-cs" icon={FileText} active={location === "/accounting/form-cs"} inGroup>
+            Form C-S
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_iaf") && (
+          <NavItem href="/accounting/iaf" icon={Archive} active={location === "/accounting/iaf"} inGroup>
+            IRAS Audit File
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_ar_aging") && (
+          <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"} inGroup>
+            AR Aging
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_cust_stmt") && (
+          <NavItem href="/accounting/customer-statement" icon={UserCheck} active={location === "/accounting/customer-statement"} inGroup>
+            Customer Statement
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_ap_aging") && (
+          <NavItem href="/accounting/ap-aging" icon={CreditCard} active={location === "/accounting/ap-aging"} inGroup>
+            AP Aging
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_vendor_stmt") && (
+          <NavItem href="/accounting/vendor-statement" icon={Building} active={location === "/accounting/vendor-statement"} inGroup>
+            Vendor Statement
+          </NavItem>
+        )}
       </NavGroup>
 
       {/* ── SYSTEM (admin only) ─────────────────────────────── */}
