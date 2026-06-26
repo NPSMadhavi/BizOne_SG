@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Banknote, Search, Loader2, CheckCircle2 } from "lucide-react";
+import { Banknote, Search, Loader2, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -39,6 +39,64 @@ function computeFifo(pis: OpenPi[], total: number): Record<number, number> {
   return out;
 }
 
+// ── Inline PI list shown when vendor row is expanded ────────────────────────
+function VendorPiDetail({ vendorName }: { vendorName: string }) {
+  const { data, isLoading } = useQuery<{ invoices: OpenPi[] }>({
+    queryKey: ["ap-vendor-invoices", vendorName],
+    queryFn: async () => {
+      const r = await fetch(`/api/ap/vendor-invoices?vendorName=${encodeURIComponent(vendorName)}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load");
+      return r.json();
+    },
+    staleTime: 30_000,
+  });
+
+  if (isLoading) return <div className="py-3 text-center text-xs text-gray-400"><Loader2 className="h-3.5 w-3.5 animate-spin inline mr-1.5" />Loading…</div>;
+  const pis = data?.invoices ?? [];
+  if (pis.length === 0) return <div className="py-3 text-center text-xs text-gray-400">No open vendor invoices.</div>;
+
+  const totalOutstanding = pis.reduce((s, p) => s + p.outstanding, 0);
+  const totalInvoice     = pis.reduce((s, p) => s + p.totalAmount, 0);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50/80">
+            <th className="text-left px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider pl-12">PI Number</th>
+            <th className="text-left px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+            <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Total</th>
+            <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Paid</th>
+            <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Outstanding</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pis.map(pi => (
+            <tr key={pi.id} className="border-b border-gray-100 hover:bg-gray-50/40">
+              <td className="px-4 py-2.5 pl-12 font-mono font-semibold text-gray-700">{pi.piNumber}</td>
+              <td className="px-4 py-2.5 text-gray-500">{fmtDate(pi.piDate)}</td>
+              <td className="px-4 py-2.5 text-right font-mono text-gray-600">{fmtAmt(pi.totalAmount)}</td>
+              <td className="px-4 py-2.5 text-right font-mono text-gray-400">{fmtAmt(pi.paidAmount)}</td>
+              <td className="px-4 py-2.5 text-right font-mono font-semibold text-orange-600">{fmtAmt(pi.outstanding)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 border-t-2 border-gray-200">
+            <td className="px-4 py-2.5 pl-12 text-xs font-bold text-gray-600 uppercase tracking-wider" colSpan={2}>
+              Total ({pis.length} PI{pis.length !== 1 ? "s" : ""})
+            </td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold text-gray-700">{fmtAmt(totalInvoice)}</td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold text-gray-400">{fmtAmt(totalInvoice - totalOutstanding)}</td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold text-orange-700">{fmtAmt(totalOutstanding)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+// ── Bulk Vendor Payment Dialog ───────────────────────────────────────────────
 interface BulkVendorPaymentDialogProps {
   open: boolean; onClose: () => void; vendorName: string; onSuccess: () => void;
 }
@@ -263,9 +321,11 @@ function BulkVendorPaymentDialog({ open, onClose, vendorName, onSuccess }: BulkV
   );
 }
 
+// ── Main Page ────────────────────────────────────────────────────────────────
 export default function ApPaymentsPage() {
   const today = new Date().toISOString().split("T")[0];
   const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [payingVendor, setPayingVendor] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -283,6 +343,10 @@ export default function ApPaymentsPage() {
     !search.trim() || v.vendorName.toLowerCase().includes(search.trim().toLowerCase())
   );
   const grandTotal = data?.totals?.total ?? 0;
+
+  function toggleExpanded(name: string) {
+    setExpanded(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
+  }
 
   function handleSuccess() {
     qc.invalidateQueries({ queryKey: ["ap-aging"] });
@@ -338,29 +402,54 @@ export default function ApPaymentsPage() {
                   </td>
                 </tr>
               )}
-              {vendors.map(v => (
-                <tr key={v.vendorName} className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors">
-                  <td className="px-5 py-3.5 font-medium text-gray-800">{v.vendorName}</td>
-                  <td className="px-5 py-3.5 text-right font-mono font-semibold text-orange-600 tabular-nums">
-                    S$ {fmtAmt(v.total)}
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <Button
-                      size="sm"
-                      className="h-8 text-xs bg-blue-600 hover:bg-blue-700 gap-1.5"
-                      onClick={() => setPayingVendor(v.vendorName)}
-                    >
-                      <Banknote className="h-3.5 w-3.5" />Pay Vendor
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {vendors.map(v => {
+                const isOpen = expanded.has(v.vendorName);
+                return (
+                  <>
+                    <tr key={v.vendorName} className={cn("border-b border-gray-100 transition-colors", isOpen ? "bg-blue-50/40" : "hover:bg-gray-50/60")}>
+                      <td className="px-5 py-3.5">
+                        <button
+                          className="flex items-center gap-2 text-left font-medium text-gray-800 hover:text-blue-700 transition-colors group"
+                          onClick={() => toggleExpanded(v.vendorName)}
+                        >
+                          {isOpen
+                            ? <ChevronDown className="h-4 w-4 text-blue-600 shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-blue-500 shrink-0" />
+                          }
+                          {v.vendorName}
+                        </button>
+                      </td>
+                      <td className="px-5 py-3.5 text-right font-mono font-semibold text-orange-600 tabular-nums">
+                        S$ {fmtAmt(v.total)}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs bg-blue-600 hover:bg-blue-700 gap-1.5"
+                          onClick={() => setPayingVendor(v.vendorName)}
+                        >
+                          <Banknote className="h-3.5 w-3.5" />Pay Vendor
+                        </Button>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr key={`${v.vendorName}-detail`} className="bg-white border-b border-gray-100">
+                        <td colSpan={3} className="p-0">
+                          <div className="border-l-4 border-blue-300 ml-5 my-1 rounded">
+                            <VendorPiDetail vendorName={v.vendorName} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      <p className="text-xs text-gray-400">Shows all vendors with open (pending/partial) vendor invoices as of today. Use the aging report for historical snapshots.</p>
+      <p className="text-xs text-gray-400">Click a vendor name to view their open invoices. Use the aging report for historical snapshots.</p>
 
       {payingVendor && (
         <BulkVendorPaymentDialog

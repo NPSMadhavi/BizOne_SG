@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, Search, Loader2, CheckCircle2, Coins, Wallet } from "lucide-react";
+import { CreditCard, Search, Loader2, CheckCircle2, Coins, Wallet, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -40,6 +40,64 @@ function computeFifo(invoices: OpenInvoice[], total: number): Record<number, num
   return out;
 }
 
+// ── Inline invoice list shown when customer row is expanded ──────────────────
+function CustomerInvoiceDetail({ customerName }: { customerName: string }) {
+  const { data, isLoading } = useQuery<{ invoices: OpenInvoice[] }>({
+    queryKey: ["ar-customer-invoices", customerName],
+    queryFn: async () => {
+      const r = await fetch(`/api/ar/customer-invoices?customerName=${encodeURIComponent(customerName)}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load");
+      return r.json();
+    },
+    staleTime: 30_000,
+  });
+
+  if (isLoading) return <div className="py-3 text-center text-xs text-gray-400"><Loader2 className="h-3.5 w-3.5 animate-spin inline mr-1.5" />Loading invoices…</div>;
+  const invoices = data?.invoices ?? [];
+  if (invoices.length === 0) return <div className="py-3 text-center text-xs text-gray-400">No open invoices.</div>;
+
+  const totalOutstanding = invoices.reduce((s, i) => s + i.outstanding, 0);
+  const totalInvoice     = invoices.reduce((s, i) => s + i.totalAmount, 0);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50/80">
+            <th className="text-left px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider pl-12">Invoice</th>
+            <th className="text-left px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+            <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Invoice Amt</th>
+            <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Paid</th>
+            <th className="text-right px-4 py-2 font-semibold text-gray-500 uppercase tracking-wider">Outstanding</th>
+          </tr>
+        </thead>
+        <tbody>
+          {invoices.map(inv => (
+            <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50/40">
+              <td className="px-4 py-2.5 pl-12 font-mono font-semibold text-gray-700">{inv.invNumber}</td>
+              <td className="px-4 py-2.5 text-gray-500">{fmtDate(inv.issueDate)}</td>
+              <td className="px-4 py-2.5 text-right font-mono text-gray-600">{fmtAmt(inv.totalAmount)}</td>
+              <td className="px-4 py-2.5 text-right font-mono text-gray-400">{fmtAmt(inv.paidAmount)}</td>
+              <td className="px-4 py-2.5 text-right font-mono font-semibold text-orange-600">{fmtAmt(inv.outstanding)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 border-t-2 border-gray-200">
+            <td className="px-4 py-2.5 pl-12 text-xs font-bold text-gray-600 uppercase tracking-wider" colSpan={2}>
+              Total ({invoices.length} invoice{invoices.length !== 1 ? "s" : ""})
+            </td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold text-gray-700">{fmtAmt(totalInvoice)}</td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold text-gray-400">{fmtAmt(totalInvoice - totalOutstanding)}</td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold text-orange-700">{fmtAmt(totalOutstanding)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+// ── Bulk Payment Dialog ──────────────────────────────────────────────────────
 interface BulkPaymentDialogProps {
   open: boolean; onClose: () => void; customerName: string; onSuccess: () => void;
 }
@@ -294,9 +352,11 @@ function BulkPaymentDialog({ open, onClose, customerName, onSuccess }: BulkPayme
   );
 }
 
+// ── Main Page ────────────────────────────────────────────────────────────────
 export default function ArCollectionsPage() {
   const today = new Date().toISOString().split("T")[0];
   const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [payingCustomer, setPayingCustomer] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -314,6 +374,10 @@ export default function ArCollectionsPage() {
     !search.trim() || c.customerName.toLowerCase().includes(search.trim().toLowerCase())
   );
   const grandTotal = data?.totals?.total ?? 0;
+
+  function toggleExpanded(name: string) {
+    setExpanded(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
+  }
 
   function handleSuccess() {
     qc.invalidateQueries({ queryKey: ["ar-aging"] });
@@ -370,29 +434,54 @@ export default function ArCollectionsPage() {
                   </td>
                 </tr>
               )}
-              {customers.map(c => (
-                <tr key={c.customerName} className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors">
-                  <td className="px-5 py-3.5 font-medium text-gray-800">{c.customerName}</td>
-                  <td className="px-5 py-3.5 text-right font-mono font-semibold text-orange-600 tabular-nums">
-                    S$ {fmtAmt(c.total)}
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <Button
-                      size="sm"
-                      className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 gap-1.5"
-                      onClick={() => setPayingCustomer(c.customerName)}
-                    >
-                      <CreditCard className="h-3.5 w-3.5" />Receive Payment
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {customers.map(c => {
+                const isOpen = expanded.has(c.customerName);
+                return (
+                  <>
+                    <tr key={c.customerName} className={cn("border-b border-gray-100 transition-colors", isOpen ? "bg-emerald-50/40" : "hover:bg-gray-50/60")}>
+                      <td className="px-5 py-3.5">
+                        <button
+                          className="flex items-center gap-2 text-left font-medium text-gray-800 hover:text-emerald-700 transition-colors group"
+                          onClick={() => toggleExpanded(c.customerName)}
+                        >
+                          {isOpen
+                            ? <ChevronDown className="h-4 w-4 text-emerald-600 shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-gray-400 group-hover:text-emerald-500 shrink-0" />
+                          }
+                          {c.customerName}
+                        </button>
+                      </td>
+                      <td className="px-5 py-3.5 text-right font-mono font-semibold text-orange-600 tabular-nums">
+                        S$ {fmtAmt(c.total)}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 gap-1.5"
+                          onClick={() => setPayingCustomer(c.customerName)}
+                        >
+                          <CreditCard className="h-3.5 w-3.5" />Receive Payment
+                        </Button>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr key={`${c.customerName}-detail`} className="bg-white border-b border-gray-100">
+                        <td colSpan={3} className="p-0">
+                          <div className="border-l-4 border-emerald-300 ml-5 my-1 rounded">
+                            <CustomerInvoiceDetail customerName={c.customerName} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      <p className="text-xs text-gray-400">Shows all customers with open (non-void, non-paid) invoices as of today. Use the aging report for historical snapshots.</p>
+      <p className="text-xs text-gray-400">Click a customer name to view their open invoices. Use the aging report for historical snapshots.</p>
 
       {payingCustomer && (
         <BulkPaymentDialog

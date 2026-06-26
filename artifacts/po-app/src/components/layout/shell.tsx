@@ -372,6 +372,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         onToggle={toggleGroup}
         visible={isSingapore && hasAnyAccounting}
       >
+        {/* ─ Core Books ─ */}
+        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Core Books</div>
         {hasModuleAccess("accounting_coa") && (
           <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")} inGroup>
             Chart of Accounts
@@ -407,6 +409,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Cash Flow
           </NavItem>
         )}
+
+        {/* ─ Tax & Compliance ─ */}
+        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Tax & Compliance</div>
         {hasModuleAccess("accounting_gst_f5") && (
           <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"} inGroup>
             GST F5 Return
@@ -442,6 +447,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             IRAS Audit File
           </NavItem>
         )}
+
+        {/* ─ Receivables ─ */}
+        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Receivables</div>
         {hasModuleAccess("accounting_ar") && (
           <NavItem href="/accounting/ar" icon={Wallet} active={location === "/accounting/ar"} inGroup>
             AR Collections
@@ -457,6 +465,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Customer Statement
           </NavItem>
         )}
+
+        {/* ─ Payables ─ */}
+        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Payables</div>
         {hasModuleAccess("accounting_ap") && (
           <NavItem href="/accounting/ap" icon={HandCoins} active={location === "/accounting/ap"} inGroup>
             AP Payments
