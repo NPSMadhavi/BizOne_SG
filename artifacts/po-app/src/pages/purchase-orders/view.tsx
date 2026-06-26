@@ -1,10 +1,10 @@
-import { useGetPurchaseOrder, getGetPurchaseOrderQueryKey, useDeletePurchaseOrder } from "@workspace/api-client-react";
+import { useGetPurchaseOrder, getGetPurchaseOrderQueryKey, getListPurchaseOrdersQueryKey, useDeletePurchaseOrder } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -139,6 +139,12 @@ export default function PurchaseOrderView() {
           <p className="text-muted-foreground mt-1">
             Created on {fmtDate(po.createdAt)}
           </p>
+          {(po as any).emailSentTo && (
+            <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
+              <Mail className="h-3 w-3 shrink-0" />
+              <span>Emailed to: {(po as any).emailSentTo}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {linkedGrn ? (
@@ -445,6 +451,7 @@ export default function PurchaseOrderView() {
         onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/purchase-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
           await refetchPO();
         }}
       />

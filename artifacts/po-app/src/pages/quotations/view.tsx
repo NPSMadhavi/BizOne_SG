@@ -1,16 +1,17 @@
-import { useGetQuotation, getGetQuotationQueryKey, useDeleteQuotation, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetQuotation, getGetQuotationQueryKey, getListQuotationsQueryKey, useDeleteQuotation, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -28,6 +29,7 @@ export default function QuotationView() {
   const { toast } = useToast();
   const { selectedCompany, isAdmin } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const qc = useQueryClient();
 
   const { data: doc, isLoading, refetch } = useGetQuotation(id, {
     query: { queryKey: getGetQuotationQueryKey(id), enabled: !!id },
@@ -84,6 +86,12 @@ export default function QuotationView() {
               {getStatusBadge(doc.status)}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
+            {(doc as any).emailSentTo && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
+                <Mail className="h-3 w-3 shrink-0" />
+                <span>Emailed to: {(doc as any).emailSentTo}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -221,6 +229,7 @@ export default function QuotationView() {
         onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() });
           await refetch();
         }}
       />

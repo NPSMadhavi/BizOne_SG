@@ -1,4 +1,4 @@
-import { useGetInvoice, getGetInvoiceQueryKey, useVoidInvoice, useKnockOffInvoice, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetInvoice, getGetInvoiceQueryKey, getListInvoicesQueryKey, useVoidInvoice, useKnockOffInvoice, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2 } from "lucide-react";
+import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -242,6 +242,12 @@ export default function InvoiceView() {
               {getStatusBadge(doc.status)}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
+            {(doc as any).emailSentTo && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
+                <Mail className="h-3 w-3 shrink-0" />
+                <span>Emailed to: {(doc as any).emailSentTo}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -524,6 +530,7 @@ export default function InvoiceView() {
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await qc.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
           await qc.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         }}
       />
