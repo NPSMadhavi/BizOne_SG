@@ -1753,6 +1753,121 @@ router.post("/ar/apply-credit", async (req, res): Promise<void> => {
   res.json({ processed: processedPayments.length, totalApplied: +applyTotal.toFixed(2), remainingBalance: +(available - applyTotal).toFixed(2) });
 });
 
+// ─── AP: Bulk payment to vendor ────────────────────────────────────────────
+
+router.post("/ap/bulk-payment", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+
+  const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
+  const { vendorName, paymentDate, paymentMethod, bankRef, totalAmount, allocations, notes } = req.body;
+
+  if (!vendorName || !paymentDate || !allocations || !Array.isArray(allocations)) {
+    res.status(400).json({ error: "vendorName, paymentDate, and allocations are required" }); return;
+  }
+
+  const totalNum = parseFloat(String(totalAmount || 0));
+  const isCash = (paymentMethod || "bank_transfer") === "cash";
+
+  await ensureAccountsSeeded(companyId);
+
+  const getAcct = async (code: string) => {
+    const [a] = await db.select().from(accountsTable)
+      .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, code))).limit(1);
+    return a ?? null;
+  };
+
+  const [cashAcct, apAcct] = await Promise.all([
+    getAcct(isCash ? "1000" : "1010"),
+    getAcct("2000"),
+  ]);
+
+  const [co] = await db.select({ country: companiesTable.country })
+    .from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const isSgp = co?.country?.toLowerCase() === "singapore";
+
+  const processedPayments: Array<{ paymentId: number; vendorInvoiceId: number; piNumber: string; amount: number }> = [];
+  let totalPaid = 0;
+
+  for (const alloc of allocations as any[]) {
+    const piId = parseInt(String(alloc.vendorInvoiceId));
+    const allocAmt = parseFloat(String(alloc.amount));
+    if (isNaN(piId) || allocAmt <= 0.004) continue;
+
+    const [pi] = await db.select().from(vendorInvoicesTable)
+      .where(and(eq(vendorInvoicesTable.id, piId), eq(vendorInvoicesTable.companyId, companyId))).limit(1);
+    if (!pi || pi.status === "paid") continue;
+
+    const [payment] = await db.insert(vendorPaymentsTable).values({
+      companyId, vendorInvoiceId: piId, paymentDate,
+      amount: allocAmt.toFixed(2),
+      reference: bankRef || null,
+      paymentMethod: paymentMethod || "bank_transfer",
+      notes: notes || null,
+      createdBy: userId,
+    }).returning();
+
+    const allPmts = await db.select({ amount: vendorPaymentsTable.amount })
+      .from(vendorPaymentsTable).where(eq(vendorPaymentsTable.vendorInvoiceId, piId));
+    const paidTotal = allPmts.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+    const piTotal = parseFloat(pi.totalAmount ?? "0");
+    let newStatus = pi.status;
+    if (paidTotal >= piTotal - 0.005 && piTotal > 0) newStatus = "paid";
+    else if (paidTotal > 0.004) newStatus = "partial";
+    if (newStatus !== pi.status) {
+      await db.update(vendorInvoicesTable)
+        .set({ paidAmount: paidTotal.toFixed(2), status: newStatus })
+        .where(eq(vendorInvoicesTable.id, piId));
+    }
+
+    processedPayments.push({ paymentId: payment.id, vendorInvoiceId: piId, piNumber: pi.piNumber, amount: allocAmt });
+    totalPaid += allocAmt;
+  }
+
+  // Post JE
+  if (isSgp && cashAcct && apAcct && processedPayments.length > 0) {
+    const piNumbers = processedPayments.map(p => p.piNumber).join(", ");
+    const ref = bankRef ? ` (Ref: ${bankRef})` : "";
+
+    if (isCash) {
+      for (const p of processedPayments) {
+        const desc = `Cash payment — PI ${p.piNumber} — ${vendorName}${ref}`;
+        try {
+          const [entry] = await db.insert(journalEntriesTable).values({
+            companyId, entryDate: paymentDate, description: desc,
+            refType: "vendor_payment", refId: p.paymentId, refNumber: p.piNumber,
+            status: "posted", createdBy: userId,
+          }).returning();
+          await db.insert(journalLinesTable).values([
+            { journalEntryId: entry.id, accountId: apAcct.id,   description: desc, debit: p.amount.toFixed(2), credit: "0.00" },
+            { journalEntryId: entry.id, accountId: cashAcct.id, description: desc, debit: "0.00", credit: p.amount.toFixed(2) },
+          ]);
+        } catch {}
+      }
+    } else {
+      const desc = `Payment to ${vendorName} — ${piNumbers}${ref}`;
+      try {
+        const [entry] = await db.insert(journalEntriesTable).values({
+          companyId, entryDate: paymentDate, description: desc,
+          refType: "vendor_payment", refId: processedPayments[0]?.paymentId ?? 0, refNumber: piNumbers,
+          status: "posted", createdBy: userId,
+        }).returning();
+        await db.insert(journalLinesTable).values([
+          { journalEntryId: entry.id, accountId: apAcct.id,   description: `AP settlement — ${piNumbers}`, debit: totalPaid.toFixed(2), credit: "0.00" },
+          { journalEntryId: entry.id, accountId: cashAcct.id, description: desc, debit: "0.00", credit: totalNum.toFixed(2) },
+        ]);
+      } catch {}
+    }
+  }
+
+  logAudit({ req, action: "ap:bulk-payment", entityType: "vendor_invoice", entityId: 0,
+    entityLabel: `${vendorName} — ${processedPayments.length} PIs`,
+    details: { totalPaid, pis: processedPayments.length } });
+
+  res.json({ processed: processedPayments.length, totalPaid: +totalPaid.toFixed(2), payments: processedPayments });
+});
+
 // ─── AP: Open vendor invoices for a vendor ─────────────────────────────────
 
 router.get("/ap/vendor-invoices", async (req, res): Promise<void> => {

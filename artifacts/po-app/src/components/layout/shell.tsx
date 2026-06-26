@@ -24,6 +24,8 @@ import {
   TrendingUp,
   Clock,
   CreditCard,
+  Wallet,
+  HandCoins,
   Scale,
   Calculator,
   UserCheck,
@@ -440,6 +442,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             IRAS Audit File
           </NavItem>
         )}
+        {hasModuleAccess("accounting_ar") && (
+          <NavItem href="/accounting/ar" icon={Wallet} active={location === "/accounting/ar"} inGroup>
+            AR Collections
+          </NavItem>
+        )}
         {hasModuleAccess("accounting_ar_aging") && (
           <NavItem href="/accounting/ar-aging" icon={Clock} active={location === "/accounting/ar-aging"} inGroup>
             AR Aging
@@ -448,6 +455,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("accounting_cust_stmt") && (
           <NavItem href="/accounting/customer-statement" icon={UserCheck} active={location === "/accounting/customer-statement"} inGroup>
             Customer Statement
+          </NavItem>
+        )}
+        {hasModuleAccess("accounting_ap") && (
+          <NavItem href="/accounting/ap" icon={HandCoins} active={location === "/accounting/ap"} inGroup>
+            AP Payments
           </NavItem>
         )}
         {hasModuleAccess("accounting_ap_aging") && (

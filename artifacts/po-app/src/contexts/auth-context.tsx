@@ -12,7 +12,8 @@ export const ALL_MODULES = [
   "accounting_pl", "accounting_cf",
   "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io",
   "accounting_wht", "accounting_eci", "accounting_formcs", "accounting_iaf",
-  "accounting_ar_aging", "accounting_cust_stmt", "accounting_ap_aging", "accounting_vendor_stmt",
+  "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt",
+  "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
 ] as const;
 
 export const DEFAULT_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"] as const;
@@ -42,8 +43,10 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   accounting_eci: "ECI",
   accounting_formcs: "Form C-S",
   accounting_iaf: "IRAS Audit File",
+  accounting_ar: "AR Collections",
   accounting_ar_aging: "AR Aging",
   accounting_cust_stmt: "Customer Statement",
+  accounting_ap: "AP Payments",
   accounting_ap_aging: "AP Aging",
   accounting_vendor_stmt: "Vendor Statement",
 };
@@ -75,7 +78,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
       "accounting_pl", "accounting_cf",
       "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io",
       "accounting_wht", "accounting_eci", "accounting_formcs", "accounting_iaf",
-      "accounting_ar_aging", "accounting_cust_stmt", "accounting_ap_aging", "accounting_vendor_stmt",
+      "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt",
+      "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
     ],
   },
 ];

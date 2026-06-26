@@ -41,6 +41,8 @@ import ProfitLoss from "@/pages/accounting/profit-loss";
 import GstF5 from "@/pages/accounting/gst-f5";
 import ArAging from "@/pages/accounting/ar-aging";
 import ApAging from "@/pages/accounting/ap-aging";
+import ArCollections from "@/pages/accounting/ar-collections";
+import ApPayments from "@/pages/accounting/ap-payments";
 import BalanceSheet from "@/pages/accounting/balance-sheet";
 import TrialBalance from "@/pages/accounting/trial-balance";
 import CustomerStatement from "@/pages/accounting/customer-statement";
@@ -77,7 +79,9 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/cash-flow": "Cash Flow Statement",
   "/accounting/iaf": "IRAS Audit File (IAF)",
   "/accounting/gst-f5": "GST F5 Return",
+  "/accounting/ar": "AR Collections",
   "/accounting/ar-aging": "AR Aging Report",
+  "/accounting/ap": "AP Payments",
   "/accounting/ap-aging": "AP Aging Report",
   "/accounting/balance-sheet": "Balance Sheet",
   "/accounting/trial-balance": "Trial Balance",
@@ -241,7 +245,9 @@ function Router() {
         <Route path="/accounting/eci">{() => <ProtectedRoute component={EciPage} />}</Route>
         <Route path="/accounting/form-cs">{() => <ProtectedRoute component={FormCsPage} />}</Route>
         <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
+        <Route path="/accounting/ar">{() => <ProtectedRoute component={ArCollections} />}</Route>
         <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
+        <Route path="/accounting/ap">{() => <ProtectedRoute component={ApPayments} />}</Route>
         <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>
         <Route path="/accounting/balance-sheet">{() => <ProtectedRoute component={BalanceSheet} />}</Route>
         <Route path="/accounting/trial-balance">{() => <ProtectedRoute component={TrialBalance} />}</Route>
