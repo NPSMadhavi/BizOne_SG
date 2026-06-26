@@ -20,6 +20,7 @@ interface EmailSendDialogProps {
   triggerSize?: "default" | "sm" | "lg" | "icon";
   triggerLabel?: string;
   onSuccess?: (recipients: string[]) => void;
+  poId?: number;
 }
 
 interface EmailContact {
@@ -65,6 +66,7 @@ export function EmailSendDialog({
   triggerSize = "default",
   triggerLabel,
   onSuccess,
+  poId,
 }: EmailSendDialogProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -172,7 +174,7 @@ export function EmailSendDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ to: finalRecipients.join(", "), subject, body, pdfBase64, filename: pdfFilename }),
+        body: JSON.stringify({ to: finalRecipients.join(", "), subject, body, pdfBase64, filename: pdfFilename, ...(poId ? { poId } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send email");

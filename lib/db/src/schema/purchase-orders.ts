@@ -26,6 +26,9 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   customerId: integer("customer_id"),
   customerPoRef: text("customer_po_ref"),
   emailSentTo: text("email_sent_to"),
+  ackToken: text("ack_token"),
+  ackAt: text("ack_at"),
+  ackNote: text("ack_note"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

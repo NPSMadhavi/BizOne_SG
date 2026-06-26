@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail, CheckCircle2 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -143,6 +143,12 @@ export default function PurchaseOrderView() {
             <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
               <Mail className="h-3 w-3 shrink-0" />
               <span>Emailed to: {(po as any).emailSentTo}</span>
+            </div>
+          )}
+          {(po as any).ackAt && (
+            <div className="flex items-center gap-1.5 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-2.5 py-1 w-fit mt-1">
+              <CheckCircle2 className="h-3 w-3 shrink-0" />
+              <span>Supplier acknowledged: {(po as any).ackNote} — {fmtDate((po as any).ackAt)}</span>
             </div>
           )}
         </div>
@@ -449,6 +455,7 @@ export default function PurchaseOrderView() {
         defaultEmailSubject={`Purchase Order ${po.poNumber}`}
         defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}${(po as any).quoteRefNo ? ` with the sales reference number ${(po as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
         onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
+        poId={po.id}
         onEmailSent={async (recipients) => {
           await fetch(`/api/purchase-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });

@@ -1,9 +1,10 @@
 import { Router } from "express";
 import nodemailer from "nodemailer";
-import { db, settingsTable, companiesTable } from "@workspace/db";
+import { db, settingsTable, companiesTable, purchaseOrdersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import path from "node:path";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 
 const router = Router();
 
@@ -46,9 +47,30 @@ function loadLogoBuffer(filename: string): Buffer | null {
   }
 }
 
-function buildEmailHtml(body: string, isSingapore: boolean, companyName: string): string {
+function buildEmailHtml(body: string, isSingapore: boolean, companyName: string, ackUrl?: string): string {
   const brand = isSingapore ? "BizOne Singapore" : "BizOne India";
   const brandShort = isSingapore ? "bizOneSG" : "bizOneIndia";
+
+  const ackSection = ackUrl ? `
+        <!-- ACK buttons -->
+        <tr>
+          <td style="padding:0 40px 28px 40px;">
+            <p style="margin:0 0 12px 0;font-size:13px;color:#666666;">To acknowledge this Purchase Order, click one of the options below:</p>
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding-right:8px;">
+                  <a href="${ackUrl}/order-received" style="display:inline-block;padding:9px 18px;background:#1565c0;color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;border-radius:6px;">Order received with thanks.</a>
+                </td>
+                <td style="padding-right:8px;">
+                  <a href="${ackUrl}/received" style="display:inline-block;padding:9px 18px;background:#2e7d32;color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;border-radius:6px;">Received with thanks.</a>
+                </td>
+                <td>
+                  <a href="${ackUrl}/confirmed" style="display:inline-block;padding:9px 18px;background:#6a1b9a;color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;border-radius:6px;">Confirmed!</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -63,11 +85,14 @@ function buildEmailHtml(body: string, isSingapore: boolean, companyName: string)
     <td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
 
-        <!-- Header -->
+        <!-- Header: blue accent stripe + white logo area -->
         <tr>
-          <td style="background:linear-gradient(135deg,#0a2d6e 0%,#1565c0 60%,#1e88e5 100%);padding:32px 40px;text-align:center;">
+          <td style="background:linear-gradient(135deg,#0a2d6e 0%,#1565c0 60%,#1e88e5 100%);height:8px;font-size:0;line-height:0;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td style="background:#ffffff;padding:28px 40px 20px 40px;text-align:center;border-bottom:1px solid #e8ecf0;">
             <img src="cid:bizone-logo" alt="${brand}" style="height:52px;max-width:240px;object-fit:contain;" />
-            <p style="margin:10px 0 0 0;color:rgba(255,255,255,0.80);font-size:12px;letter-spacing:0.5px;">Smarter Accounting. Better Business.</p>
+            <p style="margin:8px 0 0 0;color:#6b7280;font-size:12px;letter-spacing:0.5px;">Smarter Accounting. Better Business.</p>
           </td>
         </tr>
 
@@ -77,6 +102,8 @@ function buildEmailHtml(body: string, isSingapore: boolean, companyName: string)
             ${textToEmailHtml(body)}
           </td>
         </tr>
+
+        ${ackSection}
 
         <!-- Divider -->
         <tr>
@@ -111,12 +138,13 @@ router.post("/send-email", async (req, res): Promise<void> => {
     return;
   }
 
-  const { to, subject, body, pdfBase64, filename } = req.body as {
+  const { to, subject, body, pdfBase64, filename, poId } = req.body as {
     to: string;
     subject: string;
     body: string;
     pdfBase64: string;
     filename: string;
+    poId?: number;
   };
 
   if (!to || !subject || !pdfBase64 || !filename) {
@@ -155,7 +183,22 @@ router.post("/send-email", async (req, res): Promise<void> => {
     const logoFilename = isSingapore ? "bizone-sg.png" : "bizone-india.png";
     const logoBuffer = loadLogoBuffer(logoFilename);
 
-    const htmlBody = buildEmailHtml(body, isSingapore, companyName);
+    // If this is a PO email, generate/reuse an ACK token and build the ACK URL
+    let ackUrl: string | undefined;
+    if (poId) {
+      const [poRow] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId)).limit(1);
+      if (poRow) {
+        const token = (poRow as any).ackToken || randomUUID();
+        if (!(poRow as any).ackToken) {
+          await db.update(purchaseOrdersTable).set({ ackToken: token } as any).where(eq(purchaseOrdersTable.id, poId));
+        }
+        const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
+        const proto = req.get("x-forwarded-proto") || "https";
+        ackUrl = `${proto}://${host}/api/ack/po/${token}`;
+      }
+    }
+
+    const htmlBody = buildEmailHtml(body, isSingapore, companyName, ackUrl);
     const brandShort = isSingapore ? "bizOneSG" : "bizOneIndia";
     const plainFooter = `\n\n--\nSent from ${brandShort} – Smarter Accounting. Better Business.`;
 

@@ -128,6 +128,7 @@ interface PdfPreviewModalProps {
   defaultEmailBody?: string;
   onEdit?: () => void;
   onEmailSent?: (recipients: string[]) => void;
+  poId?: number;
 }
 
 export function PdfPreviewModal({
@@ -141,6 +142,7 @@ export function PdfPreviewModal({
   defaultEmailBody = "",
   onEdit,
   onEmailSent,
+  poId,
 }: PdfPreviewModalProps) {
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -227,6 +229,7 @@ export function PdfPreviewModal({
               generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
               triggerSize="sm"
               onSuccess={(recipients) => onEmailSent?.(recipients)}
+              poId={poId}
             />
           </div>
         </DialogHeader>

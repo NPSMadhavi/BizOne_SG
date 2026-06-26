@@ -28,6 +28,7 @@ import aiInvoiceRouter from "./ai/generate-invoice";
 import aiFormatRouter from "./ai/format-invoice";
 import aiFormatTextRouter from "./ai/format-text";
 import creditNotesRouter from "./credit-notes";
+import ackRouter from "./ack";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(aiInvoiceRouter);
 router.use(aiFormatRouter);
 router.use(aiFormatTextRouter);
 router.use(creditNotesRouter);
+router.use(ackRouter);
 
 export default router;
