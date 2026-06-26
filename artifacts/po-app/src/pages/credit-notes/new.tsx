@@ -212,10 +212,7 @@ export default function CreditNoteNew() {
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Issue Date</FormLabel>
-                      <IssueDateField value={field.value ?? ""} onChange={field.onChange} />
-                    </FormItem>
+                    <IssueDateField value={field.value ?? ""} onChange={field.onChange} label="Issue Date" />
                   )} />
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (

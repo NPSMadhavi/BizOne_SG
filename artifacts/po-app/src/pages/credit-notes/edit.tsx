@@ -251,10 +251,7 @@ export default function CreditNoteEdit() {
                     <FormItem><FormLabel>Reference Invoice No.</FormLabel><FormControl><Input {...field} placeholder="INV-0042" /></FormControl></FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Issue Date</FormLabel>
-                      <IssueDateField value={field.value ?? ""} onChange={field.onChange} />
-                    </FormItem>
+                    <IssueDateField value={field.value ?? ""} onChange={field.onChange} label="Issue Date" />
                   )} />
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (
