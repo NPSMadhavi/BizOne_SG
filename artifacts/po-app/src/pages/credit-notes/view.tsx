@@ -90,7 +90,7 @@ export default function CreditNoteView() {
             <ArrowLeft className="h-3 w-3" />Back to Credit Notes
           </Link>
           <div className="flex items-center gap-3">
-            <FileMinus className="h-6 w-6 text-rose-600" />
+            <FileMinus className="h-6 w-6 text-gray-700" />
             <h1 className="text-2xl font-bold text-gray-900">{doc.cnNumber}</h1>
             {doc.isPrivate && <Lock className="h-4 w-4 text-gray-400" />}
             {statusBadge(doc.status)}
@@ -142,7 +142,7 @@ export default function CreditNoteView() {
           <CardContent>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <dt className="text-gray-500">Issue Date</dt><dd className="font-medium">{fmtDate(doc.issueDate)}</dd>
-              {doc.refInvNumber && <><dt className="text-gray-500">Ref Invoice</dt><dd className="font-mono font-medium text-rose-700">{doc.refInvNumber}</dd></>}
+              {doc.refInvNumber && <><dt className="text-gray-500">Ref Invoice</dt><dd className="font-mono font-medium text-gray-900">{doc.refInvNumber}</dd></>}
               <dt className="text-gray-500">Currency</dt><dd className="font-medium">{doc.currency}</dd>
               <dt className="text-gray-500">GST Rate</dt><dd className="font-medium">{Number(doc.taxRate).toFixed(1)}%</dd>
               {doc.paymentTerms && <><dt className="text-gray-500">Payment Terms</dt><dd className="font-medium">{doc.paymentTerms}</dd></>}
@@ -217,7 +217,7 @@ export default function CreditNoteView() {
               <div className="flex justify-between text-gray-600">
                 <span>GST ({Number(doc.taxRate).toFixed(1)}%)</span><span className="font-mono">{fmt(doc.currency, doc.tax)}</span>
               </div>
-              <div className="flex justify-between font-bold text-base border-t pt-2 text-rose-700">
+              <div className="flex justify-between font-bold text-base border-t pt-2 text-gray-900">
                 <span>Credit Total</span><span className="font-mono">{fmt(doc.currency, doc.totalAmount)}</span>
               </div>
             </div>

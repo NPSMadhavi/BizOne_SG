@@ -198,7 +198,7 @@ export default function CreditNoteEdit() {
           <Button variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
             <Save className="h-4 w-4" />Save Draft
           </Button>
-          <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2 bg-rose-600 hover:bg-rose-700">
+          <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
             <Eye className="h-4 w-4" />Save & Preview
           </Button>
         </div>
@@ -365,7 +365,7 @@ export default function CreditNoteEdit() {
                   <div className="flex justify-between text-gray-600">
                     <span>GST ({fmt(Number(watchTax))}%)</span><span className="font-mono">{currency} {fmt(tax)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-base border-t pt-2 text-rose-700">
+                  <div className="flex justify-between font-bold text-base border-t pt-2 text-gray-900">
                     <span>Credit Total</span><span className="font-mono">{currency} {fmt(total)}</span>
                   </div>
                 </div>

@@ -54,12 +54,12 @@ export default function CreditNoteList() {
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <FileMinus className="h-6 w-6 text-rose-600" /> Credit Notes
+            <FileMinus className="h-6 w-6 text-gray-700" /> Credit Notes
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">Manual credit notes issued to customers</p>
         </div>
         <Link href="/credit-notes/new">
-          <Button className="gap-2 bg-rose-600 hover:bg-rose-700">
+          <Button className="gap-2">
             <Plus className="h-4 w-4" />New Credit Note
           </Button>
         </Link>
@@ -101,7 +101,7 @@ export default function CreditNoteList() {
                   <td className="px-4 py-3 text-gray-700">{note.customerName}</td>
                   <td className="px-4 py-3 font-mono text-gray-500">{note.refInvNumber || "—"}</td>
                   <td className="px-4 py-3 text-gray-500">{fmtDate(note.issueDate)}</td>
-                  <td className="px-4 py-3 text-right font-mono font-semibold text-rose-700">
+                  <td className="px-4 py-3 text-right font-mono font-semibold text-gray-800">
                     {note.currency} {new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2 }).format(note.totalAmount)}
                   </td>
                   <td className="px-4 py-3">{statusBadge(note.status)}</td>
