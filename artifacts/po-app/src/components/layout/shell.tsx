@@ -53,6 +53,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import logo from "@assets/logo_1776054030755.png";
+import bizoneSgLogo from "@assets/bizone_1_1782467876559.png";
+import bizoneIndiaLogo from "@assets/bizone_India_1782467973411.png";
 import { AgentPanel } from "@/components/agent-panel";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -553,6 +555,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-border/50 bg-muted/10 pt-2">
           <CompanyBadge />
           <UserMenu />
+        </div>
+        <div className="px-4 py-3 border-t border-border/30 flex items-center justify-center">
+          <img
+            src={isSingapore ? bizoneSgLogo : bizoneIndiaLogo}
+            alt={isSingapore ? "BizOne Singapore" : "BizOne India"}
+            className="h-7 opacity-80 hover:opacity-100 transition-opacity"
+          />
         </div>
       </aside>
 
