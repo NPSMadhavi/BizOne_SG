@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
-import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -15,7 +15,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
+import { ImportFromPODialog } from "@/components/import-from-po-dialog";
+import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
@@ -221,6 +223,20 @@ export default function InvoiceEdit() {
   const updateMutation = useUpdateInvoice();
   const items = form.watch("items");
   const taxPercent = form.watch("tax") || 0;
+
+  const [importPOOpen, setImportPOOpen] = useState(false);
+  function handleImportFromPO(imported: InvoiceImportItem[]) {
+    if (!imported.length) return;
+    const current = form.getValues("items");
+    const allBlank = current.every(i => !i.description?.trim());
+    if (allBlank) {
+      form.setValue("items", imported as any);
+    } else {
+      const last = current[current.length - 1];
+      const trailingBlank = last && !last.description?.trim();
+      form.setValue("items", [...(trailingBlank ? current.slice(0, -1) : current), ...(imported as any)]);
+    }
+  }
 
   const appendLock = useRef(false);
   useEffect(() => {
@@ -454,6 +470,9 @@ export default function InvoiceEdit() {
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from PO
                   </Button>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
@@ -821,6 +840,12 @@ export default function InvoiceEdit() {
           }
           setPendingConfirmValues(null);
         }}
+      />
+      <ImportFromPODialog
+        open={importPOOpen}
+        onOpenChange={setImportPOOpen}
+        mode="invoice"
+        onImport={imported => handleImportFromPO(imported as InvoiceImportItem[])}
       />
       <PdfPreviewModal
         open={previewOpen}

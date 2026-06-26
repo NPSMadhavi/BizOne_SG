@@ -3,7 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -16,7 +16,9 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, FileInput } from "lucide-react";
+import { ImportFromPODialog } from "@/components/import-from-po-dialog";
+import type { DOImportItem } from "@/components/import-from-po-dialog";
 import { generateDO_PDF } from "@/lib/pdf";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
@@ -64,6 +66,20 @@ export default function DeliveryOrderNew() {
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateDeliveryOrder();
+
+  const [importPOOpen, setImportPOOpen] = useState(false);
+  function handleImportFromPO(imported: DOImportItem[]) {
+    if (!imported.length) return;
+    const current = form.getValues("items");
+    const allBlank = current.every(i => !i.description?.trim());
+    if (allBlank) {
+      form.setValue("items", imported as any);
+    } else {
+      const last = current[current.length - 1];
+      const trailingBlank = last && !last.description?.trim();
+      form.setValue("items", [...(trailingBlank ? current.slice(0, -1) : current), ...(imported as any)]);
+    }
+  }
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
   const nextDoNumber = (() => {
@@ -222,7 +238,12 @@ export default function DeliveryOrderNew() {
 
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
-              <CardTitle className="text-lg">Items to Deliver</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Items to Deliver</CardTitle>
+                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
+                  <FileInput className="h-3 w-3" /> Import from PO
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -306,6 +327,12 @@ export default function DeliveryOrderNew() {
         </form>
       </Form>
 
+      <ImportFromPODialog
+        open={importPOOpen}
+        onOpenChange={setImportPOOpen}
+        mode="do"
+        onImport={imported => handleImportFromPO(imported as DOImportItem[])}
+      />
       {savedDoc && (
         <PdfPreviewModal
           open={previewOpen}
