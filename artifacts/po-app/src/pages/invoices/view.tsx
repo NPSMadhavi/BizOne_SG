@@ -263,38 +263,6 @@ export default function InvoiceView() {
               <Plus className="h-4 w-4" />Record Payment
             </Button>
           )}
-          {canKnockOff && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50">
-                  <CheckCircle2 className="h-4 w-4" />Quick Knock-Off
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Mark as Fully Paid?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will mark {doc.invNumber} as fully paid and record a payment entry for the remaining balance of {fmt(balance)}. Use "Record Payment" for partial payments.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-blue-600 hover:bg-blue-700"
-                    onClick={() => knockOffMutation.mutate({ id }, {
-                      onSuccess: () => {
-                        toast({ title: "Knocked Off", description: "Invoice marked as fully paid." });
-                        invalidate();
-                      },
-                      onError: (err: any) => toast({ title: "Error", description: err.message || "Failed", variant: "destructive" }),
-                    })}
-                  >
-                    Confirm Knock-Off
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
           {canVoid && (
             <Button variant="outline" className="gap-2 border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => setVoidDialogOpen(true)}>
               <Ban className="h-4 w-4" />Void Invoice

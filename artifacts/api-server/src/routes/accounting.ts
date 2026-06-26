@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable } from "@workspace/db";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable, invoicePaymentsTable, vendorPaymentsTable, customerDepositsTable } from "@workspace/db";
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
@@ -1421,4 +1421,363 @@ router.get("/iaf", async (req, res): Promise<void> => {
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to generate IAF" });
   }
+});
+
+// ─── AR: Open invoices for a customer ──────────────────────────────────────
+
+router.get("/ar/customer-invoices", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const customerName = (req.query.customerName as string) || "";
+  if (!customerName.trim()) { res.status(400).json({ error: "customerName required" }); return; }
+
+  const rows = await db.select({
+    id: invoicesTable.id, invNumber: invoicesTable.invNumber,
+    issueDate: invoicesTable.issueDate, totalAmount: invoicesTable.totalAmount,
+    currency: invoicesTable.currency, paymentTerms: invoicesTable.paymentTerms, status: invoicesTable.status,
+  })
+  .from(invoicesTable)
+  .where(and(
+    eq(invoicesTable.companyId, companyId),
+    sql`lower(${invoicesTable.customerName}) = lower(${customerName})`,
+    sql`${invoicesTable.status} NOT IN ('draft', 'void', 'paid')`,
+  ))
+  .orderBy(asc(invoicesTable.issueDate), asc(invoicesTable.id));
+
+  const result = await Promise.all(rows.map(async (inv) => {
+    const payments = await db.select({ amount: invoicePaymentsTable.amount })
+      .from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, inv.id));
+    const paidAmount = payments.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+    const total = parseFloat(inv.totalAmount ?? "0");
+    return {
+      id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate,
+      totalAmount: +total.toFixed(2), paidAmount: +paidAmount.toFixed(2),
+      outstanding: +Math.max(0, total - paidAmount).toFixed(2),
+      currency: inv.currency, paymentTerms: inv.paymentTerms, status: inv.status,
+    };
+  }));
+
+  res.json({ invoices: result });
+});
+
+// ─── AR: Customer deposit balance ──────────────────────────────────────────
+
+router.get("/ar/customer-deposit", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const customerName = (req.query.customerName as string) || "";
+  if (!customerName.trim()) { res.status(400).json({ error: "customerName required" }); return; }
+
+  const deposits = await db.select().from(customerDepositsTable)
+    .where(and(
+      eq(customerDepositsTable.companyId, companyId),
+      sql`lower(${customerDepositsTable.customerName}) = lower(${customerName})`,
+      eq(customerDepositsTable.status, "available"),
+    ))
+    .orderBy(asc(customerDepositsTable.paymentDate));
+
+  const totalBalance = deposits.reduce((s, d) => {
+    return s + parseFloat(d.totalAmount) - parseFloat(d.appliedAmount ?? "0");
+  }, 0);
+
+  res.json({
+    deposits: deposits.map(d => ({
+      id: d.id,
+      totalAmount: parseFloat(d.totalAmount),
+      appliedAmount: parseFloat(d.appliedAmount ?? "0"),
+      available: parseFloat(d.totalAmount) - parseFloat(d.appliedAmount ?? "0"),
+      currency: d.currency, paymentDate: d.paymentDate, bankRef: d.bankRef,
+    })),
+    totalBalance: +totalBalance.toFixed(2),
+  });
+});
+
+// ─── AR: Bulk payment (knock-off) ──────────────────────────────────────────
+
+router.post("/ar/bulk-payment", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+
+  const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
+  const { customerName, paymentDate, paymentMethod, bankRef, totalAmount, allocations, notes } = req.body;
+
+  if (!customerName || !paymentDate || !allocations || !Array.isArray(allocations)) {
+    res.status(400).json({ error: "customerName, paymentDate, and allocations are required" }); return;
+  }
+
+  const totalNum = parseFloat(String(totalAmount || 0));
+  const allocTotal = (allocations as any[]).reduce((s, a) => s + parseFloat(String(a.amount || 0)), 0);
+  const excess = Math.max(0, totalNum - allocTotal);
+  const isCash = (paymentMethod || "bank_transfer") === "cash";
+
+  await ensureAccountsSeeded(companyId);
+
+  const [dep2035] = await db.select({ id: accountsTable.id }).from(accountsTable)
+    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, "2035"))).limit(1);
+  if (!dep2035) {
+    await db.insert(accountsTable).values({
+      companyId, code: "2035", name: "Customer Deposits / Advance Receipts",
+      type: "liability" as any, subType: "current_liability", isActive: true, isSystem: false,
+    });
+  }
+
+  const getAcct = async (code: string) => {
+    const [a] = await db.select().from(accountsTable)
+      .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, code))).limit(1);
+    return a ?? null;
+  };
+
+  const [cashAcct, arAcct, depositAcct] = await Promise.all([
+    getAcct(isCash ? "1000" : "1010"),
+    getAcct("1100"),
+    getAcct("2035"),
+  ]);
+
+  const [co] = await db.select({ country: companiesTable.country }).from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const isSgp = co?.country?.toLowerCase() === "singapore";
+
+  const processedPayments: Array<{ paymentId: number; invoiceId: number; invNumber: string; amount: number }> = [];
+
+  for (const alloc of allocations as any[]) {
+    const invId = parseInt(String(alloc.invoiceId));
+    const allocAmt = parseFloat(String(alloc.amount));
+    if (isNaN(invId) || allocAmt <= 0.004) continue;
+
+    const [inv] = await db.select().from(invoicesTable)
+      .where(and(eq(invoicesTable.id, invId), eq(invoicesTable.companyId, companyId))).limit(1);
+    if (!inv || inv.status === "void" || inv.status === "draft") continue;
+
+    const [payment] = await db.insert(invoicePaymentsTable).values({
+      companyId, invoiceId: invId, paymentDate,
+      amount: allocAmt.toFixed(2),
+      reference: bankRef || null,
+      paymentMethod: paymentMethod || "bank_transfer",
+      notes: notes || null,
+      createdBy: userId,
+    }).returning();
+
+    const allPmts = await db.select({ amount: invoicePaymentsTable.amount })
+      .from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, invId));
+    const paidTotal = allPmts.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+    const invTotal = parseFloat(inv.totalAmount ?? "0");
+    let newStatus = inv.status;
+    if (paidTotal >= invTotal - 0.005) newStatus = "paid";
+    else if (paidTotal > 0.004) newStatus = "partial";
+    if (newStatus !== inv.status) {
+      await db.update(invoicesTable).set({ status: newStatus }).where(eq(invoicesTable.id, invId));
+    }
+
+    processedPayments.push({ paymentId: payment.id, invoiceId: invId, invNumber: inv.invNumber, amount: allocAmt });
+  }
+
+  // Create customer deposit record for excess
+  let depositRecord: any = null;
+  if (excess > 0.004) {
+    const [dep] = await db.insert(customerDepositsTable).values({
+      companyId, customerName, currency: "SGD",
+      totalAmount: excess.toFixed(2), appliedAmount: "0", status: "available",
+      paymentDate, paymentMethod: paymentMethod || "bank_transfer",
+      bankRef: bankRef || null,
+      notes: `Excess from bulk payment${notes ? `: ${notes}` : ""}`,
+      createdBy: userId,
+    }).returning();
+    depositRecord = dep;
+  }
+
+  // Post JE
+  if (isSgp && cashAcct && arAcct && processedPayments.length > 0) {
+    const invNumbers = processedPayments.map(p => p.invNumber).join(", ");
+    const ref = bankRef ? ` (Ref: ${bankRef})` : "";
+
+    if (isCash) {
+      for (const p of processedPayments) {
+        const desc = `Cash receipt — Invoice ${p.invNumber} — ${customerName}${ref}`;
+        try {
+          const [entry] = await db.insert(journalEntriesTable).values({
+            companyId, entryDate: paymentDate, description: desc,
+            refType: "invoice_payment", refId: p.paymentId, refNumber: p.invNumber,
+            status: "posted", createdBy: userId,
+          }).returning();
+          await db.insert(journalLinesTable).values([
+            { journalEntryId: entry.id, accountId: cashAcct.id, description: desc, debit: p.amount.toFixed(2), credit: "0.00" },
+            { journalEntryId: entry.id, accountId: arAcct.id,   description: desc, debit: "0.00", credit: p.amount.toFixed(2) },
+          ]);
+        } catch {}
+      }
+      if (excess > 0.004 && depositAcct && depositRecord) {
+        const desc = `Cash receipt — Customer deposit — ${customerName}${ref}`;
+        try {
+          const [entry] = await db.insert(journalEntriesTable).values({
+            companyId, entryDate: paymentDate, description: desc,
+            refType: "customer_deposit", refId: depositRecord.id, refNumber: `DEP-${depositRecord.id}`,
+            status: "posted", createdBy: userId,
+          }).returning();
+          await db.insert(journalLinesTable).values([
+            { journalEntryId: entry.id, accountId: cashAcct.id,    description: desc, debit: excess.toFixed(2), credit: "0.00" },
+            { journalEntryId: entry.id, accountId: depositAcct.id, description: desc, debit: "0.00", credit: excess.toFixed(2) },
+          ]);
+          await db.update(customerDepositsTable).set({ journalEntryId: entry.id }).where(eq(customerDepositsTable.id, depositRecord.id));
+        } catch {}
+      }
+    } else {
+      const desc = `Payment received — ${customerName} — ${invNumbers}${ref}`;
+      try {
+        const [entry] = await db.insert(journalEntriesTable).values({
+          companyId, entryDate: paymentDate, description: desc,
+          refType: "invoice_payment", refId: processedPayments[0]?.paymentId ?? 0, refNumber: invNumbers,
+          status: "posted", createdBy: userId,
+        }).returning();
+        const lines: any[] = [
+          { journalEntryId: entry.id, accountId: cashAcct.id, description: desc, debit: totalNum.toFixed(2), credit: "0.00" },
+        ];
+        if (allocTotal > 0.004) {
+          lines.push({ journalEntryId: entry.id, accountId: arAcct.id, description: `AR settlement — ${invNumbers}`, debit: "0.00", credit: allocTotal.toFixed(2) });
+        }
+        if (excess > 0.004 && depositAcct && depositRecord) {
+          lines.push({ journalEntryId: entry.id, accountId: depositAcct.id, description: `Customer deposit — ${customerName}`, debit: "0.00", credit: excess.toFixed(2) });
+          await db.update(customerDepositsTable).set({ journalEntryId: entry.id }).where(eq(customerDepositsTable.id, depositRecord.id));
+        }
+        await db.insert(journalLinesTable).values(lines);
+      } catch {}
+    }
+  }
+
+  logAudit({ req, action: "ar:bulk-payment", entityType: "invoice", entityId: 0,
+    entityLabel: `${customerName} — ${processedPayments.length} invoices`,
+    details: { totalAmount: totalNum, allocated: allocTotal, excess } });
+
+  res.json({
+    processed: processedPayments.length,
+    totalAllocated: +allocTotal.toFixed(2),
+    excess: +excess.toFixed(2),
+    depositId: depositRecord?.id ?? null,
+    payments: processedPayments,
+  });
+});
+
+// ─── AR: Apply existing customer credit to invoices ────────────────────────
+
+router.post("/ar/apply-credit", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+
+  const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
+  const { depositId, applyDate, allocations } = req.body;
+
+  if (!depositId || !allocations || !Array.isArray(allocations)) {
+    res.status(400).json({ error: "depositId and allocations are required" }); return;
+  }
+
+  const [deposit] = await db.select().from(customerDepositsTable)
+    .where(and(eq(customerDepositsTable.id, parseInt(String(depositId))), eq(customerDepositsTable.companyId, companyId))).limit(1);
+  if (!deposit) { res.status(404).json({ error: "Deposit not found" }); return; }
+
+  const available = parseFloat(deposit.totalAmount) - parseFloat(deposit.appliedAmount ?? "0");
+  const applyTotal = (allocations as any[]).reduce((s, a) => s + parseFloat(String(a.amount || 0)), 0);
+
+  if (applyTotal > available + 0.004) {
+    res.status(400).json({ error: `Apply amount exceeds available balance of ${available.toFixed(2)}` }); return;
+  }
+
+  const date = applyDate || new Date().toISOString().split("T")[0];
+  const processedPayments: Array<{ paymentId: number; invoiceId: number; invNumber: string; amount: number }> = [];
+
+  for (const alloc of allocations as any[]) {
+    const invId = parseInt(String(alloc.invoiceId));
+    const allocAmt = parseFloat(String(alloc.amount));
+    if (isNaN(invId) || allocAmt <= 0.004) continue;
+
+    const [inv] = await db.select().from(invoicesTable)
+      .where(and(eq(invoicesTable.id, invId), eq(invoicesTable.companyId, companyId))).limit(1);
+    if (!inv || inv.status === "void" || inv.status === "draft") continue;
+
+    const [payment] = await db.insert(invoicePaymentsTable).values({
+      companyId, invoiceId: invId, paymentDate: date,
+      amount: allocAmt.toFixed(2),
+      reference: `DEP-${deposit.id}`,
+      paymentMethod: "customer_deposit",
+      notes: `Applied from customer credit (DEP-${deposit.id})`,
+      createdBy: userId,
+    }).returning();
+
+    const allPmts = await db.select({ amount: invoicePaymentsTable.amount }).from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, invId));
+    const paidTotal = allPmts.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+    const invTotal = parseFloat(inv.totalAmount ?? "0");
+    let newStatus = inv.status;
+    if (paidTotal >= invTotal - 0.005) newStatus = "paid";
+    else if (paidTotal > 0.004) newStatus = "partial";
+    if (newStatus !== inv.status) {
+      await db.update(invoicesTable).set({ status: newStatus }).where(eq(invoicesTable.id, invId));
+    }
+
+    processedPayments.push({ paymentId: payment.id, invoiceId: invId, invNumber: inv.invNumber, amount: allocAmt });
+  }
+
+  const newApplied = parseFloat(deposit.appliedAmount ?? "0") + applyTotal;
+  const newStatus = newApplied >= parseFloat(deposit.totalAmount) - 0.004 ? "exhausted" : "available";
+  await db.update(customerDepositsTable)
+    .set({ appliedAmount: newApplied.toFixed(2), status: newStatus })
+    .where(eq(customerDepositsTable.id, deposit.id));
+
+  // JE: DR 2035 / CR 1100 per invoice
+  const [co] = await db.select({ country: companiesTable.country }).from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  if (co?.country?.toLowerCase() === "singapore") {
+    await ensureAccountsSeeded(companyId);
+    const getAcct = async (code: string) => {
+      const [a] = await db.select().from(accountsTable).where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, code))).limit(1);
+      return a ?? null;
+    };
+    const [depositAcct, arAcct] = await Promise.all([getAcct("2035"), getAcct("1100")]);
+    if (depositAcct && arAcct) {
+      for (const p of processedPayments) {
+        const desc = `Credit applied — Invoice ${p.invNumber} — ${deposit.customerName} (DEP-${deposit.id})`;
+        try {
+          const [entry] = await db.insert(journalEntriesTable).values({
+            companyId, entryDate: date, description: desc,
+            refType: "invoice_payment", refId: p.paymentId, refNumber: p.invNumber,
+            status: "posted", createdBy: userId,
+          }).returning();
+          await db.insert(journalLinesTable).values([
+            { journalEntryId: entry.id, accountId: depositAcct.id, description: desc, debit: p.amount.toFixed(2), credit: "0.00" },
+            { journalEntryId: entry.id, accountId: arAcct.id,      description: desc, debit: "0.00", credit: p.amount.toFixed(2) },
+          ]);
+        } catch {}
+      }
+    }
+  }
+
+  res.json({ processed: processedPayments.length, totalApplied: +applyTotal.toFixed(2), remainingBalance: +(available - applyTotal).toFixed(2) });
+});
+
+// ─── AP: Open vendor invoices for a vendor ─────────────────────────────────
+
+router.get("/ap/vendor-invoices", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const vendorName = (req.query.vendorName as string) || "";
+  if (!vendorName.trim()) { res.status(400).json({ error: "vendorName required" }); return; }
+
+  const rows = await db.select()
+    .from(vendorInvoicesTable)
+    .where(and(
+      eq(vendorInvoicesTable.companyId, companyId),
+      sql`lower(${vendorInvoicesTable.vendorName}) = lower(${vendorName})`,
+      sql`${vendorInvoicesTable.status} IN ('pending', 'partial')`,
+    ))
+    .orderBy(asc(vendorInvoicesTable.piDate), asc(vendorInvoicesTable.id));
+
+  res.json({
+    invoices: rows.map(r => ({
+      id: r.id, piNumber: r.piNumber, piDate: r.piDate,
+      totalAmount: parseFloat(r.totalAmount ?? "0"),
+      paidAmount: parseFloat(r.paidAmount ?? "0"),
+      outstanding: Math.max(0, parseFloat(r.totalAmount ?? "0") - parseFloat(r.paidAmount ?? "0")),
+      currency: r.currency, status: r.status,
+    })),
+  });
 });

@@ -1,5 +1,5 @@
 import { db, accountsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash & Cash Equivalents",                    type: "asset",     subType: "current_asset",       isSystem: true  },
@@ -22,6 +22,7 @@ export const DEFAULT_ACCOUNTS = [
   { code: "2010", name: "GST Output Tax Payable",                     type: "liability", subType: "current_liability",   isSystem: true  },
   { code: "2020", name: "Accrued Liabilities",                        type: "liability", subType: "current_liability",   isSystem: false },
   { code: "2030", name: "Deferred Revenue",                           type: "liability", subType: "current_liability",   isSystem: false },
+  { code: "2035", name: "Customer Deposits / Advance Receipts",       type: "liability", subType: "current_liability",   isSystem: false },
   { code: "2040", name: "Staff Salaries Payable",                     type: "liability", subType: "current_liability",   isSystem: false },
   { code: "2050", name: "CPF Contributions Payable",                  type: "liability", subType: "current_liability",   isSystem: false },
   { code: "2060", name: "Other Current Liabilities",                  type: "liability", subType: "current_liability",   isSystem: false },
