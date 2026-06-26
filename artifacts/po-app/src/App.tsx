@@ -18,6 +18,10 @@ import InvoiceList from "@/pages/invoices/list";
 import InvoiceNew from "@/pages/invoices/new";
 import InvoiceView from "@/pages/invoices/view";
 import InvoiceEdit from "@/pages/invoices/edit";
+import CreditNoteList from "@/pages/credit-notes/list";
+import CreditNoteNew from "@/pages/credit-notes/new";
+import CreditNoteView from "@/pages/credit-notes/view";
+import CreditNoteEdit from "@/pages/credit-notes/edit";
 import DeliveryOrderList from "@/pages/delivery-orders/list";
 import DeliveryOrderNew from "@/pages/delivery-orders/new";
 import DeliveryOrderView from "@/pages/delivery-orders/view";
@@ -66,6 +70,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/purchase-orders": "Purchase Orders",
   "/quotations": "Quotations",
   "/invoices": "Invoices",
+  "/credit-notes": "Credit Notes",
   "/delivery-orders": "Delivery Orders",
   "/grn": "Goods Receipt Notes",
   "/stock": "Stock Items",
@@ -209,6 +214,12 @@ function Router() {
         <Route path="/invoices/new">{() => <ProtectedRoute component={InvoiceNew} module="invoices" />}</Route>
         <Route path="/invoices/:id/edit">{() => <ProtectedRoute component={InvoiceEdit} module="invoices" />}</Route>
         <Route path="/invoices/:id">{() => <ProtectedRoute component={InvoiceView} module="invoices" />}</Route>
+
+        {/* Credit Notes */}
+        <Route path="/credit-notes">{() => <ProtectedRoute component={CreditNoteList} module="credit_notes" />}</Route>
+        <Route path="/credit-notes/new">{() => <ProtectedRoute component={CreditNoteNew} module="credit_notes" />}</Route>
+        <Route path="/credit-notes/:id/edit">{() => <ProtectedRoute component={CreditNoteEdit} module="credit_notes" />}</Route>
+        <Route path="/credit-notes/:id">{() => <ProtectedRoute component={CreditNoteView} module="credit_notes" />}</Route>
 
         {/* Delivery Orders */}
         <Route path="/delivery-orders">{() => <ProtectedRoute component={DeliveryOrderList} module="delivery_orders" />}</Route>

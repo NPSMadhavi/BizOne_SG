@@ -27,6 +27,7 @@ import taxFilingsRouter from "./tax-filings";
 import aiInvoiceRouter from "./ai/generate-invoice";
 import aiFormatRouter from "./ai/format-invoice";
 import aiFormatTextRouter from "./ai/format-text";
+import creditNotesRouter from "./credit-notes";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(taxFilingsRouter);
 router.use(aiInvoiceRouter);
 router.use(aiFormatRouter);
 router.use(aiFormatTextRouter);
+router.use(creditNotesRouter);
 
 export default router;

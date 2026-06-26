@@ -2936,3 +2936,152 @@ export async function generateCashFlow_PDF(
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`CashFlow_${data.period.from}_to_${data.period.to}.pdf`);
 }
+
+// ── Credit Note PDF ───────────────────────────────────────────────────────────
+interface CreditNote {
+  id: number; cnNumber: string; customerName: string; customerAddress?: string | null;
+  contactPerson?: string | null; contactEmail?: string | null;
+  refInvNumber?: string | null; reason?: string | null;
+  issueDate?: string | null; currency: string; paymentTerms?: string | null;
+  subtotal: number; discountAmount: number; taxRate: number; tax: number; totalAmount: number;
+  status: string; notes?: string | null; items: any[];
+}
+
+export async function generateCreditNote_PDF(
+  cn: CreditNote,
+  company?: Company | null,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 14;
+  const marginRight = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+
+  buildDocHeader(doc, logo, "CREDIT NOTE", cn.cnNumber, fmtDate((cn as any).issueDate || new Date().toISOString()), cn.status, info);
+
+  doc.setFontSize(9.5);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  if (cn.refInvNumber) {
+    doc.text(`Ref Invoice: ${cn.refInvNumber}`, marginRight, 42, { align: "right" });
+  }
+  if (cn.paymentTerms) {
+    doc.text(`Payment Terms: ${cn.paymentTerms}`, marginRight, cn.refInvNumber ? 48 : 42, { align: "right" });
+  }
+
+  // Bill To
+  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+  doc.text("Bill To:", marginLeft, 67);
+  const entityBottom = renderEntityBlock(doc, cn.customerName, [cn.customerAddress, cn.contactPerson ? `\nAttn: ${cn.contactPerson}` : null], marginLeft, 74, 85);
+
+  // Reason block
+  let tableStartY = entityBottom + 10;
+  if (cn.reason) {
+    doc.setFontSize(9); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Reason for Credit:", marginLeft, tableStartY);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    const reasonLines = doc.splitTextToSize(cn.reason, marginRight - marginLeft);
+    doc.text(reasonLines, marginLeft, tableStartY + 5);
+    tableStartY += 5 + reasonLines.length * 5 + 5;
+  }
+
+  const cnCurrency = cn.currency || "SGD";
+  const allItems = (cn.items as any[]).filter(item => {
+    if (item.type === "section") return (item.sectionLabel || "").trim() !== "";
+    return (item.description || "").trim() !== "" || (item.partNumber || "").trim() !== "";
+  });
+  const regularItems = allItems.filter(i => i.type !== "section");
+  const hasPartNo = regularItems.some((i: any) => i.partNumber && String(i.partNumber).trim());
+  const hasDiscount = regularItems.some(i => Number(i.discount) > 0);
+
+  const headers: string[] = ["#"];
+  if (hasPartNo) headers.push("Item / Part Number");
+  headers.push("Description", "Qty", `Unit Price (${currSymbol(cnCurrency)})`);
+  if (hasDiscount) headers.push("Disc %");
+  headers.push(`Amount (${currSymbol(cnCurrency)})`);
+
+  const tableWidth = marginRight - marginLeft;
+  const amtW = 28; const qtyW = 14; const upW = 28; const discW = hasDiscount ? 14 : 0;
+  const partW = hasPartNo ? 32 : 0;
+  const descW = tableWidth - 8 - partW - qtyW - upW - discW - amtW;
+
+  const colStyles: Record<number, any> = {};
+  let ci = 0;
+  colStyles[ci++] = { cellWidth: 8, halign: "center" };
+  if (hasPartNo) colStyles[ci++] = { cellWidth: partW };
+  colStyles[ci++] = { cellWidth: descW };
+  colStyles[ci++] = { cellWidth: qtyW, halign: "right" };
+  colStyles[ci++] = { cellWidth: upW, halign: "right" };
+  if (hasDiscount) colStyles[ci++] = { cellWidth: discW, halign: "right" };
+  colStyles[ci++] = { cellWidth: amtW, halign: "right" };
+
+  let lineNum = 0;
+  const bodyRows: any[][] = allItems.map(item => {
+    if (item.type === "section") {
+      const row: any[] = [{ content: item.sectionLabel || "", colSpan: headers.length, styles: { fontStyle: "bold", fillColor: [240, 240, 240], textColor: [40, 40, 40] } }];
+      return row;
+    }
+    lineNum++;
+    const row: any[] = [String(lineNum)];
+    if (hasPartNo) row.push(item.partNumber || "");
+    row.push(item.description || "");
+    row.push(String(item.qty ?? 1));
+    row.push(fmtMoney(cnCurrency, Number(item.unitPrice)));
+    if (hasDiscount) row.push(Number(item.discount) > 0 ? `${item.discount}%` : "");
+    row.push(fmtMoney(cnCurrency, Number(item.amount)));
+    return row;
+  });
+
+  (doc as any).autoTable({
+    startY: tableStartY,
+    head: [headers],
+    body: bodyRows,
+    columnStyles: colStyles,
+    headStyles: { fillColor: [220, 38, 38], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
+    bodyStyles: { fontSize: 9 },
+    alternateRowStyles: { fillColor: [255, 245, 245] },
+    margin: { left: marginLeft, right: 14, bottom: 40 },
+    didDrawPage: () => {},
+  });
+
+  const afterTable = (doc as any).lastAutoTable.finalY + 8;
+  const docDiscount = Number(cn.discountAmount) || 0;
+  const valueX = marginRight;
+  const labelX = marginRight - 35;
+  let ty = afterTable;
+
+  doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text("Subtotal:", labelX, ty, { align: "right" });
+  doc.text(fmtMoney(cnCurrency, cn.subtotal), valueX, ty, { align: "right" });
+  ty += 7;
+  if (docDiscount > 0) {
+    doc.text("Discount:", labelX, ty, { align: "right" });
+    doc.text(`- ${fmtMoney(cnCurrency, docDiscount)}`, valueX, ty, { align: "right" });
+    ty += 7;
+  }
+  doc.text(`GST (${Number(cn.taxRate).toFixed(1)}%):`, labelX, ty, { align: "right" });
+  doc.text(fmtMoney(cnCurrency, cn.tax), valueX, ty, { align: "right" });
+  ty += 2;
+  doc.setDrawColor(220, 38, 38); doc.setLineWidth(0.4);
+  doc.line(labelX - 10, ty, marginRight, ty);
+  ty += 5;
+  doc.setFontSize(11); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(220, 38, 38);
+  doc.text("Credit Total:", labelX, ty, { align: "right" });
+  doc.text(fmtMoney(cnCurrency, cn.totalAmount), valueX, ty, { align: "right" });
+
+  if (cn.notes) {
+    ty += 14;
+    doc.setFontSize(9); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Notes:", marginLeft, ty);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    const noteLines = doc.splitTextToSize(cn.notes, marginRight - marginLeft - 20);
+    doc.text(noteLines, marginLeft + 18, ty);
+  }
+
+  buildDocFooter(doc, "Credit Note");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`CreditNote_${cn.cnNumber}.pdf`);
+}

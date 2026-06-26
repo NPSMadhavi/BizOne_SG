@@ -28,6 +28,7 @@ import {
   HandCoins,
   Scale,
   Calculator,
+  FileMinus,
   UserCheck,
   FileDiff,
   Building,
@@ -261,6 +262,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     hasModuleAccess("purchase_orders") ||
     hasModuleAccess("quotations") ||
     hasModuleAccess("invoices") ||
+    hasModuleAccess("credit_notes") ||
     hasModuleAccess("delivery_orders");
   const hasDirectory =
     isAdmin ||
@@ -307,8 +309,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </NavItem>
         )}
         {hasModuleAccess("invoices") && (
-          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices")} inGroup>
+          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices") && !location.startsWith("/invoices/")} inGroup>
             Invoices
+          </NavItem>
+        )}
+        {hasModuleAccess("credit_notes") && (
+          <NavItem href="/credit-notes" icon={FileMinus} active={location.startsWith("/credit-notes")} inGroup>
+            Credit Notes
           </NavItem>
         )}
         {hasModuleAccess("delivery_orders") && (
