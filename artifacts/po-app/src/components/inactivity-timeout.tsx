@@ -7,6 +7,23 @@ import { useAuth } from "@/contexts/auth-context";
 const INACTIVITY_MS = 10 * 60 * 1000;
 const WARN_BEFORE_MS = 30 * 1000;
 
+// Returns true if any dialog/popover/listbox is open that isn't the inactivity
+// warning itself. In that case we consider the user "present" and reschedule.
+function anyAppDialogOpen(): boolean {
+  const selectors = [
+    '[role="dialog"]',
+    '[role="listbox"]',
+    '[role="menu"]',
+    '[data-radix-popper-content-wrapper]',
+    '[data-radix-select-viewport]',
+  ];
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el && !el.closest("[data-inactivity-dialog]")) return true;
+  }
+  return false;
+}
+
 export function InactivityTimeout() {
   const { user, logout } = useAuth();
   const [showWarning, setShowWarning] = useState(false);
@@ -17,9 +34,6 @@ export function InactivityTimeout() {
   const warnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Use refs for flag state so resetTimer stays stable (doesn't change
-  // reference when the dialog opens, preventing the useEffect cleanup from
-  // accidentally clearing the 30-second logout timer).
   const warningActiveRef = useRef(false);
   const timedOutRef = useRef(false);
   const logoutRef = useRef(logout);
@@ -54,22 +68,39 @@ export function InactivityTimeout() {
     logoutRef.current();
   }, [clearAll]);
 
-  // resetTimer only depends on stable values — no showWarning/showTimedOut
-  // state in deps, so the useEffect below never re-runs when the dialog opens.
+  // Forward-declare so resetTimer can reference itself for rescheduling.
+  const resetTimerRef = useRef<() => void>(() => {});
+
   const resetTimer = useCallback(() => {
     if (!user) return;
     if (warningActiveRef.current || timedOutRef.current) return;
     clearAll();
     warnTimerRef.current = setTimeout(() => {
+      // If a non-inactivity dialog/popover is open, the user is considered
+      // present — reschedule the full timeout rather than showing the warning.
+      if (anyAppDialogOpen()) {
+        resetTimerRef.current();
+        return;
+      }
       warningActiveRef.current = true;
       setShowWarning(true);
       startCountdown();
-      // This timer MUST survive; it is only cleared by handleStayActive or doLogout.
       timerRef.current = setTimeout(() => {
+        // Same guard for the final logout — reschedule if a dialog is open.
+        if (anyAppDialogOpen()) {
+          warningActiveRef.current = false;
+          setShowWarning(false);
+          clearAll();
+          resetTimerRef.current();
+          return;
+        }
         doLogout();
       }, WARN_BEFORE_MS);
     }, INACTIVITY_MS - WARN_BEFORE_MS);
   }, [user, clearAll, startCountdown, doLogout]);
+
+  // Keep the ref in sync so the setTimeout callbacks always call the latest version.
+  useEffect(() => { resetTimerRef.current = resetTimer; }, [resetTimer]);
 
   const handleStayActive = useCallback(() => {
     warningActiveRef.current = false;
@@ -78,8 +109,7 @@ export function InactivityTimeout() {
     resetTimer();
   }, [clearAll, resetTimer]);
 
-  // When the user logs back in after a timeout, clear any stale timed-out
-  // dialog state (component stays mounted across logout so state persists).
+  // Reset stale dialog state when user logs back in.
   const prevUserIdRef = useRef<number | null>(null);
   useEffect(() => {
     const currentId = user?.id ?? null;
@@ -95,12 +125,14 @@ export function InactivityTimeout() {
 
   useEffect(() => {
     if (!user) return;
-    const events = ["mousemove", "keydown", "click", "touchstart", "scroll", "wheel"];
+    const events = ["mousemove", "keydown", "click", "touchstart", "scroll", "wheel", "pointerdown", "pointermove", "focus"];
     const handler = () => resetTimer();
-    events.forEach(e => window.addEventListener(e, handler, { passive: true }));
+    // Use CAPTURE phase so events intercepted by Radix focus-traps / modals
+    // still reach this handler before stopPropagation can suppress them.
+    events.forEach(e => window.addEventListener(e, handler, { passive: true, capture: true }));
     resetTimer();
     return () => {
-      events.forEach(e => window.removeEventListener(e, handler));
+      events.forEach(e => window.removeEventListener(e, handler, { capture: true }));
       clearAll();
     };
   }, [user, resetTimer, clearAll]);
@@ -110,7 +142,7 @@ export function InactivityTimeout() {
   return (
     <>
       <Dialog open={showWarning} onOpenChange={() => {}}>
-        <DialogContent className="max-w-sm" onPointerDownOutside={e => e.preventDefault()}>
+        <DialogContent data-inactivity-dialog className="max-w-sm" onPointerDownOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-amber-500" />
@@ -130,7 +162,7 @@ export function InactivityTimeout() {
       </Dialog>
 
       <Dialog open={showTimedOut} onOpenChange={() => {}}>
-        <DialogContent className="max-w-sm" onPointerDownOutside={e => e.preventDefault()}>
+        <DialogContent data-inactivity-dialog className="max-w-sm" onPointerDownOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
