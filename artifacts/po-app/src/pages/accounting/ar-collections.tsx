@@ -285,10 +285,16 @@ function BulkPaymentDialog({ open, onClose, customerName, onSuccess }: BulkPayme
                           <td className="px-3 py-2 text-right font-mono text-orange-600 font-medium">{fmtAmt(inv.outstanding)}</td>
                           <td className="px-3 py-2 text-right">
                             {mode === "auto" ? (
-                              <span className={cn("font-mono font-semibold", alloc > 0 ? "text-emerald-700" : "text-gray-300")}>{alloc > 0 ? fmtAmt(alloc) : "—"}</span>
-                            ) : isChecked ? (
-                              <Input type="text" inputMode="decimal" className="w-28 h-7 text-xs text-right font-mono ml-auto" value={manualAmounts[inv.id] ?? ""} onChange={e => setManualAmounts(a => ({ ...a, [inv.id]: e.target.value }))} />
-                            ) : (
+                              <span className={cn("font-mono font-semibold",
+                                alloc <= 0 ? "text-gray-300" :
+                                alloc < inv.outstanding ? "text-orange-500" :
+                                "text-emerald-700"
+                              )}>{alloc > 0 ? fmtAmt(alloc) : "—"}</span>
+                            ) : isChecked ? (() => {
+                              const manualVal = parseFloat(manualAmounts[inv.id] ?? "0") || 0;
+                              const isPartial = manualVal > 0 && manualVal < inv.outstanding;
+                              return <Input type="text" inputMode="decimal" className={cn("w-28 h-7 text-xs text-right font-mono ml-auto", isPartial ? "text-orange-500 border-orange-300 focus-visible:ring-orange-400" : "")} value={manualAmounts[inv.id] ?? ""} onChange={e => setManualAmounts(a => ({ ...a, [inv.id]: e.target.value }))} />;
+                            })() : (
                               <span className="text-gray-300 font-mono">—</span>
                             )}
                           </td>
