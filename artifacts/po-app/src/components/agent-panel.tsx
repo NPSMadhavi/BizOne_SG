@@ -326,10 +326,10 @@ export function AgentPanel() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 bg-primary text-primary-foreground rounded-full px-5 py-3 shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95"
+          title="Ask Aria"
+          className="fixed bottom-6 right-6 z-40 flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95"
         >
-          <Sparkles className="h-4 w-4" />
-          <span className="text-sm font-semibold">Ask Aria</span>
+          <Sparkles className="h-5 w-5" />
         </button>
       )}
 
