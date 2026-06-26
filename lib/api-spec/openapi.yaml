@@ -999,6 +999,12 @@ components:
           type: string
         isPrivate:
           type: boolean
+        customerId:
+          type: integer
+        customerName:
+          type: string
+        customerPoRef:
+          type: string
         items:
           type: array
           items:
@@ -1045,6 +1051,10 @@ components:
           type: string
         isPrivate:
           type: boolean
+        customerId:
+          type: integer
+        customerPoRef:
+          type: string
         items:
           type: array
           items:
@@ -1081,6 +1091,10 @@ components:
           type: string
         isPrivate:
           type: boolean
+        customerId:
+          type: integer
+        customerPoRef:
+          type: string
         status:
           type: string
           enum: [draft, confirmed, cancelled]

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -245,6 +245,24 @@ export default function PurchaseOrderView() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {(po as any).customerName && (
+              <div className="flex items-center gap-3">
+                <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <span className="text-sm font-medium">Customer: </span>
+                  <span className="text-sm text-muted-foreground">{(po as any).customerName}</span>
+                </div>
+              </div>
+            )}
+            {(po as any).customerPoRef && (
+              <div className="flex items-center gap-3">
+                <Tag className="h-4 w-4 text-blue-400 shrink-0" />
+                <div>
+                  <span className="text-sm font-medium">Customer PO Ref: </span>
+                  <span className="text-sm text-muted-foreground font-mono">{(po as any).customerPoRef}</span>
+                </div>
+              </div>
+            )}
             {(po as any).quoteRefNo && (
               <div className="flex items-center gap-3">
                 <Tag className="h-4 w-4 text-muted-foreground shrink-0" />

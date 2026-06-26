@@ -3,6 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Users } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -64,6 +66,8 @@ const poSchema = z.object({
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
   isPrivate: z.boolean().default(false),
+  customerId: z.number().nullable().optional(),
+  customerPoRef: z.string().optional(),
   tax: z.coerce.number().min(0).max(100).default(0),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
@@ -80,6 +84,15 @@ export default function PurchaseOrderNew() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
 
+  const { data: customers = [] } = useQuery<any[]>({
+    queryKey: ["customers-for-po"],
+    queryFn: async () => {
+      const res = await fetch("/api/customers", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const form = useForm<z.infer<typeof poSchema>>({
     resolver: zodResolver(poSchema),
     defaultValues: {
@@ -95,6 +108,8 @@ export default function PurchaseOrderNew() {
       notes: "",
       currency: "SGD",
       isPrivate: false,
+      customerId: null,
+      customerPoRef: "",
       tax: 9,
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" }],
     },
@@ -343,6 +358,43 @@ export default function PurchaseOrderNew() {
                 <CardTitle className="text-lg">Order Logistics</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="customerId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-muted-foreground" />Customer (for reference)</FormLabel>
+                      <Select
+                        value={field.value != null ? String(field.value) : "none"}
+                        onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a customer…" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">— None —</SelectItem>
+                          {customers.map((c: any) => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerPoRef"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Customer PO Ref No.</FormLabel>
+                      <FormControl><Input placeholder="CUST-PO-2024-001" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="quoteRefNo"

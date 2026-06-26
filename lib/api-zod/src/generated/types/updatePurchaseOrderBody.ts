@@ -20,6 +20,8 @@ export interface UpdatePurchaseOrderBody {
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
+  customerId?: number;
+  customerPoRef?: string;
   status?: UpdatePurchaseOrderBodyStatus;
   items: POItem[];
   tax?: number;

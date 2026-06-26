@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, purchaseOrdersTable, usersTable, vendorsTable, vendorInvoicesTable } from "@workspace/db";
+import { db, purchaseOrdersTable, usersTable, vendorsTable, vendorInvoicesTable, customersTable } from "@workspace/db";
 import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { autoCreateGrn, autoDeleteGrnIfEmpty } from "./grn.js";
@@ -65,7 +65,20 @@ async function withUsernames(docs: any[]): Promise<any[]> {
       .from(usersTable).where(inArray(usersTable.id, userIds));
     usernameMap = Object.fromEntries(users.map(u => [u.id, u.username]));
   }
-  return docs.map(d => ({ ...d, createdByUsername: usernameMap[d.createdBy] || null }));
+
+  const customerIds = [...new Set(docs.map(d => d.customerId).filter(Boolean))] as number[];
+  let customerMap: Record<number, string> = {};
+  if (customerIds.length > 0) {
+    const customers = await db.select({ id: customersTable.id, name: customersTable.name })
+      .from(customersTable).where(inArray(customersTable.id, customerIds));
+    customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+  }
+
+  return docs.map(d => ({
+    ...d,
+    createdByUsername: usernameMap[d.createdBy] || null,
+    customerName: d.customerId ? (customerMap[d.customerId] || null) : null,
+  }));
 }
 
 router.get("/purchase-orders/stats", async (req, res): Promise<void> => {
@@ -124,7 +137,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
   const {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, quoteRefNo, notes,
-    items, tax = 0, currency, isPrivate, status,
+    items, tax = 0, currency, isPrivate, status, customerId, customerPoRef,
   } = req.body;
 
   if (!vendorName || !items) { res.status(400).json({ error: "vendorName and items are required" }); return; }
@@ -148,6 +161,8 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     items: itemsWithAmounts,
     currency: currency || "SGD",
     isPrivate: isPrivate === true,
+    customerId: customerId ? Number(customerId) : null,
+    customerPoRef: customerPoRef || null,
     subtotal: subtotal.toFixed(2),
     tax: taxAmount.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
@@ -182,7 +197,13 @@ router.get("/purchase-orders/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Access denied" }); return;
   }
 
-  res.json(parsePO(po));
+  let customerName: string | null = null;
+  if (po.customerId) {
+    const [cust] = await db.select({ name: customersTable.name }).from(customersTable).where(eq(customersTable.id, po.customerId));
+    customerName = cust?.name ?? null;
+  }
+
+  res.json({ ...parsePO(po), customerName });
 });
 
 router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
@@ -196,7 +217,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
   const {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, quoteRefNo, notes,
-    items, tax = 0, currency, isPrivate, status,
+    items, tax = 0, currency, isPrivate, status, customerId, customerPoRef,
   } = req.body;
 
   const itemsWithAmounts = (items as any[]).map((item: any) => ({
@@ -215,6 +236,8 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
     subtotal: subtotal.toFixed(2),
     tax: taxAmount.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
+    customerId: customerId ? Number(customerId) : null,
+    customerPoRef: customerPoRef || null,
   };
   if (currency !== undefined) updateData.currency = currency;
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;

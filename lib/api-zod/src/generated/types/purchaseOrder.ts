@@ -22,6 +22,9 @@ export interface PurchaseOrder {
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
+  customerId?: number;
+  customerName?: string;
+  customerPoRef?: string;
   items: POItem[];
   subtotal: number;
   tax: number;

@@ -111,6 +111,7 @@ export default function PurchaseOrderList() {
                 <th className="px-6 py-4 font-medium">PO Number</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Vendor</th>
+                <th className="px-6 py-4 font-medium">Customer</th>
                 <th className="px-6 py-4 font-medium text-right">Amount</th>
                 <th className="px-6 py-4 font-medium text-center">Status</th>
                 <th className="px-6 py-4 font-medium">Sent To</th>
@@ -122,14 +123,14 @@ export default function PurchaseOrderList() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {[...Array(8)].map((_, j) => (
+                    {[...Array(9)].map((_, j) => (
                       <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : !filteredPOs || filteredPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50" />
                       <p>No purchase orders found.</p>
@@ -154,6 +155,11 @@ export default function PurchaseOrderList() {
                       <td className="px-6 py-4 font-medium text-primary">{po.poNumber}</td>
                       <td className="px-6 py-4 text-muted-foreground">{fmtDate(po.createdAt)}</td>
                       <td className="px-6 py-4 font-medium">{po.vendorName}</td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        {(po as any).customerName
+                          ? <span className="text-foreground font-medium">{(po as any).customerName}</span>
+                          : <span>—</span>}
+                      </td>
                       <td className="px-6 py-4 text-right font-medium">{formatCurrency(po.totalAmount, (po as any).currency || "SGD")}</td>
                       <td className="px-6 py-4 text-center">{getStatusBadge(po.status)}</td>
                       <td className="px-6 py-4"><SentToCell emailSentTo={(po as any).emailSentTo} /></td>

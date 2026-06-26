@@ -143,6 +143,9 @@ export interface PurchaseOrder {
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
+  customerId?: number;
+  customerName?: string;
+  customerPoRef?: string;
   items: POItem[];
   subtotal: number;
   tax: number;
@@ -174,6 +177,8 @@ export interface CreatePurchaseOrderBody {
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
+  customerId?: number;
+  customerPoRef?: string;
   items: POItem[];
   tax?: number;
   status?: CreatePurchaseOrderBodyStatus;
@@ -200,6 +205,8 @@ export interface UpdatePurchaseOrderBody {
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
+  customerId?: number;
+  customerPoRef?: string;
   status?: UpdatePurchaseOrderBodyStatus;
   items: POItem[];
   tax?: number;

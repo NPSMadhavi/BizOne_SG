@@ -221,6 +221,9 @@ export const ListPurchaseOrdersResponseItem = zod.object({
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
+  customerId: zod.number().optional(),
+  customerName: zod.string().optional(),
+  customerPoRef: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -258,6 +261,8 @@ export const CreatePurchaseOrderBody = zod.object({
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
+  customerId: zod.number().optional(),
+  customerPoRef: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -293,6 +298,9 @@ export const GetPurchaseOrderResponse = zod.object({
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
+  customerId: zod.number().optional(),
+  customerName: zod.string().optional(),
+  customerPoRef: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),
@@ -331,6 +339,8 @@ export const UpdatePurchaseOrderBody = zod.object({
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
+  customerId: zod.number().optional(),
+  customerPoRef: zod.string().optional(),
   status: zod.enum(["draft", "confirmed", "cancelled"]).optional(),
   items: zod.array(
     zod.object({
@@ -359,6 +369,9 @@ export const UpdatePurchaseOrderResponse = zod.object({
   notes: zod.string().optional(),
   currency: zod.string().optional(),
   isPrivate: zod.boolean().optional(),
+  customerId: zod.number().optional(),
+  customerName: zod.string().optional(),
+  customerPoRef: zod.string().optional(),
   items: zod.array(
     zod.object({
       partNumber: zod.string(),

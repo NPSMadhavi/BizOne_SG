@@ -23,6 +23,8 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("SGD"),
   status: text("status").notNull().default("draft"),
+  customerId: integer("customer_id"),
+  customerPoRef: text("customer_po_ref"),
   emailSentTo: text("email_sent_to"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

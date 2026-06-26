@@ -20,6 +20,8 @@ export interface CreatePurchaseOrderBody {
   notes?: string;
   currency?: string;
   isPrivate?: boolean;
+  customerId?: number;
+  customerPoRef?: string;
   items: POItem[];
   tax?: number;
   status?: CreatePurchaseOrderBodyStatus;
