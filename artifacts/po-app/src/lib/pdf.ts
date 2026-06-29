@@ -624,13 +624,20 @@ function autoTableRich(
 
       const scaleFactor = (jdoc.internal as any).scaleFactor || 2.8346;
       const LINE_H = (9.5 * 1.15) / scaleFactor;
-      const BASELINE_OFFSET = (9.5 * 1.15 * 0.8) / scaleFactor; // matches autotable's own lineHeightFactor * fontSize * 0.8
       jdoc.setFontSize(9.5);
 
+      // Compute first-line baseline using autotable's exact formula (valign:"top"):
+      //   textPos.y = cell.y + topPadding + lineHeight * 0.8
+      // We derive topPadding from the cell's resolved styles rather than trusting
+      // textPos.y from data.cell (which autotable may recalculate after willDrawCell
+      // clears cell.text to [], producing a shifted value).
+      const _cp = data.cell.styles?.cellPadding;
+      const _topPad = typeof _cp === "number" ? _cp : (_cp?.top ?? padding);
+      const BASELINE_OFFSET = LINE_H * 0.8; // matches autotable's constant
       // Build rendering plan — each line gets its baseline y coordinate
       type Plan = { y: number; richLine: RichLine };
       const plan: Plan[] = [];
-      let ty = (cell as any).textPos?.y ?? (cell.y + padding + BASELINE_OFFSET);
+      let ty = cell.y + _topPad + BASELINE_OFFSET;
       for (const rl of richLines) {
         plan.push({ y: ty, richLine: rl });
         if (rl.cols) {
