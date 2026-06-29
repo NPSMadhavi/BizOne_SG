@@ -320,29 +320,29 @@ export default function PurchaseOrderView() {
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
               <tr>
                 <th className="px-6 py-3 font-medium w-12 text-center">#</th>
-                <th className="px-6 py-3 font-medium">Item / Part Number</th>
+                <th className="px-6 py-3 font-medium whitespace-nowrap min-w-[140px]">Item / Part Number</th>
                 <th className="px-6 py-3 font-medium">Description</th>
-                <th className="px-6 py-3 font-medium text-center">Qty</th>
-                {hasPOUom && <th className="px-6 py-3 font-medium text-center">UOM</th>}
-                <th className="px-6 py-3 font-medium text-right">Unit Price</th>
-                <th className="px-6 py-3 font-medium text-right">Amount</th>
+                <th className="px-6 py-3 font-medium text-center whitespace-nowrap">Qty</th>
+                {hasPOUom && <th className="px-6 py-3 font-medium text-center whitespace-nowrap">UOM</th>}
+                <th className="px-6 py-3 font-medium text-right whitespace-nowrap">Unit Price</th>
+                <th className="px-6 py-3 font-medium text-right whitespace-nowrap">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y border-b">
               {po.items.map((item, index) => (
                 <tr key={index} className="bg-card">
-                  <td className="px-6 py-4 text-center text-muted-foreground">{index + 1}</td>
-                  <td className="px-6 py-4 font-medium">{item.partNumber}</td>
-                  <td className="px-6 py-4 text-muted-foreground">
+                  <td className="px-6 py-4 text-center text-muted-foreground align-top">{index + 1}</td>
+                  <td className="px-6 py-4 font-mono text-xs text-muted-foreground align-top break-all">{item.partNumber}</td>
+                  <td className="px-6 py-4 text-muted-foreground align-top">
                     <div className="flex gap-3 items-start">
                       <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                       {(item as any).itemImage && <img src={(item as any).itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-center font-medium">{item.qty}</td>
-                  {hasPOUom && <td className="px-6 py-4 text-center text-muted-foreground">{(item as any).uom || "—"}</td>}
-                  <td className="px-6 py-4 text-right text-muted-foreground">{formatCurrency(item.unitPrice)}</td>
-                  <td className="px-6 py-4 text-right font-medium">{formatCurrency(item.amount)}</td>
+                  <td className="px-6 py-4 text-center font-medium align-top">{item.qty}</td>
+                  {hasPOUom && <td className="px-6 py-4 text-center text-muted-foreground align-top">{(item as any).uom || "—"}</td>}
+                  <td className="px-6 py-4 text-right text-muted-foreground align-top">{formatCurrency(item.unitPrice)}</td>
+                  <td className="px-6 py-4 text-right font-medium align-top">{formatCurrency(item.amount)}</td>
                 </tr>
               ))}
             </tbody>

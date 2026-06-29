@@ -361,13 +361,13 @@ export default function InvoiceView() {
             <thead className="bg-muted/50 border-b text-xs text-muted-foreground uppercase">
               <tr>
                 <th className="px-6 py-3 text-left w-8">#</th>
-                {hasPartNo && <th className="px-6 py-3 text-left">Item / Part Number</th>}
+                {hasPartNo && <th className="px-6 py-3 text-left whitespace-nowrap min-w-[140px]">Item / Part Number</th>}
                 <th className="px-6 py-3 text-left">Description</th>
-                <th className="px-6 py-3 text-right">Qty</th>
-                {hasInvUom && <th className="px-6 py-3 text-center">UOM</th>}
-                <th className="px-6 py-3 text-right">Unit Price</th>
-                {hasItemDiscount && <th className="px-6 py-3 text-right">Disc %</th>}
-                <th className="px-6 py-3 text-right">Amount</th>
+                <th className="px-6 py-3 text-right whitespace-nowrap">Qty</th>
+                {hasInvUom && <th className="px-6 py-3 text-center whitespace-nowrap">UOM</th>}
+                <th className="px-6 py-3 text-right whitespace-nowrap">Unit Price</th>
+                {hasItemDiscount && <th className="px-6 py-3 text-right whitespace-nowrap">Disc %</th>}
+                <th className="px-6 py-3 text-right whitespace-nowrap">Amount</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -384,19 +384,19 @@ export default function InvoiceView() {
                   seq++;
                   return (
                     <tr key={i} className="hover:bg-muted/30">
-                      <td className="px-6 py-3 text-muted-foreground">{seq}</td>
-                      {hasPartNo && <td className="px-6 py-3 text-muted-foreground">{item.partNumber || "—"}</td>}
-                      <td className="px-6 py-3 font-medium">
+                      <td className="px-6 py-3 text-muted-foreground align-top">{seq}</td>
+                      {hasPartNo && <td className="px-6 py-3 text-muted-foreground font-mono text-xs align-top break-all">{item.partNumber || "—"}</td>}
+                      <td className="px-6 py-3 font-medium align-top">
                         <div className="flex gap-3 items-start">
                           <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
                           {(item as any).itemImage && <img src={(item as any).itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
                         </div>
                       </td>
-                      <td className="px-6 py-3 text-right">{item.qty}</td>
-                      {hasInvUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
-                      <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
-                      {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
-                      <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
+                      <td className="px-6 py-3 text-right align-top">{item.qty}</td>
+                      {hasInvUom && <td className="px-6 py-3 text-center text-muted-foreground align-top">{item.uom || "—"}</td>}
+                      <td className="px-6 py-3 text-right align-top">{fmt(Number(item.unitPrice) || 0)}</td>
+                      {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground align-top">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
+                      <td className="px-6 py-3 text-right align-top">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
                     </tr>
                   );
                 });

@@ -796,7 +796,7 @@ export default function InvoiceNew() {
               onClick={form.handleSubmit(v => doSubmit(v, false))}
             >
               <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save"}
+              {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button
               type="button"
@@ -805,7 +805,7 @@ export default function InvoiceNew() {
               onClick={form.handleSubmit(v => onSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save"}
+              {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
           </div>
         </form>
