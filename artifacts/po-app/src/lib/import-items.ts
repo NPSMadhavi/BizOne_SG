@@ -124,6 +124,45 @@ function mergeRowContinuations(rows: string[][], columnMap: ColumnMap): string[]
   return merged;
 }
 
+/**
+ * Returns true for rows that are clearly PDF boilerplate (footers, URLs,
+ * watermarks) rather than genuine line items.
+ *
+ * Conservative heuristics — chosen to avoid false positives:
+ *  1. Description is a bare URL (www.* or http*)
+ *  2. Part-number field contains ≥4 whitespace-separated tokens — real product
+ *     codes don't read like sentences ("This is a computer generated …")
+ *  3. Part-number field starts with a known boilerplate keyword phrase
+ */
+function isLikelyFooterItem(item: ImportedItem): boolean {
+  const desc = item.description.trim();
+  const part = item.partNumber.trim();
+
+  // 1. Description is a URL
+  if (/^(https?:\/\/|www\.)\S+$/i.test(desc)) return true;
+
+  // 2. Part-number is a sentence (≥4 whitespace-delimited tokens)
+  if (part.split(/\s+/).length >= 4) return true;
+
+  // 3. Common boilerplate phrases in part-number or description
+  const boilerplate = [
+    "this is a computer",
+    "computer generated",
+    "thank you for your",
+    "bank details",
+    "terms and conditions",
+    "authorised signatory",
+    "authorized signatory",
+    "e. & o.e.",
+    "e&oe",
+  ];
+  const partLow = part.toLowerCase();
+  const descLow = desc.toLowerCase();
+  if (boilerplate.some((kw) => partLow.startsWith(kw) || descLow.startsWith(kw))) return true;
+
+  return false;
+}
+
 export function applyColumnMap(
   rows: string[][],
   columnMap: ColumnMap,
@@ -145,6 +184,7 @@ export function applyColumnMap(
     const hasContent =
       item.description.trim() !== "" || item.partNumber.trim() !== "";
     if (!hasContent) continue;
+    if (isLikelyFooterItem(item)) continue;
     items.push(item);
   }
   return items;
