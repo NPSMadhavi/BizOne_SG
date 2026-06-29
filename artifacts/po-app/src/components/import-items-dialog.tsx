@@ -1,6 +1,7 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { Upload, FileSpreadsheet, FileText, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -12,7 +13,6 @@ import {
   parseExcel,
   parsePdf,
   applyColumnMap,
-  buildColumnMap,
   type ImportedItem,
   type ColumnField,
   type ColumnMap,
@@ -43,13 +43,26 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
   const [fileName, setFileName] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [columnMap, setColumnMap] = useState<ColumnMap>({});
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
+
+  // Recompute preview items from raw rows + current column map
+  const previewItems = parseResult
+    ? applyColumnMap(parseResult.rawRows, columnMap)
+    : [];
+
+  // When preview items list changes (new parse or column remap) → select all
+  useEffect(() => {
+    setSelected(new Set(previewItems.map((_, i) => i)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parseResult, columnMap]);
 
   const reset = () => {
     setStage("upload");
     setFileName("");
     setParseResult(null);
     setColumnMap({});
+    setSelected(new Set());
     setError("");
   };
 
@@ -91,20 +104,28 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
     if (file) handleFile(file);
   };
 
-  const previewItems = parseResult
-    ? applyColumnMap(parseResult.rawRows, columnMap)
-    : [];
+  const toggleRow = (i: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
 
-  const handleImport = () => {
-    onImport(previewItems);
-    reset();
-    onClose();
+  const allChecked = previewItems.length > 0 && selected.size === previewItems.length;
+  const someChecked = selected.size > 0 && selected.size < previewItems.length;
+
+  const toggleAll = () => {
+    if (allChecked) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(previewItems.map((_, i) => i)));
+    }
   };
 
   const updateColMap = (colIdx: number, field: ColumnField) => {
     setColumnMap((prev) => {
       const next = { ...prev };
-      // Unset any other column already using this field (avoid duplicates)
       if (field !== "ignore") {
         for (const k of Object.keys(next)) {
           if (next[Number(k)] === field) next[Number(k)] = "ignore";
@@ -113,6 +134,14 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
       next[colIdx] = field;
       return next;
     });
+  };
+
+  const selectedItems = previewItems.filter((_, i) => selected.has(i));
+
+  const handleImport = () => {
+    onImport(selectedItems);
+    reset();
+    onClose();
   };
 
   const handleClose = () => {
@@ -130,8 +159,8 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-4 py-2">
-          {/* ── Stage: Upload ── */}
+        <div className="flex-1 overflow-y-auto space-y-4 py-2 min-h-0">
+          {/* ── Upload ── */}
           {stage === "upload" && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
@@ -152,29 +181,20 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                 </div>
                 <p className="text-sm font-medium">Drop file here or click to browse</p>
                 <p className="text-xs text-muted-foreground mt-1">Supports: PDF, XLSX, XLS</p>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".pdf,.xlsx,.xls"
-                  className="hidden"
-                  onChange={handleInputChange}
-                />
+                <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls" className="hidden" onChange={handleInputChange} />
               </div>
-
               {error && (
                 <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  {error}
+                  <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
                 </div>
               )}
-
               <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md p-3">
                 <strong>PDF note:</strong> Works best with text-based PDFs (not scanned images). Column detection is automatic but you can adjust the mapping after upload.
               </div>
             </div>
           )}
 
-          {/* ── Stage: Parsing ── */}
+          {/* ── Parsing ── */}
           {stage === "parsing" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <RefreshCw className="h-8 w-8 text-primary animate-spin" />
@@ -182,10 +202,10 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
             </div>
           )}
 
-          {/* ── Stage: Preview ── */}
+          {/* ── Preview ── */}
           {stage === "preview" && parseResult && (
             <div className="space-y-4">
-              {/* File info + re-upload */}
+              {/* File info */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   {fileName.toLowerCase().endsWith(".pdf")
@@ -204,8 +224,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                 <div className="space-y-1.5">
                   {parseResult.warnings.map((w, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
-                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                      {w}
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" /> {w}
                     </div>
                   ))}
                 </div>
@@ -219,18 +238,11 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                     {parseResult.rawHeaders.map((h, i) => (
                       <div key={i} className="flex flex-col gap-1 min-w-[130px]">
                         <span className="text-xs text-muted-foreground truncate max-w-[160px]" title={h}>{h || `Col ${i + 1}`}</span>
-                        <Select
-                          value={columnMap[i] ?? "ignore"}
-                          onValueChange={(v) => updateColMap(i, v as ColumnField)}
-                        >
-                          <SelectTrigger className="h-7 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
+                        <Select value={columnMap[i] ?? "ignore"} onValueChange={(v) => updateColMap(i, v as ColumnField)}>
+                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {FIELD_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                {opt.label}
-                              </SelectItem>
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -240,72 +252,86 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                 </div>
               )}
 
-              {/* Preview table */}
+              {/* Preview table with checkboxes */}
               {previewItems.length > 0 ? (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
-                    Preview (first {Math.min(previewItems.length, 10)} of {previewItems.length})
-                  </p>
-                  <div className="overflow-x-auto rounded-md border">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-muted/60 border-b">
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8">#</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Part Number</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Description</th>
-                          <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16">Qty</th>
-                          <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Unit Price</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground w-16">UOM</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewItems.slice(0, 10).map((item, i) => (
-                          <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
-                            <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                            <td className="px-3 py-2 font-mono text-muted-foreground max-w-[100px] truncate">{item.partNumber || "—"}</td>
-                            <td className="px-3 py-2 max-w-[260px] truncate" title={item.description}>{item.description || "—"}</td>
-                            <td className="px-3 py-2 text-right">{item.qty}</td>
-                            <td className="px-3 py-2 text-right">{item.unitPrice.toFixed(2)}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{item.uom || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {previewItems.length > 10 && (
-                    <p className="text-xs text-muted-foreground mt-1.5 text-right">
-                      + {previewItems.length - 10} more items will also be imported
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Select items to import
                     </p>
-                  )}
+                    <span className="text-xs text-muted-foreground">
+                      {selected.size} of {previewItems.length} selected
+                    </span>
+                  </div>
+                  <div className="rounded-md border overflow-hidden">
+                    <div className="overflow-x-auto max-h-[340px] overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-muted/80 border-b">
+                            <th className="px-3 py-2 w-8">
+                              <Checkbox
+                                checked={allChecked}
+                                ref={(el) => { if (el) (el as any).indeterminate = someChecked; }}
+                                onCheckedChange={toggleAll}
+                                aria-label="Select all"
+                              />
+                            </th>
+                            <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8">#</th>
+                            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Part Number</th>
+                            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Description</th>
+                            <th className="px-3 py-2 text-right font-medium text-muted-foreground w-16">Qty</th>
+                            <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Unit Price</th>
+                            <th className="px-3 py-2 text-left font-medium text-muted-foreground w-16">UOM</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {previewItems.map((item, i) => {
+                            const isChecked = selected.has(i);
+                            return (
+                              <tr
+                                key={i}
+                                className={`border-b last:border-0 cursor-pointer transition-colors
+                                  ${isChecked ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30 opacity-50"}`}
+                                onClick={() => toggleRow(i)}
+                              >
+                                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox checked={isChecked} onCheckedChange={() => toggleRow(i)} />
+                                </td>
+                                <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
+                                <td className="px-3 py-2 font-mono text-muted-foreground max-w-[100px] truncate">{item.partNumber || "—"}</td>
+                                <td className="px-3 py-2 max-w-[260px] truncate" title={item.description}>{item.description || "—"}</td>
+                                <td className="px-3 py-2 text-right">{item.qty}</td>
+                                <td className="px-3 py-2 text-right">{item.unitPrice.toFixed(2)}</td>
+                                <td className="px-3 py-2 text-muted-foreground">{item.uom || "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2 border rounded-md bg-muted/20">
                   <AlertTriangle className="h-6 w-6 text-amber-500" />
-                  <p className="text-sm">No items detected with current mapping. Try adjusting the column mapping above.</p>
-                </div>
-              )}
-
-              {previewItems.length > 0 && (
-                <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-3">
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  {previewItems.length} item{previewItems.length !== 1 ? "s" : ""} ready to import. They will be <strong>appended</strong> after any existing line items.
+                  <p className="text-sm">No items detected. Try adjusting the column mapping above.</p>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        <DialogFooter className="border-t pt-4">
+        <DialogFooter className="border-t pt-4 shrink-0">
           <Button type="button" variant="outline" onClick={handleClose}>Cancel</Button>
           {stage === "preview" && (
             <Button
               type="button"
-              disabled={previewItems.length === 0}
+              disabled={selectedItems.length === 0}
               onClick={handleImport}
               className="gap-2"
             >
               <CheckCircle2 className="h-4 w-4" />
-              Import {previewItems.length} Item{previewItems.length !== 1 ? "s" : ""}
+              Import {selectedItems.length} Item{selectedItems.length !== 1 ? "s" : ""}
             </Button>
           )}
         </DialogFooter>
