@@ -624,7 +624,7 @@ function autoTableRich(
 
       const scaleFactor = (jdoc.internal as any).scaleFactor || 2.8346;
       const LINE_H = (9.5 * 1.15) / scaleFactor;
-      const BASELINE_OFFSET = (9.5 * 0.8) / scaleFactor;
+      const BASELINE_OFFSET = (9.5 * 1.15 * 0.8) / scaleFactor; // matches autotable's own lineHeightFactor * fontSize * 0.8
       jdoc.setFontSize(9.5);
 
       // Build rendering plan — each line gets its baseline y coordinate

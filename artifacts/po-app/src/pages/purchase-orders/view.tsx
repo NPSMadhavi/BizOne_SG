@@ -332,7 +332,7 @@ export default function PurchaseOrderView() {
               {po.items.map((item, index) => (
                 <tr key={index} className="bg-card">
                   <td className="px-6 py-4 text-center text-muted-foreground align-top">{index + 1}</td>
-                  <td className="px-6 py-4 font-mono text-xs text-muted-foreground align-top break-all">{item.partNumber}</td>
+                  <td className="px-6 py-4 text-muted-foreground align-top break-all">{item.partNumber}</td>
                   <td className="px-6 py-4 text-muted-foreground align-top">
                     <div className="flex gap-3 items-start">
                       <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />

@@ -188,7 +188,7 @@ export default function QuotationView() {
                 return (
                   <tr key={i} className="hover:bg-muted/30">
                     <td className="px-6 py-3 text-muted-foreground align-top">{_n}</td>
-                    {hasQtPartNo && <td className="px-6 py-3 text-muted-foreground font-mono text-xs align-top break-all">{item.partNumber || "—"}</td>}
+                    {hasQtPartNo && <td className="px-6 py-3 text-muted-foreground align-top break-all">{item.partNumber || "—"}</td>}
                     <td className="px-6 py-3 font-medium align-top">
                       <div className="flex gap-3 items-start">
                         <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
