@@ -1084,6 +1084,8 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     { fixed: _poAmtW, halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const poColStyles = smartColWidths(doc, poHeaders, tableData, poTableWidth, poFixedMap);
+  // Exact description column width — prevents minCellHeight from wrapping incorrectly
+  const poKnownDescW = poTableWidth - 8 - _poPartNoW - _poQtyW - (hasPOUom ? 18 : 0) - _poUpW - _poAmtW;
 
   const pageHeight = doc.internal.pageSize.getHeight();
   const totalsBlockH = 28; // subtotal + tax + rule + total ≈ 28 mm
@@ -1112,7 +1114,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
         data.cell.styles.halign = "right";
       }
     },
-  }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
+  }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null), poKnownDescW);
 
   const poFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(poTablePages)];
@@ -1425,6 +1427,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     { fixed: _qtAmtW, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
+  const qtKnownDescW = qtTableWidth - 8 - (hasQtPartNo ? _qtPartNoW : 0) - _qtQtyW - (hasQtUom ? 18 : 0) - _qtUpW - (hasItemDiscount ? 18 : 0) - _qtAmtW;
 
   // For quotations, use quotationTerms (not invoice termsAndConditions)
   const qtSettings = settings
@@ -1463,7 +1466,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
         data.cell.styles.halign = "right";
       }
     },
-  }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)));
+  }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)), qtKnownDescW);
 
   const qtFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(qtTablePages)];
@@ -1668,6 +1671,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     { fixed: _invAmtW, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
+  const invKnownDescW = invTableWidth - 8 - (hasInvPartNo ? _invPartNoW : 0) - _invQtyW - (hasInvUom ? 18 : 0) - _invUpW - (hasInvItemDiscount ? 18 : 0) - _invAmtW;
 
   const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${currSymbol(invCurrency)})`);
   const invAmountIdx = invHeaders.indexOf(`Amount (${currSymbol(invCurrency)})`);
@@ -1697,7 +1701,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
         data.cell.styles.halign = "right";
       }
     },
-  }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)));
+  }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)), invKnownDescW);
 
   const invFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(invTablePages)];
