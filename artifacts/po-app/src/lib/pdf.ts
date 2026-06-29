@@ -1080,8 +1080,8 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     { auto: true },                   // description
     { fixed: _poQtyW, halign: "right" }, // qty
     ...(hasPOUom ? [{ fixed: 18, halign: "center" as const }] : []), // uom
-    { fixed: _poUpW,  halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
-    { fixed: _poAmtW, halign: "right", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
+    { fixed: _poUpW,  halign: "right", valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
+    { fixed: _poAmtW, halign: "right", valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const poColStyles = smartColWidths(doc, poHeaders, tableData, poTableWidth, poFixedMap);
   // Exact description column width — prevents minCellHeight from wrapping incorrectly
@@ -1422,9 +1422,9 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     { auto: true },                                                    // description
     { fixed: _qtQtyW, halign: "right" },                              // qty
     ...(hasQtUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: _qtUpW,  halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
-    ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                                // disc %
-    { fixed: _qtAmtW, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
+    { fixed: _qtUpW,  halign: "right" as const, valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // unit price
+    ...(hasItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                                             // disc %
+    { fixed: _qtAmtW, halign: "right" as const, valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
   const qtKnownDescW = qtTableWidth - 8 - (hasQtPartNo ? _qtPartNoW : 0) - _qtQtyW - (hasQtUom ? 18 : 0) - _qtUpW - (hasItemDiscount ? 18 : 0) - _qtAmtW;
@@ -1666,9 +1666,9 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     { auto: true },                                                 // description
     { fixed: _invQtyW, halign: "right" },                          // qty
     ...(hasInvUom ? [{ fixed: 18, halign: "center" as const }] : []),  // uom
-    { fixed: _invUpW,  halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
-    ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                               // disc %
-    { fixed: _invAmtW, halign: "right" as const, cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
+    { fixed: _invUpW,  halign: "right" as const, valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // unit price
+    ...(hasInvItemDiscount ? [{ fixed: 18, halign: "right" as const }] : []),                                            // disc %
+    { fixed: _invAmtW, halign: "right" as const, valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
   const invKnownDescW = invTableWidth - 8 - (hasInvPartNo ? _invPartNoW : 0) - _invQtyW - (hasInvUom ? 18 : 0) - _invUpW - (hasInvItemDiscount ? 18 : 0) - _invAmtW;
