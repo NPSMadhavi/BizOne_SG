@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -24,6 +24,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { ItemImageField } from "@/components/item-image-field";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -75,6 +76,7 @@ export default function QuotationNew() {
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -355,6 +357,9 @@ export default function QuotationNew() {
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
+                    <Upload className="h-3 w-3" /> Import from PDF/Excel
+                  </Button>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
@@ -599,6 +604,17 @@ export default function QuotationNew() {
           </div>
         </form>
       </Form>
+
+      <ImportItemsDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImport={(imported) => {
+          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" };
+          for (const it of imported) {
+            append({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice });
+          }
+        }}
+      />
 
       <CurrencyMismatchDialog
         open={currencyDialogOpen}
