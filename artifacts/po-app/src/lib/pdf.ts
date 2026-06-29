@@ -1126,15 +1126,18 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   }
 
   // Totals — if they don't fit on this page, push to a new page
+  let poTotalsOnNewPage = false;
   if (currentY + totalsBlockH + FOOTER_RESERVE > pageHeight) {
     doc.addPage();
     currentY = 20;
+    poTotalsOnNewPage = true;
   }
 
   const labelX = 146;
   const valueX = marginRight - 4;
   const poPinnedY = pageHeight - FOOTER_RESERVE - totalsBlockH;
-  const totalsY = Math.max(currentY, poPinnedY);
+  // Only bottom-pin when on same page as items; on a fresh page, draw from top
+  const totalsY = poTotalsOnNewPage ? currentY : Math.max(currentY, poPinnedY);
 
   doc.setFontSize(9.5); doc.setTextColor(0, 0, 0); doc.setFont(PDF_FONT, "normal");
   doc.text("Subtotal:", labelX, totalsY);
@@ -1468,7 +1471,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
-  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; }
+  let qtTotalsOnNewPage = false;
+  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; qtTotalsOnNewPage = true; }
 
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 1000) / 10 : 0;
@@ -1476,7 +1480,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const labelX = 146;
   const valueX = marginRight - 4;
   const qtPinnedY = pageHeight - FOOTER_RESERVE - qtCombinedH - 4;
-  const totalsY = Math.max(qtCurrentY + 4, qtPinnedY);
+  // Only bottom-pin when on same page as items; on a fresh page, draw from top
+  const totalsY = qtTotalsOnNewPage ? qtCurrentY + 4 : Math.max(qtCurrentY + 4, qtPinnedY);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1694,7 +1699,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const invCombinedH = Math.max(invBoxH, invBankBlockH);
-  if (invCurrentY + invCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; }
+  let invTotalsOnNewPage = false;
+  if (invCurrentY + invCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; invTotalsOnNewPage = true; }
 
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 1000) / 10 : 0;
@@ -1702,7 +1708,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const labelX = 146;
   const valueX = marginRight - 4;
   const invPinnedY = pageHeight - FOOTER_RESERVE - invCombinedH - 4;
-  const totalsY = Math.max(invCurrentY + 4, invPinnedY);
+  // Only bottom-pin when on same page as items; on a fresh page, draw from top
+  const totalsY = invTotalsOnNewPage ? invCurrentY + 4 : Math.max(invCurrentY + 4, invPinnedY);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
