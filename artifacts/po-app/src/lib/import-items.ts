@@ -82,12 +82,55 @@ function parseNum(s: string): number {
   return isNaN(n) ? 0 : n;
 }
 
+function colIdx(columnMap: ColumnMap, field: ColumnField): number {
+  const entry = Object.entries(columnMap).find(([, f]) => f === field);
+  return entry ? Number(entry[0]) : -1;
+}
+
+/**
+ * Merge "continuation" rows into the previous row's description.
+ * A continuation row has content only in the description column — the
+ * qty, unitPrice, and partNumber columns are all blank. This happens when
+ * a PDF renders a long description across two physical lines.
+ */
+function mergeRowContinuations(rows: string[][], columnMap: ColumnMap): string[][] {
+  const descIdx = colIdx(columnMap, "description");
+  const qtyIdx  = colIdx(columnMap, "qty");
+  const upIdx   = colIdx(columnMap, "unitPrice");
+  const pnIdx   = colIdx(columnMap, "partNumber");
+
+  // Nothing to merge if we can't identify the description column
+  if (descIdx < 0) return rows;
+
+  const merged: string[][] = [];
+
+  for (const row of rows) {
+    const desc  = (row[descIdx] ?? "").trim();
+    const qty   = qtyIdx  >= 0 ? (row[qtyIdx]  ?? "").trim() : "x";
+    const price = upIdx   >= 0 ? (row[upIdx]   ?? "").trim() : "x";
+    const part  = pnIdx   >= 0 ? (row[pnIdx]   ?? "").trim() : "x";
+
+    const isContinuation =
+      desc !== "" && qty === "" && price === "" && part === "" && merged.length > 0;
+
+    if (isContinuation) {
+      const prev = merged[merged.length - 1];
+      prev[descIdx] = ((prev[descIdx] ?? "") + " " + desc).trim();
+    } else {
+      merged.push([...row]);
+    }
+  }
+
+  return merged;
+}
+
 export function applyColumnMap(
   rows: string[][],
   columnMap: ColumnMap,
 ): ImportedItem[] {
+  const processedRows = mergeRowContinuations(rows, columnMap);
   const items: ImportedItem[] = [];
-  for (const row of rows) {
+  for (const row of processedRows) {
     const item: ImportedItem = { partNumber: "", description: "", qty: 1, unitPrice: 0, uom: "" };
     for (const [idxStr, field] of Object.entries(columnMap)) {
       const idx = Number(idxStr);
