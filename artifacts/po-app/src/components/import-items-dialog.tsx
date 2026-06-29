@@ -22,7 +22,7 @@ import {
 interface Props {
   open: boolean;
   onClose: () => void;
-  onImport: (items: ImportedItem[]) => void;
+  onImport: (items: ImportedItem[], replace: boolean) => void;
 }
 
 type Stage = "upload" | "parsing" | "preview";
@@ -44,6 +44,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [columnMap, setColumnMap] = useState<ColumnMap>({});
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [replaceExisting, setReplaceExisting] = useState(true);
   const [error, setError] = useState("");
 
   // Recompute preview items from raw rows + current column map
@@ -63,6 +64,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
     setParseResult(null);
     setColumnMap({});
     setSelected(new Set());
+    setReplaceExisting(true);
     setError("");
   };
 
@@ -139,7 +141,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
   const selectedItems = previewItems.filter((_, i) => selected.has(i));
 
   const handleImport = () => {
-    onImport(selectedItems);
+    onImport(selectedItems, replaceExisting);
     reset();
     onClose();
   };
@@ -321,7 +323,16 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
           )}
         </div>
 
-        <DialogFooter className="border-t pt-4 shrink-0">
+        <DialogFooter className="border-t pt-4 shrink-0 flex-wrap gap-y-2">
+          {stage === "preview" && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer mr-auto">
+              <Checkbox
+                checked={replaceExisting}
+                onCheckedChange={(v) => setReplaceExisting(!!v)}
+              />
+              <span>Replace existing items</span>
+            </label>
+          )}
           <Button type="button" variant="outline" onClick={handleClose}>Cancel</Button>
           {stage === "preview" && (
             <Button

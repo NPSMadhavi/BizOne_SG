@@ -608,10 +608,13 @@ export default function QuotationNew() {
       <ImportItemsDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        onImport={(imported) => {
+        onImport={(imported, replace) => {
           const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" };
-          for (const it of imported) {
-            append({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice });
+          const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
+          if (replace) {
+            form.setValue("items", newItems);
+          } else {
+            for (const item of newItems) append(item);
           }
         }}
       />
