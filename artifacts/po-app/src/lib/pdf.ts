@@ -1582,10 +1582,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   let invShipToBottom = 67;
   if (showInvShipTo) {
-    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    const shipLines = doc.splitTextToSize(invShipToAddr, invShipColW);
-    doc.text(shipLines, shipStartX, 74);
-    invShipToBottom = 74 + shipLines.length * 5;
+    invShipToBottom = renderEntityBlock(doc, inv.customerName, [invShipToAddr], shipStartX, 74, invShipColW);
   }
 
   // Dynamic table start
