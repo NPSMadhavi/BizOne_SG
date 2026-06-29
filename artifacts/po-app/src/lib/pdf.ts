@@ -1059,10 +1059,16 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const _poUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(poCurrency)})`) + 5); // 4 mm pad + 1 safety
   const _poAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(poCurrency)})`)     + 5);
   const _poQtyW = Math.max(Math.ceil(doc.getTextWidth("Qty") + 5), 14); // head pad 4mm + 1 safety; min 14mm for body
-  const _poPartNoW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5); // wide enough to never wrap header
+  const _poPartNoHeaderW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5);
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
+  // Also measure widest actual part number value at body font — header text is often narrower than data
+  const _poPartNoContentW = filteredPOItems.reduce((max: number, item: any) => {
+    const pn = (item.partNumber || "").trim();
+    return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
+  }, 0);
+  const _poPartNoW = Math.min(55, Math.max(_poPartNoHeaderW, _poPartNoContentW));
   const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
-    { fixed: 13, halign: "center" }, // #
+    { fixed: 8, halign: "center" }, // #
     { fixed: _poPartNoW },            // part no
     { auto: true },                   // description
     { fixed: _poQtyW, halign: "right" }, // qty
@@ -1394,10 +1400,15 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const _qtUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(qtCurrency)})`) + 5);
   const _qtAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(qtCurrency)})`)     + 5);
   const _qtQtyW = Math.max(Math.ceil(doc.getTextWidth("Qty") + 5), 14); // head pad 4mm + 1 safety; min 14mm for body
-  const _qtPartNoW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5); // wide enough to never wrap header
+  const _qtPartNoHeaderW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5);
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
+  const _qtPartNoContentW = regularQtItems.reduce((max: number, item: any) => {
+    const pn = (item.partNumber || "").trim();
+    return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
+  }, 0);
+  const _qtPartNoW = Math.min(55, Math.max(_qtPartNoHeaderW, _qtPartNoContentW));
   const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
-    { fixed: 13, halign: "center" },                                  // #
+    { fixed: 8, halign: "center" },                                   // #
     ...(hasQtPartNo ? [{ fixed: _qtPartNoW }] : []),                  // part no (conditional)
     { auto: true },                                                    // description
     { fixed: _qtQtyW, halign: "right" },                              // qty
@@ -1632,10 +1643,15 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const _invUpW  = Math.ceil(doc.getTextWidth(`Unit Price (${currSymbol(invCurrency)})`) + 5);
   const _invAmtW = Math.ceil(doc.getTextWidth(`Amount (${currSymbol(invCurrency)})`)     + 5);
   const _invQtyW = Math.max(Math.ceil(doc.getTextWidth("Qty") + 5), 14); // head pad 4mm + 1 safety; min 14mm for body
-  const _invPartNoW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5); // wide enough to never wrap header
+  const _invPartNoHeaderW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5);
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
+  const _invPartNoContentW = regularInvItems.reduce((max: number, item: any) => {
+    const pn = (item.partNumber || "").trim();
+    return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
+  }, 0);
+  const _invPartNoW = Math.min(55, Math.max(_invPartNoHeaderW, _invPartNoContentW));
   const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
-    { fixed: 13, halign: "center" },                               // #
+    { fixed: 8, halign: "center" },                                // #
     ...(hasInvPartNo ? [{ fixed: _invPartNoW }] : []),             // part no
     { auto: true },                                                 // description
     { fixed: _invQtyW, halign: "right" },                          // qty
@@ -1801,7 +1817,7 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
 
   const doTableWidth = marginRight - marginLeft;
   const doFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
-    { fixed: 13, halign: "center" },                          // #
+    { fixed: 8, halign: "center" },                           // #
     ...(hasPartNo ? [{ fixed: 28, halign: "left" as const }] : []), // item no
     { auto: true },                                            // description
     { fixed: hasDOUom ? 18 : 22, halign: "center" },         // qty
