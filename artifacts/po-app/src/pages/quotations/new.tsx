@@ -267,7 +267,7 @@ export default function QuotationNew() {
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
-                    if (c.effectiveGstRate !== undefined) form.setValue("tax", c.effectiveGstRate);
+                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
                     if (c.currency) {
                       form.setValue("currency", c.currency);
                       setDirectoryCurrency(c.currency);
