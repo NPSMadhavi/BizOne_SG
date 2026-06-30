@@ -6,6 +6,7 @@ import { useLocation } from "wouter";
 import { useCreateQuotation, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -36,6 +37,7 @@ const itemSchema = z.object({
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   discount: z.coerce.number().min(0).max(100).default(0),
+  isFoc: z.boolean().default(false),
   itemImage: z.string().default(""),
 });
 
@@ -89,7 +91,7 @@ export default function QuotationNew() {
       tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" }],
+      items: [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }],
     },
   });
 
@@ -102,7 +104,7 @@ export default function QuotationNew() {
     const prefill = (window as any).__ariaPrefill;
     if (!prefill) return;
     (window as any).__ariaPrefill = null;
-    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" };
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
@@ -155,7 +157,7 @@ export default function QuotationNew() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" });
+        append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -164,7 +166,7 @@ export default function QuotationNew() {
 
   const currency = form.watch("currency") || "SGD";
 
-  const subtotal = items.reduce((s, i) => ((i as any).type === "section") ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+  const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
   const [discountPct, setDiscountPct] = useState(0);
@@ -201,7 +203,7 @@ export default function QuotationNew() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left" };
       const disc = Number(i.discount) || 0;
-      return { ...i, discount: disc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: (data) => {
@@ -351,10 +353,10 @@ export default function QuotationNew() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-lg">Line Items</CardTitle>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" })}>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" })}>
                     <Plus className="h-3 w-3" /> Add Item
                   </Button>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" })}>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
@@ -392,6 +394,7 @@ export default function QuotationNew() {
                       <th className="px-4 py-3 text-right w-28">Unit Price</th>
                       <th className="px-4 py-3 text-right w-24">Disc %</th>
                       <th className="px-4 py-3 text-right w-28">Amount</th>
+                      <th className="px-4 py-3 text-center w-12">FOC</th>
                       <th className="px-4 py-3 w-10"></th>
                     </tr>
                   </thead>
@@ -399,11 +402,11 @@ export default function QuotationNew() {
                     {(() => { let _n = 0; return [...fields.map((field, index) => {
                       const itemType = form.watch(`items.${index}.type`);
                       const _itemNo = itemType !== "section" ? ++_n : null;
-                      const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" };
-                      const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" };
+                      const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+                      const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
                       const insertBar = (
                         <tr className="group/ins border-0 h-5">
-                          <td colSpan={9} className="p-0 overflow-visible">
+                          <td colSpan={10} className="p-0 overflow-visible">
                             <div className="relative flex items-center justify-center h-5">
                               <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
                               <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
@@ -423,7 +426,7 @@ export default function QuotationNew() {
                           <Fragment key={field.id}>
                             {insertBar}
                             <tr className="border-b bg-muted/40">
-                              <td colSpan={9} className="px-4 py-2">
+                              <td colSpan={10} className="px-4 py-2">
                                 <div className="flex items-start gap-2">
                                   <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
                                   <div className="flex-1 min-w-0">
@@ -454,6 +457,7 @@ export default function QuotationNew() {
                       const qty = Number(form.watch(`items.${index}.qty`)) || 0;
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
                       const disc = Number(form.watch(`items.${index}.discount`)) || 0;
+                      const isFoc = !!(form.watch(`items.${index}.isFoc`));
                       const amount = qty * price * (1 - disc / 100);
                       return (
                         <Fragment key={field.id}>
@@ -516,7 +520,14 @@ export default function QuotationNew() {
                                 <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
                               )} />
                             </td>
-                            <td className="px-4 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
+                            <td className={`px-4 py-2 text-right text-sm font-medium ${isFoc ? "text-amber-600" : "text-muted-foreground"}`}>{fmt(amount)}</td>
+                            <td className="px-4 py-2 text-center">
+                              <FormField control={form.control} name={`items.${index}.isFoc`} render={({ field }) => (
+                                <FormItem className="space-y-0"><FormControl>
+                                  <Checkbox checked={!!field.value} onCheckedChange={field.onChange} title="Free of Charge — excluded from subtotal, shown in amber" />
+                                </FormControl></FormItem>
+                              )} />
+                            </td>
                             <td className="px-4 py-2">
                               {fields.length > 1 && (
                                 <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
@@ -527,7 +538,7 @@ export default function QuotationNew() {
                           </tr>
                         </Fragment>
                       );
-                    }), <tr key="trailing-bar" className="group/ins border-0 h-5"><td colSpan={9} className="p-0 overflow-visible"><div className="relative flex items-center justify-center h-5"><div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" /><div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity"><button type="button" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Plus className="h-2.5 w-2.5" /> + line item here</button><button type="button" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Layers className="h-2.5 w-2.5" /> + section here</button></div></div></td></tr>]; })()}
+                    }), <tr key="trailing-bar" className="group/ins border-0 h-5"><td colSpan={10} className="p-0 overflow-visible"><div className="relative flex items-center justify-center h-5"><div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" /><div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity"><button type="button" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Plus className="h-2.5 w-2.5" /> + line item here</button><button type="button" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Layers className="h-2.5 w-2.5" /> + section here</button></div></div></td></tr>]; })()}
                   </tbody>
                 </table>
               </div>
@@ -609,7 +620,7 @@ export default function QuotationNew() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImport={(imported, replace) => {
-          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, itemImage: "" };
+          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
           const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
           if (replace) {
             form.setValue("items", newItems);

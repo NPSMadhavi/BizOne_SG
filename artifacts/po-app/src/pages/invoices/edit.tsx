@@ -305,7 +305,7 @@ export default function InvoiceEdit() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section" as const, sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
       const disc = Number(i.discount) || 0;
-      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i as any).isFoc ? "0.00" : (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     updateMutation.mutate({ id, data: { ...values, status: "confirmed", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
@@ -571,7 +571,7 @@ export default function InvoiceEdit() {
                       const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
                       const disc = Number(form.watch(`items.${index}.discount`)) || 0;
                       const isFoc = !!(form.watch(`items.${index}.isFoc`));
-                      const amount = isFoc ? 0 : qty * price * (1 - disc / 100);
+                      const amount = qty * price * (1 - disc / 100);
                       return (
                         <Fragment key={field.id}>
                           {insertBar}
@@ -625,11 +625,11 @@ export default function InvoiceEdit() {
                           <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
                           )} /></td>
-                          <td className="px-2 py-2 text-right text-muted-foreground text-sm">{fmt(amount)}</td>
+                          <td className={`px-2 py-2 text-right text-sm font-medium ${isFoc ? "text-amber-600" : "text-muted-foreground"}`}>{fmt(amount)}</td>
                           <td className="px-2 py-2 text-center">
                             <FormField control={form.control} name={`items.${index}.isFoc`} render={({ field }) => (
                               <FormItem className="space-y-0"><FormControl>
-                                <Checkbox checked={!!field.value} onCheckedChange={field.onChange} title="Free of Charge — amount shows as $0.00" />
+                                <Checkbox checked={!!field.value} onCheckedChange={field.onChange} title="Free of Charge — excluded from subtotal, shown in amber" />
                               </FormControl></FormItem>
                             )} />
                           </td>

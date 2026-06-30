@@ -185,21 +185,28 @@ export default function QuotationView() {
                   );
                 }
                 _n++;
+                const isFocItem = !!(item as any).isFoc;
+                const qtDisplayAmount = isFocItem
+                  ? (Number(item.amount) > 0 ? Number(item.amount) : Number(item.qty) * Number(item.unitPrice) * (1 - (Number(item.discount) || 0) / 100))
+                  : (Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)));
                 return (
                   <tr key={i} className="hover:bg-muted/30">
                     <td className="px-6 py-3 text-muted-foreground align-top">{_n}</td>
                     {hasQtPartNo && <td className="px-6 py-3 text-muted-foreground align-top break-all">{item.partNumber || "—"}</td>}
                     <td className="px-6 py-3 font-medium align-top">
                       <div className="flex gap-3 items-start">
-                        <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                          {isFocItem && <span className="inline-block mt-1 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">FOC</span>}
+                        </div>
                         {(item as any).itemImage && <img src={(item as any).itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
                       </div>
                     </td>
-                    <td className="px-6 py-3 text-right">{item.qty}</td>
+                    <td className={`px-6 py-3 text-right align-top ${isFocItem ? "text-amber-600 font-medium" : ""}`}>{item.qty}</td>
                     {hasQtUom && <td className="px-6 py-3 text-center text-muted-foreground">{item.uom || "—"}</td>}
-                    <td className="px-6 py-3 text-right">{fmt(Number(item.unitPrice) || 0)}</td>
+                    <td className={`px-6 py-3 text-right align-top ${isFocItem ? "text-amber-600 font-medium" : ""}`}>{fmt(Number(item.unitPrice) || 0)}</td>
                     {hasItemDiscount && <td className="px-6 py-3 text-right text-muted-foreground">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>}
-                    <td className="px-6 py-3 text-right">{fmt(Number(item.amount) || (Number(item.qty) * Number(item.unitPrice)))}</td>
+                    <td className={`px-6 py-3 text-right align-top ${isFocItem ? "text-amber-600 font-medium" : ""}`}>{fmt(qtDisplayAmount)}</td>
                   </tr>
                 );
               }); })()}

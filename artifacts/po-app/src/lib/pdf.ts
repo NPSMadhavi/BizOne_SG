@@ -1382,23 +1382,32 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const qtTotalCols = qtHeaders.length;
 
   const qtRichDesc: RichLine[][] = [];
+  const qtFocFlags: boolean[] = [];
   let qtItemCounter = 0;
   const qtTableData = allQtItems.map((item: any) => {
     if (item.type === "section") {
       qtRichDesc.push(htmlToRichLines(item.sectionLabel || ""));
+      qtFocFlags.push(false);
       const halign = item.sectionAlign === "center" ? "center" : "left";
       return [{ content: htmlToText(item.sectionLabel || ""), colSpan: qtTotalCols, styles: { halign } }];
     }
     qtItemCounter++;
-    qtRichDesc.push(htmlToRichLines(item.description));
+    const isQtFocRow = !!(item.isFoc);
+    qtFocFlags.push(isQtFocRow);
+    const qtRichLines = htmlToRichLines(item.description);
+    if (isQtFocRow) qtRichLines.push({ text: "  \u25b8 Free of Charge", bold: true, italic: false });
+    qtRichDesc.push(qtRichLines);
     const disc = Number(item.discount) || 0;
+    const qtDisplayAmt = isQtFocRow && Number(item.amount) === 0
+      ? fmtNum(Number(item.qty) * Number(item.unitPrice) * (1 - disc / 100))
+      : fmtNum(Number(item.amount));
     const row: any[] = [qtItemCounter];
     if (hasQtPartNo) row.push(item.partNumber || "");
     row.push(htmlToText(item.description), item.qty);
     if (hasQtUom) row.push(item.uom || "");
     row.push(fmtNum(Number(item.unitPrice)));
     if (hasItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
-    row.push(fmtNum(Number(item.amount)));
+    row.push(qtDisplayAmt);
     return row;
   });
 
@@ -1464,6 +1473,11 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     didParseCell: (data: any) => {
       if ([qtQtyIdx, qtUnitPriceIdx, qtAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
+      }
+      if (data.section === "body" && qtFocFlags[data.row.index]) {
+        if ([qtQtyIdx, qtUnitPriceIdx, qtAmountIdx].includes(data.column.index)) {
+          data.cell.styles.textColor = [217, 119, 6]; // amber
+        }
       }
     },
   }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)), qtKnownDescW);
@@ -1623,23 +1637,33 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invTableWidth = marginRight - marginLeft;
 
   const invRichDesc: RichLine[][] = [];
+  const invFocFlags: boolean[] = [];
   let invItemCounter = 0;
   const tableData = allInvItems.map((item: any) => {
     if (item.type === "section") {
       invRichDesc.push(htmlToRichLines(item.sectionLabel || ""));
+      invFocFlags.push(false);
       const halign = item.sectionAlign === "center" ? "center" : "left";
       return [{ content: htmlToText(item.sectionLabel || ""), colSpan: invTotalCols, styles: { halign } }];
     }
     invItemCounter++;
-    invRichDesc.push(htmlToRichLines(item.description));
+    const isFocRow = !!(item.isFoc);
+    invFocFlags.push(isFocRow);
+    const richLines = htmlToRichLines(item.description);
+    if (isFocRow) richLines.push({ text: "  \u25b8 Free of Charge", bold: true, italic: false });
+    invRichDesc.push(richLines);
     const disc = Number(item.discount) || 0;
+    // Backward-compat: if FOC and amount was stored as "0.00", compute from qty/price
+    const invDisplayAmt = isFocRow && Number(item.amount) === 0
+      ? fmtNum(Number(item.qty) * Number(item.unitPrice) * (1 - disc / 100))
+      : fmtNum(Number(item.amount));
     const row: any[] = [invItemCounter];
     if (hasInvPartNo) row.push(item.partNumber || "");
     row.push(htmlToText(item.description), item.qty);
     if (hasInvUom) row.push(item.uom || "");
     row.push(fmtNum(Number(item.unitPrice)));
     if (hasInvItemDiscount) row.push(disc > 0 ? `${disc}%` : "");
-    row.push(fmtNum(Number(item.amount)));
+    row.push(invDisplayAmt);
     return row;
   });
 
@@ -1696,6 +1720,11 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     didParseCell: (data: any) => {
       if ([invQtyIdx, invUnitPriceIdx, invAmountIdx].includes(data.column.index)) {
         data.cell.styles.halign = "right";
+      }
+      if (data.section === "body" && invFocFlags[data.row.index]) {
+        if ([invQtyIdx, invUnitPriceIdx, invAmountIdx].includes(data.column.index)) {
+          data.cell.styles.textColor = [217, 119, 6]; // amber
+        }
       }
     },
   }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)), invKnownDescW);
