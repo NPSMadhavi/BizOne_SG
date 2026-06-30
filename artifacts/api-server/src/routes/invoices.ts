@@ -119,7 +119,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
-  const subtotal = (items as any[]).reduce((s: number, item: any) => item.type === "section" ? s : s + parseFloat(item.amount || "0"), 0);
+  const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
   const docDiscount = Number(discountAmount) || 0;
   const taxableAmount = subtotal - docDiscount;
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
@@ -230,7 +230,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     currency, discountAmount, isPrivate, poRefNo,
   } = req.body;
 
-  const subtotal = (items as any[]).reduce((s: number, item: any) => item.type === "section" ? s : s + parseFloat(item.amount || "0"), 0);
+  const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
   const docDiscount = Number(discountAmount) || 0;
   const taxableAmount = subtotal - docDiscount;
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
