@@ -1074,8 +1074,8 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
   }, 0);
   const _poPartNoW = Math.min(55, Math.max(_poPartNoHeaderW, _poPartNoContentW));
-  const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
-    { fixed: 8, halign: "center" }, // #
+  const poFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; valign?: string; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
+    { fixed: 12, halign: "left", valign: "top" }, // #
     { fixed: _poPartNoW },            // part no
     { auto: true },                   // description
     { fixed: _poQtyW, halign: "right" }, // qty
@@ -1085,7 +1085,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   ];
   const poColStyles = smartColWidths(doc, poHeaders, tableData, poTableWidth, poFixedMap);
   // Exact description column width — prevents minCellHeight from wrapping incorrectly
-  const poKnownDescW = poTableWidth - 8 - _poPartNoW - _poQtyW - (hasPOUom ? 18 : 0) - _poUpW - _poAmtW;
+  const poKnownDescW = poTableWidth - 12 - _poPartNoW - _poQtyW - (hasPOUom ? 18 : 0) - _poUpW - _poAmtW;
 
   const pageHeight = doc.internal.pageSize.getHeight();
   const totalsBlockH = 28; // subtotal + tax + rule + total ≈ 28 mm
@@ -1416,8 +1416,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
   }, 0);
   const _qtPartNoW = Math.min(55, Math.max(_qtPartNoHeaderW, _qtPartNoContentW));
-  const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
-    { fixed: 8, halign: "center" },                                   // #
+  const qtFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; valign?: string; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
+    { fixed: 12, halign: "left", valign: "top" },                     // #
     ...(hasQtPartNo ? [{ fixed: _qtPartNoW }] : []),                  // part no (conditional)
     { auto: true },                                                    // description
     { fixed: _qtQtyW, halign: "right" },                              // qty
@@ -1427,7 +1427,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
     { fixed: _qtAmtW, halign: "right" as const, valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } }, // amount
   ];
   const qtColStyles = smartColWidths(doc, qtHeaders, qtTableData, qtTableWidth, qtFixedMap);
-  const qtKnownDescW = qtTableWidth - 8 - (hasQtPartNo ? _qtPartNoW : 0) - _qtQtyW - (hasQtUom ? 18 : 0) - _qtUpW - (hasItemDiscount ? 18 : 0) - _qtAmtW;
+  const qtKnownDescW = qtTableWidth - 12 - (hasQtPartNo ? _qtPartNoW : 0) - _qtQtyW - (hasQtUom ? 18 : 0) - _qtUpW - (hasItemDiscount ? 18 : 0) - _qtAmtW;
 
   // For quotations, use quotationTerms (not invoice termsAndConditions)
   const qtSettings = settings
@@ -1657,8 +1657,8 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
   }, 0);
   const _invPartNoW = Math.min(55, Math.max(_invPartNoHeaderW, _invPartNoContentW));
-  const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
-    { fixed: 8, halign: "center" },                                // #
+  const invFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; valign?: string; cellPadding?: { top?: number; bottom?: number; left?: number; right?: number } }> = [
+    { fixed: 12, halign: "left", valign: "top" },                  // #
     ...(hasInvPartNo ? [{ fixed: _invPartNoW }] : []),             // part no
     { auto: true },                                                 // description
     { fixed: _invQtyW, halign: "right" },                          // qty
@@ -1668,7 +1668,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
     { fixed: _invAmtW, halign: "right" as const, valign: "top", cellPadding: { top: 4, bottom: 4, left: 2, right: 2 } },  // amount
   ];
   const invColumnStyles = smartColWidths(doc, invHeaders, tableData, invTableWidth, invFixedMap);
-  const invKnownDescW = invTableWidth - 8 - (hasInvPartNo ? _invPartNoW : 0) - _invQtyW - (hasInvUom ? 18 : 0) - _invUpW - (hasInvItemDiscount ? 18 : 0) - _invAmtW;
+  const invKnownDescW = invTableWidth - 12 - (hasInvPartNo ? _invPartNoW : 0) - _invQtyW - (hasInvUom ? 18 : 0) - _invUpW - (hasInvItemDiscount ? 18 : 0) - _invAmtW;
 
   const invUnitPriceIdx = invHeaders.indexOf(`Unit Price (${currSymbol(invCurrency)})`);
   const invAmountIdx = invHeaders.indexOf(`Amount (${currSymbol(invCurrency)})`);
@@ -1824,8 +1824,8 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   });
 
   const doTableWidth = marginRight - marginLeft;
-  const doFixedMap: Array<{ halign?: string; fixed?: number; auto?: true }> = [
-    { fixed: 8, halign: "center" },                           // #
+  const doFixedMap: Array<{ halign?: string; fixed?: number; auto?: true; valign?: string }> = [
+    { fixed: 12, halign: "left", valign: "top" },             // #
     ...(hasPartNo ? [{ fixed: 28, halign: "left" as const }] : []), // item no
     { auto: true },                                            // description
     { fixed: hasDOUom ? 18 : 22, halign: "center" },         // qty
