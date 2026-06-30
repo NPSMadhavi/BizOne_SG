@@ -38,6 +38,8 @@ import {
   ChevronDown,
   ChevronUp,
   ListFilter,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,10 +54,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import logo from "@assets/logo_1776054030755.png";
 import bizoneSgLogo from "@assets/bizone_1_1782467876559.png";
 import bizoneIndiaLogo from "@assets/bizone_India_1782467973411.png";
 import { AgentPanel } from "@/components/agent-panel";
+
+// ── Sidebar collapse context ──────────────────────────────────────────────────
+// true = collapsed icon-rail; false = full expanded sidebar
+const SidebarCtx = React.createContext(false);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,7 +111,9 @@ interface NavItemProps {
 }
 
 function NavItem({ href, icon: Icon, children, active, inGroup = false }: NavItemProps) {
-  return (
+  const collapsed = React.useContext(SidebarCtx);
+
+  const expandedEl = (
     <Link href={href} className="block">
       <div
         className={`flex items-center gap-3 rounded-md text-sm font-medium transition-colors ${
@@ -110,9 +129,32 @@ function NavItem({ href, icon: Icon, children, active, inGroup = false }: NavIte
       </div>
     </Link>
   );
+
+  if (!collapsed) return expandedEl;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link href={href} className="block">
+          <div
+            className={`flex items-center justify-center rounded-md h-9 w-9 mx-auto transition-colors ${
+              active
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+          </div>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="font-medium">
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
-// ── NavGroup (accordion) ──────────────────────────────────────────────────────
+// ── NavGroup (accordion / popover) ────────────────────────────────────────────
 
 interface NavGroupProps {
   id: string;
@@ -122,10 +164,46 @@ interface NavGroupProps {
   isOpen: boolean;
   onToggle: (id: string) => void;
   visible?: boolean;
+  hasActive?: boolean;
 }
 
-function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible = true }: NavGroupProps) {
+function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible = true, hasActive = false }: NavGroupProps) {
+  const collapsed = React.useContext(SidebarCtx);
   if (!visible) return null;
+
+  if (collapsed) {
+    return (
+      <Popover>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={`flex items-center justify-center rounded-md h-9 w-9 mx-auto transition-colors ${
+                  hasActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right">{label}</TooltipContent>
+        </Tooltip>
+        <PopoverContent side="right" align="start" sideOffset={8} className="w-52 p-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 mb-1.5 px-2">
+            {label}
+          </p>
+          {/* Force expanded mode inside the popover */}
+          <SidebarCtx.Provider value={false}>
+            {children}
+          </SidebarCtx.Provider>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   return (
     <div>
       <button
@@ -144,7 +222,6 @@ function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible =
         />
       </button>
 
-      {/* CSS grid animation for smooth open/close */}
       <div
         className={`grid transition-all duration-200 ${
           isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
@@ -164,8 +241,21 @@ function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible =
 
 function CompanyBadge() {
   const { selectedCompany } = useAuth();
-
+  const collapsed = React.useContext(SidebarCtx);
   if (!selectedCompany) return null;
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center justify-center py-2">
+            <Building2 className="h-3.5 w-3.5 text-primary/70" />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right">{selectedCompany.country}</TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/15">
@@ -182,17 +272,60 @@ function CompanyBadge() {
 function UserMenu() {
   const { user, logout, isAdmin } = useAuth();
   const [, setLocation] = useLocation();
+  const collapsed = React.useContext(SidebarCtx);
   const hasMultiple = (user?.companies?.length ?? 0) > 1;
   if (!user) return null;
+
+  const avatarEl = (
+    <div className="h-7 w-7 rounded-full bg-primary/15 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
+      {user.username.charAt(0).toUpperCase()}
+    </div>
+  );
+
+  if (collapsed) {
+    return (
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button className="w-full flex items-center justify-center py-3 hover:bg-muted/50 transition-colors outline-none">
+                {avatarEl}
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="right">{user.username}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent side="right" align="end" sideOffset={8}>
+          <div className="px-2 py-1.5 text-sm font-medium">{user.username}</div>
+          {isAdmin && <div className="px-2 pb-1.5 text-xs text-muted-foreground capitalize">{user.role}</div>}
+          <DropdownMenuSeparator />
+          {hasMultiple && (
+            <>
+              <DropdownMenuItem onClick={() => setLocation("/select-company")} className="gap-2 cursor-pointer">
+                <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                Switch Company
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <DropdownMenuItem
+            onClick={() => logout()}
+            className="text-destructive focus:text-destructive focus:bg-destructive/10 gap-2 cursor-pointer"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors outline-none">
           <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-full bg-primary/15 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
-              {user.username.charAt(0).toUpperCase()}
-            </div>
+            {avatarEl}
             <div className="text-left">
               <div className="text-sm font-medium leading-tight">{user.username}</div>
               {isAdmin && <div className="text-[11px] text-muted-foreground leading-tight capitalize">{user.role}</div>}
@@ -238,8 +371,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, hasModuleAccess, selectedCompany } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [openGroup, setOpenGroup] = React.useState<string | null>(null);
+  const [collapsed, setCollapsed] = React.useState(() => {
+    try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
+  });
 
-  // Auto-expand the group that contains the current route
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem("sidebar-collapsed", String(next)); } catch { /* noop */ }
+      return next;
+    });
+  };
+
   React.useEffect(() => {
     const group = getGroupForRoute(location);
     if (group) setOpenGroup(group);
@@ -275,7 +418,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const navItems = (
     <div className="space-y-0.5">
-      {/* ── Dashboard (standalone) ──────────────────────────── */}
       {(isAdmin || hasModuleAccess("dashboard")) && (
         <NavItem
           href="/dashboard"
@@ -286,7 +428,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </NavItem>
       )}
 
-      {/* ── DOCUMENTS ──────────────────────────────────────── */}
       <NavGroup
         id="documents"
         label="Documents"
@@ -294,6 +435,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "documents"}
         onToggle={toggleGroup}
         visible={hasDocuments}
+        hasActive={location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") || location.startsWith("/quotations") || location.startsWith("/invoices") || location.startsWith("/delivery-orders") || location.startsWith("/grn")}
       >
         {hasModuleAccess("purchase_orders") && (
           <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")} inGroup>
@@ -332,7 +474,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </NavGroup>
 
-      {/* ── INVENTORY ──────────────────────────────────────── */}
       <NavGroup
         id="inventory"
         label="Inventory"
@@ -340,13 +481,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "inventory"}
         onToggle={toggleGroup}
         visible={isAdmin || hasModuleAccess("stock_items")}
+        hasActive={location.startsWith("/stock")}
       >
         <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")} inGroup>
           Stock Items
         </NavItem>
       </NavGroup>
 
-      {/* ── DIRECTORY ──────────────────────────────────────── */}
       <NavGroup
         id="directory"
         label="Directory"
@@ -354,6 +495,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "directory"}
         onToggle={toggleGroup}
         visible={hasDirectory}
+        hasActive={location.startsWith("/vendors") || location.startsWith("/customers") || location.startsWith("/address-book")}
       >
         {(isAdmin || hasModuleAccess("purchase_orders")) && (
           <NavItem href="/vendors" icon={Building2} active={location.startsWith("/vendors")} inGroup>
@@ -372,7 +514,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </NavGroup>
 
-      {/* ── ACCOUNTING (Singapore only, module-gated) ───────── */}
       <NavGroup
         id="accounting"
         label="Accounting"
@@ -380,8 +521,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "accounting"}
         onToggle={toggleGroup}
         visible={isSingapore && hasAnyAccounting}
+        hasActive={location.startsWith("/accounting")}
       >
-        {/* ─ Core Books ─ */}
         <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Core Books</div>
         {hasModuleAccess("accounting_coa") && (
           <NavItem href="/accounting/chart-of-accounts" icon={BookOpen} active={location.startsWith("/accounting/chart-of-accounts")} inGroup>
@@ -418,8 +559,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Cash Flow
           </NavItem>
         )}
-
-        {/* ─ Tax & Compliance ─ */}
         <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Tax & Compliance</div>
         {hasModuleAccess("accounting_gst_f5") && (
           <NavItem href="/accounting/gst-f5" icon={Receipt} active={location === "/accounting/gst-f5"} inGroup>
@@ -456,8 +595,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             IRAS Audit File
           </NavItem>
         )}
-
-        {/* ─ Receivables ─ */}
         <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Receivables</div>
         {hasModuleAccess("accounting_ar") && (
           <NavItem href="/accounting/ar" icon={Wallet} active={location === "/accounting/ar"} inGroup>
@@ -474,8 +611,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Customer Statement
           </NavItem>
         )}
-
-        {/* ─ Payables ─ */}
         <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Payables</div>
         {hasModuleAccess("accounting_ap") && (
           <NavItem href="/accounting/ap" icon={HandCoins} active={location === "/accounting/ap"} inGroup>
@@ -494,7 +629,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </NavGroup>
 
-      {/* ── SYSTEM (admin only) ─────────────────────────────── */}
       <NavGroup
         id="system"
         label="System"
@@ -502,6 +636,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "system"}
         onToggle={toggleGroup}
         visible={isAdmin}
+        hasActive={location.startsWith("/admin") || location.startsWith("/audit-log") || location.startsWith("/settings")}
       >
         <NavItem href="/admin" icon={Users} active={location === "/admin"} inGroup>
           User Management
@@ -514,6 +649,45 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </NavItem>
       </NavGroup>
     </div>
+  );
+
+  const sidebarContent = (
+    <SidebarCtx.Provider value={collapsed}>
+      <TooltipProvider delayDuration={0}>
+        {/* Header: logo + toggle */}
+        <div className={`border-b border-border/50 flex items-center shrink-0 ${collapsed ? "justify-center py-4 px-2" : "p-6 justify-between"}`}>
+          {!collapsed && <img src={logo} alt="RSV Infotech" className="h-8" />}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {/* Nav */}
+        <div className={`flex-1 overflow-y-auto ${collapsed ? "p-1.5" : "p-3"}`}>
+          {navItems}
+        </div>
+
+        {/* Bottom: company + user + logo */}
+        <div className="border-t border-border/50 bg-muted/10 pt-2 shrink-0">
+          <CompanyBadge />
+          <UserMenu />
+        </div>
+        {!collapsed && (
+          <div className="px-4 py-3 border-t border-border/30 flex items-center justify-center">
+            <img
+              src={isSingapore ? bizoneSgLogo : bizoneIndiaLogo}
+              alt={isSingapore ? "BizOne Singapore" : "BizOne India"}
+              className="h-7 opacity-80 hover:opacity-100 transition-opacity"
+            />
+          </div>
+        )}
+      </TooltipProvider>
+    </SidebarCtx.Provider>
   );
 
   return (
@@ -534,35 +708,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <img src={logo} alt="RSV Infotech" className="h-8" />
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-3">
-              {navItems}
+              <SidebarCtx.Provider value={false}>
+                <TooltipProvider delayDuration={0}>
+                  {navItems}
+                </TooltipProvider>
+              </SidebarCtx.Provider>
             </div>
             <div className="shrink-0 border-t border-border/50 bg-muted/10 pt-2">
-              <CompanyBadge />
-              <UserMenu />
+              <SidebarCtx.Provider value={false}>
+                <TooltipProvider delayDuration={0}>
+                  <CompanyBadge />
+                  <UserMenu />
+                </TooltipProvider>
+              </SidebarCtx.Provider>
             </div>
           </SheetContent>
         </Sheet>
       </header>
 
       {/* ── Desktop sidebar ───────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0 shrink-0">
-        <div className="p-6 border-b border-border/50">
-          <img src={logo} alt="RSV Infotech" className="h-8" />
-        </div>
-        <div className="flex-1 p-3 overflow-y-auto">
-          {navItems}
-        </div>
-        <div className="border-t border-border/50 bg-muted/10 pt-2">
-          <CompanyBadge />
-          <UserMenu />
-        </div>
-        <div className="px-4 py-3 border-t border-border/30 flex items-center justify-center">
-          <img
-            src={isSingapore ? bizoneSgLogo : bizoneIndiaLogo}
-            alt={isSingapore ? "BizOne Singapore" : "BizOne India"}
-            className="h-7 opacity-80 hover:opacity-100 transition-opacity"
-          />
-        </div>
+      <aside
+        className={`hidden md:flex flex-col border-r bg-card h-screen sticky top-0 shrink-0 transition-all duration-300 ${
+          collapsed ? "w-14" : "w-64"
+        }`}
+      >
+        {sidebarContent}
       </aside>
 
       {/* ── Main content ─────────────────────────────────────── */}
