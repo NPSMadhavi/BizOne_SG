@@ -2,8 +2,6 @@ import { Router } from "express";
 import nodemailer from "nodemailer";
 import { db, settingsTable, companiesTable, purchaseOrdersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import path from "node:path";
-import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 
 const router = Router();
@@ -35,22 +33,8 @@ function textToEmailHtml(text: string): string {
     .join("\n");
 }
 
-// Load a logo from the assets directory as a Buffer (returns null if not found)
-function loadLogoBuffer(filename: string): Buffer | null {
-  try {
-    // __dirname is set by esbuild banner to the dist directory
-    const assetsDir = path.join(__dirname, "../assets");
-    const p = path.join(assetsDir, filename);
-    return fs.readFileSync(p);
-  } catch {
-    return null;
-  }
-}
 
-function buildEmailHtml(body: string, isSingapore: boolean, companyName: string, ackUrl?: string): string {
-  const brand = isSingapore ? "BizOne Singapore" : "BizOne India";
-  const brandShort = isSingapore ? "bizOneSG" : "bizOneIndia";
-
+function buildEmailHtml(body: string, _isSingapore: boolean, companyName: string, ackUrl?: string): string {
   const ackSection = ackUrl ? `
         <!-- ACK buttons -->
         <tr>
@@ -85,14 +69,10 @@ function buildEmailHtml(body: string, isSingapore: boolean, companyName: string,
     <td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
 
-        <!-- Header: blue accent stripe + white logo area -->
+        <!-- Header: solid blue band with company name as text -->
         <tr>
-          <td style="background:linear-gradient(135deg,#0a2d6e 0%,#1565c0 60%,#1e88e5 100%);height:8px;font-size:0;line-height:0;">&nbsp;</td>
-        </tr>
-        <tr>
-          <td style="background:#ffffff;padding:28px 40px 20px 40px;text-align:center;border-bottom:1px solid #e8ecf0;">
-            <img src="cid:bizone-logo" alt="${brand}" style="height:52px;max-width:240px;object-fit:contain;" />
-            <p style="margin:8px 0 0 0;color:#6b7280;font-size:12px;letter-spacing:0.5px;">Smarter Accounting. Better Business.</p>
+          <td style="background:#0a2d6e;padding:24px 40px;text-align:center;">
+            <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">${companyName}</p>
           </td>
         </tr>
 
@@ -116,9 +96,6 @@ function buildEmailHtml(body: string, isSingapore: boolean, companyName: string,
         <tr>
           <td style="padding:20px 40px 32px 40px;text-align:center;">
             <p style="margin:0;font-size:12px;color:#9aa3af;">
-              Sent from <strong style="color:#1565c0;">${brandShort}</strong> &ndash; Smarter Accounting. Better Business.
-            </p>
-            <p style="margin:6px 0 0 0;font-size:11px;color:#bdc3cb;">
               &copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.
             </p>
           </td>
@@ -180,9 +157,6 @@ router.post("/send-email", async (req, res): Promise<void> => {
   try {
     const transporter = createTransporter(settings);
 
-    const logoFilename = isSingapore ? "bizone-sg.png" : "bizone-india.png";
-    const logoBuffer = loadLogoBuffer(logoFilename);
-
     // If this is a PO email, generate/reuse an ACK token and build the ACK URL
     let ackUrl: string | undefined;
     if (poId) {
@@ -199,8 +173,7 @@ router.post("/send-email", async (req, res): Promise<void> => {
     }
 
     const htmlBody = buildEmailHtml(body, isSingapore, companyName, ackUrl);
-    const brandShort = isSingapore ? "bizOneSG" : "bizOneIndia";
-    const plainFooter = `\n\n--\nSent from ${brandShort} – Smarter Accounting. Better Business.`;
+    const plainFooter = `\n\n--\n${companyName}`;
 
     const attachments: any[] = [
       {
@@ -210,15 +183,6 @@ router.post("/send-email", async (req, res): Promise<void> => {
         contentType: "application/pdf",
       },
     ];
-
-    if (logoBuffer) {
-      attachments.push({
-        filename: logoFilename,
-        content: logoBuffer,
-        cid: "bizone-logo",
-        contentType: "image/png",
-      });
-    }
 
     await transporter.sendMail({
       from: settings.smtpFrom || settings.smtpUser,
