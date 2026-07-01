@@ -229,9 +229,35 @@ function htmlToRichLines(html: string): RichLine[] {
       for (const li of Array.from(el.querySelectorAll(":scope > li"))) {
         n++;
         const prefix = tag === "ol" ? `${n}. ` : "• ";
-        // Tiptap wraps list-item content in a nested <p>
-        const inner = (li.querySelector(":scope > p") ?? li) as Element;
-        addBlock(inner, prefix);
+        // Walk ALL direct children of <li> so nested lists and multi-paragraph
+        // list items (common in Tiptap when pressing Enter inside a bullet) are
+        // fully captured — not just the first <p>.
+        let isFirstBlock = true;
+        for (const child of Array.from(li.childNodes)) {
+          if (child.nodeType !== Node.ELEMENT_NODE) {
+            const t = ((child.textContent ?? "").replace(/\u00a0/g, " ")).trim();
+            if (t) { out.push({ text: (isFirstBlock ? prefix : "  ") + t, bold: false, italic: false }); isFirstBlock = false; }
+            continue;
+          }
+          const cEl = child as Element;
+          const cTag = cEl.tagName.toLowerCase();
+          if (cTag === "p" || /^h[1-6]$/.test(cTag) || cTag === "div") {
+            addBlock(cEl, isFirstBlock ? prefix : "  ");
+            isFirstBlock = false;
+          } else if (cTag === "ul" || cTag === "ol") {
+            // Nested list — render with deeper indent
+            let nn = 0;
+            for (const nli of Array.from(cEl.querySelectorAll(":scope > li"))) {
+              nn++;
+              const nprefix = cTag === "ol" ? `  ${nn}. ` : "  • ";
+              const ninner = (nli.querySelector(":scope > p") ?? nli) as Element;
+              addBlock(ninner, nprefix);
+              isFirstBlock = false;
+            }
+          }
+        }
+        // Fallback: li had no recognised block children — treat li itself as the line
+        if (isFirstBlock) { addBlock(li as Element, prefix); }
       }
 
     } else if (tag === "table") {
@@ -605,13 +631,19 @@ function autoTableRich(
 
       const jdoc = data.doc as jsPDF;
       const cell = data.cell;
-      const padding = 4;
-      const x = cell.x + padding;
-      const maxW = cell.width - padding * 2 - imgReserve;
+      // Read actual cell padding from resolved styles so compact mode (cellPadding:2)
+      // uses the same width for splitTextToSize as didParseCell does.
+      const _cellCp = data.cell.styles?.cellPadding;
+      const _lPad = typeof _cellCp === "number" ? _cellCp : (_cellCp?.left  ?? 4);
+      const _rPad = typeof _cellCp === "number" ? _cellCp : (_cellCp?.right ?? 4);
+      const _tPad = typeof _cellCp === "number" ? _cellCp : (_cellCp?.top   ?? 4);
+      const _bPad = typeof _cellCp === "number" ? _cellCp : (_cellCp?.bottom ?? 4);
+      const x = cell.x + _lPad;
+      const maxW = cell.width - _lPad - _rPad - imgReserve;
 
       if (!richLines || richLines.length === 0) {
         if (rowImg) {
-          const imgH = Math.min(IMG_H_MAX, cell.height - padding * 2);
+          const imgH = Math.min(IMG_H_MAX, cell.height - _tPad - _bPad);
           const imgX = cell.x + cell.width - IMG_W - 1;
           const imgY = cell.y + (cell.height - imgH) / 2;
           try {
@@ -631,8 +663,7 @@ function autoTableRich(
       // We derive topPadding from the cell's resolved styles rather than trusting
       // textPos.y from data.cell (which autotable may recalculate after willDrawCell
       // clears cell.text to [], producing a shifted value).
-      const _cp = data.cell.styles?.cellPadding;
-      const _topPad = typeof _cp === "number" ? _cp : (_cp?.top ?? padding);
+      const _topPad = _tPad;
       const BASELINE_OFFSET = LINE_H * 0.8; // matches autotable's constant
       // Build rendering plan — each line gets its baseline y coordinate
       type Plan = { y: number; richLine: RichLine };
@@ -709,7 +740,7 @@ function autoTableRich(
         }
         // Draw item image (right side of description cell)
         if (rowImg) {
-          const imgH = Math.min(IMG_H_MAX, cell.height - padding * 2);
+          const imgH = Math.min(IMG_H_MAX, cell.height - _tPad - _bPad);
           const imgX = cell.x + cell.width - IMG_W - 1;
           const imgY = cell.y + (cell.height - imgH) / 2;
           jdoc.setFillColor(255, 255, 255);
@@ -1114,7 +1145,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
         data.cell.styles.halign = "right";
       }
     },
-  }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null), poKnownDescW);
+  }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
 
   const poFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(poTablePages)];
@@ -1480,7 +1511,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
         }
       }
     },
-  }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)), qtKnownDescW);
+  }, qtDescColIdx, qtRichDesc, allQtItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)));
 
   const qtFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(qtTablePages)];
@@ -1727,7 +1758,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
         }
       }
     },
-  }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)), invKnownDescW);
+  }, invDescColIdx, invRichDesc, allInvItems.map((item: any) => (item as any).type === "section" ? null : ((item as any).itemImage || null)));
 
   const invFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(invTablePages)];
