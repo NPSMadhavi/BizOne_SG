@@ -1211,6 +1211,72 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.save(`${po.poNumber}.pdf`);
 }
 
+/**
+ * Count the total number of wrapped text lines that drawNotesHtml would produce
+ * for the given HTML string, at the current font size.  Used to pre-measure
+ * block heights before rendering (e.g. for the bank-details shaded box).
+ */
+function countHtmlLines(doc: jsPDF, html: string, maxW: number): number {
+  if (!html?.trim()) return 0;
+  const src = /<[a-z]/i.test(html) ? html : `<p>${html.replace(/\n/g, "<br>")}</p>`;
+  const dom = new DOMParser().parseFromString(src, "text/html");
+  let count = 0;
+  const INDENT_MM = [0, 4, 9];
+
+  function measureBlock(el: Element, prefix: string, indent: number) {
+    const indOff = INDENT_MM[Math.min(indent, 2)] ?? 9;
+    const w = maxW - indOff;
+    const parts: string[] = [];
+    for (const ch of Array.from(el.childNodes)) {
+      const ct = (ch as Element).tagName?.toLowerCase();
+      if (ct !== "ul" && ct !== "ol") parts.push((ch.textContent ?? "").replace(/\u00a0/g, " "));
+    }
+    const text = (prefix + parts.join("").replace(/\s+/g, " ")).trim();
+    if (text) count += (doc.splitTextToSize(text, Math.max(w, 10)) as string[]).length;
+    else count += 1;
+  }
+
+  function walkHtmlListCount(el: Element, indent: number) {
+    const isOl = el.tagName.toLowerCase() === "ol";
+    let n = isOl ? (parseInt((el as HTMLElement).getAttribute("start") || "1", 10) - 1) : 0;
+    for (const li of Array.from(el.children)) {
+      if (li.tagName.toLowerCase() !== "li") continue;
+      if (!(li.textContent ?? "").trim()) { count += 1; continue; }
+      n++;
+      const prefix = isOl ? `${n}. ` : indent === 1 ? "\u2022 " : "\u25E6 ";
+      const paras = Array.from(li.children).filter(c => c.tagName.toLowerCase() === "p") as Element[];
+      if (paras.length > 0) {
+        measureBlock(paras[0], prefix, indent);
+        for (let pi = 1; pi < paras.length; pi++) measureBlock(paras[pi], "", indent);
+      } else {
+        measureBlock(li as Element, prefix, indent);
+      }
+      for (const ch of Array.from(li.children)) {
+        const ct = ch.tagName.toLowerCase();
+        if (ct === "ul" || ct === "ol") walkHtmlListCount(ch, indent + 1);
+      }
+    }
+  }
+
+  for (const child of Array.from(dom.body.childNodes)) {
+    if (child.nodeType !== 1) {
+      const t = (child.textContent ?? "").trim();
+      if (t) count += (doc.splitTextToSize(t, maxW) as string[]).length;
+      continue;
+    }
+    const el = child as Element;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "p" || tag === "div" || /^h\d$/.test(tag)) {
+      measureBlock(el, "", 0);
+    } else if (tag === "ul" || tag === "ol") {
+      walkHtmlListCount(el, 1);
+    } else {
+      measureBlock(el, "", 0);
+    }
+  }
+  return Math.max(1, count);
+}
+
 function calcBlockHeight(
   doc: jsPDF,
   settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
@@ -1219,24 +1285,21 @@ function calcBlockHeight(
   const bank = (settings?.bankDetails || "").trim();
   const tnc = (settings?.termsAndConditions || "").trim();
   if (!bank && !tnc) return 0;
-  // Must measure at the same font size renderInlineDocInfo uses (7.5pt)
   const prevSize = doc.getFontSize();
   doc.setFontSize(7.5);
   const lineH = 3.8;
+  const boxPad = 2.5;
   let h = 0;
   if (bank) {
+    const bankLines = countHtmlLines(doc, bank, maxW);
     h += 4; // "Bank Details:" header
-    bank.split("\n").filter(l => l.trim()).forEach(l => {
-      h += doc.splitTextToSize(l.trim(), maxW).length * lineH;
-    });
-    h += 3.5; // bottom gap after bank box (boxPad + 1 = 3.5 in renderer)
+    h += bankLines * lineH;
+    h += boxPad + 1; // bottom of shaded box
     if (tnc) h += 4; // gap between bank box and T&C
   }
   if (tnc) {
     h += 4; // "Terms & Conditions:" header
-    tnc.split("\n").filter(l => l.trim()).forEach(l => {
-      h += doc.splitTextToSize(`\u2022 ${l.trim()}`, maxW).length * lineH;
-    });
+    h += countHtmlLines(doc, tnc, maxW) * lineH;
   }
   doc.setFontSize(prevSize);
   return h + 2; // bottom margin
@@ -1262,12 +1325,11 @@ function renderInlineDocInfo(
 
   doc.setFontSize(7.5);
 
+  const pageH = doc.internal.pageSize.getHeight();
+
   if (bank) {
-    const bankContentLines: string[] = [];
-    bank.split("\n").filter(l => l.trim()).forEach(l => {
-      doc.splitTextToSize(l.trim(), maxW).forEach((row: string) => bankContentLines.push(row));
-    });
-    const bankTextH = bankContentLines.length * lineH;
+    const bankLines = countHtmlLines(doc, bank, maxW);
+    const bankTextH = bankLines * lineH;
     const boxPad = 2.5;
     const boxH = 4 + bankTextH + boxPad * 2 + 1;
 
@@ -1276,11 +1338,8 @@ function renderInlineDocInfo(
 
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Bank Details:", x, y); y += 4;
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(110, 110, 110);
-    bankContentLines.forEach(row => {
-      doc.text(row, x, y);
-      y += lineH;
-    });
+    doc.setTextColor(110, 110, 110);
+    y = drawNotesHtml(doc, bank, x, y, maxW, lineH, pageH, 0, PDF_FONT);
     y += boxPad + 1;
     if (tnc) y += 4;
   }
@@ -1288,12 +1347,8 @@ function renderInlineDocInfo(
   if (tnc) {
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Terms & Conditions:", x, y); y += 4;
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(110, 110, 110);
-    tnc.split("\n").filter(l => l.trim()).forEach(line => {
-      const wrapped = doc.splitTextToSize(`\u2022 ${line.trim()}`, maxW);
-      doc.text(wrapped, x, y);
-      y += wrapped.length * lineH;
-    });
+    doc.setTextColor(110, 110, 110);
+    drawNotesHtml(doc, tnc, x, y, maxW, lineH, pageH, 0, PDF_FONT);
   }
 }
 

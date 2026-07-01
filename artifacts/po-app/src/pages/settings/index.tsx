@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Switch } from "@/components/ui/switch";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -727,15 +728,14 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Textarea
-                  id="bankDetails"
-                  rows={4}
-                  placeholder={"Account No: 1234567890\nAccount Name: Your Company\nBank: Bank Name\nSwift / IFSC: XXXXXXXX"}
+                <RichTextEditor
                   value={bankDetails}
+                  onChange={(v) => { setDocsEditing(true); setBankDetails(v); }}
+                  placeholder="Account No: 1234567890&#10;Account Name: Your Company&#10;Bank: Bank Name&#10;Swift / IFSC: XXXXXXXX"
                   disabled={!isAdmin}
-                  onChange={(e) => { setDocsEditing(true); setBankDetails(e.target.value); }}
+                  expandable={false}
                 />
-                <p className="text-xs text-muted-foreground">Each line will appear as a separate line in the PDF.</p>
+                <p className="text-xs text-muted-foreground">Formatting (bold, lists) will render in the PDF exactly as typed here.</p>
               </CardContent>
             </Card>
 
@@ -748,15 +748,14 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Textarea
-                  id="termsAndConditions"
-                  rows={4}
-                  placeholder={"All prices are as per the currency stated on this invoice.\nPayment is due as per the payment terms stated above.\nGoods once sold are not Returnable / Exchangeable."}
+                <RichTextEditor
                   value={termsAndConditions}
+                  onChange={(v) => { setDocsEditing(true); setTermsAndConditions(v); }}
+                  placeholder="Use the toolbar to add numbered lists, bullet points, bold text, etc."
                   disabled={!isAdmin}
-                  onChange={(e) => { setDocsEditing(true); setTermsAndConditions(e.target.value); }}
+                  expandable={false}
                 />
-                <p className="text-xs text-muted-foreground">Each line will be prefixed with a bullet point in the PDF.</p>
+                <p className="text-xs text-muted-foreground">Formatting (bold, numbered lists, bullets) will render in the PDF exactly as typed here.</p>
               </CardContent>
             </Card>
 
@@ -769,15 +768,14 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Textarea
-                  id="quotationTerms"
-                  rows={4}
-                  placeholder={"This quotation is valid for 30 days from the date of issue.\nPrices are subject to change without prior notice.\nDelivery lead time as stated above is estimated only."}
+                <RichTextEditor
                   value={quotationTerms}
+                  onChange={(v) => { setDocsEditing(true); setQuotationTerms(v); }}
+                  placeholder="Use the toolbar to add numbered lists, bullet points, bold text, etc."
                   disabled={!isAdmin}
-                  onChange={(e) => { setDocsEditing(true); setQuotationTerms(e.target.value); }}
+                  expandable={false}
                 />
-                <p className="text-xs text-muted-foreground">Each line will be prefixed with a bullet point in the PDF.</p>
+                <p className="text-xs text-muted-foreground">Formatting (bold, numbered lists, bullets) will render in the PDF exactly as typed here.</p>
               </CardContent>
             </Card>
 

@@ -71,6 +71,7 @@ interface RichTextEditorProps {
   className?: string;
   expandable?: boolean;
   tall?: boolean;
+  disabled?: boolean;
 }
 
 function EditorCore({
@@ -80,6 +81,7 @@ function EditorCore({
   className,
   expandable = true,
   tall = false,
+  disabled = false,
 }: RichTextEditorProps) {
   const isUpdatingRef = useRef(false);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
@@ -104,6 +106,7 @@ function EditorCore({
       TableCell,
       Image.configure({ inline: false }),
     ],
+    editable: !disabled,
     content: value || "",
     onUpdate({ editor }) {
       isUpdatingRef.current = true;
@@ -277,8 +280,8 @@ function EditorCore({
 
   return (
     <>
-      <div className={cn("rounded-md border bg-background", className)}>
-        <div className="flex items-center border-b px-1 py-1 gap-0.5 flex-wrap shrink-0">
+      <div className={cn("rounded-md border bg-background", disabled && "opacity-60 pointer-events-none", className)}>
+        {!disabled && <div className="flex items-center border-b px-1 py-1 gap-0.5 flex-wrap shrink-0">
           <Toggle size="sm" pressed={editor.isActive("bold")} onPressedChange={() => editor.chain().focus().toggleBold().run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Bold"><Bold className="h-3 w-3" /></Toggle>
           <Toggle size="sm" pressed={editor.isActive("italic")} onPressedChange={() => editor.chain().focus().toggleItalic().run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Italic"><Italic className="h-3 w-3" /></Toggle>
           <Toggle size="sm" pressed={editor.isActive("underline")} onPressedChange={() => editor.chain().focus().toggleUnderline().run()} className="h-6 w-6 p-0 data-[state=on]:bg-muted" title="Underline"><UnderlineIcon className="h-3 w-3" /></Toggle>
@@ -319,7 +322,7 @@ function EditorCore({
               </button>
             </>
           )}
-        </div>
+        </div>}
 
         <div className={cn("relative", tall && "flex-1 min-h-0 overflow-y-auto")}>
           {isEmpty && (
