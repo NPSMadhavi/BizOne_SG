@@ -90,6 +90,7 @@ export default function PurchaseOrderView() {
       case 'confirmed': return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Confirmed</Badge>;
       case 'draft': return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case 'cancelled': return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
+      case 'sent': return <Badge className="bg-violet-600 hover:bg-violet-700 text-sm py-1">Sent</Badge>;
       default: return <Badge variant="outline" className="text-sm py-1">{status}</Badge>;
     }
   };
