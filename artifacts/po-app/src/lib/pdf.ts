@@ -1226,14 +1226,20 @@ function countHtmlLines(doc: jsPDF, html: string, maxW: number): number {
   function measureBlock(el: Element, prefix: string, indent: number) {
     const indOff = INDENT_MM[Math.min(indent, 2)] ?? 9;
     const w = maxW - indOff;
-    const parts: string[] = [];
+    // Mirror drawNotesHtml: split on <br> elements, measure each segment separately
+    const segments: string[][] = [[]];
     for (const ch of Array.from(el.childNodes)) {
       const ct = (ch as Element).tagName?.toLowerCase();
-      if (ct !== "ul" && ct !== "ol") parts.push((ch.textContent ?? "").replace(/\u00a0/g, " "));
+      if (ct === "br") { segments.push([]); continue; }
+      if (ct !== "ul" && ct !== "ol") segments[segments.length - 1].push((ch.textContent ?? "").replace(/\u00a0/g, " "));
     }
-    const text = (prefix + parts.join("").replace(/\s+/g, " ")).trim();
-    if (text) count += (doc.splitTextToSize(text, Math.max(w, 10)) as string[]).length;
-    else count += 1;
+    let anyText = false;
+    for (let si = 0; si < segments.length; si++) {
+      const text = ((si === 0 ? prefix : "") + segments[si].join("").replace(/\s+/g, " ")).trim();
+      if (text) { count += (doc.splitTextToSize(text, Math.max(w, 10)) as string[]).length; anyText = true; }
+      else if (si < segments.length - 1) { count += 1; } // blank line from <br><br>
+    }
+    if (!anyText) count += 1;
   }
 
   function walkHtmlListCount(el: Element, indent: number) {
