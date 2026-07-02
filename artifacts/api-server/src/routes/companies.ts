@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, companiesTable, userCompaniesTable, usersTable } from "@workspace/db";
+import { db, companiesTable, userCompaniesTable, usersTable, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import bcrypt from "bcryptjs";
 
 declare module "express-session" {
   interface SessionData {
@@ -64,6 +63,63 @@ export async function seedCompanies() {
     }
   }
 }
+
+router.post("/companies", async (req, res): Promise<void> => {
+  if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
+
+  const { name, country, address, phone, email, registrationNo } = req.body;
+  if (!name?.trim()) { res.status(400).json({ error: "Company name is required" }); return; }
+  if (!country?.trim()) { res.status(400).json({ error: "Country is required" }); return; }
+
+  try {
+    const [created] = await db.insert(companiesTable).values({
+      name: name.trim(),
+      country: country.trim(),
+      address: address?.trim() || null,
+      phone: phone?.trim() || null,
+      email: email?.trim() || null,
+      registrationNo: registrationNo?.trim() || null,
+    }).returning();
+
+    // Auto-assign all admin users to the new company
+    const admins = await db.select().from(usersTable).where(eq(usersTable.role, "admin"));
+    for (const admin of admins) {
+      await db.insert(userCompaniesTable).values({ userId: admin.id, companyId: created.id });
+    }
+
+    // Initialise default settings for the new company
+    const defaultGst = country.trim() === "IN" ? "18" : "9";
+    await db.insert(settingsTable).values({
+      companyId: created.id,
+      gstRate: defaultGst,
+      poPrefix: "PO", poCounter: 1, poSuffix: "",
+      invPrefix: "INV", invCounter: 1, invSuffix: "",
+      qtPrefix: "QT", qtCounter: 1, qtSuffix: "",
+      doPrefix: "DO", doCounter: 1, doSuffix: "",
+      grnPrefix: "GRN", grnCounter: 1, grnSuffix: "",
+    });
+
+    res.status(201).json(created);
+  } catch (err: any) {
+    req.log.error({ err }, "POST /companies failed");
+    res.status(500).json({ error: err?.message || "Failed to create company" });
+  }
+});
+
+router.delete("/companies/:id", async (req, res): Promise<void> => {
+  if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
+
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [deleted] = await db.delete(companiesTable).where(eq(companiesTable.id, id)).returning();
+  if (!deleted) { res.status(404).json({ error: "Company not found" }); return; }
+  res.json({ success: true });
+});
 
 router.put("/companies/:id", async (req, res): Promise<void> => {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }

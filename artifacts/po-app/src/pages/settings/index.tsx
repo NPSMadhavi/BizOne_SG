@@ -6,7 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Switch } from "@/components/ui/switch";
@@ -40,6 +42,12 @@ export default function Settings() {
     name: string; address: string; phone: string; email: string; registrationNo: string;
   }>>({});
   const [savingCompany, setSavingCompany] = useState<number | null>(null);
+  const [deletingCompany, setDeletingCompany] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+
+  const [addCompanyOpen, setAddCompanyOpen] = useState(false);
+  const [newCompany, setNewCompany] = useState({ name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "" });
+  const [addingCompany, setAddingCompany] = useState(false);
 
   const { data: companies, isLoading: companiesLoading } = useListCompanies({
     query: { queryKey: getListCompaniesQueryKey() },
@@ -78,6 +86,50 @@ export default function Settings() {
       toast({ title: "Error", description: "Failed to update company info.", variant: "destructive" });
     } finally {
       setSavingCompany(null);
+    }
+  };
+
+  const handleAddCompany = async () => {
+    if (!newCompany.name.trim()) {
+      toast({ title: "Name required", description: "Please enter a company name.", variant: "destructive" });
+      return;
+    }
+    setAddingCompany(true);
+    try {
+      const res = await fetch("/api/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(newCompany),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create company");
+      queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
+      setAddCompanyOpen(false);
+      setNewCompany({ name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "" });
+      toast({ title: "Company created", description: `${data.name} has been added. Switch to it from the sidebar to configure its settings.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to create company.", variant: "destructive" });
+    } finally {
+      setAddingCompany(false);
+    }
+  };
+
+  const handleDeleteCompany = async (id: number) => {
+    setDeletingCompany(id);
+    try {
+      const res = await fetch(`/api/companies/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete");
+      }
+      queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
+      setDeleteConfirmId(null);
+      toast({ title: "Company deleted", description: "The company and all its data have been removed." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeletingCompany(null);
     }
   };
 
@@ -650,14 +702,22 @@ export default function Settings() {
         {/* COMPANIES */}
         <TabsContent value="companies">
           <div className="space-y-6">
-            <div className="mb-2">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-primary" />
-                Company Information
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Edit the details for each registered company. These appear on all generated PDF documents.
-              </p>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  Company Information
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Edit details for each registered company. These appear on all generated PDF documents.
+                </p>
+              </div>
+              {isAdmin && (
+                <Button onClick={() => setAddCompanyOpen(true)} className="gap-2 shrink-0">
+                  <Plus className="h-4 w-4" />
+                  Add Company
+                </Button>
+              )}
             </div>
             {companiesLoading ? (
               <div className="space-y-4">
@@ -667,8 +727,25 @@ export default function Settings() {
               (companies || []).map(company => (
                 <Card key={company.id}>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">{company.name}</CardTitle>
-                    <CardDescription>{company.country === "SG" ? "Singapore" : company.country === "IN" ? "India" : company.country}</CardDescription>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-base">{company.name}</CardTitle>
+                        <CardDescription>
+                          {company.country === "SG" ? "🇸🇬 Singapore" : company.country === "IN" ? "🇮🇳 India" : company.country}
+                        </CardDescription>
+                      </div>
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
+                          onClick={() => setDeleteConfirmId(company.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
@@ -729,6 +806,125 @@ export default function Settings() {
               ))
             )}
           </div>
+
+          {/* Add Company Dialog */}
+          <Dialog open={addCompanyOpen} onOpenChange={setAddCompanyOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  Add New Company
+                </DialogTitle>
+                <DialogDescription>
+                  Creates a new company with its own isolated settings, SMTP, running numbers, GST rate, and documents. All admin users will be automatically assigned to it.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5 col-span-2">
+                    <Label htmlFor="nc-name">Company Name <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="nc-name"
+                      placeholder="e.g. My Company Pte. Ltd."
+                      value={newCompany.name}
+                      onChange={e => setNewCompany(p => ({ ...p, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="nc-country">Country <span className="text-destructive">*</span></Label>
+                    <Select value={newCompany.country} onValueChange={v => setNewCompany(p => ({ ...p, country: v }))}>
+                      <SelectTrigger id="nc-country">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="SG">🇸🇬 Singapore</SelectItem>
+                        <SelectItem value="IN">🇮🇳 India</SelectItem>
+                        <SelectItem value="MY">🇲🇾 Malaysia</SelectItem>
+                        <SelectItem value="US">🇺🇸 United States</SelectItem>
+                        <SelectItem value="GB">🇬🇧 United Kingdom</SelectItem>
+                        <SelectItem value="AU">🇦🇺 Australia</SelectItem>
+                        <SelectItem value="OTHER">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="nc-reg">Registration No.</Label>
+                    <Input
+                      id="nc-reg"
+                      placeholder="e.g. 200812581D"
+                      value={newCompany.registrationNo}
+                      onChange={e => setNewCompany(p => ({ ...p, registrationNo: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5 col-span-2">
+                    <Label htmlFor="nc-address">Address</Label>
+                    <Input
+                      id="nc-address"
+                      placeholder="Full registered address"
+                      value={newCompany.address}
+                      onChange={e => setNewCompany(p => ({ ...p, address: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="nc-email">Email</Label>
+                    <Input
+                      id="nc-email"
+                      type="email"
+                      placeholder="info@company.com"
+                      value={newCompany.email}
+                      onChange={e => setNewCompany(p => ({ ...p, email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="nc-phone">Phone</Label>
+                    <Input
+                      id="nc-phone"
+                      placeholder="+65 6123 4567"
+                      value={newCompany.phone}
+                      onChange={e => setNewCompany(p => ({ ...p, phone: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground bg-muted rounded p-2">
+                  Default GST rate will be set to <strong>{newCompany.country === "IN" ? "18%" : "9%"}</strong> based on the selected country. You can change it afterwards in Settings → Tax.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddCompanyOpen(false)} disabled={addingCompany}>Cancel</Button>
+                <Button onClick={handleAddCompany} disabled={addingCompany || !newCompany.name.trim()} className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  {addingCompany ? "Creating..." : "Create Company"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete Confirmation Dialog */}
+          <Dialog open={deleteConfirmId !== null} onOpenChange={open => { if (!open) setDeleteConfirmId(null); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <Trash2 className="h-5 w-5" />
+                  Delete Company
+                </DialogTitle>
+                <DialogDescription>
+                  This will permanently delete <strong>{(companies || []).find(c => c.id === deleteConfirmId)?.name}</strong> and all its documents, settings, vendors, customers, and stock data. This cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleteConfirmId(null)} disabled={deletingCompany !== null}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteConfirmId && handleDeleteCompany(deleteConfirmId)}
+                  disabled={deletingCompany !== null}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {deletingCompany !== null ? "Deleting..." : "Yes, Delete"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* DOCUMENTS */}
