@@ -1292,17 +1292,19 @@ function calcBlockHeight(
   let h = 0;
   if (bank) {
     const bankLines = countHtmlLines(doc, bank, maxW);
-    h += 4; // "Bank Details:" header
+    h += boxPad;        // top of shaded rect starts at y - boxPad
+    h += 4;             // "Bank Details:" header
     h += bankLines * lineH;
-    h += boxPad + 1; // bottom of shaded box
-    if (tnc) h += 4; // gap between bank box and T&C
+    h += boxPad * 2 + 1; // full bottom padding of shaded box
+    if (tnc) h += 4;    // gap before T&C
   }
   if (tnc) {
     h += 4; // "Terms & Conditions:" header
     h += countHtmlLines(doc, tnc, maxW) * lineH;
   }
   doc.setFontSize(prevSize);
-  return h + 2; // bottom margin
+  // Add a 12mm safety buffer so estimation errors never cause overflow
+  return h + 12;
 }
 
 /**
@@ -1314,7 +1316,8 @@ function renderInlineDocInfo(
   settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
   x: number,
   startY: number,
-  maxW: number
+  maxW: number,
+  footerReserve = 0
 ): void {
   const bank = (settings?.bankDetails || "").trim();
   const tnc = (settings?.termsAndConditions || "").trim();
@@ -1339,16 +1342,19 @@ function renderInlineDocInfo(
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Bank Details:", x, y); y += 4;
     doc.setTextColor(110, 110, 110);
-    y = drawNotesHtml(doc, bank, x, y, maxW, lineH, pageH, 0, PDF_FONT);
+    // Use footerReserve so content never bleeds into the footer area
+    y = drawNotesHtml(doc, bank, x, y, maxW, lineH, pageH, footerReserve, PDF_FONT);
     y += boxPad + 1;
     if (tnc) y += 4;
   }
 
   if (tnc) {
     doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    // If we've been pushed to a new page mid-bank, reset font size
+    doc.setFontSize(7.5);
     doc.text("Terms & Conditions:", x, y); y += 4;
     doc.setTextColor(110, 110, 110);
-    drawNotesHtml(doc, tnc, x, y, maxW, lineH, pageH, 0, PDF_FONT);
+    drawNotesHtml(doc, tnc, x, y, maxW, lineH, pageH, footerReserve, PDF_FONT);
   }
 }
 
@@ -1635,7 +1641,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(fmtMoneyTotal(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
   // Left: bank details + quotation T&C inline (same Y, left of totals)
-  renderInlineDocInfo(doc, qtSettings, marginLeft, totalsY, 125);
+  renderInlineDocInfo(doc, qtSettings, marginLeft, totalsY, 125, FOOTER_RESERVE);
 
   buildDocFooter(doc, "Quotation");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
@@ -1882,7 +1888,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(fmtMoneyTotal(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
   // Left: bank details + T&C inline (same Y, left of totals)
-  renderInlineDocInfo(doc, settings, marginLeft, totalsY, 125);
+  renderInlineDocInfo(doc, settings, marginLeft, totalsY, 125, FOOTER_RESERVE);
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
