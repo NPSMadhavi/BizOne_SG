@@ -39,14 +39,14 @@ export default function Settings() {
   const [testingSmtp, setTestingSmtp] = useState(false);
 
   const [companyEdits, setCompanyEdits] = useState<Record<number, {
-    name: string; address: string; phone: string; email: string; registrationNo: string;
+    name: string; address: string; phone: string; email: string; registrationNo: string; logoUrl: string;
   }>>({});
   const [savingCompany, setSavingCompany] = useState<number | null>(null);
   const [deletingCompany, setDeletingCompany] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const [addCompanyOpen, setAddCompanyOpen] = useState(false);
-  const [newCompany, setNewCompany] = useState({ name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "" });
+  const [newCompany, setNewCompany] = useState({ name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "", logoUrl: "" });
   const [addingCompany, setAddingCompany] = useState(false);
 
   const { data: companies, isLoading: companiesLoading } = useListCompanies({
@@ -72,6 +72,7 @@ export default function Settings() {
         phone: getCompanyField(company.id, "phone", company.phone || ""),
         email: getCompanyField(company.id, "email", company.email || ""),
         registrationNo: getCompanyField(company.id, "registrationNo", company.registrationNo || ""),
+        logoUrl: getCompanyField(company.id, "logoUrl", (company as any).logoUrl || ""),
       };
       const res = await fetch(`/api/companies/${company.id}`, {
         method: "PUT",
@@ -106,7 +107,7 @@ export default function Settings() {
       if (!res.ok) throw new Error(data.error || "Failed to create company");
       queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
       setAddCompanyOpen(false);
-      setNewCompany({ name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "" });
+      setNewCompany({ name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "", logoUrl: "" });
       toast({ title: "Company created", description: `${data.name} has been added. Switch to it from the sidebar to configure its settings.` });
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to create company.", variant: "destructive" });
@@ -791,6 +792,50 @@ export default function Settings() {
                         />
                       </div>
                     </div>
+                    {/* Logo upload */}
+                    <div className="space-y-2">
+                      <Label>Company Logo <span className="text-xs text-muted-foreground font-normal">(shown in sidebar)</span></Label>
+                      <div className="flex items-center gap-4">
+                        {(companyEdits[company.id]?.logoUrl ?? (company as any).logoUrl) ? (
+                          <div className="relative group">
+                            <img
+                              src={companyEdits[company.id]?.logoUrl ?? (company as any).logoUrl}
+                              alt="Logo preview"
+                              className="h-12 w-auto object-contain rounded border bg-white p-1 max-w-[120px]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setCompanyField(company.id, "logoUrl", "")}
+                              className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove logo"
+                            >×</button>
+                          </div>
+                        ) : (
+                          <div className="h-12 w-24 rounded border border-dashed bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">No logo</div>
+                        )}
+                        <label className="cursor-pointer">
+                          <span className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Upload Logo
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = ev => setCompanyField(company.id, "logoUrl", ev.target?.result as string);
+                              reader.readAsDataURL(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <span className="text-xs text-muted-foreground">PNG, JPG, SVG — max 2 MB</span>
+                      </div>
+                    </div>
+
                     <div className="flex justify-end pt-1">
                       <Button
                         onClick={() => handleSaveCompany(company as any)}
@@ -885,6 +930,34 @@ export default function Settings() {
                     />
                   </div>
                 </div>
+                {/* Logo upload for new company */}
+                <div className="space-y-2">
+                  <Label>Company Logo <span className="text-xs text-muted-foreground font-normal">optional — shown in sidebar</span></Label>
+                  <div className="flex items-center gap-3">
+                    {newCompany.logoUrl ? (
+                      <div className="relative group">
+                        <img src={newCompany.logoUrl} alt="Logo preview" className="h-10 w-auto object-contain rounded border bg-white p-1 max-w-[100px]" />
+                        <button type="button" onClick={() => setNewCompany(p => ({ ...p, logoUrl: "" }))}
+                          className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                      </div>
+                    ) : (
+                      <div className="h-10 w-20 rounded border border-dashed bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">No logo</div>
+                    )}
+                    <label className="cursor-pointer">
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload
+                      </span>
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => setNewCompany(p => ({ ...p, logoUrl: ev.target?.result as string }));
+                        reader.readAsDataURL(file); e.target.value = "";
+                      }} />
+                    </label>
+                  </div>
+                </div>
+
                 <p className="text-xs text-muted-foreground bg-muted rounded p-2">
                   Default GST rate will be set to <strong>{newCompany.country === "IN" ? "18%" : "9%"}</strong> based on the selected country. You can change it afterwards in Settings → Tax.
                 </p>

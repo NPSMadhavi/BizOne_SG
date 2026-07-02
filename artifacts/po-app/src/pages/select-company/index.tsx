@@ -41,7 +41,7 @@ function FlagImg({ iso, className = "h-4 w-6 object-cover rounded-sm" }: { iso: 
 }
 
 type Step = "details" | "confirm";
-const EMPTY = { name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "" };
+const EMPTY = { name: "", country: "SG", registrationNo: "", address: "", email: "", phone: "", logoUrl: "" };
 
 export default function SelectCompany() {
   const { user, isAdmin, setSelectedCompanyId } = useAuth();
@@ -290,6 +290,33 @@ export default function SelectCompany() {
                     <Label htmlFor="nc-phone">Phone</Label>
                     <Input id="nc-phone" placeholder="+65 6123 4567" value={form.phone}
                       onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Company Logo <span className="text-xs text-muted-foreground font-normal">optional — shown in sidebar</span></Label>
+                  <div className="flex items-center gap-3">
+                    {form.logoUrl ? (
+                      <div className="relative group">
+                        <img src={form.logoUrl} alt="Logo preview" className="h-10 w-auto object-contain rounded border bg-white p-1 max-w-[100px]" />
+                        <button type="button" onClick={() => setForm(p => ({ ...p, logoUrl: "" }))}
+                          className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                      </div>
+                    ) : (
+                      <div className="h-10 w-20 rounded border border-dashed bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">No logo</div>
+                    )}
+                    <label className="cursor-pointer">
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload
+                      </span>
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => setForm(p => ({ ...p, logoUrl: ev.target?.result as string }));
+                        reader.readAsDataURL(file); e.target.value = "";
+                      }} />
+                    </label>
                   </div>
                 </div>
 

@@ -8,6 +8,7 @@ export const companiesTable = pgTable("companies", {
   registrationNo: text("registration_no"),
   email: text("email"),
   phone: text("phone"),
+  logoUrl: text("logo_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

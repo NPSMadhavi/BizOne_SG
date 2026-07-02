@@ -681,11 +681,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <CompanyBadge />
           <UserMenu />
         </div>
-        {!collapsed && (
+        {!collapsed && (selectedCompany as any)?.logoUrl && (
           <div className="px-5 py-4 border-t border-border/30 flex items-center justify-center bg-muted/20">
             <img
-              src={activeLogo}
-              alt="BizOne"
+              src={(selectedCompany as any).logoUrl}
+              alt={selectedCompany?.name ?? "Company"}
               className="h-10 w-auto object-contain max-w-[150px]"
             />
           </div>
