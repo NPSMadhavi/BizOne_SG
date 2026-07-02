@@ -12,21 +12,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
-const COUNTRY_FLAGS: Record<string, { flag: string; label: string }> = {
-  SG: { flag: "🇸🇬", label: "Singapore" },
-  Singapore: { flag: "🇸🇬", label: "Singapore" },
-  IN: { flag: "🇮🇳", label: "India" },
-  India: { flag: "🇮🇳", label: "India" },
-  MY: { flag: "🇲🇾", label: "Malaysia" },
-  Malaysia: { flag: "🇲🇾", label: "Malaysia" },
-  US: { flag: "🇺🇸", label: "United States" },
-  GB: { flag: "🇬🇧", label: "United Kingdom" },
-  AU: { flag: "🇦🇺", label: "Australia" },
-  OTHER: { flag: "🌐", label: "Other" },
+const COUNTRY_MAP: Record<string, { iso: string; label: string }> = {
+  SG: { iso: "sg", label: "Singapore" },
+  Singapore: { iso: "sg", label: "Singapore" },
+  IN: { iso: "in", label: "India" },
+  India: { iso: "in", label: "India" },
+  MY: { iso: "my", label: "Malaysia" },
+  Malaysia: { iso: "my", label: "Malaysia" },
+  US: { iso: "us", label: "United States" },
+  GB: { iso: "gb", label: "United Kingdom" },
+  AU: { iso: "au", label: "Australia" },
 };
 
 function countryInfo(c: string) {
-  return COUNTRY_FLAGS[c] ?? { flag: "🌐", label: c };
+  return COUNTRY_MAP[c] ?? { iso: null, label: c };
+}
+
+function FlagImg({ iso, className = "h-4 w-6 object-cover rounded-sm" }: { iso: string | null; className?: string }) {
+  if (!iso) return <span className="text-slate-400 text-xs font-mono">—</span>;
+  return (
+    <img
+      src={`https://flagcdn.com/w40/${iso}.png`}
+      alt={iso.toUpperCase()}
+      className={className}
+      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+    />
+  );
 }
 
 type Step = "details" | "confirm";
@@ -171,8 +182,8 @@ export default function SelectCompany() {
                         )}
                       </td>
                       <td className="px-4 py-3.5 hidden sm:table-cell">
-                        <span className="inline-flex items-center gap-1.5 text-slate-600">
-                          <span className="text-base leading-none">{ci.flag}</span>
+                        <span className="inline-flex items-center gap-2 text-slate-600">
+                          <FlagImg iso={ci.iso} />
                           <span className="text-xs">{ci.label}</span>
                         </span>
                       </td>
@@ -302,14 +313,14 @@ export default function SelectCompany() {
                   Confirm Your Password
                 </DialogTitle>
                 <DialogDescription>
-                  Creating <strong>{form.name}</strong> ({countryInfo(form.country).flag} {countryInfo(form.country).label}). Enter your admin password to proceed.
+                  Creating <strong>{form.name}</strong> (<FlagImg iso={countryInfo(form.country).iso} className="inline h-3.5 w-5 object-cover rounded-sm align-middle" /> {countryInfo(form.country).label}). Enter your admin password to proceed.
                 </DialogDescription>
               </DialogHeader>
 
               <div className="py-2 space-y-3">
                 <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm space-y-0.5">
                   <div className="flex items-center gap-2 font-semibold">
-                    <span className="text-lg">{countryInfo(form.country).flag}</span>
+                    <FlagImg iso={countryInfo(form.country).iso} className="h-4 w-6 object-cover rounded-sm" />
                     {form.name}
                   </div>
                   {form.registrationNo && <p className="text-xs text-muted-foreground font-mono">{form.registrationNo}</p>}
