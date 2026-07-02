@@ -682,7 +682,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <UserMenu />
         </div>
         {!collapsed && (selectedCompany as any)?.logoUrl && (
-          <div className="px-5 py-4 border-t border-border/30 flex items-center justify-center bg-muted/20">
+          <div className="px-5 py-4 border-t border-border/30 flex items-center justify-start bg-muted/20">
             <img
               src={(selectedCompany as any).logoUrl}
               alt={selectedCompany?.name ?? "Company"}
