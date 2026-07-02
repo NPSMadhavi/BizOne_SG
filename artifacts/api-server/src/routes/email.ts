@@ -130,13 +130,16 @@ router.post("/send-email", async (req, res): Promise<void> => {
   }
 
   const companyId = (req.session as any).companyId;
-  const settingsRows = companyId
-    ? await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1)
-    : await db.select().from(settingsTable).limit(1);
+  if (!companyId) {
+    res.status(400).json({ error: "No active company selected. Please select a company before sending email." });
+    return;
+  }
+
+  const settingsRows = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
   const settings = settingsRows[0];
 
   if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
-    res.status(503).json({ error: "SMTP is not configured. Please configure SMTP in Settings." });
+    res.status(503).json({ error: "SMTP is not configured for this company. Please configure SMTP in Settings → Email." });
     return;
   }
 
@@ -206,13 +209,16 @@ router.post("/test-email", async (req, res): Promise<void> => {
   }
 
   const companyId = (req.session as any).companyId;
-  const settingsRows = companyId
-    ? await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1)
-    : await db.select().from(settingsTable).limit(1);
+  if (!companyId) {
+    res.status(400).json({ error: "No active company selected. Please select a company before testing email." });
+    return;
+  }
+
+  const settingsRows = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
   const settings = settingsRows[0];
 
   if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
-    res.status(400).json({ error: "SMTP settings are incomplete. Please fill in all fields and save first." });
+    res.status(400).json({ error: "SMTP settings are incomplete for this company. Please fill in all fields and save first." });
     return;
   }
 

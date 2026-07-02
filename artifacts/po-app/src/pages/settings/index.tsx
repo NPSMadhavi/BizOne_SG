@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Switch } from "@/components/ui/switch";
@@ -21,7 +21,7 @@ type RunningNumberConfig = {
 };
 
 export default function Settings() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, selectedCompany } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -284,6 +284,24 @@ export default function Settings() {
         <p className="text-muted-foreground mt-1">Manage company preferences and account settings.</p>
       </div>
 
+      {selectedCompany && (
+        <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 mb-6">
+          <Building2 className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-blue-900">
+              Configuring: <span className="font-bold">{selectedCompany.name}</span>
+            </p>
+            <p className="text-xs text-blue-700 mt-0.5">
+              Tax rate, SMTP email, running numbers, and document defaults on this page apply to <strong>{selectedCompany.name}</strong> only.
+              To configure another company, switch the active company from the sidebar first.
+            </p>
+          </div>
+          <Badge variant="outline" className="shrink-0 border-blue-300 text-blue-700 bg-white text-xs">
+            {selectedCompany.country ?? "Singapore"}
+          </Badge>
+        </div>
+      )}
+
       <Tabs defaultValue="tax">
         <TabsList className="w-full justify-start border-b rounded-none bg-transparent h-auto p-0 mb-6 gap-0">
           <TabsTrigger
@@ -499,7 +517,7 @@ export default function Settings() {
                 Email (SMTP) Settings
               </CardTitle>
               <CardDescription>
-                Configure your outgoing mail server to enable sending documents directly from the app.
+                Configure the outgoing mail server for <strong>{selectedCompany?.name ?? "this company"}</strong>. All documents sent while this company is active will use these SMTP credentials.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
