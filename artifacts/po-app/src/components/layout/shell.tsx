@@ -396,7 +396,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setOpenGroup(prev => (prev === id ? null : id));
   };
 
-  if (!user) {
+  if (!user || location === "/select-company") {
     return <>{children}</>;
   }
 
