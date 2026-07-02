@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, companiesTable, userCompaniesTable, usersTable, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 declare module "express-session" {
   interface SessionData {
@@ -69,9 +70,13 @@ router.post("/companies", async (req, res): Promise<void> => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
 
-  const { name, country, address, phone, email, registrationNo } = req.body;
+  const { name, country, address, phone, email, registrationNo, adminPassword } = req.body;
   if (!name?.trim()) { res.status(400).json({ error: "Company name is required" }); return; }
   if (!country?.trim()) { res.status(400).json({ error: "Country is required" }); return; }
+  if (!adminPassword) { res.status(400).json({ error: "Password confirmation is required" }); return; }
+
+  const passwordOk = await bcrypt.compare(adminPassword, user.passwordHash);
+  if (!passwordOk) { res.status(401).json({ error: "Incorrect password. Please try again." }); return; }
 
   try {
     const [created] = await db.insert(companiesTable).values({
