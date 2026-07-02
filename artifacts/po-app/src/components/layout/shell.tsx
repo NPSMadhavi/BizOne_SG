@@ -657,12 +657,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <SidebarCtx.Provider value={collapsed}>
       <TooltipProvider delayDuration={0}>
         {/* Header: logo + toggle */}
-        <div className={`border-b border-border/50 flex items-center shrink-0 ${collapsed ? "justify-center py-4 px-2" : "p-6 justify-between"}`}>
-          {!collapsed && <img src={activeLogo} alt="BizOne" className="h-8" />}
+        <div className={`border-b border-border/50 flex items-center shrink-0 ${collapsed ? "justify-center py-4 px-2" : "px-5 py-4 justify-between"}`}>
+          {!collapsed && (
+            <img src={activeLogo} alt="BizOne" className="h-11 w-auto object-contain max-w-[160px]" />
+          )}
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 ml-auto"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -680,11 +682,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <UserMenu />
         </div>
         {!collapsed && (
-          <div className="px-4 py-3 border-t border-border/30 flex items-center justify-center">
+          <div className="px-5 py-4 border-t border-border/30 flex items-center justify-center bg-muted/20">
             <img
-              src={isSingapore ? bizoneSgLogo : bizoneIndiaLogo}
-              alt={isSingapore ? "BizOne Singapore" : "BizOne India"}
-              className="h-7 opacity-80 hover:opacity-100 transition-opacity"
+              src={activeLogo}
+              alt="BizOne"
+              className="h-10 w-auto object-contain max-w-[150px]"
             />
           </div>
         )}
