@@ -4,7 +4,7 @@ import { useSelectCompany, getGetMeQueryKey, useLogout } from "@workspace/api-cl
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Building2, Plus, ArrowRight, Lock, ChevronLeft, LogOut, MapPin, Hash } from "lucide-react";
-import logo from "@assets/bizone_1_1782467876559.png";
+import logo from "@assets/BizOne_main_1782977343449.png";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

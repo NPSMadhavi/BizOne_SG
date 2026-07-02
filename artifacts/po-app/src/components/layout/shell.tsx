@@ -65,7 +65,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import logo from "@assets/logo_1776054030755.png";
+import bizoneLogo from "@assets/BizOne_main_1782977343449.png";
 import bizoneSgLogo from "@assets/bizone_1_1782467876559.png";
 import bizoneIndiaLogo from "@assets/bizone_India_1782467973411.png";
 import { AgentPanel } from "@/components/agent-panel";
@@ -400,7 +400,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  const isSingapore = selectedCompany?.country?.toLowerCase() === "singapore";
+  const isSingapore = selectedCompany?.country?.toLowerCase() === "singapore" || selectedCompany?.country === "SG";
+  const isIndia = selectedCompany?.country?.toLowerCase() === "india" || selectedCompany?.country === "IN";
+  const activeLogo = isSingapore ? bizoneSgLogo : isIndia ? bizoneIndiaLogo : bizoneLogo;
   const accountingGroupModules = MODULE_GROUPS.find(g => g.id === "accounting")?.modules ?? [];
   const hasAnyAccounting = isAdmin || accountingGroupModules.some(m => hasModuleAccess(m as AppModule));
   const hasDocuments =
@@ -656,7 +658,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <TooltipProvider delayDuration={0}>
         {/* Header: logo + toggle */}
         <div className={`border-b border-border/50 flex items-center shrink-0 ${collapsed ? "justify-center py-4 px-2" : "p-6 justify-between"}`}>
-          {!collapsed && <img src={logo} alt="RSV Infotech" className="h-8" />}
+          {!collapsed && <img src={activeLogo} alt="BizOne" className="h-8" />}
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -695,7 +697,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* ── Mobile header ────────────────────────────────────── */}
       <header className="md:hidden flex items-center justify-between px-4 h-14 border-b bg-card">
         <div className="flex items-center gap-2">
-          <img src={logo} alt="RSV Infotech" className="h-6" />
+          <img src={activeLogo} alt="BizOne" className="h-6" />
         </div>
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
@@ -705,7 +707,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </SheetTrigger>
           <SheetContent side="left" className="w-72 p-0 flex flex-col">
             <div className="p-4 border-b shrink-0">
-              <img src={logo} alt="RSV Infotech" className="h-8" />
+              <img src={activeLogo} alt="BizOne" className="h-8" />
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-3">
               <SidebarCtx.Provider value={false}>
