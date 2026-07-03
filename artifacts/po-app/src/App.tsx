@@ -61,7 +61,6 @@ import EciPage from "@/pages/accounting/eci";
 import FormCsPage from "@/pages/accounting/form-cs";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
-import { InactivityTimeout } from "@/components/inactivity-timeout";
 import { MaintenanceGuard } from "@/components/maintenance-guard";
 import { useEffect } from "react";
 
@@ -285,7 +284,6 @@ function App() {
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
             <MaintenanceGuard>
-              <InactivityTimeout />
               <Router />
             </MaintenanceGuard>
           </AuthProvider>
