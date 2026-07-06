@@ -147,7 +147,11 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-xs text-slate-400">
-          © {new Date().getFullYear()} BizOne. All rights reserved.
+          © BizOne by{" "}
+          <a href="https://www.myrsv.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-600 underline underline-offset-2 transition-colors">
+            RSV Infotech Pte. Ltd.
+          </a>{" "}
+          All rights reserved.
         </p>
       </div>
 
