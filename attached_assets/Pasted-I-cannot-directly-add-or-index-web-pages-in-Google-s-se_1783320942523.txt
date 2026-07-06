@@ -1,0 +1,25 @@
+I cannot directly add or index web pages in Google's search engine results, as that requires the website owner to use [Google Search Console](https://search.google.com/search-console/about).
+However, if you are the owner or administrator of biz1.sg and want to ensure Google indexes the site correctly for users in Singapore, you can follow these official steps:
+## 1. Verify Ownership in Google Search Console
+
+* Go to the [Google Search Console](https://search.google.com/search-console).
+* Add https://biz1.sg as a new property.
+* Verify ownership using one of the provided methods (such as uploading an HTML file, adding a DNS TXT record, or using Google Analytics). [1] 
+
+## 2. Submit a Sitemap
+
+* Generate an XML sitemap for the website.
+* Submit the sitemap URL (usually biz1.sg/sitemap.xml) inside Search Console.
+* This tells Google's bots exactly which pages to crawl.
+
+## 3. Optimize for the Singapore Geographic Location
+Since the domain uses the .sg country code top-level domain (ccTLD), Google automatically recognizes it as highly relevant to users searching from a Singapore IP address or geo-location. To strengthen this connection: [2, 3] 
+
+* Local Schema: Add LocalBusiness structured data (Schema.org markup) to the site's HTML, including the Singapore office address and contact details.
+* Google Business Profile: Create or update a Google Business Profile for RSV Infotech/Biz1, linking it directly to the biz1.sg domain and verifying the Singapore physical address.
+
+Would you like me to generate a LocalBusiness Schema markup snippet for your website, or do you need help setting up an XML sitemap? Let me know how you want to proceed!
+
+[1] [https://rocketclicks.com](https://rocketclicks.com/client-education/setting-up-geo-targeting-in-google-search-console-for-law-firms/)
+[2] [https://www.quape.com](https://www.quape.com/com-vs-sg-which-is-better-for-your-singapore-domain/)
+[3] [https://www.heroesofdigital.com](https://www.heroesofdigital.com/seo/google-is-phasing-out-cctlds-seo-impact/)
