@@ -148,7 +148,7 @@ export default function Login() {
         {/* Footer */}
         <p className="text-xs text-slate-400">
           © BizOne by{" "}
-          <a href="https://www.myrsv.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-600 underline underline-offset-2 transition-colors">
+          <a href="https://www.myrsv.com" target="_blank" rel="noopener noreferrer" className="font-bold hover:text-slate-600 transition-colors">
             RSV Infotech Pte. Ltd.
           </a>{" "}
           All rights reserved.
@@ -245,7 +245,7 @@ export default function Login() {
           </Form>
 
           <p className="text-center text-xs text-slate-400 pt-4">
-            Powered by <span className="font-semibold text-slate-500">BizOne</span>
+            Powered by <span className="font-semibold text-slate-500">RSV Infotech Pte. Ltd.</span>
           </p>
         </div>
       </div>
