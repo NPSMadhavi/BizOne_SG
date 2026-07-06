@@ -2,68 +2,84 @@ import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wo
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
-import Login from "@/pages/login";
-import Dashboard from "@/pages/dashboard";
-import SelectCompany from "@/pages/select-company/index";
-import PurchaseOrderList from "@/pages/purchase-orders/list";
-import PurchaseOrderNew from "@/pages/purchase-orders/new";
-import PurchaseOrderView from "@/pages/purchase-orders/view";
-import PurchaseOrderEdit from "@/pages/purchase-orders/edit";
-import QuotationList from "@/pages/quotations/list";
-import QuotationNew from "@/pages/quotations/new";
-import QuotationView from "@/pages/quotations/view";
-import QuotationEdit from "@/pages/quotations/edit";
-import InvoiceList from "@/pages/invoices/list";
-import InvoiceNew from "@/pages/invoices/new";
-import InvoiceView from "@/pages/invoices/view";
-import InvoiceEdit from "@/pages/invoices/edit";
-import CreditNoteList from "@/pages/credit-notes/list";
-import CreditNoteNew from "@/pages/credit-notes/new";
-import CreditNoteView from "@/pages/credit-notes/view";
-import CreditNoteEdit from "@/pages/credit-notes/edit";
-import DeliveryOrderList from "@/pages/delivery-orders/list";
-import DeliveryOrderNew from "@/pages/delivery-orders/new";
-import DeliveryOrderView from "@/pages/delivery-orders/view";
-import DeliveryOrderEdit from "@/pages/delivery-orders/edit";
-import Admin from "@/pages/admin/index";
-import Settings from "@/pages/settings/index";
-import GrnList from "@/pages/grn/list";
-import GrnView from "@/pages/grn/view";
-import StockList from "@/pages/stock/list";
-import VendorsPage from "@/pages/vendors/index";
-import CustomersPage from "@/pages/customers/index";
-import AddressBookPage from "@/pages/address-book/index";
-import VendorInvoiceList from "@/pages/vendor-invoices/list";
-import VendorInvoiceView from "@/pages/vendor-invoices/view";
-import AuditLog from "@/pages/admin/audit-log";
-import ChartOfAccounts from "@/pages/accounting/chart-of-accounts";
-import JournalEntriesList from "@/pages/accounting/journal-entries";
-import JournalEntryNew from "@/pages/accounting/journal-entry-new";
-import JournalEntryView from "@/pages/accounting/journal-entry-view";
-import ProfitLoss from "@/pages/accounting/profit-loss";
-import GstF5 from "@/pages/accounting/gst-f5";
-import ArAging from "@/pages/accounting/ar-aging";
-import ApAging from "@/pages/accounting/ap-aging";
-import ArCollections from "@/pages/accounting/ar-collections";
-import ApPayments from "@/pages/accounting/ap-payments";
-import BalanceSheet from "@/pages/accounting/balance-sheet";
-import TrialBalance from "@/pages/accounting/trial-balance";
-import CustomerStatement from "@/pages/accounting/customer-statement";
-import GstF7 from "@/pages/accounting/gst-f7";
-import VendorStatement from "@/pages/accounting/vendor-statement";
-import GeneralLedger from "@/pages/accounting/general-ledger";
-import CashFlowStatement from "@/pages/accounting/cash-flow";
-import IafPage from "@/pages/accounting/iaf";
-import GstIoListing from "@/pages/accounting/gst-io";
-import WhtRegister from "@/pages/accounting/wht";
-import EciPage from "@/pages/accounting/eci";
-import FormCsPage from "@/pages/accounting/form-cs";
+import { lazy, Suspense, useEffect } from "react";
 import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
 import { Shell } from "@/components/layout/shell";
 import { MaintenanceGuard } from "@/components/maintenance-guard";
-import { useEffect } from "react";
 
+// ── Eagerly-loaded shells (tiny, always needed) ────────────────────────────
+import NotFound from "@/pages/not-found";
+import Login from "@/pages/login";
+import SelectCompany from "@/pages/select-company/index";
+
+// ── Route-level lazy bundles ───────────────────────────────────────────────
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+
+const PurchaseOrderList = lazy(() => import("@/pages/purchase-orders/list"));
+const PurchaseOrderNew  = lazy(() => import("@/pages/purchase-orders/new"));
+const PurchaseOrderView = lazy(() => import("@/pages/purchase-orders/view"));
+const PurchaseOrderEdit = lazy(() => import("@/pages/purchase-orders/edit"));
+
+const QuotationList = lazy(() => import("@/pages/quotations/list"));
+const QuotationNew  = lazy(() => import("@/pages/quotations/new"));
+const QuotationView = lazy(() => import("@/pages/quotations/view"));
+const QuotationEdit = lazy(() => import("@/pages/quotations/edit"));
+
+const InvoiceList = lazy(() => import("@/pages/invoices/list"));
+const InvoiceNew  = lazy(() => import("@/pages/invoices/new"));
+const InvoiceView = lazy(() => import("@/pages/invoices/view"));
+const InvoiceEdit = lazy(() => import("@/pages/invoices/edit"));
+
+const CreditNoteList = lazy(() => import("@/pages/credit-notes/list"));
+const CreditNoteNew  = lazy(() => import("@/pages/credit-notes/new"));
+const CreditNoteView = lazy(() => import("@/pages/credit-notes/view"));
+const CreditNoteEdit = lazy(() => import("@/pages/credit-notes/edit"));
+
+const DeliveryOrderList = lazy(() => import("@/pages/delivery-orders/list"));
+const DeliveryOrderNew  = lazy(() => import("@/pages/delivery-orders/new"));
+const DeliveryOrderView = lazy(() => import("@/pages/delivery-orders/view"));
+const DeliveryOrderEdit = lazy(() => import("@/pages/delivery-orders/edit"));
+
+const GrnList = lazy(() => import("@/pages/grn/list"));
+const GrnView = lazy(() => import("@/pages/grn/view"));
+
+const StockList = lazy(() => import("@/pages/stock/list"));
+
+const VendorsPage    = lazy(() => import("@/pages/vendors/index"));
+const CustomersPage  = lazy(() => import("@/pages/customers/index"));
+const AddressBookPage = lazy(() => import("@/pages/address-book/index"));
+
+const VendorInvoiceList = lazy(() => import("@/pages/vendor-invoices/list"));
+const VendorInvoiceView = lazy(() => import("@/pages/vendor-invoices/view"));
+
+const Admin    = lazy(() => import("@/pages/admin/index"));
+const Settings = lazy(() => import("@/pages/settings/index"));
+const AuditLog = lazy(() => import("@/pages/admin/audit-log"));
+
+const ChartOfAccounts    = lazy(() => import("@/pages/accounting/chart-of-accounts"));
+const JournalEntriesList = lazy(() => import("@/pages/accounting/journal-entries"));
+const JournalEntryNew    = lazy(() => import("@/pages/accounting/journal-entry-new"));
+const JournalEntryView   = lazy(() => import("@/pages/accounting/journal-entry-view"));
+const ProfitLoss         = lazy(() => import("@/pages/accounting/profit-loss"));
+const GstF5              = lazy(() => import("@/pages/accounting/gst-f5"));
+const ArAging            = lazy(() => import("@/pages/accounting/ar-aging"));
+const ApAging            = lazy(() => import("@/pages/accounting/ap-aging"));
+const ArCollections      = lazy(() => import("@/pages/accounting/ar-collections"));
+const ApPayments         = lazy(() => import("@/pages/accounting/ap-payments"));
+const BalanceSheet       = lazy(() => import("@/pages/accounting/balance-sheet"));
+const TrialBalance       = lazy(() => import("@/pages/accounting/trial-balance"));
+const CustomerStatement  = lazy(() => import("@/pages/accounting/customer-statement"));
+const GstF7              = lazy(() => import("@/pages/accounting/gst-f7"));
+const VendorStatement    = lazy(() => import("@/pages/accounting/vendor-statement"));
+const GeneralLedger      = lazy(() => import("@/pages/accounting/general-ledger"));
+const CashFlowStatement  = lazy(() => import("@/pages/accounting/cash-flow"));
+const IafPage            = lazy(() => import("@/pages/accounting/iaf"));
+const GstIoListing       = lazy(() => import("@/pages/accounting/gst-io"));
+const WhtRegister        = lazy(() => import("@/pages/accounting/wht"));
+const EciPage            = lazy(() => import("@/pages/accounting/eci"));
+const FormCsPage         = lazy(() => import("@/pages/accounting/form-cs"));
+
+// ── Route title map ────────────────────────────────────────────────────────
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/purchase-orders": "Purchase Orders",
@@ -189,90 +205,92 @@ function Router() {
   useDocumentTitle();
   return (
     <Shell>
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/select-company" component={SelectCompany} />
-        <Route path="/">{() => <SmartHomeRedirect />}</Route>
+      <Suspense fallback={<LoadingSpinner />}>
+        <Switch>
+          <Route path="/login" component={Login} />
+          <Route path="/select-company" component={SelectCompany} />
+          <Route path="/">{() => <SmartHomeRedirect />}</Route>
 
-        <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>
+          <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>
 
-        {/* Purchase Orders */}
-        <Route path="/purchase-orders">{() => <ProtectedRoute component={PurchaseOrderList} module="purchase_orders" />}</Route>
-        <Route path="/purchase-orders/new">{() => <ProtectedRoute component={PurchaseOrderNew} module="purchase_orders" />}</Route>
-        <Route path="/purchase-orders/:id/edit">{() => <ProtectedRoute component={PurchaseOrderEdit} module="purchase_orders" />}</Route>
-        <Route path="/purchase-orders/:id">{() => <ProtectedRoute component={PurchaseOrderView} module="purchase_orders" />}</Route>
+          {/* Purchase Orders */}
+          <Route path="/purchase-orders">{() => <ProtectedRoute component={PurchaseOrderList} module="purchase_orders" />}</Route>
+          <Route path="/purchase-orders/new">{() => <ProtectedRoute component={PurchaseOrderNew} module="purchase_orders" />}</Route>
+          <Route path="/purchase-orders/:id/edit">{() => <ProtectedRoute component={PurchaseOrderEdit} module="purchase_orders" />}</Route>
+          <Route path="/purchase-orders/:id">{() => <ProtectedRoute component={PurchaseOrderView} module="purchase_orders" />}</Route>
 
-        {/* Quotations */}
-        <Route path="/quotations">{() => <ProtectedRoute component={QuotationList} module="quotations" />}</Route>
-        <Route path="/quotations/new">{() => <ProtectedRoute component={QuotationNew} module="quotations" />}</Route>
-        <Route path="/quotations/:id/edit">{() => <ProtectedRoute component={QuotationEdit} module="quotations" />}</Route>
-        <Route path="/quotations/:id">{() => <ProtectedRoute component={QuotationView} module="quotations" />}</Route>
+          {/* Quotations */}
+          <Route path="/quotations">{() => <ProtectedRoute component={QuotationList} module="quotations" />}</Route>
+          <Route path="/quotations/new">{() => <ProtectedRoute component={QuotationNew} module="quotations" />}</Route>
+          <Route path="/quotations/:id/edit">{() => <ProtectedRoute component={QuotationEdit} module="quotations" />}</Route>
+          <Route path="/quotations/:id">{() => <ProtectedRoute component={QuotationView} module="quotations" />}</Route>
 
-        {/* Invoices */}
-        <Route path="/invoices">{() => <ProtectedRoute component={InvoiceList} module="invoices" />}</Route>
-        <Route path="/invoices/new">{() => <ProtectedRoute component={InvoiceNew} module="invoices" />}</Route>
-        <Route path="/invoices/:id/edit">{() => <ProtectedRoute component={InvoiceEdit} module="invoices" />}</Route>
-        <Route path="/invoices/:id">{() => <ProtectedRoute component={InvoiceView} module="invoices" />}</Route>
+          {/* Invoices */}
+          <Route path="/invoices">{() => <ProtectedRoute component={InvoiceList} module="invoices" />}</Route>
+          <Route path="/invoices/new">{() => <ProtectedRoute component={InvoiceNew} module="invoices" />}</Route>
+          <Route path="/invoices/:id/edit">{() => <ProtectedRoute component={InvoiceEdit} module="invoices" />}</Route>
+          <Route path="/invoices/:id">{() => <ProtectedRoute component={InvoiceView} module="invoices" />}</Route>
 
-        {/* Credit Notes */}
-        <Route path="/credit-notes">{() => <ProtectedRoute component={CreditNoteList} module="credit_notes" />}</Route>
-        <Route path="/credit-notes/new">{() => <ProtectedRoute component={CreditNoteNew} module="credit_notes" />}</Route>
-        <Route path="/credit-notes/:id/edit">{() => <ProtectedRoute component={CreditNoteEdit} module="credit_notes" />}</Route>
-        <Route path="/credit-notes/:id">{() => <ProtectedRoute component={CreditNoteView} module="credit_notes" />}</Route>
+          {/* Credit Notes */}
+          <Route path="/credit-notes">{() => <ProtectedRoute component={CreditNoteList} module="credit_notes" />}</Route>
+          <Route path="/credit-notes/new">{() => <ProtectedRoute component={CreditNoteNew} module="credit_notes" />}</Route>
+          <Route path="/credit-notes/:id/edit">{() => <ProtectedRoute component={CreditNoteEdit} module="credit_notes" />}</Route>
+          <Route path="/credit-notes/:id">{() => <ProtectedRoute component={CreditNoteView} module="credit_notes" />}</Route>
 
-        {/* Delivery Orders */}
-        <Route path="/delivery-orders">{() => <ProtectedRoute component={DeliveryOrderList} module="delivery_orders" />}</Route>
-        <Route path="/delivery-orders/new">{() => <ProtectedRoute component={DeliveryOrderNew} module="delivery_orders" />}</Route>
-        <Route path="/delivery-orders/:id/edit">{() => <ProtectedRoute component={DeliveryOrderEdit} module="delivery_orders" />}</Route>
-        <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
+          {/* Delivery Orders */}
+          <Route path="/delivery-orders">{() => <ProtectedRoute component={DeliveryOrderList} module="delivery_orders" />}</Route>
+          <Route path="/delivery-orders/new">{() => <ProtectedRoute component={DeliveryOrderNew} module="delivery_orders" />}</Route>
+          <Route path="/delivery-orders/:id/edit">{() => <ProtectedRoute component={DeliveryOrderEdit} module="delivery_orders" />}</Route>
+          <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
-        {/* Goods Receipt Notes */}
-        <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
-        <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="grn" />}</Route>
+          {/* Goods Receipt Notes */}
+          <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
+          <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="grn" />}</Route>
 
-        {/* Stock Items — requires stock_items access */}
-        <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
+          {/* Stock Items */}
+          <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
 
-        {/* Vendor Invoices — requires purchase_orders access */}
-        <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="purchase_orders" />}</Route>
-        <Route path="/vendor-invoices/:id">{() => <ProtectedRoute component={VendorInvoiceView} module="purchase_orders" />}</Route>
+          {/* Vendor Invoices */}
+          <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="purchase_orders" />}</Route>
+          <Route path="/vendor-invoices/:id">{() => <ProtectedRoute component={VendorInvoiceView} module="purchase_orders" />}</Route>
 
-        {/* Directory — scoped by relevant module */}
-        <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>
-        <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} anyOf={["invoices", "quotations"]} />}</Route>
-        <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} anyOf={["purchase_orders", "invoices", "quotations", "delivery_orders"]} />}</Route>
+          {/* Directory */}
+          <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>
+          <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} anyOf={["invoices", "quotations"]} />}</Route>
+          <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} anyOf={["purchase_orders", "invoices", "quotations", "delivery_orders"]} />}</Route>
 
-        {/* Accounting — Singapore companies */}
-        <Route path="/accounting/chart-of-accounts">{() => <ProtectedRoute component={ChartOfAccounts} />}</Route>
-        <Route path="/accounting/journal-entries/new">{() => <ProtectedRoute component={JournalEntryNew} />}</Route>
-        <Route path="/accounting/journal-entries/:id">{() => <ProtectedRoute component={JournalEntryView} />}</Route>
-        <Route path="/accounting/journal-entries">{() => <ProtectedRoute component={JournalEntriesList} />}</Route>
-        <Route path="/accounting/profit-loss">{() => <ProtectedRoute component={ProfitLoss} />}</Route>
-        <Route path="/accounting/cash-flow">{() => <ProtectedRoute component={CashFlowStatement} />}</Route>
-        <Route path="/accounting/iaf">{() => <ProtectedRoute component={IafPage} />}</Route>
-        <Route path="/accounting/gst-io">{() => <ProtectedRoute component={GstIoListing} />}</Route>
-        <Route path="/accounting/wht">{() => <ProtectedRoute component={WhtRegister} />}</Route>
-        <Route path="/accounting/eci">{() => <ProtectedRoute component={EciPage} />}</Route>
-        <Route path="/accounting/form-cs">{() => <ProtectedRoute component={FormCsPage} />}</Route>
-        <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
-        <Route path="/accounting/ar">{() => <ProtectedRoute component={ArCollections} />}</Route>
-        <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
-        <Route path="/accounting/ap">{() => <ProtectedRoute component={ApPayments} />}</Route>
-        <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>
-        <Route path="/accounting/balance-sheet">{() => <ProtectedRoute component={BalanceSheet} />}</Route>
-        <Route path="/accounting/trial-balance">{() => <ProtectedRoute component={TrialBalance} />}</Route>
-        <Route path="/accounting/customer-statement">{() => <ProtectedRoute component={CustomerStatement} />}</Route>
-        <Route path="/accounting/gst-f7">{() => <ProtectedRoute component={GstF7} />}</Route>
-        <Route path="/accounting/vendor-statement">{() => <ProtectedRoute component={VendorStatement} />}</Route>
-        <Route path="/accounting/general-ledger">{() => <ProtectedRoute component={GeneralLedger} />}</Route>
+          {/* Accounting */}
+          <Route path="/accounting/chart-of-accounts">{() => <ProtectedRoute component={ChartOfAccounts} />}</Route>
+          <Route path="/accounting/journal-entries/new">{() => <ProtectedRoute component={JournalEntryNew} />}</Route>
+          <Route path="/accounting/journal-entries/:id">{() => <ProtectedRoute component={JournalEntryView} />}</Route>
+          <Route path="/accounting/journal-entries">{() => <ProtectedRoute component={JournalEntriesList} />}</Route>
+          <Route path="/accounting/profit-loss">{() => <ProtectedRoute component={ProfitLoss} />}</Route>
+          <Route path="/accounting/cash-flow">{() => <ProtectedRoute component={CashFlowStatement} />}</Route>
+          <Route path="/accounting/iaf">{() => <ProtectedRoute component={IafPage} />}</Route>
+          <Route path="/accounting/gst-io">{() => <ProtectedRoute component={GstIoListing} />}</Route>
+          <Route path="/accounting/wht">{() => <ProtectedRoute component={WhtRegister} />}</Route>
+          <Route path="/accounting/eci">{() => <ProtectedRoute component={EciPage} />}</Route>
+          <Route path="/accounting/form-cs">{() => <ProtectedRoute component={FormCsPage} />}</Route>
+          <Route path="/accounting/gst-f5">{() => <ProtectedRoute component={GstF5} />}</Route>
+          <Route path="/accounting/ar">{() => <ProtectedRoute component={ArCollections} />}</Route>
+          <Route path="/accounting/ar-aging">{() => <ProtectedRoute component={ArAging} />}</Route>
+          <Route path="/accounting/ap">{() => <ProtectedRoute component={ApPayments} />}</Route>
+          <Route path="/accounting/ap-aging">{() => <ProtectedRoute component={ApAging} />}</Route>
+          <Route path="/accounting/balance-sheet">{() => <ProtectedRoute component={BalanceSheet} />}</Route>
+          <Route path="/accounting/trial-balance">{() => <ProtectedRoute component={TrialBalance} />}</Route>
+          <Route path="/accounting/customer-statement">{() => <ProtectedRoute component={CustomerStatement} />}</Route>
+          <Route path="/accounting/gst-f7">{() => <ProtectedRoute component={GstF7} />}</Route>
+          <Route path="/accounting/vendor-statement">{() => <ProtectedRoute component={VendorStatement} />}</Route>
+          <Route path="/accounting/general-ledger">{() => <ProtectedRoute component={GeneralLedger} />}</Route>
 
-        {/* System — admin only */}
-        <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
-        <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
-        <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
+          {/* System — admin only */}
+          <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
+          <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
+          <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
 
-        <Route component={NotFound} />
-      </Switch>
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </Shell>
   );
 }

@@ -57,6 +57,34 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/jspdf") || id.includes("node_modules/jspdf-autotable")) {
+            return "pdf-vendor";
+          }
+          if (
+            id.includes("node_modules/react-hook-form") ||
+            id.includes("node_modules/@hookform") ||
+            id.includes("node_modules/zod")
+          ) {
+            return "forms-vendor";
+          }
+          if (
+            id.includes("node_modules/@radix-ui") ||
+            id.includes("node_modules/lucide-react")
+          ) {
+            return "ui-vendor";
+          }
+          if (
+            id.includes("node_modules/react") ||
+            id.includes("node_modules/@tanstack")
+          ) {
+            return "react-vendor";
+          }
+        },
+      },
+    },
   },
   server: {
     port,

@@ -65,9 +65,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import bizoneLogo from "@assets/BizOne_main_1782977343449.png";
-import bizoneSgLogo from "@assets/bizone_1_1782467876559.png";
-import bizoneIndiaLogo from "@assets/bizone_India_1782467973411.png";
+import bizoneLogo from "@assets/bizone_logo_optimized.webp";
+import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
+import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
 import { AgentPanel } from "@/components/agent-panel";
 
 // ── Sidebar collapse context ──────────────────────────────────────────────────
