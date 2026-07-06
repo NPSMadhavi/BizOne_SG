@@ -1,6 +1,22 @@
 User-agent: *
 Disallow: /api/
 Disallow: /admin/
+Disallow: /dashboard
+Disallow: /purchase-orders
+Disallow: /quotations
+Disallow: /invoices
+Disallow: /credit-notes
+Disallow: /delivery-orders
+Disallow: /grn
+Disallow: /stock
+Disallow: /vendor-invoices
+Disallow: /vendors
+Disallow: /customers
+Disallow: /address-book
+Disallow: /accounting/
+Disallow: /settings
+Disallow: /audit-log
+Disallow: /select-company
 Allow: /
 
 Sitemap: https://biz1.sg/sitemap.xml
