@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useCreateInvoice, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,8 @@ const schema = z.object({
 
 export default function InvoiceNew() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const qtParams = new URLSearchParams(search);
   const { toast } = useToast();
   const { selectedCompany, user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -144,8 +146,8 @@ export default function InvoiceNew() {
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: {
-      customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", poRefNo: "", notes: "",
+      customerName: qtParams.get("customer") || "", customerAddress: "", customerContact: "", customerContactEmail: "",
+      issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", poRefNo: qtParams.get("qtNumber") || "", notes: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
