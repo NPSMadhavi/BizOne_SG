@@ -223,7 +223,7 @@ export default function PurchaseOrderNew() {
   async function doSaveAndPreview(values: z.infer<typeof poSchema>) {
     setIsGenerating(true);
     try {
-      const data = await saveDocument(values, "confirmed");
+      const data = await saveDocument(values, "draft");
       if (!data) return;
       setSavedPo(data);
       setPreviewOpen(true);

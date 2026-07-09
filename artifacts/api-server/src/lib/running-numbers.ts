@@ -1,15 +1,16 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
-type DocType = "po" | "inv" | "qt" | "do" | "grn" | "cn";
+type DocType = "po" | "inv" | "qt" | "do" | "grn" | "cn" | "pi";
 
 const TABLE_MAP: Record<DocType, { table: string; col: string }> = {
-  po:  { table: "purchase_orders", col: "po_number" },
-  inv: { table: "invoices",        col: "inv_number" },
-  qt:  { table: "quotations",      col: "qt_number" },
-  do:  { table: "delivery_orders", col: "do_number" },
-  grn: { table: "grn",             col: "grn_number" },
-  cn:  { table: "credit_notes",    col: "cn_number" },
+  po:  { table: "purchase_orders",    col: "po_number" },
+  inv: { table: "invoices",           col: "inv_number" },
+  qt:  { table: "quotations",         col: "qt_number" },
+  do:  { table: "delivery_orders",    col: "do_number" },
+  grn: { table: "grn",                col: "grn_number" },
+  cn:  { table: "credit_notes",       col: "cn_number" },
+  pi:  { table: "proforma_invoices",  col: "pi_number" },
 };
 
 function buildNumber(prefix: string, counter: number, suffix: string): string {
@@ -32,21 +33,24 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
     type === "inv" ? "inv_counter" :
     type === "qt"  ? "qt_counter"  :
     type === "grn" ? "grn_counter" :
-    type === "cn"  ? "cn_counter"  : "do_counter";
+    type === "cn"  ? "cn_counter"  :
+    type === "pi"  ? "pi_counter"  : "do_counter";
 
   const prefixCol =
     type === "po"  ? "po_prefix"  :
     type === "inv" ? "inv_prefix" :
     type === "qt"  ? "qt_prefix"  :
     type === "grn" ? "grn_prefix" :
-    type === "cn"  ? "cn_prefix"  : "do_prefix";
+    type === "cn"  ? "cn_prefix"  :
+    type === "pi"  ? "pi_prefix"  : "do_prefix";
 
   const suffixCol =
     type === "po"  ? "po_suffix"  :
     type === "inv" ? "inv_suffix" :
     type === "qt"  ? "qt_suffix"  :
     type === "grn" ? "grn_suffix" :
-    type === "cn"  ? "cn_suffix"  : "do_suffix";
+    type === "cn"  ? "cn_suffix"  :
+    type === "pi"  ? "pi_suffix"  : "do_suffix";
 
   let rows: any[];
 

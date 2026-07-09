@@ -24,3 +24,4 @@ export * from "./tax-filings";
 export * from "./invoice-payments";
 export * from "./customer-deposits";
 export * from "./credit-notes";
+export * from "./proforma-invoices";

@@ -1656,7 +1656,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
 // ── INVOICE PDF ───────────────────────────────────────────────────────────────
 
-export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+export async function generateInvoice_PDF(inv: Invoice, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean; titleOverride?: string }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   attachPdfFonts(doc);
@@ -1667,7 +1667,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const info = companyToInfo(company);
 
   const logo = await getLogoData(getLogoUrl(company));
-  buildDocHeader(doc, logo, "TAX INVOICE", inv.invNumber, fmtDate((inv as any).issueDate || inv.createdAt), inv.status, info);
+  buildDocHeader(doc, logo, options?.titleOverride ?? "TAX INVOICE", inv.invNumber, fmtDate((inv as any).issueDate || inv.createdAt), inv.status, info);
 
   // Payment Terms + PO Ref — same style as Number / Date (normal, grey, 6 mm apart)
   doc.setFontSize(9.5);
@@ -3245,4 +3245,14 @@ export async function generateCreditNote_PDF(
   buildDocFooter(doc, "Credit Note");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`CreditNote_${cn.cnNumber}.pdf`);
+}
+
+// ── PROFORMA INVOICE PDF ──────────────────────────────────────────────────────
+export async function generatePI_PDF(pi: any, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  const invShape: Invoice = {
+    ...pi,
+    invNumber: pi.piNumber,
+    poRefNo: pi.qtRefNo || null,
+  } as unknown as Invoice;
+  return generateInvoice_PDF(invShape, company, settings, { returnBase64: options?.returnBase64, titleOverride: "PROFORMA INVOICE" });
 }

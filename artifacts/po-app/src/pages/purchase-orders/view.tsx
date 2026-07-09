@@ -42,7 +42,7 @@ export default function PurchaseOrderView() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!po && po.status === "confirmed",
+    enabled: !!po && ["confirmed", "sent"].includes(po.status),
   });
   const linkedGrn = grns?.find((g: any) => g.poId === id);
 
@@ -53,7 +53,7 @@ export default function PurchaseOrderView() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!po && po.status === "confirmed",
+    enabled: !!po && ["confirmed", "sent"].includes(po.status),
   });
 
   const createGrnMutation = useMutation({
@@ -163,7 +163,7 @@ export default function PurchaseOrderView() {
               <ClipboardList className="h-4 w-4" />
               {linkedGrn.grnNumber}
             </Button>
-          ) : po.status === "confirmed" && (
+          ) : ["confirmed", "sent"].includes(po.status) && (
             <Button
               variant="outline"
               className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
@@ -174,7 +174,7 @@ export default function PurchaseOrderView() {
               {createGrnMutation.isPending ? "Creating..." : "Create GRN"}
             </Button>
           )}
-          {po.status === "confirmed" && (
+          {["confirmed", "sent"].includes(po.status) && (
             <Button
               variant="outline"
               className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
@@ -379,7 +379,7 @@ export default function PurchaseOrderView() {
         </Card>
       )}
 
-      {po.status === "confirmed" && linkedPIs.length > 0 && (
+      {["confirmed", "sent"].includes(po.status) && linkedPIs.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between text-base">

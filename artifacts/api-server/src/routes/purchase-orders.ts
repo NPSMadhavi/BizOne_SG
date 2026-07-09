@@ -278,7 +278,7 @@ router.post("/purchase-orders/:id/mark-sent", async (req, res): Promise<void> =>
 
   const sentTo: string[] = Array.isArray(req.body.sentTo) ? req.body.sentTo : [];
   const updateData: Record<string, any> = {};
-  if (existing.status === "confirmed") updateData.status = "sent";
+  if (["draft", "confirmed"].includes(existing.status)) updateData.status = "sent";
   if (sentTo.length > 0) updateData.emailSentTo = sentTo.join(", ");
 
   if (Object.keys(updateData).length > 0) {

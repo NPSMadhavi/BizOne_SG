@@ -318,7 +318,7 @@ export default function InvoiceNew() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    createMutation.mutate({ data: { ...values, status: "confirmed", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
+    createMutation.mutate({ data: { ...values, status: "draft", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {

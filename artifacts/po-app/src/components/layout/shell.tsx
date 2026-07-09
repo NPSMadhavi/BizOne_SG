@@ -437,7 +437,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "documents"}
         onToggle={toggleGroup}
         visible={hasDocuments}
-        hasActive={location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") || location.startsWith("/quotations") || location.startsWith("/invoices") || location.startsWith("/delivery-orders") || location.startsWith("/grn")}
+        hasActive={location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") || location.startsWith("/quotations") || location.startsWith("/invoices") || location.startsWith("/proforma-invoices") || location.startsWith("/delivery-orders") || location.startsWith("/grn")}
       >
         {hasModuleAccess("purchase_orders") && (
           <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")} inGroup>
@@ -457,6 +457,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("invoices") && (
           <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices") && !location.startsWith("/invoices/")} inGroup>
             Invoices
+          </NavItem>
+        )}
+        {hasModuleAccess("proforma_invoices") && (
+          <NavItem href="/proforma-invoices" icon={FileMinus} active={location.startsWith("/proforma-invoices")} inGroup>
+            Proforma Invoices
           </NavItem>
         )}
         {hasModuleAccess("credit_notes") && (

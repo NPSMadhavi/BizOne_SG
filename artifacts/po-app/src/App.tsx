@@ -30,6 +30,11 @@ const InvoiceNew  = lazy(() => import("@/pages/invoices/new"));
 const InvoiceView = lazy(() => import("@/pages/invoices/view"));
 const InvoiceEdit = lazy(() => import("@/pages/invoices/edit"));
 
+const ProformaInvoiceList = lazy(() => import("@/pages/proforma-invoices/list"));
+const ProformaInvoiceNew  = lazy(() => import("@/pages/proforma-invoices/new"));
+const ProformaInvoiceView = lazy(() => import("@/pages/proforma-invoices/view"));
+const ProformaInvoiceEdit = lazy(() => import("@/pages/proforma-invoices/edit"));
+
 const CreditNoteList = lazy(() => import("@/pages/credit-notes/list"));
 const CreditNoteNew  = lazy(() => import("@/pages/credit-notes/new"));
 const CreditNoteView = lazy(() => import("@/pages/credit-notes/view"));
@@ -85,6 +90,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/purchase-orders": "Purchase Orders",
   "/quotations": "Quotations",
   "/invoices": "Invoices",
+  "/proforma-invoices": "Proforma Invoices",
   "/credit-notes": "Credit Notes",
   "/delivery-orders": "Delivery Orders",
   "/grn": "Goods Receipt Notes",
@@ -230,6 +236,12 @@ function Router() {
           <Route path="/invoices/new">{() => <ProtectedRoute component={InvoiceNew} module="invoices" />}</Route>
           <Route path="/invoices/:id/edit">{() => <ProtectedRoute component={InvoiceEdit} module="invoices" />}</Route>
           <Route path="/invoices/:id">{() => <ProtectedRoute component={InvoiceView} module="invoices" />}</Route>
+
+          {/* Proforma Invoices */}
+          <Route path="/proforma-invoices">{() => <ProtectedRoute component={ProformaInvoiceList} module="proforma_invoices" />}</Route>
+          <Route path="/proforma-invoices/new">{() => <ProtectedRoute component={ProformaInvoiceNew} module="proforma_invoices" />}</Route>
+          <Route path="/proforma-invoices/:id/edit">{() => <ProtectedRoute component={ProformaInvoiceEdit} module="proforma_invoices" />}</Route>
+          <Route path="/proforma-invoices/:id">{() => <ProtectedRoute component={ProformaInvoiceView} module="proforma_invoices" />}</Route>
 
           {/* Credit Notes */}
           <Route path="/credit-notes">{() => <ProtectedRoute component={CreditNoteList} module="credit_notes" />}</Route>

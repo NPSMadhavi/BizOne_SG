@@ -5,9 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, ArrowRight, MailCheck } from "lucide-react";
+import { Search, Plus, MailCheck, CheckCircle2, MoreHorizontal, Eye, Pencil, FileText, Receipt } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
@@ -27,9 +32,27 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
 export default function QuotationList() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: docs, isLoading } = useListQuotations({
     query: { queryKey: getListQuotationsQueryKey() },
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/quotations/${id}/mark-confirmed`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to confirm"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListQuotationsQueryKey() });
+      toast({ title: "Quotation confirmed." });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const formatCurrency = (value: number) =>
@@ -37,11 +60,11 @@ export default function QuotationList() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "confirmed": return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
+      case "confirmed": return <Badge className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
       case "sent":      return <Badge className="bg-violet-600 hover:bg-violet-700">Sent</Badge>;
-      case "draft": return <Badge variant="secondary">Draft</Badge>;
+      case "draft":     return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
-      default: return <Badge variant="outline">{status}</Badge>;
+      default:          return <Badge variant="outline">{status}</Badge>;
     }
   };
 
@@ -113,13 +136,55 @@ export default function QuotationList() {
                     <td className="px-6 py-4 font-medium text-primary">{doc.qtNumber}</td>
                     <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(doc.totalAmount)}</td>
+                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(Number(doc.totalAmount))}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
                     <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo} /></td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
+                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          {doc.status !== "confirmed" ? (
+                            <DropdownMenuItem
+                              className="gap-2 text-emerald-700 focus:text-emerald-700"
+                              onClick={() => confirmMutation.mutate(Number(doc.id))}
+                              disabled={confirmMutation.isPending}
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              Mark as Confirmed
+                            </DropdownMenuItem>
+                          ) : (
+                            <>
+                              <DropdownMenuItem
+                                className="gap-2"
+                                onClick={() => setLocation(`/proforma-invoices/new?from=qt&qtId=${doc.id}&qtNumber=${encodeURIComponent(doc.qtNumber)}&customer=${encodeURIComponent(doc.customerName)}`)}
+                              >
+                                <FileText className="h-4 w-4" />
+                                Prepare Proforma Invoice
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="gap-2"
+                                onClick={() => setLocation(`/invoices/new?from=qt&qtId=${doc.id}&qtNumber=${encodeURIComponent(doc.qtNumber)}&customer=${encodeURIComponent(doc.customerName)}`)}
+                              >
+                                <Receipt className="h-4 w-4" />
+                                Prepare Tax Invoice
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="gap-2" onClick={() => setLocation(`/quotations/${doc.id}`)}>
+                            <Eye className="h-4 w-4" />
+                            View
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="gap-2" onClick={() => setLocation(`/quotations/${doc.id}/edit`)}>
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   </tr>
                 ))

@@ -120,7 +120,7 @@ export default function DeliveryOrderNew() {
       setIsSubmitting(false);
       return;
     }
-    createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", items: filledItems as any } }, {
+    createMutation.mutate({ data: { ...values, status: "draft", items: filledItems as any } }, {
       onSuccess: (data) => {
         setIsSubmitting(false);
         if (openPreview) {

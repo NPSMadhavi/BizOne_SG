@@ -6,7 +6,7 @@ import { useLocation } from "wouter";
 
 export const ALL_MODULES = [
   "dashboard",
-  "purchase_orders", "quotations", "invoices", "credit_notes", "delivery_orders", "grn", "stock_items",
+  "purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "delivery_orders", "grn", "stock_items",
   "vendors", "customers",
   "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs",
   "accounting_pl", "accounting_cf",
@@ -16,7 +16,7 @@ export const ALL_MODULES = [
   "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
 ] as const;
 
-export const DEFAULT_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"] as const;
+export const DEFAULT_MODULES = ["purchase_orders", "quotations", "invoices", "proforma_invoices", "delivery_orders"] as const;
 export type AppModule = typeof ALL_MODULES[number];
 
 export const MODULE_LABELS: Record<AppModule, string> = {
@@ -24,6 +24,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   purchase_orders: "Purchase Orders",
   quotations: "Quotations",
   invoices: "Invoices",
+  proforma_invoices: "Proforma Invoices",
   credit_notes: "Credit Notes",
   delivery_orders: "Delivery Orders",
   grn: "Goods Receipt",
@@ -63,7 +64,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "documents",
     label: "Documents",
-    modules: ["purchase_orders", "quotations", "invoices", "credit_notes", "delivery_orders", "grn", "stock_items"],
+    modules: ["purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "delivery_orders", "grn", "stock_items"],
   },
   {
     id: "directory",
