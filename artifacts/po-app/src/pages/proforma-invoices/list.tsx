@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, MailCheck } from "lucide-react";
+import { Search, Plus, ArrowRight, MailCheck } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -37,11 +37,9 @@ export default function ProformaInvoiceList() {
     },
   });
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(value);
-
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case "confirmed": return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
       case "sent":      return <Badge className="bg-violet-600 hover:bg-violet-700">Sent</Badge>;
       case "draft":     return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
@@ -89,7 +87,7 @@ export default function ProformaInvoiceList() {
                 <th className="px-6 py-4 font-medium text-right">Amount</th>
                 <th className="px-6 py-4 font-medium text-center">Status</th>
                 <th className="px-6 py-4 font-medium">Sent To</th>
-                <th className="px-6 py-4 font-medium">Created By</th>
+                <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -117,10 +115,16 @@ export default function ProformaInvoiceList() {
                     <td className="px-6 py-4 font-medium text-primary">{doc.piNumber}</td>
                     <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(doc.totalAmount)}</td>
+                    <td className="px-6 py-4 text-right font-medium">
+                      {new Intl.NumberFormat("en-SG", { style: "currency", currency: doc.currency || "SGD" }).format(Number(doc.totalAmount))}
+                    </td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
                     <td className="px-6 py-4"><SentToCell emailSentTo={doc.emailSentTo} /></td>
-                    <td className="px-6 py-4 text-muted-foreground">{doc.createdByUsername || "—"}</td>
+                    <td className="px-6 py-4 text-right">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </td>
                   </tr>
                 ))
               )}

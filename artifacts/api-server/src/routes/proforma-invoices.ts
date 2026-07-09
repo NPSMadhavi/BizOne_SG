@@ -173,6 +173,22 @@ router.put("/proforma-invoices/:id", async (req, res): Promise<void> => {
   res.json(parseDoc(updated));
 });
 
+// ── Mark Confirmed ─────────────────────────────────────────────────────────────
+router.post("/proforma-invoices/:id/mark-confirmed", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const companyId = req.session.companyId!;
+  const [existing] = await db.select().from(proformaInvoicesTable).where(eq(proformaInvoicesTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Proforma invoice not found" }); return; }
+  if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const [updated] = await db.update(proformaInvoicesTable).set({ status: "confirmed" }).where(eq(proformaInvoicesTable.id, id)).returning();
+  logAudit({ req, action: "mark-confirmed", entityType: "proforma_invoice", entityId: id, entityLabel: updated.piNumber });
+  res.json(parseDoc(updated));
+});
+
 // ── Mark Sent ──────────────────────────────────────────────────────────────────
 router.post("/proforma-invoices/:id/mark-sent", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
