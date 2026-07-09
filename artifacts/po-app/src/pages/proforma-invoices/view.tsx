@@ -266,15 +266,14 @@ export default function ProformaInvoiceView() {
 
       <PdfPreviewModal
         open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        generatePdf={async (opts) => {
-          const result = await generatePI_PDF(doc, selectedCompany, settings, opts);
-          return result ?? null;
-        }}
-        docNumber={doc.piNumber}
-        docType="proforma-invoice"
-        entityId={id}
-        markSentEndpoint={`/api/proforma-invoices/${id}/mark-sent`}
+        onOpenChange={setPreviewOpen}
+        title={`Proforma Invoice ${doc.piNumber}`}
+        generatePdf={(opts) => generatePI_PDF(doc, selectedCompany, settings, opts)}
+        pdfFilename={`${doc.piNumber}.pdf`}
+        defaultEmailTo={(doc as any).customerContactEmail || ""}
+        defaultEmailSubject={`Proforma Invoice ${doc.piNumber}`}
+        defaultEmailBody={`Dear ${(doc as any).customerContact || "Sir/Madam"},\n\nPlease find attached our Proforma Invoice ${doc.piNumber} for your consideration.\n\nThank you.`}
+        onEdit={() => setLocation(`/proforma-invoices/${id}/edit`)}
         onEmailSent={(recipients) => markSentMutation.mutate(recipients)}
       />
     </div>

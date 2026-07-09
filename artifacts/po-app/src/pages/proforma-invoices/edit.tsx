@@ -469,19 +469,23 @@ export default function ProformaInvoiceEdit() {
         </form>
       </Form>
 
-      <PdfPreviewModal
-        open={previewOpen}
-        onClose={() => { setPreviewOpen(false); setLocation(`/proforma-invoices/${id}`); }}
-        generatePdf={async (opts) => {
-          if (!previewDoc) return;
-          return generatePI_PDF({ ...previewDoc, tax: previewDoc.tax ?? Number(form.watch("tax")) }, selectedCompany, settings, opts);
-        }}
-        docNumber={previewDoc?.piNumber ?? ""}
-        docType="proforma-invoice"
-        entityId={id}
-        markSentEndpoint={`/api/proforma-invoices/${id}/mark-sent`}
-        onEmailSent={(recipients) => markSentMutation.mutate(recipients)}
-      />
+      {previewDoc && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={(open) => { if (!open) { setPreviewOpen(false); setLocation(`/proforma-invoices/${id}`); } }}
+          title={`Proforma Invoice ${previewDoc.piNumber}`}
+          generatePdf={async (opts) => {
+            if (!previewDoc) return;
+            return generatePI_PDF({ ...previewDoc, tax: previewDoc.tax ?? Number(form.watch("tax")) }, selectedCompany, settings, opts);
+          }}
+          pdfFilename={`${previewDoc.piNumber}.pdf`}
+          defaultEmailTo={previewDoc.customerContactEmail || ""}
+          defaultEmailSubject={`Proforma Invoice ${previewDoc.piNumber}`}
+          defaultEmailBody={`Dear ${previewDoc.customerContact || "Sir/Madam"},\n\nPlease find attached our Proforma Invoice ${previewDoc.piNumber} for your consideration.\n\nThank you.`}
+          onEdit={() => { setPreviewOpen(false); setLocation(`/proforma-invoices/${id}/edit`); }}
+          onEmailSent={(recipients) => markSentMutation.mutate(recipients)}
+        />
+      )}
     </div>
   );
 }

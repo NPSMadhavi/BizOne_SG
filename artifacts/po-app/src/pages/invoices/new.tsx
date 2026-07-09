@@ -3,7 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation, useSearch } from "wouter";
-import { useCreateInvoice, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useCreateInvoice, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey, useGetQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -81,6 +81,7 @@ export default function InvoiceNew() {
   const [, setLocation] = useLocation();
   const search = useSearch();
   const qtParams = new URLSearchParams(search);
+  const qtId = qtParams.get("qtId");
   const { toast } = useToast();
   const { selectedCompany, user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -142,6 +143,12 @@ export default function InvoiceNew() {
   }, []);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+  const qtIdNum = qtId ? Number(qtId) : null;
+  const { data: sourceQt } = useGetQuotation(qtIdNum ?? 0, {
+    query: { queryKey: getGetQuotationQueryKey(qtIdNum ?? 0), enabled: !!qtIdNum },
+  });
+
+  const blankInvItem = { type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
@@ -152,13 +159,48 @@ export default function InvoiceNew() {
       tax: 9,
       discountAmount: 0,
       isPrivate: false,
-      items: [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" }],
+      items: [blankInvItem],
     },
   });
 
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
   }, [settings]);
+
+  useEffect(() => {
+    if (!sourceQt) return;
+    const qtItems = (sourceQt.items as any[]) ?? [];
+    form.reset({
+      customerName: sourceQt.customerName || "",
+      customerAddress: (sourceQt as any).customerAddress || "",
+      customerContact: (sourceQt as any).customerContact || "",
+      customerContactEmail: (sourceQt as any).customerContactEmail || "",
+      issueDate: getToday(),
+      deliveryDate: (sourceQt as any).deliveryDate || "",
+      paymentTerms: (sourceQt as any).paymentTerms || "30 Days Net",
+      poRefNo: sourceQt.qtNumber || "",
+      notes: (sourceQt as any).notes || "",
+      currency: (sourceQt as any).currency || "SGD",
+      tax: Number((sourceQt as any).tax ?? settings?.gstRate ?? 9),
+      discountAmount: Number((sourceQt as any).discountAmount ?? 0),
+      isPrivate: false,
+      items: qtItems.length > 0
+        ? qtItems.map((it: any) => ({
+            ...blankInvItem,
+            type: it.type || "item",
+            sectionLabel: it.sectionLabel || "",
+            partNumber: it.partNumber || "",
+            description: it.description || "",
+            qty: Number(it.qty) || 1,
+            uom: it.uom || "",
+            unitPrice: Number(it.unitPrice) || 0,
+            discount: Number(it.discount) || 0,
+            isFoc: !!it.isFoc,
+            itemImage: it.itemImage || "",
+          }))
+        : [blankInvItem],
+    });
+  }, [sourceQt]);
 
   function handleAiApply(data: AiGeneratedInvoice) {
     const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };

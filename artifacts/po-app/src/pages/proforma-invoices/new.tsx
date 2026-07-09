@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation, useSearch } from "wouter";
 import { useMutation } from "@tanstack/react-query";
-import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useGetSettings, getGetSettingsQueryKey, useGetQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -85,6 +85,7 @@ export default function ProformaInvoiceNew() {
   const [, setLocation] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
+  const qtId = params.get("qtId");
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
 
@@ -94,6 +95,12 @@ export default function ProformaInvoiceNew() {
   const [savedId, setSavedId] = useState<number | null>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+  const qtIdNum = qtId ? Number(qtId) : null;
+  const { data: sourceQt } = useGetQuotation(qtIdNum ?? 0, {
+    query: { queryKey: getGetQuotationQueryKey(qtIdNum ?? 0), enabled: !!qtIdNum },
+  });
+
+  const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -112,7 +119,7 @@ export default function ProformaInvoiceNew() {
       tax: Number(settings?.gstRate ?? 9),
       discountAmount: 0,
       isPrivate: false,
-      items: [{ type: "item", sectionLabel: "", sectionAlign: "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }],
+      items: [blankItem],
     },
   });
 
@@ -121,6 +128,42 @@ export default function ProformaInvoiceNew() {
   useEffect(() => {
     if (settings?.gstRate) form.setValue("tax", Number(settings.gstRate));
   }, [settings, form]);
+
+  useEffect(() => {
+    if (!sourceQt) return;
+    const qtItems = (sourceQt.items as any[]) ?? [];
+    form.reset({
+      customerName: sourceQt.customerName || "",
+      customerAddress: (sourceQt as any).customerAddress || "",
+      customerContact: (sourceQt as any).customerContact || "",
+      customerContactEmail: (sourceQt as any).customerContactEmail || "",
+      deliveryAddress: (sourceQt as any).deliveryAddress || "",
+      issueDate: getToday(),
+      deliveryDate: (sourceQt as any).deliveryDate || "",
+      paymentTerms: (sourceQt as any).paymentTerms || "",
+      qtRefNo: sourceQt.qtNumber || "",
+      notes: (sourceQt as any).notes || "",
+      currency: (sourceQt as any).currency || "SGD",
+      tax: Number((sourceQt as any).tax ?? settings?.gstRate ?? 9),
+      discountAmount: Number((sourceQt as any).discountAmount ?? 0),
+      isPrivate: false,
+      items: qtItems.length > 0
+        ? qtItems.map((it: any) => ({
+            type: it.type || "item",
+            sectionLabel: it.sectionLabel || "",
+            sectionAlign: it.sectionAlign || "left",
+            partNumber: it.partNumber || "",
+            description: it.description || "",
+            qty: Number(it.qty) || 1,
+            uom: it.uom || "",
+            unitPrice: Number(it.unitPrice) || 0,
+            discount: Number(it.discount) || 0,
+            isFoc: !!it.isFoc,
+            itemImage: it.itemImage || "",
+          }))
+        : [blankItem],
+    });
+  }, [sourceQt]);
 
   const createMutation = useMutation({
     mutationFn: async (body: any) => {
@@ -452,19 +495,32 @@ export default function ProformaInvoiceNew() {
         </form>
       </Form>
 
-      <PdfPreviewModal
-        open={previewOpen}
-        onClose={() => { setPreviewOpen(false); setLocation("/proforma-invoices"); }}
-        generatePdf={async (opts) => {
-          if (!previewDoc) return;
-          return generatePI_PDF({ ...previewDoc, tax: previewDoc.tax ?? Number(form.watch("tax")) }, selectedCompany, settings, opts);
-        }}
-        docNumber={previewDoc?.piNumber ?? ""}
-        docType="proforma-invoice"
-        entityId={savedId ?? undefined}
-        markSentEndpoint={savedId ? `/api/proforma-invoices/${savedId}/mark-sent` : undefined}
-        onEmailSent={() => setLocation("/proforma-invoices")}
-      />
+      {previewDoc && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={(open) => { if (!open) { setPreviewOpen(false); setLocation("/proforma-invoices"); } }}
+          title={`Proforma Invoice ${previewDoc.piNumber}`}
+          generatePdf={async (opts) => {
+            if (!previewDoc) return;
+            return generatePI_PDF({ ...previewDoc, tax: previewDoc.tax ?? Number(form.watch("tax")) }, selectedCompany, settings, opts);
+          }}
+          pdfFilename={`${previewDoc.piNumber}.pdf`}
+          defaultEmailTo={previewDoc.customerContactEmail || ""}
+          defaultEmailSubject={`Proforma Invoice ${previewDoc.piNumber}`}
+          defaultEmailBody={`Dear ${previewDoc.customerContact || "Sir/Madam"},\n\nPlease find attached our Proforma Invoice ${previewDoc.piNumber} for your consideration.\n\nThank you.`}
+          onEdit={savedId ? () => { setPreviewOpen(false); setLocation(`/proforma-invoices/${savedId}/edit`); } : undefined}
+          onEmailSent={async (recipients) => {
+            if (savedId) {
+              await fetch(`/api/proforma-invoices/${savedId}/mark-sent`, {
+                method: "POST", credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sentTo: recipients }),
+              });
+            }
+            setLocation("/proforma-invoices");
+          }}
+        />
+      )}
     </div>
   );
 }
