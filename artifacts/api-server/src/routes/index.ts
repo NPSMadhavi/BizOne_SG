@@ -29,6 +29,7 @@ import aiFormatRouter from "./ai/format-invoice";
 import aiFormatTextRouter from "./ai/format-text";
 import creditNotesRouter from "./credit-notes";
 import proformaInvoicesRouter from "./proforma-invoices";
+import projectsRouter from "./projects";
 import ackRouter from "./ack";
 
 const router: IRouter = Router();
@@ -63,6 +64,7 @@ router.use(aiFormatRouter);
 router.use(aiFormatTextRouter);
 router.use(creditNotesRouter);
 router.use(proformaInvoicesRouter);
+router.use(projectsRouter);
 router.use(ackRouter);
 
 export default router;

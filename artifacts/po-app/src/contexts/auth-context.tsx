@@ -8,6 +8,7 @@ export const ALL_MODULES = [
   "dashboard",
   "purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "delivery_orders", "grn", "stock_items",
   "vendors", "customers",
+  "projects",
   "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs",
   "accounting_pl", "accounting_cf",
   "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io",
@@ -31,6 +32,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   stock_items: "Stock Items",
   vendors: "Vendors",
   customers: "Customers",
+  projects: "Projects",
   accounting_coa: "Chart of Accounts",
   accounting_je: "Journal Entries",
   accounting_gl: "General Ledger",
@@ -70,6 +72,11 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     id: "directory",
     label: "Directory",
     modules: ["vendors", "customers"],
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    modules: ["projects"],
   },
   {
     id: "accounting",

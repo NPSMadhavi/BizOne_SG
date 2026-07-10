@@ -30,6 +30,14 @@ const InvoiceNew  = lazy(() => import("@/pages/invoices/new"));
 const InvoiceView = lazy(() => import("@/pages/invoices/view"));
 const InvoiceEdit = lazy(() => import("@/pages/invoices/edit"));
 
+const ProjectList    = lazy(() => import("@/pages/projects/list"));
+const ProjectNew     = lazy(() => import("@/pages/projects/new"));
+const ProjectDetail  = lazy(() => import("@/pages/projects/detail"));
+const ProjectEdit    = lazy(() => import("@/pages/projects/edit"));
+const VoucherNew     = lazy(() => import("@/pages/projects/vouchers/new"));
+const VoucherView    = lazy(() => import("@/pages/projects/vouchers/view"));
+const VoucherEdit    = lazy(() => import("@/pages/projects/vouchers/edit"));
+
 const ProformaInvoiceList = lazy(() => import("@/pages/proforma-invoices/list"));
 const ProformaInvoiceNew  = lazy(() => import("@/pages/proforma-invoices/new"));
 const ProformaInvoiceView = lazy(() => import("@/pages/proforma-invoices/view"));
@@ -96,6 +104,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/grn": "Goods Receipt Notes",
   "/stock": "Stock Items",
   "/vendor-invoices": "Vendor Invoices",
+  "/projects": "Projects",
   "/vendors": "Vendors",
   "/customers": "Customers",
   "/address-book": "Address Book",
@@ -218,6 +227,15 @@ function Router() {
           <Route path="/">{() => <SmartHomeRedirect />}</Route>
 
           <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>
+
+          {/* Projects & Vouchers */}
+          <Route path="/projects">{() => <ProtectedRoute component={ProjectList} module="projects" />}</Route>
+          <Route path="/projects/new">{() => <ProtectedRoute component={ProjectNew} module="projects" />}</Route>
+          <Route path="/projects/:id/edit">{() => <ProtectedRoute component={ProjectEdit} module="projects" />}</Route>
+          <Route path="/projects/:id/vouchers/new">{() => <ProtectedRoute component={VoucherNew} module="projects" />}</Route>
+          <Route path="/projects/:id/vouchers/:vid/edit">{() => <ProtectedRoute component={VoucherEdit} module="projects" />}</Route>
+          <Route path="/projects/:id/vouchers/:vid">{() => <ProtectedRoute component={VoucherView} module="projects" />}</Route>
+          <Route path="/projects/:id">{() => <ProtectedRoute component={ProjectDetail} module="projects" />}</Route>
 
           {/* Purchase Orders */}
           <Route path="/purchase-orders">{() => <ProtectedRoute component={PurchaseOrderList} module="purchase_orders" />}</Route>

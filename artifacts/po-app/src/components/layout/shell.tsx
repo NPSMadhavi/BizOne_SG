@@ -40,6 +40,7 @@ import {
   ListFilter,
   ChevronLeft,
   ChevronRight,
+  FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,6 +86,7 @@ function getGroupForRoute(loc: string): string | null {
     loc.startsWith("/delivery-orders") ||
     loc.startsWith("/grn")
   ) return "documents";
+  if (loc.startsWith("/projects")) return "projects";
   if (loc.startsWith("/stock")) return "inventory";
   if (
     loc.startsWith("/vendors") ||
@@ -427,6 +429,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
           active={location === "/dashboard" || location === "/"}
         >
           Dashboard
+        </NavItem>
+      )}
+
+      {(isAdmin || hasModuleAccess("projects")) && (
+        <NavItem
+          href="/projects"
+          icon={FolderKanban}
+          active={location.startsWith("/projects")}
+        >
+          Projects
         </NavItem>
       )}
 
