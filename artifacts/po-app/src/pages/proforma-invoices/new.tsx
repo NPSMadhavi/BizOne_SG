@@ -125,7 +125,14 @@ export default function ProformaInvoiceNew() {
       qtRefNo: sourceQt.qtNumber || "",
       notes: (sourceQt as any).notes || "",
       currency: (sourceQt as any).currency || "SGD",
-      tax: Number((sourceQt as any).tax ?? settings?.gstRate ?? 9),
+      tax: (() => {
+        const sub = Number((sourceQt as any).subtotal) || 0;
+        const disc = Number((sourceQt as any).discountAmount) || 0;
+        const taxAmt = Number((sourceQt as any).tax) || 0;
+        const taxable = sub - disc;
+        if (taxable > 0 && taxAmt > 0) return Math.round((taxAmt / taxable) * 1000) / 10;
+        return Number(settings?.gstRate ?? 9);
+      })(),
       discountAmount: Number((sourceQt as any).discountAmount ?? 0),
       isPrivate: false,
       items: qtItems.length > 0
