@@ -353,8 +353,8 @@ router.post("/projects/:projectId/vouchers", async (req: any, res: any) => {
     const amtStr = fmtAmount(total);
     const curr = currency || "SGD";
 
-    const [company] = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any[];
-    const companyName = Array.isArray(company) ? (company[0]?.name || "") : (company as any)?.rows?.[0]?.name || "";
+    const companyResult = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any;
+    const companyName = (Array.isArray(companyResult) ? companyResult[0] : companyResult?.rows?.[0])?.name || "";
 
     if (status === "pending_verification" && verifierId) {
       const [verifier] = await db.select({ username: usersTable.username, email: usersTable.email })
@@ -623,8 +623,8 @@ router.post("/vouchers/:id/verify", async (req: any, res: any) => {
       const [appUrl2] = [existing.approverId];
       const [approver] = await db.select({ username: usersTable.username, email: usersTable.email })
         .from(usersTable).where(eq(usersTable.id, existing.approverId));
-      const [companyRow] = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any[];
-      const cName = Array.isArray(companyRow) ? (companyRow[0]?.name || "") : (companyRow as any)?.rows?.[0]?.name || "";
+      const companyRow = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any;
+      const cName = (Array.isArray(companyRow) ? companyRow[0] : companyRow?.rows?.[0])?.name || "";
       if (approver) {
         const url = `${req.get("origin") || `https://${req.get("host")}`}/projects/${existing.projectId}/vouchers/${id}`;
         sendVoucherEmail({
@@ -641,8 +641,8 @@ router.post("/vouchers/:id/verify", async (req: any, res: any) => {
     } else if (nextStatus === "approved" && existing.paidById && existing.paidById !== userId) {
       const [payer] = await db.select({ username: usersTable.username, email: usersTable.email })
         .from(usersTable).where(eq(usersTable.id, existing.paidById));
-      const [companyRow] = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any[];
-      const cName = Array.isArray(companyRow) ? (companyRow[0]?.name || "") : (companyRow as any)?.rows?.[0]?.name || "";
+      const companyRow = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any;
+      const cName = (Array.isArray(companyRow) ? companyRow[0] : companyRow?.rows?.[0])?.name || "";
       if (payer) {
         const url = `${req.get("origin") || `https://${req.get("host")}`}/projects/${existing.projectId}/vouchers/${id}`;
         sendVoucherEmail({
@@ -697,8 +697,8 @@ router.post("/vouchers/:id/approve", async (req: any, res: any) => {
     if (existing.paidById && existing.paidById !== userId) {
       const [payer] = await db.select({ username: usersTable.username, email: usersTable.email })
         .from(usersTable).where(eq(usersTable.id, existing.paidById));
-      const [companyRow] = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any[];
-      const cName = Array.isArray(companyRow) ? (companyRow[0]?.name || "") : (companyRow as any)?.rows?.[0]?.name || "";
+      const companyRow = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any;
+      const cName = (Array.isArray(companyRow) ? companyRow[0] : companyRow?.rows?.[0])?.name || "";
       if (payer) {
         const url = `${req.get("origin") || `https://${req.get("host")}`}/projects/${existing.projectId}/vouchers/${id}`;
         sendVoucherEmail({
@@ -756,8 +756,8 @@ router.post("/vouchers/:id/mark-paid", async (req: any, res: any) => {
     if (existing.createdBy !== userId) {
       const [creator] = await db.select({ username: usersTable.username, email: usersTable.email })
         .from(usersTable).where(eq(usersTable.id, existing.createdBy));
-      const [companyRow] = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any[];
-      const cName = Array.isArray(companyRow) ? (companyRow[0]?.name || "") : (companyRow as any)?.rows?.[0]?.name || "";
+      const companyRow = await db.execute(sql`SELECT name FROM companies WHERE id = ${companyId}`) as any;
+      const cName = (Array.isArray(companyRow) ? companyRow[0] : companyRow?.rows?.[0])?.name || "";
       if (creator) {
         const url = `${req.get("origin") || `https://${req.get("host")}`}/projects/${existing.projectId}/vouchers/${id}`;
         sendVoucherEmail({
