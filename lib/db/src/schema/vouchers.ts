@@ -23,4 +23,14 @@ export const vouchersTable = pgTable("vouchers", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const voucherAttachmentsTable = pgTable("voucher_attachments", {
+  id: serial("id").primaryKey(),
+  voucherId: integer("voucher_id").notNull(),
+  fileName: text("file_name").notNull().default("attachment"),
+  mimeType: text("mime_type").notNull().default("image/jpeg"),
+  fileData: text("file_data").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type VoucherRecord = typeof vouchersTable.$inferSelect;
+export type VoucherAttachmentRecord = typeof voucherAttachmentsTable.$inferSelect;

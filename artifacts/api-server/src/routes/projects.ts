@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, projectsTable, vouchersTable, usersTable } from "@workspace/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { db, projectsTable, vouchersTable, voucherAttachmentsTable, usersTable } from "@workspace/db";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 
@@ -253,11 +253,18 @@ router.get("/vouchers/:id", async (req: any, res: any) => {
       .from(projectsTable).where(eq(projectsTable.id, voucher.projectId));
 
     const named = await withCreatorNames([voucher]);
+    // Count attachments (fast — no binary data)
+    const countRows = await db.execute(
+      sql`SELECT COUNT(*)::int AS cnt FROM voucher_attachments WHERE voucher_id = ${id}`
+    ) as any[];
+    const cnt = Array.isArray(countRows) ? countRows[0]?.cnt : (countRows as any).rows?.[0]?.cnt;
+    const attachmentCount = Number(cnt || 0);
+
     res.json({
       ...named[0],
       totalAmount: parseDecimal(voucher.totalAmount),
       project: project || null,
-      hasProof: !!voucher.hasProof,
+      attachmentCount,
     });
   } catch (err: any) {
     req.log.error({ err }, "GET /vouchers/:id error");
@@ -265,23 +272,104 @@ router.get("/vouchers/:id", async (req: any, res: any) => {
   }
 });
 
-// Separate endpoint for proof image only — keeps main GET lean
-router.get("/vouchers/:id/proof", async (req: any, res: any) => {
+// List attachment metadata (no fileData) — safe to call frequently
+router.get("/vouchers/:id/attachments", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
   const id = parseInt(req.params.id);
   try {
-    const [row] = await db.select({
-      proofData: vouchersTable.proofData,
-      proofMimeType: vouchersTable.proofMimeType,
-    }).from(vouchersTable)
+    const [voucher] = await db.select({ id: vouchersTable.id }).from(vouchersTable)
       .where(and(eq(vouchersTable.id, id), eq(vouchersTable.companyId, companyId)));
-    if (!row) return res.status(404).json({ error: "Not found" });
-    res.json({ proofData: row.proofData || null, proofMimeType: row.proofMimeType || null });
+    if (!voucher) return res.status(404).json({ error: "Not found" });
+
+    const rows = await db.select({
+      id: voucherAttachmentsTable.id,
+      fileName: voucherAttachmentsTable.fileName,
+      mimeType: voucherAttachmentsTable.mimeType,
+      createdAt: voucherAttachmentsTable.createdAt,
+    }).from(voucherAttachmentsTable)
+      .where(eq(voucherAttachmentsTable.voucherId, id))
+      .orderBy(voucherAttachmentsTable.createdAt);
+
+    res.json(rows);
   } catch (err: any) {
-    req.log.error({ err }, "GET /vouchers/:id/proof error");
-    res.status(500).json({ error: "Failed to fetch proof" });
+    req.log.error({ err }, "GET /vouchers/:id/attachments error");
+    res.status(500).json({ error: "Failed to fetch attachments" });
+  }
+});
+
+// Get single attachment with fileData (for PDF generation and image preview)
+router.get("/vouchers/:id/attachments/:attId", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const voucherId = parseInt(req.params.id);
+  const attId = parseInt(req.params.attId);
+  try {
+    const [voucher] = await db.select({ id: vouchersTable.id }).from(vouchersTable)
+      .where(and(eq(vouchersTable.id, voucherId), eq(vouchersTable.companyId, companyId)));
+    if (!voucher) return res.status(404).json({ error: "Not found" });
+
+    const [att] = await db.select().from(voucherAttachmentsTable)
+      .where(and(eq(voucherAttachmentsTable.id, attId), eq(voucherAttachmentsTable.voucherId, voucherId)));
+    if (!att) return res.status(404).json({ error: "Attachment not found" });
+
+    res.json({ id: att.id, fileName: att.fileName, mimeType: att.mimeType, fileData: att.fileData });
+  } catch (err: any) {
+    req.log.error({ err }, "GET /vouchers/:id/attachments/:attId error");
+    res.status(500).json({ error: "Failed to fetch attachment" });
+  }
+});
+
+// Upload a new attachment
+router.post("/vouchers/:id/attachments", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const voucherId = parseInt(req.params.id);
+  try {
+    const [voucher] = await db.select({ id: vouchersTable.id, status: vouchersTable.status })
+      .from(vouchersTable)
+      .where(and(eq(vouchersTable.id, voucherId), eq(vouchersTable.companyId, companyId)));
+    if (!voucher) return res.status(404).json({ error: "Not found" });
+
+    const { fileName, mimeType, fileData } = req.body;
+    if (!fileData || !mimeType) return res.status(400).json({ error: "fileData and mimeType are required" });
+
+    const [att] = await db.insert(voucherAttachmentsTable).values({
+      voucherId,
+      fileName: fileName || "attachment",
+      mimeType,
+      fileData,
+    }).returning({ id: voucherAttachmentsTable.id, fileName: voucherAttachmentsTable.fileName, mimeType: voucherAttachmentsTable.mimeType });
+
+    res.json(att);
+  } catch (err: any) {
+    req.log.error({ err }, "POST /vouchers/:id/attachments error");
+    res.status(500).json({ error: "Failed to upload attachment" });
+  }
+});
+
+// Delete an attachment
+router.delete("/vouchers/:id/attachments/:attId", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const voucherId = parseInt(req.params.id);
+  const attId = parseInt(req.params.attId);
+  try {
+    const [voucher] = await db.select({ id: vouchersTable.id }).from(vouchersTable)
+      .where(and(eq(vouchersTable.id, voucherId), eq(vouchersTable.companyId, companyId)));
+    if (!voucher) return res.status(404).json({ error: "Not found" });
+
+    await db.delete(voucherAttachmentsTable)
+      .where(and(eq(voucherAttachmentsTable.id, attId), eq(voucherAttachmentsTable.voucherId, voucherId)));
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    req.log.error({ err }, "DELETE /vouchers/:id/attachments/:attId error");
+    res.status(500).json({ error: "Failed to delete attachment" });
   }
 });
 

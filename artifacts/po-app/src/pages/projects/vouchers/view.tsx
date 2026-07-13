@@ -11,9 +11,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText, Paperclip,
+  ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText, Paperclip, FileImage,
 } from "lucide-react";
 import { generateVoucherPDF } from "@/lib/voucher-pdf";
+import type { VoucherAttachment } from "@/lib/voucher-pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -48,29 +49,28 @@ export default function VoucherView() {
   const [paidDate, setPaidDate] = useState(new Date().toISOString().split("T")[0]);
   const [bankRef, setBankRef] = useState("");
   const [pdfOpen, setPdfOpen] = useState(false);
+  // Preview a single attachment full-screen
+  const [previewAttUrl, setPreviewAttUrl] = useState<string | null>(null);
 
-  // Main voucher — excludes proofData so it stays lean and fast
+  // Main voucher — lean, no binary data
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
     queryFn: async () => {
-      const r = await fetch(`/api/vouchers/${voucherId}?_t=${Date.now()}`, {
-        credentials: "include",
-      });
+      const r = await fetch(`/api/vouchers/${voucherId}?_t=${Date.now()}`, { credentials: "include" });
       if (!r.ok) throw new Error("Not found");
       return r.json();
     },
   });
 
-  // Proof image — separate query so main GET stays fast
-  const { data: proofInfo } = useQuery<any>({
-    queryKey: ["voucher-proof", voucherId],
+  // Attachment metadata list — no file data, fast
+  const { data: attachmentsMeta = [] } = useQuery<any[]>({
+    queryKey: ["voucher-attachments", voucherId],
     queryFn: async () => {
-      const r = await fetch(`/api/vouchers/${voucherId}/proof`, { credentials: "include" });
-      if (!r.ok) return { proofData: null, proofMimeType: null };
+      const r = await fetch(`/api/vouchers/${voucherId}/attachments`, { credentials: "include" });
+      if (!r.ok) return [];
       return r.json();
     },
-    enabled: !!voucher?.hasProof,
-    staleTime: 5 * 60 * 1000, // proof rarely changes — cache 5 min
+    enabled: !!voucher?.attachmentCount && voucher.attachmentCount > 0,
   });
 
   const { data: company } = useQuery<any>({
@@ -91,16 +91,12 @@ export default function VoucherView() {
         credentials: "include",
         body: JSON.stringify({ paidDate, bankRef }),
       });
-      if (!r.ok) {
-        const e = await r.json();
-        throw new Error(e.error || "Failed");
-      }
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); }
       return r.json();
     },
     onSuccess: async () => {
       setMarkPaidOpen(false);
       toast({ title: "Voucher marked as paid" });
-      // Await the refetch so PDF opens with the fresh paid data
       await qc.refetchQueries({ queryKey: ["voucher", voucherId] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       setPdfOpen(true);
@@ -110,14 +106,8 @@ export default function VoucherView() {
 
   const markDraftMutation = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`/api/vouchers/${voucherId}/mark-draft`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const e = await r.json();
-        throw new Error(e.error || "Failed");
-      }
+      const r = await fetch(`/api/vouchers/${voucherId}/mark-draft`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); }
       return r.json();
     },
     onSuccess: async () => {
@@ -131,10 +121,7 @@ export default function VoucherView() {
   const deleteMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/vouchers/${voucherId}`, { method: "DELETE", credentials: "include" });
-      if (!r.ok) {
-        const e = await r.json();
-        throw new Error(e.error || "Failed");
-      }
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
@@ -146,15 +133,21 @@ export default function VoucherView() {
 
   const handleGeneratePdf = async (opts?: { returnBase64?: boolean }) => {
     if (!voucher) return;
-    // Fetch proof fresh if voucher has one (in case stale or not loaded yet)
-    let pd: string | null = proofInfo?.proofData ?? null;
-    let pm: string | null = proofInfo?.proofMimeType ?? null;
-    if (voucher.hasProof && !pd) {
-      try {
-        const r = await fetch(`/api/vouchers/${voucherId}/proof`, { credentials: "include" });
-        if (r.ok) { const j = await r.json(); pd = j.proofData; pm = j.proofMimeType; }
-      } catch { /* ignore */ }
+    // Fetch all attachment data for PDF rendering
+    let attachments: VoucherAttachment[] = [];
+    if (attachmentsMeta.length > 0) {
+      const results = await Promise.allSettled(
+        attachmentsMeta.map(async (att: any) => {
+          const r = await fetch(`/api/vouchers/${voucherId}/attachments/${att.id}`, { credentials: "include" });
+          if (!r.ok) return null;
+          return r.json();
+        })
+      );
+      attachments = results
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value !== null)
+        .map(r => ({ fileData: r.value.fileData, mimeType: r.value.mimeType, fileName: r.value.fileName }));
     }
+
     return generateVoucherPDF(
       {
         voucherNumber: voucher.voucherNumber,
@@ -171,8 +164,7 @@ export default function VoucherView() {
         notes: voucher.notes,
         items: (voucher.items as any[]) || [],
         project: voucher.project,
-        proofData: pd,
-        proofMimeType: pm,
+        attachments,
       },
       company,
       opts
@@ -317,28 +309,27 @@ export default function VoucherView() {
         </div>
       )}
 
-      {/* Bills / Receipts */}
-      {voucher.hasProof && (
+      {/* Bills / Receipts — attachment grid */}
+      {voucher.attachmentCount > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
             <Paperclip className="h-4 w-4 text-muted-foreground" />
             <h2 className="font-semibold text-sm">Bills / Receipts</h2>
+            <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+              {voucher.attachmentCount} file{voucher.attachmentCount > 1 ? "s" : ""}
+            </span>
             {voucher.status === "paid" && (
-              <span className="ml-auto text-xs text-green-600 font-medium">✓ Included as page 2 in PDF with PAID stamp</span>
+              <span className="ml-auto text-xs text-green-600 font-medium">✓ Each image appears as a page in the PDF with PAID stamp</span>
             )}
           </div>
           <div className="p-5">
-            {proofInfo?.proofData && proofInfo?.proofMimeType ? (
-              <img
-                src={`data:${proofInfo.proofMimeType};base64,${proofInfo.proofData}`}
-                alt="Bill / receipt"
-                className="max-w-full max-h-[500px] object-contain rounded border border-border mx-auto block"
-              />
-            ) : (
+            {attachmentsMeta.length === 0 ? (
               <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
                 <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full mr-2" />
                 Loading…
               </div>
+            ) : (
+              <AttachmentGrid voucherId={voucherId} attachments={attachmentsMeta} onPreview={setPreviewAttUrl} />
             )}
           </div>
         </div>
@@ -347,9 +338,7 @@ export default function VoucherView() {
       {/* Mark Paid dialog */}
       <Dialog open={markPaidOpen} onOpenChange={setMarkPaidOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Mark Voucher as Paid</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Mark Voucher as Paid</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Payment Date</Label>
@@ -372,9 +361,7 @@ export default function VoucherView() {
       {/* Delete dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Voucher?</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Delete Voucher?</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
             This will permanently delete voucher <strong>{voucher.voucherNumber}</strong>. This cannot be undone.
           </p>
@@ -387,6 +374,27 @@ export default function VoucherView() {
         </DialogContent>
       </Dialog>
 
+      {/* Full-screen attachment preview */}
+      {previewAttUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setPreviewAttUrl(null)}
+        >
+          <img
+            src={previewAttUrl}
+            alt="Attachment preview"
+            className="max-w-full max-h-full object-contain rounded shadow-xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/80"
+            onClick={() => setPreviewAttUrl(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* PDF Preview modal */}
       <PdfPreviewModal
         open={pdfOpen}
@@ -396,6 +404,55 @@ export default function VoucherView() {
         pdfFilename={`${voucher.voucherNumber}.pdf`}
         onEdit={voucher.status === "draft" ? () => { setPdfOpen(false); setLocation(`/projects/${projectId}/vouchers/${voucherId}/edit`); } : undefined}
       />
+    </div>
+  );
+}
+
+// Lazy-loading tile component — fetches image data on mount
+function AttachmentTile({ voucherId, att, onPreview }: { voucherId: string; att: any; onPreview: (url: string) => void }) {
+  const { data } = useQuery<any>({
+    queryKey: ["voucher-attachment-data", att.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/vouchers/${voucherId}/attachments/${att.id}`, { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const imgSrc = data?.fileData ? `data:${data.mimeType};base64,${data.fileData}` : null;
+
+  return (
+    <div
+      className="relative group border border-border rounded-lg overflow-hidden bg-muted/20 cursor-pointer"
+      onClick={() => imgSrc && onPreview(imgSrc)}
+    >
+      {imgSrc ? (
+        <img src={imgSrc} alt={att.fileName} className="w-full h-36 object-cover group-hover:opacity-90 transition-opacity" />
+      ) : (
+        <div className="w-full h-36 flex items-center justify-center bg-muted/30">
+          <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
+        </div>
+      )}
+      <div className="p-2">
+        <p className="text-xs font-medium truncate">{att.fileName}</p>
+        <p className="text-xs text-muted-foreground">{new Date(att.createdAt).toLocaleDateString()}</p>
+      </div>
+      {imgSrc && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-colors">
+          <FileImage className="h-6 w-6 text-white opacity-0 group-hover:opacity-80 transition-opacity" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttachmentGrid({ voucherId, attachments, onPreview }: { voucherId: string; attachments: any[]; onPreview: (url: string) => void }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+      {attachments.map(att => (
+        <AttachmentTile key={att.id} voucherId={voucherId} att={att} onPreview={onPreview} />
+      ))}
     </div>
   );
 }

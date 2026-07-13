@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload } from "lucide-react";
 
 interface Item {
   description: string;
@@ -15,7 +15,7 @@ interface Item {
   amount: string;
 }
 
-interface ProofFile {
+interface AttachFile {
   data: string;
   mimeType: string;
   name: string;
@@ -36,6 +36,8 @@ const EXPENSE_CATEGORIES = [
 ];
 
 const CURRENCIES = ["SGD", "USD", "EUR", "GBP", "MYR", "INR"];
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILES = 10;
 
 export default function VoucherNew() {
   const params = useParams<{ id: string }>();
@@ -57,7 +59,7 @@ export default function VoucherNew() {
     notes: "",
   });
   const [items, setItems] = useState<Item[]>([{ description: "", category: "", amount: "" }]);
-  const [proof, setProof] = useState<ProofFile | null>(null);
+  const [attachments, setAttachments] = useState<AttachFile[]>([]);
 
   const { data: project } = useQuery<any>({
     queryKey: ["project", projectId],
@@ -71,6 +73,7 @@ export default function VoucherNew() {
   const mutation = useMutation({
     mutationFn: async () => {
       const validItems = items.filter(it => it.description.trim() && parseFloat(it.amount) > 0);
+      // Step 1: Create voucher (no binary data in body)
       const r = await fetch(`/api/projects/${projectId}/vouchers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,15 +85,25 @@ export default function VoucherNew() {
             category: it.category,
             amount: parseFloat(it.amount) || 0,
           })),
-          proofData: proof?.data ?? null,
-          proofMimeType: proof?.mimeType ?? null,
         }),
       });
       if (!r.ok) {
         const e = await r.json();
         throw new Error(e.error || "Failed to create voucher");
       }
-      return r.json();
+      const voucher = await r.json();
+
+      // Step 2: Upload attachments one by one
+      for (const att of attachments) {
+        await fetch(`/api/vouchers/${voucher.id}/attachments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ fileName: att.name, mimeType: att.mimeType, fileData: att.data }),
+        });
+      }
+
+      return voucher;
     },
     onSuccess: (voucher) => {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
@@ -116,25 +129,36 @@ export default function VoucherNew() {
   }).format(n);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Only images supported", description: "Please upload a JPG, PNG, or WebP image.", variant: "destructive" });
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const remaining = MAX_FILES - attachments.length;
+    if (remaining <= 0) {
+      toast({ title: `Max ${MAX_FILES} files`, variant: "destructive" });
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum file size is 5 MB.", variant: "destructive" });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setProof({ data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) });
-    };
-    reader.readAsDataURL(file);
+
+    files.slice(0, remaining).forEach(file => {
+      if (!file.type.startsWith("image/")) {
+        toast({ title: `${file.name}: only images supported`, variant: "destructive" });
+        return;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        toast({ title: `${file.name}: max 5 MB`, variant: "destructive" });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        setAttachments(prev => [...prev, { data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) }]);
+      };
+      reader.readAsDataURL(file);
+    });
     e.target.value = "";
   };
+
+  const removeAttachment = (i: number) => setAttachments(prev => prev.filter((_, idx) => idx !== i));
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
@@ -259,51 +283,78 @@ export default function VoucherNew() {
             <Textarea className="mt-1" rows={2} placeholder="Any additional notes..." value={form.notes} onChange={e => set("notes", e.target.value)} />
           </div>
 
-          {/* Proof upload */}
+          {/* Bills / Receipts — multi-upload */}
           <div className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Paperclip className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-semibold">Bills / Receipts</h2>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4 text-muted-foreground" />
+                <h2 className="font-semibold">Bills / Receipts</h2>
+                {attachments.length > 0 && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                    {attachments.length}
+                  </span>
+                )}
+              </div>
+              {attachments.length < MAX_FILES && (
+                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="gap-1.5">
+                  <Upload className="h-3.5 w-3.5" />
+                  Add Files
+                </Button>
+              )}
             </div>
             <p className="text-xs text-muted-foreground mb-4">
-              Attach a bill, receipt, or payment screenshot. Supported: JPG, PNG, WebP (max 5 MB).
-              When the voucher is paid, the image will appear as page 2 of the PDF with a PAID stamp.
+              Attach bills, receipts, or payment screenshots. Images only (JPG, PNG, WebP), max 5 MB each, up to {MAX_FILES} files.
+              When paid, all images appear as separate pages in the PDF with a PAID stamp.
             </p>
 
-            {!proof ? (
+            {attachments.length === 0 ? (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-border rounded-lg py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
               >
                 <FileImage className="h-8 w-8" />
-                <span className="text-sm font-medium">Click to upload proof / receipt</span>
-                <span className="text-xs">JPG, PNG, WebP — max 5 MB</span>
+                <span className="text-sm font-medium">Click to upload bills / receipts</span>
+                <span className="text-xs">JPG, PNG, WebP — max 5 MB each</span>
               </button>
             ) : (
-              <div className="flex items-start gap-4 p-3 border border-border rounded-lg bg-muted/30">
-                <img
-                  src={`data:${proof.mimeType};base64,${proof.data}`}
-                  alt="Proof"
-                  className="w-24 h-24 object-cover rounded border border-border"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{proof.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{proof.sizeKB} KB</p>
-                  <p className="text-xs text-green-600 mt-1">✓ Will appear as page 2 in PDF when paid</p>
-                </div>
-                <button
-                  onClick={() => setProof(null)}
-                  className="text-muted-foreground hover:text-destructive transition-colors mt-0.5"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {attachments.map((att, i) => (
+                  <div key={i} className="relative group border border-border rounded-lg overflow-hidden bg-muted/20">
+                    <img
+                      src={`data:${att.mimeType};base64,${att.data}`}
+                      alt={att.name}
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="p-2">
+                      <p className="text-xs font-medium truncate">{att.name}</p>
+                      <p className="text-xs text-muted-foreground">{att.sizeKB} KB</p>
+                    </div>
+                    <button
+                      onClick={() => removeAttachment(i)}
+                      className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {attachments.length < MAX_FILES && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-border rounded-lg h-32 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                  >
+                    <Plus className="h-6 w-6" />
+                    <span className="text-xs">Add more</span>
+                  </button>
+                )}
               </div>
             )}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
               className="hidden"
               onChange={handleFileChange}
             />
@@ -328,9 +379,9 @@ export default function VoucherNew() {
                 <span>{items.filter(it => it.description.trim()).length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Proof</span>
-                <span className={proof ? "text-green-600 font-medium" : "text-muted-foreground"}>
-                  {proof ? "Attached" : "None"}
+                <span className="text-muted-foreground">Attachments</span>
+                <span className={attachments.length > 0 ? "text-green-600 font-medium" : "text-muted-foreground"}>
+                  {attachments.length > 0 ? `${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "None"}
                 </span>
               </div>
               <div className="h-px bg-border my-2" />

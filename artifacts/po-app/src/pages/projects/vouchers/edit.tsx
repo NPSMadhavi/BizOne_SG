@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload } from "lucide-react";
 
 interface Item {
   description: string;
@@ -15,11 +15,17 @@ interface Item {
   amount: string;
 }
 
-interface ProofFile {
+interface AttachFile {
   data: string;
   mimeType: string;
   name: string;
   sizeKB: number;
+}
+
+interface ExistingAttachment {
+  id: number;
+  fileName: string;
+  mimeType: string;
 }
 
 const EXPENSE_CATEGORIES = [
@@ -36,6 +42,8 @@ const EXPENSE_CATEGORIES = [
 ];
 
 const CURRENCIES = ["SGD", "USD", "EUR", "GBP", "MYR", "INR"];
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILES = 10;
 
 export default function VoucherEdit() {
   const params = useParams<{ id: string; vid: string }>();
@@ -56,9 +64,12 @@ export default function VoucherEdit() {
     notes: "",
   });
   const [items, setItems] = useState<Item[]>([{ description: "", category: "", amount: "" }]);
-  const [proof, setProof] = useState<ProofFile | null>(null);
-  const [proofRemoved, setProofRemoved] = useState(false);
-  const [proofChanged, setProofChanged] = useState(false);
+  // Existing attachments from server
+  const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>([]);
+  // New files to upload after save
+  const [newAttachments, setNewAttachments] = useState<AttachFile[]>([]);
+  // IDs to delete after save
+  const [toDelete, setToDelete] = useState<number[]>([]);
 
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
@@ -68,6 +79,21 @@ export default function VoucherEdit() {
       return r.json();
     },
   });
+
+  // Load existing attachments
+  const { data: attachmentsData } = useQuery<ExistingAttachment[]>({
+    queryKey: ["voucher-attachments", voucherId],
+    queryFn: async () => {
+      const r = await fetch(`/api/vouchers/${voucherId}/attachments`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!voucherId,
+  });
+
+  useEffect(() => {
+    if (attachmentsData) setExistingAttachments(attachmentsData);
+  }, [attachmentsData]);
 
   useEffect(() => {
     if (voucher) {
@@ -86,20 +112,13 @@ export default function VoucherEdit() {
           ? vItems.map((it: any) => ({ description: it.description || "", category: it.category || "", amount: String(it.amount || "") }))
           : [{ description: "", category: "", amount: "" }]
       );
-      if (voucher.proofData && voucher.proofMimeType) {
-        setProof({
-          data: voucher.proofData,
-          mimeType: voucher.proofMimeType,
-          name: "Existing proof",
-          sizeKB: Math.round((voucher.proofData.length * 3) / 4 / 1024),
-        });
-      }
     }
   }, [voucher]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const validItems = items.filter(it => it.description.trim() && parseFloat(it.amount) > 0);
+      // Step 1: Update voucher core fields
       const r = await fetch(`/api/vouchers/${voucherId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -111,15 +130,30 @@ export default function VoucherEdit() {
             category: it.category,
             amount: parseFloat(it.amount) || 0,
           })),
-          proofData: proofRemoved ? null : (proofChanged ? (proof?.data ?? undefined) : undefined),
-          proofMimeType: proofRemoved ? null : (proofChanged ? (proof?.mimeType ?? undefined) : undefined),
         }),
       });
       if (!r.ok) {
         const e = await r.json();
         throw new Error(e.error || "Failed to update voucher");
       }
-      return r.json();
+
+      // Step 2: Delete removed attachments
+      for (const id of toDelete) {
+        await fetch(`/api/vouchers/${voucherId}/attachments/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+      }
+
+      // Step 3: Upload new attachments
+      for (const att of newAttachments) {
+        await fetch(`/api/vouchers/${voucherId}/attachments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ fileName: att.name, mimeType: att.mimeType, fileData: att.data }),
+        });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["voucher", voucherId] });
@@ -143,33 +177,44 @@ export default function VoucherEdit() {
   }).format(n);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Only images supported", description: "Please upload a JPG, PNG, or WebP image.", variant: "destructive" });
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const totalExisting = existingAttachments.length - toDelete.length;
+    const remaining = MAX_FILES - totalExisting - newAttachments.length;
+    if (remaining <= 0) {
+      toast({ title: `Max ${MAX_FILES} files`, variant: "destructive" });
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum file size is 5 MB.", variant: "destructive" });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setProof({ data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) });
-      setProofRemoved(false);
-      setProofChanged(true);
-    };
-    reader.readAsDataURL(file);
+
+    files.slice(0, remaining).forEach(file => {
+      if (!file.type.startsWith("image/")) {
+        toast({ title: `${file.name}: only images supported`, variant: "destructive" });
+        return;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        toast({ title: `${file.name}: max 5 MB`, variant: "destructive" });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        setNewAttachments(prev => [...prev, { data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) }]);
+      };
+      reader.readAsDataURL(file);
+    });
     e.target.value = "";
   };
 
-  const removeProof = () => {
-    setProof(null);
-    setProofRemoved(true);
-    setProofChanged(true);
+  const removeExisting = (id: number) => {
+    setToDelete(prev => [...prev, id]);
+    setExistingAttachments(prev => prev.filter(a => a.id !== id));
   };
+  const removeNew = (i: number) => setNewAttachments(prev => prev.filter((_, idx) => idx !== i));
+
+  const visibleExisting = existingAttachments.filter(a => !toDelete.includes(a.id));
+  const totalFiles = visibleExisting.length + newAttachments.length;
 
   if (isLoading) return (
     <div className="flex justify-center py-16">
@@ -291,55 +336,96 @@ export default function VoucherEdit() {
             <Textarea className="mt-1" rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} />
           </div>
 
-          {/* Proof upload */}
+          {/* Bills / Receipts — multi-upload */}
           <div className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Paperclip className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-semibold">Bills / Receipts</h2>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4 text-muted-foreground" />
+                <h2 className="font-semibold">Bills / Receipts</h2>
+                {totalFiles > 0 && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                    {totalFiles}
+                  </span>
+                )}
+              </div>
+              {totalFiles < MAX_FILES && (
+                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="gap-1.5">
+                  <Upload className="h-3.5 w-3.5" />
+                  Add Files
+                </Button>
+              )}
             </div>
             <p className="text-xs text-muted-foreground mb-4">
-              Attach a bill, receipt, or payment screenshot. Supported: JPG, PNG, WebP (max 5 MB).
-              When the voucher is paid, the image will appear as page 2 of the PDF with a PAID stamp.
+              Attach bills, receipts, or payment screenshots. Images only (JPG, PNG, WebP), max 5 MB each, up to {MAX_FILES} files.
             </p>
 
-            {!proof ? (
+            {totalFiles === 0 ? (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-border rounded-lg py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
               >
                 <FileImage className="h-8 w-8" />
-                <span className="text-sm font-medium">Click to upload proof / receipt</span>
-                <span className="text-xs">JPG, PNG, WebP — max 5 MB</span>
+                <span className="text-sm font-medium">Click to upload bills / receipts</span>
+                <span className="text-xs">JPG, PNG, WebP — max 5 MB each</span>
               </button>
             ) : (
-              <div className="flex items-start gap-4 p-3 border border-border rounded-lg bg-muted/30">
-                <img
-                  src={`data:${proof.mimeType};base64,${proof.data}`}
-                  alt="Proof"
-                  className="w-24 h-24 object-cover rounded border border-border"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{proof.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{proof.sizeKB} KB</p>
-                  <p className="text-xs text-green-600 mt-1">✓ Will appear as page 2 in PDF when paid</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {/* Existing attachments — shown as placeholder tiles (no image data loaded) */}
+                {visibleExisting.map(att => (
+                  <div key={att.id} className="relative group border border-border rounded-lg overflow-hidden bg-muted/20">
+                    <div className="w-full h-32 flex items-center justify-center bg-muted/30">
+                      <FileImage className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs font-medium truncate">{att.fileName}</p>
+                      <p className="text-xs text-muted-foreground">Saved</p>
+                    </div>
+                    <button
+                      onClick={() => removeExisting(att.id)}
+                      className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {/* New attachments being added */}
+                {newAttachments.map((att, i) => (
+                  <div key={`new-${i}`} className="relative group border border-primary/30 rounded-lg overflow-hidden bg-primary/5">
+                    <img
+                      src={`data:${att.mimeType};base64,${att.data}`}
+                      alt={att.name}
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="p-2">
+                      <p className="text-xs font-medium truncate">{att.name}</p>
+                      <p className="text-xs text-primary">New — {att.sizeKB} KB</p>
+                    </div>
+                    <button
+                      onClick={() => removeNew(i)}
+                      className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {totalFiles < MAX_FILES && (
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-xs text-primary hover:underline mt-1"
+                    className="border-2 border-dashed border-border rounded-lg h-32 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
                   >
-                    Replace image
+                    <Plus className="h-6 w-6" />
+                    <span className="text-xs">Add more</span>
                   </button>
-                </div>
-                <button onClick={removeProof} className="text-muted-foreground hover:text-destructive transition-colors mt-0.5">
-                  <X className="h-4 w-4" />
-                </button>
+                )}
               </div>
             )}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
               className="hidden"
               onChange={handleFileChange}
             />
@@ -359,11 +445,23 @@ export default function VoucherEdit() {
                 <span>{items.filter(it => it.description.trim()).length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Proof</span>
-                <span className={proof ? "text-green-600 font-medium" : "text-muted-foreground"}>
-                  {proof ? "Attached" : "None"}
+                <span className="text-muted-foreground">Attachments</span>
+                <span className={totalFiles > 0 ? "text-green-600 font-medium" : "text-muted-foreground"}>
+                  {totalFiles > 0 ? `${totalFiles} file${totalFiles > 1 ? "s" : ""}` : "None"}
                 </span>
               </div>
+              {toDelete.length > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">To remove</span>
+                  <span className="text-destructive">{toDelete.length} file{toDelete.length > 1 ? "s" : ""}</span>
+                </div>
+              )}
+              {newAttachments.length > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">To upload</span>
+                  <span className="text-primary">{newAttachments.length} new</span>
+                </div>
+              )}
               <div className="h-px bg-border my-2" />
               <div className="flex justify-between text-base font-bold">
                 <span>Total</span>

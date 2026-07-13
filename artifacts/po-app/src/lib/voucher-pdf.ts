@@ -41,6 +41,12 @@ function fmtMoney(currency: string, amount: number): string {
   }).format(amount);
 }
 
+export interface VoucherAttachment {
+  fileData: string;
+  mimeType: string;
+  fileName: string;
+}
+
 export interface VoucherPDFData {
   voucherNumber: string;
   type: string;
@@ -56,8 +62,7 @@ export interface VoucherPDFData {
   notes?: string | null;
   items: Array<{ description: string; category?: string; amount: number }>;
   project?: { name: string; code?: string | null } | null;
-  proofData?: string | null;
-  proofMimeType?: string | null;
+  attachments?: VoucherAttachment[];
 }
 
 export interface VoucherCompany {
@@ -146,8 +151,6 @@ export async function generateVoucherPDF(
   y += 7;
 
   // ── PAYMENT DETAILS BANNER (paid vouchers only) ────────────────────────────
-  // Shown as a tinted row right below the divider — keeps bank ref legible and
-  // never competes with the meta column.
   if (isPaid && (voucher.paidDate || voucher.bankRef)) {
     const bannerTop = y;
     const bannerH = 9;
@@ -169,10 +172,7 @@ export async function generateVoucherPDF(
       doc.setFont(F, "normal"); doc.setTextColor(50, 50, 50);
       doc.text("Bank Ref / UTR:", bx, bannerTop + 6);
       doc.setFont(F, "bold"); doc.setTextColor(20, 20, 20);
-      // Truncate very long refs to avoid overflow
-      const refText = voucher.bankRef.length > 30
-        ? voucher.bankRef.slice(0, 27) + "…"
-        : voucher.bankRef;
+      const refText = voucher.bankRef.length > 30 ? voucher.bankRef.slice(0, 27) + "…" : voucher.bankRef;
       doc.text(refText, bx + 28, bannerTop + 6);
     }
 
@@ -303,38 +303,44 @@ export async function generateVoucherPDF(
   doc.setFontSize(7); doc.setTextColor(130, 130, 130);
   [sig1X, sig2X, sig3X].forEach(sx => doc.text("Name & Date", sx + sigW / 2, y, { align: "center" }));
 
-  // ── Page 2: Proof image (paid vouchers only) ──────────────────────────────
-  const hasProof = isPaid && voucher.proofData && voucher.proofMimeType?.startsWith("image/");
-  if (hasProof) {
+  // ── Pages 2+: Attachment images ───────────────────────────────────────────
+  const imageAttachments = (voucher.attachments || []).filter(a => a.mimeType.startsWith("image/"));
+  for (let ai = 0; ai < imageAttachments.length; ai++) {
+    const att = imageAttachments[ai];
     doc.addPage();
-    const p2 = (doc as any).internal.getNumberOfPages();
-    doc.setPage(p2);
+    const pn = (doc as any).internal.getNumberOfPages();
+    doc.setPage(pn);
 
     // Header strip
     doc.setFillColor(25, 35, 55);
     doc.rect(0, 0, pageW, 18, "F");
     doc.setFont(F, "bold"); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
-    doc.text("BILLS / RECEIPTS", pageW / 2, 11, { align: "center" });
+    const attLabel = imageAttachments.length > 1
+      ? `BILLS / RECEIPTS (${ai + 1} of ${imageAttachments.length})`
+      : "BILLS / RECEIPTS";
+    doc.text(attLabel, pageW / 2, 11, { align: "center" });
 
     // Sub-header info row
     doc.setFillColor(245, 247, 250);
     doc.rect(0, 18, pageW, 10, "F");
     doc.setFont(F, "normal"); doc.setFontSize(8); doc.setTextColor(80, 80, 80);
-    doc.text(`Voucher: ${voucher.voucherNumber}  |  Payee: ${voucher.payee}  |  Paid On: ${voucher.paidDate || "—"}`, pageW / 2, 24, { align: "center" });
+    const subParts = [`Voucher: ${voucher.voucherNumber}`, `Payee: ${voucher.payee}`];
+    if (isPaid) subParts.push(`Paid On: ${voucher.paidDate || "—"}`);
+    if (att.fileName && att.fileName !== "attachment" && att.fileName !== "proof") subParts.push(`File: ${att.fileName}`);
+    doc.text(subParts.join("  |  "), pageW / 2, 24, { align: "center" });
 
-    // Draw the proof image — fit inside margins
+    // Draw the image — fit inside margins
     const imgTop = 32;
-    const imgMaxW = pageW - 28; // 14mm each side
+    const imgMaxW = pageW - 28;
     const imgMaxH = 240;
 
     try {
-      const ext = (voucher.proofMimeType || "image/jpeg").split("/")[1].toUpperCase().replace("JPEG", "JPEG");
-      // Load image to get natural dimensions
+      const ext = att.mimeType.split("/")[1].toUpperCase().replace("JPEG", "JPEG");
       const tempImg = new Image();
       await new Promise<void>((resolve) => {
         tempImg.onload = () => resolve();
         tempImg.onerror = () => resolve();
-        tempImg.src = `data:${voucher.proofMimeType};base64,${voucher.proofData}`;
+        tempImg.src = `data:${att.mimeType};base64,${att.fileData}`;
       });
       const natW = tempImg.naturalWidth || imgMaxW * 3.78;
       const natH = tempImg.naturalHeight || imgMaxH * 3.78;
@@ -343,21 +349,19 @@ export async function generateVoucherPDF(
       const drawH = (natH / 3.78) * scale;
       const imgX = (pageW - drawW) / 2;
 
-      doc.addImage(
-        `data:${voucher.proofMimeType};base64,${voucher.proofData}`,
-        ext,
-        imgX, imgTop, drawW, drawH
-      );
+      doc.addImage(`data:${att.mimeType};base64,${att.fileData}`, ext, imgX, imgTop, drawW, drawH);
 
-      // PAID watermark on top of proof image
-      doc.saveGraphicsState();
-      (doc as any).setGState(new (doc as any).GState({ opacity: 0.12 }));
-      doc.setFont(F, "bold"); doc.setFontSize(88); doc.setTextColor(0, 130, 60);
-      doc.text("PAID", pageW / 2, imgTop + drawH / 2 + 16, { align: "center", angle: 35 });
-      doc.restoreGraphicsState();
+      // PAID watermark on proof pages when paid
+      if (isPaid) {
+        doc.saveGraphicsState();
+        (doc as any).setGState(new (doc as any).GState({ opacity: 0.12 }));
+        doc.setFont(F, "bold"); doc.setFontSize(88); doc.setTextColor(0, 130, 60);
+        doc.text("PAID", pageW / 2, imgTop + drawH / 2 + 16, { align: "center", angle: 35 });
+        doc.restoreGraphicsState();
+      }
     } catch {
       doc.setFont(F, "normal"); doc.setFontSize(10); doc.setTextColor(120, 120, 120);
-      doc.text("[Proof image could not be rendered]", pageW / 2, 100, { align: "center" });
+      doc.text("[Image could not be rendered]", pageW / 2, 100, { align: "center" });
     }
   }
 
@@ -376,7 +380,7 @@ export async function generateVoucherPDF(
   for (let pg = 1; pg <= pageCount; pg++) {
     doc.setPage(pg);
     doc.setFont(F, "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 160, 160);
-    const pgLabel = pg === 1 ? title : "Payment Proof / Receipt";
+    const pgLabel = pg === 1 ? title : "Bills / Receipts";
     doc.text(
       `${pgLabel} | ${voucher.voucherNumber} | Page ${pg} of ${pageCount}`,
       pageW / 2, 291, { align: "center" }
