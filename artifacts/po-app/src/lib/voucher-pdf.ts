@@ -74,22 +74,33 @@ export async function generateVoucherPDF(
 ): Promise<string | void> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const F = "helvetica";
-  const mL = 15, mR = 195;
+  const mL = 15;
+  const mR = 195;
   const pageW = 210;
   const centerX = pageW / 2;
+
+  // Column layout for the info grid
+  // Left pair:  label at mL, value starting at 42
+  // Right pair: label at 120, value right-aligned at mR
+  const lLabel = mL;
+  const lVal = 42;
+  const rLabel = 118;
+  const rVal = mR;
+  const lValMaxW = rLabel - lVal - 4; // max width for left value before right column
+  const lineH = 6;
 
   const logo = await getLogoData(getLogoUrl(company?.id)).catch(() => null);
 
   let y = 12;
 
+  // ── Logo ───────────────────────────────────────────────────────────────────
   if (logo) {
     const maxW = 45, maxH = 18;
     const scale = Math.min(maxW / logo.natW, maxH / logo.natH);
-    const lw = logo.natW * scale;
-    const lh = logo.natH * scale;
-    doc.addImage(logo.dataUrl, "PNG", mL, y, lw, lh);
+    doc.addImage(logo.dataUrl, "PNG", mL, y, logo.natW * scale, logo.natH * scale);
   }
 
+  // ── Company header (right side) ────────────────────────────────────────────
   const coName = company?.name || "RSV Infotech Pte. Ltd.";
   const coAddr = company?.address || "";
   const coReg = company?.registrationNo ? `Reg. No: ${company.registrationNo}` : "";
@@ -109,38 +120,64 @@ export async function generateVoucherPDF(
 
   y = 38;
 
+  // ── Red rule + document title ───────────────────────────────────────────────
   doc.setDrawColor(220, 38, 38); doc.setLineWidth(0.8);
   doc.line(mL, y, mR, y);
-  y += 6;
+  y += 7;
 
   const title = VOUCHER_TYPE_LABELS[voucher.type] || "PAYMENT VOUCHER";
   doc.setFont(F, "bold"); doc.setFontSize(16); doc.setTextColor(30, 30, 30);
   doc.text(title, centerX, y, { align: "center" });
-  y += 8;
+  y += 9;
 
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
   doc.line(mL, y, mR, y);
-  y += 6;
+  y += 7;
 
-  doc.setFontSize(9); doc.setFont(F, "normal"); doc.setTextColor(60, 60, 60);
-  const col1 = mL, col2 = 70, col3 = 120, col4 = mR;
+  // ── Info grid helper ───────────────────────────────────────────────────────
+  // Renders one row. Left value wraps if too long; right label+value sit on
+  // the first line only. Returns new y.
+  function infoRow(
+    label1: string,
+    val1: string,
+    label2: string,
+    val2: string
+  ): void {
+    doc.setFontSize(9);
 
-  function infoRow(label1: string, val1: string, label2: string, val2: string) {
+    // Wrap the left value within its column
+    doc.setFont(F, "normal");
+    const wrapped = doc.splitTextToSize(val1, lValMaxW) as string[];
+    const rowH = Math.max(wrapped.length, 1) * lineH;
+
+    // Left label
     doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text(label1, col1, y);
+    doc.text(label1, lLabel, y);
+
+    // Left value (may be multi-line)
     doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
-    doc.text(val1, col2, y);
-    doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text(label2, col3, y);
-    doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
-    doc.text(val2, col4, y, { align: "right" });
-    y += 6;
+    doc.text(wrapped, lVal, y);
+
+    // Right label + value on first line only
+    if (label2) {
+      doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
+      doc.text(label2, rLabel, y);
+    }
+    if (val2) {
+      doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
+      doc.text(val2, rVal, y, { align: "right" });
+    }
+
+    y += rowH + 1;
   }
 
+  // ── Metadata rows ─────────────────────────────────────────────────────────
   infoRow("Voucher No:", voucher.voucherNumber, "Date:", voucher.issueDate || new Date().toISOString().slice(0, 10));
 
   if (voucher.project) {
-    const projLabel = voucher.project.code ? `${voucher.project.name} (${voucher.project.code})` : voucher.project.name;
+    const projLabel = voucher.project.code
+      ? `${voucher.project.name} (${voucher.project.code})`
+      : voucher.project.name;
     infoRow("Project:", projLabel, "Currency:", voucher.currency);
   } else {
     infoRow("Currency:", voucher.currency, "", "");
@@ -149,36 +186,40 @@ export async function generateVoucherPDF(
   infoRow("Pay To:", voucher.payee, "Status:", voucher.status === "paid" ? "PAID" : "DRAFT");
 
   if (voucher.payeeContact) {
+    doc.setFontSize(9);
     doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text("Contact:", col1, y);
+    doc.text("Contact:", lLabel, y);
     doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
-    doc.text(voucher.payeeContact, col2, y);
-    y += 6;
+    const contactWrapped = doc.splitTextToSize(voucher.payeeContact, lValMaxW + (rLabel - lVal - lValMaxW)) as string[];
+    doc.text(contactWrapped, lVal, y);
+    y += contactWrapped.length * lineH + 1;
   }
 
   if (voucher.status === "paid" && (voucher.paidDate || voucher.bankRef)) {
-    infoRow("Paid On:", voucher.paidDate || "", "Bank Ref:", voucher.bankRef || "");
+    infoRow("Paid On:", voucher.paidDate || "—", "Bank Ref:", voucher.bankRef || "—");
   }
 
   y += 2;
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
   doc.line(mL, y, mR, y);
-  y += 5;
+  y += 6;
 
+  // ── Purpose/Description ───────────────────────────────────────────────────
   if (voucher.description) {
-    doc.setFont(F, "bold"); doc.setFontSize(8.5); doc.setTextColor(80, 80, 80);
+    doc.setFont(F, "bold"); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
     doc.text("Description:", mL, y);
     doc.setFont(F, "normal"); doc.setTextColor(40, 40, 40);
-    const descLines = doc.splitTextToSize(voucher.description, mR - mL - 30);
-    doc.text(descLines, mL + 28, y);
-    y += descLines.length * 5 + 3;
+    const descLines = doc.splitTextToSize(voucher.description, mR - mL - 32) as string[];
+    doc.text(descLines, mL + 30, y);
+    y += Math.max(descLines.length, 1) * 5 + 4;
   }
 
+  // ── Expense items table ───────────────────────────────────────────────────
   const items = (voucher.items || []).filter((it: any) => it.description);
   if (items.length > 0) {
     (doc as any).autoTable({
       startY: y,
-      margin: { left: mL, right: 210 - mR },
+      margin: { left: mL, right: pageW - mR },
       head: [["#", "Description", "Category", "Amount"]],
       body: items.map((it: any, i: number) => [
         String(i + 1),
@@ -196,8 +237,8 @@ export async function generateVoucherPDF(
       columnStyles: {
         0: { cellWidth: 10 },
         1: { cellWidth: "auto" },
-        2: { cellWidth: 40 },
-        3: { cellWidth: 35, halign: "right" },
+        2: { cellWidth: 42 },
+        3: { cellWidth: 36, halign: "right" },
       },
       alternateRowStyles: { fillColor: [248, 248, 248] },
       tableLineColor: [220, 220, 220],
@@ -206,31 +247,35 @@ export async function generateVoucherPDF(
     y = (doc as any).lastAutoTable.finalY + 4;
   }
 
-  const labelX = mR - 40;
+  // ── Total row ─────────────────────────────────────────────────────────────
+  // Use a narrow right-side block so label + amount never overlap
+  const totalLabelX = 120; // plenty of room to the left
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
-  doc.line(labelX - 5, y, mR, y);
+  doc.line(totalLabelX, y, mR, y);
   y += 5;
   doc.setFontSize(11); doc.setFont(F, "bold"); doc.setTextColor(30, 30, 30);
-  doc.text("Total Amount:", labelX - 5, y);
+  doc.text("Total Amount:", totalLabelX, y);
   doc.setTextColor(220, 38, 38);
   doc.text(fmtMoney(voucher.currency, voucher.totalAmount), mR, y, { align: "right" });
   y += 10;
 
+  // ── Notes ─────────────────────────────────────────────────────────────────
   if (voucher.notes) {
-    doc.setFont(F, "bold"); doc.setFontSize(8.5); doc.setTextColor(80, 80, 80);
+    doc.setFont(F, "bold"); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
     doc.text("Notes:", mL, y);
     doc.setFont(F, "normal"); doc.setTextColor(40, 40, 40);
-    const noteLines = doc.splitTextToSize(voucher.notes, mR - mL - 18);
+    const noteLines = doc.splitTextToSize(voucher.notes, mR - mL - 20) as string[];
     doc.text(noteLines, mL + 18, y);
     y += noteLines.length * 5 + 4;
   }
 
-  y = Math.max(y + 10, 220);
-  if (y > 250) y = 250;
+  // ── Signature lines ───────────────────────────────────────────────────────
+  y = Math.max(y + 12, 220);
+  if (y > 252) y = 252;
 
   doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
 
-  const sigW = 55;
+  const sigW = 52;
   const sig1X = mL;
   const sig2X = centerX - sigW / 2;
   const sig3X = mR - sigW;
@@ -249,6 +294,7 @@ export async function generateVoucherPDF(
   doc.text("Name & Date", sig2X + sigW / 2, y, { align: "center" });
   doc.text("Name & Date", sig3X + sigW / 2, y, { align: "center" });
 
+  // ── Footer ─────────────────────────────────────────────────────────────────
   const pageCount = (doc as any).internal.getNumberOfPages();
   for (let pg = 1; pg <= pageCount; pg++) {
     doc.setPage(pg);
