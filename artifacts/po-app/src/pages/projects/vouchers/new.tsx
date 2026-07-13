@@ -208,6 +208,7 @@ export default function VoucherNew() {
                       placeholder="0.00"
                       value={it.amount}
                       onChange={e => setItem(i, "amount", e.target.value)}
+                      className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </div>
                   <div className="col-span-1 flex justify-center">

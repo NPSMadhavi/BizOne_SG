@@ -11,9 +11,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileDown,
+  ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText,
 } from "lucide-react";
 import { generateVoucherPDF } from "@/lib/voucher-pdf";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 
 const TYPE_LABELS: Record<string, string> = {
   payment: "Payment Voucher",
@@ -46,7 +47,7 @@ export default function VoucherView() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [paidDate, setPaidDate] = useState(new Date().toISOString().split("T")[0]);
   const [bankRef, setBankRef] = useState("");
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
 
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
@@ -126,34 +127,28 @@ export default function VoucherView() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const handlePrint = async () => {
+  const handleGeneratePdf = async (opts?: { returnBase64?: boolean }) => {
     if (!voucher) return;
-    setPdfLoading(true);
-    try {
-      await generateVoucherPDF(
-        {
-          voucherNumber: voucher.voucherNumber,
-          type: voucher.type,
-          payee: voucher.payee,
-          payeeContact: voucher.payeeContact,
-          issueDate: voucher.issueDate,
-          description: voucher.description,
-          currency: voucher.currency,
-          totalAmount: voucher.totalAmount,
-          status: voucher.status,
-          paidDate: voucher.paidDate,
-          bankRef: voucher.bankRef,
-          notes: voucher.notes,
-          items: (voucher.items as any[]) || [],
-          project: voucher.project,
-        },
-        company
-      );
-    } catch (e) {
-      toast({ title: "PDF error", description: String(e), variant: "destructive" });
-    } finally {
-      setPdfLoading(false);
-    }
+    return generateVoucherPDF(
+      {
+        voucherNumber: voucher.voucherNumber,
+        type: voucher.type,
+        payee: voucher.payee,
+        payeeContact: voucher.payeeContact,
+        issueDate: voucher.issueDate,
+        description: voucher.description,
+        currency: voucher.currency,
+        totalAmount: voucher.totalAmount,
+        status: voucher.status,
+        paidDate: voucher.paidDate,
+        bankRef: voucher.bankRef,
+        notes: voucher.notes,
+        items: (voucher.items as any[]) || [],
+        project: voucher.project,
+      },
+      company,
+      opts
+    );
   };
 
   if (isLoading) return (
@@ -195,9 +190,9 @@ export default function VoucherView() {
         </div>
 
         <div className="flex gap-2 shrink-0 flex-wrap justify-end">
-          <Button variant="outline" size="sm" onClick={handlePrint} disabled={pdfLoading} className="gap-1.5">
-            <FileDown className="h-3.5 w-3.5" />
-            {pdfLoading ? "Generating…" : "Print PDF"}
+          <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)} className="gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            Preview / Print
           </Button>
           {voucher.status === "draft" && (
             <>
@@ -336,6 +331,16 @@ export default function VoucherView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* PDF Preview modal */}
+      <PdfPreviewModal
+        open={pdfOpen}
+        onOpenChange={setPdfOpen}
+        title={`${voucher.voucherNumber} — ${TYPE_LABELS[voucher.type] || voucher.type}`}
+        generatePdf={handleGeneratePdf}
+        pdfFilename={`${voucher.voucherNumber}.pdf`}
+        onEdit={voucher.status === "draft" ? () => { setPdfOpen(false); setLocation(`/projects/${projectId}/vouchers/${voucherId}/edit`); } : undefined}
+      />
     </div>
   );
 }

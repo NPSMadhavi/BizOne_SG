@@ -144,6 +144,7 @@ export default function Settings() {
   const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "1", suffix: "" });
   const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "1", suffix: "" });
   const [rnGRN, setRnGRN] = useState<RunningNumberConfig>({ prefix: "GRN", counter: "1", suffix: "" });
+  const [rnPV, setRnPV] = useState<RunningNumberConfig>({ prefix: "PV", counter: "1", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
 
   const [maintEnabled, setMaintEnabled] = useState(false);
@@ -215,6 +216,7 @@ export default function Settings() {
       setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 1), suffix: (settings as any).invSuffix ?? "" });
       setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 1), suffix: (settings as any).doSuffix ?? "" });
       setRnGRN({ prefix: (settings as any).grnPrefix ?? "GRN", counter: String((settings as any).grnCounter ?? 1), suffix: (settings as any).grnSuffix ?? "" });
+      setRnPV({ prefix: (settings as any).pvPrefix ?? "PV", counter: String((settings as any).pvCounter ?? 1), suffix: (settings as any).pvSuffix ?? "" });
     }
     if (settings && !docsEditing) {
       setBankDetails((settings as any).bankDetails ?? "");
@@ -277,6 +279,7 @@ export default function Settings() {
           invPrefix: rnINV.prefix, invCounter: parseInt(rnINV.counter) || 1, invSuffix: rnINV.suffix,
           doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 1, doSuffix: rnDO.suffix,
           grnPrefix: rnGRN.prefix, grnCounter: parseInt(rnGRN.counter) || 1, grnSuffix: rnGRN.suffix,
+          pvPrefix: rnPV.prefix, pvCounter: parseInt(rnPV.counter) || 1, pvSuffix: rnPV.suffix,
         } as any,
       },
       {
@@ -499,6 +502,7 @@ export default function Settings() {
                     { label: "Invoice", state: rnINV, setter: setRnINV },
                     { label: "Delivery Order", state: rnDO, setter: setRnDO },
                     { label: "Goods Receipt Note", state: rnGRN, setter: setRnGRN },
+                    { label: "Payment / Project Voucher", state: rnPV, setter: setRnPV },
                   ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
                     <div key={label} className="rounded-lg border p-4 space-y-3">
                       <div className="flex items-center justify-between">
