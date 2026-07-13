@@ -87,6 +87,7 @@ export default function VoucherView() {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       toast({ title: "Voucher marked as paid" });
       setMarkPaidOpen(false);
+      setTimeout(() => setPdfOpen(true), 400);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
