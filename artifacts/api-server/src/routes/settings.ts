@@ -27,11 +27,14 @@ async function ensureSettings(companyId: number) {
   const [created] = await db.insert(settingsTable).values({
     companyId,
     gstRate: defaultGst,
-    poPrefix: "PO", poCounter: 1, poSuffix: "",
+    poPrefix: "PO",  poCounter: 1,  poSuffix: "",
     invPrefix: "INV", invCounter: 1, invSuffix: "",
-    qtPrefix: "QT", qtCounter: 1, qtSuffix: "",
-    doPrefix: "DO", doCounter: 1, doSuffix: "",
+    qtPrefix: "QT",  qtCounter: 1,  qtSuffix: "",
+    doPrefix: "DO",  doCounter: 1,  doSuffix: "",
     grnPrefix: "GRN", grnCounter: 1, grnSuffix: "",
+    cnPrefix: "CN",  cnCounter: 1,  cnSuffix: "",
+    piPrefix: "PI",  piCounter: 1,  piSuffix: "",
+    pvPrefix: "PV",  pvCounter: 1,  pvSuffix: "",
   }).returning();
   return created;
 }
@@ -62,6 +65,15 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     grnPrefix: s.grnPrefix ?? "GRN",
     grnCounter: s.grnCounter ?? 1,
     grnSuffix: s.grnSuffix ?? "",
+    cnPrefix: s.cnPrefix ?? "CN",
+    cnCounter: s.cnCounter ?? 1,
+    cnSuffix: s.cnSuffix ?? "",
+    piPrefix: s.piPrefix ?? "PI",
+    piCounter: s.piCounter ?? 1,
+    piSuffix: s.piSuffix ?? "",
+    pvPrefix: s.pvPrefix ?? "PV",
+    pvCounter: s.pvCounter ?? 1,
+    pvSuffix: s.pvSuffix ?? "",
     allowNegativeStock: s.allowNegativeStock ?? false,
     autoDeductOnDo: s.autoDeductOnDo ?? false,
     lowStockWarning: parseFloat(s.lowStockWarning ?? "0"),
@@ -96,6 +108,9 @@ router.put("/", async (req, res) => {
     qtPrefix, qtCounter, qtSuffix,
     doPrefix, doCounter, doSuffix,
     grnPrefix, grnCounter, grnSuffix,
+    cnPrefix, cnCounter, cnSuffix,
+    piPrefix, piCounter, piSuffix,
+    pvPrefix, pvCounter, pvSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
     bankDetails, termsAndConditions, quotationTerms,
   } = req.body;
@@ -126,6 +141,15 @@ router.put("/", async (req, res) => {
   if (grnPrefix !== undefined) updateData.grnPrefix = grnPrefix;
   if (grnCounter !== undefined) updateData.grnCounter = Number(grnCounter);
   if (grnSuffix !== undefined) updateData.grnSuffix = grnSuffix;
+  if (cnPrefix !== undefined) updateData.cnPrefix = cnPrefix;
+  if (cnCounter !== undefined) updateData.cnCounter = Number(cnCounter);
+  if (cnSuffix !== undefined) updateData.cnSuffix = cnSuffix;
+  if (piPrefix !== undefined) updateData.piPrefix = piPrefix;
+  if (piCounter !== undefined) updateData.piCounter = Number(piCounter);
+  if (piSuffix !== undefined) updateData.piSuffix = piSuffix;
+  if (pvPrefix !== undefined) updateData.pvPrefix = pvPrefix;
+  if (pvCounter !== undefined) updateData.pvCounter = Number(pvCounter);
+  if (pvSuffix !== undefined) updateData.pvSuffix = pvSuffix;
   if (allowNegativeStock !== undefined) updateData.allowNegativeStock = Boolean(allowNegativeStock);
   if (autoDeductOnDo !== undefined) updateData.autoDeductOnDo = Boolean(autoDeductOnDo);
   if (lowStockWarning !== undefined) updateData.lowStockWarning = String(lowStockWarning);
