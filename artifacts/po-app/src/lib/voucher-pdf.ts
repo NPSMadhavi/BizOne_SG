@@ -77,42 +77,34 @@ export async function generateVoucherPDF(
   const mL = 14;
   const mR = 196;
   const pageW = 210;
+  const isPaid = voucher.status === "paid";
 
   const logo = await getLogoData(getLogoUrl(company?.id)).catch(() => null);
 
-  // ── TOP HEADER BLOCK ───────────────────────────────────────────────────────
-  // Left: logo + company details  |  Right: title + voucher metadata
-  // Mirrors the Invoice / TAX INVOICE layout exactly.
-
+  // ── TOP HEADER ─────────────────────────────────────────────────────────────
   let y = 14;
 
-  // Logo — same scale as other documents (maxW=55, maxH=22)
+  // Logo (same scale as Invoice: maxW=55, maxH=22)
   if (logo) {
     const maxW = 55, maxH = 22;
     const scale = Math.min(maxW / logo.natW, maxH / logo.natH);
     doc.addImage(logo.dataUrl, "PNG", mL, y, logo.natW * scale, logo.natH * scale);
   }
 
-  // Document title — large, right-aligned (like "TAX INVOICE")
+  // Document title — top-right, large bold (like "TAX INVOICE")
   const title = VOUCHER_TYPE_LABELS[voucher.type] || "PAYMENT VOUCHER";
   doc.setFont(F, "bold"); doc.setFontSize(22); doc.setTextColor(20, 20, 20);
   doc.text(title, mR, y + 7, { align: "right" });
 
-  // Right meta block: Voucher No / Date / Status / Currency (small, right-aligned)
+  // Right meta block — only core fields (NO bank ref / paid-on here)
   const metaItems: Array<[string, string]> = [
     ["Voucher No:", voucher.voucherNumber],
     ["Date:", voucher.issueDate || new Date().toISOString().slice(0, 10)],
-    ["Status:", voucher.status === "paid" ? "PAID" : "DRAFT"],
+    ["Status:", isPaid ? "PAID" : "DRAFT"],
     ["Currency:", voucher.currency],
   ];
-  if (voucher.status === "paid" && voucher.paidDate) {
-    metaItems.push(["Paid On:", voucher.paidDate]);
-  }
-  if (voucher.status === "paid" && voucher.bankRef) {
-    metaItems.push(["Bank Ref:", voucher.bankRef]);
-  }
 
-  const metaLabelX = 140;
+  const metaLabelX = 138;
   let metaY = y + 15;
   doc.setFontSize(9);
   for (const [label, val] of metaItems) {
@@ -123,7 +115,7 @@ export async function generateVoucherPDF(
     metaY += 5.5;
   }
 
-  // Company details — left column below logo (same as Invoice)
+  // Company details — left column below logo
   const coName = company?.name || "RSV Infotech Pte. Ltd.";
   const coAddr = company?.address || "";
   const coReg = company?.registrationNo ? `Co. Reg. No.: ${company.registrationNo}` : "";
@@ -136,38 +128,66 @@ export async function generateVoucherPDF(
   doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
   if (coAddr) {
     const addrParts = coAddr.split(",").map((s: string) => s.trim()).filter(Boolean);
-    // Group into lines of ~2-3 parts each
     const chunkSize = 3;
     for (let i = 0; i < addrParts.length; i += chunkSize) {
-      const line = addrParts.slice(i, i + chunkSize).join(", ");
-      doc.text(line, mL, coY);
+      doc.text(addrParts.slice(i, i + chunkSize).join(", "), mL, coY);
       coY += 5;
     }
   }
-  if (coReg) {
-    doc.text(coReg, mL, coY);
-    coY += 5;
-  }
+  if (coReg) { doc.text(coReg, mL, coY); coY += 5; }
 
-  // Advance y to below whichever block is taller
   y = Math.max(coY, metaY) + 4;
 
   // ── Divider ────────────────────────────────────────────────────────────────
   doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.4);
   doc.line(mL, y, mR, y);
-  y += 8;
+  y += 7;
 
-  // ── PARTY BLOCK: Pay To / Project / Contact ────────────────────────────────
-  // Left column: Pay To + Contact  |  Right column: Project
+  // ── PAYMENT DETAILS BANNER (paid vouchers only) ────────────────────────────
+  // Shown as a tinted row right below the divider — keeps bank ref legible and
+  // never competes with the meta column.
+  if (isPaid && (voucher.paidDate || voucher.bankRef)) {
+    const bannerTop = y;
+    const bannerH = 9;
+    doc.setFillColor(232, 245, 232);
+    doc.roundedRect(mL, bannerTop, mR - mL, bannerH, 1.5, 1.5, "F");
+
+    doc.setFont(F, "bold"); doc.setFontSize(8); doc.setTextColor(30, 100, 60);
+    const checkMark = "✓ PAYMENT RECEIVED";
+    doc.text(checkMark, mL + 3, bannerTop + 6);
+
+    let bx = mL + 52;
+    if (voucher.paidDate) {
+      doc.setFont(F, "normal"); doc.setTextColor(50, 50, 50);
+      doc.text("Paid On:", bx, bannerTop + 6);
+      doc.setFont(F, "bold"); doc.setTextColor(20, 20, 20);
+      doc.text(voucher.paidDate, bx + 17, bannerTop + 6);
+      bx += 42;
+    }
+    if (voucher.bankRef) {
+      doc.setFont(F, "normal"); doc.setTextColor(50, 50, 50);
+      doc.text("Bank Ref / UTR:", bx, bannerTop + 6);
+      doc.setFont(F, "bold"); doc.setTextColor(20, 20, 20);
+      // Truncate very long refs to avoid overflow
+      const refText = voucher.bankRef.length > 30
+        ? voucher.bankRef.slice(0, 27) + "…"
+        : voucher.bankRef;
+      doc.text(refText, bx + 28, bannerTop + 6);
+    }
+
+    y += bannerH + 5;
+  }
+
+  // ── PARTY BLOCK: Pay To / Contact / Project ────────────────────────────────
   const midX = pageW / 2;
   const lValX = mL + 22;
-  const rColX = midX + 6;
+  const rColX = midX + 4;
 
   function partyLabel(txt: string, x: number, py: number) {
-    doc.setFont(F, "bold"); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+    doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(100, 100, 100);
     doc.text(txt, x, py);
   }
-  function partyVal(txt: string, x: number, py: number, maxW: number) {
+  function partyVal(txt: string, x: number, py: number, maxW: number): number {
     doc.setFont(F, "bold"); doc.setFontSize(10); doc.setTextColor(20, 20, 20);
     const wrapped = doc.splitTextToSize(txt, maxW) as string[];
     doc.text(wrapped, x, py);
@@ -183,8 +203,9 @@ export async function generateVoucherPDF(
       : voucher.project.name;
     partyLabel("Project:", rColX, y);
     doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(40, 40, 40);
-    const projWrapped = doc.splitTextToSize(projStr, mR - rColX - 22) as string[];
-    doc.text(projWrapped, rColX + 18, y);
+    const projW = mR - rColX - 18;
+    const projWrapped = doc.splitTextToSize(projStr, projW) as string[];
+    doc.text(projWrapped, rColX + 16, y);
   }
 
   y += Math.max(payeeLines, 1) * 5.5 + 2;
@@ -204,9 +225,9 @@ export async function generateVoucherPDF(
     y += Math.max(dLines.length, 1) * 5 + 2;
   }
 
-  y += 4;
+  y += 5;
 
-  // ── Items table ────────────────────────────────────────────────────────────
+  // ── Expense items table ────────────────────────────────────────────────────
   const items = (voucher.items || []).filter((it: any) => it.description);
   if (items.length > 0) {
     (doc as any).autoTable({
@@ -239,7 +260,7 @@ export async function generateVoucherPDF(
     y = (doc as any).lastAutoTable.finalY + 4;
   }
 
-  // ── Total row ──────────────────────────────────────────────────────────────
+  // ── Total ──────────────────────────────────────────────────────────────────
   const totalLabelX = 120;
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
   doc.line(totalLabelX, y, mR, y);
@@ -280,6 +301,24 @@ export async function generateVoucherPDF(
   y += 4;
   doc.setFontSize(7); doc.setTextColor(130, 130, 130);
   [sig1X, sig2X, sig3X].forEach(sx => doc.text("Name & Date", sx + sigW / 2, y, { align: "center" }));
+
+  // ── PAID stamp watermark ───────────────────────────────────────────────────
+  // Drawn last so it sits on top of all content as a subtle overlay.
+  if (isPaid) {
+    const pageCount2 = (doc as any).internal.getNumberOfPages();
+    for (let pg = 1; pg <= pageCount2; pg++) {
+      doc.setPage(pg);
+      doc.saveGraphicsState();
+      // Semi-transparent green stamp
+      (doc as any).setGState(new (doc as any).GState({ opacity: 0.10 }));
+      doc.setFont(F, "bold");
+      doc.setFontSize(88);
+      doc.setTextColor(0, 130, 60);
+      // Rotate 35° counter-clockwise, centered on the lower half of the page
+      doc.text("PAID", pageW / 2, 185, { align: "center", angle: 35 });
+      doc.restoreGraphicsState();
+    }
+  }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   const pageCount = (doc as any).internal.getNumberOfPages();
