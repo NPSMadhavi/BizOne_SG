@@ -185,7 +185,7 @@ router.post("/projects/:projectId/vouchers", async (req: any, res: any) => {
       .where(and(eq(projectsTable.id, projectId), eq(projectsTable.companyId, companyId)));
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    const { type, payee, payeeContact, issueDate, description, items, currency, notes } = req.body;
+    const { type, payee, payeeContact, issueDate, description, items, currency, notes, proofData, proofMimeType } = req.body;
     if (!payee?.trim()) return res.status(400).json({ error: "Payee is required" });
 
     const itemsArr: any[] = Array.isArray(items) ? items : [];
@@ -206,6 +206,8 @@ router.post("/projects/:projectId/vouchers", async (req: any, res: any) => {
       totalAmount: String(total),
       currency: currency || "SGD",
       notes: notes?.trim() || null,
+      proofData: proofData || null,
+      proofMimeType: proofMimeType || null,
       createdBy: req.session.userId!,
     }).returning();
 
@@ -249,7 +251,7 @@ router.put("/vouchers/:id", async (req: any, res: any) => {
     if (!existing) return res.status(404).json({ error: "Voucher not found" });
     if (existing.status === "paid") return res.status(400).json({ error: "Cannot edit a paid voucher" });
 
-    const { type, payee, payeeContact, issueDate, description, items, currency, notes } = req.body;
+    const { type, payee, payeeContact, issueDate, description, items, currency, notes, proofData, proofMimeType } = req.body;
     const itemsArr: any[] = Array.isArray(items) ? items : (existing.items as any[]);
     const total = itemsArr.reduce((s: number, it: any) => s + (parseFloat(it.amount) || 0), 0);
 
@@ -263,6 +265,8 @@ router.put("/vouchers/:id", async (req: any, res: any) => {
       totalAmount: String(total),
       currency: currency || existing.currency,
       notes: notes?.trim() || null,
+      proofData: proofData !== undefined ? (proofData || null) : existing.proofData,
+      proofMimeType: proofMimeType !== undefined ? (proofMimeType || null) : existing.proofMimeType,
     }).where(eq(vouchersTable.id, id)).returning();
 
     logAudit({ req, action: "update", entityType: "voucher", entityId: id });

@@ -11,7 +11,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText,
+  ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText, Paperclip,
 } from "lucide-react";
 import { generateVoucherPDF } from "@/lib/voucher-pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -145,6 +145,8 @@ export default function VoucherView() {
         notes: voucher.notes,
         items: (voucher.items as any[]) || [],
         project: voucher.project,
+        proofData: voucher.proofData ?? null,
+        proofMimeType: voucher.proofMimeType ?? null,
       },
       company,
       opts
@@ -286,6 +288,26 @@ export default function VoucherView() {
         <div className="bg-card border border-border rounded-lg px-5 py-4">
           <div className="text-xs text-muted-foreground mb-1">Notes</div>
           <p className="text-sm whitespace-pre-wrap">{voucher.notes}</p>
+        </div>
+      )}
+
+      {/* Proof attachment */}
+      {voucher.proofData && voucher.proofMimeType && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-muted-foreground" />
+            <h2 className="font-semibold text-sm">Payment Proof / Receipt</h2>
+            {voucher.status === "paid" && (
+              <span className="ml-auto text-xs text-green-600 font-medium">✓ Included as page 2 in PDF with PAID stamp</span>
+            )}
+          </div>
+          <div className="p-5">
+            <img
+              src={`data:${voucher.proofMimeType};base64,${voucher.proofData}`}
+              alt="Payment proof"
+              className="max-w-full max-h-[500px] object-contain rounded border border-border mx-auto block"
+            />
+          </div>
         </div>
       )}
 

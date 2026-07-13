@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -7,12 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Receipt } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage } from "lucide-react";
 
 interface Item {
   description: string;
   category: string;
   amount: string;
+}
+
+interface ProofFile {
+  data: string;
+  mimeType: string;
+  name: string;
+  sizeKB: number;
 }
 
 const EXPENSE_CATEGORIES = [
@@ -37,6 +44,7 @@ export default function VoucherEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     type: "payment",
@@ -48,6 +56,8 @@ export default function VoucherEdit() {
     notes: "",
   });
   const [items, setItems] = useState<Item[]>([{ description: "", category: "", amount: "" }]);
+  const [proof, setProof] = useState<ProofFile | null>(null);
+  const [proofRemoved, setProofRemoved] = useState(false);
 
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
@@ -75,6 +85,14 @@ export default function VoucherEdit() {
           ? vItems.map((it: any) => ({ description: it.description || "", category: it.category || "", amount: String(it.amount || "") }))
           : [{ description: "", category: "", amount: "" }]
       );
+      if (voucher.proofData && voucher.proofMimeType) {
+        setProof({
+          data: voucher.proofData,
+          mimeType: voucher.proofMimeType,
+          name: "Existing proof",
+          sizeKB: Math.round((voucher.proofData.length * 3) / 4 / 1024),
+        });
+      }
     }
   }, [voucher]);
 
@@ -92,6 +110,8 @@ export default function VoucherEdit() {
             category: it.category,
             amount: parseFloat(it.amount) || 0,
           })),
+          proofData: proofRemoved ? null : (proof?.data ?? undefined),
+          proofMimeType: proofRemoved ? null : (proof?.mimeType ?? undefined),
         }),
       });
       if (!r.ok) {
@@ -120,6 +140,33 @@ export default function VoucherEdit() {
   const fmt = (n: number) => new Intl.NumberFormat("en-US", {
     style: "currency", currency: form.currency, minimumFractionDigits: 2
   }).format(n);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Only images supported", description: "Please upload a JPG, PNG, or WebP image.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 5 MB.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      setProof({ data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) });
+      setProofRemoved(false);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const removeProof = () => {
+    setProof(null);
+    setProofRemoved(true);
+  };
 
   if (isLoading) return (
     <div className="flex justify-center py-16">
@@ -240,6 +287,60 @@ export default function VoucherEdit() {
             <Label>Notes</Label>
             <Textarea className="mt-1" rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} />
           </div>
+
+          {/* Proof upload */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Paperclip className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold">Payment Proof / Receipt</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Attach a bill, receipt, or payment screenshot. Supported: JPG, PNG, WebP (max 5 MB).
+              When the voucher is paid, the proof image will appear as page 2 of the PDF with a PAID stamp.
+            </p>
+
+            {!proof ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full border-2 border-dashed border-border rounded-lg py-8 flex flex-col items-center gap-2 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+              >
+                <FileImage className="h-8 w-8" />
+                <span className="text-sm font-medium">Click to upload proof / receipt</span>
+                <span className="text-xs">JPG, PNG, WebP — max 5 MB</span>
+              </button>
+            ) : (
+              <div className="flex items-start gap-4 p-3 border border-border rounded-lg bg-muted/30">
+                <img
+                  src={`data:${proof.mimeType};base64,${proof.data}`}
+                  alt="Proof"
+                  className="w-24 h-24 object-cover rounded border border-border"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{proof.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{proof.sizeKB} KB</p>
+                  <p className="text-xs text-green-600 mt-1">✓ Will appear as page 2 in PDF when paid</p>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs text-primary hover:underline mt-1"
+                  >
+                    Replace image
+                  </button>
+                </div>
+                <button onClick={removeProof} className="text-muted-foreground hover:text-destructive transition-colors mt-0.5">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
         </div>
 
         <div>
@@ -253,6 +354,12 @@ export default function VoucherEdit() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Items</span>
                 <span>{items.filter(it => it.description.trim()).length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Proof</span>
+                <span className={proof ? "text-green-600 font-medium" : "text-muted-foreground"}>
+                  {proof ? "Attached" : "None"}
+                </span>
               </div>
               <div className="h-px bg-border my-2" />
               <div className="flex justify-between text-base font-bold">

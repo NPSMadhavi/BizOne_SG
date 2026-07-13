@@ -17,6 +17,8 @@ export const vouchersTable = pgTable("vouchers", {
   paidDate: text("paid_date"),
   bankRef: text("bank_ref"),
   notes: text("notes"),
+  proofData: text("proof_data"),
+  proofMimeType: text("proof_mime_type"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

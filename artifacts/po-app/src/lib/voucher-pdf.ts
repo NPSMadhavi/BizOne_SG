@@ -56,6 +56,8 @@ export interface VoucherPDFData {
   notes?: string | null;
   items: Array<{ description: string; category?: string; amount: number }>;
   project?: { name: string; code?: string | null } | null;
+  proofData?: string | null;
+  proofMimeType?: string | null;
 }
 
 export interface VoucherCompany {
@@ -301,22 +303,72 @@ export async function generateVoucherPDF(
   doc.setFontSize(7); doc.setTextColor(130, 130, 130);
   [sig1X, sig2X, sig3X].forEach(sx => doc.text("Name & Date", sx + sigW / 2, y, { align: "center" }));
 
-  // ── PAID stamp watermark ───────────────────────────────────────────────────
-  // Drawn last so it sits on top of all content as a subtle overlay.
-  if (isPaid) {
-    const pageCount2 = (doc as any).internal.getNumberOfPages();
-    for (let pg = 1; pg <= pageCount2; pg++) {
-      doc.setPage(pg);
+  // ── Page 2: Proof image (paid vouchers only) ──────────────────────────────
+  const hasProof = isPaid && voucher.proofData && voucher.proofMimeType?.startsWith("image/");
+  if (hasProof) {
+    doc.addPage();
+    const p2 = (doc as any).internal.getNumberOfPages();
+    doc.setPage(p2);
+
+    // Header strip
+    doc.setFillColor(25, 35, 55);
+    doc.rect(0, 0, pageW, 18, "F");
+    doc.setFont(F, "bold"); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
+    doc.text("PAYMENT PROOF / RECEIPT", pageW / 2, 11, { align: "center" });
+
+    // Sub-header info row
+    doc.setFillColor(245, 247, 250);
+    doc.rect(0, 18, pageW, 10, "F");
+    doc.setFont(F, "normal"); doc.setFontSize(8); doc.setTextColor(80, 80, 80);
+    doc.text(`Voucher: ${voucher.voucherNumber}  |  Payee: ${voucher.payee}  |  Paid On: ${voucher.paidDate || "—"}`, pageW / 2, 24, { align: "center" });
+
+    // Draw the proof image — fit inside margins
+    const imgTop = 32;
+    const imgMaxW = pageW - 28; // 14mm each side
+    const imgMaxH = 240;
+
+    try {
+      const ext = (voucher.proofMimeType || "image/jpeg").split("/")[1].toUpperCase().replace("JPEG", "JPEG");
+      // Load image to get natural dimensions
+      const tempImg = new Image();
+      await new Promise<void>((resolve) => {
+        tempImg.onload = () => resolve();
+        tempImg.onerror = () => resolve();
+        tempImg.src = `data:${voucher.proofMimeType};base64,${voucher.proofData}`;
+      });
+      const natW = tempImg.naturalWidth || imgMaxW * 3.78;
+      const natH = tempImg.naturalHeight || imgMaxH * 3.78;
+      const scale = Math.min(imgMaxW / (natW / 3.78), imgMaxH / (natH / 3.78));
+      const drawW = (natW / 3.78) * scale;
+      const drawH = (natH / 3.78) * scale;
+      const imgX = (pageW - drawW) / 2;
+
+      doc.addImage(
+        `data:${voucher.proofMimeType};base64,${voucher.proofData}`,
+        ext,
+        imgX, imgTop, drawW, drawH
+      );
+
+      // PAID watermark on top of proof image
       doc.saveGraphicsState();
-      // Semi-transparent green stamp
-      (doc as any).setGState(new (doc as any).GState({ opacity: 0.10 }));
-      doc.setFont(F, "bold");
-      doc.setFontSize(88);
-      doc.setTextColor(0, 130, 60);
-      // Rotate 35° counter-clockwise, centered on the lower half of the page
-      doc.text("PAID", pageW / 2, 185, { align: "center", angle: 35 });
+      (doc as any).setGState(new (doc as any).GState({ opacity: 0.12 }));
+      doc.setFont(F, "bold"); doc.setFontSize(88); doc.setTextColor(0, 130, 60);
+      doc.text("PAID", pageW / 2, imgTop + drawH / 2 + 16, { align: "center", angle: 35 });
       doc.restoreGraphicsState();
+    } catch {
+      doc.setFont(F, "normal"); doc.setFontSize(10); doc.setTextColor(120, 120, 120);
+      doc.text("[Proof image could not be rendered]", pageW / 2, 100, { align: "center" });
     }
+  }
+
+  // ── PAID stamp watermark on page 1 ────────────────────────────────────────
+  if (isPaid) {
+    doc.setPage(1);
+    doc.saveGraphicsState();
+    (doc as any).setGState(new (doc as any).GState({ opacity: 0.10 }));
+    doc.setFont(F, "bold"); doc.setFontSize(88); doc.setTextColor(0, 130, 60);
+    doc.text("PAID", pageW / 2, 185, { align: "center", angle: 35 });
+    doc.restoreGraphicsState();
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
@@ -324,8 +376,9 @@ export async function generateVoucherPDF(
   for (let pg = 1; pg <= pageCount; pg++) {
     doc.setPage(pg);
     doc.setFont(F, "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 160, 160);
+    const pgLabel = pg === 1 ? title : "Payment Proof / Receipt";
     doc.text(
-      `${title} | ${voucher.voucherNumber} | Page ${pg} of ${pageCount}`,
+      `${pgLabel} | ${voucher.voucherNumber} | Page ${pg} of ${pageCount}`,
       pageW / 2, 291, { align: "center" }
     );
   }
