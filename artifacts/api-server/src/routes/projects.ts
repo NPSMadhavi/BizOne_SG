@@ -225,7 +225,27 @@ router.get("/vouchers/:id", async (req: any, res: any) => {
   const companyId = req.session.companyId!;
   const id = parseInt(req.params.id);
   try {
-    const [voucher] = await db.select().from(vouchersTable)
+    const [voucher] = await db.select({
+      id: vouchersTable.id,
+      voucherNumber: vouchersTable.voucherNumber,
+      companyId: vouchersTable.companyId,
+      projectId: vouchersTable.projectId,
+      type: vouchersTable.type,
+      payee: vouchersTable.payee,
+      payeeContact: vouchersTable.payeeContact,
+      issueDate: vouchersTable.issueDate,
+      description: vouchersTable.description,
+      status: vouchersTable.status,
+      items: vouchersTable.items,
+      totalAmount: vouchersTable.totalAmount,
+      currency: vouchersTable.currency,
+      paidDate: vouchersTable.paidDate,
+      bankRef: vouchersTable.bankRef,
+      notes: vouchersTable.notes,
+      hasProof: vouchersTable.proofMimeType,
+      createdBy: vouchersTable.createdBy,
+      createdAt: vouchersTable.createdAt,
+    }).from(vouchersTable)
       .where(and(eq(vouchersTable.id, id), eq(vouchersTable.companyId, companyId)));
     if (!voucher) return res.status(404).json({ error: "Voucher not found" });
 
@@ -233,10 +253,35 @@ router.get("/vouchers/:id", async (req: any, res: any) => {
       .from(projectsTable).where(eq(projectsTable.id, voucher.projectId));
 
     const named = await withCreatorNames([voucher]);
-    res.json({ ...named[0], totalAmount: parseDecimal(voucher.totalAmount), project: project || null });
+    res.json({
+      ...named[0],
+      totalAmount: parseDecimal(voucher.totalAmount),
+      project: project || null,
+      hasProof: !!voucher.hasProof,
+    });
   } catch (err: any) {
     req.log.error({ err }, "GET /vouchers/:id error");
     res.status(500).json({ error: "Failed to fetch voucher" });
+  }
+});
+
+// Separate endpoint for proof image only — keeps main GET lean
+router.get("/vouchers/:id/proof", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const id = parseInt(req.params.id);
+  try {
+    const [row] = await db.select({
+      proofData: vouchersTable.proofData,
+      proofMimeType: vouchersTable.proofMimeType,
+    }).from(vouchersTable)
+      .where(and(eq(vouchersTable.id, id), eq(vouchersTable.companyId, companyId)));
+    if (!row) return res.status(404).json({ error: "Not found" });
+    res.json({ proofData: row.proofData || null, proofMimeType: row.proofMimeType || null });
+  } catch (err: any) {
+    req.log.error({ err }, "GET /vouchers/:id/proof error");
+    res.status(500).json({ error: "Failed to fetch proof" });
   }
 });
 

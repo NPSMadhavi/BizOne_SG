@@ -49,6 +49,7 @@ export default function VoucherView() {
   const [bankRef, setBankRef] = useState("");
   const [pdfOpen, setPdfOpen] = useState(false);
 
+  // Main voucher — excludes proofData so it stays lean and fast
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
     queryFn: async () => {
@@ -58,6 +59,18 @@ export default function VoucherView() {
       if (!r.ok) throw new Error("Not found");
       return r.json();
     },
+  });
+
+  // Proof image — separate query so main GET stays fast
+  const { data: proofInfo } = useQuery<any>({
+    queryKey: ["voucher-proof", voucherId],
+    queryFn: async () => {
+      const r = await fetch(`/api/vouchers/${voucherId}/proof`, { credentials: "include" });
+      if (!r.ok) return { proofData: null, proofMimeType: null };
+      return r.json();
+    },
+    enabled: !!voucher?.hasProof,
+    staleTime: 5 * 60 * 1000, // proof rarely changes — cache 5 min
   });
 
   const { data: company } = useQuery<any>({
@@ -84,12 +97,13 @@ export default function VoucherView() {
       }
       return r.json();
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["voucher", voucherId] });
-      qc.invalidateQueries({ queryKey: ["project", projectId] });
-      toast({ title: "Voucher marked as paid" });
+    onSuccess: async () => {
       setMarkPaidOpen(false);
-      setTimeout(() => setPdfOpen(true), 400);
+      toast({ title: "Voucher marked as paid" });
+      // Await the refetch so PDF opens with the fresh paid data
+      await qc.refetchQueries({ queryKey: ["voucher", voucherId] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      setPdfOpen(true);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -106,10 +120,10 @@ export default function VoucherView() {
       }
       return r.json();
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["voucher", voucherId] });
-      qc.invalidateQueries({ queryKey: ["project", projectId] });
+    onSuccess: async () => {
       toast({ title: "Reverted to draft" });
+      await qc.refetchQueries({ queryKey: ["voucher", voucherId] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -132,6 +146,15 @@ export default function VoucherView() {
 
   const handleGeneratePdf = async (opts?: { returnBase64?: boolean }) => {
     if (!voucher) return;
+    // Fetch proof fresh if voucher has one (in case stale or not loaded yet)
+    let pd: string | null = proofInfo?.proofData ?? null;
+    let pm: string | null = proofInfo?.proofMimeType ?? null;
+    if (voucher.hasProof && !pd) {
+      try {
+        const r = await fetch(`/api/vouchers/${voucherId}/proof`, { credentials: "include" });
+        if (r.ok) { const j = await r.json(); pd = j.proofData; pm = j.proofMimeType; }
+      } catch { /* ignore */ }
+    }
     return generateVoucherPDF(
       {
         voucherNumber: voucher.voucherNumber,
@@ -148,8 +171,8 @@ export default function VoucherView() {
         notes: voucher.notes,
         items: (voucher.items as any[]) || [],
         project: voucher.project,
-        proofData: voucher.proofData ?? null,
-        proofMimeType: voucher.proofMimeType ?? null,
+        proofData: pd,
+        proofMimeType: pm,
       },
       company,
       opts
@@ -213,7 +236,7 @@ export default function VoucherView() {
           )}
           {isAdmin && voucher.status === "paid" && (
             <Button variant="outline" size="sm" onClick={() => markDraftMutation.mutate()} disabled={markDraftMutation.isPending} className="gap-1.5">
-              Revert to Draft
+              {markDraftMutation.isPending ? "Reverting…" : "Revert to Draft"}
             </Button>
           )}
           {isAdmin && (
@@ -294,8 +317,8 @@ export default function VoucherView() {
         </div>
       )}
 
-      {/* Proof attachment */}
-      {voucher.proofData && voucher.proofMimeType && (
+      {/* Bills / Receipts */}
+      {voucher.hasProof && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
             <Paperclip className="h-4 w-4 text-muted-foreground" />
@@ -305,11 +328,18 @@ export default function VoucherView() {
             )}
           </div>
           <div className="p-5">
-            <img
-              src={`data:${voucher.proofMimeType};base64,${voucher.proofData}`}
-              alt="Payment proof"
-              className="max-w-full max-h-[500px] object-contain rounded border border-border mx-auto block"
-            />
+            {proofInfo?.proofData && proofInfo?.proofMimeType ? (
+              <img
+                src={`data:${proofInfo.proofMimeType};base64,${proofInfo.proofData}`}
+                alt="Bill / receipt"
+                className="max-w-full max-h-[500px] object-contain rounded border border-border mx-auto block"
+              />
+            ) : (
+              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+                <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full mr-2" />
+                Loading…
+              </div>
+            )}
           </div>
         </div>
       )}
