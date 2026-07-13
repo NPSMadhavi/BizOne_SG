@@ -74,147 +74,139 @@ export async function generateVoucherPDF(
 ): Promise<string | void> {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const F = "helvetica";
-  const mL = 15;
-  const mR = 195;
+  const mL = 14;
+  const mR = 196;
   const pageW = 210;
-  const centerX = pageW / 2;
-
-  // Column layout for the info grid
-  // Left pair:  label at mL, value starting at 42
-  // Right pair: label at 120, value right-aligned at mR
-  const lLabel = mL;
-  const lVal = 42;
-  const rLabel = 118;
-  const rVal = mR;
-  const lValMaxW = rLabel - lVal - 4; // max width for left value before right column
-  const lineH = 6;
 
   const logo = await getLogoData(getLogoUrl(company?.id)).catch(() => null);
 
-  let y = 12;
+  // ── TOP HEADER BLOCK ───────────────────────────────────────────────────────
+  // Left: logo + company details  |  Right: title + voucher metadata
+  // Mirrors the Invoice / TAX INVOICE layout exactly.
 
-  // ── Logo ───────────────────────────────────────────────────────────────────
+  let y = 14;
+
+  // Logo — same scale as other documents (maxW=55, maxH=22)
   if (logo) {
-    const maxW = 45, maxH = 18;
+    const maxW = 55, maxH = 22;
     const scale = Math.min(maxW / logo.natW, maxH / logo.natH);
     doc.addImage(logo.dataUrl, "PNG", mL, y, logo.natW * scale, logo.natH * scale);
   }
 
-  // ── Company header (right side) ────────────────────────────────────────────
+  // Document title — large, right-aligned (like "TAX INVOICE")
+  const title = VOUCHER_TYPE_LABELS[voucher.type] || "PAYMENT VOUCHER";
+  doc.setFont(F, "bold"); doc.setFontSize(22); doc.setTextColor(20, 20, 20);
+  doc.text(title, mR, y + 7, { align: "right" });
+
+  // Right meta block: Voucher No / Date / Status / Currency (small, right-aligned)
+  const metaItems: Array<[string, string]> = [
+    ["Voucher No:", voucher.voucherNumber],
+    ["Date:", voucher.issueDate || new Date().toISOString().slice(0, 10)],
+    ["Status:", voucher.status === "paid" ? "PAID" : "DRAFT"],
+    ["Currency:", voucher.currency],
+  ];
+  if (voucher.status === "paid" && voucher.paidDate) {
+    metaItems.push(["Paid On:", voucher.paidDate]);
+  }
+  if (voucher.status === "paid" && voucher.bankRef) {
+    metaItems.push(["Bank Ref:", voucher.bankRef]);
+  }
+
+  const metaLabelX = 140;
+  let metaY = y + 15;
+  doc.setFontSize(9);
+  for (const [label, val] of metaItems) {
+    doc.setFont(F, "normal"); doc.setTextColor(100, 100, 100);
+    doc.text(label, metaLabelX, metaY);
+    doc.setFont(F, "bold"); doc.setTextColor(30, 30, 30);
+    doc.text(val, mR, metaY, { align: "right" });
+    metaY += 5.5;
+  }
+
+  // Company details — left column below logo (same as Invoice)
   const coName = company?.name || "RSV Infotech Pte. Ltd.";
   const coAddr = company?.address || "";
-  const coReg = company?.registrationNo ? `Reg. No: ${company.registrationNo}` : "";
+  const coReg = company?.registrationNo ? `Co. Reg. No.: ${company.registrationNo}` : "";
 
-  doc.setFont(F, "bold"); doc.setFontSize(11); doc.setTextColor(30, 30, 30);
-  doc.text(coName, mR, y + 2, { align: "right" });
-  doc.setFont(F, "normal"); doc.setFontSize(8.5); doc.setTextColor(80, 80, 80);
+  let coY = y + 26;
+  doc.setFont(F, "bold"); doc.setFontSize(11); doc.setTextColor(20, 20, 20);
+  doc.text(coName, mL, coY);
+  coY += 5.5;
+
+  doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
   if (coAddr) {
-    const addrLines = coAddr.split(",").map((s: string) => s.trim()).filter(Boolean);
-    const mid = Math.ceil(addrLines.length / 2);
-    const line1 = addrLines.slice(0, mid).join(", ");
-    const line2 = addrLines.slice(mid).join(", ");
-    doc.text(line1, mR, y + 8, { align: "right" });
-    if (line2) doc.text(line2, mR, y + 13, { align: "right" });
+    const addrParts = coAddr.split(",").map((s: string) => s.trim()).filter(Boolean);
+    // Group into lines of ~2-3 parts each
+    const chunkSize = 3;
+    for (let i = 0; i < addrParts.length; i += chunkSize) {
+      const line = addrParts.slice(i, i + chunkSize).join(", ");
+      doc.text(line, mL, coY);
+      coY += 5;
+    }
   }
-  if (coReg) doc.text(coReg, mR, y + 18, { align: "right" });
-
-  y = 38;
-
-  // ── Red rule + document title ───────────────────────────────────────────────
-  doc.setDrawColor(220, 38, 38); doc.setLineWidth(0.8);
-  doc.line(mL, y, mR, y);
-  y += 7;
-
-  const title = VOUCHER_TYPE_LABELS[voucher.type] || "PAYMENT VOUCHER";
-  doc.setFont(F, "bold"); doc.setFontSize(16); doc.setTextColor(30, 30, 30);
-  doc.text(title, centerX, y, { align: "center" });
-  y += 9;
-
-  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
-  doc.line(mL, y, mR, y);
-  y += 7;
-
-  // ── Info grid helper ───────────────────────────────────────────────────────
-  // Renders one row. Left value wraps if too long; right label+value sit on
-  // the first line only. Returns new y.
-  function infoRow(
-    label1: string,
-    val1: string,
-    label2: string,
-    val2: string
-  ): void {
-    doc.setFontSize(9);
-
-    // Wrap the left value within its column
-    doc.setFont(F, "normal");
-    const wrapped = doc.splitTextToSize(val1, lValMaxW) as string[];
-    const rowH = Math.max(wrapped.length, 1) * lineH;
-
-    // Left label
-    doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text(label1, lLabel, y);
-
-    // Left value (may be multi-line)
-    doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
-    doc.text(wrapped, lVal, y);
-
-    // Right label + value on first line only
-    if (label2) {
-      doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
-      doc.text(label2, rLabel, y);
-    }
-    if (val2) {
-      doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
-      doc.text(val2, rVal, y, { align: "right" });
-    }
-
-    y += rowH + 1;
+  if (coReg) {
+    doc.text(coReg, mL, coY);
+    coY += 5;
   }
 
-  // ── Metadata rows ─────────────────────────────────────────────────────────
-  infoRow("Voucher No:", voucher.voucherNumber, "Date:", voucher.issueDate || new Date().toISOString().slice(0, 10));
+  // Advance y to below whichever block is taller
+  y = Math.max(coY, metaY) + 4;
+
+  // ── Divider ────────────────────────────────────────────────────────────────
+  doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.4);
+  doc.line(mL, y, mR, y);
+  y += 8;
+
+  // ── PARTY BLOCK: Pay To / Project / Contact ────────────────────────────────
+  // Left column: Pay To + Contact  |  Right column: Project
+  const midX = pageW / 2;
+  const lValX = mL + 22;
+  const rColX = midX + 6;
+
+  function partyLabel(txt: string, x: number, py: number) {
+    doc.setFont(F, "bold"); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+    doc.text(txt, x, py);
+  }
+  function partyVal(txt: string, x: number, py: number, maxW: number) {
+    doc.setFont(F, "bold"); doc.setFontSize(10); doc.setTextColor(20, 20, 20);
+    const wrapped = doc.splitTextToSize(txt, maxW) as string[];
+    doc.text(wrapped, x, py);
+    return wrapped.length;
+  }
+
+  partyLabel("Pay To:", mL, y);
+  const payeeLines = partyVal(voucher.payee, lValX, y, midX - lValX - 4);
 
   if (voucher.project) {
-    const projLabel = voucher.project.code
+    const projStr = voucher.project.code
       ? `${voucher.project.name} (${voucher.project.code})`
       : voucher.project.name;
-    infoRow("Project:", projLabel, "Currency:", voucher.currency);
-  } else {
-    infoRow("Currency:", voucher.currency, "", "");
+    partyLabel("Project:", rColX, y);
+    doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(40, 40, 40);
+    const projWrapped = doc.splitTextToSize(projStr, mR - rColX - 22) as string[];
+    doc.text(projWrapped, rColX + 18, y);
   }
 
-  infoRow("Pay To:", voucher.payee, "Status:", voucher.status === "paid" ? "PAID" : "DRAFT");
+  y += Math.max(payeeLines, 1) * 5.5 + 2;
 
   if (voucher.payeeContact) {
-    doc.setFontSize(9);
-    doc.setFont(F, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text("Contact:", lLabel, y);
-    doc.setFont(F, "normal"); doc.setTextColor(30, 30, 30);
-    const contactWrapped = doc.splitTextToSize(voucher.payeeContact, lValMaxW + (rLabel - lVal - lValMaxW)) as string[];
-    doc.text(contactWrapped, lVal, y);
-    y += contactWrapped.length * lineH + 1;
+    partyLabel("Contact:", mL, y);
+    doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    doc.text(voucher.payeeContact, lValX, y);
+    y += 5.5;
   }
 
-  if (voucher.status === "paid" && (voucher.paidDate || voucher.bankRef)) {
-    infoRow("Paid On:", voucher.paidDate || "—", "Bank Ref:", voucher.bankRef || "—");
-  }
-
-  y += 2;
-  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
-  doc.line(mL, y, mR, y);
-  y += 6;
-
-  // ── Purpose/Description ───────────────────────────────────────────────────
   if (voucher.description) {
-    doc.setFont(F, "bold"); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
-    doc.text("Description:", mL, y);
-    doc.setFont(F, "normal"); doc.setTextColor(40, 40, 40);
-    const descLines = doc.splitTextToSize(voucher.description, mR - mL - 32) as string[];
-    doc.text(descLines, mL + 30, y);
-    y += Math.max(descLines.length, 1) * 5 + 4;
+    partyLabel("Purpose:", mL, y);
+    doc.setFont(F, "normal"); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    const dLines = doc.splitTextToSize(voucher.description, mR - lValX - 2) as string[];
+    doc.text(dLines, lValX, y);
+    y += Math.max(dLines.length, 1) * 5 + 2;
   }
 
-  // ── Expense items table ───────────────────────────────────────────────────
+  y += 4;
+
+  // ── Items table ────────────────────────────────────────────────────────────
   const items = (voucher.items || []).filter((it: any) => it.description);
   if (items.length > 0) {
     (doc as any).autoTable({
@@ -228,7 +220,7 @@ export async function generateVoucherPDF(
         fmtMoney(voucher.currency, parseFloat(it.amount) || 0),
       ]),
       headStyles: {
-        fillColor: [30, 30, 30],
+        fillColor: [25, 35, 55],
         textColor: [255, 255, 255],
         fontStyle: "bold",
         fontSize: 9,
@@ -240,68 +232,63 @@ export async function generateVoucherPDF(
         2: { cellWidth: 42 },
         3: { cellWidth: 36, halign: "right" },
       },
-      alternateRowStyles: { fillColor: [248, 248, 248] },
-      tableLineColor: [220, 220, 220],
-      tableLineWidth: 0.3,
+      alternateRowStyles: { fillColor: [248, 249, 250] },
+      tableLineColor: [210, 215, 220],
+      tableLineWidth: 0.25,
     });
     y = (doc as any).lastAutoTable.finalY + 4;
   }
 
-  // ── Total row ─────────────────────────────────────────────────────────────
-  // Use a narrow right-side block so label + amount never overlap
-  const totalLabelX = 120; // plenty of room to the left
+  // ── Total row ──────────────────────────────────────────────────────────────
+  const totalLabelX = 120;
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
   doc.line(totalLabelX, y, mR, y);
   y += 5;
   doc.setFontSize(11); doc.setFont(F, "bold"); doc.setTextColor(30, 30, 30);
   doc.text("Total Amount:", totalLabelX, y);
-  doc.setTextColor(220, 38, 38);
+  doc.setTextColor(180, 20, 20);
   doc.text(fmtMoney(voucher.currency, voucher.totalAmount), mR, y, { align: "right" });
   y += 10;
 
-  // ── Notes ─────────────────────────────────────────────────────────────────
+  // ── Notes ──────────────────────────────────────────────────────────────────
   if (voucher.notes) {
     doc.setFont(F, "bold"); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
     doc.text("Notes:", mL, y);
-    doc.setFont(F, "normal"); doc.setTextColor(40, 40, 40);
+    doc.setFont(F, "normal"); doc.setTextColor(50, 50, 50);
     const noteLines = doc.splitTextToSize(voucher.notes, mR - mL - 20) as string[];
     doc.text(noteLines, mL + 18, y);
     y += noteLines.length * 5 + 4;
   }
 
-  // ── Signature lines ───────────────────────────────────────────────────────
-  y = Math.max(y + 12, 220);
+  // ── Signature block ────────────────────────────────────────────────────────
+  y = Math.max(y + 14, 225);
   if (y > 252) y = 252;
 
-  doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
-
-  const sigW = 52;
+  doc.setDrawColor(160, 160, 160); doc.setLineWidth(0.3);
+  const sigW = 50;
   const sig1X = mL;
-  const sig2X = centerX - sigW / 2;
+  const sig2X = pageW / 2 - sigW / 2;
   const sig3X = mR - sigW;
 
-  doc.line(sig1X, y, sig1X + sigW, y);
-  doc.line(sig2X, y, sig2X + sigW, y);
-  doc.line(sig3X, y, sig3X + sigW, y);
+  [sig1X, sig2X, sig3X].forEach(sx => doc.line(sx, y, sx + sigW, y));
   y += 4;
   doc.setFont(F, "normal"); doc.setFontSize(8); doc.setTextColor(80, 80, 80);
-  doc.text("Prepared By", sig1X + sigW / 2, y, { align: "center" });
-  doc.text("Verified By", sig2X + sigW / 2, y, { align: "center" });
-  doc.text("Approved By", sig3X + sigW / 2, y, { align: "center" });
+  ["Prepared By", "Verified By", "Approved By"].forEach((lbl, i) => {
+    const sx = [sig1X, sig2X, sig3X][i];
+    doc.text(lbl, sx + sigW / 2, y, { align: "center" });
+  });
   y += 4;
-  doc.setFontSize(7); doc.setTextColor(120, 120, 120);
-  doc.text("Name & Date", sig1X + sigW / 2, y, { align: "center" });
-  doc.text("Name & Date", sig2X + sigW / 2, y, { align: "center" });
-  doc.text("Name & Date", sig3X + sigW / 2, y, { align: "center" });
+  doc.setFontSize(7); doc.setTextColor(130, 130, 130);
+  [sig1X, sig2X, sig3X].forEach(sx => doc.text("Name & Date", sx + sigW / 2, y, { align: "center" }));
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   const pageCount = (doc as any).internal.getNumberOfPages();
   for (let pg = 1; pg <= pageCount; pg++) {
     doc.setPage(pg);
-    doc.setFont(F, "normal"); doc.setFontSize(7.5); doc.setTextColor(150, 150, 150);
+    doc.setFont(F, "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 160, 160);
     doc.text(
       `${title} | ${voucher.voucherNumber} | Page ${pg} of ${pageCount}`,
-      centerX, 290, { align: "center" }
+      pageW / 2, 291, { align: "center" }
     );
   }
 
