@@ -263,11 +263,11 @@ export default function VoucherNew() {
           <div className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-center gap-2 mb-1">
               <Paperclip className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-semibold">Payment Proof / Receipt</h2>
+              <h2 className="font-semibold">Bills / Receipts</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               Attach a bill, receipt, or payment screenshot. Supported: JPG, PNG, WebP (max 5 MB).
-              When the voucher is paid, the proof image will appear as page 2 of the PDF with a PAID stamp.
+              When the voucher is paid, the image will appear as page 2 of the PDF with a PAID stamp.
             </p>
 
             {!proof ? (

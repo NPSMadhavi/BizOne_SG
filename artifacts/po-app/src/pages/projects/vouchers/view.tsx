@@ -52,7 +52,10 @@ export default function VoucherView() {
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
     queryFn: async () => {
-      const r = await fetch(`/api/vouchers/${voucherId}`, { credentials: "include" });
+      const r = await fetch(`/api/vouchers/${voucherId}`, {
+        credentials: "include",
+        headers: { "Cache-Control": "no-cache" },
+      });
       if (!r.ok) throw new Error("Not found");
       return r.json();
     },
@@ -297,7 +300,7 @@ export default function VoucherView() {
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
             <Paperclip className="h-4 w-4 text-muted-foreground" />
-            <h2 className="font-semibold text-sm">Payment Proof / Receipt</h2>
+            <h2 className="font-semibold text-sm">Bills / Receipts</h2>
             {voucher.status === "paid" && (
               <span className="ml-auto text-xs text-green-600 font-medium">✓ Included as page 2 in PDF with PAID stamp</span>
             )}

@@ -58,6 +58,7 @@ export default function VoucherEdit() {
   const [items, setItems] = useState<Item[]>([{ description: "", category: "", amount: "" }]);
   const [proof, setProof] = useState<ProofFile | null>(null);
   const [proofRemoved, setProofRemoved] = useState(false);
+  const [proofChanged, setProofChanged] = useState(false);
 
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
@@ -110,8 +111,8 @@ export default function VoucherEdit() {
             category: it.category,
             amount: parseFloat(it.amount) || 0,
           })),
-          proofData: proofRemoved ? null : (proof?.data ?? undefined),
-          proofMimeType: proofRemoved ? null : (proof?.mimeType ?? undefined),
+          proofData: proofRemoved ? null : (proofChanged ? (proof?.data ?? undefined) : undefined),
+          proofMimeType: proofRemoved ? null : (proofChanged ? (proof?.mimeType ?? undefined) : undefined),
         }),
       });
       if (!r.ok) {
@@ -158,6 +159,7 @@ export default function VoucherEdit() {
       const base64 = dataUrl.split(",")[1];
       setProof({ data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) });
       setProofRemoved(false);
+      setProofChanged(true);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -166,6 +168,7 @@ export default function VoucherEdit() {
   const removeProof = () => {
     setProof(null);
     setProofRemoved(true);
+    setProofChanged(true);
   };
 
   if (isLoading) return (
@@ -292,11 +295,11 @@ export default function VoucherEdit() {
           <div className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-center gap-2 mb-1">
               <Paperclip className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-semibold">Payment Proof / Receipt</h2>
+              <h2 className="font-semibold">Bills / Receipts</h2>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               Attach a bill, receipt, or payment screenshot. Supported: JPG, PNG, WebP (max 5 MB).
-              When the voucher is paid, the proof image will appear as page 2 of the PDF with a PAID stamp.
+              When the voucher is paid, the image will appear as page 2 of the PDF with a PAID stamp.
             </p>
 
             {!proof ? (

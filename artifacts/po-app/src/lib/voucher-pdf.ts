@@ -314,7 +314,7 @@ export async function generateVoucherPDF(
     doc.setFillColor(25, 35, 55);
     doc.rect(0, 0, pageW, 18, "F");
     doc.setFont(F, "bold"); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
-    doc.text("PAYMENT PROOF / RECEIPT", pageW / 2, 11, { align: "center" });
+    doc.text("BILLS / RECEIPTS", pageW / 2, 11, { align: "center" });
 
     // Sub-header info row
     doc.setFillColor(245, 247, 250);
