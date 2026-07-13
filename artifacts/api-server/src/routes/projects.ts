@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, projectsTable, vouchersTable, usersTable, settingsTable } from "@workspace/db";
+import { db, projectsTable, vouchersTable, usersTable } from "@workspace/db";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
@@ -12,10 +12,7 @@ function requireAuth(req: any, res: any): boolean {
 }
 
 function requireCompany(req: any, res: any): boolean {
-  if (!req.session.companyId) {
-    res.status(400).json({ error: "No company selected." });
-    return false;
-  }
+  if (!req.session.companyId) { res.status(400).json({ error: "No company selected." }); return false; }
   return true;
 }
 
@@ -34,7 +31,7 @@ async function withCreatorNames(docs: any[]): Promise<any[]> {
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 
-router.get("/api/projects", async (req: any, res: any) => {
+router.get("/projects", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
@@ -53,8 +50,7 @@ router.get("/api/projects", async (req: any, res: any) => {
         and(eq(vouchersTable.companyId, companyId), inArray(vouchersTable.projectId, projectIds))
       );
       for (const v of vouchers) {
-        const pid = v.projectId;
-        spentMap[pid] = (spentMap[pid] || 0) + parseDecimal(v.totalAmount);
+        spentMap[v.projectId] = (spentMap[v.projectId] || 0) + parseDecimal(v.totalAmount);
       }
     }
 
@@ -65,16 +61,15 @@ router.get("/api/projects", async (req: any, res: any) => {
       spent: spentMap[p.id] || 0,
     })));
   } catch (err: any) {
-    req.log.error({ err }, "GET /api/projects error");
+    req.log.error({ err }, "GET /projects error");
     res.status(500).json({ error: "Failed to fetch projects" });
   }
 });
 
-router.post("/api/projects", async (req: any, res: any) => {
+router.post("/projects", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   try {
     const { name, code, description, status, budget, startDate, endDate } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: "Project name is required" });
@@ -88,18 +83,18 @@ router.post("/api/projects", async (req: any, res: any) => {
       budget: budget ? String(budget) : null,
       startDate: startDate || null,
       endDate: endDate || null,
-      createdBy: userId,
+      createdBy: req.session.userId!,
     }).returning();
 
-    await logAudit(userId, companyId, "create", "project", project.id, null, project);
+    logAudit({ req, action: "create", entityType: "project", entityId: project.id });
     res.status(201).json(project);
   } catch (err: any) {
-    req.log.error({ err }, "POST /api/projects error");
+    req.log.error({ err }, "POST /projects error");
     res.status(500).json({ error: "Failed to create project" });
   }
 });
 
-router.get("/api/projects/:id", async (req: any, res: any) => {
+router.get("/projects/:id", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
@@ -124,16 +119,15 @@ router.get("/api/projects/:id", async (req: any, res: any) => {
       vouchers: namedVouchers.map(v => ({ ...v, totalAmount: parseDecimal(v.totalAmount) })),
     });
   } catch (err: any) {
-    req.log.error({ err }, "GET /api/projects/:id error");
+    req.log.error({ err }, "GET /projects/:id error");
     res.status(500).json({ error: "Failed to fetch project" });
   }
 });
 
-router.put("/api/projects/:id", async (req: any, res: any) => {
+router.put("/projects/:id", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   try {
     const [existing] = await db.select().from(projectsTable)
@@ -151,19 +145,18 @@ router.put("/api/projects/:id", async (req: any, res: any) => {
       endDate: endDate !== undefined ? (endDate || null) : existing.endDate,
     }).where(eq(projectsTable.id, id)).returning();
 
-    await logAudit(userId, companyId, "update", "project", id, existing, updated);
+    logAudit({ req, action: "update", entityType: "project", entityId: id });
     res.json(updated);
   } catch (err: any) {
-    req.log.error({ err }, "PUT /api/projects/:id error");
+    req.log.error({ err }, "PUT /projects/:id error");
     res.status(500).json({ error: "Failed to update project" });
   }
 });
 
-router.delete("/api/projects/:id", async (req: any, res: any) => {
+router.delete("/projects/:id", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!req.session.isAdmin) return res.status(403).json({ error: "Admin only" });
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   try {
     const [existing] = await db.select().from(projectsTable)
@@ -172,21 +165,20 @@ router.delete("/api/projects/:id", async (req: any, res: any) => {
 
     await db.delete(vouchersTable).where(eq(vouchersTable.projectId, id));
     await db.delete(projectsTable).where(eq(projectsTable.id, id));
-    await logAudit(userId, companyId, "delete", "project", id, existing, null);
+    logAudit({ req, action: "delete", entityType: "project", entityId: id });
     res.json({ ok: true });
   } catch (err: any) {
-    req.log.error({ err }, "DELETE /api/projects/:id error");
+    req.log.error({ err }, "DELETE /projects/:id error");
     res.status(500).json({ error: "Failed to delete project" });
   }
 });
 
 // ── VOUCHERS ──────────────────────────────────────────────────────────────────
 
-router.post("/api/projects/:projectId/vouchers", async (req: any, res: any) => {
+router.post("/projects/:projectId/vouchers", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const projectId = parseInt(req.params.projectId);
   try {
     const [project] = await db.select({ id: projectsTable.id }).from(projectsTable)
@@ -214,18 +206,18 @@ router.post("/api/projects/:projectId/vouchers", async (req: any, res: any) => {
       totalAmount: String(total),
       currency: currency || "SGD",
       notes: notes?.trim() || null,
-      createdBy: userId,
+      createdBy: req.session.userId!,
     }).returning();
 
-    await logAudit(userId, companyId, "create", "voucher", voucher.id, null, voucher);
+    logAudit({ req, action: "create", entityType: "voucher", entityId: voucher.id });
     res.status(201).json({ ...voucher, totalAmount: parseDecimal(voucher.totalAmount) });
   } catch (err: any) {
-    req.log.error({ err }, "POST /api/projects/:id/vouchers error");
+    req.log.error({ err }, "POST /projects/:id/vouchers error");
     res.status(500).json({ error: "Failed to create voucher" });
   }
 });
 
-router.get("/api/vouchers/:id", async (req: any, res: any) => {
+router.get("/vouchers/:id", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
@@ -241,16 +233,15 @@ router.get("/api/vouchers/:id", async (req: any, res: any) => {
     const named = await withCreatorNames([voucher]);
     res.json({ ...named[0], totalAmount: parseDecimal(voucher.totalAmount), project: project || null });
   } catch (err: any) {
-    req.log.error({ err }, "GET /api/vouchers/:id error");
+    req.log.error({ err }, "GET /vouchers/:id error");
     res.status(500).json({ error: "Failed to fetch voucher" });
   }
 });
 
-router.put("/api/vouchers/:id", async (req: any, res: any) => {
+router.put("/vouchers/:id", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   try {
     const [existing] = await db.select().from(vouchersTable)
@@ -274,19 +265,18 @@ router.put("/api/vouchers/:id", async (req: any, res: any) => {
       notes: notes?.trim() || null,
     }).where(eq(vouchersTable.id, id)).returning();
 
-    await logAudit(userId, companyId, "update", "voucher", id, existing, updated);
+    logAudit({ req, action: "update", entityType: "voucher", entityId: id });
     res.json({ ...updated, totalAmount: parseDecimal(updated.totalAmount) });
   } catch (err: any) {
-    req.log.error({ err }, "PUT /api/vouchers/:id error");
+    req.log.error({ err }, "PUT /vouchers/:id error");
     res.status(500).json({ error: "Failed to update voucher" });
   }
 });
 
-router.post("/api/vouchers/:id/mark-paid", async (req: any, res: any) => {
+router.post("/vouchers/:id/mark-paid", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   try {
     const [existing] = await db.select().from(vouchersTable)
@@ -302,19 +292,18 @@ router.post("/api/vouchers/:id/mark-paid", async (req: any, res: any) => {
       bankRef: bankRef?.trim() || null,
     }).where(eq(vouchersTable.id, id)).returning();
 
-    await logAudit(userId, companyId, "update", "voucher", id, existing, { status: "paid" });
+    logAudit({ req, action: "update", entityType: "voucher", entityId: id, details: { status: "paid" } });
     res.json({ ...updated, totalAmount: parseDecimal(updated.totalAmount) });
   } catch (err: any) {
-    req.log.error({ err }, "POST /api/vouchers/:id/mark-paid error");
+    req.log.error({ err }, "POST /vouchers/:id/mark-paid error");
     res.status(500).json({ error: "Failed to mark voucher as paid" });
   }
 });
 
-router.post("/api/vouchers/:id/mark-draft", async (req: any, res: any) => {
+router.post("/vouchers/:id/mark-draft", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!req.session.isAdmin) return res.status(403).json({ error: "Admin only" });
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   try {
     const [existing] = await db.select().from(vouchersTable)
@@ -327,19 +316,18 @@ router.post("/api/vouchers/:id/mark-draft", async (req: any, res: any) => {
       bankRef: null,
     }).where(eq(vouchersTable.id, id)).returning();
 
-    await logAudit(userId, companyId, "update", "voucher", id, existing, { status: "draft" });
+    logAudit({ req, action: "update", entityType: "voucher", entityId: id, details: { status: "draft" } });
     res.json({ ...updated, totalAmount: parseDecimal(updated.totalAmount) });
   } catch (err: any) {
-    req.log.error({ err }, "POST /api/vouchers/:id/mark-draft error");
+    req.log.error({ err }, "POST /vouchers/:id/mark-draft error");
     res.status(500).json({ error: "Failed to revert voucher" });
   }
 });
 
-router.delete("/api/vouchers/:id", async (req: any, res: any) => {
+router.delete("/vouchers/:id", async (req: any, res: any) => {
   if (!requireAuth(req, res)) return;
   if (!req.session.isAdmin) return res.status(403).json({ error: "Admin only" });
   const companyId = req.session.companyId!;
-  const userId = req.session.userId!;
   const id = parseInt(req.params.id);
   try {
     const [existing] = await db.select().from(vouchersTable)
@@ -347,10 +335,10 @@ router.delete("/api/vouchers/:id", async (req: any, res: any) => {
     if (!existing) return res.status(404).json({ error: "Voucher not found" });
 
     await db.delete(vouchersTable).where(eq(vouchersTable.id, id));
-    await logAudit(userId, companyId, "delete", "voucher", id, existing, null);
+    logAudit({ req, action: "delete", entityType: "voucher", entityId: id });
     res.json({ ok: true });
   } catch (err: any) {
-    req.log.error({ err }, "DELETE /api/vouchers/:id error");
+    req.log.error({ err }, "DELETE /vouchers/:id error");
     res.status(500).json({ error: "Failed to delete voucher" });
   }
 });
