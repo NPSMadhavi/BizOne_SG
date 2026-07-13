@@ -64,7 +64,7 @@ export default function VoucherView() {
       const r = await fetch("/api/auth/me", { credentials: "include" });
       if (!r.ok) return null;
       const me = await r.json();
-      return me.selectedCompany || null;
+      return me.companies?.find((c: any) => c.id === me.selectedCompanyId) ?? null;
     },
   });
 
