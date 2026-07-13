@@ -81,6 +81,10 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     bankDetails: s.bankDetails ?? "",
     termsAndConditions: s.termsAndConditions ?? "",
     quotationTerms: s.quotationTerms ?? "",
+    // Voucher workflow defaults
+    defaultVerifierId: s.defaultVerifierId ?? null,
+    defaultApproverId: s.defaultApproverId ?? null,
+    defaultPaidById: s.defaultPaidById ?? null,
   };
 }
 
@@ -113,6 +117,7 @@ router.put("/", async (req, res) => {
     pvPrefix, pvCounter, pvSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
     bankDetails, termsAndConditions, quotationTerms,
+    defaultVerifierId, defaultApproverId, defaultPaidById,
   } = req.body;
 
   const updateData: Record<string, any> = {};
@@ -157,6 +162,10 @@ router.put("/", async (req, res) => {
   if (bankDetails !== undefined) updateData.bankDetails = bankDetails;
   if (termsAndConditions !== undefined) updateData.termsAndConditions = termsAndConditions;
   if (quotationTerms !== undefined) updateData.quotationTerms = quotationTerms;
+  // Voucher workflow
+  if (defaultVerifierId !== undefined) updateData.defaultVerifierId = defaultVerifierId ? Number(defaultVerifierId) : null;
+  if (defaultApproverId !== undefined) updateData.defaultApproverId = defaultApproverId ? Number(defaultApproverId) : null;
+  if (defaultPaidById !== undefined) updateData.defaultPaidById = defaultPaidById ? Number(defaultPaidById) : null;
 
   if (Object.keys(updateData).length === 0) {
     return res.status(400).json({ error: "No fields to update" });
@@ -168,7 +177,6 @@ router.put("/", async (req, res) => {
     const [updated] = await db.update(settingsTable).set(updateData).where(eq(settingsTable.id, settings.id)).returning();
     res.json(formatSettings(updated, company?.country));
   } catch (err) {
-    console.error("[settings PUT error]", err);
     res.status(500).json({ error: "Failed to update settings" });
   }
 });

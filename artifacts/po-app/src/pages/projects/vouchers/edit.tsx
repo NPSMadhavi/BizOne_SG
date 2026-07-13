@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload, Users } from "lucide-react";
 
 interface Item {
   description: string;
@@ -64,6 +64,9 @@ export default function VoucherEdit() {
     notes: "",
   });
   const [items, setItems] = useState<Item[]>([{ description: "", category: "", amount: "" }]);
+  const [verifierId, setVerifierId] = useState<string>("");
+  const [approverId, setApproverId] = useState<string>("");
+  const [paidById, setPaidById] = useState<string>("");
   // Existing attachments from server
   const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>([]);
   // New files to upload after save
@@ -95,6 +98,15 @@ export default function VoucherEdit() {
     if (attachmentsData) setExistingAttachments(attachmentsData);
   }, [attachmentsData]);
 
+  const { data: companyUsers = [] } = useQuery<any[]>({
+    queryKey: ["company-users"],
+    queryFn: async () => {
+      const r = await fetch("/api/company-users", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
   useEffect(() => {
     if (voucher) {
       setForm({
@@ -106,6 +118,9 @@ export default function VoucherEdit() {
         currency: voucher.currency || "SGD",
         notes: voucher.notes || "",
       });
+      setVerifierId(voucher.verifierId ? String(voucher.verifierId) : "");
+      setApproverId(voucher.approverId ? String(voucher.approverId) : "");
+      setPaidById(voucher.paidById ? String(voucher.paidById) : "");
       const vItems = (voucher.items as any[]) || [];
       setItems(
         vItems.length > 0
@@ -130,6 +145,9 @@ export default function VoucherEdit() {
             category: it.category,
             amount: parseFloat(it.amount) || 0,
           })),
+          verifierId: verifierId ? Number(verifierId) : null,
+          approverId: approverId ? Number(approverId) : null,
+          paidById: paidById ? Number(paidById) : null,
         }),
       });
       if (!r.ok) {
@@ -334,6 +352,58 @@ export default function VoucherEdit() {
           <div className="bg-card border border-border rounded-xl p-5">
             <Label>Notes</Label>
             <Textarea className="mt-1" rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} />
+          </div>
+
+          {/* Workflow Signatories */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold">Approval Workflow</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Verified By</Label>
+                <Select value={verifierId || "none"} onValueChange={v => setVerifierId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select verifier…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None (skip verification) —</SelectItem>
+                    {companyUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.username}{u.role === "admin" ? " (admin)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Approved By</Label>
+                <Select value={approverId || "none"} onValueChange={v => setApproverId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select approver…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None (skip approval) —</SelectItem>
+                    {companyUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.username}{u.role === "admin" ? " (admin)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Paid By</Label>
+                <Select value={paidById || "none"} onValueChange={v => setPaidById(v === "none" ? "" : v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select payer…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Anyone —</SelectItem>
+                    {companyUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.username}{u.role === "admin" ? " (admin)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
 
           {/* Bills / Receipts — multi-upload */}

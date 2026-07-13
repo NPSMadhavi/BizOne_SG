@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
   ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText, Paperclip, FileImage,
+  ShieldCheck, ThumbsUp, Banknote, Clock, RotateCcw,
 } from "lucide-react";
 import { generateVoucherPDF } from "@/lib/voucher-pdf";
 import type { VoucherAttachment } from "@/lib/voucher-pdf";
@@ -25,7 +26,18 @@ const TYPE_LABELS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600 border-gray-200",
+  pending_verification: "bg-amber-100 text-amber-700 border-amber-200",
+  pending_approval: "bg-orange-100 text-orange-700 border-orange-200",
+  approved: "bg-blue-100 text-blue-700 border-blue-200",
   paid: "bg-green-100 text-green-700 border-green-200",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  pending_verification: "Pending Verification",
+  pending_approval: "Pending Approval",
+  approved: "Approved",
+  paid: "Paid",
 };
 
 function fmt(n: number, currency = "SGD") {
@@ -46,13 +58,24 @@ export default function VoucherView() {
   const qc = useQueryClient();
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
   const [paidDate, setPaidDate] = useState(new Date().toISOString().split("T")[0]);
   const [bankRef, setBankRef] = useState("");
   const [pdfOpen, setPdfOpen] = useState(false);
-  // Preview a single attachment full-screen
   const [previewAttUrl, setPreviewAttUrl] = useState<string | null>(null);
 
-  // Main voucher — lean, no binary data
+  const { data: me } = useQuery<any>({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const r = await fetch("/api/auth/me", { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+  });
+
+  const currentUserId: number | null = me?.id ?? null;
+  const company = me?.companies?.find((c: any) => c.id === me?.selectedCompanyId) ?? null;
+
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
     queryFn: async () => {
@@ -62,7 +85,6 @@ export default function VoucherView() {
     },
   });
 
-  // Attachment metadata list — no file data, fast
   const { data: attachmentsMeta = [] } = useQuery<any[]>({
     queryKey: ["voucher-attachments", voucherId],
     queryFn: async () => {
@@ -73,14 +95,36 @@ export default function VoucherView() {
     enabled: !!voucher?.attachmentCount && voucher.attachmentCount > 0,
   });
 
-  const { data: company } = useQuery<any>({
-    queryKey: ["company-info"],
-    queryFn: async () => {
-      const r = await fetch("/api/auth/me", { credentials: "include" });
-      if (!r.ok) return null;
-      const me = await r.json();
-      return me.companies?.find((c: any) => c.id === me.selectedCompanyId) ?? null;
+  const invalidate = async () => {
+    await qc.refetchQueries({ queryKey: ["voucher", voucherId] });
+    qc.invalidateQueries({ queryKey: ["project", projectId] });
+    qc.invalidateQueries({ queryKey: ["vouchers-pending-action"] });
+  };
+
+  const verifyMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/vouchers/${voucherId}/verify`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); }
+      return r.json();
     },
+    onSuccess: async () => {
+      toast({ title: "Voucher verified" });
+      await invalidate();
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/vouchers/${voucherId}/approve`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed"); }
+      return r.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Voucher approved" });
+      await invalidate();
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const markPaidMutation = useMutation({
@@ -97,8 +141,7 @@ export default function VoucherView() {
     onSuccess: async () => {
       setMarkPaidOpen(false);
       toast({ title: "Voucher marked as paid" });
-      await qc.refetchQueries({ queryKey: ["voucher", voucherId] });
-      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      await invalidate();
       setPdfOpen(true);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -111,9 +154,9 @@ export default function VoucherView() {
       return r.json();
     },
     onSuccess: async () => {
-      toast({ title: "Reverted to draft" });
-      await qc.refetchQueries({ queryKey: ["voucher", voucherId] });
-      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      setRevertOpen(false);
+      toast({ title: "Workflow restarted" });
+      await invalidate();
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -133,7 +176,6 @@ export default function VoucherView() {
 
   const handleGeneratePdf = async (opts?: { returnBase64?: boolean }) => {
     if (!voucher) return;
-    // Fetch all attachment data for PDF rendering
     let attachments: VoucherAttachment[] = [];
     if (attachmentsMeta.length > 0) {
       const results = await Promise.allSettled(
@@ -147,7 +189,6 @@ export default function VoucherView() {
         .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value !== null)
         .map(r => ({ fileData: r.value.fileData, mimeType: r.value.mimeType, fileName: r.value.fileName }));
     }
-
     return generateVoucherPDF(
       {
         voucherNumber: voucher.voucherNumber,
@@ -179,6 +220,13 @@ export default function VoucherView() {
   if (!voucher) return <div className="p-8 text-center text-muted-foreground">Voucher not found</div>;
 
   const items: any[] = voucher.items || [];
+  const status = voucher.status as string;
+
+  // Workflow action flags
+  const canVerify = status === "pending_verification" && (isAdmin || currentUserId === voucher.verifierId);
+  const canApprove = status === "pending_approval" && (isAdmin || currentUserId === voucher.approverId);
+  const canMarkPaid = status === "approved" && (isAdmin || currentUserId === voucher.paidById);
+  const canEdit = (status === "pending_verification" || status === "pending_approval") || (isAdmin && status !== "paid");
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
@@ -192,10 +240,10 @@ export default function VoucherView() {
             <div className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-primary" />
               <h1 className="text-xl font-bold">{voucher.voucherNumber}</h1>
-              <Badge className={`text-xs border ${STATUS_COLORS[voucher.status] || ""}`}>
-                {voucher.status === "paid" ? (
+              <Badge className={`text-xs border ${STATUS_COLORS[status] || ""}`}>
+                {status === "paid" ? (
                   <span className="flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Paid</span>
-                ) : "Draft"}
+                ) : STATUS_LABELS[status] || status}
               </Badge>
               <span className="text-sm text-muted-foreground">
                 {TYPE_LABELS[voucher.type] || voucher.type}
@@ -214,23 +262,46 @@ export default function VoucherView() {
             <FileText className="h-3.5 w-3.5" />
             Preview / Print
           </Button>
-          {voucher.status === "draft" && (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setLocation(`/projects/${projectId}/vouchers/${voucherId}/edit`)} className="gap-1.5">
-                <Edit className="h-3.5 w-3.5" />
-                Edit
-              </Button>
-              <Button size="sm" onClick={() => setMarkPaidOpen(true)} className="gap-1.5 bg-green-600 hover:bg-green-700">
-                <CheckCircle className="h-3.5 w-3.5" />
-                Mark as Paid
-              </Button>
-            </>
-          )}
-          {isAdmin && voucher.status === "paid" && (
-            <Button variant="outline" size="sm" onClick={() => markDraftMutation.mutate()} disabled={markDraftMutation.isPending} className="gap-1.5">
-              {markDraftMutation.isPending ? "Reverting…" : "Revert to Draft"}
+
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={() => setLocation(`/projects/${projectId}/vouchers/${voucherId}/edit`)} className="gap-1.5">
+              <Edit className="h-3.5 w-3.5" />
+              Edit
             </Button>
           )}
+
+          {canVerify && (
+            <Button size="sm" onClick={() => verifyMutation.mutate()} disabled={verifyMutation.isPending}
+              className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {verifyMutation.isPending ? "Verifying…" : "Verify"}
+            </Button>
+          )}
+
+          {canApprove && (
+            <Button size="sm" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}
+              className="gap-1.5 bg-orange-500 hover:bg-orange-600 text-white">
+              <ThumbsUp className="h-3.5 w-3.5" />
+              {approveMutation.isPending ? "Approving…" : "Approve"}
+            </Button>
+          )}
+
+          {canMarkPaid && (
+            <Button size="sm" onClick={() => setMarkPaidOpen(true)}
+              className="gap-1.5 bg-green-600 hover:bg-green-700">
+              <Banknote className="h-3.5 w-3.5" />
+              Mark as Paid
+            </Button>
+          )}
+
+          {isAdmin && status !== "draft" && (
+            <Button variant="outline" size="sm" onClick={() => setRevertOpen(true)}
+              className="gap-1.5 text-muted-foreground">
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restart Workflow
+            </Button>
+          )}
+
           {isAdmin && (
             <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 className="h-3.5 w-3.5" />
@@ -240,15 +311,49 @@ export default function VoucherView() {
         </div>
       </div>
 
+      {/* Workflow status banner */}
+      {status === "pending_verification" && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
+          <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-medium text-amber-800">Awaiting Verification</span>
+            {voucher.verifierName && <span className="text-amber-700"> — assigned to <strong>{voucher.verifierName}</strong></span>}
+          </div>
+        </div>
+      )}
+      {status === "pending_approval" && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 flex items-center gap-3">
+          <Clock className="h-4 w-4 text-orange-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-medium text-orange-800">Awaiting Approval</span>
+            {voucher.approverName && <span className="text-orange-700"> — assigned to <strong>{voucher.approverName}</strong></span>}
+            {voucher.verifierName && voucher.verifiedAt && <span className="text-orange-600 ml-2">· Verified by {voucher.verifierName} on {fmtDate(voucher.verifiedAt)}</span>}
+          </div>
+        </div>
+      )}
+      {status === "approved" && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-center gap-3">
+          <ThumbsUp className="h-4 w-4 text-blue-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-medium text-blue-800">Approved — Ready for Payment</span>
+            {voucher.approverName && voucher.approvedAt && <span className="text-blue-700"> — Approved by <strong>{voucher.approverName}</strong> on {fmtDate(voucher.approvedAt)}</span>}
+            {voucher.paidByName && <span className="text-blue-600 ml-2">· Payment assigned to <strong>{voucher.paidByName}</strong></span>}
+          </div>
+        </div>
+      )}
+
       {/* Info grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Pay To", value: voucher.payee },
           { label: "Date", value: fmtDate(voucher.issueDate) },
           { label: "Currency", value: voucher.currency },
-          { label: "Created By", value: voucher.createdByUsername || "—" },
+          { label: "Prepared By", value: voucher.preparedByName || voucher.createdByUsername || "—" },
           ...(voucher.payeeContact ? [{ label: "Contact", value: voucher.payeeContact }] : []),
-          ...(voucher.status === "paid" ? [
+          ...(voucher.verifierName ? [{ label: "Verifier", value: voucher.verifierName }] : []),
+          ...(voucher.approverName ? [{ label: "Approver", value: voucher.approverName }] : []),
+          ...(voucher.paidByName ? [{ label: "Paid By", value: voucher.paidByName }] : []),
+          ...(status === "paid" ? [
             { label: "Paid On", value: fmtDate(voucher.paidDate) },
             { label: "Bank Ref", value: voucher.bankRef || "—" },
           ] : []),
@@ -309,7 +414,7 @@ export default function VoucherView() {
         </div>
       )}
 
-      {/* Bills / Receipts — attachment grid */}
+      {/* Bills / Receipts */}
       {voucher.attachmentCount > 0 && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
@@ -318,7 +423,7 @@ export default function VoucherView() {
             <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
               {voucher.attachmentCount} file{voucher.attachmentCount > 1 ? "s" : ""}
             </span>
-            {voucher.status === "paid" && (
+            {status === "paid" && (
               <span className="ml-auto text-xs text-green-600 font-medium">✓ Each image appears as a page in the PDF with PAID stamp</span>
             )}
           </div>
@@ -353,6 +458,22 @@ export default function VoucherView() {
             <Button variant="outline" onClick={() => setMarkPaidOpen(false)}>Cancel</Button>
             <Button onClick={() => markPaidMutation.mutate()} disabled={markPaidMutation.isPending} className="bg-green-600 hover:bg-green-700">
               {markPaidMutation.isPending ? "Saving…" : "Confirm Paid"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restart Workflow dialog */}
+      <Dialog open={revertOpen} onOpenChange={setRevertOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Restart Workflow?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will clear any verification and approval recorded on this voucher and restart the workflow from the beginning.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevertOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => markDraftMutation.mutate()} disabled={markDraftMutation.isPending}>
+              {markDraftMutation.isPending ? "Reverting…" : "Restart Workflow"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -402,13 +523,12 @@ export default function VoucherView() {
         title={`${voucher.voucherNumber} — ${TYPE_LABELS[voucher.type] || voucher.type}`}
         generatePdf={handleGeneratePdf}
         pdfFilename={`${voucher.voucherNumber}.pdf`}
-        onEdit={voucher.status === "draft" ? () => { setPdfOpen(false); setLocation(`/projects/${projectId}/vouchers/${voucherId}/edit`); } : undefined}
+        onEdit={canEdit ? () => { setPdfOpen(false); setLocation(`/projects/${projectId}/vouchers/${voucherId}/edit`); } : undefined}
       />
     </div>
   );
 }
 
-// Lazy-loading tile component — fetches image data on mount
 function AttachmentTile({ voucherId, att, onPreview }: { voucherId: string; att: any; onPreview: (url: string) => void }) {
   const { data } = useQuery<any>({
     queryKey: ["voucher-attachment-data", att.id],

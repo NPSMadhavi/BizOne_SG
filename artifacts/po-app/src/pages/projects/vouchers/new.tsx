@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload, Users } from "lucide-react";
 
 interface Item {
   description: string;
@@ -60,6 +60,9 @@ export default function VoucherNew() {
   });
   const [items, setItems] = useState<Item[]>([{ description: "", category: "", amount: "" }]);
   const [attachments, setAttachments] = useState<AttachFile[]>([]);
+  const [verifierId, setVerifierId] = useState<string>("");
+  const [approverId, setApproverId] = useState<string>("");
+  const [paidById, setPaidById] = useState<string>("");
 
   const { data: project } = useQuery<any>({
     queryKey: ["project", projectId],
@@ -70,10 +73,45 @@ export default function VoucherNew() {
     },
   });
 
+  const { data: settings } = useQuery<any>({
+    queryKey: ["settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/settings", { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+  });
+
+  const { data: companyUsers = [] } = useQuery<any[]>({
+    queryKey: ["company-users"],
+    queryFn: async () => {
+      const r = await fetch("/api/company-users", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const { data: me } = useQuery<any>({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const r = await fetch("/api/auth/me", { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+  });
+
+  // Pre-fill signatory defaults from settings once loaded
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  if (settings && !defaultsApplied && companyUsers.length > 0) {
+    if (settings.defaultVerifierId) setVerifierId(String(settings.defaultVerifierId));
+    if (settings.defaultApproverId) setApproverId(String(settings.defaultApproverId));
+    if (settings.defaultPaidById) setPaidById(String(settings.defaultPaidById));
+    setDefaultsApplied(true);
+  }
+
   const mutation = useMutation({
     mutationFn: async () => {
       const validItems = items.filter(it => it.description.trim() && parseFloat(it.amount) > 0);
-      // Step 1: Create voucher (no binary data in body)
       const r = await fetch(`/api/projects/${projectId}/vouchers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,6 +123,9 @@ export default function VoucherNew() {
             category: it.category,
             amount: parseFloat(it.amount) || 0,
           })),
+          verifierId: verifierId ? Number(verifierId) : null,
+          approverId: approverId ? Number(approverId) : null,
+          paidById: paidById ? Number(paidById) : null,
         }),
       });
       if (!r.ok) {
@@ -93,7 +134,6 @@ export default function VoucherNew() {
       }
       const voucher = await r.json();
 
-      // Step 2: Upload attachments one by one
       for (const att of attachments) {
         await fetch(`/api/vouchers/${voucher.id}/attachments`, {
           method: "POST",
@@ -107,6 +147,7 @@ export default function VoucherNew() {
     },
     onSuccess: (voucher) => {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["vouchers-pending-action"] });
       toast({ title: "Voucher created" });
       setLocation(`/projects/${projectId}/vouchers/${voucher.id}`);
     },
@@ -114,39 +155,22 @@ export default function VoucherNew() {
   });
 
   const set = (field: string, val: string) => setForm(f => ({ ...f, [field]: val }));
-
   const setItem = (i: number, field: keyof Item, val: string) => {
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [field]: val } : it));
   };
-
   const addItem = () => setItems(prev => [...prev, { description: "", category: "", amount: "" }]);
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
-
   const total = items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
-
-  const fmt = (n: number) => new Intl.NumberFormat("en-US", {
-    style: "currency", currency: form.currency, minimumFractionDigits: 2
-  }).format(n);
+  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: form.currency, minimumFractionDigits: 2 }).format(n);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-
     const remaining = MAX_FILES - attachments.length;
-    if (remaining <= 0) {
-      toast({ title: `Max ${MAX_FILES} files`, variant: "destructive" });
-      return;
-    }
-
+    if (remaining <= 0) { toast({ title: `Max ${MAX_FILES} files`, variant: "destructive" }); return; }
     files.slice(0, remaining).forEach(file => {
-      if (!file.type.startsWith("image/")) {
-        toast({ title: `${file.name}: only images supported`, variant: "destructive" });
-        return;
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        toast({ title: `${file.name}: max 5 MB`, variant: "destructive" });
-        return;
-      }
+      if (!file.type.startsWith("image/")) { toast({ title: `${file.name}: only images supported`, variant: "destructive" }); return; }
+      if (file.size > MAX_FILE_SIZE) { toast({ title: `${file.name}: max 5 MB`, variant: "destructive" }); return; }
       const reader = new FileReader();
       reader.onloadend = () => {
         const dataUrl = reader.result as string;
@@ -159,6 +183,8 @@ export default function VoucherNew() {
   };
 
   const removeAttachment = (i: number) => setAttachments(prev => prev.filter((_, idx) => idx !== i));
+
+  const currentUsername = me?.username || "You";
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
@@ -230,7 +256,6 @@ export default function VoucherNew() {
                 Add Item
               </Button>
             </div>
-
             <div className="space-y-3">
               <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-1">
                 <div className="col-span-5">Description *</div>
@@ -241,11 +266,7 @@ export default function VoucherNew() {
               {items.map((it, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-5">
-                    <Input
-                      placeholder="What was purchased/paid"
-                      value={it.description}
-                      onChange={e => setItem(i, "description", e.target.value)}
-                    />
+                    <Input placeholder="What was purchased/paid" value={it.description} onChange={e => setItem(i, "description", e.target.value)} />
                   </div>
                   <div className="col-span-4">
                     <Select value={it.category} onValueChange={v => setItem(i, "category", v)}>
@@ -256,15 +277,9 @@ export default function VoucherNew() {
                     </Select>
                   </div>
                   <div className="col-span-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={it.amount}
+                    <Input type="number" min="0" step="0.01" placeholder="0.00" value={it.amount}
                       onChange={e => setItem(i, "amount", e.target.value)}
-                      className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
+                      className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                   </div>
                   <div className="col-span-1 flex justify-center">
                     {items.length > 1 && (
@@ -283,7 +298,68 @@ export default function VoucherNew() {
             <Textarea className="mt-1" rows={2} placeholder="Any additional notes..." value={form.notes} onChange={e => set("notes", e.target.value)} />
           </div>
 
-          {/* Bills / Receipts — multi-upload */}
+          {/* Workflow Signatories */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold">Approval Workflow</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Assign who needs to verify, approve, and process payment for this voucher.
+              Defaults are loaded from your company settings. If a signatory is the same as the creator, that step is skipped automatically.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Prepared By</Label>
+                <Input className="mt-1" value={currentUsername} disabled />
+              </div>
+              <div />
+              <div>
+                <Label>Verified By</Label>
+                <Select value={verifierId || "none"} onValueChange={v => setVerifierId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select verifier…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None (skip verification) —</SelectItem>
+                    {companyUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.username}{u.role === "admin" ? " (admin)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Approved By</Label>
+                <Select value={approverId || "none"} onValueChange={v => setApproverId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select approver…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None (skip approval) —</SelectItem>
+                    {companyUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.username}{u.role === "admin" ? " (admin)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Paid By</Label>
+                <Select value={paidById || "none"} onValueChange={v => setPaidById(v === "none" ? "" : v)}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Select payer…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Anyone (or self) —</SelectItem>
+                    {companyUsers.map((u: any) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.username}{u.role === "admin" ? " (admin)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Bills / Receipts */}
           <div className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
@@ -304,9 +380,7 @@ export default function VoucherNew() {
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               Attach bills, receipts, or payment screenshots. Images only (JPG, PNG, WebP), max 5 MB each, up to {MAX_FILES} files.
-              When paid, all images appear as separate pages in the PDF with a PAID stamp.
             </p>
-
             {attachments.length === 0 ? (
               <button
                 type="button"
@@ -321,11 +395,7 @@ export default function VoucherNew() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {attachments.map((att, i) => (
                   <div key={i} className="relative group border border-border rounded-lg overflow-hidden bg-muted/20">
-                    <img
-                      src={`data:${att.mimeType};base64,${att.data}`}
-                      alt={att.name}
-                      className="w-full h-32 object-cover"
-                    />
+                    <img src={`data:${att.mimeType};base64,${att.data}`} alt={att.name} className="w-full h-32 object-cover" />
                     <div className="p-2">
                       <p className="text-xs font-medium truncate">{att.name}</p>
                       <p className="text-xs text-muted-foreground">{att.sizeKB} KB</p>
@@ -385,6 +455,33 @@ export default function VoucherNew() {
                 </span>
               </div>
               <div className="h-px bg-border my-2" />
+
+              {/* Workflow summary */}
+              {(verifierId || approverId || paidById) && (
+                <>
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-1">Workflow</div>
+                  {verifierId && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Verifier</span>
+                      <span>{companyUsers.find((u: any) => String(u.id) === verifierId)?.username || "—"}</span>
+                    </div>
+                  )}
+                  {approverId && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Approver</span>
+                      <span>{companyUsers.find((u: any) => String(u.id) === approverId)?.username || "—"}</span>
+                    </div>
+                  )}
+                  {paidById && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Paid By</span>
+                      <span>{companyUsers.find((u: any) => String(u.id) === paidById)?.username || "—"}</span>
+                    </div>
+                  )}
+                  <div className="h-px bg-border my-1" />
+                </>
+              )}
+
               <div className="flex justify-between text-base font-bold">
                 <span>Total</span>
                 <span className="text-primary">{fmt(total)}</span>

@@ -40,6 +40,10 @@ export const settingsTable = pgTable("settings", {
   bankDetails: text("bank_details"),
   termsAndConditions: text("terms_and_conditions"),
   quotationTerms: text("quotation_terms"),
+  // Voucher workflow defaults
+  defaultVerifierId: integer("default_verifier_id"),
+  defaultApproverId: integer("default_approver_id"),
+  defaultPaidById: integer("default_paid_by_id"),
 });
 
 export type SettingsRecord = typeof settingsTable.$inferSelect;

@@ -20,7 +20,17 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const VOUCHER_STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600 border-gray-200",
+  pending_verification: "bg-amber-100 text-amber-700 border-amber-200",
+  pending_approval: "bg-orange-100 text-orange-700 border-orange-200",
+  approved: "bg-blue-100 text-blue-700 border-blue-200",
   paid: "bg-green-100 text-green-700 border-green-200",
+};
+const VOUCHER_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  pending_verification: "Verifying",
+  pending_approval: "Approving",
+  approved: "Approved",
+  paid: "Paid",
 };
 const TYPE_LABELS: Record<string, string> = {
   payment: "Payment",
@@ -220,7 +230,7 @@ export default function ProjectDetail() {
                     <Badge className={`text-[10px] border ${VOUCHER_STATUS_COLORS[v.status] || ""}`}>
                       {v.status === "paid" ? (
                         <span className="flex items-center gap-0.5"><CheckCircle className="h-2.5 w-2.5" /> Paid</span>
-                      ) : "Draft"}
+                      ) : (VOUCHER_STATUS_LABELS[v.status] || v.status)}
                     </Badge>
                     <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                       {TYPE_LABELS[v.type] || v.type}

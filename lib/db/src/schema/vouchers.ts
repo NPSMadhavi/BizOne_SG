@@ -10,6 +10,7 @@ export const vouchersTable = pgTable("vouchers", {
   payeeContact: text("payee_contact"),
   issueDate: text("issue_date"),
   description: text("description"),
+  // Status: draft | pending_verification | pending_approval | approved | paid
   status: text("status").notNull().default("draft"),
   items: jsonb("items").notNull().default([]),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
@@ -17,9 +18,18 @@ export const vouchersTable = pgTable("vouchers", {
   paidDate: text("paid_date"),
   bankRef: text("bank_ref"),
   notes: text("notes"),
+  // Legacy proof fields (kept for backward compat — new system uses voucher_attachments)
   proofData: text("proof_data"),
   proofMimeType: text("proof_mime_type"),
+  // Creator
   createdBy: integer("created_by").notNull(),
+  preparedByName: text("prepared_by_name"),
+  // Workflow signatories
+  verifierId: integer("verifier_id"),
+  approverId: integer("approver_id"),
+  paidById: integer("paid_by_id"),
+  verifiedAt: text("verified_at"),
+  approvedAt: text("approved_at"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

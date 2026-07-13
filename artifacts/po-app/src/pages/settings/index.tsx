@@ -8,12 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2 } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Switch } from "@/components/ui/switch";
 import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 type RunningNumberConfig = {
@@ -155,6 +155,11 @@ export default function Settings() {
   const [maintSaving, setMaintSaving] = useState(false);
   const [maintLoaded, setMaintLoaded] = useState(false);
 
+  const [workflowVerifierId, setWorkflowVerifierId] = useState<string>("");
+  const [workflowApproverId, setWorkflowApproverId] = useState<string>("");
+  const [workflowPaidById, setWorkflowPaidById] = useState<string>("");
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+
   useEffect(() => {
     fetch("/api/maintenance", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
@@ -223,9 +228,23 @@ export default function Settings() {
       setTermsAndConditions((settings as any).termsAndConditions ?? "");
       setQuotationTerms((settings as any).quotationTerms ?? "");
     }
+    if (settings) {
+      if ((settings as any).defaultVerifierId) setWorkflowVerifierId(String((settings as any).defaultVerifierId));
+      if ((settings as any).defaultApproverId) setWorkflowApproverId(String((settings as any).defaultApproverId));
+      if ((settings as any).defaultPaidById) setWorkflowPaidById(String((settings as any).defaultPaidById));
+    }
   }, [settings]);
 
   const updateSettings = useUpdateSettings();
+
+  const { data: companyUsers = [] } = useQuery<any[]>({
+    queryKey: ["company-users"],
+    queryFn: async () => {
+      const r = await fetch("/api/company-users", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
 
   const handleSaveGst = () => {
     const rate = parseFloat(gstInput);
@@ -293,6 +312,29 @@ export default function Settings() {
         },
       }
     );
+  };
+
+  const handleSaveWorkflow = async () => {
+    setWorkflowSaving(true);
+    try {
+      const r = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          defaultVerifierId: workflowVerifierId ? Number(workflowVerifierId) : null,
+          defaultApproverId: workflowApproverId ? Number(workflowApproverId) : null,
+          defaultPaidById: workflowPaidById ? Number(workflowPaidById) : null,
+        }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+      toast({ title: "Saved", description: "Default workflow signatories updated." });
+    } catch {
+      toast({ title: "Error", description: "Failed to save workflow settings.", variant: "destructive" });
+    } finally {
+      setWorkflowSaving(false);
+    }
   };
 
   const handleSaveDocs = () => {
@@ -381,6 +423,15 @@ export default function Settings() {
             <Mail className="h-4 w-4" />
             Email
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger
+              value="workflow"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+            >
+              <Users className="h-4 w-4" />
+              Workflow
+            </TabsTrigger>
+          )}
           {isAdmin && (
             <TabsTrigger
               value="companies"
@@ -561,6 +612,89 @@ export default function Settings() {
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* WORKFLOW */}
+        <TabsContent value="workflow">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                Approval Workflow Defaults
+              </CardTitle>
+              <CardDescription>
+                Set the default signatories for new payment vouchers in this company.
+                These can be overridden per-voucher at creation time.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div>
+                  <Label className="text-sm font-medium">Default Verifier</Label>
+                  <p className="text-xs text-muted-foreground mb-2">User who verifies vouchers before approval</p>
+                  <Select value={workflowVerifierId || "none"} onValueChange={v => setWorkflowVerifierId(v === "none" ? "" : v)}>
+                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None (skip verification step) —</SelectItem>
+                      {(companyUsers as any[]).map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.username}{u.role === "admin" ? " (admin)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Default Approver</Label>
+                  <p className="text-xs text-muted-foreground mb-2">User who approves vouchers for payment</p>
+                  <Select value={workflowApproverId || "none"} onValueChange={v => setWorkflowApproverId(v === "none" ? "" : v)}>
+                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None (skip approval step) —</SelectItem>
+                      {(companyUsers as any[]).map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.username}{u.role === "admin" ? " (admin)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Default Paid By</Label>
+                  <p className="text-xs text-muted-foreground mb-2">User responsible for processing payment</p>
+                  <Select value={workflowPaidById || "none"} onValueChange={v => setWorkflowPaidById(v === "none" ? "" : v)}>
+                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      {(companyUsers as any[]).map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.username}{u.role === "admin" ? " (admin)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-muted/40 border border-border p-4 text-sm text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">How the workflow works:</p>
+                <ol className="list-decimal list-inside space-y-0.5 ml-1">
+                  <li>Voucher is created → assigned status based on signatories</li>
+                  <li>Verifier reviews → clicks Verify → moves to Pending Approval</li>
+                  <li>Approver reviews → clicks Approve → moves to Approved</li>
+                  <li>Paid By user marks payment → voucher becomes Paid</li>
+                </ol>
+                <p className="mt-2 text-xs">Steps are skipped automatically when the signatory is the same as the creator or not set.</p>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleSaveWorkflow} disabled={workflowSaving} className="gap-2">
+                  <Save className="h-4 w-4" />
+                  {workflowSaving ? "Saving…" : "Save Workflow Defaults"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

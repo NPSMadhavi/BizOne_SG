@@ -10,7 +10,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   FileText, CheckCircle2, Clock, DollarSign, Receipt, FileSpreadsheet,
-  Truck, Package, TrendingUp, AlertTriangle, ShoppingCart,
+  Truck, Package, TrendingUp, AlertTriangle, ShoppingCart, Bell,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
@@ -142,6 +142,16 @@ export default function Dashboard() {
     },
   });
 
+  const { data: pendingAction, isLoading: pendingActionLoading } = useQuery({
+    queryKey: ["vouchers-pending-action"],
+    queryFn: async () => {
+      const res = await fetch("/api/vouchers/pending-action", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json() as Promise<any[]>;
+    },
+    refetchInterval: 60_000,
+  });
+
   const { data: recentInvoices, isLoading: invLoading } = useListInvoices({
     query: { queryKey: getListInvoicesQueryKey() },
   });
@@ -259,6 +269,62 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* Pending Your Action — Voucher Workflow */}
+      {(pendingActionLoading || (pendingAction && pendingAction.length > 0)) && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Bell className="h-4 w-4 text-amber-600" />
+            <h2 className="text-lg xl:text-xl font-semibold">Pending Your Action</h2>
+            {!pendingActionLoading && pendingAction && pendingAction.length > 0 && (
+              <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
+                {pendingAction.length} voucher{pendingAction.length > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/10 dark:border-amber-900">
+            <CardContent className="p-0">
+              {pendingActionLoading ? (
+                <div className="p-4 space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-3/4" />
+                </div>
+              ) : (
+                <div className="divide-y divide-amber-100">
+                  {(pendingAction || []).map((v: any) => (
+                    <Link key={v.id} href={`/projects/${v.projectId}/vouchers/${v.id}`}>
+                      <div className="flex items-center justify-between px-4 py-3 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <Receipt className="h-4 w-4 text-amber-600 shrink-0" />
+                          <div>
+                            <span className="font-mono text-sm font-medium">{v.voucherNumber}</span>
+                            <span className="text-xs text-muted-foreground ml-2">{v.payee}</span>
+                          </div>
+                          <Badge className={`text-[10px] border ml-1 ${
+                            v.status === "pending_verification" ? "bg-amber-100 text-amber-700 border-amber-200" :
+                            v.status === "pending_approval" ? "bg-orange-100 text-orange-700 border-orange-200" :
+                            "bg-blue-100 text-blue-700 border-blue-200"
+                          }`}>
+                            {v.status === "pending_verification" ? "Verify" :
+                             v.status === "pending_approval" ? "Approve" :
+                             "Mark Paid"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm font-semibold tabular-nums">
+                            {new Intl.NumberFormat("en-US", { style: "currency", currency: v.currency || "SGD", minimumFractionDigits: 2 }).format(parseFloat(v.totalAmount) || 0)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">→</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Low Stock Alert */}
       {!stockLoading && lowStockCount > 0 && (
