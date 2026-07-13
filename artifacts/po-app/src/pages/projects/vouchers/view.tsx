@@ -52,9 +52,8 @@ export default function VoucherView() {
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
     queryFn: async () => {
-      const r = await fetch(`/api/vouchers/${voucherId}`, {
+      const r = await fetch(`/api/vouchers/${voucherId}?_t=${Date.now()}`, {
         credentials: "include",
-        headers: { "Cache-Control": "no-cache" },
       });
       if (!r.ok) throw new Error("Not found");
       return r.json();
