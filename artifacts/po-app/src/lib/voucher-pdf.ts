@@ -153,8 +153,7 @@ export async function generateVoucherPDF(
     doc.roundedRect(mL, bannerTop, mR - mL, bannerH, 1.5, 1.5, "F");
 
     doc.setFont(F, "bold"); doc.setFontSize(8); doc.setTextColor(30, 100, 60);
-    const checkMark = "✓ PAYMENT RECEIVED";
-    doc.text(checkMark, mL + 3, bannerTop + 6);
+    doc.text("✓  VOUCHER PAID", mL + 3, bannerTop + 6);
 
     let bx = mL + 52;
     if (voucher.paidDate) {
