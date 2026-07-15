@@ -4,7 +4,7 @@ export const vouchersTable = pgTable("vouchers", {
   id: serial("id").primaryKey(),
   voucherNumber: text("voucher_number").notNull(),
   companyId: integer("company_id").notNull(),
-  projectId: integer("project_id").notNull(),
+  projectId: integer("project_id"),
   type: text("type").notNull().default("payment"),
   payee: text("payee").notNull(),
   payeeContact: text("payee_contact"),

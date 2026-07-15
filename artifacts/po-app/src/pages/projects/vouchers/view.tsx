@@ -174,6 +174,9 @@ export default function VoucherView() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const isUnassigned = projectId === "0";
+  const backPath = isUnassigned ? "/projects" : `/projects/${projectId}`;
+
   const deleteMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/vouchers/${voucherId}`, { method: "DELETE", credentials: "include" });
@@ -181,8 +184,9 @@ export default function VoucherView() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["unassigned-vouchers"] });
       toast({ title: "Voucher deleted" });
-      setLocation(`/projects/${projectId}`);
+      setLocation(backPath);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -267,7 +271,7 @@ export default function VoucherView() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation(`/projects/${projectId}`)}>
+          <Button variant="ghost" size="icon" onClick={() => setLocation(backPath)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>

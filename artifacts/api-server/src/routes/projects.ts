@@ -134,6 +134,89 @@ router.get("/vouchers/pending-action", async (req: any, res: any) => {
   }
 });
 
+// ── STANDALONE VOUCHERS (no project required) ────────────────────────────────
+
+router.get("/vouchers", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  try {
+    const rows = await db.select().from(vouchersTable)
+      .where(and(eq(vouchersTable.companyId, companyId), sql`${vouchersTable.projectId} IS NULL`))
+      .orderBy(desc(vouchersTable.createdAt));
+    const withNames = await withCreatorNames(rows);
+    res.json(withNames.map(v => ({ ...v, totalAmount: parseDecimal(v.totalAmount) })));
+  } catch (err: any) {
+    req.log.error({ err }, "GET /vouchers error");
+    res.status(500).json({ error: "Failed to fetch vouchers" });
+  }
+});
+
+router.post("/vouchers", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const createdBy = req.session.userId!;
+  try {
+    const {
+      type, payee, payeeContact, issueDate, description, items, currency, notes,
+      projectId: bodyProjectId,
+      verifierId: bodyVerifierId, approverId: bodyApproverId, paidById: bodyPaidById,
+    } = req.body;
+    if (!payee?.trim()) return res.status(400).json({ error: "Payee is required" });
+
+    // Validate projectId if provided
+    let projectId: number | null = null;
+    if (bodyProjectId) {
+      const pid = parseInt(bodyProjectId);
+      const [proj] = await db.select({ id: projectsTable.id }).from(projectsTable)
+        .where(and(eq(projectsTable.id, pid), eq(projectsTable.companyId, companyId)));
+      if (!proj) return res.status(404).json({ error: "Project not found" });
+      projectId = pid;
+    }
+
+    const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+    const verifierId = bodyVerifierId ? Number(bodyVerifierId) : (settings?.defaultVerifierId ?? null);
+    const approverId = bodyApproverId ? Number(bodyApproverId) : (settings?.defaultApproverId ?? null);
+    const paidById = bodyPaidById ? Number(bodyPaidById) : (settings?.defaultPaidById ?? null);
+
+    const itemsArr: any[] = Array.isArray(items) ? items : [];
+    const total = itemsArr.reduce((s: number, it: any) => s + (parseFloat(it.amount) || 0), 0);
+    const voucherNumber = await nextDocNumber("pv", companyId);
+    const status = computeInitialStatus(createdBy, verifierId, approverId);
+
+    const [creator] = await db.select({ username: usersTable.username }).from(usersTable).where(eq(usersTable.id, createdBy));
+    const preparedByName = creator?.username || null;
+
+    const [voucher] = await db.insert(vouchersTable).values({
+      voucherNumber,
+      companyId,
+      projectId,
+      type: type || "payment",
+      payee: payee.trim(),
+      payeeContact: payeeContact?.trim() || null,
+      issueDate: issueDate || null,
+      description: description?.trim() || null,
+      status,
+      items: itemsArr,
+      totalAmount: String(total),
+      currency: currency || "SGD",
+      notes: notes?.trim() || null,
+      createdBy,
+      preparedByName,
+      verifierId: verifierId || null,
+      approverId: approverId || null,
+      paidById: paidById || null,
+    }).returning();
+
+    logAudit({ req, action: "create", entityType: "voucher", entityId: voucher.id });
+    res.status(201).json({ ...voucher, totalAmount: parseDecimal(voucher.totalAmount) });
+  } catch (err: any) {
+    req.log.error({ err }, "POST /vouchers error");
+    res.status(500).json({ error: "Failed to create voucher" });
+  }
+});
+
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 
 router.get("/projects", async (req: any, res: any) => {
