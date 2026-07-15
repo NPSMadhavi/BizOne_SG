@@ -1,7 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 import { Plus, FolderKanban, ChevronRight, TrendingUp, Receipt } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -34,9 +44,19 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+const CREATE_NEW_VALUE = "__create_new__";
+
 export default function ProjectList() {
   const [, setLocation] = useLocation();
   const { isAdmin, hasModuleAccess } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const [voucherDialogOpen, setVoucherDialogOpen] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const isCreatingNew = selectedProjectId === CREATE_NEW_VALUE;
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["projects"],
@@ -46,6 +66,54 @@ export default function ProjectList() {
       return r.json();
     },
   });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const r = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: name.trim(), status: "active" }),
+      });
+      if (!r.ok) {
+        const e = await r.json();
+        throw new Error(e.error || "Failed to create project");
+      }
+      return r.json();
+    },
+    onSuccess: (newProject) => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      setVoucherDialogOpen(false);
+      setSelectedProjectId("");
+      setNewProjectName("");
+      setLocation(`/projects/${newProject.id}/vouchers/new`);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const handleOpenVoucherDialog = () => {
+    setSelectedProjectId(projects.length > 0 ? String(projects[0].id) : CREATE_NEW_VALUE);
+    setNewProjectName("");
+    setVoucherDialogOpen(true);
+  };
+
+  const handleContinue = () => {
+    if (isCreatingNew) {
+      if (!newProjectName.trim()) {
+        toast({ title: "Project name is required", variant: "destructive" });
+        return;
+      }
+      createProjectMutation.mutate(newProjectName);
+    } else {
+      if (!selectedProjectId) {
+        toast({ title: "Please select a project", variant: "destructive" });
+        return;
+      }
+      setVoucherDialogOpen(false);
+      setSelectedProjectId("");
+      setLocation(`/projects/${selectedProjectId}/vouchers/new`);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -57,12 +125,18 @@ export default function ProjectList() {
             <p className="text-sm text-muted-foreground">Track project expenses with vouchers</p>
           </div>
         </div>
-        {(isAdmin || hasModuleAccess("projects")) && (
-          <Button onClick={() => setLocation("/projects/new")} className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Project
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleOpenVoucherDialog} className="gap-2">
+            <Receipt className="h-4 w-4" />
+            New Voucher
           </Button>
-        )}
+          {(isAdmin || hasModuleAccess("projects")) && (
+            <Button onClick={() => setLocation("/projects/new")} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Project
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -112,16 +186,7 @@ export default function ProjectList() {
                       {p.createdByUsername && <span>By: {p.createdByUsername}</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 text-xs h-7"
-                      onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}/vouchers/new`); }}
-                    >
-                      <Receipt className="h-3 w-3" />
-                      New Voucher
-                    </Button>
+                  <div className="flex items-center gap-4 shrink-0">
                     <div className="text-right">
                       <div className="flex items-center gap-1.5 justify-end">
                         <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
@@ -156,6 +221,96 @@ export default function ProjectList() {
           })}
         </div>
       )}
+
+      {/* New Voucher dialog — project picker */}
+      <Dialog open={voucherDialogOpen} onOpenChange={setVoucherDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-primary" />
+              New Voucher
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Select Project</Label>
+              <Select
+                value={selectedProjectId}
+                onValueChange={setSelectedProjectId}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Choose a project…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      <span className="flex items-center gap-2">
+                        {p.name}
+                        {p.code && (
+                          <span className="text-xs font-mono text-muted-foreground">({p.code})</span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CREATE_NEW_VALUE}>
+                    <span className="flex items-center gap-1.5 text-primary font-medium">
+                      <Plus className="h-3.5 w-3.5" />
+                      Create new project…
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isCreatingNew && (
+              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                <p className="text-sm font-medium text-foreground">New Project Details</p>
+                <div>
+                  <Label>Project Name *</Label>
+                  <Input
+                    className="mt-1"
+                    placeholder="e.g. Office Renovation"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleContinue(); }}
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">The project will be created as Active. You can add more details (budget, dates, etc.) from the project page later.</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVoucherDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleContinue}
+              disabled={createProjectMutation.isPending || (!isCreatingNew && !selectedProjectId)}
+              className="gap-2"
+            >
+              {createProjectMutation.isPending ? (
+                <>
+                  <div className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Creating…
+                </>
+              ) : isCreatingNew ? (
+                <>
+                  <Plus className="h-3.5 w-3.5" />
+                  Create & Continue
+                </>
+              ) : (
+                <>
+                  <Receipt className="h-3.5 w-3.5" />
+                  Continue to Voucher
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
