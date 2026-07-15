@@ -54,6 +54,7 @@ export default function VoucherEdit() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [voucherNumber, setVoucherNumber] = useState("");
   const [form, setForm] = useState({
     type: "payment",
     payee: "",
@@ -118,6 +119,7 @@ export default function VoucherEdit() {
         currency: voucher.currency || "SGD",
         notes: voucher.notes || "",
       });
+      setVoucherNumber(voucher.voucherNumber || "");
       setVerifierId(voucher.verifierId ? String(voucher.verifierId) : "");
       setApproverId(voucher.approverId ? String(voucher.approverId) : "");
       setPaidById(voucher.paidById ? String(voucher.paidById) : "");
@@ -140,6 +142,7 @@ export default function VoucherEdit() {
         credentials: "include",
         body: JSON.stringify({
           ...form,
+          voucherNumber,
           items: validItems.map(it => ({
             description: it.description.trim(),
             category: it.category,
@@ -267,6 +270,16 @@ export default function VoucherEdit() {
           <div className="bg-card border border-border rounded-xl p-5">
             <h2 className="font-semibold mb-4">Voucher Details</h2>
             <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <Label>Voucher Number</Label>
+                <Input
+                  className="mt-1 font-mono"
+                  value={voucherNumber}
+                  onChange={e => setVoucherNumber(e.target.value)}
+                  placeholder="e.g. RPV-0001"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Changing this only updates this voucher's number — it does not affect the running counter or any other vouchers.</p>
+              </div>
               <div>
                 <Label>Voucher Type</Label>
                 <Select value={form.type} onValueChange={v => set("type", v)}>

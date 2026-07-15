@@ -555,6 +555,7 @@ router.put("/vouchers/:id", async (req: any, res: any) => {
     const {
       type, payee, payeeContact, issueDate, description, items, currency, notes,
       verifierId: bodyVerifierId, approverId: bodyApproverId, paidById: bodyPaidById,
+      voucherNumber: bodyVoucherNumber,
     } = req.body;
     const itemsArr: any[] = Array.isArray(items) ? items : (existing.items as any[]);
     const total = itemsArr.reduce((s: number, it: any) => s + (parseFloat(it.amount) || 0), 0);
@@ -572,6 +573,17 @@ router.put("/vouchers/:id", async (req: any, res: any) => {
       newStatus = computeInitialStatus(createdBy, verifierId, approverId);
     }
 
+    // Validate voucherNumber uniqueness if being changed
+    let newVoucherNumber = existing.voucherNumber;
+    if (bodyVoucherNumber !== undefined && bodyVoucherNumber.trim() && bodyVoucherNumber.trim() !== existing.voucherNumber) {
+      if (!req.session.isAdmin) return res.status(403).json({ error: "Only admins can change the voucher number" });
+      const trimmed = bodyVoucherNumber.trim();
+      const [conflict] = await db.select({ id: vouchersTable.id }).from(vouchersTable)
+        .where(and(eq(vouchersTable.companyId, companyId), eq(vouchersTable.voucherNumber, trimmed)));
+      if (conflict) return res.status(400).json({ error: `Voucher number "${trimmed}" is already used by another voucher` });
+      newVoucherNumber = trimmed;
+    }
+
     const [updated] = await db.update(vouchersTable).set({
       type: type || existing.type,
       payee: payee?.trim() || existing.payee,
@@ -586,6 +598,7 @@ router.put("/vouchers/:id", async (req: any, res: any) => {
       approverId,
       paidById,
       status: newStatus,
+      voucherNumber: newVoucherNumber,
     }).where(eq(vouchersTable.id, id)).returning();
 
     logAudit({ req, action: "update", entityType: "voucher", entityId: id });

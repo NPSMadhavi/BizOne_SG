@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FolderKanban, ChevronRight, TrendingUp } from "lucide-react";
+import { Plus, FolderKanban, ChevronRight, TrendingUp, Receipt } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 interface Project {
@@ -112,7 +112,16 @@ export default function ProjectList() {
                       {p.createdByUsername && <span>By: {p.createdByUsername}</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 shrink-0">
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 text-xs h-7"
+                      onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}/vouchers/new`); }}
+                    >
+                      <Receipt className="h-3 w-3" />
+                      New Voucher
+                    </Button>
                     <div className="text-right">
                       <div className="flex items-center gap-1.5 justify-end">
                         <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
