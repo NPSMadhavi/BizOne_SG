@@ -295,12 +295,21 @@ router.post("/projects/:projectId/vouchers", async (req: any, res: any) => {
   if (!requireCompany(req, res)) return;
   const companyId = req.session.companyId!;
   const createdBy = req.session.userId!;
-  const projectId = parseInt(req.params.projectId);
+  const urlProjectId = parseInt(req.params.projectId);
+  const bodyTargetProjectId = req.body.targetProjectId ? parseInt(req.body.targetProjectId) : null;
+  const projectId = bodyTargetProjectId || urlProjectId;
 
   try {
-    const [project] = await db.select({ id: projectsTable.id }).from(projectsTable)
+    // Validate the URL project exists (so navigation context is valid)
+    if (bodyTargetProjectId && bodyTargetProjectId !== urlProjectId) {
+      const [urlProject] = await db.select({ id: projectsTable.id }).from(projectsTable)
+        .where(and(eq(projectsTable.id, urlProjectId), eq(projectsTable.companyId, companyId)));
+      if (!urlProject) return res.status(404).json({ error: "Project not found" });
+    }
+
+    const [project] = await db.select({ id: projectsTable.id, name: projectsTable.name }).from(projectsTable)
       .where(and(eq(projectsTable.id, projectId), eq(projectsTable.companyId, companyId)));
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) return res.status(404).json({ error: "Target project not found" });
 
     // Fetch settings for defaults + company name for emails
     const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
@@ -827,6 +836,37 @@ router.delete("/vouchers/:id", async (req: any, res: any) => {
   } catch (err: any) {
     req.log.error({ err }, "DELETE /vouchers/:id error");
     res.status(500).json({ error: "Failed to delete voucher" });
+  }
+});
+
+router.post("/vouchers/:id/move", async (req: any, res: any) => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(req.session as any).isAdmin) return res.status(403).json({ error: "Admin only" });
+  const companyId = req.session.companyId!;
+  const id = parseInt(req.params.id);
+  const newProjectId = req.body.projectId ? parseInt(req.body.projectId) : null;
+  if (!newProjectId) return res.status(400).json({ error: "projectId is required" });
+
+  try {
+    const [existing] = await db.select({ id: vouchersTable.id, projectId: vouchersTable.projectId })
+      .from(vouchersTable)
+      .where(and(eq(vouchersTable.id, id), eq(vouchersTable.companyId, companyId)));
+    if (!existing) return res.status(404).json({ error: "Voucher not found" });
+
+    const [targetProject] = await db.select({ id: projectsTable.id, name: projectsTable.name })
+      .from(projectsTable)
+      .where(and(eq(projectsTable.id, newProjectId), eq(projectsTable.companyId, companyId)));
+    if (!targetProject) return res.status(404).json({ error: "Target project not found" });
+
+    if (existing.projectId === newProjectId) return res.json({ ok: true, message: "Already in this project" });
+
+    await db.update(vouchersTable).set({ projectId: newProjectId }).where(eq(vouchersTable.id, id));
+    logAudit({ req, action: "update", entityType: "voucher", entityId: id, details: { movedToProjectId: newProjectId } });
+    res.json({ ok: true });
+  } catch (err: any) {
+    req.log.error({ err }, "POST /vouchers/:id/move error");
+    res.status(500).json({ error: "Failed to move voucher" });
   }
 });
 

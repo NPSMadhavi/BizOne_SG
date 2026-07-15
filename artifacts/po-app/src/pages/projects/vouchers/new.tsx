@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload, Users } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload, Users, Info } from "lucide-react";
 
 interface Item {
   description: string;
@@ -63,6 +63,7 @@ export default function VoucherNew() {
   const [verifierId, setVerifierId] = useState<string>("");
   const [approverId, setApproverId] = useState<string>("");
   const [paidById, setPaidById] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId || "");
 
   const { data: project } = useQuery<any>({
     queryKey: ["project", projectId],
@@ -70,6 +71,16 @@ export default function VoucherNew() {
       const r = await fetch(`/api/projects/${projectId}`, { credentials: "include" });
       if (!r.ok) throw new Error("Not found");
       return r.json();
+    },
+  });
+
+  const { data: allProjects = [] } = useQuery<any[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const r = await fetch("/api/projects", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : (data.projects ?? []);
     },
   });
 
@@ -109,24 +120,30 @@ export default function VoucherNew() {
     setDefaultsApplied(true);
   }
 
+  const isDifferentProject = selectedProjectId && selectedProjectId !== projectId;
+  const selectedProject = allProjects.find((p: any) => String(p.id) === selectedProjectId);
+
   const mutation = useMutation({
     mutationFn: async () => {
       const validItems = items.filter(it => it.description.trim() && parseFloat(it.amount) > 0);
+      const body: Record<string, any> = {
+        ...form,
+        items: validItems.map(it => ({
+          description: it.description.trim(),
+          category: it.category,
+          amount: parseFloat(it.amount) || 0,
+        })),
+        verifierId: verifierId ? Number(verifierId) : null,
+        approverId: approverId ? Number(approverId) : null,
+        paidById: paidById ? Number(paidById) : null,
+      };
+      if (isDifferentProject) body.targetProjectId = Number(selectedProjectId);
+
       const r = await fetch(`/api/projects/${projectId}/vouchers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          ...form,
-          items: validItems.map(it => ({
-            description: it.description.trim(),
-            category: it.category,
-            amount: parseFloat(it.amount) || 0,
-          })),
-          verifierId: verifierId ? Number(verifierId) : null,
-          approverId: approverId ? Number(approverId) : null,
-          paidById: paidById ? Number(paidById) : null,
-        }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const e = await r.json();
@@ -146,10 +163,12 @@ export default function VoucherNew() {
       return voucher;
     },
     onSuccess: (voucher) => {
+      const targetProjId = isDifferentProject ? selectedProjectId : projectId;
       qc.invalidateQueries({ queryKey: ["project", projectId] });
+      if (isDifferentProject) qc.invalidateQueries({ queryKey: ["project", selectedProjectId] });
       qc.invalidateQueries({ queryKey: ["vouchers-pending-action"] });
       toast({ title: "Voucher created" });
-      setLocation(`/projects/${projectId}/vouchers/${voucher.id}`);
+      setLocation(`/projects/${targetProjId}/vouchers/${voucher.id}`);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -205,8 +224,34 @@ export default function VoucherNew() {
         {/* Left column */}
         <div className="lg:col-span-2 space-y-5">
           {/* Basic Info */}
+          {isDifferentProject && selectedProject && (
+            <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <span className="font-medium text-blue-800">Cross-project voucher — </span>
+                <span className="text-blue-700">
+                  You are creating this voucher inside <strong>{project?.name}</strong> but it will be saved under <strong>{selectedProject.name}</strong>.
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="bg-card border border-border rounded-xl p-5">
             <h2 className="font-semibold mb-4">Voucher Details</h2>
+            <div className="mb-4">
+              <Label>Project</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select project…" /></SelectTrigger>
+                <SelectContent>
+                  {allProjects.map((p: any) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.name}{p.code ? ` (${p.code})` : ""}
+                      {String(p.id) === projectId ? " — current" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Voucher Type</Label>

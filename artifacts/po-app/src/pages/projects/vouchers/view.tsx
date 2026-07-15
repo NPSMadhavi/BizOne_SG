@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
   ArrowLeft, Receipt, Edit, Trash2, CheckCircle, FileText, Paperclip, FileImage,
-  ShieldCheck, ThumbsUp, Banknote, Clock, RotateCcw,
+  ShieldCheck, ThumbsUp, Banknote, Clock, RotateCcw, FolderInput,
 } from "lucide-react";
 import { generateVoucherPDF } from "@/lib/voucher-pdf";
 import type { VoucherAttachment } from "@/lib/voucher-pdf";
@@ -59,6 +59,8 @@ export default function VoucherView() {
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveToProjectId, setMoveToProjectId] = useState("");
   const [paidDate, setPaidDate] = useState(new Date().toISOString().split("T")[0]);
   const [bankRef, setBankRef] = useState("");
   const [pdfOpen, setPdfOpen] = useState(false);
@@ -75,6 +77,17 @@ export default function VoucherView() {
 
   const currentUserId: number | null = me?.id ?? null;
   const company = me?.companies?.find((c: any) => c.id === me?.selectedCompanyId) ?? null;
+
+  const { data: allProjects = [] } = useQuery<any[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const r = await fetch("/api/projects", { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : (data.projects ?? []);
+    },
+    enabled: isAdmin,
+  });
 
   const { data: voucher, isLoading } = useQuery<any>({
     queryKey: ["voucher", voucherId],
@@ -170,6 +183,27 @@ export default function VoucherView() {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       toast({ title: "Voucher deleted" });
       setLocation(`/projects/${projectId}`);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const moveMutation = useMutation({
+    mutationFn: async (newProjectId: string) => {
+      const r = await fetch(`/api/vouchers/${voucherId}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ projectId: Number(newProjectId) }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Failed to move voucher"); }
+      return newProjectId;
+    },
+    onSuccess: (newProjId) => {
+      setMoveOpen(false);
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["project", newProjId] });
+      toast({ title: "Voucher moved successfully" });
+      setLocation(`/projects/${newProjId}/vouchers/${voucherId}`);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -299,6 +333,13 @@ export default function VoucherView() {
               className="gap-1.5 text-muted-foreground">
               <RotateCcw className="h-3.5 w-3.5" />
               Restart Workflow
+            </Button>
+          )}
+
+          {isAdmin && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setMoveToProjectId(""); setMoveOpen(true); }}>
+              <FolderInput className="h-3.5 w-3.5" />
+              Move to Project
             </Button>
           )}
 
@@ -490,6 +531,55 @@ export default function VoucherView() {
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move to Project dialog */}
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderInput className="h-5 w-5 text-primary" />
+              Move Voucher to Another Project
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <p className="text-sm text-muted-foreground">
+              Select the project you want to move <strong>{voucher.voucherNumber}</strong> into.
+              All items, attachments, and workflow state will be preserved.
+            </p>
+            <div>
+              <Label>Target Project</Label>
+              <select
+                className="mt-1 w-full border border-input bg-background rounded-md px-3 py-2 text-sm"
+                value={moveToProjectId}
+                onChange={e => setMoveToProjectId(e.target.value)}
+              >
+                <option value="">— Select a project —</option>
+                {allProjects.map((p: any) => (
+                  <option key={p.id} value={String(p.id)} disabled={String(p.id) === projectId}>
+                    {p.name}{p.code ? ` (${p.code})` : ""}
+                    {String(p.id) === projectId ? " — current project" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {moveToProjectId && moveToProjectId !== projectId && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                This voucher will be moved from <strong>{voucher.project?.name || "current project"}</strong> to{" "}
+                <strong>{allProjects.find((p: any) => String(p.id) === moveToProjectId)?.name}</strong>.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => moveMutation.mutate(moveToProjectId)}
+              disabled={!moveToProjectId || moveToProjectId === projectId || moveMutation.isPending}
+            >
+              {moveMutation.isPending ? "Moving…" : "Move Voucher"}
             </Button>
           </DialogFooter>
         </DialogContent>
