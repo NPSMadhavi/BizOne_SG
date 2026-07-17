@@ -175,7 +175,11 @@ router.post("/send-email", async (req, res): Promise<void> => {
       }
     }
 
-    const htmlBody = buildEmailHtml(body, isSingapore, companyName, ackUrl);
+    // Plain-text body only (customers flagged HTML emails as spam)
+    let plainBody = body;
+    if (ackUrl) {
+      plainBody += `\n\nTo acknowledge this Purchase Order, please visit:\n${ackUrl}/order-received`;
+    }
     const plainFooter = `\n\n--\n${companyName}`;
 
     const attachments: any[] = [
@@ -191,8 +195,7 @@ router.post("/send-email", async (req, res): Promise<void> => {
       from: settings.smtpFrom || settings.smtpUser,
       to,
       subject,
-      text: body + plainFooter,
-      html: htmlBody,
+      text: plainBody + plainFooter,
       attachments,
     });
 

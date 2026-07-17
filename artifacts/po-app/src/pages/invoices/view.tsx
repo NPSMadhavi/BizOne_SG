@@ -534,6 +534,15 @@ export default function InvoiceView() {
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Invoice ${doc.invNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${doc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+        docInfo={{
+          docType: "Tax Invoice",
+          docNumber: doc.invNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: (doc as any).currency || "SGD",
+          totalAmount: Number(doc.totalAmount) || 0,
+        }}
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

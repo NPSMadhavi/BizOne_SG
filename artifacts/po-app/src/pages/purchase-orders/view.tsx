@@ -455,6 +455,15 @@ export default function PurchaseOrderView() {
         defaultEmailTo={(po as any).vendorContactEmail || ""}
         defaultEmailSubject={`Purchase Order ${po.poNumber}`}
         defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}${(po as any).quoteRefNo ? ` with the sales reference number ${(po as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+        docInfo={{
+          docType: "Purchase Order",
+          docNumber: po.poNumber,
+          customerName: po.vendorName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((po.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: (po as any).currency || "SGD",
+          totalAmount: Number(po.totalAmount) || 0,
+        }}
         onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
         poId={po.id}
         onEmailSent={async (recipients) => {

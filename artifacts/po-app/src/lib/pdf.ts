@@ -1650,6 +1650,24 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   renderInlineDocInfo(doc, qtSettings, marginLeft, totalsY, 125, FOOTER_RESERVE);
 
   buildDocFooter(doc, "Quotation");
+
+  // CANCELLED watermark — draw on every page
+  if ((qt as any).status === "cancelled") {
+    const totalPages = (doc.internal as any).getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      const pw = doc.internal.pageSize.getWidth();
+      const ph = doc.internal.pageSize.getHeight();
+      doc.setGState(new (doc as any).GState({ opacity: 0.10 }));
+      doc.setFontSize(58);
+      doc.setFont(PDF_FONT, "bold");
+      doc.setTextColor(180, 0, 0);
+      doc.text("CANCELLED", pw / 2, ph / 2, { align: "center", angle: 45 });
+      doc.setGState(new (doc as any).GState({ opacity: 1 }));
+      doc.setTextColor(0, 0, 0);
+    }
+  }
+
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
   doc.save(`${qt.qtNumber}.pdf`);
 }

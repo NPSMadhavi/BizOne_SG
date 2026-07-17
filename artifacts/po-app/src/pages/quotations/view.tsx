@@ -234,6 +234,15 @@ export default function QuotationView() {
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Quotation ${doc.qtNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached our Quotation ${doc.qtNumber} for your consideration.\n\nDo not hesitate to contact us if you have any questions.\n\nThank you.`}
+        docInfo={{
+          docType: "Quotation",
+          docNumber: doc.qtNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: (doc as any).currency || "SGD",
+          totalAmount: Number(doc.totalAmount) || 0,
+        }}
         onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

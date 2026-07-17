@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Sparkles } from "lucide-react";
-import { EmailSendDialog } from "@/components/email-send-dialog";
+import { EmailSendDialog, type EmailDocInfo } from "@/components/email-send-dialog";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -129,6 +129,7 @@ interface PdfPreviewModalProps {
   onEdit?: () => void;
   onEmailSent?: (recipients: string[]) => void;
   poId?: number;
+  docInfo?: EmailDocInfo;
 }
 
 export function PdfPreviewModal({
@@ -143,6 +144,7 @@ export function PdfPreviewModal({
   onEdit,
   onEmailSent,
   poId,
+  docInfo,
 }: PdfPreviewModalProps) {
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -230,6 +232,7 @@ export function PdfPreviewModal({
               triggerSize="sm"
               onSuccess={(recipients) => onEmailSent?.(recipients)}
               poId={poId}
+              docInfo={docInfo}
             />
           </div>
         </DialogHeader>

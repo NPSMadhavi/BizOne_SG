@@ -173,6 +173,15 @@ export default function DeliveryOrderView() {
         defaultEmailTo=""
         defaultEmailSubject={`Delivery Order ${doc.doNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${doc.doNumber}.\n\nThank you.`}
+        docInfo={{
+          docType: "Delivery Order",
+          docNumber: doc.doNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: "SGD",
+          totalAmount: 0,
+        }}
         onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/delivery-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
