@@ -162,13 +162,8 @@ export default function CreditNoteEdit() {
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
       const updated = await r.json();
       setSavedDoc(updated);
-      if (status === "confirmed") {
-        // Confirm via separate endpoint
-        const cr = await fetch(`/api/credit-notes/${id}/confirm`, { method: "POST", credentials: "include" });
-        if (cr.ok) { toast({ title: "Credit note confirmed" }); setShowPreview(true); }
-      } else {
-        toast({ title: "Draft saved" }); setShowPreview(true);
-      }
+      toast({ title: status === "confirmed" ? "Credit note confirmed" : "Draft saved" });
+      setShowPreview(true);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally { setSubmitting(false); }
