@@ -1072,20 +1072,31 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const poCurrency = (po as any).currency || "SGD";
   // Strip trailing/empty item rows that have no description and no part number
   const filteredPOItems = po.items.filter((item: any) => {
+    if (item.type === "section") return htmlToText(item.sectionLabel || "").trim() !== "";
     const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
     return hasDesc || hasPart;
   });
-  const hasPOUom = filteredPOItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
+  const regularPOItems = filteredPOItems.filter((item: any) => item.type !== "section");
+  const hasPOUom = regularPOItems.some((item: any) => item.uom && String(item.uom).trim() !== "");
 
   const poHeaderArr: string[] = ["#", "Item / Part Number", "Description", "Qty"];
   if (hasPOUom) poHeaderArr.push("UOM");
   poHeaderArr.push(`Unit Price (${currSymbol(poCurrency)})`, `Amount (${currSymbol(poCurrency)})`);
   const poHeaders = poHeaderArr;
+  const poTotalCols = poHeaders.length;
 
-  const poRichDesc = filteredPOItems.map((item: any) => htmlToRichLines(item.description));
-  const tableData = filteredPOItems.map((item, index) => {
-    const row: any[] = [index + 1, item.partNumber, htmlToText(item.description), item.qty];
+  const poRichDesc: any[] = [];
+  let _poN = 0;
+  const tableData = filteredPOItems.map((item: any) => {
+    if (item.type === "section") {
+      poRichDesc.push(htmlToRichLines(item.sectionLabel || ""));
+      const halign = item.sectionAlign === "center" ? "center" : "left";
+      return [{ content: htmlToText(item.sectionLabel || ""), colSpan: poTotalCols, styles: { halign } }];
+    }
+    poRichDesc.push(htmlToRichLines(item.description));
+    _poN++;
+    const row: any[] = [_poN, item.partNumber, htmlToText(item.description), item.qty];
     if (hasPOUom) row.push((item as any).uom || "");
     row.push(fmtNum(Number(item.unitPrice)), fmtNum(Number(item.amount)));
     return row;
@@ -1100,7 +1111,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const _poPartNoHeaderW = Math.ceil(doc.getTextWidth("Item / Part Number") + 5);
   doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
   // Also measure widest actual part number value at body font — header text is often narrower than data
-  const _poPartNoContentW = filteredPOItems.reduce((max: number, item: any) => {
+  const _poPartNoContentW = regularPOItems.reduce((max: number, item: any) => {
     const pn = (item.partNumber || "").trim();
     return pn ? Math.max(max, Math.ceil(doc.getTextWidth(pn) + 8)) : max;
   }, 0);
@@ -1142,10 +1153,11 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
     didDrawPage: (_d: any) => { poTablePages.push((doc as any).internal.getCurrentPageInfo().pageNumber); },
     didParseCell: (data: any) => {
       if ([poQtyIdx, poUnitPriceIdx, poAmountIdx].includes(data.column.index)) {
+        if ((data.cell.colSpan ?? 1) > 1) return;
         data.cell.styles.halign = "right";
       }
     },
-  }, 2, poRichDesc, filteredPOItems.map((item: any) => (item as any).itemImage || null));
+  }, 2, poRichDesc, filteredPOItems.map((item: any) => item.type === "section" ? null : ((item as any).itemImage || null)));
 
   const poFinalY = (doc as any).lastAutoTable.finalY;
   { const _uniq = [...new Set(poTablePages)];

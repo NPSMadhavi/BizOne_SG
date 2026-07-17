@@ -111,13 +111,33 @@ export interface UpdateUserBody {
   companyAccess?: CompanyAccessItem[];
 }
 
+export type POItemType = (typeof POItemType)[keyof typeof POItemType];
+
+export const POItemType = {
+  item: "item",
+  section: "section",
+} as const;
+
+export type POItemSectionAlign =
+  (typeof POItemSectionAlign)[keyof typeof POItemSectionAlign];
+
+export const POItemSectionAlign = {
+  left: "left",
+  center: "center",
+} as const;
+
 export interface POItem {
+  type?: POItemType;
+  sectionLabel?: string;
+  sectionAlign?: POItemSectionAlign;
   partNumber: string;
   description: string;
   qty: number;
   uom?: string;
   unitPrice: number;
   amount: number;
+  isStockItem?: boolean;
+  itemImage?: string;
 }
 
 export type PurchaseOrderStatus =

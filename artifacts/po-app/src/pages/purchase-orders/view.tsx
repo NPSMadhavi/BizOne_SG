@@ -330,22 +330,38 @@ export default function PurchaseOrderView() {
               </tr>
             </thead>
             <tbody className="divide-y border-b">
-              {po.items.map((item, index) => (
-                <tr key={index} className="bg-card">
-                  <td className="px-6 py-4 text-center text-muted-foreground align-top">{index + 1}</td>
-                  <td className="px-6 py-4 text-muted-foreground align-top break-all">{item.partNumber}</td>
-                  <td className="px-6 py-4 text-muted-foreground align-top">
-                    <div className="flex gap-3 items-start">
-                      <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
-                      {(item as any).itemImage && <img src={(item as any).itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-center font-medium align-top">{item.qty}</td>
-                  {hasPOUom && <td className="px-6 py-4 text-center text-muted-foreground align-top">{(item as any).uom || "—"}</td>}
-                  <td className="px-6 py-4 text-right text-muted-foreground align-top">{formatCurrency(item.unitPrice)}</td>
-                  <td className="px-6 py-4 text-right font-medium align-top">{formatCurrency(item.amount)}</td>
-                </tr>
-              ))}
+              {(() => {
+                let itemNo = 0;
+                return (po.items as any[]).map((item: any, index: number) => {
+                  if (item.type === "section") {
+                    const colSpan = 6 + (hasPOUom ? 1 : 0);
+                    return (
+                      <tr key={index} className="bg-muted/30">
+                        <td colSpan={colSpan} className={`px-6 py-2 font-semibold text-sm text-foreground ${item.sectionAlign === "center" ? "text-center" : "text-left"}`}>
+                          {item.sectionLabel || ""}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  itemNo++;
+                  return (
+                    <tr key={index} className="bg-card">
+                      <td className="px-6 py-4 text-center text-muted-foreground align-top">{itemNo}</td>
+                      <td className="px-6 py-4 text-muted-foreground align-top break-all">{item.partNumber}</td>
+                      <td className="px-6 py-4 text-muted-foreground align-top">
+                        <div className="flex gap-3 items-start">
+                          <div className="flex-1 min-w-0 prose prose-sm max-w-none [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0" dangerouslySetInnerHTML={{ __html: item.description }} />
+                          {item.itemImage && <img src={item.itemImage} alt="" className="w-24 h-20 object-contain rounded border border-border flex-shrink-0" />}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium align-top">{item.qty}</td>
+                      {hasPOUom && <td className="px-6 py-4 text-center text-muted-foreground align-top">{item.uom || "—"}</td>}
+                      <td className="px-6 py-4 text-right text-muted-foreground align-top">{formatCurrency(item.unitPrice)}</td>
+                      <td className="px-6 py-4 text-right font-medium align-top">{formatCurrency(item.amount)}</td>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>

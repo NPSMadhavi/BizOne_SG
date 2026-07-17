@@ -36,6 +36,8 @@ export * from "./listStockItemsType";
 export * from "./loginBody";
 export * from "./loginResponse";
 export * from "./pOItem";
+export * from "./pOItemSectionAlign";
+export * from "./pOItemType";
 export * from "./pOStats";
 export * from "./purchaseOrder";
 export * from "./purchaseOrderStatus";

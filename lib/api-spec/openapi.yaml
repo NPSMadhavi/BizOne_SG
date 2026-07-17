@@ -956,6 +956,14 @@ components:
     POItem:
       type: object
       properties:
+        type:
+          type: string
+          enum: [item, section]
+        sectionLabel:
+          type: string
+        sectionAlign:
+          type: string
+          enum: [left, center]
         partNumber:
           type: string
         description:
@@ -968,6 +976,10 @@ components:
           type: number
         amount:
           type: number
+        isStockItem:
+          type: boolean
+        itemImage:
+          type: string
       required: [partNumber, description, qty, unitPrice, amount]
 
     PurchaseOrder:

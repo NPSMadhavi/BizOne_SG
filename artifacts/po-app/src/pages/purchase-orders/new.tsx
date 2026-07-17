@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -22,7 +22,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Users } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { generatePO_PDF } from "@/lib/pdf";
@@ -35,10 +36,13 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
+  type: z.enum(["item", "section"]).default("item"),
+  sectionLabel: z.string().default(""),
+  sectionAlign: z.enum(["left", "center"]).default("left"),
   partNumber: z.string(),
   uom: z.string().default(""),
   description: z.string(),
-  qty: z.coerce.number().min(1, "Must be > 0"),
+  qty: z.coerce.number().min(0).default(1),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
   itemImage: z.string().default(""),
@@ -115,7 +119,7 @@ export default function PurchaseOrderNew() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, insert } = useFieldArray({
     control: form.control,
     name: "items",
   });
@@ -152,10 +156,11 @@ export default function PurchaseOrderNew() {
         (!last.description || String(last.description).trim() === "") &&
         (last.unitPrice === undefined || last.unitPrice === null || String(last.unitPrice).trim() === "" || Number(last.unitPrice) === 0) &&
         (last.qty === undefined || last.qty === null || String(last.qty).trim() === "" || Number(last.qty) <= 1);
+      if ((last as any).type === "section") return;
       if (!lastIsEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" });
+        append({ type: "item", sectionLabel: "", sectionAlign: "left", partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" });
         requestAnimationFrame(() => {
           focused?.focus();
           appendLock.current = false;
@@ -165,7 +170,7 @@ export default function PurchaseOrderNew() {
     return () => subscription.unsubscribe();
   }, [form, append]);
 
-  const subtotal = items.reduce((sum, item) => sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
+  const subtotal = items.reduce((sum, item) => (item as any).type === "section" ? sum : sum + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
   const taxAmount = subtotal * (taxPercent / 100);
   const totalAmount = subtotal + taxAmount;
 
@@ -175,7 +180,9 @@ export default function PurchaseOrderNew() {
 
   async function saveDocument(values: z.infer<typeof poSchema>, status: "draft" | "confirmed" = "draft") {
     const filledItems = values.items.filter(
-      (item) => item.partNumber.trim() !== "" || item.description.trim() !== ""
+      (item) => (item as any).type === "section"
+        ? ((item as any).sectionLabel || "").trim() !== ""
+        : (item.partNumber.trim() !== "" || item.description.trim() !== "")
     );
     if (filledItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
@@ -183,12 +190,12 @@ export default function PurchaseOrderNew() {
     }
     const itemsWithAmount = filledItems.map(item => ({
       ...item,
-      amount: item.qty * item.unitPrice
+      amount: (item as any).type === "section" ? 0 : item.qty * item.unitPrice
     }));
 
     return new Promise<any>((resolve, reject) => {
       createMutation.mutate(
-        { data: { ...values, items: itemsWithAmount, status } },
+        { data: { ...values, items: itemsWithAmount, status, customerId: values.customerId ?? undefined } },
         {
           onSuccess: (data) => resolve(data),
           onError: (error: any) => reject(error),
@@ -500,62 +507,116 @@ export default function PurchaseOrderNew() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {fields.map((field, index) => {
-                    const itemQty = Number(items[index]?.qty) || 0;
-                    const itemPrice = Number(items[index]?.unitPrice) || 0;
-                    const itemAmount = itemQty * itemPrice;
-
-                    return (
-                      <tr key={field.id} className="bg-card">
-                        <td className="px-4 py-2 text-center text-muted-foreground">{index + 1}</td>
-                        <td className="px-4 py-2">
-                          <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                            <FormItem><FormControl><Input className="h-8" placeholder="PN-123" {...field} /></FormControl></FormItem>
-                          )} />
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          <div className="flex gap-2 items-start">
-                            <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
-                            )} />
-                            <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
-                              <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
-                            )} />
+                  {(() => { let _n = 0; return [...fields.map((field, index) => {
+                    const itemType = form.watch(`items.${index}.type`);
+                    const _itemNo = itemType !== "section" ? ++_n : null;
+                    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+                    const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+                    const insertBar = (
+                      <tr className="group/ins border-0 h-5">
+                        <td colSpan={9} className="p-0 overflow-visible">
+                          <div className="relative flex items-center justify-center h-5">
+                            <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
+                            <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
+                              <button type="button" onClick={() => insert(index, blankItem)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                <Plus className="h-2.5 w-2.5" /> + line item here
+                              </button>
+                              <button type="button" onClick={() => insert(index, blankSection)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                <Layers className="h-2.5 w-2.5" /> + section here
+                              </button>
+                            </div>
                           </div>
-                        </td>
-                        <td className="px-4 py-2">
-                          <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
-                            <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-center" {...field} /></FormControl></FormItem>
-                          )} />
-                        </td>
-                        <td className="px-4 py-2">
-                          <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
-                            <FormItem><FormControl><Input className="h-8 text-center" placeholder="Nos" {...field} /></FormControl></FormItem>
-                          )} />
-                        </td>
-                        <td className="px-4 py-2">
-                          <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
-                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-right" {...field} /></FormControl></FormItem>
-                          )} />
-                        </td>
-                        <td className="px-4 py-2 text-right font-medium text-muted-foreground bg-muted/10">
-                          {formatCurrency(itemAmount)}
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
-                            <FormItem><FormControl>
-                              <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Track serials for this item" />
-                            </FormControl></FormItem>
-                          )} />
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => remove(index)} disabled={fields.length === 1}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
                         </td>
                       </tr>
                     );
-                  })}
+                    if (itemType === "section") {
+                      return (
+                        <Fragment key={field.id}>
+                          {insertBar}
+                          <tr className="border-b bg-muted/40">
+                            <td colSpan={9} className="px-4 py-2">
+                              <div className="flex items-start gap-2">
+                                <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
+                                <div className="flex-1 min-w-0">
+                                  <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
+                                    <FormItem><FormControl><RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." /></FormControl></FormItem>
+                                  )} />
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0 mt-1">
+                                  <FormField control={form.control} name={`items.${index}.sectionAlign`} render={({ field: f }) => (
+                                    <FormItem><FormControl>
+                                      <Button type="button" variant="ghost" size="icon" title={f.value === "center" ? "Switch to left-align" : "Switch to center-align"} className={cn("h-7 w-7", f.value === "center" ? "text-primary bg-primary/10" : "text-muted-foreground")} onClick={() => f.onChange(f.value === "center" ? "left" : "center")}>
+                                        {f.value === "center" ? <AlignCenter className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
+                                      </Button>
+                                    </FormControl></FormItem>
+                                  )} />
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        </Fragment>
+                      );
+                    }
+                    const itemQty = Number(items[index]?.qty) || 0;
+                    const itemPrice = Number(items[index]?.unitPrice) || 0;
+                    const itemAmount = itemQty * itemPrice;
+                    return (
+                      <Fragment key={field.id}>
+                        {insertBar}
+                        <tr className="bg-card">
+                          <td className="px-4 py-2 text-center text-muted-foreground">{_itemNo}</td>
+                          <td className="px-4 py-2">
+                            <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                              <FormItem><FormControl><Input className="h-8" placeholder="PN-123" {...field} /></FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-4 py-2 align-top">
+                            <div className="flex gap-2 items-start">
+                              <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                                <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                              )} />
+                              <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
+                                <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                              )} />
+                            </div>
+                          </td>
+                          <td className="px-4 py-2">
+                            <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                              <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-center" {...field} /></FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-4 py-2">
+                            <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                              <FormItem><FormControl><Input className="h-8 text-center" placeholder="Nos" {...field} /></FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-4 py-2">
+                            <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
+                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-right" {...field} /></FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-4 py-2 text-right font-medium text-muted-foreground bg-muted/10">
+                            {formatCurrency(itemAmount)}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
+                              <FormItem><FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Track serials for this item" />
+                              </FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => remove(index)} disabled={fields.length === 1}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  }), <tr key="trailing-bar" className="group/ins border-0 h-5"><td colSpan={9} className="p-0 overflow-visible"><div className="relative flex items-center justify-center h-5"><div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" /><div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity"><button type="button" onClick={() => append({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Plus className="h-2.5 w-2.5" /> + line item here</button><button type="button" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" })} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm"><Layers className="h-2.5 w-2.5" /> + section here</button></div></div></td></tr>]; })()}
                 </tbody>
               </table>
             </div>
