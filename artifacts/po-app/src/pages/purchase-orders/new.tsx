@@ -33,6 +33,7 @@ import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -87,6 +88,7 @@ export default function PurchaseOrderNew() {
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data: customers = [] } = useQuery<any[]>({
     queryKey: ["customers-for-po"],
@@ -486,7 +488,12 @@ export default function PurchaseOrderNew() {
 
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
-              <CardTitle className="text-lg">Line Items</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Line Items</CardTitle>
+                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-8 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
+                  Import from Excel / CSV
+                </Button>
+              </div>
               {form.formState.errors.items?.root && (
                 <div className="text-sm text-destructive mt-2">{form.formState.errors.items.root.message}</div>
               )}
@@ -713,6 +720,20 @@ export default function PurchaseOrderNew() {
             await doSaveAndPreview(updated);
           }
           setPendingConfirmValues(null);
+        }}
+      />
+
+      <ImportItemsDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImport={(imported, replace) => {
+          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+          const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
+          if (replace) {
+            form.setValue("items", newItems);
+          } else {
+            for (const item of newItems) append(item);
+          }
         }}
       />
 

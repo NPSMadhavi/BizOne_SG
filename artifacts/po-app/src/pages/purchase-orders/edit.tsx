@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft } from "lucide-react";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -95,6 +96,7 @@ export default function PurchaseOrderEdit() {
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: {
@@ -551,6 +553,9 @@ export default function PurchaseOrderEdit() {
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Line Items</CardTitle>
+                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-8 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
+                  Import from Excel / CSV
+                </Button>
               </div>
               {form.formState.errors.items?.root && (
                 <div className="text-sm text-destructive mt-2">
@@ -784,6 +789,20 @@ export default function PurchaseOrderEdit() {
             await doSaveConfirmed(updated);
           }
           setPendingConfirmValues(null);
+        }}
+      />
+
+      <ImportItemsDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImport={(imported, replace) => {
+          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+          const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
+          if (replace) {
+            form.setValue("items", newItems);
+          } else {
+            for (const item of newItems) append(item);
+          }
         }}
       />
 
