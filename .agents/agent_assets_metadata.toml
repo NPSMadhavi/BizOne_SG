@@ -12,3 +12,9 @@ id = "CgJDWJPbhOEFBIup5QJe0"
 uri = "file://db-scripts/RSV-DMS-Knowledge-Transfer.md"
 type = "text"
 title = "RSV DMS — Full Knowledge Transfer Kit"
+
+[[outputs]]
+id = "qNFg1HUfY0T_cbmhDK4pA"
+uri = "file://rsv_infotech_schema.txt"
+type = "text"
+title = "RSV Infotech — Complete PostgreSQL Schema (.sql)"
