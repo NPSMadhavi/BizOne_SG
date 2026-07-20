@@ -32,7 +32,7 @@ router.post("/ai/format-text", async (req: any, res: any) => {
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1",
+      model: "gpt-5",
       max_completion_tokens: 4096,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
