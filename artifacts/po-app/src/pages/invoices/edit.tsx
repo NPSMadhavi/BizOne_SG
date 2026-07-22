@@ -307,7 +307,7 @@ export default function InvoiceEdit() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    updateMutation.mutate({ id, data: { ...values, status: "confirmed", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
+    updateMutation.mutate({ id, data: { ...values, status: values.status, discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         setIsSubmitting(false);
