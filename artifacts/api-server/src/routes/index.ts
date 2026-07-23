@@ -32,6 +32,7 @@ import creditNotesRouter from "./credit-notes";
 import proformaInvoicesRouter from "./proforma-invoices";
 import projectsRouter from "./projects";
 import ackRouter from "./ack";
+import expensesRouter from "./expenses";
 
 const router: IRouter = Router();
 
@@ -68,5 +69,6 @@ router.use(creditNotesRouter);
 router.use(proformaInvoicesRouter);
 router.use(projectsRouter);
 router.use(ackRouter);
+router.use(expensesRouter);
 
 export default router;

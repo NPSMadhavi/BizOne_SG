@@ -41,6 +41,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderKanban,
+  ReceiptText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -576,6 +577,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("accounting_cf") && (
           <NavItem href="/accounting/cash-flow" icon={Banknote} active={location === "/accounting/cash-flow"} inGroup>
             Cash Flow
+          </NavItem>
+        )}
+        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Expenses</div>
+        {hasModuleAccess("accounting_expenses") && (
+          <NavItem href="/accounting/expenses" icon={ReceiptText} active={location.startsWith("/accounting/expenses")} inGroup>
+            Expenses
           </NavItem>
         )}
         <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Tax & Compliance</div>

@@ -91,6 +91,10 @@ const GstIoListing       = lazy(() => import("@/pages/accounting/gst-io"));
 const WhtRegister        = lazy(() => import("@/pages/accounting/wht"));
 const EciPage            = lazy(() => import("@/pages/accounting/eci"));
 const FormCsPage         = lazy(() => import("@/pages/accounting/form-cs"));
+const ExpensesList       = lazy(() => import("@/pages/accounting/expenses"));
+const ExpenseNew         = lazy(() => import("@/pages/accounting/expense-new"));
+const ExpenseEdit        = lazy(() => import("@/pages/accounting/expense-edit"));
+const ExpenseView        = lazy(() => import("@/pages/accounting/expense-view"));
 
 // ── Route title map ────────────────────────────────────────────────────────
 const ROUTE_TITLES: Record<string, string> = {
@@ -124,6 +128,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/gst-f7": "GST F7 Amended Return",
   "/accounting/vendor-statement": "Vendor Statement",
   "/accounting/general-ledger": "General Ledger",
+  "/accounting/expenses": "Expenses",
+  "/accounting/expenses/new": "New Expense",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -312,6 +318,10 @@ function Router() {
           <Route path="/accounting/gst-f7">{() => <ProtectedRoute component={GstF7} />}</Route>
           <Route path="/accounting/vendor-statement">{() => <ProtectedRoute component={VendorStatement} />}</Route>
           <Route path="/accounting/general-ledger">{() => <ProtectedRoute component={GeneralLedger} />}</Route>
+          <Route path="/accounting/expenses/new">{() => <ProtectedRoute component={ExpenseNew} />}</Route>
+          <Route path="/accounting/expenses/:id/edit">{() => <ProtectedRoute component={ExpenseEdit} />}</Route>
+          <Route path="/accounting/expenses/:id">{() => <ProtectedRoute component={ExpenseView} />}</Route>
+          <Route path="/accounting/expenses">{() => <ProtectedRoute component={ExpensesList} />}</Route>
 
           {/* System — admin only */}
           <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
