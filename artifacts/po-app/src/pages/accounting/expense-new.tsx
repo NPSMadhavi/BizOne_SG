@@ -188,13 +188,13 @@ export default function ExpenseNew() {
 
   const cfg = selectedCategory ? CATEGORY_CONFIG[selectedCategory] : null;
 
-  function autoCalcGst(rawAmount: string, claimable: boolean) {
-    const gross = parseFloat(rawAmount);
-    if (!claimable || isNaN(gross) || gross <= 0) {
+  function autoCalcGst(netAmount: string, claimable: boolean) {
+    const net = parseFloat(netAmount);
+    if (!claimable || isNaN(net) || net <= 0) {
       setValue("gstAmount", "");
       return;
     }
-    const gst = gross * gstRate / (100 + gstRate);
+    const gst = net * gstRate / 100;
     setValue("gstAmount", gst.toFixed(2));
   }
 
@@ -217,8 +217,8 @@ export default function ExpenseNew() {
 
   function onGstClaimableChange(checked: boolean) {
     setValue("gstClaimable", checked);
+    if (!checked) { setValue("gstAmount", ""); return; }
     autoCalcGst(amount, checked);
-    if (!checked) setValue("gstAmount", "");
   }
 
   const onReceiptChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,13 +234,13 @@ export default function ExpenseNew() {
     reader.readAsDataURL(file);
   }, [setValue]);
 
-  function calcNetAmount() {
-    return (parseFloat(amount) || 0) - (parseFloat(gstAmount) || 0);
+  function calcTotal() {
+    return (parseFloat(amount) || 0) + (parseFloat(gstAmount) || 0);
   }
 
   function calcDeductibleAmount() {
     if (!isDeductible) return 0;
-    return calcNetAmount() * deductiblePct / 100;
+    return (parseFloat(amount) || 0) * deductiblePct / 100;
   }
 
   async function onSubmit(data: ExpenseForm, statusOverride?: string) {
@@ -330,7 +330,7 @@ export default function ExpenseNew() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="amount">Total Amount (incl. GST) <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="amount">Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
                   <Input
                     id="amount"
                     inputMode="decimal"
@@ -343,7 +343,7 @@ export default function ExpenseNew() {
                 <div className="space-y-1.5">
                   <Label htmlFor="gstAmount">
                     GST Amount
-                    {gstClaimable && <span className="ml-1 text-xs text-muted-foreground font-normal">(auto-calc @ {gstRate}%)</span>}
+                    {gstClaimable && <span className="ml-1 text-xs text-muted-foreground font-normal">(auto @ {gstRate}%)</span>}
                   </Label>
                   <Input
                     id="gstAmount"
@@ -351,7 +351,8 @@ export default function ExpenseNew() {
                     placeholder="0.00"
                     value={gstAmount}
                     onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
-                    className={cn("[appearance:textfield]", gstClaimable && "bg-muted/40")}
+                    className={cn("[appearance:textfield]", gstClaimable && "bg-muted/50 text-muted-foreground")}
+                    readOnly={gstClaimable}
                   />
                 </div>
               </div>
@@ -419,16 +420,16 @@ export default function ExpenseNew() {
             <CardHeader><CardTitle className="text-sm">IRAS Summary</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Gross Amount</span>
+                <span className="text-muted-foreground">Net Amount</span>
                 <span className="font-mono font-medium">{currency} {(parseFloat(amount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">GST Amount</span>
+                <span className="text-muted-foreground">GST ({gstRate}%)</span>
                 <span className="font-mono text-blue-600">{currency} {(parseFloat(gstAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between border-t pt-2">
-                <span className="text-muted-foreground">Net (excl. GST)</span>
-                <span className="font-mono font-medium">{currency} {calcNetAmount().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+              <div className="flex justify-between border-t pt-2 font-medium">
+                <span>Total (incl. GST)</span>
+                <span className="font-mono">{currency} {calcTotal().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">GST Input Tax</span>
