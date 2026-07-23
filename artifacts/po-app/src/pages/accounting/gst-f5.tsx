@@ -27,6 +27,10 @@ interface F5Data {
     id: number; piNumber: string; vendorName: string;
     piDate: string | null; totalAmount: number; currency: string;
   }>;
+  expenses: Array<{
+    id: number; vendorName: string; description: string; category: string;
+    expenseDate: string; amount: number; gstAmount: number; currency: string;
+  }>;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -85,6 +89,7 @@ export default function GstF5Page() {
 
   const [showInvoices,       setShowInvoices]       = useState(false);
   const [showVendorInvoices, setShowVendorInvoices] = useState(false);
+  const [showExpenses,       setShowExpenses]       = useState(false);
   const [pdfLoading,         setPdfLoading]         = useState(false);
 
   const from = useCustom ? customFrom : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].from}` : "");
@@ -394,9 +399,9 @@ export default function GstF5Page() {
                   className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 text-sm font-medium transition-colors"
                   onClick={() => setShowVendorInvoices(v => !v)}
                 >
-                  <span>Vendor Invoices / Purchases contributing to Box 4 — {data.vendorInvoices.length} record{data.vendorInvoices.length !== 1 ? "s" : ""}</span>
+                  <span>Vendor Invoices contributing to Box 4 — {data.vendorInvoices.length} record{data.vendorInvoices.length !== 1 ? "s" : ""}</span>
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-muted-foreground">S$ {fmtAmt(data.box4)}</span>
+                    <span className="font-mono text-xs text-muted-foreground">S$ {fmtAmt(data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0))}</span>
                     {showVendorInvoices ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </div>
                 </button>
@@ -427,7 +432,56 @@ export default function GstF5Page() {
                           ))}
                           <tr className="bg-muted/30 font-semibold border-t-2">
                             <td colSpan={4} className="px-4 py-2 text-xs text-right text-muted-foreground">Total</td>
-                            <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(data.box4)}</td>
+                            <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0))}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Expenses with GST claimable → Box 4 + Box 7 */}
+              <div className="border rounded-lg overflow-hidden">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 text-sm font-medium transition-colors"
+                  onClick={() => setShowExpenses(v => !v)}
+                >
+                  <span>Confirmed Expenses (GST-claimable) contributing to Box 4 + Box 7 — {data.expenses.length} record{data.expenses.length !== 1 ? "s" : ""}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs text-muted-foreground">Input GST S$ {fmtAmt(data.expenses.reduce((s, e) => s + e.gstAmount, 0))}</span>
+                    {showExpenses ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </div>
+                </button>
+                {showExpenses && (
+                  <div className="overflow-x-auto">
+                    {data.expenses.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-6">No GST-claimable expenses confirmed in this period.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/20 border-b">
+                          <tr>
+                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Vendor / Payee</th>
+                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Description</th>
+                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Date</th>
+                            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Net (Box 4)</th>
+                            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">GST (Box 7)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.expenses.map((exp, i) => (
+                            <tr key={exp.id} className={cn("border-b last:border-b-0", i % 2 === 0 ? "" : "bg-muted/10")}>
+                              <td className="px-4 py-2 text-xs font-medium">{exp.vendorName}</td>
+                              <td className="px-4 py-2 text-xs text-muted-foreground max-w-[200px] truncate">{exp.description}</td>
+                              <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(exp.expenseDate)}</td>
+                              <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(exp.amount)}</td>
+                              <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(exp.gstAmount)}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-muted/30 font-semibold border-t-2">
+                            <td colSpan={3} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals</td>
+                            <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(data.expenses.reduce((s, e) => s + e.amount, 0))}</td>
+                            <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(data.expenses.reduce((s, e) => s + e.gstAmount, 0))}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -440,7 +494,7 @@ export default function GstF5Page() {
             {/* IRAS disclaimer */}
             <div className="rounded-md bg-muted/30 border px-4 py-3 text-xs text-muted-foreground">
               <span className="font-semibold">Note:</span> Boxes 2, 3, and 5 require manual entry if applicable and are not auto-computed by the system.
-              Box 7 (input tax) is sourced from GL account 1110 — ensure your accountant has posted all input tax claims before generating this report.
+              Box 4 and Box 7 include confirmed expenses marked as GST-claimable. Box 7 also includes any manual input tax posted to GL account 1110.
               File your GST return at{" "}
               <a href="https://mytax.iras.gov.sg" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">mytax.iras.gov.sg</a>.
             </div>

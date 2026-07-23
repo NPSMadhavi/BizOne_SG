@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable, invoicePaymentsTable, vendorPaymentsTable, customerDepositsTable } from "@workspace/db";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable, invoicePaymentsTable, vendorPaymentsTable, customerDepositsTable, expensesTable } from "@workspace/db";
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
@@ -486,11 +486,37 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
 
   const box4 = viRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
 
-  // ─ Box 7: input tax from GL account 1110 (GST Input Tax Recoverable) ─
+  // ─ Confirmed expenses with GST claimable → contribute to Box 4 (net) + Box 7 (GST) ─
+  const expenseRows = await db.select({
+    id:          expensesTable.id,
+    vendorName:  expensesTable.vendorName,
+    description: expensesTable.description,
+    category:    expensesTable.category,
+    expenseDate: expensesTable.expenseDate,
+    amount:      expensesTable.amount,
+    gstAmount:   expensesTable.gstAmount,
+    currency:    expensesTable.currency,
+  })
+  .from(expensesTable)
+  .where(and(
+    eq(expensesTable.companyId,   companyId),
+    eq(expensesTable.status,      "confirmed"),
+    eq(expensesTable.gstClaimable, true),
+    ...(fromDate ? [sql`${expensesTable.expenseDate} >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`${expensesTable.expenseDate} <= ${toDate}`]   : []),
+  ));
+
+  const expenseBox4 = expenseRows.reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
+  const expenseBox7 = expenseRows.reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
+
+  // Box 4 = vendor invoices + GST-claimable expenses
+  const totalBox4 = box4 + expenseBox4;
+
+  // ─ Box 7: input tax from GL account 1110 + confirmed expenses GST ─
   const [gstInputAcct] = await db.select().from(accountsTable)
     .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, "1110"))).limit(1);
 
-  let box7 = 0;
+  let glBox7 = 0;
   if (gstInputAcct) {
     const jeWhere = and(
       eq(journalEntriesTable.companyId, companyId),
@@ -505,11 +531,12 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
         eq(journalLinesTable.accountId, gstInputAcct.id),
         sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`,
       ));
-      box7 = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
+      glBox7 = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
     }
   }
 
-  const box8 = box6 - box7;
+  const totalBox7 = glBox7 + expenseBox7;
+  const box8 = box6 - totalBox7;
 
   res.json({
     period:  { from: fromDate, to: toDate },
@@ -518,10 +545,10 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     box1: parseFloat(box1.toFixed(2)),
     box2: 0,
     box3: 0,
-    box4: parseFloat(box4.toFixed(2)),
+    box4: parseFloat(totalBox4.toFixed(2)),
     box5: 0,
     box6: parseFloat(box6.toFixed(2)),
-    box7: parseFloat(box7.toFixed(2)),
+    box7: parseFloat(totalBox7.toFixed(2)),
     box8: parseFloat(box8.toFixed(2)),
     invoices: invRows.map(r => ({
       id:           r.id,
@@ -539,6 +566,16 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       vendorName:  r.vendorName,
       piDate:      r.piDate,
       totalAmount: parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+      currency:    r.currency,
+    })),
+    expenses: expenseRows.map(r => ({
+      id:          r.id,
+      vendorName:  r.vendorName,
+      description: r.description,
+      category:    r.category,
+      expenseDate: r.expenseDate,
+      amount:      parseFloat(parseFloat(r.amount ?? "0").toFixed(2)),
+      gstAmount:   parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
       currency:    r.currency,
     })),
   });
