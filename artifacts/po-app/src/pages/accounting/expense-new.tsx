@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
+import { useGetSettings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Info, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Upload, Info, AlertTriangle, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ExpenseForm {
   expenseDate: string;
@@ -70,11 +72,90 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function numericOnly(val: string): string {
+  const cleaned = val.replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length > 2) return parts[0] + "." + parts.slice(1).join("");
+  return cleaned;
+}
+
+interface CategoryComboboxProps {
+  value: string;
+  onChange: (key: string) => void;
+}
+
+function CategoryCombobox({ value, onChange }: CategoryComboboxProps) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const selectedLabel = value ? (CATEGORY_CONFIG[value]?.label ?? value) : "";
+  const displayValue = open ? query : selectedLabel;
+
+  const filtered = Object.entries(CATEGORY_CONFIG).filter(([, cfg]) =>
+    cfg.label.toLowerCase().includes(query.toLowerCase())
+  );
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <Input
+        placeholder="Type to search category…"
+        value={displayValue}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery(""); } }}
+        autoComplete="off"
+      />
+      {open && (
+        <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-56 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground">No categories found</div>
+          ) : (
+            filtered.map(([key, cfg]) => (
+              <div
+                key={key}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
+                  value === key && "bg-accent/60 font-medium"
+                )}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  onChange(key);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                {value === key && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                {value !== key && <span className="w-3.5 shrink-0" />}
+                {cfg.label}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ExpenseNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
+
+  const { data: settings } = useGetSettings({});
+  const gstRate = settings?.gstRate ?? 9;
 
   const form = useForm<ExpenseForm>({
     defaultValues: {
@@ -83,7 +164,7 @@ export default function ExpenseNew() {
       description: "",
       category: "",
       amount: "",
-      gstAmount: "0.00",
+      gstAmount: "",
       gstClaimable: false,
       isDeductible: true,
       deductiblePct: 100,
@@ -107,15 +188,37 @@ export default function ExpenseNew() {
 
   const cfg = selectedCategory ? CATEGORY_CONFIG[selectedCategory] : null;
 
-  function onCategoryChange(val: string) {
-    setValue("category", val);
-    const c = CATEGORY_CONFIG[val];
+  function autoCalcGst(rawAmount: string, claimable: boolean) {
+    const gross = parseFloat(rawAmount);
+    if (!claimable || isNaN(gross) || gross <= 0) {
+      setValue("gstAmount", "");
+      return;
+    }
+    const gst = gross * gstRate / (100 + gstRate);
+    setValue("gstAmount", gst.toFixed(2));
+  }
+
+  function onCategoryChange(key: string) {
+    setValue("category", key);
+    const c = CATEGORY_CONFIG[key];
     if (c) {
       setValue("isDeductible", c.deductible);
       setValue("deductiblePct", c.pct);
       setValue("gstClaimable", c.gstClaimable);
-      if (!c.gstClaimable) setValue("gstAmount", "0.00");
+      autoCalcGst(amount, c.gstClaimable);
     }
+  }
+
+  function onAmountChange(raw: string) {
+    const cleaned = numericOnly(raw);
+    setValue("amount", cleaned);
+    autoCalcGst(cleaned, gstClaimable);
+  }
+
+  function onGstClaimableChange(checked: boolean) {
+    setValue("gstClaimable", checked);
+    autoCalcGst(amount, checked);
+    if (!checked) setValue("gstAmount", "");
   }
 
   const onReceiptChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,23 +228,19 @@ export default function ExpenseNew() {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setValue("receiptData", base64);
+      setValue("receiptData", dataUrl.split(",")[1]);
       setValue("receiptMimeType", file.type);
     };
     reader.readAsDataURL(file);
   }, [setValue]);
 
   function calcNetAmount() {
-    const gross = parseFloat(amount) || 0;
-    const gst = parseFloat(gstAmount) || 0;
-    return gross - gst;
+    return (parseFloat(amount) || 0) - (parseFloat(gstAmount) || 0);
   }
 
   function calcDeductibleAmount() {
-    const net = calcNetAmount();
     if (!isDeductible) return 0;
-    return net * deductiblePct / 100;
+    return calcNetAmount() * deductiblePct / 100;
   }
 
   async function onSubmit(data: ExpenseForm, statusOverride?: string) {
@@ -186,7 +285,7 @@ export default function ExpenseNew() {
                   <Input id="expenseDate" type="date" {...register("expenseDate", { required: true })} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="currency">Currency</Label>
+                  <Label>Currency</Label>
                   <Select value={currency} onValueChange={v => setValue("currency", v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>{CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
@@ -208,14 +307,7 @@ export default function ExpenseNew() {
 
               <div className="space-y-1.5">
                 <Label>IRAS Category <span className="text-destructive">*</span></Label>
-                <Select value={selectedCategory} onValueChange={onCategoryChange}>
-                  <SelectTrigger><SelectValue placeholder="Select a category…" /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(CATEGORY_CONFIG).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CategoryCombobox value={selectedCategory} onChange={onCategoryChange} />
                 {cfg?.note && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
                     <Info className="h-3 w-3 shrink-0" /> {cfg.note}
@@ -239,11 +331,28 @@ export default function ExpenseNew() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="amount">Total Amount (incl. GST) <span className="text-destructive">*</span></Label>
-                  <Input id="amount" type="number" step="0.01" min="0" placeholder="0.00" {...register("amount", { required: true })} />
+                  <Input
+                    id="amount"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={e => onAmountChange(e.target.value)}
+                    className="[appearance:textfield]"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="gstAmount">GST Amount</Label>
-                  <Input id="gstAmount" type="number" step="0.01" min="0" placeholder="0.00" {...register("gstAmount")} />
+                  <Label htmlFor="gstAmount">
+                    GST Amount
+                    {gstClaimable && <span className="ml-1 text-xs text-muted-foreground font-normal">(auto-calc @ {gstRate}%)</span>}
+                  </Label>
+                  <Input
+                    id="gstAmount"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={gstAmount}
+                    onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
+                    className={cn("[appearance:textfield]", gstClaimable && "bg-muted/40")}
+                  />
                 </div>
               </div>
 
@@ -252,7 +361,7 @@ export default function ExpenseNew() {
                   <p className="text-sm font-medium">GST Input Tax Claimable</p>
                   <p className="text-xs text-muted-foreground">Claim GST back from IRAS if vendor is GST-registered</p>
                 </div>
-                <Switch checked={gstClaimable} onCheckedChange={v => setValue("gstClaimable", v)} />
+                <Switch checked={gstClaimable} onCheckedChange={onGstClaimableChange} />
               </div>
 
               <div className="flex items-center justify-between rounded-lg border p-3">
@@ -277,7 +386,7 @@ export default function ExpenseNew() {
                 </div>
               )}
 
-              {cfg?.label === "Motor Vehicle (Private Car)" && (
+              {selectedCategory === "motor_vehicle_private" && (
                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3">
                   <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800">Private car expenses are <strong>non-deductible</strong> and GST input tax cannot be claimed under IRAS rules (Section 14(1)(c)).</p>
@@ -293,7 +402,6 @@ export default function ExpenseNew() {
                 <Label htmlFor="notes">Internal Notes</Label>
                 <Textarea id="notes" placeholder="Any additional notes…" rows={3} {...register("notes")} />
               </div>
-
               <div className="space-y-1.5">
                 <Label>Receipt / Invoice Upload</Label>
                 <label className="flex items-center gap-2 border-2 border-dashed rounded-lg p-4 cursor-pointer hover:bg-muted/30 transition-colors">
