@@ -501,8 +501,8 @@ export function AgentPanel() {
 
     try {
       setConvState("greeting");
-      setConvText("Yes, how can I help you?");
-      await speak("Yes, how can I help you?");
+      setConvText("Yes Boss, how may I help you?");
+      await speak("Yes Boss, how may I help you?");
 
       let silenceStreak = 0;
       let pendingCommand = ""; // carries user speech that interrupted TTS
@@ -530,8 +530,8 @@ export function AgentPanel() {
 
         if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
-          setConvText("Alright!");
-          await speak("Alright. Call my name whenever you need me.");
+          setConvText("Okay!");
+          await speak("Okay.");
           break;
         }
 
@@ -623,7 +623,7 @@ export function AgentPanel() {
       try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
       if (next) {
         setWakeError(null); // clear any previous block error on re-enable
-        speak("Ambient mode on. Say my name to get started.");
+        // no greeting — just silently activate wake word listening
       }
       return next;
     });
