@@ -543,28 +543,22 @@ export function AgentPanel() {
       await new Promise(r => setTimeout(r, 400));
 
       let silenceStreak = 0;
-      let pendingCommand = ""; // carries user speech that interrupted TTS
 
       while (convActiveRef.current) {
         setConvState("listening");
         setConvText("");
 
-        let command: string;
-        if (pendingCommand) {
-          // User spoke while Veda was talking — skip listen, use that text directly
-          command = pendingCommand;
-          pendingCommand = "";
-          silenceStreak = 0;
-        } else {
-          command = await listenForCommand(t => setConvText(t), ctrl.signal);
-          if (ctrl.signal.aborted || !convActiveRef.current) break;
-          if (!command.trim()) {
-            silenceStreak++;
-            if (silenceStreak >= 2) break; // two silent rounds → end conversation
-            continue; // retry once on first silence
-          }
-          silenceStreak = 0;
+        const command = await listenForCommand(t => setConvText(t), ctrl.signal);
+        if (ctrl.signal.aborted || !convActiveRef.current) break;
+
+        if (!command.trim()) {
+          // listenForCommand only returns "" after its 20s hard cap (no-speech restarts internally)
+          // One empty round = user was genuinely silent for 20s → end conversation
+          silenceStreak++;
+          if (silenceStreak >= 1) break;
+          continue;
         }
+        silenceStreak = 0;
 
         if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
@@ -595,25 +589,11 @@ export function AgentPanel() {
             ].slice(-16);
             setConvState("speaking");
             setConvText(response.slice(0, 240));
-
-            // ── Speak with interruption support ─────────────────────────────
-            // Race TTS against a parallel mic listener. If the user speaks
-            // before Veda finishes, cancel TTS and carry their words forward.
-            const interruptCtrl = new AbortController();
-            const [interruptText] = await Promise.race([
-              speak(response.slice(0, 600)).then(() => [""]),
-              listenForCommand(
-                t => setConvText(`↩ ${t}`),
-                interruptCtrl.signal,
-              ).then(t => [t]),
-            ]);
-            interruptCtrl.abort();          // stop listener if TTS finished first
-            window.speechSynthesis.cancel(); // stop TTS if listener finished first
-
-            if (interruptText.trim()) {
-              pendingCommand = interruptText; // process interrupt as next command
-              silenceStreak = 0;
-            }
+            // Speak the response — no concurrent mic listener here to avoid
+            // the TTS-feedback loop (mic picking up Veda's own voice as a command)
+            await speak(response.slice(0, 600));
+            // Brief pause so audio hardware fully switches speaker→mic before next listen
+            await new Promise(r => setTimeout(r, 300));
           }
         } catch (e: any) {
           if (e.name === "AbortError" || ctrl.signal.aborted) break;
