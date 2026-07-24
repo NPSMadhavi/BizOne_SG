@@ -487,18 +487,28 @@ export function AgentPanel() {
       await speak("Yes boss, what can I do for you?");
 
       let silenceStreak = 0;
+      let pendingCommand = ""; // carries user speech that interrupted TTS
+
       while (convActiveRef.current) {
         setConvState("listening");
         setConvText("");
 
-        const command = await listenForCommand(t => setConvText(t), ctrl.signal);
-        if (ctrl.signal.aborted || !convActiveRef.current) break;
-        if (!command.trim()) {
-          silenceStreak++;
-          if (silenceStreak >= 2) break; // two silent rounds → end conversation
-          continue; // retry once on first silence
+        let command: string;
+        if (pendingCommand) {
+          // User spoke while Maya was talking — skip listen, use that text directly
+          command = pendingCommand;
+          pendingCommand = "";
+          silenceStreak = 0;
+        } else {
+          command = await listenForCommand(t => setConvText(t), ctrl.signal);
+          if (ctrl.signal.aborted || !convActiveRef.current) break;
+          if (!command.trim()) {
+            silenceStreak++;
+            if (silenceStreak >= 2) break; // two silent rounds → end conversation
+            continue; // retry once on first silence
+          }
+          silenceStreak = 0;
         }
-        silenceStreak = 0;
 
         if (/\b(stop|bye|goodbye|that'?s all|thanks maya|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
@@ -529,7 +539,25 @@ export function AgentPanel() {
             ].slice(-16);
             setConvState("speaking");
             setConvText(response.slice(0, 240));
-            await speak(response.slice(0, 600));
+
+            // ── Speak with interruption support ─────────────────────────────
+            // Race TTS against a parallel mic listener. If the user speaks
+            // before Maya finishes, cancel TTS and carry their words forward.
+            const interruptCtrl = new AbortController();
+            const [interruptText] = await Promise.race([
+              speak(response.slice(0, 600)).then(() => [""]),
+              listenForCommand(
+                t => setConvText(`↩ ${t}`),
+                interruptCtrl.signal,
+              ).then(t => [t]),
+            ]);
+            interruptCtrl.abort();          // stop listener if TTS finished first
+            window.speechSynthesis.cancel(); // stop TTS if listener finished first
+
+            if (interruptText.trim()) {
+              pendingCommand = interruptText; // process interrupt as next command
+              silenceStreak = 0;
+            }
           }
         } catch (e: any) {
           if (e.name === "AbortError" || ctrl.signal.aborted) break;
@@ -540,6 +568,10 @@ export function AgentPanel() {
     } finally {
       convActiveRef.current = false;
       ambientAbortRef.current = null;
+      // Brief pause so the mic from the last listenForCommand fully releases
+      // before the wake-word hook tries to claim it again. Without this gap,
+      // the new SpeechRecognition can silently fail, leaving "Maya" unresponsive.
+      await new Promise(r => setTimeout(r, 700));
       setConvState("idle");
       setConvText("");
     }
