@@ -383,15 +383,15 @@ function useWakeWord(
       rec.start();
     } catch {
       recRef.current = null;
-      if (enabledRef.current) timerRef.current = setTimeout(startListening, 2000);
+      if (enabledRef.current) timerRef.current = setTimeout(startListening, 800);
     }
   }, []);
 
   useEffect(() => {
     if (enabled) {
-      // 2 s delay on every (re)enable — gives ambient greeting time to finish
-      // and lets the mic fully release after a conversation ends before we start again
-      timerRef.current = setTimeout(startListening, 2000);
+      // 600 ms buffer — lets any just-finished conversation mic fully release
+      // before we open the wake-word SpeechRecognition
+      timerRef.current = setTimeout(startListening, 600);
     } else {
       stopListening();
     }
@@ -506,6 +506,10 @@ export function AgentPanel() {
       setConvState("greeting");
       setConvText(greeting);
       await speak(greeting);
+      // Give the audio hardware ~400 ms to switch from speaker → mic
+      // before we open a SpeechRecognition session. Without this pause
+      // rec.start() can fail silently and the loop exits immediately.
+      await new Promise(r => setTimeout(r, 400));
 
       let silenceStreak = 0;
       let pendingCommand = ""; // carries user speech that interrupted TTS
