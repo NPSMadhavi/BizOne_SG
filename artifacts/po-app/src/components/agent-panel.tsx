@@ -74,6 +74,10 @@ const TOOL_LABELS: Record<string, string> = {
   getPurchaseOrder: "Loading PO",
   searchInvoices: "Searching invoices",
   getInvoice: "Loading invoice",
+  searchDeliveryOrders: "Searching delivery orders",
+  getDeliveryOrder: "Loading delivery order",
+  searchVendorInvoices: "Searching vendor invoices",
+  searchGRN: "Searching GRN",
   getCompanySettings: "Loading settings",
   getFinancialStats: "Calculating stats",
   navigateTo: "Navigating",
@@ -97,6 +101,10 @@ const PATH_LABELS: Record<string, string> = {
   "/vendor-invoices": "Vendor Invoices",
   "/customers": "Customers",
   "/vendors": "Vendors",
+  "/accounting": "Accounting",
+  "/accounting/gst-f5": "GST F5",
+  "/expenses": "Expenses",
+  "/admin/users": "Admin — Users",
 };
 
 const SUGGESTIONS = [
@@ -340,7 +348,34 @@ function useWakeWord(onWakeWord: () => void, enabled: boolean) {
   return { supported };
 }
 
+// ── Ambient single-shot voice capture (auto-stops on silence — browser VAD) ────
+function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal): Promise<string> {
+  return new Promise((resolve) => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { resolve(""); return; }
+    const rec = new SR();
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    rec.maxAlternatives = 1;
+    let finalText = "";
+    signal?.addEventListener("abort", () => { try { rec.abort(); } catch {} resolve(finalText); });
+    rec.onresult = (evt: any) => {
+      for (let i = evt.resultIndex; i < evt.results.length; i++) {
+        const t = evt.results[i][0].transcript;
+        if (evt.results[i].isFinal) finalText = t;
+        else onInterim(t);
+      }
+    };
+    rec.onerror = () => resolve(finalText);
+    rec.onend = () => resolve(finalText);
+    try { rec.start(); } catch { resolve(""); }
+  });
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
+type ConvState = "idle" | "greeting" | "listening" | "processing" | "speaking";
+
 export function AgentPanel() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -351,7 +386,13 @@ export function AgentPanel() {
   const [ambientMode, setAmbientMode] = useState(() => {
     try { return localStorage.getItem("maya_ambient") === "1"; } catch { return false; }
   });
-  const [wakeGreeting, setWakeGreeting] = useState(false);
+  // Ambient conversation state machine
+  const [convState, setConvState] = useState<ConvState>("idle");
+  const [convText, setConvText] = useState("");
+  const convActiveRef = useRef(false);
+  const ambientAbortRef = useRef<AbortController | null>(null);
+  const ambientHistoryRef = useRef<{ role: string; content: string }[]>([]);
+
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -361,18 +402,85 @@ export function AgentPanel() {
 
   const hasMessages = messages.length > 0;
 
-  // Wake word handler — opens panel, greets, then auto-records
-  const handleWakeWord = useCallback(async () => {
-    setWakeGreeting(true);
-    setOpen(true);
-    await speak("Yes boss, what can I do for you?");
-    setWakeGreeting(false);
-    // Auto-start mic after greeting
-    const ok = await start();
-    if (!ok) setMicError(true);
-  }, [start]);
+  // ── Ambient conversation loop ──
+  const runAmbientConversation = useCallback(async () => {
+    if (convActiveRef.current) return;
+    convActiveRef.current = true;
+    const ctrl = new AbortController();
+    ambientAbortRef.current = ctrl;
+    ambientHistoryRef.current = [];
 
-  const { supported: wakeSupported } = useWakeWord(handleWakeWord, ambientMode && !open && !recording && !wakeGreeting);
+    try {
+      setConvState("greeting");
+      setConvText("Yes boss, what can I do for you?");
+      await speak("Yes boss, what can I do for you?");
+
+      while (convActiveRef.current) {
+        setConvState("listening");
+        setConvText("");
+
+        const command = await listenForCommand(t => setConvText(t), ctrl.signal);
+        if (ctrl.signal.aborted || !convActiveRef.current) break;
+        if (!command.trim()) break; // silence timeout → end conversation
+
+        if (/\b(stop|bye|goodbye|that'?s all|thanks maya|thank you|no thanks|done|exit|close)\b/i.test(command)) {
+          setConvState("speaking");
+          setConvText("Alright!");
+          await speak("Alright, I'm here whenever you need me.");
+          break;
+        }
+
+        setConvState("processing");
+        setConvText(command);
+
+        let response = "";
+        try {
+          await streamChat(
+            [...ambientHistoryRef.current, { role: "user", content: command }],
+            memory,
+            chunk => { response += chunk; setConvText(response.slice(-150)); },
+            () => {},
+            (path, prefill) => { if (prefill) (window as any).__mayaPrefill = prefill; navigate(path); },
+            ctrl.signal,
+          );
+          if (response) {
+            ambientHistoryRef.current = [
+              ...ambientHistoryRef.current,
+              { role: "user", content: command },
+              { role: "assistant", content: response },
+            ].slice(-16);
+            setConvState("speaking");
+            setConvText(response.slice(0, 240));
+            await speak(response.slice(0, 600));
+          }
+        } catch (e: any) {
+          if (e.name === "AbortError" || ctrl.signal.aborted) break;
+          await speak("Something went wrong. Please try again.");
+          break;
+        }
+      }
+    } finally {
+      convActiveRef.current = false;
+      ambientAbortRef.current = null;
+      setConvState("idle");
+      setConvText("");
+    }
+  }, [navigate, memory]);
+
+  const handleWakeWord = useCallback(() => {
+    runAmbientConversation();
+  }, [runAmbientConversation]);
+
+  const stopConversation = useCallback(() => {
+    convActiveRef.current = false;
+    ambientAbortRef.current?.abort();
+    window.speechSynthesis?.cancel();
+    setConvState("idle");
+    setConvText("");
+  }, []);
+
+  // Wake word only active when ambient on AND no active conversation
+  const { supported: wakeSupported } = useWakeWord(handleWakeWord, ambientMode && convState === "idle");
 
   const toggleAmbient = useCallback(() => {
     setAmbientMode(v => {
@@ -480,6 +588,55 @@ export function AgentPanel() {
 
   return (
     <>
+      {/* ── Ambient conversation overlay (shown instead of panel during voice conv) ── */}
+      {convState !== "idle" && !open && (
+        <div className="fixed bottom-24 right-6 z-50 w-72 bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+                <Sparkles className="h-3 w-3" />
+              </div>
+              <span className="text-sm font-semibold">Maya</span>
+              <span className={cn(
+                "text-xs transition-colors",
+                convState === "listening" ? "text-primary" : "text-muted-foreground",
+              )}>
+                {convState === "greeting" ? "· hello!" : convState === "listening" ? "· listening…" : convState === "processing" ? "· thinking…" : "· speaking…"}
+              </span>
+            </div>
+            <button
+              onClick={stopConversation}
+              className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Stop conversation"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="px-3 py-3 min-h-[64px] flex items-center">
+            {convState === "listening" ? (
+              <div className="flex items-center gap-3 w-full">
+                <div className="flex items-end gap-[3px] shrink-0 h-6">
+                  {[2,3,5,6,4,5,3,2].map((h, i) => (
+                    <span key={i} className="w-[3px] rounded-full bg-primary animate-pulse"
+                      style={{ height: `${h * 3}px`, animationDelay: `${i * 70}ms` }} />
+                  ))}
+                </div>
+                <span className="text-xs text-muted-foreground italic truncate">
+                  {convText || "Go ahead…"}
+                </span>
+              </div>
+            ) : convState === "processing" ? (
+              <div className="flex items-center gap-2 w-full">
+                <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                <span className="text-xs text-muted-foreground truncate">{convText || "Thinking…"}</span>
+              </div>
+            ) : (
+              <span className="text-sm text-foreground leading-snug line-clamp-4">{convText}</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── FAB trigger ── */}
       {!open && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
@@ -573,25 +730,9 @@ export function AgentPanel() {
               {!hasMessages ? (
                 /* ── Welcome ── */
                 <div className="flex flex-col items-center justify-center h-full px-6 gap-6">
-                  {wakeGreeting ? (
-                    <div className="text-center space-y-3">
-                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                        <Sparkles className="h-8 w-8 text-primary animate-pulse" />
-                      </div>
-                      <p className="text-base font-semibold">Yes boss!</p>
-                      <p className="text-sm text-muted-foreground">What can I do for you?</p>
-                      {recording && (
-                        <div className="flex items-center justify-center gap-[4px] mt-2">
-                          {[1,2,3,4,3,2,1].map((h, i) => (
-                            <span key={i} className="w-[3px] rounded-full bg-primary animate-pulse" style={{ height: `${h * 6}px`, animationDelay: `${i * 80}ms` }} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-center">
-                        <p className="text-sm text-muted-foreground mb-1">Hi there</p>
+                  <>
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-1">Hi there</p>
                         <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
                         {ambientMode && (
                           <p className="text-xs text-primary mt-1.5 flex items-center justify-center gap-1.5">
@@ -694,8 +835,7 @@ export function AgentPanel() {
                           </button>
                         ))}
                       </div>
-                    </>
-                  )}
+                  </>
                 </div>
               ) : (
                 /* ── Chat thread ── */

@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import express from "express";
 import {
   db, invoicesTable, quotationsTable, customersTable, stockItemsTable,
-  settingsTable, purchaseOrdersTable,
+  settingsTable, purchaseOrdersTable, vendorsTable, deliveryOrdersTable,
+  vendorInvoicesTable, grnTable,
 } from "@workspace/db";
 import { eq, and, ilike, or, desc, SQL, gte } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -26,8 +27,16 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "searchCustomers",
-      description: "Search the customer directory by name (partial, fuzzy). Returns address and contact details.",
-      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      description: "Search the customer directory by name (partial or full — pass all words the user says). Returns address and contact details.",
+      parameters: { type: "object", properties: { query: { type: "string", description: "Name or partial name. Pass the FULL name as spoken, including spaces." } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchVendors",
+      description: "Search the vendor/supplier directory by name (partial or full). Returns address, contact, GST info.",
+      parameters: { type: "object", properties: { query: { type: "string", description: "Name or partial name. Pass the FULL name as spoken." } }, required: ["query"] },
     },
   },
   {
@@ -58,15 +67,15 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "searchPurchaseOrders",
-      description: "Search purchase orders by PO number or vendor name. Returns a list. Always follow up with getPurchaseOrder to get full details when user asks about a specific PO.",
-      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      description: "Search purchase orders by PO number or vendor/supplier name (partial ok). Returns a list.",
+      parameters: { type: "object", properties: { query: { type: "string", description: "PO number or full/partial vendor name" } }, required: ["query"] },
     },
   },
   {
     type: "function",
     function: {
       name: "getPurchaseOrder",
-      description: "Get full details of a specific purchase order including all line items, pricing, vendor info, and status. Use after searchPurchaseOrders to get the full record.",
+      description: "Get full details of a specific purchase order. Use after searchPurchaseOrders.",
       parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
     },
   },
@@ -74,7 +83,7 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "searchInvoices",
-      description: "Search invoices by invoice number (e.g. INV-0042) or customer name.",
+      description: "Search invoices by invoice number or customer name (partial ok).",
       parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
     },
   },
@@ -84,6 +93,38 @@ const AGENT_TOOLS = [
       name: "getInvoice",
       description: "Get full details of a specific invoice including all line items, pricing, and status.",
       parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchDeliveryOrders",
+      description: "Search delivery orders by DO number or customer name (partial ok).",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getDeliveryOrder",
+      description: "Get full details of a specific delivery order.",
+      parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchVendorInvoices",
+      description: "Search vendor/supplier invoices (AP) by PI number or vendor name (partial ok).",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchGRN",
+      description: "Search Goods Received Notes by GRN number, PO number, or vendor name.",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
     },
   },
   {
@@ -115,13 +156,13 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "navigateTo",
-      description: "Navigate the application to a specific module or page, and optionally pre-fill a form. Use when the user says 'go to', 'open', 'take me to', 'show me', or when creating a complex document with serials/many items that are better handled in the UI form.",
+      description: "Navigate the application to any page, module, document, or form. Use for 'open', 'show', 'go to', 'edit', 'preview', or 'take me to'. Also use to open edit forms for specific documents.",
       parameters: {
         type: "object",
         properties: {
           path: {
             type: "string",
-            description: "App route: /dashboard, /invoices, /invoices/new, /invoices/:id, /quotations, /quotations/new, /quotations/:id, /purchase-orders, /purchase-orders/new, /purchase-orders/:id, /delivery-orders, /delivery-orders/new, /delivery-orders/:id, /stock, /grn, /settings, /vendor-invoices, /customers, /vendors. Use /purchase-orders/:id (with real numeric id) to open a specific PO, /invoices/:id to open a specific invoice.",
+            description: "App route. Pages: /dashboard, /settings, /customers, /vendors, /stock, /grn, /vendor-invoices, /accounting, /expenses, /accounting/gst-f5. Document lists: /invoices, /quotations, /purchase-orders, /delivery-orders. New forms: /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new. View specific doc: /invoices/:id, /quotations/:id, /purchase-orders/:id, /delivery-orders/:id. Edit specific doc: /invoices/:id/edit, /quotations/:id/edit, /purchase-orders/:id/edit, /delivery-orders/:id/edit. Admin: /admin/users.",
           },
           prefill: {
             type: "object",
@@ -251,6 +292,68 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
         tokenOr(customersTable.name, args.query),
       )).limit(8);
       return rows.length > 0 ? rows : { message: "No customers found matching that name." };
+    }
+
+    case "searchVendors": {
+      const rows = await db.select({
+        id: vendorsTable.id, name: vendorsTable.name, address: vendorsTable.address,
+        contactPerson: vendorsTable.contactPerson, contactEmail: vendorsTable.contactEmail,
+        country: vendorsTable.country, gstRegistered: vendorsTable.gstRegistered, gstNo: vendorsTable.gstNo,
+        phone: vendorsTable.phone, currency: vendorsTable.currency,
+      }).from(vendorsTable).where(and(
+        eq(vendorsTable.companyId, companyId),
+        eq(vendorsTable.isActive, true),
+        tokenOr(vendorsTable.name, args.query),
+      )).limit(8);
+      return rows.length > 0 ? rows : { message: "No vendors found matching that name." };
+    }
+
+    case "searchDeliveryOrders": {
+      const rows = await db.select({
+        id: deliveryOrdersTable.id, doNumber: deliveryOrdersTable.doNumber,
+        customerName: deliveryOrdersTable.customerName, status: deliveryOrdersTable.status,
+        deliveryDate: deliveryOrdersTable.deliveryDate, createdAt: deliveryOrdersTable.createdAt,
+        invNumber: deliveryOrdersTable.invNumber,
+      }).from(deliveryOrdersTable).where(and(
+        eq(deliveryOrdersTable.companyId, companyId),
+        or(tokenOr(deliveryOrdersTable.doNumber, args.query), tokenOr(deliveryOrdersTable.customerName, args.query)),
+      )).orderBy(desc(deliveryOrdersTable.createdAt)).limit(8);
+      return rows.length > 0 ? rows : { message: "No delivery orders found." };
+    }
+
+    case "getDeliveryOrder": {
+      const [doc] = await db.select().from(deliveryOrdersTable)
+        .where(and(eq(deliveryOrdersTable.companyId, companyId), eq(deliveryOrdersTable.id, args.id)));
+      return doc ?? { error: "Delivery order not found" };
+    }
+
+    case "searchVendorInvoices": {
+      const rows = await db.select({
+        id: vendorInvoicesTable.id, piNumber: vendorInvoicesTable.piNumber,
+        vendorName: vendorInvoicesTable.vendorName, status: vendorInvoicesTable.status,
+        poNumbers: vendorInvoicesTable.poNumbers, currency: vendorInvoicesTable.currency,
+        createdAt: vendorInvoicesTable.createdAt,
+      }).from(vendorInvoicesTable).where(and(
+        eq(vendorInvoicesTable.companyId, companyId),
+        or(tokenOr(vendorInvoicesTable.piNumber, args.query), tokenOr(vendorInvoicesTable.vendorName, args.query)),
+      )).orderBy(desc(vendorInvoicesTable.createdAt)).limit(8);
+      return rows.length > 0 ? rows : { message: "No vendor invoices found." };
+    }
+
+    case "searchGRN": {
+      const rows = await db.select({
+        id: grnTable.id, grnNumber: grnTable.grnNumber,
+        poNumber: grnTable.poNumber, vendorName: grnTable.vendorName,
+        status: grnTable.status, createdAt: grnTable.createdAt,
+      }).from(grnTable).where(and(
+        eq(grnTable.companyId, companyId),
+        or(
+          tokenOr(grnTable.grnNumber, args.query),
+          tokenOr(grnTable.poNumber, args.query),
+          tokenOr(grnTable.vendorName, args.query),
+        ),
+      )).orderBy(desc(grnTable.createdAt)).limit(8);
+      return rows.length > 0 ? rows : { message: "No GRN records found." };
     }
 
     case "searchQuotations": {
@@ -444,24 +547,29 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
     ? `\n\nRecent session memory (use to understand user preferences and context):\n${memory.map((m: any) => `• ${m}`).join("\n")}`
     : "";
 
-  const systemPrompt = `You are Maya, the AI accountant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
+  const systemPrompt = `You are Maya, the AI assistant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
 
-## Your capabilities
+## Your capabilities (full app access)
 - CREATE invoices and quotations via API (fast path)
-- NAVIGATE to any page and pre-fill forms (use navigateTo with the real numeric id for specific documents)
-- SEARCH & RETRIEVE customers, quotations, purchase orders, invoices, stock items
+- NAVIGATE to any page, module, form, or document — including edit forms (/invoices/:id/edit), view pages, accounting, admin
+- SEARCH & RETRIEVE from every module: customers, vendors, quotations, purchase orders, invoices, delivery orders, vendor invoices (AP), GRN, stock items
 - SHOW financial statistics and analytics
-- ANSWER anything about documents, customers, or orders — always look it up first
+- ANSWER anything about documents, vendors, customers, or orders — always look it up first, never guess
 
 ## Core rules — follow these exactly
 
 ### Always search before answering
-- User mentions a vendor or customer → searchCustomers / searchPurchaseOrders immediately
+- User mentions a vendor → searchVendors immediately (pass all words as spoken)
+- User mentions a customer → searchCustomers immediately
 - User asks about a PO → searchPurchaseOrders → getPurchaseOrder → navigateTo /purchase-orders/:id
 - User asks about an invoice → searchInvoices → getInvoice → navigateTo /invoices/:id
 - User asks about a quotation → searchQuotations → getQuotation → navigateTo /quotations/:id
+- User asks about a DO or delivery order → searchDeliveryOrders → getDeliveryOrder → navigateTo /delivery-orders/:id
+- User asks about a vendor/supplier invoice or PI → searchVendorInvoices
+- User asks about GRN or goods received → searchGRN
 - Stats question → getFinancialStats immediately
-- Never ask "what's the PO number?" — search for it yourself
+- Never ask "what's the PO/invoice/DO number?" — search for it yourself
+- "Open", "show", "take me to", "edit" X → navigate directly to the right path
 
 ### Name matching — critical
 - Always pass the FULL name exactly as the user says it (including spaces): "Micro United Network" not just "Micro"
