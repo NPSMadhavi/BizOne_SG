@@ -748,8 +748,8 @@ export default function PurchaseOrderNew() {
           generatePdf={(opts) => generatePO_PDF(savedPo, selectedCompany, opts)}
           pdfFilename={`${savedPo.poNumber}.pdf`}
           defaultEmailTo={(savedPo as any).vendorContactEmail || ""}
-          defaultEmailSubject={`Purchase Order ${savedPo.poNumber}`}
-          defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}${(savedPo as any).quoteRefNo ? ` with the sales reference number ${(savedPo as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          defaultEmailSubject={`${savedPo.poNumber} for ${savedPo.vendorName} | ${(selectedCompany as any)?.name || "RSV Infotech"}`}
+          defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
           onEdit={() => {
             setPreviewOpen(false);
             setLocation(`/purchase-orders/${savedPo.id}/edit`);

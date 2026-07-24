@@ -469,8 +469,8 @@ export default function PurchaseOrderView() {
         generatePdf={(opts) => generatePO_PDF(po, selectedCompany, opts)}
         pdfFilename={`${po.poNumber}.pdf`}
         defaultEmailTo={(po as any).vendorContactEmail || ""}
-        defaultEmailSubject={`Purchase Order ${po.poNumber}`}
-        defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}${(po as any).quoteRefNo ? ` with the sales reference number ${(po as any).quoteRefNo}` : ""}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+        defaultEmailSubject={`${po.poNumber} for ${po.vendorName} | ${(selectedCompany as any)?.name || "RSV Infotech"}`}
+        defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
         docInfo={{
           docType: "Purchase Order",
           docNumber: po.poNumber,
