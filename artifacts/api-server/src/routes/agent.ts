@@ -444,7 +444,7 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
     ? `\n\nRecent session memory (use to understand user preferences and context):\n${memory.map((m: any) => `• ${m}`).join("\n")}`
     : "";
 
-  const systemPrompt = `You are Aria, the AI accountant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
+  const systemPrompt = `You are Aira, the AI accountant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
 
 ## Your capabilities
 - CREATE invoices and quotations via API (fast path)
@@ -462,6 +462,12 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
 - User asks about a quotation → searchQuotations → getQuotation → navigateTo /quotations/:id
 - Stats question → getFinancialStats immediately
 - Never ask "what's the PO number?" — search for it yourself
+
+### Name matching — critical
+- Always pass the FULL name exactly as the user says it (including spaces): "Micro United Network" not just "Micro"
+- The search is fuzzy and matches partial names — pass as many words as the user gives
+- If voice input gives you "SP Systems" pass "SP Systems" exactly — do not shorten or abbreviate
+- If first search returns nothing, try a shorter subset of words from the name
 
 ### Opening specific documents
 When a user asks "what was the last PO for Westcon?" or "show me the SP SYSNET invoice":
@@ -591,17 +597,13 @@ router.post("/agent/speak", async (req: any, res: any): Promise<void> => {
   try {
     const cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "")
       .replace(/`/g, "").replace(/•\s*/g, "").trim().slice(0, 4096);
-    const response = await openai.chat.completions.create({
-      model: "gpt-audio",
-      modalities: ["text", "audio"],
-      audio: { voice: "nova", format: "mp3" },
-      messages: [
-        { role: "system", content: "Speak the following text naturally and clearly. Do not add commentary — speak only what is given." },
-        { role: "user", content: cleanText },
-      ],
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "nova",
+      input: cleanText,
     } as any);
-    const audioData = ((response.choices[0]?.message as any)?.audio?.data) ?? "";
-    res.json({ audio: Buffer.from(audioData, "base64").toString("base64") });
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    res.json({ audio: buffer.toString("base64") });
   } catch (e: any) {
     req.log?.error({ err: e }, "TTS failed");
     res.status(500).json({ error: e.message });

@@ -101,9 +101,9 @@ export default function QuotationNew() {
 
   // Aria prefill — populated by the AI agent via navigateTo
   useEffect(() => {
-    const prefill = (window as any).__ariaPrefill;
+    const prefill = (window as any).__airaPrefill;
     if (!prefill) return;
-    (window as any).__ariaPrefill = null;
+    (window as any).__airaPrefill = null;
     const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
     form.reset({
       customerName: prefill.customerName || "",

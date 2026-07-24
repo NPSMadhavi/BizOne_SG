@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Send, Mic, Volume2, Loader2, Sparkles, ExternalLink,
-  Square, BarChart2, Navigation, RotateCcw, X, CheckCircle2, Plus,
+  Square, BarChart2, Navigation, X, CheckCircle2, Plus, Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -18,7 +18,7 @@ interface Message {
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
-const MEMORY_KEY = "aria_memory_v2";
+const MEMORY_KEY = "aira_memory_v3";
 const MAX_MEMORY = 10;
 function loadMemory(): string[] {
   try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || "[]"); } catch { return []; }
@@ -66,6 +66,7 @@ function MarkdownText({ text }: { text: string }) {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TOOL_LABELS: Record<string, string> = {
   searchCustomers: "Searching customers",
+  searchVendors: "Searching vendors",
   searchQuotations: "Searching quotations",
   getQuotation: "Loading quotation",
   searchStockItems: "Searching catalogue",
@@ -109,23 +110,72 @@ const SUGGESTIONS = [
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// ── Audio ─────────────────────────────────────────────────────────────────────
-let _audio: HTMLAudioElement | null = null;
-function playAudio(b64: string) {
-  if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; }
-  const a = new Audio(`data:audio/mp3;base64,${b64}`);
-  _audio = a;
-  a.onended = a.onerror = () => { _audio = null; };
-  a.play().catch(() => { _audio = null; });
+// ── Browser TTS (fast, always-available fallback) ──────────────────────────
+let _browserTtsResolve: (() => void) | null = null;
+function speakBrowser(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis) { resolve(); return; }
+    window.speechSynthesis.cancel();
+    _browserTtsResolve?.();
+    _browserTtsResolve = resolve;
+    const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
+    const utt = new SpeechSynthesisUtterance(clean);
+    utt.rate = 1.05;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    const setVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const v = voices.find(v => /google uk english female/i.test(v.name))
+        || voices.find(v => /samantha/i.test(v.name))
+        || voices.find(v => /zira/i.test(v.name))
+        || voices.find(v => v.lang === "en-GB" && v.localService)
+        || voices.find(v => v.lang.startsWith("en-") && v.localService)
+        || voices.find(v => v.lang.startsWith("en"));
+      if (v) utt.voice = v;
+    };
+    setVoice();
+    utt.onend = () => { _browserTtsResolve = null; resolve(); };
+    utt.onerror = () => { _browserTtsResolve = null; resolve(); };
+    window.speechSynthesis.speak(utt);
+  });
 }
-async function speak(text: string) {
+
+// ── API Audio ──────────────────────────────────────────────────────────────
+let _audio: HTMLAudioElement | null = null;
+function playAudio(b64: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; }
+    const a = new Audio(`data:audio/mp3;base64,${b64}`);
+    _audio = a;
+    a.onended = () => { _audio = null; resolve(); };
+    a.onerror = () => { _audio = null; resolve(); };
+    a.play().catch(() => { _audio = null; resolve(); });
+  });
+}
+
+async function speakApi(text: string): Promise<boolean> {
   try {
     const r = await fetch(`${BASE}/api/agent/speak`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       credentials: "include", body: JSON.stringify({ text }),
     });
-    if (r.ok) playAudio((await r.json()).audio);
-  } catch {}
+    if (!r.ok) return false;
+    const { audio } = await r.json();
+    if (!audio) return false;
+    await playAudio(audio);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function speak(text: string): Promise<void> {
+  const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim().slice(0, 600);
+  if (!clean) return;
+  // Use browser TTS (instant, always available). Try API in background for future quality upgrade.
+  await speakBrowser(clean);
+  // Silently attempt API for higher-quality audio (non-blocking, just warms it up)
+  speakApi(clean).catch(() => {});
 }
 
 // ── SSE stream ────────────────────────────────────────────────────────────────
@@ -163,7 +213,7 @@ async function streamChat(
   }
 }
 
-// ── Voice ─────────────────────────────────────────────────────────────────────
+// ── MediaRecorder voice hook ───────────────────────────────────────────────────
 async function transcribe(blob: Blob): Promise<string> {
   const ab = await blob.arrayBuffer();
   const bytes = new Uint8Array(ab);
@@ -212,6 +262,68 @@ function useVoice() {
   return { recording, start, stop };
 }
 
+// ── Wake word hook (continuous Web Speech API) ────────────────────────────────
+const WAKE_WORDS = /\b(aira|aria|ayra|ara|aera|ira)\b/i;
+
+function useWakeWord(onWakeWord: () => void, enabled: boolean) {
+  const recRef = useRef<any>(null);
+  const enabledRef = useRef(enabled);
+  const onWakeRef = useRef(onWakeWord);
+  enabledRef.current = enabled;
+  onWakeRef.current = onWakeWord;
+
+  const startListening = useCallback(() => {
+    if (recRef.current) return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    try {
+      const rec = new SR();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = "en-US";
+      rec.onresult = (evt: any) => {
+        for (let i = evt.resultIndex; i < evt.results.length; i++) {
+          const t = (evt.results[i][0].transcript || "").toLowerCase().trim();
+          if (WAKE_WORDS.test(t)) {
+            recRef.current = null;
+            try { rec.stop(); } catch {}
+            onWakeRef.current();
+            return;
+          }
+        }
+      };
+      rec.onerror = () => { recRef.current = null; };
+      rec.onend = () => {
+        recRef.current = null;
+        if (enabledRef.current) setTimeout(startListening, 600);
+      };
+      rec.start();
+      recRef.current = rec;
+    } catch {}
+  }, []);
+
+  const stopListening = useCallback(() => {
+    if (recRef.current) {
+      try { recRef.current.stop(); } catch {}
+      recRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (enabled) {
+      setTimeout(startListening, 200);
+    } else {
+      stopListening();
+    }
+    return stopListening;
+  }, [enabled, startListening, stopListening]);
+
+  const supported = !!(
+    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  );
+  return { supported };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export function AgentPanel() {
   const [open, setOpen] = useState(false);
@@ -220,6 +332,10 @@ export function AgentPanel() {
   const [thinking, setThinking] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [micError, setMicError] = useState(false);
+  const [ambientMode, setAmbientMode] = useState(() => {
+    try { return localStorage.getItem("aira_ambient") === "1"; } catch { return false; }
+  });
+  const [wakeGreeting, setWakeGreeting] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -228,6 +344,28 @@ export function AgentPanel() {
   const [memory] = useState(() => loadMemory());
 
   const hasMessages = messages.length > 0;
+
+  // Wake word handler — opens panel, greets, then auto-records
+  const handleWakeWord = useCallback(async () => {
+    setWakeGreeting(true);
+    setOpen(true);
+    await speak("Yes boss, what can I do for you?");
+    setWakeGreeting(false);
+    // Auto-start mic after greeting
+    const ok = await start();
+    if (!ok) setMicError(true);
+  }, [start]);
+
+  const { supported: wakeSupported } = useWakeWord(handleWakeWord, ambientMode && !open && !recording && !wakeGreeting);
+
+  const toggleAmbient = useCallback(() => {
+    setAmbientMode(v => {
+      const next = !v;
+      try { localStorage.setItem("aira_ambient", next ? "1" : "0"); } catch {}
+      if (next) speak("Ambient mode on. Just say Aira anytime.");
+      return next;
+    });
+  }, []);
 
   // Focus input when opened
   useEffect(() => {
@@ -256,7 +394,7 @@ export function AgentPanel() {
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
   const handleNavigate = useCallback((path: string, prefill: any, reason: string) => {
-    if (prefill) (window as any).__ariaPrefill = prefill;
+    if (prefill) (window as any).__airaPrefill = prefill;
     const label = PATH_LABELS[path] || reason || path.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
@@ -291,7 +429,7 @@ export function AgentPanel() {
       if (inv) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
       else if (qt) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
       else { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true } : m)); }
-      if (fromVoice && full) speak(full.slice(0, 600));
+      if (fromVoice && full) await speak(full.slice(0, 600));
     } catch (e: any) {
       if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
     } finally { setThinking(false); abortRef.current = null; }
@@ -316,7 +454,11 @@ export function AgentPanel() {
     }
   };
 
-  const stopAudio = () => { if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; } };
+  const stopAudio = () => {
+    if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; }
+    window.speechSynthesis?.cancel();
+    _browserTtsResolve?.();
+  };
   const clear = () => { stopAudio(); setMessages([]); };
   const close = () => { stopAudio(); setOpen(false); };
 
@@ -324,32 +466,74 @@ export function AgentPanel() {
     <>
       {/* ── FAB trigger ── */}
       {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          title="Ask Aria"
-          className="fixed bottom-6 right-6 z-40 flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95"
-        >
-          <Sparkles className="h-5 w-5" />
-        </button>
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+          {/* Ambient mode toggle chip */}
+          {wakeSupported && (
+            <button
+              onClick={toggleAmbient}
+              title={ambientMode ? "Ambient mode ON — say 'Aira' anytime" : "Enable ambient mode"}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all",
+                ambientMode
+                  ? "bg-primary text-primary-foreground animate-pulse"
+                  : "bg-background border border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Radio className="h-3 w-3" />
+              {ambientMode ? "Listening…" : "Ambient"}
+            </button>
+          )}
+          <button
+            onClick={() => setOpen(true)}
+            title="Ask Aira"
+            className={cn(
+              "relative flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95",
+            )}
+          >
+            {ambientMode && (
+              <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
+            )}
+            <Sparkles className="h-5 w-5" />
+          </button>
+        </div>
       )}
 
-      {/* ── Floating panel — no backdrop, fully non-blocking ── */}
+      {/* ── Floating panel ── */}
       {open && (
         <div className="fixed bottom-6 right-6 z-50 pointer-events-none flex flex-col items-end">
-          {/* Dialog card */}
-          <div
-            className="pointer-events-auto flex flex-col w-[520px] h-[620px] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden"
-          >
+          <div className="pointer-events-auto flex flex-col w-[520px] h-[620px] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
                   <Sparkles className="h-3.5 w-3.5" />
                 </div>
-                <span className="text-sm font-semibold">Aria</span>
+                <span className="text-sm font-semibold">Aira</span>
                 <span className="text-xs text-muted-foreground">· AI assistant</span>
+                {ambientMode && (
+                  <span className="flex items-center gap-1 text-xs text-primary font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                    listening
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1">
+                {/* Ambient toggle */}
+                {wakeSupported && (
+                  <button
+                    onClick={toggleAmbient}
+                    title={ambientMode ? "Turn off ambient mode" : "Enable ambient mode (say 'Aira' anytime)"}
+                    className={cn(
+                      "flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors",
+                      ambientMode
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    )}
+                  >
+                    <Radio className="h-3 w-3" />
+                    {ambientMode ? "Ambient ON" : "Ambient"}
+                  </button>
+                )}
                 {hasMessages && (
                   <button
                     onClick={clear}
@@ -373,107 +557,129 @@ export function AgentPanel() {
               {!hasMessages ? (
                 /* ── Welcome ── */
                 <div className="flex flex-col items-center justify-center h-full px-6 gap-6">
-                  <div className="text-center">
-                    <p className="text-sm text-muted-foreground mb-1">Hi there</p>
-                    <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
-                  </div>
-
-                  {/* ── Speak button ── */}
-                  <div className="w-full flex flex-col items-center gap-3">
-                    <button
-                      onClick={mic}
-                      disabled={transcribing}
-                      className={cn(
-                        "relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-semibold text-base transition-all duration-200 shadow-md select-none",
-                        micError
-                          ? "bg-red-100 text-red-600 border border-red-200"
-                          : recording
-                          ? "bg-red-500 text-white shadow-red-200 shadow-lg scale-[1.02]"
-                          : transcribing
-                          ? "bg-muted text-muted-foreground cursor-wait"
-                          : "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]",
-                      )}
-                    >
-                      {/* Pulsing ring when recording */}
+                  {wakeGreeting ? (
+                    <div className="text-center space-y-3">
+                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                        <Sparkles className="h-8 w-8 text-primary animate-pulse" />
+                      </div>
+                      <p className="text-base font-semibold">Yes boss!</p>
+                      <p className="text-sm text-muted-foreground">What can I do for you?</p>
                       {recording && (
-                        <span className="absolute inset-0 rounded-2xl animate-ping bg-red-400 opacity-30 pointer-events-none" />
-                      )}
-                      <span className={cn(
-                        "flex items-center justify-center w-9 h-9 rounded-full shrink-0",
-                        recording ? "bg-white/20" : "bg-white/15",
-                      )}>
-                        {transcribing
-                          ? <Loader2 className="h-5 w-5 animate-spin" />
-                          : recording
-                          ? <Square className="h-4 w-4 fill-current" />
-                          : <Mic className="h-5 w-5" />}
-                      </span>
-                      <span className="flex flex-col items-start leading-tight">
-                        <span className="text-sm font-semibold">
-                          {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Aria"}
-                        </span>
-                        {!recording && !transcribing && !micError && (
-                          <span className="text-xs opacity-70 font-normal">Tap and talk — I'm listening</span>
-                        )}
-                      </span>
-                      {/* Sound wave bars when recording */}
-                      {recording && (
-                        <span className="ml-auto flex items-center gap-[3px]">
-                          {[1,2,3,4,3].map((h, i) => (
-                            <span key={i} className="w-[3px] rounded-full bg-white/80 animate-pulse" style={{ height: `${h * 5}px`, animationDelay: `${i * 100}ms` }} />
+                        <div className="flex items-center justify-center gap-[4px] mt-2">
+                          {[1,2,3,4,3,2,1].map((h, i) => (
+                            <span key={i} className="w-[3px] rounded-full bg-primary animate-pulse" style={{ height: `${h * 6}px`, animationDelay: `${i * 80}ms` }} />
                           ))}
-                        </span>
+                        </div>
                       )}
-                    </button>
-
-                    {/* Divider */}
-                    <div className="flex items-center gap-3 w-full">
-                      <div className="flex-1 h-px bg-border" />
-                      <span className="text-xs text-muted-foreground">or type below</span>
-                      <div className="flex-1 h-px bg-border" />
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground mb-1">Hi there</p>
+                        <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
+                        {ambientMode && (
+                          <p className="text-xs text-primary mt-1.5 flex items-center justify-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                            Say "Aira" anytime to get my attention
+                          </p>
+                        )}
+                      </div>
 
-                  {/* Text input */}
-                  <div className="w-full">
-                    <div className="flex items-end gap-2 bg-muted/50 border border-border rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
-                      <textarea
-                        ref={inputRef}
-                        value={input}
-                        onChange={e => setInput(e.target.value)}
-                        onKeyDown={onKey}
-                        placeholder="Ask me anything…"
-                        rows={1}
-                        className="flex-1 resize-none bg-transparent text-sm focus:outline-none min-h-[24px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
-                        onInput={e => {
-                          const el = e.currentTarget;
-                          el.style.height = "auto";
-                          el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
-                        }}
-                      />
-                      <button
-                        onClick={submit}
-                        disabled={!input.trim()}
-                        className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-                      >
-                        <Send className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </div>
+                      {/* Speak button */}
+                      <div className="w-full flex flex-col items-center gap-3">
+                        <button
+                          onClick={mic}
+                          disabled={transcribing}
+                          className={cn(
+                            "relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-semibold text-base transition-all duration-200 shadow-md select-none",
+                            micError
+                              ? "bg-red-100 text-red-600 border border-red-200"
+                              : recording
+                              ? "bg-red-500 text-white shadow-red-200 shadow-lg scale-[1.02]"
+                              : transcribing
+                              ? "bg-muted text-muted-foreground cursor-wait"
+                              : "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]",
+                          )}
+                        >
+                          {recording && (
+                            <span className="absolute inset-0 rounded-2xl animate-ping bg-red-400 opacity-30 pointer-events-none" />
+                          )}
+                          <span className={cn(
+                            "flex items-center justify-center w-9 h-9 rounded-full shrink-0",
+                            recording ? "bg-white/20" : "bg-white/15",
+                          )}>
+                            {transcribing
+                              ? <Loader2 className="h-5 w-5 animate-spin" />
+                              : recording
+                              ? <Square className="h-4 w-4 fill-current" />
+                              : <Mic className="h-5 w-5" />}
+                          </span>
+                          <span className="flex flex-col items-start leading-tight">
+                            <span className="text-sm font-semibold">
+                              {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Aira"}
+                            </span>
+                            {!recording && !transcribing && !micError && (
+                              <span className="text-xs opacity-70 font-normal">Tap and talk — I'm listening</span>
+                            )}
+                          </span>
+                          {recording && (
+                            <span className="ml-auto flex items-center gap-[3px]">
+                              {[1,2,3,4,3].map((h, i) => (
+                                <span key={i} className="w-[3px] rounded-full bg-white/80 animate-pulse" style={{ height: `${h * 5}px`, animationDelay: `${i * 100}ms` }} />
+                              ))}
+                            </span>
+                          )}
+                        </button>
 
-                  {/* Chips */}
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {SUGGESTIONS.map(s => (
-                      <button
-                        key={s.label}
-                        onClick={() => send(s.label)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-background hover:bg-muted text-xs text-foreground/70 hover:text-foreground transition-colors"
-                      >
-                        <span>{s.icon}</span>
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
+                        <div className="flex items-center gap-3 w-full">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs text-muted-foreground">or type below</span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
+                      </div>
+
+                      {/* Text input */}
+                      <div className="w-full">
+                        <div className="flex items-end gap-2 bg-muted/50 border border-border rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
+                          <textarea
+                            ref={inputRef}
+                            value={input}
+                            onChange={e => setInput(e.target.value)}
+                            onKeyDown={onKey}
+                            placeholder="Ask me anything…"
+                            rows={1}
+                            className="flex-1 resize-none bg-transparent text-sm focus:outline-none min-h-[24px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
+                            onInput={e => {
+                              const el = e.currentTarget;
+                              el.style.height = "auto";
+                              el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
+                            }}
+                          />
+                          <button
+                            onClick={submit}
+                            disabled={!input.trim()}
+                            className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+                          >
+                            <Send className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Chips */}
+                      <div className="flex flex-wrap gap-2 justify-center">
+                        {SUGGESTIONS.map(s => (
+                          <button
+                            key={s.label}
+                            onClick={() => send(s.label)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-background hover:bg-muted text-xs text-foreground/70 hover:text-foreground transition-colors"
+                          >
+                            <span>{s.icon}</span>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 /* ── Chat thread ── */
@@ -507,23 +713,23 @@ export function AgentPanel() {
                                 <span key={i} className={cn(
                                   "text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border",
                                   done
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/50"
-                                    : "bg-muted text-muted-foreground border-border/60",
+                                    ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-400"
+                                    : "bg-muted border-border text-muted-foreground",
                                 )}>
                                   {icon}
-                                  {TOOL_LABELS[tc] ?? tc}
+                                  {TOOL_LABELS[tc] || tc}
                                 </span>
                               );
                             })}
                           </div>
                         )}
 
-                        {/* Navigation badge */}
+                        {/* Navigation chip */}
                         {msg.navigated && (
-                          <div className="flex items-center gap-1 text-xs text-primary bg-primary/8 border border-primary/20 rounded-full px-2.5 py-0.5">
+                          <span className="text-xs rounded-full px-2.5 py-1 flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-400">
                             <Navigation className="h-2.5 w-2.5" />
                             Opened {msg.navigated.label}
-                          </div>
+                          </span>
                         )}
 
                         {/* Bubble */}
@@ -587,7 +793,7 @@ export function AgentPanel() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKey}
-                    placeholder={recording ? "🔴 Listening…" : "Ask Aria anything…"}
+                    placeholder={recording ? "🔴 Listening…" : "Ask Aira anything…"}
                     rows={1}
                     disabled={thinking || recording || transcribing}
                     className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[22px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
