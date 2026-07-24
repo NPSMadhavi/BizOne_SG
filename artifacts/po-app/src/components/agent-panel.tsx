@@ -492,7 +492,10 @@ export function AgentPanel() {
   const hasMessages = messages.length > 0;
 
   // ── Ambient conversation loop ──
-  const runAmbientConversation = useCallback(async () => {
+  // greeting: what Veda says at the start of this conversation turn
+  //   button press  → "Yes Boss, how may I help you?"
+  //   wake word     → "Yes Boss"
+  const runAmbientConversation = useCallback(async (greeting = "Yes Boss") => {
     if (convActiveRef.current) return;
     convActiveRef.current = true;
     const ctrl = new AbortController();
@@ -501,8 +504,8 @@ export function AgentPanel() {
 
     try {
       setConvState("greeting");
-      setConvText("Yes Boss, how may I help you?");
-      await speak("Yes Boss, how may I help you?");
+      setConvText(greeting);
+      await speak(greeting);
 
       let silenceStreak = 0;
       let pendingCommand = ""; // carries user speech that interrupted TTS
@@ -596,7 +599,7 @@ export function AgentPanel() {
   }, [navigate, memory]);
 
   const handleWakeWord = useCallback(() => {
-    runAmbientConversation();
+    runAmbientConversation("Yes Boss"); // short acknowledgment on wake word
   }, [runAmbientConversation]);
 
   const stopConversation = useCallback(() => {
@@ -618,16 +621,17 @@ export function AgentPanel() {
   );
 
   const toggleAmbient = useCallback(() => {
-    setAmbientMode(v => {
-      const next = !v;
-      try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
-      if (next) {
-        setWakeError(null); // clear any previous block error on re-enable
-        // no greeting — just silently activate wake word listening
-      }
-      return next;
-    });
-  }, []);
+    const next = !ambientMode;
+    try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
+    if (next) {
+      setWakeError(null);
+      setAmbientMode(true);
+      // Immediately greet and enter conversation — don't wait for wake word
+      runAmbientConversation("Yes Boss, how may I help you?");
+    } else {
+      setAmbientMode(false);
+    }
+  }, [ambientMode, runAmbientConversation]);
 
   // Focus input when opened
   useEffect(() => {
@@ -645,7 +649,7 @@ export function AgentPanel() {
       if (e.key === "Escape") { close(); return; }
       if (e.altKey && e.key.toLowerCase() === "m" && convState === "idle" && !open) {
         e.preventDefault();
-        runAmbientConversation();
+        runAmbientConversation("Yes Boss, how may I help you?");
       }
     };
     window.addEventListener("keydown", handler);
