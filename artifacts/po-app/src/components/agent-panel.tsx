@@ -404,7 +404,9 @@ function useWakeWord(
   return { supported };
 }
 
-// ── Ambient single-shot voice capture (auto-stops on silence — browser VAD) ────
+// ── Ambient voice capture — keeps listening until speech detected or timeout ──
+// Uses continuous=false but restarts on no-speech/early-end so the listening
+// mode doesn't close automatically when the user hasn't spoken yet.
 function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -414,51 +416,80 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
     let finalText = "";
     let silenceTimer: ReturnType<typeof setTimeout> | null = null;
     let maxTimer: ReturnType<typeof setTimeout> | null = null;
+    let rec: any = null;
+    let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
     const done = (text: string) => {
       if (resolved) return;
       resolved = true;
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       if (maxTimer) { clearTimeout(maxTimer); maxTimer = null; }
-      try { rec.abort(); } catch {}
+      if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+      try { rec?.abort(); } catch {}
       resolve(text);
     };
 
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = "en-US";
-    rec.maxAlternatives = 1;
+    const startRec = () => {
+      if (resolved) return;
+      try {
+        rec = new SR();
+        rec.continuous = false;
+        rec.interimResults = true;
+        rec.lang = "en-US";
+        rec.maxAlternatives = 1;
 
-    // Hard cap: if nothing resolves within 10s, give up (prevents forever-listening)
-    maxTimer = setTimeout(() => done(finalText), 10000);
+        rec.onresult = (evt: any) => {
+          for (let i = evt.resultIndex; i < evt.results.length; i++) {
+            const t = evt.results[i][0].transcript;
+            if (evt.results[i].isFinal) {
+              finalText = t;
+              if (silenceTimer) clearTimeout(silenceTimer);
+              // 800 ms after final word — catches appended words
+              silenceTimer = setTimeout(() => done(finalText), 800);
+            } else {
+              onInterim(t);
+              if (silenceTimer) clearTimeout(silenceTimer);
+              silenceTimer = setTimeout(() => done(finalText), 2500);
+            }
+          }
+        };
 
-    signal?.addEventListener("abort", () => done(finalText));
+        rec.onerror = (e: any) => {
+          rec = null;
+          if (e.error === "no-speech") {
+            // Normal — browser heard nothing; restart immediately and keep waiting
+            if (!resolved) restartTimer = setTimeout(startRec, 100);
+          } else if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+            done(""); // mic blocked — give up
+          } else {
+            // Other transient errors — brief pause then retry
+            if (!resolved) restartTimer = setTimeout(startRec, 500);
+          }
+        };
 
-    rec.onresult = (evt: any) => {
-      for (let i = evt.resultIndex; i < evt.results.length; i++) {
-        const t = evt.results[i][0].transcript;
-        if (evt.results[i].isFinal) {
-          finalText = t;
-          // Short pause after final result before stopping (allows follow-up words)
-          if (silenceTimer) clearTimeout(silenceTimer);
-          silenceTimer = setTimeout(() => done(finalText), 800);
-        } else {
-          onInterim(t);
-          // Reset silence countdown on any interim speech
-          if (silenceTimer) clearTimeout(silenceTimer);
-          silenceTimer = setTimeout(() => done(finalText), 2500);
-        }
+        rec.onend = () => {
+          rec = null;
+          if (resolved) return;
+          if (finalText) {
+            // Already have text — silence timer handles it
+          } else {
+            // Ended early without speech — restart to keep listening
+            restartTimer = setTimeout(startRec, 150);
+          }
+        };
+
+        rec.start();
+      } catch {
+        rec = null;
+        if (!resolved) restartTimer = setTimeout(startRec, 500);
       }
     };
 
-    rec.onerror = (e: any) => {
-      // "no-speech" = silence detected — resolve normally (empty = loop continues waiting)
-      done(finalText);
-    };
-    rec.onend = () => done(finalText);
+    // Hard cap: 20 s total (user has plenty of time to speak)
+    maxTimer = setTimeout(() => done(finalText), 20000);
+    signal?.addEventListener("abort", () => done(finalText));
 
-    try { rec.start(); } catch { done(""); }
+    startRec();
   });
 }
 
