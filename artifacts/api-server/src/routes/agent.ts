@@ -155,6 +155,25 @@ const AGENT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "fillCurrentForm",
+      description: "Update specific fields in the document form that is currently open (new or edit page). Use when the user asks to change, set, or update fields on the form they're already on — payment terms, delivery date, currency, customer details, shipping address, notes, etc. Do NOT use navigateTo. Just call this to instantly update the visible form fields.",
+      parameters: {
+        type: "object",
+        properties: {
+          fields: {
+            type: "object",
+            description: "Fields to update on the open form. Common keys: customerName, customerAddress, customerContact, customerContactEmail, paymentTerms (e.g. '15 Days Net', '30 Days Net', 'COD', 'Advance'), deliveryDate (YYYY-MM-DD), currency (SGD/USD/EUR/GBP/MYR/INR), notes, shipToAddress, tax (number), poRefNo, discountAmount (number). For PO forms: vendorName, vendorAddress, vendorContact, vendorContactEmail, deliveryAddress. Only include keys that need to change.",
+            additionalProperties: true,
+          },
+          summary: { type: "string", description: "One-line summary of what changed, e.g. 'Set payment terms to 15 days and delivery date to 31 Jul 2026'" },
+        },
+        required: ["fields", "summary"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "navigateTo",
       description: "Navigate the application to any page, module, document, or form. Use for 'open', 'show', 'go to', 'edit', 'preview', or 'take me to'. Also use to open edit forms for specific documents.",
       parameters: {
@@ -480,6 +499,10 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
       };
     }
 
+    case "fillCurrentForm": {
+      return { _fillForm: true, fields: args.fields, summary: args.summary };
+    }
+
     case "navigateTo": {
       return { _navigate: true, path: args.path, prefill: args.prefill || null, reason: args.reason || "" };
     }
@@ -584,6 +607,12 @@ When a user asks "what was the last PO for Westcon?" or "show me the SP SYSNET i
 3. Navigate to it: navigateTo with path=/purchase-orders/{id} (real id number)
 4. Then summarise it conversationally: vendor, date, amount, status, key items
 
+### Updating fields on an open form
+- When the user is already on a form (new or edit) and asks to change/set/update any field — payment terms, delivery date, address, currency, notes, etc. — call fillCurrentForm immediately
+- Do NOT navigate away. The form is already open; just patch the fields.
+- After filling, confirm briefly: "Done — updated payment terms to 15 days and delivery date to 31 Jul."
+- If the user mentions a customer/vendor name to look up the address, call searchCustomers/searchVendors first, THEN fillCurrentForm with the result
+
 ### Creating documents
 - Use createInvoice / createQuotation (API) for simple/fast creation
 - Use navigateTo with prefill for complex docs or when user wants to review the form
@@ -660,6 +689,15 @@ Today: ${today}.${memoryBlock}`;
           toolResult = await executeTool(tc.function.name, args, companyId, userId);
         } catch (e: any) {
           toolResult = { error: e.message };
+        }
+
+        if (toolResult && toolResult._fillForm) {
+          res.write(`data: ${JSON.stringify({
+            type: "fill_form",
+            fields: toolResult.fields,
+            summary: toolResult.summary,
+          })}\n\n`);
+          toolResult = { filled: true, summary: toolResult.summary };
         }
 
         if (toolResult && toolResult._navigate) {

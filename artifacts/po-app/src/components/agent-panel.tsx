@@ -80,6 +80,7 @@ const TOOL_LABELS: Record<string, string> = {
   searchGRN: "Searching GRN",
   getCompanySettings: "Loading settings",
   getFinancialStats: "Calculating stats",
+  fillCurrentForm: "Updating form",
   navigateTo: "Navigating",
   createInvoice: "Creating invoice",
   createQuotation: "Creating quotation",
@@ -218,6 +219,7 @@ async function streamChat(
   onTool: (n: string) => void,
   onNav: (path: string, prefill: any, reason: string) => void,
   signal: AbortSignal,
+  onFill?: (fields: Record<string, any>) => void,
 ) {
   const r = await fetch(`${BASE}/api/agent/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -239,6 +241,7 @@ async function streamChat(
         if (ev.type === "text" && ev.content) onText(ev.content);
         if (ev.type === "tool_call" && ev.name) onTool(ev.name);
         if (ev.type === "navigate") onNav(ev.path, ev.prefill, ev.reason || "");
+        if (ev.type === "fill_form" && ev.fields) onFill?.(ev.fields);
         if (ev.type === "error") throw new Error(ev.message);
       } catch (e: any) { if (e.message && !e.message.includes("JSON")) throw e; }
     }
@@ -477,6 +480,7 @@ export function AgentPanel() {
             () => {},
             (path, prefill) => { if (prefill) (window as any).__mayaPrefill = prefill; navigate(path); },
             ctrl.signal,
+            (fields) => window.dispatchEvent(new CustomEvent("maya:fill-form", { detail: fields })),
           );
           if (response) {
             ambientHistoryRef.current = [
@@ -598,6 +602,7 @@ export function AgentPanel() {
         tool => setMessages(p => p.map(m => m.id === aid ? { ...m, toolCalls: [...(m.toolCalls ?? []), tool] } : m)),
         (path, prefill, reason) => handleNavigate(path, prefill, reason),
         abortRef.current.signal,
+        (fields) => window.dispatchEvent(new CustomEvent("maya:fill-form", { detail: fields })),
       );
       const inv = full.match(/\b(INV-\d+)\b/);
       const qt = full.match(/\b(QT-\d+)\b/);

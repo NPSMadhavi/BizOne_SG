@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useMayaFormFill } from "@/hooks/useMayaFormFill";
 import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -120,6 +121,7 @@ export default function PurchaseOrderNew() {
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" }],
     },
   });
+  useMayaFormFill(form);
 
   const { fields, append, remove, insert } = useFieldArray({
     control: form.control,

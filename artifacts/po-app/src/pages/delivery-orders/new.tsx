@@ -16,6 +16,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useMayaFormFill } from "@/hooks/useMayaFormFill";
 import { Trash2, Save, Eye, Lock, Plus, FileInput } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { DOImportItem } from "@/components/import-from-po-dialog";
@@ -63,6 +64,7 @@ export default function DeliveryOrderNew() {
       items: [{ partNumber: "", description: "", qty: 1, itemImage: "" }],
     },
   });
+  useMayaFormFill(form);
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateDeliveryOrder();

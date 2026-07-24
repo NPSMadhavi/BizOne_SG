@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useMayaFormFill } from "@/hooks/useMayaFormFill";
 import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
@@ -162,6 +163,7 @@ export default function InvoiceNew() {
       items: [blankInvItem],
     },
   });
+  useMayaFormFill(form);
 
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);

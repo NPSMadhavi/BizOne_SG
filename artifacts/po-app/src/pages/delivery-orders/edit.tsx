@@ -17,6 +17,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useMayaFormFill } from "@/hooks/useMayaFormFill";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, FileInput } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { DOImportItem } from "@/components/import-from-po-dialog";
@@ -71,6 +72,7 @@ export default function DeliveryOrderEdit() {
       items: [{ partNumber: "", description: "", qty: 1, itemImage: "" }],
     },
   });
+  useMayaFormFill(form);
 
   useEffect(() => {
     if (doc && !initialized.current) {

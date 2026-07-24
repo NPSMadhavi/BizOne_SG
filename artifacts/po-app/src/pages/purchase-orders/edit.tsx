@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useMayaFormFill } from "@/hooks/useMayaFormFill";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,7 @@ export default function PurchaseOrderEdit() {
       items: [{ partNumber: "", description: "", qty: 1, unitPrice: 0, itemImage: "" }],
     },
   });
+  useMayaFormFill(form);
 
   useEffect(() => {
     if (po && !initialized) {
