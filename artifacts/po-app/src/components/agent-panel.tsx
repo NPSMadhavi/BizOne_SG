@@ -118,7 +118,38 @@ const SUGGESTIONS = [
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// ── Browser TTS (fast, always-available fallback) ──────────────────────────
+// ── Browser TTS — voice cache (must load BEFORE first speak call) ─────────
+let _cachedVoice: SpeechSynthesisVoice | null = null;
+
+function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  // Ordered preference: known great female voices → female local → any non-male English
+  return voices.find(v => /google uk english female/i.test(v.name))
+    || voices.find(v => /samantha/i.test(v.name))
+    || voices.find(v => /karen/i.test(v.name))
+    || voices.find(v => /moira/i.test(v.name))
+    || voices.find(v => /zira/i.test(v.name))
+    || voices.find(v => /hazel/i.test(v.name))
+    || voices.find(v => /tessa/i.test(v.name))
+    || voices.find(v => /fiona/i.test(v.name))
+    || voices.find(v => /google.*female/i.test(v.name))
+    || voices.find(v => v.lang === "en-GB" && v.localService)
+    || voices.find(v => v.lang === "en-AU" && v.localService)
+    || voices.find(v => v.lang.startsWith("en") && v.localService
+        && !/\b(alex|daniel|fred|lee|tom|rishi|ralph|albert|bruce|jorge)\b/i.test(v.name))
+    || null;
+}
+
+// Eagerly cache voice — runs at module load and again when voices change
+function _initVoiceCache() {
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) _cachedVoice = pickBestVoice(voices);
+}
+if (typeof window !== "undefined" && window.speechSynthesis) {
+  window.speechSynthesis.addEventListener("voiceschanged", _initVoiceCache);
+  _initVoiceCache();
+}
+
 let _browserTtsResolve: (() => void) | null = null;
 function speakBrowser(text: string): Promise<void> {
   return new Promise((resolve) => {
@@ -127,21 +158,14 @@ function speakBrowser(text: string): Promise<void> {
     _browserTtsResolve?.();
     _browserTtsResolve = resolve;
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
+    if (!clean) { _browserTtsResolve = null; resolve(); return; }
     const utt = new SpeechSynthesisUtterance(clean);
-    utt.rate = 1.05;
-    utt.pitch = 1.0;
+    utt.rate = 1.0;
+    utt.pitch = 1.05;
     utt.volume = 1.0;
-    const setVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const v = voices.find(v => /google uk english female/i.test(v.name))
-        || voices.find(v => /samantha/i.test(v.name))
-        || voices.find(v => /zira/i.test(v.name))
-        || voices.find(v => v.lang === "en-GB" && v.localService)
-        || voices.find(v => v.lang.startsWith("en-") && v.localService)
-        || voices.find(v => v.lang.startsWith("en"));
-      if (v) utt.voice = v;
-    };
-    setVoice();
+    // Use pre-cached voice; fall back to fresh lookup if voiceschanged hasn't fired yet
+    const voice = _cachedVoice ?? pickBestVoice(window.speechSynthesis.getVoices());
+    if (voice) utt.voice = voice;
     utt.onend = () => { _browserTtsResolve = null; resolve(); };
     utt.onerror = () => { _browserTtsResolve = null; resolve(); };
     window.speechSynthesis.speak(utt);
@@ -273,13 +297,19 @@ function useVoice() {
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
 const WAKE_WORDS = /\b(maya|maia|mya|maaya|mayer)\b/i;
 
-function useWakeWord(onWakeWord: () => void, enabled: boolean) {
+function useWakeWord(
+  onWakeWord: () => void,
+  enabled: boolean,
+  onMicError?: (code: string) => void,
+) {
   const recRef = useRef<any>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enabledRef = useRef(enabled);
   const onWakeRef = useRef(onWakeWord);
+  const onMicErrRef = useRef(onMicError);
   enabledRef.current = enabled;
   onWakeRef.current = onWakeWord;
+  onMicErrRef.current = onMicError;
 
   const stopListening = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
@@ -295,8 +325,8 @@ function useWakeWord(onWakeWord: () => void, enabled: boolean) {
     if (!SR) return;
     try {
       const rec = new SR();
-      rec.continuous = false;       // single-shot: listen once, check, restart
-      rec.interimResults = false;   // only final results
+      rec.continuous = false;
+      rec.interimResults = false;
       rec.lang = "en-US";
       rec.maxAlternatives = 5;
       recRef.current = rec;
@@ -316,7 +346,12 @@ function useWakeWord(onWakeWord: () => void, enabled: boolean) {
 
       rec.onerror = (e: any) => {
         recRef.current = null;
-        // "no-speech" is normal silence — restart quickly; real errors wait longer
+        // Permission blocked → stop retrying, surface the error to the UI
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          onMicErrRef.current?.(e.error);
+          return; // do NOT restart — would just loop permission errors
+        }
+        // "no-speech" is normal — restart fast; other transient errors wait
         const delay = e.error === "no-speech" ? 100 : 1500;
         if (enabledRef.current) timerRef.current = setTimeout(startListening, delay);
       };
@@ -479,14 +514,24 @@ export function AgentPanel() {
     setConvText("");
   }, []);
 
+  // Wake word error state (set when mic permission is denied/blocked in this context)
+  const [wakeError, setWakeError] = useState<string | null>(null);
+
   // Wake word only active when ambient on AND no active conversation
-  const { supported: wakeSupported } = useWakeWord(handleWakeWord, ambientMode && convState === "idle");
+  const { supported: wakeSupported } = useWakeWord(
+    handleWakeWord,
+    ambientMode && convState === "idle",
+    (code) => setWakeError(code),
+  );
 
   const toggleAmbient = useCallback(() => {
     setAmbientMode(v => {
       const next = !v;
       try { localStorage.setItem("maya_ambient", next ? "1" : "0"); } catch {}
-      if (next) speak("Ambient mode on. Just say Maya anytime.");
+      if (next) {
+        setWakeError(null); // clear any previous block error on re-enable
+        speak("Ambient mode on. Just say Maya anytime, or press Alt + M.");
+      }
       return next;
     });
   }, []);
@@ -501,12 +546,18 @@ export function AgentPanel() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Close on Escape
+  // Keyboard shortcuts: Escape = close panel; Alt+M = trigger Maya (reliable iframe fallback)
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { close(); return; }
+      if (e.altKey && e.key.toLowerCase() === "m" && convState === "idle" && !open) {
+        e.preventDefault();
+        runAmbientConversation();
+      }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [convState, open, runAmbientConversation]);
 
   // Auto-clear mic error after 3 seconds
   useEffect(() => {
@@ -653,7 +704,7 @@ export function AgentPanel() {
               )}
             >
               <Radio className="h-3 w-3" />
-              {ambientMode ? "Listening…" : "Ambient"}
+              {wakeError ? "⚠ Mic blocked" : ambientMode ? "Listening…" : "Ambient"}
             </button>
           )}
           <button
@@ -695,16 +746,24 @@ export function AgentPanel() {
                 {wakeSupported && (
                   <button
                     onClick={toggleAmbient}
-                    title={ambientMode ? "Turn off ambient mode" : "Enable ambient mode (say 'Maya' anytime)"}
+                    title={
+                      wakeError
+                        ? "Mic blocked by browser — try opening the app in a new tab, or use Alt+M as wake shortcut"
+                        : ambientMode
+                        ? "Ambient ON — say 'Maya' or press Alt+M"
+                        : "Enable ambient mode (say 'Maya' or press Alt+M)"
+                    }
                     className={cn(
                       "flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors",
-                      ambientMode
+                      wakeError
+                        ? "bg-yellow-500/10 text-yellow-600 font-medium"
+                        : ambientMode
                         ? "bg-primary/10 text-primary font-medium"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted",
                     )}
                   >
                     <Radio className="h-3 w-3" />
-                    {ambientMode ? "Ambient ON" : "Ambient"}
+                    {wakeError ? "⚠ Mic blocked" : ambientMode ? "Ambient ON" : "Ambient"}
                   </button>
                 )}
                 {hasMessages && (
