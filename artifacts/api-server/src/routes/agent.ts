@@ -444,7 +444,7 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
     ? `\n\nRecent session memory (use to understand user preferences and context):\n${memory.map((m: any) => `• ${m}`).join("\n")}`
     : "";
 
-  const systemPrompt = `You are Aira, the AI accountant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
+  const systemPrompt = `You are Maya, the AI accountant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
 
 ## Your capabilities
 - CREATE invoices and quotations via API (fast path)

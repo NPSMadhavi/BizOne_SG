@@ -248,9 +248,9 @@ export default function InvoiceNew() {
 
   // Aria prefill — populated by the AI agent via navigateTo
   useEffect(() => {
-    const prefill = (window as any).__airaPrefill;
+    const prefill = (window as any).__mayaPrefill;
     if (!prefill) return;
-    (window as any).__airaPrefill = null;
+    (window as any).__mayaPrefill = null;
     const blankItem = { type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
     form.reset({
       customerName: prefill.customerName || "",

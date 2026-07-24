@@ -18,7 +18,7 @@ interface Message {
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
-const MEMORY_KEY = "aira_memory_v3";
+const MEMORY_KEY = "maya_memory_v1";
 const MAX_MEMORY = 10;
 function loadMemory(): string[] {
   try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || "[]"); } catch { return []; }
@@ -262,56 +262,72 @@ function useVoice() {
   return { recording, start, stop };
 }
 
-// ── Wake word hook (continuous Web Speech API) ────────────────────────────────
-const WAKE_WORDS = /\b(aira|aria|ayra|ara|aera|ira)\b/i;
+// ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
+const WAKE_WORDS = /\b(maya|maia|mya|maaya|mayer)\b/i;
 
 function useWakeWord(onWakeWord: () => void, enabled: boolean) {
   const recRef = useRef<any>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enabledRef = useRef(enabled);
   const onWakeRef = useRef(onWakeWord);
   enabledRef.current = enabled;
   onWakeRef.current = onWakeWord;
 
+  const stopListening = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (recRef.current) {
+      try { recRef.current.abort(); } catch {}
+      recRef.current = null;
+    }
+  }, []);
+
   const startListening = useCallback(() => {
-    if (recRef.current) return;
+    if (!enabledRef.current || recRef.current) return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
     try {
       const rec = new SR();
-      rec.continuous = true;
-      rec.interimResults = true;
+      rec.continuous = false;       // single-shot: listen once, check, restart
+      rec.interimResults = false;   // only final results
       rec.lang = "en-US";
+      rec.maxAlternatives = 5;
+      recRef.current = rec;
+
       rec.onresult = (evt: any) => {
-        for (let i = evt.resultIndex; i < evt.results.length; i++) {
-          const t = (evt.results[i][0].transcript || "").toLowerCase().trim();
-          if (WAKE_WORDS.test(t)) {
-            recRef.current = null;
-            try { rec.stop(); } catch {}
-            onWakeRef.current();
-            return;
+        for (let i = 0; i < evt.results.length; i++) {
+          for (let j = 0; j < evt.results[i].length; j++) {
+            const t = (evt.results[i][j].transcript || "").toLowerCase().trim();
+            if (WAKE_WORDS.test(t)) {
+              recRef.current = null;
+              onWakeRef.current();
+              return;
+            }
           }
         }
       };
-      rec.onerror = () => { recRef.current = null; };
+
+      rec.onerror = (e: any) => {
+        recRef.current = null;
+        // "no-speech" is normal silence — restart quickly; real errors wait longer
+        const delay = e.error === "no-speech" ? 100 : 1500;
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, delay);
+      };
+
       rec.onend = () => {
         recRef.current = null;
-        if (enabledRef.current) setTimeout(startListening, 600);
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, 150);
       };
-      rec.start();
-      recRef.current = rec;
-    } catch {}
-  }, []);
 
-  const stopListening = useCallback(() => {
-    if (recRef.current) {
-      try { recRef.current.stop(); } catch {}
+      rec.start();
+    } catch {
       recRef.current = null;
+      if (enabledRef.current) timerRef.current = setTimeout(startListening, 2000);
     }
   }, []);
 
   useEffect(() => {
     if (enabled) {
-      setTimeout(startListening, 200);
+      timerRef.current = setTimeout(startListening, 300);
     } else {
       stopListening();
     }
@@ -333,7 +349,7 @@ export function AgentPanel() {
   const [transcribing, setTranscribing] = useState(false);
   const [micError, setMicError] = useState(false);
   const [ambientMode, setAmbientMode] = useState(() => {
-    try { return localStorage.getItem("aira_ambient") === "1"; } catch { return false; }
+    try { return localStorage.getItem("maya_ambient") === "1"; } catch { return false; }
   });
   const [wakeGreeting, setWakeGreeting] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -361,8 +377,8 @@ export function AgentPanel() {
   const toggleAmbient = useCallback(() => {
     setAmbientMode(v => {
       const next = !v;
-      try { localStorage.setItem("aira_ambient", next ? "1" : "0"); } catch {}
-      if (next) speak("Ambient mode on. Just say Aira anytime.");
+      try { localStorage.setItem("maya_ambient", next ? "1" : "0"); } catch {}
+      if (next) speak("Ambient mode on. Just say Maya anytime.");
       return next;
     });
   }, []);
@@ -394,7 +410,7 @@ export function AgentPanel() {
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
   const handleNavigate = useCallback((path: string, prefill: any, reason: string) => {
-    if (prefill) (window as any).__airaPrefill = prefill;
+    if (prefill) (window as any).__mayaPrefill = prefill;
     const label = PATH_LABELS[path] || reason || path.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
@@ -471,7 +487,7 @@ export function AgentPanel() {
           {wakeSupported && (
             <button
               onClick={toggleAmbient}
-              title={ambientMode ? "Ambient mode ON — say 'Aira' anytime" : "Enable ambient mode"}
+              title={ambientMode ? "Ambient mode ON — say 'Maya' anytime" : "Enable ambient mode"}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all",
                 ambientMode
@@ -485,7 +501,7 @@ export function AgentPanel() {
           )}
           <button
             onClick={() => setOpen(true)}
-            title="Ask Aira"
+            title="Ask Maya"
             className={cn(
               "relative flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95",
             )}
@@ -508,7 +524,7 @@ export function AgentPanel() {
                 <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
                   <Sparkles className="h-3.5 w-3.5" />
                 </div>
-                <span className="text-sm font-semibold">Aira</span>
+                <span className="text-sm font-semibold">Maya</span>
                 <span className="text-xs text-muted-foreground">· AI assistant</span>
                 {ambientMode && (
                   <span className="flex items-center gap-1 text-xs text-primary font-medium">
@@ -522,7 +538,7 @@ export function AgentPanel() {
                 {wakeSupported && (
                   <button
                     onClick={toggleAmbient}
-                    title={ambientMode ? "Turn off ambient mode" : "Enable ambient mode (say 'Aira' anytime)"}
+                    title={ambientMode ? "Turn off ambient mode" : "Enable ambient mode (say 'Maya' anytime)"}
                     className={cn(
                       "flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors",
                       ambientMode
@@ -580,7 +596,7 @@ export function AgentPanel() {
                         {ambientMode && (
                           <p className="text-xs text-primary mt-1.5 flex items-center justify-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                            Say "Aira" anytime to get my attention
+                            Say "Maya" anytime to get my attention
                           </p>
                         )}
                       </div>
@@ -616,7 +632,7 @@ export function AgentPanel() {
                           </span>
                           <span className="flex flex-col items-start leading-tight">
                             <span className="text-sm font-semibold">
-                              {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Aira"}
+                              {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Maya"}
                             </span>
                             {!recording && !transcribing && !micError && (
                               <span className="text-xs opacity-70 font-normal">Tap and talk — I'm listening</span>
@@ -793,7 +809,7 @@ export function AgentPanel() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKey}
-                    placeholder={recording ? "🔴 Listening…" : "Ask Aira anything…"}
+                    placeholder={recording ? "🔴 Listening…" : "Ask Maya anything…"}
                     rows={1}
                     disabled={thinking || recording || transcribing}
                     className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[22px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
