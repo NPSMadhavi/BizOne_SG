@@ -235,6 +235,143 @@ const AGENT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "confirmDocument",
+      description: "Confirm a document — changes its status from draft to confirmed. Works for invoices (inv), quotations (qt), purchase orders (po), and delivery orders (do). Always confirm with the user before calling.",
+      parameters: {
+        type: "object",
+        properties: {
+          docType: { type: "string", enum: ["inv", "qt", "po", "do"], description: "Document type" },
+          id: { type: "integer", description: "Document ID (from a prior search)" },
+          docNumber: { type: "string", description: "Document number for confirmation message, e.g. INV-0042" },
+        },
+        required: ["docType", "id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "voidInvoice",
+      description: "Void an invoice with a reason. The invoice must be in draft or confirmed status. Always confirm the reason with the user before calling.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          invNumber: { type: "string", description: "Invoice number for confirmation message" },
+          reason: { type: "string", description: "Reason for voiding" },
+        },
+        required: ["id", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "knockOffInvoice",
+      description: "Mark an invoice as paid (knock-off / collect payment). Only call after the user confirms payment has been received.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          invNumber: { type: "string", description: "Invoice number for confirmation message" },
+        },
+        required: ["id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createPurchaseOrder",
+      description: "Create a new purchase order draft via API. Fast path — use when user confirms. Ask for vendor name and items before creating.",
+      parameters: {
+        type: "object",
+        properties: {
+          vendorName: { type: "string" },
+          vendorAddress: { type: "string" },
+          vendorContact: { type: "string" },
+          vendorContactEmail: { type: "string" },
+          currency: { type: "string", enum: ["SGD", "USD", "EUR", "GBP", "MYR", "INR"] },
+          paymentTerms: { type: "string" },
+          deliveryDate: { type: "string" },
+          deliveryAddress: { type: "string" },
+          issueDate: { type: "string" },
+          notes: { type: "string" },
+          discountAmount: { type: "number" },
+          gstRate: { type: "number" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string" },
+                partNumber: { type: "string" },
+                qty: { type: "number" },
+                unitPrice: { type: "number" },
+                amount: { type: "number" },
+              },
+              required: ["description", "qty", "unitPrice", "amount"],
+            },
+          },
+        },
+        required: ["vendorName", "items", "currency"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createDeliveryOrder",
+      description: "Create a new delivery order draft via API. Items have description and qty only — no pricing on DOs.",
+      parameters: {
+        type: "object",
+        properties: {
+          customerName: { type: "string" },
+          customerAddress: { type: "string" },
+          customerContact: { type: "string" },
+          customerContactEmail: { type: "string" },
+          currency: { type: "string", enum: ["SGD", "USD", "EUR", "GBP", "MYR", "INR"] },
+          deliveryDate: { type: "string" },
+          issueDate: { type: "string" },
+          notes: { type: "string" },
+          invNumber: { type: "string", description: "Linked invoice number if this DO is for an invoice" },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string" },
+                partNumber: { type: "string" },
+                qty: { type: "number" },
+              },
+              required: ["description", "qty"],
+            },
+          },
+        },
+        required: ["customerName", "items"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "sendDocumentEmail",
+      description: "Send a document (invoice, quotation, PO, or DO) as a PDF to one or more email addresses. Use when the user says 'send', 'email', or 'share' a document. Identify the recipient email from the customer/vendor contact or ask the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          docType: { type: "string", enum: ["inv", "qt", "po", "do"], description: "Document type" },
+          id: { type: "integer", description: "Document ID" },
+          docNumber: { type: "string", description: "Document number e.g. INV-0042" },
+          recipients: { type: "array", items: { type: "string" }, description: "Email addresses to send to" },
+        },
+        required: ["docType", "id", "recipients"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "createQuotation",
       description: "Create a new quotation draft via API. Fast path — use when user confirms.",
       parameters: {
@@ -546,6 +683,93 @@ async function executeTool(name: string, args: any, companyId: number, userId: n
       return { success: true, quotation: { id: qt.id, qtNumber: qt.qtNumber, customerName: qt.customerName, totalAmount: qt.totalAmount, currency: qt.currency, status: qt.status } };
     }
 
+    case "confirmDocument": {
+      const { docType, id } = args;
+      const tableMap: Record<string, any> = {
+        inv: invoicesTable, qt: quotationsTable, po: purchaseOrdersTable, do: deliveryOrdersTable,
+      };
+      const tbl = tableMap[docType];
+      if (!tbl) return { error: `Unknown docType: ${docType}` };
+      const [existing] = await db.select({ id: tbl.id, status: tbl.status, companyId: tbl.companyId })
+        .from(tbl).where(and(eq(tbl.id, id), eq(tbl.companyId, companyId)));
+      if (!existing) return { error: "Document not found or does not belong to this company." };
+      if (existing.status === "confirmed") return { alreadyConfirmed: true, message: "Already confirmed." };
+      if (existing.status === "void" || existing.status === "paid")
+        return { error: `Cannot confirm — document is already ${existing.status}.` };
+      await db.update(tbl).set({ status: "confirmed" }).where(and(eq(tbl.id, id), eq(tbl.companyId, companyId)));
+      const pathMap: Record<string, string> = { inv: "invoices", qt: "quotations", po: "purchase-orders", do: "delivery-orders" };
+      return { _navigate: true, path: `/${pathMap[docType]}/${id}`, prefill: null, reason: `Confirmed — opening ${args.docNumber || id}` };
+    }
+
+    case "voidInvoice": {
+      const { id, reason } = args;
+      const [inv] = await db.select({ status: invoicesTable.status, companyId: invoicesTable.companyId, invNumber: invoicesTable.invNumber })
+        .from(invoicesTable).where(and(eq(invoicesTable.id, id), eq(invoicesTable.companyId, companyId)));
+      if (!inv) return { error: "Invoice not found or does not belong to this company." };
+      if (inv.status === "void") return { error: "Invoice is already voided." };
+      if (inv.status === "paid") return { error: "Cannot void a paid invoice." };
+      await db.update(invoicesTable)
+        .set({ status: "void", voidReason: reason })
+        .where(and(eq(invoicesTable.id, id), eq(invoicesTable.companyId, companyId)));
+      return { _navigate: true, path: `/invoices/${id}`, prefill: null, reason: `Voided ${inv.invNumber}` };
+    }
+
+    case "knockOffInvoice": {
+      const { id } = args;
+      const [inv] = await db.select({ status: invoicesTable.status, companyId: invoicesTable.companyId, invNumber: invoicesTable.invNumber })
+        .from(invoicesTable).where(and(eq(invoicesTable.id, id), eq(invoicesTable.companyId, companyId)));
+      if (!inv) return { error: "Invoice not found or does not belong to this company." };
+      if (inv.status === "void") return { error: "Cannot knock off a voided invoice." };
+      if (inv.status === "paid") return { error: "Invoice is already paid." };
+      if (inv.status === "draft") return { error: "Invoice must be confirmed before marking as paid." };
+      await db.update(invoicesTable)
+        .set({ status: "paid" })
+        .where(and(eq(invoicesTable.id, id), eq(invoicesTable.companyId, companyId)));
+      return { _navigate: true, path: `/invoices/${id}`, prefill: null, reason: `Marked ${inv.invNumber} as paid` };
+    }
+
+    case "createPurchaseOrder": {
+      const { items, gstRate = 0, discountAmount = 0, issueDate, ...rest } = args;
+      const subtotal = items.reduce((s: number, i: any) => s + Number(i.amount), 0);
+      const discAmt = Number(discountAmount);
+      const taxAmount = (subtotal - discAmt) * (Number(gstRate) / 100);
+      const totalAmount = (subtotal - discAmt) + taxAmount;
+      const today = new Date().toISOString().split("T")[0];
+      const poNumber = await nextDocNumber("po", companyId);
+      const [po] = await db.insert(purchaseOrdersTable).values({
+        companyId, poNumber, status: "draft", createdBy: userId,
+        items: items as any,
+        subtotal: subtotal.toFixed(2), tax: taxAmount.toFixed(2),
+        totalAmount: totalAmount.toFixed(2),
+        issueDate: issueDate ?? today,
+        ...rest,
+      }).returning();
+      return { success: true, _navigate: true, path: `/purchase-orders/${po.id}`, prefill: null, reason: `Created ${po.poNumber}`,
+        purchaseOrder: { id: po.id, poNumber: po.poNumber, vendorName: po.vendorName, totalAmount: po.totalAmount, currency: po.currency, status: po.status } };
+    }
+
+    case "createDeliveryOrder": {
+      const { items, issueDate, invNumber, ...rest } = args;
+      const today = new Date().toISOString().split("T")[0];
+      const doNumber = await nextDocNumber("do", companyId);
+      const [doc] = await db.insert(deliveryOrdersTable).values({
+        companyId, doNumber, status: "draft", createdBy: userId,
+        items: items as any,
+        issueDate: issueDate ?? today,
+        ...(invNumber ? { invNumber } : {}),
+        ...rest,
+      }).returning();
+      return { success: true, _navigate: true, path: `/delivery-orders/${doc.id}`, prefill: null, reason: `Created ${doc.doNumber}`,
+        deliveryOrder: { id: doc.id, doNumber: doc.doNumber, customerName: doc.customerName, status: doc.status } };
+    }
+
+    case "sendDocumentEmail": {
+      const { docType, id, recipients, docNumber } = args;
+      const pathMap: Record<string, string> = { inv: "invoices", qt: "quotations", po: "purchase-orders", do: "delivery-orders" };
+      const path = `/${pathMap[docType] ?? docType}/${id}`;
+      return { _triggerEmail: true, docType, id, docNumber, recipients, navigatePath: path };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -573,8 +797,12 @@ router.post("/agent/chat", async (req: any, res: any): Promise<void> => {
   const systemPrompt = `You are Veda, the AI assistant for RSV Infotech's document management system. You're sharp, warm, and speak like a knowledgeable colleague — not a chatbot. You know this business inside out and you take action immediately.
 
 ## Your capabilities (full app access)
-- CREATE invoices and quotations via API (fast path)
-- NAVIGATE to any page, module, form, or document — including edit forms (/invoices/:id/edit), view pages, accounting, admin
+- CREATE invoices, quotations, purchase orders, and delivery orders via API (fast path)
+- CONFIRM any document (invoice, quotation, PO, DO) — changes status from draft to confirmed
+- VOID invoices with a reason
+- MARK invoices as paid (knock-off)
+- EMAIL any document as a PDF to the customer/vendor — use sendDocumentEmail
+- NAVIGATE to any page, module, form, or document — including edit forms, view pages, accounting, admin
 - SEARCH & RETRIEVE from every module: customers, vendors, quotations, purchase orders, invoices, delivery orders, vendor invoices (AP), GRN, stock items
 - SHOW financial statistics and analytics
 - ANSWER anything about documents, vendors, customers, or orders — always look it up first, never guess
@@ -614,11 +842,23 @@ When a user asks "what was the last PO for Westcon?" or "show me the SP SYSNET i
 - If the user mentions a customer/vendor name to look up the address, call searchCustomers/searchVendors first, THEN fillCurrentForm with the result
 
 ### Creating documents
-- Use createInvoice / createQuotation (API) for simple/fast creation
+- Use createInvoice / createQuotation / createPurchaseOrder / createDeliveryOrder (API) for simple/fast creation
 - Use navigateTo with prefill for complex docs or when user wants to review the form
 - Before creating: give ONE compact summary. Ask "Shall I go ahead?"
 - Any affirmative (yes, ok, sure, do it, go ahead) → act immediately, no second confirmation
 - After creation: state the document number, offer to open or email it
+
+### Confirming, voiding, and marking paid
+- User says "confirm invoice INV-0042" or "confirm this PO" → searchInvoices/searchPurchaseOrders to get the ID, then confirmDocument immediately
+- User says "void invoice X, reason is Y" → searchInvoices to get ID, then voidInvoice with the reason
+- User says "mark invoice X as paid" or "knock off invoice X" → searchInvoices to get ID, then knockOffInvoice
+- Always ask for the void reason if not given; don't guess it
+- After confirming/voiding/paying: navigate to the document so the user can see the updated status
+
+### Sending email
+- User says "email invoice X to Y" or "send invoice to customer" → searchInvoices to get the invoice details, use customerContactEmail as the recipient if not specified, then sendDocumentEmail
+- If the recipient email is unknown, ask the user before calling sendDocumentEmail
+- sendDocumentEmail opens the document and auto-fills the email dialog with the recipients
 
 ### Writing item descriptions
 - Keep each description concise and professional — max 2 short lines
@@ -700,6 +940,23 @@ Today: ${today}.${memoryBlock}`;
           toolResult = { filled: true, summary: toolResult.summary };
         }
 
+        if (toolResult && toolResult._triggerEmail) {
+          res.write(`data: ${JSON.stringify({
+            type: "trigger_email",
+            docType: toolResult.docType,
+            id: toolResult.id,
+            docNumber: toolResult.docNumber,
+            recipients: toolResult.recipients,
+          })}\n\n`);
+          res.write(`data: ${JSON.stringify({
+            type: "navigate",
+            path: toolResult.navigatePath,
+            prefill: null,
+            reason: `Opening ${toolResult.docNumber || toolResult.id} for email`,
+          })}\n\n`);
+          toolResult = { triggered: true, recipients: toolResult.recipients };
+        }
+
         if (toolResult && toolResult._navigate) {
           res.write(`data: ${JSON.stringify({
             type: "navigate",
@@ -707,7 +964,7 @@ Today: ${today}.${memoryBlock}`;
             prefill: toolResult.prefill || null,
             reason: toolResult.reason || "",
           })}\n\n`);
-          toolResult = { navigated: true, path: toolResult.path };
+          toolResult = { navigated: true, path: toolResult.path, ...(toolResult.invoice || toolResult.quotation || toolResult.purchaseOrder || toolResult.deliveryOrder ? { doc: toolResult.invoice ?? toolResult.quotation ?? toolResult.purchaseOrder ?? toolResult.deliveryOrder } : {}) };
         }
 
         chatMessages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(toolResult) });

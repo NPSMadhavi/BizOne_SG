@@ -236,6 +236,7 @@ async function streamChat(
   onNav: (path: string, prefill: any, reason: string) => void,
   signal: AbortSignal,
   onFill?: (fields: Record<string, any>) => void,
+  onEmail?: (docType: string, id: number, recipients: string[], docNumber?: string) => void,
 ) {
   const r = await fetch(`${BASE}/api/agent/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -258,6 +259,10 @@ async function streamChat(
         if (ev.type === "tool_call" && ev.name) onTool(ev.name);
         if (ev.type === "navigate") onNav(ev.path, ev.prefill, ev.reason || "");
         if (ev.type === "fill_form" && ev.fields) onFill?.(ev.fields);
+        if (ev.type === "trigger_email") {
+          (window as any).__vedaOpenEmail = { recipients: ev.recipients, docType: ev.docType, id: ev.id };
+          onEmail?.(ev.docType, ev.id, ev.recipients, ev.docNumber);
+        }
         if (ev.type === "error") throw new Error(ev.message);
       } catch (e: any) { if (e.message && !e.message.includes("JSON")) throw e; }
     }
@@ -580,6 +585,7 @@ export function AgentPanel() {
             (path, prefill) => { if (prefill) (window as any).__vedaPrefill = prefill; navigate(path); },
             ctrl.signal,
             (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+            (_dt, _id, recipients) => { window.dispatchEvent(new CustomEvent("veda:open-email", { detail: { recipients } })); },
           );
           if (response) {
             ambientHistoryRef.current = [
@@ -711,6 +717,7 @@ export function AgentPanel() {
         (path, prefill, reason) => handleNavigate(path, prefill, reason),
         abortRef.current.signal,
         (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+        (_dt, _id, recipients) => { window.dispatchEvent(new CustomEvent("veda:open-email", { detail: { recipients } })); },
       );
       const inv = full.match(/\b(INV-\d+)\b/);
       const qt = full.match(/\b(QT-\d+)\b/);
