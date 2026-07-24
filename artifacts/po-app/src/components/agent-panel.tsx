@@ -123,30 +123,46 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 let _cachedVoice: SpeechSynthesisVoice | null = null;
 
 function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  // Ordered preference: known great female voices → female local → any non-male English
-  return voices.find(v => /google uk english female/i.test(v.name))
-    || voices.find(v => /samantha/i.test(v.name))
-    || voices.find(v => /karen/i.test(v.name))
-    || voices.find(v => /moira/i.test(v.name))
-    || voices.find(v => /zira/i.test(v.name))
-    || voices.find(v => /hazel/i.test(v.name))
-    || voices.find(v => /tessa/i.test(v.name))
-    || voices.find(v => /fiona/i.test(v.name))
-    || voices.find(v => /google.*female/i.test(v.name))
-    || voices.find(v => v.lang === "en-GB" && v.localService)
-    || voices.find(v => v.lang === "en-AU" && v.localService)
+  // Priority: Indian English (clear, neutral, non-Western accent) →
+  //           Google US English (crisp synthesis) → neutral US voices → fallback
+  return (
+    // Indian English female — Microsoft/Google (Heera = Windows en-IN, Neerja = some Windows)
+    voices.find(v => /heera|neerja/i.test(v.name))
+    // Google Indian English (Chrome on some platforms)
+    || voices.find(v => v.lang === "en-IN" && /google/i.test(v.name))
+    // Any en-IN local voice
+    || voices.find(v => v.lang === "en-IN" && v.localService)
+    // Google US English (very clean synthesis, available in Chrome)
+    || voices.find(v => /google us english/i.test(v.name))
+    // Clear US female voices (macOS/Windows)
+    || voices.find(v => /samantha/i.test(v.name))   // macOS — clear US
+    || voices.find(v => /zira/i.test(v.name))        // Windows — clear US
+    // Any Google English voice (avoid Google UK Female — too accented for this app)
+    || voices.find(v => /google/i.test(v.name) && v.lang.startsWith("en")
+        && !/uk.*male|uk.*female|australian|ireland/i.test(v.name))
+    // Any Google English voice as last resort
+    || voices.find(v => /google/i.test(v.name) && v.lang.startsWith("en"))
+    // Any en-US local voice that isn't a male or joke voice
+    || voices.find(v => v.lang === "en-US" && v.localService
+        && !/\b(alex|daniel|fred|lee|tom|ralph|albert|bruce|jorge|trinoids|bubbles|zarvox|whisper|bells)\b/i.test(v.name))
+    // Widest net fallback
     || voices.find(v => v.lang.startsWith("en") && v.localService
-        && !/\b(alex|daniel|fred|lee|tom|rishi|ralph|albert|bruce|jorge)\b/i.test(v.name))
-    || null;
+        && !/\b(alex|daniel|fred|lee|tom|ralph|albert|bruce|jorge|trinoids|bubbles|zarvox|whisper|bells)\b/i.test(v.name))
+    || null
+  );
 }
 
 // Eagerly cache voice — runs at module load and again when voices change
 function _initVoiceCache() {
   if (!window.speechSynthesis) return;
   const voices = window.speechSynthesis.getVoices();
-  if (voices.length > 0) _cachedVoice = pickBestVoice(voices);
+  if (voices.length > 0) {
+    _cachedVoice = null; // reset before re-picking so priority changes take effect
+    _cachedVoice = pickBestVoice(voices);
+  }
 }
 if (typeof window !== "undefined" && window.speechSynthesis) {
+  _cachedVoice = null; // always start fresh (ensures code change takes effect on reload)
   window.speechSynthesis.addEventListener("voiceschanged", _initVoiceCache);
   _initVoiceCache();
 }
@@ -298,7 +314,7 @@ function useVoice() {
 }
 
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
-const WAKE_WORDS = /\b(veda|veeda|vaida|vida)\b/i;
+const WAKE_WORDS = /\b(veda|veeda|vida|beta|beda|vetta|weda)\b/i;
 
 function useWakeWord(
   onWakeWord: () => void,
@@ -483,8 +499,8 @@ export function AgentPanel() {
 
     try {
       setConvState("greeting");
-      setConvText("Yes boss, what can I do for you?");
-      await speak("Yes boss, what can I do for you?");
+      setConvText("Yes, how can I help you?");
+      await speak("Yes, how can I help you?");
 
       let silenceStreak = 0;
       let pendingCommand = ""; // carries user speech that interrupted TTS
@@ -513,7 +529,7 @@ export function AgentPanel() {
         if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
           setConvText("Alright!");
-          await speak("Alright, I'm here whenever you need me.");
+          await speak("Alright. Just say Veda whenever you need me.");
           break;
         }
 
@@ -561,7 +577,7 @@ export function AgentPanel() {
           }
         } catch (e: any) {
           if (e.name === "AbortError" || ctrl.signal.aborted) break;
-          await speak("Something went wrong. Please try again.");
+          await speak("I ran into an issue. Please try again.");
           break;
         }
       }
@@ -605,7 +621,7 @@ export function AgentPanel() {
       try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
       if (next) {
         setWakeError(null); // clear any previous block error on re-enable
-        speak("Ambient mode on. Just say Veda anytime, or press Alt + M.");
+        speak("Hello, I'm Veda — your Virtual Enterprise Document Assistant. Say my name anytime to talk to me.");
       }
       return next;
     });
