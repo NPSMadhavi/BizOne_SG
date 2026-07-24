@@ -659,6 +659,9 @@ export default function QuotationEdit() {
         pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Quotation ${doc.qtNumber}` : "Quotation"}
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+        }}
         onEdit={() => { setPreviewOpen(false); }}
       />
     </div>

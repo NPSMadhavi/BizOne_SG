@@ -662,6 +662,9 @@ export default function QuotationNew() {
           defaultEmailTo={savedDoc.customerContactEmail || ""}
           defaultEmailSubject={`Quotation ${savedDoc.qtNumber}`}
           defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached our Quotation ${savedDoc.qtNumber} for your consideration.\n\nDo not hesitate to contact us if you have any questions.\n\nThank you.`}
+          onEmailSent={async (recipients) => {
+            await fetch(`/api/quotations/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          }}
           onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${savedDoc.id}/edit`); }}
         />
       )}

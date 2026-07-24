@@ -364,6 +364,9 @@ export default function DeliveryOrderEdit() {
         pdfFilename={doc ? `${doc.doNumber}.pdf` : "delivery-order.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Delivery Order ${doc.doNumber}` : "Delivery Order"}
+        onEmailSent={async (recipients) => {
+          await fetch(`/api/delivery-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+        }}
         onEdit={() => { setPreviewOpen(false); }}
       />
     </div>

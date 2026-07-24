@@ -343,6 +343,9 @@ export default function DeliveryOrderNew() {
           defaultEmailTo=""
           defaultEmailSubject={`Delivery Order ${savedDoc.doNumber}`}
           defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${savedDoc.doNumber}.\n\nThank you.`}
+          onEmailSent={async (recipients) => {
+            await fetch(`/api/delivery-orders/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          }}
           onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${savedDoc.id}/edit`); }}
         />
       )}
