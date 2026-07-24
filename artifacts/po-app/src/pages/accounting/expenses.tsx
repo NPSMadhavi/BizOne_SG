@@ -102,10 +102,10 @@ export default function ExpensesList() {
     return true;
   });
 
-  const totalAmount = filtered.reduce((s, e) => s + parseFloat(e.amount), 0);
-  const totalGst = filtered.reduce((s, e) => s + parseFloat(e.gstAmount), 0);
+  const totalAmount = filtered.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  const totalGst = filtered.reduce((s, e) => s + (parseFloat(e.gstAmount) || 0), 0);
   const totalDeductible = filtered.reduce((s, e) => {
-    const net = parseFloat(e.amount) - parseFloat(e.gstAmount);
+    const net = (parseFloat(e.amount) || 0) - (parseFloat(e.gstAmount) || 0);
     return s + (e.isDeductible ? net * e.deductiblePct / 100 : 0);
   }, 0);
 
