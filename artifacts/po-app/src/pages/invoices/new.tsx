@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useMayaFormFill } from "@/hooks/useMayaFormFill";
+import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
@@ -163,7 +163,7 @@ export default function InvoiceNew() {
       items: [blankInvItem],
     },
   });
-  useMayaFormFill(form);
+  useVedaFormFill(form);
 
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
@@ -250,9 +250,9 @@ export default function InvoiceNew() {
 
   // Aria prefill — populated by the AI agent via navigateTo
   useEffect(() => {
-    const prefill = (window as any).__mayaPrefill;
+    const prefill = (window as any).__vedaPrefill;
     if (!prefill) return;
-    (window as any).__mayaPrefill = null;
+    (window as any).__vedaPrefill = null;
     const blankItem = { type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
     form.reset({
       customerName: prefill.customerName || "",

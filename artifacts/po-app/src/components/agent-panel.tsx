@@ -18,7 +18,7 @@ interface Message {
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
-const MEMORY_KEY = "maya_memory_v1";
+const MEMORY_KEY = "veda_memory_v1";
 const MAX_MEMORY = 10;
 function loadMemory(): string[] {
   try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || "[]"); } catch { return []; }
@@ -298,7 +298,7 @@ function useVoice() {
 }
 
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
-const WAKE_WORDS = /\b(maya|maia|mya|maaya|mayer)\b/i;
+const WAKE_WORDS = /\b(veda|veeda|vaida|vida)\b/i;
 
 function useWakeWord(
   onWakeWord: () => void,
@@ -455,7 +455,7 @@ export function AgentPanel() {
   const [transcribing, setTranscribing] = useState(false);
   const [micError, setMicError] = useState(false);
   const [ambientMode, setAmbientMode] = useState(() => {
-    try { return localStorage.getItem("maya_ambient") === "1"; } catch { return false; }
+    try { return localStorage.getItem("veda_ambient") === "1"; } catch { return false; }
   });
   // Ambient conversation state machine
   const [convState, setConvState] = useState<ConvState>("idle");
@@ -495,7 +495,7 @@ export function AgentPanel() {
 
         let command: string;
         if (pendingCommand) {
-          // User spoke while Maya was talking — skip listen, use that text directly
+          // User spoke while Veda was talking — skip listen, use that text directly
           command = pendingCommand;
           pendingCommand = "";
           silenceStreak = 0;
@@ -510,7 +510,7 @@ export function AgentPanel() {
           silenceStreak = 0;
         }
 
-        if (/\b(stop|bye|goodbye|that'?s all|thanks maya|thank you|no thanks|done|exit|close)\b/i.test(command)) {
+        if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
           setConvText("Alright!");
           await speak("Alright, I'm here whenever you need me.");
@@ -527,9 +527,9 @@ export function AgentPanel() {
             memory,
             chunk => { response += chunk; setConvText(response.slice(-150)); },
             () => {},
-            (path, prefill) => { if (prefill) (window as any).__mayaPrefill = prefill; navigate(path); },
+            (path, prefill) => { if (prefill) (window as any).__vedaPrefill = prefill; navigate(path); },
             ctrl.signal,
-            (fields) => window.dispatchEvent(new CustomEvent("maya:fill-form", { detail: fields })),
+            (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
           );
           if (response) {
             ambientHistoryRef.current = [
@@ -542,7 +542,7 @@ export function AgentPanel() {
 
             // ── Speak with interruption support ─────────────────────────────
             // Race TTS against a parallel mic listener. If the user speaks
-            // before Maya finishes, cancel TTS and carry their words forward.
+            // before Veda finishes, cancel TTS and carry their words forward.
             const interruptCtrl = new AbortController();
             const [interruptText] = await Promise.race([
               speak(response.slice(0, 600)).then(() => [""]),
@@ -570,7 +570,7 @@ export function AgentPanel() {
       ambientAbortRef.current = null;
       // Brief pause so the mic from the last listenForCommand fully releases
       // before the wake-word hook tries to claim it again. Without this gap,
-      // the new SpeechRecognition can silently fail, leaving "Maya" unresponsive.
+      // the new SpeechRecognition can silently fail, leaving "Veda" unresponsive.
       await new Promise(r => setTimeout(r, 700));
       setConvState("idle");
       setConvText("");
@@ -602,10 +602,10 @@ export function AgentPanel() {
   const toggleAmbient = useCallback(() => {
     setAmbientMode(v => {
       const next = !v;
-      try { localStorage.setItem("maya_ambient", next ? "1" : "0"); } catch {}
+      try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
       if (next) {
         setWakeError(null); // clear any previous block error on re-enable
-        speak("Ambient mode on. Just say Maya anytime, or press Alt + M.");
+        speak("Ambient mode on. Just say Veda anytime, or press Alt + M.");
       }
       return next;
     });
@@ -621,7 +621,7 @@ export function AgentPanel() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Keyboard shortcuts: Escape = close panel; Alt+M = trigger Maya (reliable iframe fallback)
+  // Keyboard shortcuts: Escape = close panel; Alt+M = trigger Veda (reliable iframe fallback)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") { close(); return; }
@@ -644,7 +644,7 @@ export function AgentPanel() {
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
   const handleNavigate = useCallback((path: string, prefill: any, reason: string) => {
-    if (prefill) (window as any).__mayaPrefill = prefill;
+    if (prefill) (window as any).__vedaPrefill = prefill;
     const label = PATH_LABELS[path] || reason || path.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
@@ -673,7 +673,7 @@ export function AgentPanel() {
         tool => setMessages(p => p.map(m => m.id === aid ? { ...m, toolCalls: [...(m.toolCalls ?? []), tool] } : m)),
         (path, prefill, reason) => handleNavigate(path, prefill, reason),
         abortRef.current.signal,
-        (fields) => window.dispatchEvent(new CustomEvent("maya:fill-form", { detail: fields })),
+        (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
       );
       const inv = full.match(/\b(INV-\d+)\b/);
       const qt = full.match(/\b(QT-\d+)\b/);
@@ -723,7 +723,7 @@ export function AgentPanel() {
               <div className="w-6 h-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
                 <Sparkles className="h-3 w-3" />
               </div>
-              <span className="text-sm font-semibold">Maya</span>
+              <span className="text-sm font-semibold">Veda</span>
               <span className={cn(
                 "text-xs transition-colors",
                 convState === "listening" ? "text-primary" : "text-muted-foreground",
@@ -771,7 +771,7 @@ export function AgentPanel() {
           {wakeSupported && (
             <button
               onClick={toggleAmbient}
-              title={ambientMode ? "Ambient mode ON — say 'Maya' anytime" : "Enable ambient mode"}
+              title={ambientMode ? "Ambient mode ON — say 'Veda' anytime" : "Enable ambient mode"}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all",
                 ambientMode
@@ -785,7 +785,7 @@ export function AgentPanel() {
           )}
           <button
             onClick={() => setOpen(true)}
-            title="Ask Maya"
+            title="Ask Veda"
             className={cn(
               "relative flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95",
             )}
@@ -808,7 +808,7 @@ export function AgentPanel() {
                 <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
                   <Sparkles className="h-3.5 w-3.5" />
                 </div>
-                <span className="text-sm font-semibold">Maya</span>
+                <span className="text-sm font-semibold">Veda</span>
                 <span className="text-xs text-muted-foreground">· AI assistant</span>
                 {ambientMode && (
                   <span className="flex items-center gap-1 text-xs text-primary font-medium">
@@ -826,8 +826,8 @@ export function AgentPanel() {
                       wakeError
                         ? "Mic blocked by browser — try opening the app in a new tab, or use Alt+M as wake shortcut"
                         : ambientMode
-                        ? "Ambient ON — say 'Maya' or press Alt+M"
-                        : "Enable ambient mode (say 'Maya' or press Alt+M)"
+                        ? "Ambient ON — say 'Veda' or press Alt+M"
+                        : "Enable ambient mode (say 'Veda' or press Alt+M)"
                     }
                     className={cn(
                       "flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors",
@@ -872,7 +872,7 @@ export function AgentPanel() {
                         {ambientMode && (
                           <p className="text-xs text-primary mt-1.5 flex items-center justify-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                            Say "Maya" anytime to get my attention
+                            Say "Veda" anytime to get my attention
                           </p>
                         )}
                       </div>
@@ -908,7 +908,7 @@ export function AgentPanel() {
                           </span>
                           <span className="flex flex-col items-start leading-tight">
                             <span className="text-sm font-semibold">
-                              {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Maya"}
+                              {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Veda"}
                             </span>
                             {!recording && !transcribing && !micError && (
                               <span className="text-xs opacity-70 font-normal">Tap and talk — I'm listening</span>
@@ -1084,7 +1084,7 @@ export function AgentPanel() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKey}
-                    placeholder={recording ? "🔴 Listening…" : "Ask Maya anything…"}
+                    placeholder={recording ? "🔴 Listening…" : "Ask Veda anything…"}
                     rows={1}
                     disabled={thinking || recording || transcribing}
                     className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[22px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"

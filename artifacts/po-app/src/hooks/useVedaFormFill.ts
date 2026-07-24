@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { UseFormReturn } from "react-hook-form";
 
-export function useMayaFormFill(form: UseFormReturn<any>) {
+export function useVedaFormFill(form: UseFormReturn<any>) {
   useEffect(() => {
     const handler = (e: Event) => {
       const fields = (e as CustomEvent<Record<string, unknown>>).detail;
@@ -14,7 +14,7 @@ export function useMayaFormFill(form: UseFormReturn<any>) {
         });
       });
     };
-    window.addEventListener("maya:fill-form", handler);
-    return () => window.removeEventListener("maya:fill-form", handler);
+    window.addEventListener("veda:fill-form", handler);
+    return () => window.removeEventListener("veda:fill-form", handler);
   }, [form]);
 }

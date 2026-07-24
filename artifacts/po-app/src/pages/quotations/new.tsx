@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useMayaFormFill } from "@/hooks/useMayaFormFill";
+import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
@@ -95,7 +95,7 @@ export default function QuotationNew() {
       items: [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }],
     },
   });
-  useMayaFormFill(form);
+  useVedaFormFill(form);
 
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
@@ -103,9 +103,9 @@ export default function QuotationNew() {
 
   // Aria prefill — populated by the AI agent via navigateTo
   useEffect(() => {
-    const prefill = (window as any).__mayaPrefill;
+    const prefill = (window as any).__vedaPrefill;
     if (!prefill) return;
-    (window as any).__mayaPrefill = null;
+    (window as any).__vedaPrefill = null;
     const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
     form.reset({
       customerName: prefill.customerName || "",
