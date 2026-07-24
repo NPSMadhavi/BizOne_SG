@@ -1055,13 +1055,6 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   const formatDeliveryDate = (d: string | null | undefined): string => fmtDate(d);
 
-  if ((po as any).quoteRefNo) {
-    doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
-    doc.text("Sales Ref No.:", col2, 96);
-    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
-    doc.text((po as any).quoteRefNo, col2 + 30, 96);
-  }
-
   doc.setFont(PDF_FONT, "bold"); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
   doc.text("Delivery Date:", marginLeft, 105);
   doc.text("Payment Terms:", col2, 105);
