@@ -391,23 +391,56 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
   return new Promise((resolve) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { resolve(""); return; }
+
+    let resolved = false;
+    let finalText = "";
+    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+    let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const done = (text: string) => {
+      if (resolved) return;
+      resolved = true;
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      if (maxTimer) { clearTimeout(maxTimer); maxTimer = null; }
+      try { rec.abort(); } catch {}
+      resolve(text);
+    };
+
     const rec = new SR();
     rec.continuous = false;
     rec.interimResults = true;
     rec.lang = "en-US";
     rec.maxAlternatives = 1;
-    let finalText = "";
-    signal?.addEventListener("abort", () => { try { rec.abort(); } catch {} resolve(finalText); });
+
+    // Hard cap: if nothing resolves within 10s, give up (prevents forever-listening)
+    maxTimer = setTimeout(() => done(finalText), 10000);
+
+    signal?.addEventListener("abort", () => done(finalText));
+
     rec.onresult = (evt: any) => {
       for (let i = evt.resultIndex; i < evt.results.length; i++) {
         const t = evt.results[i][0].transcript;
-        if (evt.results[i].isFinal) finalText = t;
-        else onInterim(t);
+        if (evt.results[i].isFinal) {
+          finalText = t;
+          // Short pause after final result before stopping (allows follow-up words)
+          if (silenceTimer) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => done(finalText), 800);
+        } else {
+          onInterim(t);
+          // Reset silence countdown on any interim speech
+          if (silenceTimer) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => done(finalText), 2500);
+        }
       }
     };
-    rec.onerror = () => resolve(finalText);
-    rec.onend = () => resolve(finalText);
-    try { rec.start(); } catch { resolve(""); }
+
+    rec.onerror = (e: any) => {
+      // "no-speech" = silence detected — resolve normally (empty = loop continues waiting)
+      done(finalText);
+    };
+    rec.onend = () => done(finalText);
+
+    try { rec.start(); } catch { done(""); }
   });
 }
 
@@ -453,13 +486,19 @@ export function AgentPanel() {
       setConvText("Yes boss, what can I do for you?");
       await speak("Yes boss, what can I do for you?");
 
+      let silenceStreak = 0;
       while (convActiveRef.current) {
         setConvState("listening");
         setConvText("");
 
         const command = await listenForCommand(t => setConvText(t), ctrl.signal);
         if (ctrl.signal.aborted || !convActiveRef.current) break;
-        if (!command.trim()) break; // silence timeout → end conversation
+        if (!command.trim()) {
+          silenceStreak++;
+          if (silenceStreak >= 2) break; // two silent rounds → end conversation
+          continue; // retry once on first silence
+        }
+        silenceStreak = 0;
 
         if (/\b(stop|bye|goodbye|that'?s all|thanks maya|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
@@ -709,7 +748,7 @@ export function AgentPanel() {
               )}
             >
               <Radio className="h-3 w-3" />
-              {wakeError ? "⚠ Mic blocked" : ambientMode ? "Listening…" : "Ambient"}
+              {wakeError ? "⚠ Mic blocked" : ambientMode ? "Ambient ON" : "Ambient"}
             </button>
           )}
           <button
