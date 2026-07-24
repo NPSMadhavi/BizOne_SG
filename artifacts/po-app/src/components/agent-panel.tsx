@@ -389,7 +389,9 @@ function useWakeWord(
 
   useEffect(() => {
     if (enabled) {
-      timerRef.current = setTimeout(startListening, 300);
+      // 2 s delay on every (re)enable — gives ambient greeting time to finish
+      // and lets the mic fully release after a conversation ends before we start again
+      timerRef.current = setTimeout(startListening, 2000);
     } else {
       stopListening();
     }
@@ -529,7 +531,7 @@ export function AgentPanel() {
         if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
           setConvText("Alright!");
-          await speak("Alright. Just say Veda whenever you need me.");
+          await speak("Alright. Call my name whenever you need me.");
           break;
         }
 
@@ -621,7 +623,7 @@ export function AgentPanel() {
       try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
       if (next) {
         setWakeError(null); // clear any previous block error on re-enable
-        speak("Hello, I'm Veda — your Virtual Enterprise Document Assistant. Say my name anytime to talk to me.");
+        speak("Ambient mode on. Say my name to get started.");
       }
       return next;
     });
