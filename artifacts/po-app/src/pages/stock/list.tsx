@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListStockItems, useCreateStockItem, useUpdateStockItem, useDeleteStockItem } from "@workspace/api-client-react";
+import { useListStockItems, useCreateStockItem, useUpdateStockItem, useDeleteStockItem, getListStockItemsQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,10 @@ export default function StockList() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
+  const stockParams = { search: search || undefined, type: typeFilter || undefined } as any;
   const { data: items = [], refetch } = useListStockItems(
-    { search: search || undefined, type: typeFilter || undefined } as any,
-    { query: { refetchOnWindowFocus: false } }
+    stockParams,
+    { query: { queryKey: getListStockItemsQueryKey(stockParams), refetchOnWindowFocus: false } }
   );
 
   const createMutation = useCreateStockItem();

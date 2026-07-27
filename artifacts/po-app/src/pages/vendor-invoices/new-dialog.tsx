@@ -41,7 +41,7 @@ export default function NewVendorInvoiceDialog({
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
   const [vendorFromPo, setVendorFromPo] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [currency, setCurrency] = useState(prefillCurrency || selectedCompany?.currency || "SGD");
+  const [currency, setCurrency] = useState(prefillCurrency || (selectedCompany as any)?.currency || "SGD");
   const [amount, setAmount] = useState(prefillAmount ? String(prefillAmount) : "");
   const [notes, setNotes] = useState("");
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>(prefillPoId ? [prefillPoId] : []);
@@ -181,7 +181,7 @@ export default function NewVendorInvoiceDialog({
     setVendorFromPo(false);
     setAmount(prefillAmount ? String(prefillAmount) : "");
     setAmountAutoFilled(false);
-    setCurrency(prefillCurrency || selectedCompany?.currency || "SGD");
+    setCurrency(prefillCurrency || (selectedCompany as any)?.currency || "SGD");
     setNotes("");
     setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
     setDropdownOpen(false);

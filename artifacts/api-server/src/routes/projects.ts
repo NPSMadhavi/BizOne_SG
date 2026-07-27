@@ -238,7 +238,9 @@ router.get("/projects", async (req: any, res: any) => {
         and(eq(vouchersTable.companyId, companyId), inArray(vouchersTable.projectId, projectIds))
       );
       for (const v of vouchers) {
-        spentMap[v.projectId] = (spentMap[v.projectId] || 0) + parseDecimal(v.totalAmount);
+        if (v.projectId != null) {
+          spentMap[v.projectId] = (spentMap[v.projectId] || 0) + parseDecimal(v.totalAmount);
+        }
       }
     }
 
@@ -500,14 +502,16 @@ router.get("/vouchers/:id", async (req: any, res: any) => {
       .where(and(eq(vouchersTable.id, id), eq(vouchersTable.companyId, companyId)));
     if (!voucher) return res.status(404).json({ error: "Voucher not found" });
 
-    const [project] = await db.select({ id: projectsTable.id, name: projectsTable.name, code: projectsTable.code })
-      .from(projectsTable).where(eq(projectsTable.id, voucher.projectId));
+    const [project] = voucher.projectId != null
+      ? await db.select({ id: projectsTable.id, name: projectsTable.name, code: projectsTable.code })
+          .from(projectsTable).where(eq(projectsTable.id, voucher.projectId))
+      : [];
 
     const userMap = await resolveUserMap([voucher.createdBy, voucher.verifierId, voucher.approverId, voucher.paidById]);
 
     const countRows = await db.execute(
       sql`SELECT COUNT(*)::int AS cnt FROM voucher_attachments WHERE voucher_id = ${id}`
-    ) as any[];
+    ) as unknown as any[];
     const cnt = Array.isArray(countRows) ? countRows[0]?.cnt : (countRows as any).rows?.[0]?.cnt;
     const attachmentCount = Number(cnt || 0);
 

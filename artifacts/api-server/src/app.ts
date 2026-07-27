@@ -46,7 +46,7 @@ pgPool.query(`
     CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
   );
   CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
-`).catch(err => logger.error({ err }, "Failed to create session table"));
+`).catch((err: unknown) => logger.error({ err }, "Failed to create session table"));
 
 app.use(
   session({

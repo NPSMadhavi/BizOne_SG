@@ -110,7 +110,7 @@ router.post("/wht", async (req, res): Promise<void> => {
       createdBy:      req.session.userId,
     }).returning();
 
-    await logAudit(req.session.userId!, companyId, "WHT", rec.id, "CREATE", null, rec);
+    logAudit({ req, action: "CREATE", entityType: "WHT", entityId: rec.id, details: rec });
     res.status(201).json(parseRec(rec));
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to create WHT record" });
@@ -136,7 +136,7 @@ router.put("/wht/:id", async (req, res): Promise<void> => {
       const [updated] = await db.update(whtRecordsTable)
         .set({ status: "filed", filedDate: filedDate || new Date().toISOString().slice(0, 10), referenceNo: referenceNo || null })
         .where(eq(whtRecordsTable.id, id)).returning();
-      await logAudit(req.session.userId!, companyId, "WHT", id, "UPDATE", existing, updated);
+      logAudit({ req, action: "UPDATE", entityType: "WHT", entityId: id, details: { before: existing, after: updated } });
       res.json(parseRec(updated));
       return;
     }
@@ -171,7 +171,7 @@ router.put("/wht/:id", async (req, res): Promise<void> => {
       notes:          notes ?? existing.notes,
     }).where(eq(whtRecordsTable.id, id)).returning();
 
-    await logAudit(req.session.userId!, companyId, "WHT", id, "UPDATE", existing, updated);
+    logAudit({ req, action: "UPDATE", entityType: "WHT", entityId: id, details: { before: existing, after: updated } });
     res.json(parseRec(updated));
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to update WHT record" });
@@ -191,7 +191,7 @@ router.delete("/wht/:id", async (req, res): Promise<void> => {
       .where(and(eq(whtRecordsTable.id, id), eq(whtRecordsTable.companyId, companyId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Record not found" }); return; }
     await db.delete(whtRecordsTable).where(eq(whtRecordsTable.id, id));
-    await logAudit(req.session.userId!, companyId, "WHT", id, "DELETE", existing, null);
+    logAudit({ req, action: "DELETE", entityType: "WHT", entityId: id, details: existing });
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to delete WHT record" });

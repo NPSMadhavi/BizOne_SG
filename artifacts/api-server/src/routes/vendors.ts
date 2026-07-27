@@ -11,9 +11,9 @@ router.get("/vendors", async (req, res) => {
     const vendors = await db.select().from(vendorsTable)
       .where(eq(vendorsTable.companyId, companyId))
       .orderBy(vendorsTable.name);
-    res.json(vendors);
+    return res.json(vendors);
   } catch {
-    res.status(500).json({ error: "Failed to fetch vendors" });
+    return res.status(500).json({ error: "Failed to fetch vendors" });
   }
 });
 
@@ -39,9 +39,9 @@ router.post("/vendors", async (req, res) => {
       gstRegistered: Boolean(gstRegistered),
       gstNo: gstRegistered && gstNo ? gstNo : null,
     }).returning();
-    res.status(201).json(vendor);
+    return res.status(201).json(vendor);
   } catch {
-    res.status(500).json({ error: "Failed to create vendor" });
+    return res.status(500).json({ error: "Failed to create vendor" });
   }
 });
 
@@ -69,9 +69,9 @@ router.put("/vendors/:id", async (req, res) => {
     }).where(and(eq(vendorsTable.id, id), eq(vendorsTable.companyId, companyId))).returning();
 
     if (!vendor) return res.status(404).json({ error: "Vendor not found" });
-    res.json(vendor);
+    return res.json(vendor);
   } catch {
-    res.status(500).json({ error: "Failed to update vendor" });
+    return res.status(500).json({ error: "Failed to update vendor" });
   }
 });
 
@@ -83,9 +83,9 @@ router.delete("/vendors/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   try {
     await db.delete(vendorsTable).where(and(eq(vendorsTable.id, id), eq(vendorsTable.companyId, companyId)));
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch {
-    res.status(500).json({ error: "Failed to delete vendor" });
+    return res.status(500).json({ error: "Failed to delete vendor" });
   }
 });
 

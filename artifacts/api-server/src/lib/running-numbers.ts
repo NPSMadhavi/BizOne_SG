@@ -23,7 +23,7 @@ async function numberExists(type: DocType, number: string, companyId?: number): 
   const companyClause = companyId ? sql` AND company_id = ${companyId}` : sql``;
   const rows = await db.execute(
     sql`SELECT 1 FROM ${sql.raw(table)} WHERE ${sql.raw(col)} = ${number}${companyClause} LIMIT 1`
-  ) as any[];
+  ) as unknown as any[];
   const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
   return arr.length > 0;
 }
@@ -61,11 +61,11 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
   if (companyId) {
     rows = await db.execute(
       sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE company_id = ${companyId} RETURNING *`
-    ) as any[];
+    ) as unknown as any[];
   } else {
     rows = await db.execute(
       sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
-    ) as any[];
+    ) as unknown as any[];
   }
 
   const s = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];

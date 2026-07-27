@@ -94,9 +94,9 @@ router.get("/", async (req, res) => {
     if (!companyId) return res.status(400).json({ error: "No company selected" });
     const settings = await ensureSettings(companyId);
     const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
-    res.json(formatSettings(settings, company?.country));
+    return res.json(formatSettings(settings, company?.country));
   } catch (err) {
-    res.status(500).json({ error: "Failed to get settings" });
+    return res.status(500).json({ error: "Failed to get settings" });
   }
 });
 
@@ -175,9 +175,9 @@ router.put("/", async (req, res) => {
     const settings = await ensureSettings(companyId);
     const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
     const [updated] = await db.update(settingsTable).set(updateData).where(eq(settingsTable.id, settings.id)).returning();
-    res.json(formatSettings(updated, company?.country));
+    return res.json(formatSettings(updated, company?.country));
   } catch (err) {
-    res.status(500).json({ error: "Failed to update settings" });
+    return res.status(500).json({ error: "Failed to update settings" });
   }
 });
 

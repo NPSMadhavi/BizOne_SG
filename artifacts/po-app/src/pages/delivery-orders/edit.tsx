@@ -40,6 +40,8 @@ const schema = z.object({
   customerName: z.string().min(1, "Required"),
   customerAddress: z.string().optional(),
   customerContact: z.string().optional(),
+  customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  deliveryAddress: z.string().optional(),
   issueDate: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
@@ -174,7 +176,7 @@ export default function DeliveryOrderEdit() {
       </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={form.handleSubmit((v) => onSubmit(v))} className="space-y-8">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-4 flex flex-row items-center justify-between">

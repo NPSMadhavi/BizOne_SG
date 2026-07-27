@@ -11,9 +11,9 @@ router.get("/customers", async (req, res) => {
     const customers = await db.select().from(customersTable)
       .where(eq(customersTable.companyId, companyId))
       .orderBy(customersTable.name);
-    res.json(customers);
+    return res.json(customers);
   } catch {
-    res.status(500).json({ error: "Failed to fetch customers" });
+    return res.status(500).json({ error: "Failed to fetch customers" });
   }
 });
 
@@ -40,9 +40,9 @@ router.post("/customers", async (req, res) => {
       gstNo: gstRegistered && gstNo ? gstNo : null,
       shipToAddress: shipToAddress || null,
     }).returning();
-    res.status(201).json(customer);
+    return res.status(201).json(customer);
   } catch {
-    res.status(500).json({ error: "Failed to create customer" });
+    return res.status(500).json({ error: "Failed to create customer" });
   }
 });
 
@@ -71,9 +71,9 @@ router.put("/customers/:id", async (req, res) => {
     }).where(and(eq(customersTable.id, id), eq(customersTable.companyId, companyId))).returning();
 
     if (!customer) return res.status(404).json({ error: "Customer not found" });
-    res.json(customer);
+    return res.json(customer);
   } catch {
-    res.status(500).json({ error: "Failed to update customer" });
+    return res.status(500).json({ error: "Failed to update customer" });
   }
 });
 
@@ -85,9 +85,9 @@ router.delete("/customers/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   try {
     await db.delete(customersTable).where(and(eq(customersTable.id, id), eq(customersTable.companyId, companyId)));
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch {
-    res.status(500).json({ error: "Failed to delete customer" });
+    return res.status(500).json({ error: "Failed to delete customer" });
   }
 });
 

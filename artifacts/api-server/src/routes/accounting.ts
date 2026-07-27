@@ -1476,7 +1476,7 @@ router.get("/iaf", async (req, res): Promise<void> => {
     const credit = parseFloat(jl.credit ?? "0");
     const docDate = fmtD(entry.entryDate);
     const desc    = safe(jl.description || entry.description || "");
-    lines.push(`GA|${docDate}|${safe(account.code)}|${safe(account.name)}|${safe(entry.reference)}|${desc}|${fmtA(debit)}|${fmtA(credit)}|${acctType(account.type)}|`);
+    lines.push(`GA|${docDate}|${safe(account.code)}|${safe(account.name)}|${safe(entry.refNumber ?? "")}|${desc}|${fmtA(debit)}|${fmtA(credit)}|${acctType(account.type)}|`);
     gaCount++; totalDebit += debit; totalCredit += credit;
   }
 
