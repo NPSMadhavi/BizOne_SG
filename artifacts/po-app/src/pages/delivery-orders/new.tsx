@@ -17,7 +17,8 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, FileInput } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, FileInput, Package } from "lucide-react";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { DOImportItem } from "@/components/import-from-po-dialog";
 import { generateDO_PDF } from "@/lib/pdf";
@@ -72,6 +73,7 @@ export default function DeliveryOrderNew() {
   const createMutation = useCreateDeliveryOrder();
 
   const [importPOOpen, setImportPOOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   function handleImportFromPO(imported: DOImportItem[]) {
     if (!imported.length) return;
     const current = form.getValues("items");
@@ -267,9 +269,14 @@ export default function DeliveryOrderNew() {
                       <tr key={field.id} className="border-b last:border-0 hover:bg-muted/20">
                         <td className="px-4 py-2 text-muted-foreground text-xs align-top pt-3">{index + 1}</td>
                         <td className="px-4 py-2 align-top">
-                          <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                            <FormItem><FormControl><Input className="h-8 text-sm font-mono" placeholder="PN-123" {...field} /></FormControl></FormItem>
-                          )} />
+                          <div className="flex gap-1 items-center">
+                            <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                              <FormItem className="flex-1"><FormControl><Input className="h-8 text-sm font-mono" placeholder="PN-123" {...field} /></FormControl></FormItem>
+                            )} />
+                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary" title="Pick from stock catalog" onClick={() => setStockPickerIndex(index)}>
+                              <Package className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </td>
                         <td className="px-4 py-2 align-top">
                           <div className="flex gap-2 items-start">
@@ -336,6 +343,19 @@ export default function DeliveryOrderNew() {
         onOpenChange={setImportPOOpen}
         mode="do"
         onImport={imported => handleImportFromPO(imported as DOImportItem[])}
+      />
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(v) => { if (!v) setStockPickerIndex(null); }}
+        onSelect={({ item, selectedSerials, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          const desc = [item.name, item.description].filter(Boolean).join(" — ");
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, desc);
+          form.setValue(`items.${stockPickerIndex}.uom`, item.uom);
+          form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length > 0 ? selectedSerials.length : (qty ?? 1));
+          setStockPickerIndex(null);
+        }}
       />
       {savedDoc && (
         <PdfPreviewModal
