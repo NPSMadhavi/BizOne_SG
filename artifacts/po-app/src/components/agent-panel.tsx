@@ -810,14 +810,14 @@ export function AgentPanel() {
 
       {/* ── FAB trigger ── */}
       {!open && (
-        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+        <div className="group fixed bottom-6 right-0 z-40 flex flex-col items-end gap-2 translate-x-[calc(100%-10px)] hover:translate-x-0 transition-transform duration-300 ease-in-out pr-3">
           {/* Ambient mode toggle chip */}
           {wakeSupported && (
             <button
               onClick={toggleAmbient}
               title={ambientMode ? "Ambient mode ON — say 'Veda' anytime" : "Enable ambient mode"}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all opacity-0 group-hover:opacity-100 duration-200",
                 ambientMode
                   ? "bg-primary text-primary-foreground animate-pulse"
                   : "bg-background border border-border text-muted-foreground hover:text-foreground",
