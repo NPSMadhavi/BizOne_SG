@@ -709,6 +709,84 @@ CREATE TABLE voucher_attachments (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ---------------------------------------------------------------------------
+-- expenses  (Singapore-only expense tracking with GST & deductibility)
+-- category    : staff_costs | rental | professional_fees | advertising |
+--               office_supplies | utilities | travel | entertainment |
+--               motor_vehicle_private | motor_vehicle_commercial |
+--               training | insurance | bank_charges | other
+-- gst_claimable  : input GST claimable on GST F5 Box 7
+-- is_deductible  : whether expense qualifies for income-tax deduction
+-- deductible_pct : percentage deductible (0–100); 50 for entertainment
+-- status      : 'draft' | 'confirmed' | 'void'
+-- Confirmed records auto-post a journal entry:
+--   gst_claimable → DR Expense / DR GST Input(2020) / CR AP or Bank
+--   non-claimable → DR Expense (full incl. GST) / CR AP or Bank
+-- ---------------------------------------------------------------------------
+CREATE TABLE expenses (
+    id                SERIAL PRIMARY KEY,
+    company_id        INTEGER       NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    expense_date      TEXT          NOT NULL,
+    vendor_name       TEXT          NOT NULL,
+    description       TEXT          NOT NULL,
+    category          TEXT          NOT NULL,
+    amount            NUMERIC(15,2) NOT NULL,
+    gst_amount        NUMERIC(15,2) NOT NULL DEFAULT 0,
+    gst_claimable     BOOLEAN       NOT NULL DEFAULT FALSE,
+    is_deductible     BOOLEAN       NOT NULL DEFAULT TRUE,
+    deductible_pct    INTEGER       NOT NULL DEFAULT 100,
+    currency          TEXT          NOT NULL DEFAULT 'SGD',
+    payment_method    TEXT                   DEFAULT 'bank_transfer',
+    receipt_data      TEXT,                  -- base64 encoded receipt image
+    receipt_mime_type TEXT,
+    vendor_id         INTEGER,
+    project_id        INTEGER,
+    voucher_id        INTEGER,
+    journal_entry_id  INTEGER       REFERENCES journal_entries(id),
+    status            TEXT          NOT NULL DEFAULT 'draft',
+    notes             TEXT,
+    created_by        INTEGER       NOT NULL REFERENCES users(id),
+    created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ---------------------------------------------------------------------------
+-- income_records  (Singapore-only non-trade income tracking)
+-- category      : rental_income | interest_income | dividend_income |
+--                 grant_subsidy | commission_income | service_fee |
+--                 royalty_income | gain_on_disposal | forex_gain | other_income
+-- gst_treatment : 'standard_rated' | 'zero_rated' | 'exempt' | 'out_of_scope'
+-- status        : 'draft' | 'confirmed' | 'void'
+-- Confirmed records auto-post a journal entry and feed GST F5 boxes:
+--   standard_rated → DR Bank(1010) / CR Revenue / CR GST Output(2010)
+--                    → Box 1 (net amount) + Box 6 (GST amount)
+--   zero_rated     → DR Bank(1010) / CR Revenue → Box 2
+--   exempt         → DR Bank(1010) / CR Revenue → Box 3
+--   out_of_scope   → DR Bank(1010) / CR Revenue (no GST box)
+-- Void reverses the journal entry.
+-- ---------------------------------------------------------------------------
+CREATE TABLE income_records (
+    id               SERIAL PRIMARY KEY,
+    company_id       INTEGER       NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    income_date      TEXT          NOT NULL,
+    payer_name       TEXT          NOT NULL,
+    description      TEXT          NOT NULL,
+    category         TEXT          NOT NULL,
+    amount           NUMERIC(15,2) NOT NULL,
+    gst_amount       NUMERIC(15,2) NOT NULL DEFAULT 0,
+    gst_treatment    TEXT          NOT NULL DEFAULT 'standard_rated',
+    currency         TEXT          NOT NULL DEFAULT 'SGD',
+    payment_method   TEXT                   DEFAULT 'bank_transfer',
+    account_id       INTEGER,               -- revenue account from chart of accounts
+    reference        TEXT,
+    notes            TEXT,
+    status           TEXT          NOT NULL DEFAULT 'draft',
+    journal_entry_id INTEGER       REFERENCES journal_entries(id),
+    created_by       INTEGER       NOT NULL REFERENCES users(id),
+    created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
 -- =============================================================================
 -- PROJECTS
 -- =============================================================================

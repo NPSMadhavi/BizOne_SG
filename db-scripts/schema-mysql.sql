@@ -436,6 +436,80 @@ CREATE TABLE IF NOT EXISTS messages (
   CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ============================================================
+-- TABLE: expenses  (Singapore-only expense tracking)
+-- category: staff_costs | rental | professional_fees | advertising |
+--           office_supplies | utilities | travel | entertainment |
+--           motor_vehicle_private | motor_vehicle_commercial |
+--           training | insurance | bank_charges | other
+-- status: 'draft' | 'confirmed' | 'void'
+-- gst_claimable: whether input GST can be claimed on GST F5 Box 7
+-- is_deductible: whether expense is tax-deductible for income tax
+-- deductible_pct: percentage deductible (0-100), e.g. 50 for entertainment
+-- ============================================================
+CREATE TABLE IF NOT EXISTS expenses (
+  id                 INT            NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  company_id         INT            NOT NULL,
+  expense_date       VARCHAR(20)    NOT NULL,
+  vendor_name        TEXT           NOT NULL,
+  description        TEXT           NOT NULL,
+  category           VARCHAR(50)    NOT NULL,
+  amount             DECIMAL(15,2)  NOT NULL,
+  gst_amount         DECIMAL(15,2)  NOT NULL DEFAULT 0,
+  gst_claimable      TINYINT(1)     NOT NULL DEFAULT 0,
+  is_deductible      TINYINT(1)     NOT NULL DEFAULT 1,
+  deductible_pct     INT            NOT NULL DEFAULT 100,
+  currency           VARCHAR(10)    NOT NULL DEFAULT 'SGD',
+  payment_method     VARCHAR(50)             DEFAULT 'bank_transfer',
+  receipt_data       LONGTEXT,
+  receipt_mime_type  VARCHAR(100),
+  vendor_id          INT,
+  project_id         INT,
+  voucher_id         INT,
+  journal_entry_id   INT,
+  status             VARCHAR(20)    NOT NULL DEFAULT 'draft',
+  notes              TEXT,
+  created_by         INT            NOT NULL,
+  created_at         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_exp_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE: income_records  (Singapore-only non-trade income tracking)
+-- category: rental_income | interest_income | dividend_income |
+--           grant_subsidy | commission_income | service_fee |
+--           royalty_income | gain_on_disposal | forex_gain | other_income
+-- gst_treatment: 'standard_rated' | 'zero_rated' | 'exempt' | 'out_of_scope'
+-- status: 'draft' | 'confirmed' | 'void'
+-- Confirmed records auto-post a journal entry and feed GST F5:
+--   standard_rated → Box 1 (net) & Box 6 (GST)
+--   zero_rated     → Box 2
+--   exempt         → Box 3
+-- ============================================================
+CREATE TABLE IF NOT EXISTS income_records (
+  id               INT            NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  company_id       INT            NOT NULL,
+  income_date      VARCHAR(20)    NOT NULL,
+  payer_name       TEXT           NOT NULL,
+  description      TEXT           NOT NULL,
+  category         VARCHAR(50)    NOT NULL,
+  amount           DECIMAL(15,2)  NOT NULL,
+  gst_amount       DECIMAL(15,2)  NOT NULL DEFAULT 0,
+  gst_treatment    VARCHAR(20)    NOT NULL DEFAULT 'standard_rated',
+  currency         VARCHAR(10)    NOT NULL DEFAULT 'SGD',
+  payment_method   VARCHAR(50)             DEFAULT 'bank_transfer',
+  account_id       INT,
+  reference        VARCHAR(255),
+  notes            TEXT,
+  status           VARCHAR(20)    NOT NULL DEFAULT 'draft',
+  journal_entry_id INT,
+  created_by       INT            NOT NULL,
+  created_at       DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_inc_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 
