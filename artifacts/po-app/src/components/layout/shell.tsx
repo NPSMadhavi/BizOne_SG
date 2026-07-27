@@ -579,7 +579,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Cash Flow
           </NavItem>
         )}
-        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Expenses</div>
+        <div className="px-3 pt-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400/80 select-none">Income & Expenses</div>
+        {hasModuleAccess("accounting_income") && (
+          <NavItem href="/accounting/income" icon={TrendingUp} active={location.startsWith("/accounting/income")} inGroup>
+            Income
+          </NavItem>
+        )}
         {hasModuleAccess("accounting_expenses") && (
           <NavItem href="/accounting/expenses" icon={ReceiptText} active={location.startsWith("/accounting/expenses")} inGroup>
             Expenses

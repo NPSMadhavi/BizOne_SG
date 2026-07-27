@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable, invoicePaymentsTable, vendorPaymentsTable, customerDepositsTable, expensesTable } from "@workspace/db";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable, invoicePaymentsTable, vendorPaymentsTable, customerDepositsTable, expensesTable, incomeRecordsTable } from "@workspace/db";
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
@@ -464,9 +464,37 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
   ));
 
-  const box1 = invRows.reduce((s, r) =>
+  const invBox1 = invRows.reduce((s, r) =>
     s + parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0"), 0);
-  const box6 = invRows.reduce((s, r) => s + parseFloat(r.tax ?? "0"), 0);
+  const invBox6 = invRows.reduce((s, r) => s + parseFloat(r.tax ?? "0"), 0);
+
+  // ─ Box 1/2/3/6: confirmed income records (non-trade income) ─
+  const incomeRows = await db.select({
+    id:           incomeRecordsTable.id,
+    payerName:    incomeRecordsTable.payerName,
+    description:  incomeRecordsTable.description,
+    category:     incomeRecordsTable.category,
+    incomeDate:   incomeRecordsTable.incomeDate,
+    amount:       incomeRecordsTable.amount,
+    gstAmount:    incomeRecordsTable.gstAmount,
+    gstTreatment: incomeRecordsTable.gstTreatment,
+    currency:     incomeRecordsTable.currency,
+  })
+  .from(incomeRecordsTable)
+  .where(and(
+    eq(incomeRecordsTable.companyId, companyId),
+    eq(incomeRecordsTable.status, "confirmed"),
+    ...(fromDate ? [sql`${incomeRecordsTable.incomeDate} >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`${incomeRecordsTable.incomeDate} <= ${toDate}`]   : []),
+  ));
+
+  const incomeBox1 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
+  const incomeBox2 = incomeRows.filter(r => r.gstTreatment === "zero_rated").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
+  const incomeBox3 = incomeRows.filter(r => r.gstTreatment === "exempt").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
+  const incomeBox6 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
+
+  const box1 = invBox1 + incomeBox1;
+  const box6 = invBox6 + incomeBox6;
 
   // ─ Box 4: taxable purchases from vendor invoices ─
   const viRows = await db.select({
@@ -543,8 +571,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     company: { name: company?.name, gstRegistrationNo: company?.registrationNo, address: company?.address },
     gstRate,
     box1: parseFloat(box1.toFixed(2)),
-    box2: 0,
-    box3: 0,
+    box2: parseFloat(incomeBox2.toFixed(2)),
+    box3: parseFloat(incomeBox3.toFixed(2)),
     box4: parseFloat(totalBox4.toFixed(2)),
     box5: 0,
     box6: parseFloat(box6.toFixed(2)),
@@ -577,6 +605,17 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       amount:      parseFloat(parseFloat(r.amount ?? "0").toFixed(2)),
       gstAmount:   parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
       currency:    r.currency,
+    })),
+    incomeRecords: incomeRows.map(r => ({
+      id:           r.id,
+      payerName:    r.payerName,
+      description:  r.description,
+      category:     r.category,
+      incomeDate:   r.incomeDate,
+      amount:       parseFloat(parseFloat(r.amount ?? "0").toFixed(2)),
+      gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
+      gstTreatment: r.gstTreatment,
+      currency:     r.currency,
     })),
   });
 });

@@ -33,6 +33,7 @@ import proformaInvoicesRouter from "./proforma-invoices";
 import projectsRouter from "./projects";
 import ackRouter from "./ack";
 import expensesRouter from "./expenses";
+import incomeRouter from "./income";
 
 const router: IRouter = Router();
 
@@ -70,5 +71,6 @@ router.use(proformaInvoicesRouter);
 router.use(projectsRouter);
 router.use(ackRouter);
 router.use(expensesRouter);
+router.use(incomeRouter);
 
 export default router;

@@ -95,6 +95,10 @@ const ExpensesList       = lazy(() => import("@/pages/accounting/expenses"));
 const ExpenseNew         = lazy(() => import("@/pages/accounting/expense-new"));
 const ExpenseEdit        = lazy(() => import("@/pages/accounting/expense-edit"));
 const ExpenseView        = lazy(() => import("@/pages/accounting/expense-view"));
+const IncomeList         = lazy(() => import("@/pages/accounting/income"));
+const IncomeNew          = lazy(() => import("@/pages/accounting/income-new"));
+const IncomeEdit         = lazy(() => import("@/pages/accounting/income-edit"));
+const IncomeView         = lazy(() => import("@/pages/accounting/income-view"));
 
 // ── Route title map ────────────────────────────────────────────────────────
 const ROUTE_TITLES: Record<string, string> = {
@@ -130,6 +134,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/general-ledger": "General Ledger",
   "/accounting/expenses": "Expenses",
   "/accounting/expenses/new": "New Expense",
+  "/accounting/income": "Income",
+  "/accounting/income/new": "New Income Entry",
   "/admin": "User Management",
   "/settings": "Settings",
   "/select-company": "Select Company",
@@ -322,6 +328,10 @@ function Router() {
           <Route path="/accounting/expenses/:id/edit">{() => <ProtectedRoute component={ExpenseEdit} />}</Route>
           <Route path="/accounting/expenses/:id">{() => <ProtectedRoute component={ExpenseView} />}</Route>
           <Route path="/accounting/expenses">{() => <ProtectedRoute component={ExpensesList} />}</Route>
+          <Route path="/accounting/income/new">{() => <ProtectedRoute component={IncomeNew} />}</Route>
+          <Route path="/accounting/income/:id/edit">{() => <ProtectedRoute component={IncomeEdit} />}</Route>
+          <Route path="/accounting/income/:id">{() => <ProtectedRoute component={IncomeView} />}</Route>
+          <Route path="/accounting/income">{() => <ProtectedRoute component={IncomeList} />}</Route>
 
           {/* System — admin only */}
           <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>

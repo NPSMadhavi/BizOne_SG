@@ -16,6 +16,7 @@ export const ALL_MODULES = [
   "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt",
   "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
   "accounting_expenses",
+  "accounting_income",
 ] as const;
 
 export const DEFAULT_MODULES = ["purchase_orders", "quotations", "invoices", "proforma_invoices", "delivery_orders"] as const;
@@ -55,6 +56,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   accounting_ap_aging: "AP Aging",
   accounting_vendor_stmt: "Vendor Statement",
   accounting_expenses: "Expenses",
+  accounting_income: "Income",
 };
 
 export interface ModuleGroup {
@@ -92,6 +94,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
       "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt",
       "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
       "accounting_expenses",
+      "accounting_income",
     ],
   },
 ];

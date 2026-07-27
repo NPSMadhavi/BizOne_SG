@@ -28,3 +28,4 @@ export * from "./proforma-invoices";
 export * from "./projects";
 export * from "./vouchers";
 export * from "./expenses";
+export * from "./income-records";
