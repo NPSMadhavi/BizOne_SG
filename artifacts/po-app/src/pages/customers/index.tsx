@@ -86,6 +86,7 @@ export default function CustomersPage() {
   const [form, setForm] = useState<Partial<Customer>>(blank());
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [countryOpen, setCountryOpen] = useState(false);
+  const [currencyOpen, setCurrencyOpen] = useState(false);
 
   const { selectedCompany, isAdmin } = useAuth();
   const companyCountry = selectedCompany?.country ?? "";
@@ -356,12 +357,47 @@ export default function CustomersPage() {
 
             <div className="space-y-1.5">
               <Label>Default Currency</Label>
-              <Select value={form.currency || ""} onValueChange={v => setField("currency", v)}>
-                <SelectTrigger><SelectValue placeholder="Select currency (optional)" /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map(c => <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Popover open={currencyOpen} onOpenChange={setCurrencyOpen} modal={false}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={currencyOpen}
+                    className="w-full justify-between font-normal"
+                  >
+                    <span className={form.currency ? "text-foreground" : "text-muted-foreground"}>
+                      {form.currency
+                        ? CURRENCIES.find(c => c.code === form.currency)?.label ?? form.currency
+                        : "Select currency (optional)"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search currency…" />
+                    <CommandList>
+                      <CommandEmpty>No currency found.</CommandEmpty>
+                      <CommandGroup>
+                        {CURRENCIES.map(c => (
+                          <CommandItem
+                            key={c.code}
+                            value={c.label}
+                            onSelect={() => {
+                              setField("currency", c.code);
+                              setCurrencyOpen(false);
+                            }}
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${form.currency === c.code ? "opacity-100" : "opacity-0"}`} />
+                            {c.label}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this customer.</p>
             </div>
 
