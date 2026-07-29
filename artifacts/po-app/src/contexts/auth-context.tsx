@@ -4,12 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { ALL_MODULES, DEFAULT_MODULES, type AppModule } from "./auth-modules";
 
-// Re-export for backwards compatibility so existing imports keep working
-export type { AppModule };
-export { ALL_MODULES, DEFAULT_MODULES };
-export type { ModuleGroup } from "./auth-modules";
-export { MODULE_LABELS, MODULE_GROUPS } from "./auth-modules";
-
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
