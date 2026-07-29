@@ -11,7 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Trash2, Save, Eye, Lock, Plus, Layers } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput } from "lucide-react";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
@@ -66,6 +67,7 @@ export default function CreditNoteNew() {
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [importExcelOpen, setImportExcelOpen] = useState(false);
 
   const { data: settings } = useGetSettings();
 
@@ -267,6 +269,10 @@ export default function CreditNoteNew() {
                   onClick={() => append({ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
                   <Plus className="h-3.5 w-3.5" />Add Item
                 </Button>
+                <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8 text-primary border-primary/30 hover:bg-primary/5"
+                  onClick={() => setImportExcelOpen(true)}>
+                  <FileInput className="h-3.5 w-3.5" />Import from Excel / CSV
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -360,6 +366,14 @@ export default function CreditNoteNew() {
         </form>
       </Form>
 
+      <ImportItemsDialog
+        open={importExcelOpen}
+        onClose={() => setImportExcelOpen(false)}
+        onImport={(imported, replace) => {
+          const newItems = imported.map(it => ({ type: "item" as const, sectionLabel: "", partNumber: it.partNumber, description: it.description, qty: it.qty, unitPrice: it.unitPrice, discount: 0, amount: 0 }));
+          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        }}
+      />
       {savedDoc && showPreview && (
         <PdfPreviewModal
           open={showPreview}

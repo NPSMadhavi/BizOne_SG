@@ -22,6 +22,7 @@ import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, FileInput, Package } from "lu
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { DOImportItem } from "@/components/import-from-po-dialog";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -107,6 +108,7 @@ export default function DeliveryOrderEdit() {
   const updateMutation = useUpdateDeliveryOrder();
 
   const [importPOOpen, setImportPOOpen] = useState(false);
+  const [importExcelOpen, setImportExcelOpen] = useState(false);
   function handleImportFromPO(imported: DOImportItem[]) {
     if (!imported.length) return;
     const current = form.getValues("items");
@@ -272,6 +274,9 @@ export default function DeliveryOrderEdit() {
                 <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
                   <FileInput className="h-3 w-3" /> Import from PO
                 </Button>
+                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
+                  <FileInput className="h-3 w-3" /> Import from Excel / CSV
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -379,6 +384,14 @@ export default function DeliveryOrderEdit() {
         onOpenChange={setImportPOOpen}
         mode="do"
         onImport={imported => handleImportFromPO(imported as DOImportItem[])}
+      />
+      <ImportItemsDialog
+        open={importExcelOpen}
+        onClose={() => setImportExcelOpen(false)}
+        onImport={(imported, replace) => {
+          const newItems = imported.map(it => ({ partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, itemImage: "" }));
+          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        }}
       />
       <PdfPreviewModal
         open={previewOpen}

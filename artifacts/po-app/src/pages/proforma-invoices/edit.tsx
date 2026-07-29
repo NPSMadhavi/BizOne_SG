@@ -15,7 +15,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
@@ -89,6 +90,7 @@ export default function ProformaInvoiceEdit() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+  const [importExcelOpen, setImportExcelOpen] = useState(false);
 
   const { data: doc } = useQuery<any>({
     queryKey: ["proforma-invoices", id],
@@ -424,6 +426,9 @@ export default function ProformaInvoiceEdit() {
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append(blankSection)}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from Excel / CSV
+                  </Button>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
@@ -716,6 +721,14 @@ export default function ProformaInvoiceEdit() {
         }}
       />
 
+      <ImportItemsDialog
+        open={importExcelOpen}
+        onClose={() => setImportExcelOpen(false)}
+        onImport={(imported, replace) => {
+          const newItems = imported.map(it => ({ ...blankPiItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
+          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        }}
+      />
       {doc && (
         <PdfPreviewModal
           open={previewOpen}

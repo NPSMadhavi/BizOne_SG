@@ -19,6 +19,7 @@ import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
@@ -227,6 +228,7 @@ export default function InvoiceEdit() {
   const taxPercent = form.watch("tax") || 0;
 
   const [importPOOpen, setImportPOOpen] = useState(false);
+  const [importExcelOpen, setImportExcelOpen] = useState(false);
   function handleImportFromPO(imported: InvoiceImportItem[]) {
     if (!imported.length) return;
     const current = form.getValues("items");
@@ -475,6 +477,9 @@ export default function InvoiceEdit() {
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
                     <FileInput className="h-3 w-3" /> Import from PO
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from Excel / CSV
                   </Button>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
@@ -848,6 +853,15 @@ export default function InvoiceEdit() {
         onOpenChange={setImportPOOpen}
         mode="invoice"
         onImport={imported => handleImportFromPO(imported as InvoiceImportItem[])}
+      />
+      <ImportItemsDialog
+        open={importExcelOpen}
+        onClose={() => setImportExcelOpen(false)}
+        onImport={(imported, replace) => {
+          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
+          const newItems = imported.map(it => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
+          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        }}
       />
       <PdfPreviewModal
         open={previewOpen}
