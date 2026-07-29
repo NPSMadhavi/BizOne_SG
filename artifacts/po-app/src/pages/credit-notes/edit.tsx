@@ -298,7 +298,7 @@ export default function CreditNoteEdit() {
                 </Button>
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8 text-primary border-primary/30 hover:bg-primary/5"
                   onClick={() => setImportExcelOpen(true)}>
-                  <FileInput className="h-3.5 w-3.5" />Import from Excel / CSV
+                  <FileInput className="h-3.5 w-3.5" />Import from Excel / PDF
                 </Button>
               </div>
             </CardHeader>

@@ -11,6 +11,23 @@ const { PDFParse } = require("pdf-parse") as {
   };
 };
 
+/** Replace common PDF ligature characters with ASCII equivalents */
+function normalizePdfText(text: string): string {
+  return text
+    .replace(/\uFB00/g, "ff")
+    .replace(/\uFB01/g, "fi")
+    .replace(/\uFB02/g, "fl")
+    .replace(/\uFB03/g, "ffi")
+    .replace(/\uFB04/g, "ffl")
+    .replace(/\uFB05/g, "st")
+    .replace(/\uFB06/g, "st")
+    // Uncommon but seen in some PDFs
+    .replace(/\u0132/g, "IJ")
+    .replace(/\u0133/g, "ij")
+    .replace(/\u00E6/g, "ae")
+    .replace(/\u0153/g, "oe");
+}
+
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),

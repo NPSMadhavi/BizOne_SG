@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { Upload, FileSpreadsheet, FileText, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
+import { Upload, FileSpreadsheet, FileText, AlertTriangle, CheckCircle2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -11,7 +11,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   parseExcel,
-  parsePdf,
   applyColumnMap,
   type ImportedItem,
   type ColumnField,
@@ -43,26 +42,32 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
   const [fileName, setFileName] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [columnMap, setColumnMap] = useState<ColumnMap>({});
+  const [aiItems, setAiItems] = useState<ImportedItem[] | null>(null);
+  const [isAiParsed, setIsAiParsed] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [error, setError] = useState("");
 
-  // Recompute preview items from raw rows + current column map
-  const previewItems = parseResult
-    ? applyColumnMap(parseResult.rawRows, columnMap)
-    : [];
+  // Recompute preview items from raw rows + current column map (Excel) or AI items (PDF)
+  const previewItems: ImportedItem[] = isAiParsed && aiItems
+    ? aiItems
+    : parseResult
+      ? applyColumnMap(parseResult.rawRows, columnMap)
+      : [];
 
-  // When preview items list changes (new parse or column remap) → select all
+  // When preview items list changes → select all
   useEffect(() => {
     setSelected(new Set(previewItems.map((_, i) => i)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parseResult, columnMap]);
+  }, [parseResult, columnMap, aiItems]);
 
   const reset = () => {
     setStage("upload");
     setFileName("");
     setParseResult(null);
     setColumnMap({});
+    setAiItems(null);
+    setIsAiParsed(false);
     setSelected(new Set());
     setReplaceExisting(true);
     setError("");
@@ -73,20 +78,48 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
     setError("");
     setStage("parsing");
     try {
-      let result: ParseResult;
       const lower = file.name.toLowerCase();
+
       if (lower.endsWith(".pdf")) {
-        result = await parsePdf(file);
+        // Use the AI-powered backend extractor (same engine as "Import from PO")
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/invoices/extract-po", {
+          method: "POST",
+          body: form,
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error((errData as any)?.error || `Server error ${res.status}`);
+        }
+        const data = await res.json() as { items?: any[] };
+        const items: ImportedItem[] = (data.items ?? []).map((it: any) => ({
+          partNumber: String(it.partNumber ?? ""),
+          description: String(it.description ?? ""),
+          qty: Number(it.qty) || 1,
+          unitPrice: Number(it.unitPrice) || 0,
+          uom: String(it.uom ?? ""),
+        }));
+        if (items.length === 0) {
+          throw new Error("No line items could be extracted from this PDF. Please check that it contains product/service line items.");
+        }
+        setAiItems(items);
+        setIsAiParsed(true);
+        setParseResult(null);
+        setStage("preview");
+
       } else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-        result = await parseExcel(file);
+        const result = await parseExcel(file);
+        setAiItems(null);
+        setIsAiParsed(false);
+        setParseResult(result);
+        setColumnMap(result.columnMap);
+        setStage("preview");
+
       } else {
         setError("Unsupported file type. Please upload a PDF, XLSX, or XLS file.");
         setStage("upload");
-        return;
       }
-      setParseResult(result);
-      setColumnMap(result.columnMap);
-      setStage("preview");
     } catch (e: any) {
       setError(e?.message || "Failed to parse file. Please try another file.");
       setStage("upload");
@@ -151,6 +184,8 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
     onClose();
   };
 
+  const isPdf = fileName.toLowerCase().endsWith(".pdf");
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
@@ -166,7 +201,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
           {stage === "upload" && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Upload a supplier quote in <strong>PDF</strong> or <strong>Excel (.xlsx / .xls)</strong> format.
+                Upload a supplier quote or PO in <strong>PDF</strong> or <strong>Excel (.xlsx / .xls)</strong> format.
                 The system will extract Part Number, Description, Qty, and Unit Price.
               </p>
               <div
@@ -190,8 +225,8 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                   <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
                 </div>
               )}
-              <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md p-3">
-                <strong>PDF note:</strong> Works best with text-based PDFs (not scanned images). Column detection is automatic but you can adjust the mapping after upload.
+              <div className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-md p-3">
+                <strong>PDF:</strong> AI-powered extraction — same engine as "Import from PO". Works best with text-based PDFs (not scanned images).
               </div>
             </div>
           )}
@@ -200,29 +235,41 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
           {stage === "parsing" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <RefreshCw className="h-8 w-8 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground">Parsing <strong>{fileName}</strong>…</p>
+              <p className="text-sm text-muted-foreground">
+                {isPdf
+                  ? <>Extracting line items from <strong>{fileName}</strong> using AI…</>
+                  : <>Parsing <strong>{fileName}</strong>…</>}
+              </p>
+              {isPdf && (
+                <p className="text-xs text-muted-foreground">This may take a few seconds</p>
+              )}
             </div>
           )}
 
           {/* ── Preview ── */}
-          {stage === "preview" && parseResult && (
+          {stage === "preview" && (
             <div className="space-y-4">
               {/* File info */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {fileName.toLowerCase().endsWith(".pdf")
+                  {isPdf
                     ? <FileText className="h-4 w-4" />
                     : <FileSpreadsheet className="h-4 w-4" />}
                   <span className="font-medium text-foreground">{fileName}</span>
                   <Badge variant="secondary">{previewItems.length} item{previewItems.length !== 1 ? "s" : ""} detected</Badge>
+                  {isAiParsed && (
+                    <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50 gap-1">
+                      <Sparkles className="h-3 w-3" /> AI extracted
+                    </Badge>
+                  )}
                 </div>
                 <Button type="button" variant="ghost" size="sm" onClick={reset} className="gap-1.5 text-xs">
                   <Upload className="h-3.5 w-3.5" /> Change file
                 </Button>
               </div>
 
-              {/* Warnings */}
-              {parseResult.warnings.length > 0 && (
+              {/* Warnings (Excel only) */}
+              {!isAiParsed && parseResult && parseResult.warnings.length > 0 && (
                 <div className="space-y-1.5">
                   {parseResult.warnings.map((w, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
@@ -232,8 +279,8 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                 </div>
               )}
 
-              {/* Column mapping */}
-              {parseResult.rawHeaders.length > 0 && (
+              {/* Column mapping (Excel only) */}
+              {!isAiParsed && parseResult && parseResult.rawHeaders.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Column Mapping</p>
                   <div className="flex flex-wrap gap-3 p-3 bg-muted/30 rounded-md border">

@@ -417,7 +417,7 @@ export default function ProformaInvoiceNew() {
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
-                    <FileInput className="h-3 w-3" /> Import from Excel / CSV
+                    <FileInput className="h-3 w-3" /> Import from Excel / PDF
                   </Button>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">

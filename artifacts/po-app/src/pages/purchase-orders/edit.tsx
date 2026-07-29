@@ -556,7 +556,7 @@ export default function PurchaseOrderEdit() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Line Items</CardTitle>
                 <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-8 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
-                  Import from Excel / CSV
+                  Import from Excel / PDF
                 </Button>
               </div>
               {form.formState.errors.items?.root && (
