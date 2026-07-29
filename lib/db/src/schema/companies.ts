@@ -6,6 +6,7 @@ export const companiesTable = pgTable("companies", {
   country: text("country").notNull(),
   address: text("address"),
   registrationNo: text("registration_no"),
+  gstRegNo: text("gst_reg_no"),
   email: text("email"),
   phone: text("phone"),
   logoUrl: text("logo_url"),

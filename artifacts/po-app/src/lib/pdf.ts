@@ -810,6 +810,7 @@ function companyToInfo(company: Company | null | undefined): CompanyInfo {
     addressLine1: line1 || addr,
     addressLine2: line2 || undefined,
     registrationNo: company.registrationNo,
+    gstNo: (company as any).gstRegNo || undefined,
     phone: company.phone,
     email: company.email,
   };
@@ -899,13 +900,13 @@ function buildDocHeader(
   doc.setFontSize(11);
   doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(0, 0, 0);
-  doc.text(info.name, marginLeft, 40);
+  doc.text(info.name, marginLeft, 35);
 
   doc.setFontSize(9.5);
   doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(100, 100, 100);
 
-  let companyY = 46;
+  let companyY = 41;
   if (info.addressLine1) {
     doc.text(info.addressLine1, marginLeft, companyY);
     companyY += 5;
@@ -1025,12 +1026,12 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setFontSize(11);
   doc.setFont(PDF_FONT, "bold");
   doc.setTextColor(0, 0, 0);
-  doc.text(info.name, marginLeft, 40);
+  doc.text(info.name, marginLeft, 35);
 
   doc.setFontSize(9.5);
   doc.setFont(PDF_FONT, "normal");
   doc.setTextColor(100, 100, 100);
-  let companyY = 46;
+  let companyY = 41;
   if (info.addressLine1) { doc.text(info.addressLine1, marginLeft, companyY); companyY += 5; }
   if (info.addressLine2) { doc.text(info.addressLine2, marginLeft, companyY); companyY += 5; }
   if (info.registrationNo) { doc.text(`Co. Reg. No.: ${info.registrationNo}`, marginLeft, companyY); companyY += 5; }
@@ -2051,12 +2052,13 @@ function drawAccountingHeader(
   doc.text(subtitle, mR, 28, { align: "right" });
   if (rightLine2) doc.text(rightLine2, mR, 34, { align: "right" });
   doc.setFontSize(11); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text(info.name, mL, 40);
+  doc.text(info.name, mL, 35);
   doc.setFontSize(9); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(100, 100, 100);
-  let cy = 46;
+  let cy = 41;
   if (info.addressLine1) { doc.text(info.addressLine1, mL, cy); cy += 5; }
   if (info.addressLine2) { doc.text(info.addressLine2, mL, cy); cy += 5; }
-  if (info.registrationNo) doc.text(`Co. Reg. No.: ${info.registrationNo}`, mL, cy);
+  if (info.registrationNo) { doc.text(`Co. Reg. No.: ${info.registrationNo}`, mL, cy); cy += 5; }
+  if (info.gstNo) doc.text(`GST Reg. No.: ${info.gstNo}`, mL, cy);
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.4); doc.line(mL, 58, mR, 58);
 }
 

@@ -134,13 +134,14 @@ router.put("/companies/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const { name, address, phone, email, registrationNo, logoUrl } = req.body;
+  const { name, address, phone, email, registrationNo, gstRegNo, logoUrl } = req.body;
   const updateData: Record<string, any> = {};
   if (name !== undefined) updateData.name = name;
   if (address !== undefined) updateData.address = address;
   if (phone !== undefined) updateData.phone = phone;
   if (email !== undefined) updateData.email = email;
   if (registrationNo !== undefined) updateData.registrationNo = registrationNo;
+  if (gstRegNo !== undefined) updateData.gstRegNo = gstRegNo || null;
   if (logoUrl !== undefined) updateData.logoUrl = logoUrl || null;
 
   const [updated] = await db.update(companiesTable).set(updateData).where(eq(companiesTable.id, id)).returning();
