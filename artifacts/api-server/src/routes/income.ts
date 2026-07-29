@@ -120,8 +120,8 @@ router.put("/income/:id", async (req, res): Promise<void> => {
     .where(and(eq(incomeRecordsTable.id, id), eq(incomeRecordsTable.companyId, req.session.companyId!)))
     .limit(1);
   if (!existing) { res.status(404).json({ error: "Income record not found" }); return; }
-  if (existing.status === "confirmed" && !req.session.isAdmin) {
-    res.status(403).json({ error: "Only admins can edit confirmed income records." }); return;
+  if (existing.status === "confirmed" && !req.session.isAdmin && req.session.userRole !== "accountant") {
+    res.status(403).json({ error: "Only admins and accountants can edit confirmed income records." }); return;
   }
   if (existing.status === "void") {
     res.status(400).json({ error: "Cannot edit a voided income record." }); return;
@@ -169,8 +169,8 @@ router.delete("/income/:id", async (req, res): Promise<void> => {
     .limit(1);
   if (!existing) { res.status(404).json({ error: "Income record not found" }); return; }
 
-  if (!req.session.isAdmin) {
-    res.status(403).json({ error: "Only admins can delete income records." }); return;
+  if (!req.session.isAdmin && req.session.userRole !== "accountant") {
+    res.status(403).json({ error: "Only admins and accountants can delete income records." }); return;
   }
   if (existing.status === "confirmed") {
     res.status(400).json({ error: "Cannot delete a confirmed income record. Void it instead." }); return;

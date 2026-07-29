@@ -496,14 +496,20 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   const box1 = invBox1 + incomeBox1;
   const box6 = invBox6 + incomeBox6;
 
-  // ─ Box 4: taxable purchases from vendor invoices ─
+  // ─ Box 4 / Box 5 / Box 7: purchases from vendor invoices ─
+  // IRAS F5:
+  //   Box 4 = net value of standard-rated (SR 9%) purchases (excl. GST)
+  //   Box 5 = zero-rated (ZR) + exempt (ES) purchases
+  //   Box 7 = claimable input tax = GST on SR purchases
   const viRows = await db.select({
-    id:          vendorInvoicesTable.id,
-    piNumber:    vendorInvoicesTable.piNumber,
-    vendorName:  vendorInvoicesTable.vendorName,
-    piDate:      vendorInvoicesTable.piDate,
-    totalAmount: vendorInvoicesTable.totalAmount,
-    currency:    vendorInvoicesTable.currency,
+    id:           vendorInvoicesTable.id,
+    piNumber:     vendorInvoicesTable.piNumber,
+    vendorName:   vendorInvoicesTable.vendorName,
+    piDate:       vendorInvoicesTable.piDate,
+    totalAmount:  vendorInvoicesTable.totalAmount,
+    gstAmount:    vendorInvoicesTable.gstAmount,
+    gstTreatment: vendorInvoicesTable.gstTreatment,
+    currency:     vendorInvoicesTable.currency,
   })
   .from(vendorInvoicesTable)
   .where(and(
@@ -512,9 +518,19 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt}, 'YYYY-MM-DD')) <= ${toDate}`]   : []),
   ));
 
-  const box4 = viRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+  // Segment vendor invoices by GST treatment
+  const viSR  = viRows.filter(r => !r.gstTreatment || r.gstTreatment === "standard_rated");
+  const viZRES = viRows.filter(r => r.gstTreatment === "zero_rated" || r.gstTreatment === "exempt");
 
-  // ─ Confirmed expenses with GST claimable → contribute to Box 4 (net) + Box 7 (GST) ─
+  // Box 4: net amount (excl. GST) of SR purchases
+  const viBox4 = viSR.reduce((s, r) =>
+    s + parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0"), 0);
+  // Box 5: value of ZR + exempt purchases (no input tax)
+  const viBox5 = viZRES.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+  // Box 7 contribution from vendor invoices: GST amount on SR purchases
+  const viBox7 = viSR.reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
+
+  // ─ Confirmed expenses with GST claimable → also contribute to Box 4 (net) + Box 7 (GST) ─
   const expenseRows = await db.select({
     id:          expensesTable.id,
     vendorName:  expensesTable.vendorName,
@@ -527,8 +543,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   })
   .from(expensesTable)
   .where(and(
-    eq(expensesTable.companyId,   companyId),
-    eq(expensesTable.status,      "confirmed"),
+    eq(expensesTable.companyId,    companyId),
+    eq(expensesTable.status,       "confirmed"),
     eq(expensesTable.gstClaimable, true),
     ...(fromDate ? [sql`${expensesTable.expenseDate} >= ${fromDate}`] : []),
     ...(toDate   ? [sql`${expensesTable.expenseDate} <= ${toDate}`]   : []),
@@ -537,33 +553,12 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   const expenseBox4 = expenseRows.reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
   const expenseBox7 = expenseRows.reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
 
-  // Box 4 = vendor invoices + GST-claimable expenses
-  const totalBox4 = box4 + expenseBox4;
-
-  // ─ Box 7: input tax from GL account 1110 + confirmed expenses GST ─
-  const [gstInputAcct] = await db.select().from(accountsTable)
-    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, "1110"))).limit(1);
-
-  let glBox7 = 0;
-  if (gstInputAcct) {
-    const jeWhere = and(
-      eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.status,    "posted"),
-      ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
-      ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
-    );
-    const entries  = await db.select({ entryId: journalEntriesTable.id }).from(journalEntriesTable).where(jeWhere);
-    const entryIds = entries.map(e => e.entryId);
-    if (entryIds.length > 0) {
-      const lines = await db.select().from(journalLinesTable).where(and(
-        eq(journalLinesTable.accountId, gstInputAcct.id),
-        sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`,
-      ));
-      glBox7 = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
-    }
-  }
-
-  const totalBox7 = glBox7 + expenseBox7;
+  // Box 4 = net SR vendor invoices + GST-claimable expenses
+  const totalBox4 = viBox4 + expenseBox4;
+  // Box 5 = ZR + exempt vendor invoice purchases
+  const totalBox5 = viBox5;
+  // Box 7 = input tax from SR vendor invoices + claimable expenses
+  const totalBox7 = viBox7 + expenseBox7;
   const box8 = box6 - totalBox7;
 
   res.json({
@@ -574,7 +569,7 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     box2: parseFloat(incomeBox2.toFixed(2)),
     box3: parseFloat(incomeBox3.toFixed(2)),
     box4: parseFloat(totalBox4.toFixed(2)),
-    box5: 0,
+    box5: parseFloat(totalBox5.toFixed(2)),
     box6: parseFloat(box6.toFixed(2)),
     box7: parseFloat(totalBox7.toFixed(2)),
     box8: parseFloat(box8.toFixed(2)),
@@ -589,12 +584,15 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       status:       r.status,
     })),
     vendorInvoices: viRows.map(r => ({
-      id:          r.id,
-      piNumber:    r.piNumber,
-      vendorName:  r.vendorName,
-      piDate:      r.piDate,
-      totalAmount: parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
-      currency:    r.currency,
+      id:           r.id,
+      piNumber:     r.piNumber,
+      vendorName:   r.vendorName,
+      piDate:       r.piDate,
+      netAmount:    parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2)),
+      gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
+      totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+      gstTreatment: r.gstTreatment ?? "standard_rated",
+      currency:     r.currency,
     })),
     expenses: expenseRows.map(r => ({
       id:          r.id,

@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
 import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -47,6 +48,8 @@ export default function NewVendorInvoiceDialog({
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>(prefillPoId ? [prefillPoId] : []);
   const [amountAutoFilled, setAmountAutoFilled] = useState(false);
   const [expenseAccountId, setExpenseAccountId] = useState<string>("none");
+  const [gstTreatment, setGstTreatment] = useState("standard_rated");
+  const [gstInclusive, setGstInclusive] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -173,6 +176,22 @@ export default function NewVendorInvoiceDialog({
   const poOverrun = poTotal > 0 && enteredAmount > poTotal + 0.005;
   const overrunBy = poOverrun ? enteredAmount - poTotal : 0;
 
+  // GST calculations (IRAS-compliant)
+  const gstRateNum = gstTreatment === "standard_rated" ? 9 : 0;
+  const piAmountNum = parseFloat(amount) || 0;
+  let computedNetAmount: number, computedGstAmount: number, computedTotal: number;
+  if (gstRateNum === 0) {
+    computedNetAmount = piAmountNum; computedGstAmount = 0; computedTotal = piAmountNum;
+  } else if (gstInclusive) {
+    computedTotal    = piAmountNum;
+    computedGstAmount = +(piAmountNum * gstRateNum / (100 + gstRateNum)).toFixed(2);
+    computedNetAmount = +(piAmountNum - computedGstAmount).toFixed(2);
+  } else {
+    computedNetAmount = piAmountNum;
+    computedGstAmount = +(piAmountNum * gstRateNum / 100).toFixed(2);
+    computedTotal     = +(piAmountNum + computedGstAmount).toFixed(2);
+  }
+
   const resetForm = () => {
     setPiNumber("");
     setPiDate(new Date().toISOString().split("T")[0]);
@@ -186,6 +205,8 @@ export default function NewVendorInvoiceDialog({
     setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
     setDropdownOpen(false);
     setExpenseAccountId("none");
+    setGstTreatment("standard_rated");
+    setGstInclusive(false);
   };
 
   const handleSave = async () => {
@@ -206,7 +227,11 @@ export default function NewVendorInvoiceDialog({
           poIds: selectedPoIds,
           poNumbers: poNumbers || null,
           currency,
-          totalAmount: parseFloat(amount),
+          totalAmount: computedTotal,
+          gstTreatment,
+          gstRate: gstRateNum,
+          gstAmount: computedGstAmount,
+          gstInclusive,
           notes: notes || null,
           expenseAccountId: (expenseAccountId && expenseAccountId !== "none") ? parseInt(expenseAccountId) : null,
         }),
@@ -388,7 +413,7 @@ export default function NewVendorInvoiceDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>PI Amount <span className="text-destructive">*</span></Label>
+              <Label>{gstInclusive && gstTreatment === "standard_rated" ? "PI Amount (incl. GST)" : "PI Amount (excl. GST)"} <span className="text-destructive">*</span></Label>
               <Input
                 type="number" min="0" step="0.01" placeholder="0.00"
                 value={amount}
@@ -420,6 +445,46 @@ export default function NewVendorInvoiceDialog({
               <Input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="SGD" />
             </div>
           </div>
+
+          {/* GST Treatment */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>GST Treatment</Label>
+              <Select value={gstTreatment} onValueChange={v => { setGstTreatment(v); if (v !== "standard_rated") setGstInclusive(false); }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard_rated">Standard Rate (SR 9%)</SelectItem>
+                  <SelectItem value="zero_rated">Zero-Rated (ZR 0%)</SelectItem>
+                  <SelectItem value="exempt">Exempt (ES)</SelectItem>
+                  <SelectItem value="out_of_scope">Out of Scope (OS)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {gstTreatment === "standard_rated" && (
+              <div className="flex items-center gap-2 pt-6">
+                <Switch id="gst-inclusive-new" checked={gstInclusive} onCheckedChange={setGstInclusive} />
+                <Label htmlFor="gst-inclusive-new" className="cursor-pointer font-normal text-sm">GST Inclusive</Label>
+              </div>
+            )}
+          </div>
+          {gstTreatment === "standard_rated" && piAmountNum > 0 && (
+            <div className="rounded-md bg-muted/40 border px-3 py-2.5 space-y-1.5 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Net Amount (excl. GST)</span>
+                <span className="font-mono">{currency} {computedNetAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-primary">
+                <span>GST (9%)</span>
+                <span className="font-mono">+ {currency} {computedGstAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-semibold border-t pt-1.5">
+                <span>Total Invoice Amount</span>
+                <span className="font-mono">{currency} {computedTotal.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
 
           {/* GL / Expense Account */}
           <div className="space-y-1.5">

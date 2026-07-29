@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, decimal, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, decimal, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 import { companiesTable } from "./companies";
 
 export const vendorInvoicesTable = pgTable("vendor_invoices", {
@@ -15,6 +15,13 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   status: text("status").notNull().default("pending"),
   notes: text("notes"),
   expenseAccountId: integer("expense_account_id"),
+  // GST fields (IRAS-compliant)
+  // gstTreatment: 'standard_rated' (SR 9%) | 'zero_rated' (ZR 0%) | 'exempt' | 'out_of_scope' (OS)
+  gstTreatment: text("gst_treatment").notNull().default("standard_rated"),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).notNull().default("9"),
+  gstAmount: decimal("gst_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  // When true, the totalAmount entered by the user already INCLUDES GST (net is back-calculated)
+  gstInclusive: boolean("gst_inclusive").notNull().default(false),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

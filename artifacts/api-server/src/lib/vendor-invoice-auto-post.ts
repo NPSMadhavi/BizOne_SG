@@ -44,6 +44,8 @@ export async function postVendorInvoiceJE(
     vendorName: string;
     piDate?: string | null;
     totalAmount: number | string;
+    gstAmount?: number | string;
+    gstTreatment?: string;
     expenseAccountId?: number | null;
   },
   userId: number,
@@ -72,7 +74,10 @@ export async function postVendorInvoiceJE(
     return;
   }
 
-  const amount   = parseFloat(String(pi.totalAmount)).toFixed(2);
+  const total    = parseFloat(String(pi.totalAmount));
+  const gst      = parseFloat(String(pi.gstAmount ?? "0"));
+  const net      = total - gst;
+  const isSR     = !pi.gstTreatment || pi.gstTreatment === "standard_rated";
   const entryDate = pi.piDate || new Date().toISOString().split("T")[0];
   const desc     = `Vendor PI ${pi.piNumber} — ${pi.vendorName}`;
 
@@ -88,10 +93,29 @@ export async function postVendorInvoiceJE(
       createdBy:   userId,
     }).returning();
 
-    await db.insert(journalLinesTable).values([
-      { journalEntryId: entry.id, accountId: expAcct.id, description: desc, debit: amount,  credit: "0.00" },
-      { journalEntryId: entry.id, accountId: apAcct.id,  description: desc, debit: "0.00", credit: amount  },
-    ]);
+    if (isSR && gst > 0) {
+      // Split JE: DR Expense (net excl. GST) + DR Input Tax 1110 (GST) + CR AP (total)
+      const inputTaxAcct = await getAccountByCode(pi.companyId, "1110");
+      if (inputTaxAcct) {
+        await db.insert(journalLinesTable).values([
+          { journalEntryId: entry.id, accountId: expAcct.id,      description: desc, debit: net.toFixed(2),   credit: "0.00" },
+          { journalEntryId: entry.id, accountId: inputTaxAcct.id, description: desc, debit: gst.toFixed(2),   credit: "0.00" },
+          { journalEntryId: entry.id, accountId: apAcct.id,       description: desc, debit: "0.00",           credit: total.toFixed(2) },
+        ]);
+      } else {
+        // Fallback: no 1110 account seeded yet — post full total to expense
+        await db.insert(journalLinesTable).values([
+          { journalEntryId: entry.id, accountId: expAcct.id, description: desc, debit: total.toFixed(2), credit: "0.00" },
+          { journalEntryId: entry.id, accountId: apAcct.id,  description: desc, debit: "0.00",           credit: total.toFixed(2) },
+        ]);
+      }
+    } else {
+      // No GST split: DR Expense (full amount) + CR AP
+      await db.insert(journalLinesTable).values([
+        { journalEntryId: entry.id, accountId: expAcct.id, description: desc, debit: total.toFixed(2), credit: "0.00" },
+        { journalEntryId: entry.id, accountId: apAcct.id,  description: desc, debit: "0.00",           credit: total.toFixed(2) },
+      ]);
+    }
   } catch (err) {
     if (log) log.error({ err, piNumber: pi.piNumber }, "vendor-invoice-auto-post: JE insert failed (non-fatal)");
   }

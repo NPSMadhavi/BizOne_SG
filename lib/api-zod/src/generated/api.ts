@@ -26,7 +26,7 @@ export const LoginResponse = zod.object({
   user: zod.object({
     id: zod.number(),
     username: zod.string(),
-    role: zod.enum(["admin", "user", "external"]),
+    role: zod.enum(["admin", "user", "external", "accountant"]),
     createdAt: zod.string(),
     companies: zod.array(
       zod
@@ -59,7 +59,7 @@ export const LogoutResponse = zod.object({
 export const GetMeResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user", "external", "accountant"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -109,7 +109,7 @@ export const ListCompaniesResponse = zod.array(ListCompaniesResponseItem);
 export const ListUsersResponseItem = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user", "external", "accountant"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -135,7 +135,7 @@ export const ListUsersResponse = zod.array(ListUsersResponseItem);
 export const CreateUserBody = zod.object({
   username: zod.string(),
   password: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user", "external", "accountant"]),
   companyAccess: zod
     .array(
       zod
@@ -158,7 +158,7 @@ export const UpdateUserParams = zod.object({
 export const UpdateUserBody = zod.object({
   username: zod.string().optional(),
   password: zod.string().optional(),
-  role: zod.enum(["admin", "user", "external"]).optional(),
+  role: zod.enum(["admin", "user", "external", "accountant"]).optional(),
   companyAccess: zod
     .array(
       zod
@@ -174,7 +174,7 @@ export const UpdateUserBody = zod.object({
 export const UpdateUserResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external"]),
+  role: zod.enum(["admin", "user", "external", "accountant"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod

@@ -14,6 +14,7 @@ declare module "express-session" {
     userId?: number;
     companyId?: number;
     isAdmin?: boolean;
+    userRole?: string;
   }
 }
 
@@ -87,7 +88,8 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   const companyId = req.session.companyId!;
   const userId = req.session.userId!;
 
-  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId } = req.body;
+  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId,
+          gstTreatment, gstRate, gstAmount, gstInclusive } = req.body;
   if (!piNumber?.trim()) { res.status(400).json({ error: "Vendor PI number is required" }); return; }
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
   if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
@@ -107,13 +109,23 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     status: "pending",
     notes: notes || null,
     expenseAccountId: expenseAccountId ? parseInt(expenseAccountId) : null,
+    gstTreatment: gstTreatment || "standard_rated",
+    gstRate: parseFloat(gstRate ?? "9").toFixed(2),
+    gstAmount: parseFloat(gstAmount ?? "0").toFixed(2),
+    gstInclusive: !!gstInclusive,
     createdBy: userId,
   }).returning();
 
   logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
 
   await postVendorInvoiceJE(
-    { id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName, piDate: doc.piDate, totalAmount: parseFloat(totalAmount), expenseAccountId: doc.expenseAccountId },
+    {
+      id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName,
+      piDate: doc.piDate, totalAmount: parseFloat(totalAmount),
+      gstAmount: parseFloat(gstAmount ?? "0"),
+      gstTreatment: gstTreatment || "standard_rated",
+      expenseAccountId: doc.expenseAccountId,
+    },
     userId,
     req.log,
   );
@@ -148,7 +160,8 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
 
-  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes } = req.body;
+  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes,
+          gstTreatment, gstRate, gstAmount, gstInclusive } = req.body;
   const updates: any = { updatedAt: new Date() };
   if (piNumber !== undefined) updates.piNumber = piNumber.trim();
   if (piDate !== undefined) updates.piDate = piDate;
@@ -158,6 +171,10 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   if (currency !== undefined) updates.currency = currency;
   if (totalAmount !== undefined) updates.totalAmount = parseFloat(totalAmount).toFixed(2);
   if (notes !== undefined) updates.notes = notes || null;
+  if (gstTreatment !== undefined) updates.gstTreatment = gstTreatment;
+  if (gstRate !== undefined) updates.gstRate = parseFloat(gstRate).toFixed(2);
+  if (gstAmount !== undefined) updates.gstAmount = parseFloat(gstAmount).toFixed(2);
+  if (gstInclusive !== undefined) updates.gstInclusive = !!gstInclusive;
 
   await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
   await recalcPI(id, existing.companyId);

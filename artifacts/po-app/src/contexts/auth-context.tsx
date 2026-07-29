@@ -104,6 +104,7 @@ interface AuthContextType {
   isLoading: boolean;
   logout: () => void;
   isAdmin: boolean;
+  isAccountant: boolean;
   isExternal: boolean;
   selectedCompany: UserCompany | null;
   setSelectedCompanyId: (id: number) => void;
@@ -148,12 +149,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isAdmin = user?.role === "admin";
+  const isAccountant = user?.role === "accountant";
   const isExternal = user?.role === "external";
   const effectiveCompanyId = localCompanyId ?? user?.selectedCompanyId ?? null;
   const selectedCompany = user?.companies?.find(c => c.id === effectiveCompanyId) ?? null;
 
   const hasModuleAccess = (module: AppModule): boolean => {
-    if (isAdmin) return true;
+    // Admin + Accountant both get access to all modules
+    // (System Settings page is separately gated to isAdmin only in the shell)
+    if (isAdmin || isAccountant) return true;
     if (!selectedCompany) return false;
     const mods = selectedCompany.modules ?? [];
     if (mods.length === 0) {
@@ -168,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       logout: handleLogout,
       isAdmin,
+      isAccountant,
       isExternal,
       selectedCompany,
       setSelectedCompanyId,
