@@ -499,7 +499,7 @@ export default function NewVendorInvoiceDialog({
             {(() => {
               const selectedAccount = expenseAccounts.find((a: any) => String(a.id) === expenseAccountId);
               return (
-                <Popover open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
+                <Popover modal={false} open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
