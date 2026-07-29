@@ -491,6 +491,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   const incomeBox1 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
   const incomeBox2 = incomeRows.filter(r => r.gstTreatment === "zero_rated").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
   const incomeBox3 = incomeRows.filter(r => r.gstTreatment === "exempt").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
+  // Box 5 = out-of-scope SUPPLIES (sales/income side only — e.g. grants, non-business receipts)
+  const incomeBox5 = incomeRows.filter(r => r.gstTreatment === "out_of_scope").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
   const incomeBox6 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
 
   const box1 = invBox1 + incomeBox1;
@@ -519,14 +521,15 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   ));
 
   // Segment vendor invoices by GST treatment
-  const viSR  = viRows.filter(r => !r.gstTreatment || r.gstTreatment === "standard_rated");
-  const viZRES = viRows.filter(r => r.gstTreatment === "zero_rated" || r.gstTreatment === "exempt");
+  // Only standard-rated purchases contribute to the F5:
+  //   Box 4 = net value of SR purchases (excl. GST)
+  //   Box 7 = input tax claimed on SR purchases
+  // ZR, exempt, and out-of-scope purchases are non-claimable and have no F5 box.
+  const viSR = viRows.filter(r => !r.gstTreatment || r.gstTreatment === "standard_rated");
 
   // Box 4: net amount (excl. GST) of SR purchases
   const viBox4 = viSR.reduce((s, r) =>
     s + parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0"), 0);
-  // Box 5: value of ZR + exempt purchases (no input tax)
-  const viBox5 = viZRES.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
   // Box 7 contribution from vendor invoices: GST amount on SR purchases
   const viBox7 = viSR.reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
 
@@ -555,8 +558,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
 
   // Box 4 = net SR vendor invoices + GST-claimable expenses
   const totalBox4 = viBox4 + expenseBox4;
-  // Box 5 = ZR + exempt vendor invoice purchases
-  const totalBox5 = viBox5;
+  // Box 5 = out-of-scope SUPPLIES (income/sales side) — NOT vendor purchases
+  const totalBox5 = incomeBox5;
   // Box 7 = input tax from SR vendor invoices + claimable expenses
   const totalBox7 = viBox7 + expenseBox7;
   const box8 = box6 - totalBox7;
