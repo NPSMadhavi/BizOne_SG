@@ -662,6 +662,15 @@ export default function QuotationEdit() {
         pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Quotation ${doc.qtNumber}` : "Quotation"}
+        docInfo={doc ? {
+          docType: "Quotation",
+          docNumber: doc.qtNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: (doc as any).currency || "SGD",
+          totalAmount: Number(doc.totalAmount) || 0,
+        } : undefined}
         onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
         }}

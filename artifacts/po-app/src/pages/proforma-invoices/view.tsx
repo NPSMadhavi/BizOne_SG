@@ -319,6 +319,15 @@ export default function ProformaInvoiceView() {
         defaultEmailTo={doc.customerContactEmail || ""}
         defaultEmailSubject={`Proforma Invoice ${doc.piNumber}`}
         defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached our Proforma Invoice ${doc.piNumber} for your consideration.\n\nThank you.`}
+        docInfo={{
+          docType: "Proforma Invoice",
+          docNumber: doc.piNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: (doc as any).currency || "SGD",
+          totalAmount: Number(doc.totalAmount) || 0,
+        }}
         onEdit={() => setLocation(`/proforma-invoices/${id}/edit`)}
         onEmailSent={(recipients) => markSentMutation.mutate(recipients)}
       />

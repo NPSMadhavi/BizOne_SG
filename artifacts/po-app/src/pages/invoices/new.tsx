@@ -986,6 +986,15 @@ export default function InvoiceNew() {
           defaultEmailTo={savedDoc.customerContactEmail || ""}
           defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
           defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+          docInfo={{
+            docType: "Tax Invoice",
+            docNumber: savedDoc.invNumber,
+            customerName: savedDoc.customerName,
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((savedDoc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: (savedDoc as any).currency || "SGD",
+            totalAmount: Number(savedDoc.totalAmount) || 0,
+          }}
           onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
           onEmailSent={async (recipients) => {
             await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

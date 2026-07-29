@@ -260,6 +260,15 @@ export default function CreditNoteView() {
           defaultEmailTo={doc.contactEmail || ""}
           defaultEmailSubject={`Credit Note ${doc.cnNumber}`}
           defaultEmailBody={`Dear ${doc.contactPerson || "Sir/Madam"},\n\nPlease find attached Credit Note ${doc.cnNumber}.\n\nThank you.`}
+          docInfo={{
+            docType: "Credit Note",
+            docNumber: doc.cnNumber,
+            customerName: (doc as any).customerName || doc.contactPerson || "",
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: (doc as any).currency || "SGD",
+            totalAmount: Number((doc as any).totalAmount) || 0,
+          }}
           onEdit={doc.status === "draft" ? () => setLocation(`/credit-notes/${id}/edit`) : undefined}
         />
       )}

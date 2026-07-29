@@ -752,6 +752,15 @@ export default function PurchaseOrderNew() {
           defaultEmailTo={(savedPo as any).vendorContactEmail || ""}
           defaultEmailSubject={`${savedPo.poNumber} for ${savedPo.vendorName} | ${(selectedCompany as any)?.name || "RSV Infotech"}`}
           defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          docInfo={{
+            docType: "Purchase Order",
+            docNumber: savedPo.poNumber,
+            customerName: savedPo.vendorName,
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((savedPo.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: (savedPo as any).currency || "SGD",
+            totalAmount: Number(savedPo.totalAmount) || 0,
+          }}
           poId={savedPo.id}
           onEmailSent={async (recipients) => {
             await fetch(`/api/purchase-orders/${savedPo.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

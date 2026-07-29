@@ -381,6 +381,18 @@ export default function CreditNoteNew() {
           title={savedDoc.cnNumber}
           generatePdf={(opts) => generateCreditNote_PDF(savedDoc, selectedCompany, opts)}
           pdfFilename={`${savedDoc.cnNumber}.pdf`}
+          defaultEmailTo={(savedDoc as any).contactEmail || ""}
+          defaultEmailSubject={`Credit Note ${savedDoc.cnNumber}`}
+          defaultEmailBody={`Dear ${(savedDoc as any).contactPerson || "Sir/Madam"},\n\nPlease find attached Credit Note ${savedDoc.cnNumber}.\n\nThank you.`}
+          docInfo={{
+            docType: "Credit Note",
+            docNumber: savedDoc.cnNumber,
+            customerName: (savedDoc as any).customerName || (savedDoc as any).contactPerson || "",
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((savedDoc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: (savedDoc as any).currency || "SGD",
+            totalAmount: Number((savedDoc as any).totalAmount) || 0,
+          }}
           onEdit={() => setLocation(`/credit-notes/${savedDoc.id}/edit`)}
         />
       )}

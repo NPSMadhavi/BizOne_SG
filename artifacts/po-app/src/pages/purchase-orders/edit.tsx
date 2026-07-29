@@ -818,6 +818,15 @@ export default function PurchaseOrderEdit() {
           defaultEmailTo={(po as any).vendorContactEmail || ""}
           defaultEmailSubject={`${po.poNumber} for ${po.vendorName} | ${(selectedCompany as any)?.name || "RSV Infotech"}`}
           defaultEmailBody={`Dear ${po.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${po.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+          docInfo={{
+            docType: "Purchase Order",
+            docNumber: po.poNumber,
+            customerName: po.vendorName,
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((po.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: (po as any).currency || "SGD",
+            totalAmount: Number(po.totalAmount) || 0,
+          }}
           poId={po.id}
           onEmailSent={async (recipients) => {
             await fetch(`/api/purchase-orders/${po.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

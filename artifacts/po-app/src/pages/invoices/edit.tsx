@@ -871,6 +871,15 @@ export default function InvoiceEdit() {
         pdfFilename={doc ? `${doc.invNumber}.pdf` : "invoice.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
+        docInfo={doc ? {
+          docType: "Tax Invoice",
+          docNumber: doc.invNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+          currency: (doc as any).currency || "SGD",
+          totalAmount: Number(doc.totalAmount) || 0,
+        } : undefined}
         onEdit={() => { setPreviewOpen(false); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

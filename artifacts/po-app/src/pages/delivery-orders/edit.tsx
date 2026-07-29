@@ -401,6 +401,15 @@ export default function DeliveryOrderEdit() {
         pdfFilename={doc ? `${doc.doNumber}.pdf` : "delivery-order.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Delivery Order ${doc.doNumber}` : "Delivery Order"}
+        docInfo={doc ? {
+          docType: "Delivery Order",
+          docNumber: doc.doNumber,
+          customerName: doc.customerName,
+          companyName: (selectedCompany as any)?.name || "RSV Infotech",
+          items: ((doc.items as any[]) || []),
+          currency: "SGD",
+          totalAmount: 0,
+        } : undefined}
         onEmailSent={async (recipients) => {
           await fetch(`/api/delivery-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
         }}
