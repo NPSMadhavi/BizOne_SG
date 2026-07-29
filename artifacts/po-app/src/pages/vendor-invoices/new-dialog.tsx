@@ -12,6 +12,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
 import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -50,6 +52,7 @@ export default function NewVendorInvoiceDialog({
   const [expenseAccountId, setExpenseAccountId] = useState<string>("none");
   const [gstTreatment, setGstTreatment] = useState("standard_rated");
   const [gstInclusive, setGstInclusive] = useState(false);
+  const [expenseAccountPickerOpen, setExpenseAccountPickerOpen] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -493,20 +496,60 @@ export default function NewVendorInvoiceDialog({
               Expense Account (GL)
               <span className="text-xs font-normal text-muted-foreground ml-1">— for auto journal entry</span>
             </Label>
-            <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select expense account (optional)…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— None (no journal entry) —</SelectItem>
-                {expenseAccounts.map((a: any) => (
-                  <SelectItem key={a.id} value={String(a.id)}>
-                    <span className="font-mono text-xs text-muted-foreground mr-2">{a.code}</span>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {(() => {
+              const selectedAccount = expenseAccounts.find((a: any) => String(a.id) === expenseAccountId);
+              return (
+                <Popover open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={expenseAccountPickerOpen}
+                      className={cn("w-full justify-between font-normal text-left h-9 px-3", !selectedAccount && "text-muted-foreground")}
+                    >
+                      <span className="truncate">
+                        {selectedAccount
+                          ? <><span className="font-mono text-xs mr-2 opacity-60">{selectedAccount.code}</span>{selectedAccount.name}</>
+                          : "— None (no journal entry) —"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[420px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search expense accounts…" className="h-9" />
+                      <CommandList>
+                        <CommandEmpty>No account found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="__none__"
+                            onSelect={() => { setExpenseAccountId("none"); setExpenseAccountPickerOpen(false); }}
+                            className="italic text-muted-foreground"
+                          >
+                            — None (no journal entry) —
+                            {expenseAccountId === "none" && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
+                          </CommandItem>
+                        </CommandGroup>
+                        <CommandGroup heading="Expense Accounts">
+                          {expenseAccounts.map((a: any) => (
+                            <CommandItem
+                              key={a.id}
+                              value={`${a.code} ${a.name}`}
+                              onSelect={() => { setExpenseAccountId(String(a.id)); setExpenseAccountPickerOpen(false); }}
+                              className="gap-2"
+                            >
+                              <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{a.code}</span>
+                              <span className="flex-1">{a.name}</span>
+                              {String(a.id) === expenseAccountId && <Check className="h-3.5 w-3.5 shrink-0" />}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              );
+            })()}
             {expenseAccountId && expenseAccountId !== "none" ? (
               <p className="text-xs text-emerald-700 flex items-center gap-1">
                 ✓ Will auto-post: DR {expenseAccounts.find((a: any) => String(a.id) === expenseAccountId)?.name} / CR Accounts Payable
