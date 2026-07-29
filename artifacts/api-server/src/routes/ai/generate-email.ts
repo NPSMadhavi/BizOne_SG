@@ -43,12 +43,12 @@ ${itemSummary || "(no items provided)"}
 Tasks:
 1. Read the line items and infer what this document is about in 1-3 words (e.g. "IT Services", "Network Equipment", "Software Subscription"). Call this the TOPIC.
 2. Generate an email subject in EXACTLY this format: "${docType} for [TOPIC] | ${companyName}"
-3. Write a short, professional plain-text email body (3–5 sentences). The email should:
-   - Open with a polite greeting to the customer (use their name if helpful)
-   - Briefly mention what the attached document is
-   - Mention the document number and amount
-   - Close professionally with the sender's company name
-   - Be plain text only — no HTML, no markdown, no bullet points, no headers
+3. Write a short, professional plain-text email body. Use this exact 4-part structure, with each part on its own line separated by a blank line (\\n\\n):
+   - Line 1: Greeting — "Dear [Customer Name],"
+   - Paragraph: 2–3 sentences briefly describing what the attached document is, the document number, and the total amount payable.
+   - Line: "Please do not hesitate to contact us if you have any questions."
+   - Closing: "Best regards,\\n[Sending Company Name]"
+   - Use \\n\\n between each part. Plain text only — no HTML, no markdown, no bullet points, no headers.
 
 Return ONLY valid JSON with this exact structure, no extra keys, no markdown fences:
 {"subject":"...","body":"..."}`;
