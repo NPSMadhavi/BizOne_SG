@@ -41,12 +41,13 @@ export default function Settings() {
   const [companyEdits, setCompanyEdits] = useState<Record<number, {
     name: string; address: string; phone: string; email: string; registrationNo: string; gstRegNo: string; logoUrl: string;
   }>>({});
+  const [companyGstOn, setCompanyGstOn] = useState<Record<number, boolean>>({});
   const [savingCompany, setSavingCompany] = useState<number | null>(null);
   const [deletingCompany, setDeletingCompany] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const [addCompanyOpen, setAddCompanyOpen] = useState(false);
-  const [newCompany, setNewCompany] = useState({ name: "", country: "SG", registrationNo: "", gstRegNo: "", address: "", email: "", phone: "", logoUrl: "" });
+  const [newCompany, setNewCompany] = useState({ name: "", country: "SG", registrationNo: "", gstRegistered: false, gstRegNo: "", address: "", email: "", phone: "", logoUrl: "" });
   const [addingCompany, setAddingCompany] = useState(false);
 
   const { data: companies, isLoading: companiesLoading } = useListCompanies({
@@ -108,7 +109,7 @@ export default function Settings() {
       if (!res.ok) throw new Error(data.error || "Failed to create company");
       queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
       setAddCompanyOpen(false);
-      setNewCompany({ name: "", country: "SG", registrationNo: "", gstRegNo: "", address: "", email: "", phone: "", logoUrl: "" });
+      setNewCompany({ name: "", country: "SG", registrationNo: "", gstRegistered: false, gstRegNo: "", address: "", email: "", phone: "", logoUrl: "" });
       toast({ title: "Company created", description: `${data.name} has been added. Switch to it from the sidebar to configure its settings.` });
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to create company.", variant: "destructive" });
@@ -913,12 +914,27 @@ export default function Settings() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label>GST Reg. No. <span className="text-xs text-muted-foreground font-normal">(if different from Reg. No.)</span></Label>
-                        <Input
-                          value={getCompanyField(company.id, "gstRegNo", (company as any).gstRegNo || "")}
-                          onChange={e => setCompanyField(company.id, "gstRegNo", e.target.value)}
-                          placeholder="e.g. M90365727T"
-                        />
+                        <Label>GST Registered</Label>
+                        <div className="flex items-center gap-3 pt-1">
+                          <Switch
+                            checked={companyGstOn[company.id] ?? !!(company as any).gstRegNo}
+                            onCheckedChange={val => {
+                              setCompanyGstOn(prev => ({ ...prev, [company.id]: val }));
+                              if (!val) setCompanyField(company.id, "gstRegNo", "");
+                            }}
+                          />
+                          <span className="text-sm text-muted-foreground">
+                            {(companyGstOn[company.id] ?? !!(company as any).gstRegNo) ? "Yes — GST registered" : "No GST"}
+                          </span>
+                        </div>
+                        {(companyGstOn[company.id] ?? !!(company as any).gstRegNo) && (
+                          <Input
+                            className="mt-2"
+                            value={getCompanyField(company.id, "gstRegNo", (company as any).gstRegNo || "")}
+                            onChange={e => setCompanyField(company.id, "gstRegNo", e.target.value)}
+                            placeholder="GST Reg. No. e.g. M90365727T"
+                          />
+                        )}
                       </div>
                     </div>
                     <div className="space-y-1.5">
@@ -1057,13 +1073,25 @@ export default function Settings() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="nc-gstreg">GST Reg. No. <span className="text-xs text-muted-foreground font-normal">(if different)</span></Label>
-                    <Input
-                      id="nc-gstreg"
-                      placeholder="e.g. M90365727T"
-                      value={newCompany.gstRegNo}
-                      onChange={e => setNewCompany(p => ({ ...p, gstRegNo: e.target.value }))}
-                    />
+                    <Label>GST Registered</Label>
+                    <div className="flex items-center gap-3 pt-1">
+                      <Switch
+                        checked={newCompany.gstRegistered}
+                        onCheckedChange={val => setNewCompany(p => ({ ...p, gstRegistered: val, gstRegNo: val ? p.gstRegNo : "" }))}
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        {newCompany.gstRegistered ? "Yes — GST registered" : "No GST"}
+                      </span>
+                    </div>
+                    {newCompany.gstRegistered && (
+                      <Input
+                        className="mt-2"
+                        id="nc-gstreg"
+                        placeholder="GST Reg. No. e.g. M90365727T"
+                        value={newCompany.gstRegNo}
+                        onChange={e => setNewCompany(p => ({ ...p, gstRegNo: e.target.value }))}
+                      />
+                    )}
                   </div>
                   <div className="space-y-1.5 col-span-2">
                     <Label htmlFor="nc-address">Address</Label>

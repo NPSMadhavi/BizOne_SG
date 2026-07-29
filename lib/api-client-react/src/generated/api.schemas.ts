@@ -64,6 +64,7 @@ export interface Company {
   country: string;
   address?: string;
   registrationNo?: string;
+  gstRegNo?: string;
   email?: string;
   phone?: string;
 }
