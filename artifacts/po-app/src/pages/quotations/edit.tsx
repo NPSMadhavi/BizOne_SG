@@ -13,12 +13,13 @@ import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ItemImageField } from "@/components/item-image-field";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
@@ -80,6 +81,7 @@ export default function QuotationEdit() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importQtOpen, setImportQtOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
@@ -380,6 +382,9 @@ export default function QuotationEdit() {
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportQtOpen(true)}>
+                    <Copy className="h-3 w-3" /> Import from Quotation
+                  </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
                     <Upload className="h-3 w-3" /> Import from PDF/Excel
                   </Button>
@@ -632,6 +637,13 @@ export default function QuotationEdit() {
             for (const item of newItems) append(item);
           }
         }}
+      />
+
+      <ImportFromQuotationDialog
+        open={importQtOpen}
+        onClose={() => setImportQtOpen(false)}
+        currentItems={form.getValues("items")}
+        onImport={(items) => { for (const item of items) append(item); }}
       />
       <CurrencyMismatchDialog
         open={currencyDialogOpen}

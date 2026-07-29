@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -27,6 +27,7 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { ItemImageField } from "@/components/item-image-field";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -81,6 +82,7 @@ export default function QuotationNew() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importQtOpen, setImportQtOpen] = useState(false);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -362,6 +364,9 @@ export default function QuotationNew() {
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
                   </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportQtOpen(true)}>
+                    <Copy className="h-3 w-3" /> Import from Quotation
+                  </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
                     <Upload className="h-3 w-3" /> Import from PDF/Excel
                   </Button>
@@ -631,6 +636,13 @@ export default function QuotationNew() {
             for (const item of newItems) append(item);
           }
         }}
+      />
+
+      <ImportFromQuotationDialog
+        open={importQtOpen}
+        onClose={() => setImportQtOpen(false)}
+        currentItems={form.getValues("items")}
+        onImport={(items) => { for (const item of items) append(item); }}
       />
 
       <CurrencyMismatchDialog
