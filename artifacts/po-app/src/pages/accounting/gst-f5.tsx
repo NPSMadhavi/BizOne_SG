@@ -25,7 +25,8 @@ interface F5Data {
   }>;
   vendorInvoices: Array<{
     id: number; piNumber: string; vendorName: string;
-    piDate: string | null; totalAmount: number; currency: string;
+    piDate: string | null; netAmount: number; gstAmount: number;
+    totalAmount: number; gstTreatment: string; currency: string;
   }>;
   expenses: Array<{
     id: number; vendorName: string; description: string; category: string;
@@ -394,52 +395,104 @@ export default function GstF5Page() {
               </div>
 
               {/* Vendor invoices */}
-              <div className="border rounded-lg overflow-hidden">
-                <button
-                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 text-sm font-medium transition-colors"
-                  onClick={() => setShowVendorInvoices(v => !v)}
-                >
-                  <span>Vendor Invoices contributing to Box 4 — {data.vendorInvoices.length} record{data.vendorInvoices.length !== 1 ? "s" : ""}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-muted-foreground">S$ {fmtAmt(data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0))}</span>
-                    {showVendorInvoices ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </div>
-                </button>
-                {showVendorInvoices && (
-                  <div className="overflow-x-auto">
-                    {data.vendorInvoices.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-6">No vendor invoices in this period.</p>
-                    ) : (
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/20 border-b">
-                          <tr>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">PI Number</th>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Vendor</th>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Date</th>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Currency</th>
-                            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {data.vendorInvoices.map((vi, i) => (
-                            <tr key={vi.id} className={cn("border-b last:border-b-0", i % 2 === 0 ? "" : "bg-muted/10")}>
-                              <td className="px-4 py-2 font-mono text-xs font-medium">{vi.piNumber}</td>
-                              <td className="px-4 py-2 text-xs">{vi.vendorName}</td>
-                              <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(vi.piDate)}</td>
-                              <td className="px-4 py-2 text-xs">{vi.currency}</td>
-                              <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{fmtAmt(vi.totalAmount)}</td>
-                            </tr>
-                          ))}
-                          <tr className="bg-muted/30 font-semibold border-t-2">
-                            <td colSpan={4} className="px-4 py-2 text-xs text-right text-muted-foreground">Total</td>
-                            <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0))}</td>
-                          </tr>
-                        </tbody>
-                      </table>
+              {(() => {
+                const viSR    = data.vendorInvoices.filter(v => !v.gstTreatment || v.gstTreatment === "standard_rated");
+                const viOther = data.vendorInvoices.filter(v => v.gstTreatment && v.gstTreatment !== "standard_rated");
+                const totalInputGst = viSR.reduce((s, v) => s + v.gstAmount, 0);
+                const totalNet      = viSR.reduce((s, v) => s + v.netAmount, 0);
+                const totalAll      = data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0);
+
+                const GST_TREATMENT_BADGE: Record<string, { label: string; cls: string }> = {
+                  standard_rated: { label: "SR 9%",       cls: "bg-green-100 text-green-800 border-green-300" },
+                  zero_rated:     { label: "ZR 0%",       cls: "bg-blue-100 text-blue-800 border-blue-300" },
+                  exempt:         { label: "Exempt",      cls: "bg-gray-100 text-gray-700 border-gray-300" },
+                  out_of_scope:   { label: "Out of Scope",cls: "bg-orange-100 text-orange-800 border-orange-300" },
+                };
+
+                return (
+                  <div className="border rounded-lg overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 text-sm font-medium transition-colors"
+                      onClick={() => setShowVendorInvoices(v => !v)}
+                    >
+                      <span>
+                        Vendor Invoices — {data.vendorInvoices.length} record{data.vendorInvoices.length !== 1 ? "s" : ""}
+                        {viOther.length > 0 && (
+                          <span className="ml-2 text-xs text-muted-foreground font-normal">
+                            ({viSR.length} GST · {viOther.length} Non-GST)
+                          </span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-xs text-muted-foreground">Input GST S$ {fmtAmt(totalInputGst)}</span>
+                        {showVendorInvoices ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </div>
+                    </button>
+                    {showVendorInvoices && (
+                      <div className="overflow-x-auto">
+                        {data.vendorInvoices.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-6">No vendor invoices in this period.</p>
+                        ) : (
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/20 border-b">
+                              <tr>
+                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">PI Number</th>
+                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Vendor</th>
+                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Date</th>
+                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Currency</th>
+                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">GST Treatment</th>
+                                <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Net (Box 4)</th>
+                                <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">GST (Box 7)</th>
+                                <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {data.vendorInvoices.map((vi, i) => {
+                                const isSR = !vi.gstTreatment || vi.gstTreatment === "standard_rated";
+                                const badge = GST_TREATMENT_BADGE[vi.gstTreatment] ?? GST_TREATMENT_BADGE.standard_rated;
+                                return (
+                                  <tr key={vi.id} className={cn("border-b last:border-b-0", i % 2 === 0 ? "" : "bg-muted/10", !isSR ? "opacity-70" : "")}>
+                                    <td className="px-4 py-2 font-mono text-xs font-medium">{vi.piNumber}</td>
+                                    <td className="px-4 py-2 text-xs">{vi.vendorName}</td>
+                                    <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(vi.piDate)}</td>
+                                    <td className="px-4 py-2 text-xs text-muted-foreground">{vi.currency}</td>
+                                    <td className="px-4 py-2">
+                                      <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold", badge.cls)}>
+                                        {badge.label}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">
+                                      {isSR ? fmtAmt(vi.netAmount) : <span className="text-muted-foreground/40">—</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">
+                                      {isSR ? fmtAmt(vi.gstAmount) : <span className="text-muted-foreground/40">—</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{fmtAmt(vi.totalAmount)}</td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="bg-muted/30 font-semibold border-t-2">
+                                <td colSpan={5} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalNet)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(totalInputGst)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalAll)}</td>
+                              </tr>
+                              {viOther.length > 0 && (
+                                <tr className="bg-amber-50 border-t">
+                                  <td colSpan={8} className="px-4 py-2 text-[10px] text-amber-700 flex items-center gap-1">
+                                    <Info className="h-3 w-3 shrink-0" />
+                                    {viOther.length} non-GST record{viOther.length !== 1 ? "s" : ""} (ZR / Exempt / Out-of-scope) — excluded from Box 4 &amp; Box 7 as no input tax is claimable.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Expenses with GST claimable → Box 4 + Box 7 */}
               <div className="border rounded-lg overflow-hidden">
