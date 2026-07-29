@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -16,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Building2, CheckCircle2, XCircle, MapPin, Globe, Info } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Building2, CheckCircle2, XCircle, MapPin, Globe, Info, ChevronsUpDown, Check } from "lucide-react";
 import { useGetSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { COUNTRIES } from "@/lib/countries";
@@ -80,6 +82,7 @@ export default function VendorsPage() {
   const [editing, setEditing] = useState<Vendor | null>(null);
   const [form, setForm] = useState<Partial<Vendor>>(blank());
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [countryOpen, setCountryOpen] = useState(false);
 
   const { selectedCompany, isAdmin } = useAuth();
   const companyCountry = selectedCompany?.country ?? "";
@@ -256,18 +259,46 @@ export default function VendorsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Country</Label>
-                <Select
-                  value={form.country || ""}
-                  onValueChange={v => {
-                    const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
-                    setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
-                  <SelectContent>
-                    {COUNTRIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Popover open={countryOpen} onOpenChange={setCountryOpen} modal={false}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={countryOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      <span className={form.country ? "text-foreground" : "text-muted-foreground"}>
+                        {form.country || "Select country"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search country…" />
+                      <CommandList>
+                        <CommandEmpty>No country found.</CommandEmpty>
+                        <CommandGroup>
+                          {COUNTRIES.map(c => (
+                            <CommandItem
+                              key={c}
+                              value={c}
+                              onSelect={v => {
+                                const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                                setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
+                                setCountryOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${form.country === c ? "opacity-100" : "opacity-0"}`} />
+                              {c}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-1.5">
                 <Label>Phone</Label>
