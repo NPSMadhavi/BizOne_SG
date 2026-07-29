@@ -171,9 +171,6 @@ router.delete("/expenses/:id", async (req, res): Promise<void> => {
   if (!req.session.isAdmin && req.session.userRole !== "accountant") {
     res.status(403).json({ error: "Only admins and accountants can delete expenses." }); return;
   }
-  if (existing.status === "confirmed") {
-    res.status(400).json({ error: "Cannot delete a confirmed expense. Void it instead." }); return;
-  }
 
   await db.delete(expensesTable).where(eq(expensesTable.id, id));
   logAudit({ req, action: "delete", entityType: "expense", entityId: id, entityLabel: existing.vendorName });

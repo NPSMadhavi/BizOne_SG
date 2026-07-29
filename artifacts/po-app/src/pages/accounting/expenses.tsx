@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, Trash2, ReceiptText, CheckCircle2 } from "lucide-react";
+import { Plus, Search, Eye, Trash2, Pencil, ReceiptText, CheckCircle2 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
 interface Expense {
@@ -227,11 +227,16 @@ export default function ExpensesList() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" title="View" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        {(isAdmin || isAccountant) && exp.status === "draft" && (
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(exp.id)}>
+                        {(isAdmin || isAccountant) && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {(isAdmin || isAccountant) && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteId(exp.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
@@ -249,7 +254,7 @@ export default function ExpensesList() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete expense?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone. Only draft expenses can be deleted.</AlertDialogDescription>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

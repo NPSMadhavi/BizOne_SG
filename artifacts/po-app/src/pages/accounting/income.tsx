@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, Trash2, TrendingUp } from "lucide-react";
+import { Plus, Search, Eye, Trash2, Pencil, TrendingUp } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
 interface IncomeRecord {
@@ -218,11 +218,16 @@ export default function IncomeList() {
                   <td className="px-4 py-3">{statusBadge(r.status)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {(isAdmin || isAccountant) && r.status === "draft" && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteId(r.id)}>
+                      {(isAdmin || isAccountant) && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {(isAdmin || isAccountant) && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteId(r.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
