@@ -37,7 +37,7 @@ export interface CompanyAccessEntry {
 const userSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters").or(z.literal("")),
-  role: z.enum(["admin", "user", "external"]),
+  role: z.enum(["admin", "user", "external", "accountant"]),
   companyAccess: z.array(z.object({
     companyId: z.number(),
     modules: z.array(z.string()).min(1, "Select at least one module"),
@@ -194,6 +194,7 @@ function UserFormContent({
             <SelectContent>
               <SelectItem value="user">User</SelectItem>
               <SelectItem value="admin">Administrator</SelectItem>
+              <SelectItem value="accountant">Accountant</SelectItem>
               <SelectItem value="external">External User</SelectItem>
             </SelectContent>
           </Select>
@@ -260,7 +261,7 @@ export default function Admin() {
       editForm.reset({
         username: editingUser.username,
         password: "",
-        role: editingUser.role as "admin" | "user",
+        role: editingUser.role as "admin" | "user" | "external" | "accountant",
         companyAccess: editingUser.companies?.map(c => ({
           companyId: c.id,
           modules: (c as any).modules ?? [...DEFAULT_MODULES],
@@ -442,9 +443,9 @@ export default function Admin() {
                     <td className="px-6 py-4">
                       <Badge
                         variant={u.role === 'admin' ? 'default' : u.role === 'external' ? 'outline' : 'secondary'}
-                        className={u.role === 'external' ? 'text-amber-600 border-amber-300 bg-amber-50' : ''}
+                        className={u.role === 'external' ? 'text-amber-600 border-amber-300 bg-amber-50' : u.role === 'accountant' ? 'text-blue-700 border-blue-300 bg-blue-50' : ''}
                       >
-                        {u.role === 'admin' ? 'Administrator' : u.role === 'external' ? 'External' : 'User'}
+                        {u.role === 'admin' ? 'Administrator' : u.role === 'external' ? 'External' : u.role === 'accountant' ? 'Accountant' : 'User'}
                       </Badge>
                     </td>
                     <td className="px-6 py-4">
