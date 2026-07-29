@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth, type AppModule, MODULE_GROUPS } from "@/contexts/auth-context";
+import { useAuth } from "@/contexts/auth-context";
+import { type AppModule, MODULE_GROUPS } from "@/contexts/auth-modules";
 import {
   LayoutDashboard,
   FileText,

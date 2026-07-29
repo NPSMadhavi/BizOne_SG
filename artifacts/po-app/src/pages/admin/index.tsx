@@ -1,5 +1,5 @@
 import { useAuth } from "@/contexts/auth-context";
-import { DEFAULT_MODULES, MODULE_LABELS, MODULE_GROUPS, type AppModule, type ModuleGroup } from "@/contexts/auth-context";
+import { DEFAULT_MODULES, MODULE_LABELS, MODULE_GROUPS, type AppModule, type ModuleGroup } from "@/contexts/auth-modules";
 import {
   useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser,
   useListCompanies, getListCompaniesQueryKey, type User, type Company,

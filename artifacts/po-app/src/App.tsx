@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense, useEffect } from "react";
-import { AuthProvider, useAuth, type AppModule } from "@/contexts/auth-context";
+import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import type { AppModule } from "@/contexts/auth-modules";
 import { Shell } from "@/components/layout/shell";
 import { MaintenanceGuard } from "@/components/maintenance-guard";
 
