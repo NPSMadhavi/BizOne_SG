@@ -115,13 +115,14 @@ router.post("/send-email", async (req, res): Promise<void> => {
     return;
   }
 
-  const { to, subject, body, pdfBase64, filename, poId } = req.body as {
+  const { to, subject, body, pdfBase64, filename, poId, extraAttachments } = req.body as {
     to: string;
     subject: string;
     body: string;
     pdfBase64: string;
     filename: string;
     poId?: number;
+    extraAttachments?: { filename: string; content: string; contentType: string }[];
   };
 
   if (!to || !subject || !pdfBase64 || !filename) {
@@ -190,6 +191,11 @@ router.post("/send-email", async (req, res): Promise<void> => {
         contentType: "application/pdf",
       },
     ];
+    if (extraAttachments?.length) {
+      for (const att of extraAttachments) {
+        attachments.push({ filename: att.filename, content: att.content, encoding: "base64", contentType: att.contentType });
+      }
+    }
 
     await transporter.sendMail({
       from: settings.smtpFrom || settings.smtpUser,

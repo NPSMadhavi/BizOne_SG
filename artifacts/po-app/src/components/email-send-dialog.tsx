@@ -1,5 +1,5 @@
 import { useState, useRef, KeyboardEvent, useCallback } from "react";
-import { Mail, Send, Loader2, Paperclip, X, Sparkles } from "lucide-react";
+import { Mail, Send, Loader2, Paperclip, X, Sparkles, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -91,7 +91,9 @@ export function EmailSendDialog({
   const [suggestions, setSuggestions] = useState<EmailContact[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [extraFiles, setExtraFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleOpen = (isOpen: boolean) => {
@@ -104,9 +106,23 @@ export function EmailSendDialog({
       setSuggestions([]);
       setShowSuggestions(false);
       setActiveSuggestion(-1);
+      setExtraFiles([]);
     }
     setOpen(isOpen);
   };
+
+  const handleFilesPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
+    setExtraFiles(prev => {
+      const existing = new Set(prev.map(f => f.name + f.size));
+      return [...prev, ...picked.filter(f => !existing.has(f.name + f.size))];
+    });
+    e.target.value = "";
+  };
+
+  const removeExtraFile = (idx: number) =>
+    setExtraFiles(prev => prev.filter((_, i) => i !== idx));
 
   const addRecipient = useCallback((raw: string) => {
     const emails = parseEmails(raw).filter(isValidEmail);
@@ -208,11 +224,26 @@ export function EmailSendDialog({
     setSending(true);
     try {
       const pdfBase64 = await generatePdf();
+
+      // Convert extra files to base64
+      const extraAttachments = await Promise.all(
+        extraFiles.map(file => new Promise<{ filename: string; content: string; contentType: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const base64 = dataUrl.split(",")[1];
+            resolve({ filename: file.name, content: base64, contentType: file.type || "application/octet-stream" });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        }))
+      );
+
       const res = await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ to: finalRecipients.join(", "), subject, body, pdfBase64, filename: pdfFilename, ...(poId ? { poId } : {}) }),
+        body: JSON.stringify({ to: finalRecipients.join(", "), subject, body, pdfBase64, filename: pdfFilename, extraAttachments, ...(poId ? { poId } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send email");
@@ -320,9 +351,53 @@ export function EmailSendDialog({
             <p className="text-xs text-muted-foreground">Plain text email — sent without HTML formatting.</p>
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
-            <Paperclip className="h-4 w-4 shrink-0" />
-            <span className="truncate">{pdfFilename}</span>
+          {/* Attachments */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Attachments</Label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add file
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFilesPick}
+              />
+            </div>
+            <div className="space-y-1">
+              {/* Auto-attached PDF */}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
+                <Paperclip className="h-4 w-4 shrink-0" />
+                <span className="truncate flex-1">{pdfFilename}</span>
+                <span className="text-xs shrink-0">auto</span>
+              </div>
+              {/* Extra attachments */}
+              {extraFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 bg-background">
+                  <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate flex-1">{file.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {file.size < 1024 * 1024
+                      ? `${(file.size / 1024).toFixed(0)} KB`
+                      : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeExtraFile(idx)}
+                    className="ml-1 rounded-full hover:bg-muted p-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
         <DialogFooter>
