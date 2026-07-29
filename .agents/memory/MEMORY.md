@@ -1,3 +1,4 @@
+- [Vendor invoice GST fields + F5 fix + accountant role](vendor-invoice-gst.md) — GST columns migrated, F5 Box 4/5/7 fixed, JE split, UserRole enum updated everywhere
 - [Invoice section rows + poRefNo](invoice-section-rows.md) — section items stored as `{type:"section",sectionLabel:"..."}` in JSONB; excluded from subtotal, doSubmit, auto-append
 - [Pre-existing TS errors in po-app](preexisting-ts-errors.md) — deliveryAddress setValue + form.handleSubmit(onSubmit) signature errors are pre-existing; don't investigate
 - [Item image feature](item-image-feature.md) — per-line-item image field in all 8 forms + 4 view pages + PDF rendering via autoTableRich 5th param
