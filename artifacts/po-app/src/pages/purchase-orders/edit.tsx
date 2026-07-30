@@ -648,7 +648,7 @@ export default function PurchaseOrderEdit() {
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
                                 <div className="flex items-center gap-1">
-                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
                                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                     <Package className="h-3.5 w-3.5" />
                                   </Button>
