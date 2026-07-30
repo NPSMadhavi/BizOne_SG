@@ -11,6 +11,8 @@ interface AuthContextType {
   isAdmin: boolean;
   isAccountant: boolean;
   isExternal: boolean;
+  /** true for admin OR accountant — use this to gate edit/delete actions in all non-Settings pages */
+  canManage: boolean;
   selectedCompany: UserCompany | null;
   setSelectedCompanyId: (id: number) => void;
   hasModuleAccess: (module: AppModule) => boolean;
@@ -56,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === "admin";
   const isAccountant = user?.role === "accountant";
   const isExternal = user?.role === "external";
+  const canManage = isAdmin || isAccountant;
   const effectiveCompanyId = localCompanyId ?? user?.selectedCompanyId ?? null;
   const selectedCompany = user?.companies?.find(c => c.id === effectiveCompanyId) ?? null;
 
@@ -79,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAdmin,
       isAccountant,
       isExternal,
+      canManage,
       selectedCompany,
       setSelectedCompanyId,
       hasModuleAccess,

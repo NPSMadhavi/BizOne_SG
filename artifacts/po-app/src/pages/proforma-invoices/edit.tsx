@@ -23,7 +23,6 @@ import { StockItemPickerDialog, type StockItemSelection } from "@/components/sto
 import { generatePI_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
-import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
@@ -84,7 +83,6 @@ export default function ProformaInvoiceEdit() {
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");

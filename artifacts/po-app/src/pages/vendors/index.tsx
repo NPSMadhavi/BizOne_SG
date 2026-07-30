@@ -85,7 +85,7 @@ export default function VendorsPage() {
   const [countryOpen, setCountryOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
 
-  const { selectedCompany, isAdmin } = useAuth();
+  const { selectedCompany, canManage } = useAuth();
   const companyCountry = selectedCompany?.country ?? "";
 
   const { data: settings } = useGetSettings({});
@@ -229,7 +229,7 @@ export default function VendorsPage() {
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(v)}>
                             <Edit2 className="h-3.5 w-3.5" />
                           </Button>
-                          {isAdmin && (
+                          {canManage && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteId(v.id)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>

@@ -27,7 +27,7 @@ export default function ProformaInvoiceView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany, isAdmin } = useAuth();
+  const { selectedCompany, canManage } = useAuth();
   const qc = useQueryClient();
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -170,7 +170,7 @@ export default function ProformaInvoiceView() {
               </AlertDialogContent>
             </AlertDialog>
           )}
-          {isAdmin && isDraft && (
+          {canManage && isDraft && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">

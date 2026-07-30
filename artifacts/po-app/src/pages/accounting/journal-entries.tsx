@@ -39,7 +39,7 @@ async function deleteEntry(id: number): Promise<void> {
 
 export default function JournalEntriesList() {
   const [, setLocation] = useLocation();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -181,7 +181,7 @@ export default function JournalEntriesList() {
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        {isAdmin && entry.refType === "manual" && (
+                        {canManage && entry.refType === "manual" && (
                           <Button
                             variant="ghost" size="sm"
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"

@@ -25,7 +25,7 @@ const EMPTY_FORM = {
 };
 
 export default function StockList() {
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "product" | "service">("");
@@ -241,7 +241,7 @@ export default function StockList() {
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(item)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        {isAdmin && (
+                        {canManage && (
                           <Button
                             variant="ghost"
                             size="icon"

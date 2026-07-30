@@ -46,7 +46,7 @@ export default function DebitNoteView() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAdmin, selectedCompany } = useAuth();
+  const { canManage, selectedCompany } = useAuth();
   const [showVoid, setShowVoid] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [showPreview, setShowPreview] = useState(false);
@@ -110,7 +110,7 @@ export default function DebitNoteView() {
               Confirm Debit Note
             </Button>
           )}
-          {doc.status !== "void" && isAdmin && (
+          {doc.status !== "void" && canManage && (
             <Button variant="outline" className="gap-2 text-red-600 border-red-200 hover:bg-red-50" onClick={() => setShowVoid(true)}>
               <Ban className="h-4 w-4" />Void
             </Button>

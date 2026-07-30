@@ -292,7 +292,7 @@ function FileDialog({ record, open, onClose }: { record: WhtRecord | null; open:
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WhtRegister() {
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<WhtRecord | null>(null);
@@ -479,7 +479,7 @@ export default function WhtRegister() {
                               Unfile
                             </Button>
                           )}
-                          {isAdmin && (
+                          {canManage && (
                             <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => { if (confirm("Delete this WHT record?")) del.mutate(r.id); }}>
                               <Trash2 className="h-3.5 w-3.5" />

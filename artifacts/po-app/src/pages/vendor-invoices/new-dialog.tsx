@@ -680,6 +680,13 @@ export default function NewVendorInvoiceDialog({
           <Button onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Record Vendor PI"}</Button>
         </DialogFooter>
       </DialogContent>
+      <VendorCreateDialog
+        open={newVendorOpen}
+        onOpenChange={setNewVendorOpen}
+        onSuccess={vendor => {
+          handleSelectVendor(vendor);
+        }}
+      />
     </Dialog>
   );
 }

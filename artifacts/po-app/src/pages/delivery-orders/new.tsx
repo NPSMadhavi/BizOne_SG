@@ -13,7 +13,6 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ItemImageField } from "@/components/item-image-field";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
-import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -59,7 +58,6 @@ export default function DeliveryOrderNew() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
-  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),

@@ -68,7 +68,7 @@ function fmtMoney(currency: string, amount: string) {
 
 export default function ExpensesList() {
   const [, setLocation] = useLocation();
-  const { isAdmin, isAccountant } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -230,12 +230,12 @@ export default function ExpensesList() {
                         <Button size="icon" variant="ghost" className="h-7 w-7" title="View" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        {(isAdmin || isAccountant) && (
+                        {canManage && (
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {(isAdmin || isAccountant) && (
+                        {canManage && (
                           <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteId(exp.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>

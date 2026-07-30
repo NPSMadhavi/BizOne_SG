@@ -57,7 +57,7 @@ export default function JournalEntryView() {
   const params = useParams();
   const id = Number(params.id);
   const [, setLocation] = useLocation();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -116,7 +116,7 @@ export default function JournalEntryView() {
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(entry.createdAt)}</p>
           </div>
         </div>
-        {isAdmin && isManual && (
+        {canManage && isManual && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">

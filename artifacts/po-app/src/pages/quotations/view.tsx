@@ -27,7 +27,7 @@ export default function QuotationView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany, isAdmin } = useAuth();
+  const { selectedCompany, canManage } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
   const qc = useQueryClient();
 
@@ -107,7 +107,7 @@ export default function QuotationView() {
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/quotations/${id}/edit`)}>
             <Pencil className="h-4 w-4" />Edit
           </Button>
-          {isAdmin && (
+          {canManage && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="icon"><Trash2 className="h-4 w-4" /></Button>

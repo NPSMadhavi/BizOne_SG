@@ -15,7 +15,6 @@ import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
-import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateDebitNote_PDF } from "@/lib/pdf";
@@ -67,7 +66,6 @@ export default function DebitNoteNew() {
   const { selectedCompany } = useAuth();
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [importExcelOpen, setImportExcelOpen] = useState(false);
 

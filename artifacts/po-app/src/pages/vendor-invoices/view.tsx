@@ -41,7 +41,7 @@ export default function VendorInvoiceView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAdmin, isAccountant } = useAuth();
+  const { isAdmin, canManage } = useAuth();
   const queryClient = useQueryClient();
 
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -289,7 +289,7 @@ export default function VendorInvoiceView() {
               Record Payment
             </Button>
           )}
-          {(isAdmin || isAccountant) && (
+          {canManage && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="icon">
@@ -436,7 +436,7 @@ export default function VendorInvoiceView() {
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditPayment(p)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        {(isAdmin || isAccountant) && (
+                        {canManage && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
@@ -464,9 +464,9 @@ export default function VendorInvoiceView() {
               </tbody>
               <tfoot className="bg-muted/30 border-t">
                 <tr>
-                  <td colSpan={isAdmin ? 4 : 4} className="px-4 py-2 text-sm font-medium text-right">Total Paid</td>
+                  <td colSpan={canManage ? 4 : 4} className="px-4 py-2 text-sm font-medium text-right">Total Paid</td>
                   <td className="px-4 py-2 text-right font-bold text-emerald-600">{formatCurrency(pi.paidAmount, pi.currency)}</td>
-                  <td colSpan={isAdmin ? 2 : 1}></td>
+                  <td colSpan={canManage ? 2 : 1}></td>
                 </tr>
               </tfoot>
             </table>

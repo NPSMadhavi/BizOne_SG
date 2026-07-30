@@ -51,7 +51,7 @@ export default function ProjectDetail() {
   const id = params.id;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const qc = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -124,7 +124,7 @@ export default function ProjectDetail() {
             <Edit className="h-3.5 w-3.5" />
             Edit
           </Button>
-          {isAdmin && (
+          {canManage && (
             <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 className="h-3.5 w-3.5" />
               Delete

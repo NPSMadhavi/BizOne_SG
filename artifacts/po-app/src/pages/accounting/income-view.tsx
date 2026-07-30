@@ -88,7 +88,7 @@ export default function IncomeView() {
   const params = useParams<{ id: string }>();
   const id = parseInt(params.id);
   const [, setLocation] = useLocation();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -179,7 +179,7 @@ export default function IncomeView() {
               <Button size="sm" onClick={() => setConfirmOpen(true)}>
                 <CheckCircle2 className="h-4 w-4 mr-1.5" />Confirm & Post
               </Button>
-              {isAdmin && (
+              {canManage && (
                 <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
                   <Trash2 className="h-4 w-4 mr-1.5" />Delete
                 </Button>
@@ -188,12 +188,12 @@ export default function IncomeView() {
           )}
           {record.status === "confirmed" && (
             <>
-              {isAdmin && (
+              {canManage && (
                 <Button variant="outline" size="sm" onClick={() => setLocation(`/accounting/income/${id}/edit`)}>
                   <Edit className="h-4 w-4 mr-1.5" />Edit (Admin)
                 </Button>
               )}
-              {isAdmin && (
+              {canManage && (
                 <Button variant="destructive" size="sm" onClick={() => setVoidOpen(true)}>
                   <Ban className="h-4 w-4 mr-1.5" />Void
                 </Button>

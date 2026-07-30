@@ -30,7 +30,7 @@ export default function DebitNoteList() {
   const [search, setSearch] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
 
   const { data = [], isLoading } = useQuery<DebitNote[]>({
     queryKey: ["debit-notes"],

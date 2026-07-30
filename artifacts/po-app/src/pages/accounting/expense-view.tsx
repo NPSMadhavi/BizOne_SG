@@ -70,7 +70,7 @@ export default function ExpenseView() {
   const params = useParams<{ id: string }>();
   const id = parseInt(params.id);
   const [, setLocation] = useLocation();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -145,14 +145,14 @@ export default function ExpenseView() {
               <Button onClick={() => setConfirmOpen(true)}>
                 <CheckCircle2 className="h-4 w-4 mr-2" /> Confirm
               </Button>
-              {isAdmin && (
+              {canManage && (
                 <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               )}
             </>
           )}
-          {expense.status === "confirmed" && isAdmin && (
+          {expense.status === "confirmed" && canManage && (
             <Button variant="outline" onClick={() => setLocation(`/accounting/expenses/${id}/edit`)}>
               <Edit className="h-4 w-4 mr-2" /> Edit (Admin)
             </Button>

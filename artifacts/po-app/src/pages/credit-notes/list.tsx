@@ -30,7 +30,7 @@ export default function CreditNoteList() {
   const [search, setSearch] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
 
   const { data = [], isLoading } = useQuery<CreditNote[]>({
     queryKey: ["credit-notes"],

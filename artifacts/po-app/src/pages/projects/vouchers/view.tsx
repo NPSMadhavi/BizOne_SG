@@ -54,7 +54,7 @@ export default function VoucherView() {
   const voucherId = params.vid;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const qc = useQueryClient();
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -86,7 +86,7 @@ export default function VoucherView() {
       const data = await r.json();
       return Array.isArray(data) ? data : (data.projects ?? []);
     },
-    enabled: isAdmin,
+    enabled: canManage,
   });
 
   const { data: voucher, isLoading } = useQuery<any>({
@@ -261,10 +261,10 @@ export default function VoucherView() {
   const status = voucher.status as string;
 
   // Workflow action flags
-  const canVerify = status === "pending_verification" && (isAdmin || currentUserId === voucher.verifierId);
-  const canApprove = status === "pending_approval" && (isAdmin || currentUserId === voucher.approverId);
-  const canMarkPaid = status === "approved" && (isAdmin || currentUserId === voucher.paidById);
-  const canEdit = (status === "pending_verification" || status === "pending_approval") || (isAdmin && status !== "paid");
+  const canVerify = status === "pending_verification" && (canManage || currentUserId === voucher.verifierId);
+  const canApprove = status === "pending_approval" && (canManage || currentUserId === voucher.approverId);
+  const canMarkPaid = status === "approved" && (canManage || currentUserId === voucher.paidById);
+  const canEdit = (status === "pending_verification" || status === "pending_approval") || (canManage && status !== "paid");
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
@@ -332,7 +332,7 @@ export default function VoucherView() {
             </Button>
           )}
 
-          {isAdmin && status !== "draft" && (
+          {canManage && status !== "draft" && (
             <Button variant="outline" size="sm" onClick={() => setRevertOpen(true)}
               className="gap-1.5 text-muted-foreground">
               <RotateCcw className="h-3.5 w-3.5" />
@@ -340,14 +340,14 @@ export default function VoucherView() {
             </Button>
           )}
 
-          {isAdmin && (
+          {canManage && (
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setMoveToProjectId(""); setMoveOpen(true); }}>
               <FolderInput className="h-3.5 w-3.5" />
               Move to Project
             </Button>
           )}
 
-          {isAdmin && (
+          {canManage && (
             <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
               <Trash2 className="h-3.5 w-3.5" />
               Delete

@@ -49,7 +49,7 @@ export default function InvoiceView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany, isAdmin } = useAuth();
+  const { selectedCompany, canManage } = useAuth();
   const qc = useQueryClient();
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -274,7 +274,7 @@ export default function InvoiceView() {
               <Ban className="h-4 w-4" />Void Invoice
             </Button>
           )}
-          {isAdmin && doc.status === "draft" && (
+          {canManage && doc.status === "draft" && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">
@@ -474,7 +474,7 @@ export default function InvoiceView() {
                       <th className="px-4 py-2.5 text-left">Method</th>
                       <th className="px-4 py-2.5 text-left">Reference</th>
                       <th className="px-4 py-2.5 text-right">Amount</th>
-                      {isAdmin && <th className="px-4 py-2.5 text-right">Actions</th>}
+                      {canManage && <th className="px-4 py-2.5 text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -484,7 +484,7 @@ export default function InvoiceView() {
                         <td className="px-4 py-3">{methodLabel(p.paymentMethod || "bank_transfer")}</td>
                         <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{p.reference || "—"}</td>
                         <td className="px-4 py-3 text-right font-semibold text-emerald-700">{fmt(p.amount)}</td>
-                        {isAdmin && (
+                        {canManage && (
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEditPayment(p)}>Edit</Button>

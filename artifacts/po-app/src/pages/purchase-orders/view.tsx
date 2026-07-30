@@ -25,7 +25,7 @@ export default function PurchaseOrderView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany, isAdmin } = useAuth();
+  const { selectedCompany, canManage } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const queryClient = useQueryClient();
@@ -193,7 +193,7 @@ export default function PurchaseOrderView() {
             <Eye className="h-4 w-4" />
             Preview
           </Button>
-          {isAdmin && (
+          {canManage && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="icon">

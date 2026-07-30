@@ -76,7 +76,7 @@ async function deleteIncome(id: number): Promise<void> {
 
 export default function IncomeList() {
   const [, setLocation] = useLocation();
-  const { isAdmin, isAccountant } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -221,12 +221,12 @@ export default function IncomeList() {
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {(isAdmin || isAccountant) && (
+                      {canManage && (
                         <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
-                      {(isAdmin || isAccountant) && (
+                      {canManage && (
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteId(r.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>

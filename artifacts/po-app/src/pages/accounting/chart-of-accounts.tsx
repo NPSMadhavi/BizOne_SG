@@ -90,7 +90,7 @@ const blankForm = (): Partial<Account> => ({
 });
 
 export default function ChartOfAccounts() {
-  const { isAdmin } = useAuth();
+  const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -198,7 +198,7 @@ export default function ChartOfAccounts() {
             {isLoading ? "Loading…" : `${totalActive} active account${totalActive !== 1 ? "s" : ""}`}
           </p>
         </div>
-        {isAdmin && (
+        {canManage && (
           <Button className="gap-2" onClick={openAdd}>
             <Plus className="h-4 w-4" /> Add Account
           </Button>
@@ -234,7 +234,7 @@ export default function ChartOfAccounts() {
                 </button>
               ))}
             </div>
-            {isAdmin && (
+            {canManage && (
               <div className="flex items-center gap-2 ml-auto">
                 <span className="text-xs text-muted-foreground">Show inactive</span>
                 <Switch checked={showInactive} onCheckedChange={setShowInactive} />
@@ -278,7 +278,7 @@ export default function ChartOfAccounts() {
                         <th className="px-4 py-2.5 text-left">Name</th>
                         <th className="px-4 py-2.5 text-left hidden sm:table-cell">Sub-type</th>
                         <th className="px-4 py-2.5 text-left hidden md:table-cell">Status</th>
-                        {isAdmin && <th className="px-4 py-2.5 text-right">Actions</th>}
+                        {canManage && <th className="px-4 py-2.5 text-right">Actions</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -319,7 +319,7 @@ export default function ChartOfAccounts() {
                               : <Badge variant="secondary" className="text-xs">Inactive</Badge>
                             }
                           </td>
-                          {isAdmin && (
+                          {canManage && (
                             <td className="px-4 py-3">
                               <div className="flex items-center justify-end gap-1">
                                 <Button
