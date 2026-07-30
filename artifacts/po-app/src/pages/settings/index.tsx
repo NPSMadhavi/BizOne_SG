@@ -147,6 +147,7 @@ export default function Settings() {
   const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "1", suffix: "" });
   const [rnGRN, setRnGRN] = useState<RunningNumberConfig>({ prefix: "GRN", counter: "1", suffix: "" });
   const [rnCN, setRnCN] = useState<RunningNumberConfig>({ prefix: "CN", counter: "1", suffix: "" });
+  const [rnDN, setRnDN] = useState<RunningNumberConfig>({ prefix: "DN", counter: "1", suffix: "" });
   const [rnPI, setRnPI] = useState<RunningNumberConfig>({ prefix: "PI", counter: "1", suffix: "" });
   const [rnPV, setRnPV] = useState<RunningNumberConfig>({ prefix: "PV", counter: "1", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
@@ -226,6 +227,7 @@ export default function Settings() {
       setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 1), suffix: (settings as any).doSuffix ?? "" });
       setRnGRN({ prefix: (settings as any).grnPrefix ?? "GRN", counter: String((settings as any).grnCounter ?? 1), suffix: (settings as any).grnSuffix ?? "" });
       setRnCN({ prefix: (settings as any).cnPrefix ?? "CN", counter: String((settings as any).cnCounter ?? 1), suffix: (settings as any).cnSuffix ?? "" });
+      setRnDN({ prefix: (settings as any).dnPrefix ?? "DN", counter: String((settings as any).dnCounter ?? 1), suffix: (settings as any).dnSuffix ?? "" });
       setRnPI({ prefix: (settings as any).piPrefix ?? "PI", counter: String((settings as any).piCounter ?? 1), suffix: (settings as any).piSuffix ?? "" });
       setRnPV({ prefix: (settings as any).pvPrefix ?? "PV", counter: String((settings as any).pvCounter ?? 1), suffix: (settings as any).pvSuffix ?? "" });
     }
@@ -305,6 +307,7 @@ export default function Settings() {
           doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 1, doSuffix: rnDO.suffix,
           grnPrefix: rnGRN.prefix, grnCounter: parseInt(rnGRN.counter) || 1, grnSuffix: rnGRN.suffix,
           cnPrefix: rnCN.prefix, cnCounter: parseInt(rnCN.counter) || 1, cnSuffix: rnCN.suffix,
+          dnPrefix: rnDN.prefix, dnCounter: parseInt(rnDN.counter) || 1, dnSuffix: rnDN.suffix,
           piPrefix: rnPI.prefix, piCounter: parseInt(rnPI.counter) || 1, piSuffix: rnPI.suffix,
           pvPrefix: rnPV.prefix, pvCounter: parseInt(rnPV.counter) || 1, pvSuffix: rnPV.suffix,
         } as any,
@@ -562,6 +565,7 @@ export default function Settings() {
                     { label: "Delivery Order", state: rnDO, setter: setRnDO },
                     { label: "Goods Receipt Note", state: rnGRN, setter: setRnGRN },
                     { label: "Credit Note", state: rnCN, setter: setRnCN },
+                    { label: "Debit Note", state: rnDN, setter: setRnDN },
                     { label: "Proforma Invoice / Vendor PI", state: rnPI, setter: setRnPI },
                     { label: "Payment / Project Voucher", state: rnPV, setter: setRnPV },
                   ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (

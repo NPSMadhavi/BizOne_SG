@@ -1,7 +1,7 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
-type DocType = "po" | "inv" | "qt" | "do" | "grn" | "cn" | "pi" | "pv";
+type DocType = "po" | "inv" | "qt" | "do" | "grn" | "cn" | "dn" | "pi" | "pv";
 
 const TABLE_MAP: Record<DocType, { table: string; col: string }> = {
   po:  { table: "purchase_orders",    col: "po_number" },
@@ -10,6 +10,7 @@ const TABLE_MAP: Record<DocType, { table: string; col: string }> = {
   do:  { table: "delivery_orders",    col: "do_number" },
   grn: { table: "grn",                col: "grn_number" },
   cn:  { table: "credit_notes",       col: "cn_number" },
+  dn:  { table: "debit_notes",        col: "dn_number" },
   pi:  { table: "proforma_invoices",  col: "pi_number" },
   pv:  { table: "vouchers",           col: "voucher_number" },
 };
@@ -35,6 +36,7 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
     type === "qt"  ? "qt_counter"  :
     type === "grn" ? "grn_counter" :
     type === "cn"  ? "cn_counter"  :
+    type === "dn"  ? "dn_counter"  :
     type === "pi"  ? "pi_counter"  :
     type === "pv"  ? "pv_counter"  : "do_counter";
 
@@ -44,6 +46,7 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
     type === "qt"  ? "qt_prefix"  :
     type === "grn" ? "grn_prefix" :
     type === "cn"  ? "cn_prefix"  :
+    type === "dn"  ? "dn_prefix"  :
     type === "pi"  ? "pi_prefix"  :
     type === "pv"  ? "pv_prefix"  : "do_prefix";
 
@@ -53,6 +56,7 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
     type === "qt"  ? "qt_suffix"  :
     type === "grn" ? "grn_suffix" :
     type === "cn"  ? "cn_suffix"  :
+    type === "dn"  ? "dn_suffix"  :
     type === "pi"  ? "pi_suffix"  :
     type === "pv"  ? "pv_suffix"  : "do_suffix";
 

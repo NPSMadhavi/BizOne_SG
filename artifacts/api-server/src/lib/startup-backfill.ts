@@ -43,6 +43,9 @@ export async function runStartupMigrations(): Promise<void> {
         CONSTRAINT debit_notes_company_dn_number_unique UNIQUE (company_id, dn_number)
       )
     `);
+    await db.execute(sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_prefix text NOT NULL DEFAULT 'DN'`);
+    await db.execute(sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_counter integer NOT NULL DEFAULT 1`);
+    await db.execute(sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_suffix text NOT NULL DEFAULT ''`);
     logger.info("[startup-migrations] schema up to date");
   } catch (err) {
     logger.warn({ err }, "[startup-migrations] non-fatal error — continuing");

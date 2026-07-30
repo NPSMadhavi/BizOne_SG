@@ -33,6 +33,7 @@ async function ensureSettings(companyId: number) {
     doPrefix: "DO",  doCounter: 1,  doSuffix: "",
     grnPrefix: "GRN", grnCounter: 1, grnSuffix: "",
     cnPrefix: "CN",  cnCounter: 1,  cnSuffix: "",
+    dnPrefix: "DN",  dnCounter: 1,  dnSuffix: "",
     piPrefix: "PI",  piCounter: 1,  piSuffix: "",
     pvPrefix: "PV",  pvCounter: 1,  pvSuffix: "",
   }).returning();
@@ -68,6 +69,9 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     cnPrefix: s.cnPrefix ?? "CN",
     cnCounter: s.cnCounter ?? 1,
     cnSuffix: s.cnSuffix ?? "",
+    dnPrefix: (s as any).dnPrefix ?? "DN",
+    dnCounter: (s as any).dnCounter ?? 1,
+    dnSuffix: (s as any).dnSuffix ?? "",
     piPrefix: s.piPrefix ?? "PI",
     piCounter: s.piCounter ?? 1,
     piSuffix: s.piSuffix ?? "",
@@ -113,6 +117,7 @@ router.put("/", async (req, res) => {
     doPrefix, doCounter, doSuffix,
     grnPrefix, grnCounter, grnSuffix,
     cnPrefix, cnCounter, cnSuffix,
+    dnPrefix, dnCounter, dnSuffix,
     piPrefix, piCounter, piSuffix,
     pvPrefix, pvCounter, pvSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
@@ -149,6 +154,9 @@ router.put("/", async (req, res) => {
   if (cnPrefix !== undefined) updateData.cnPrefix = cnPrefix;
   if (cnCounter !== undefined) updateData.cnCounter = Number(cnCounter);
   if (cnSuffix !== undefined) updateData.cnSuffix = cnSuffix;
+  if (dnPrefix !== undefined) updateData.dnPrefix = dnPrefix;
+  if (dnCounter !== undefined) updateData.dnCounter = Number(dnCounter);
+  if (dnSuffix !== undefined) updateData.dnSuffix = dnSuffix;
   if (piPrefix !== undefined) updateData.piPrefix = piPrefix;
   if (piCounter !== undefined) updateData.piCounter = Number(piCounter);
   if (piSuffix !== undefined) updateData.piSuffix = piSuffix;
