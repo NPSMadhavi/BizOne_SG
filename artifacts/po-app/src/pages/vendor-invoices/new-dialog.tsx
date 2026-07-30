@@ -206,6 +206,9 @@ export default function NewVendorInvoiceDialog({
   const enteredAmount = parseFloat(amount) || 0;
   const poOverrun = poTotal > 0 && enteredAmount > poTotal + 0.005;
   const overrunBy = poOverrun ? enteredAmount - poTotal : 0;
+  // Advisory: amount differs from PO remaining balance by >5% (and is not already an overrun)
+  const poMismatch = poTotal > 0 && !poOverrun && enteredAmount > 0 && !amountAutoFilled &&
+    Math.abs(enteredAmount - poTotal) / poTotal > 0.05;
 
   // GST calculations (IRAS-compliant)
   const gstRateNum = gstTreatment === "standard_rated" ? 9 : 0;
@@ -495,6 +498,18 @@ export default function NewVendorInvoiceDialog({
                     <span className="font-mono">{currency} {poTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     ). Ensure a PO variation/amendment is approved before payment.
                   </div>
+                </div>
+              )}
+              {poMismatch && (
+                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 mt-1">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800">
+                    Amount differs from PO remaining balance of{" "}
+                    <span className="font-mono font-semibold">
+                      {currency} {poTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    {" "}— verify before saving.
+                  </p>
                 </div>
               )}
             </div>
