@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
-import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle, RefreshCw } from "lucide-react";
+import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle, RefreshCw, Plus, ArrowLeft, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -38,6 +38,38 @@ export default function NewVendorInvoiceDialog({
   const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
   const [saving, setSaving] = useState(false);
+  const qc = useQueryClient();
+
+  // Inline vendor creation state
+  const [createMode, setCreateMode] = useState(false);
+  const [cvName, setCvName] = useState("");
+  const [cvCurrency, setCvCurrency] = useState("SGD");
+  const [cvAddress, setCvAddress] = useState("");
+  const [cvContact, setCvContact] = useState("");
+  const [cvEmail, setCvEmail] = useState("");
+  const [cvCreating, setCvCreating] = useState(false);
+
+  const handleCreateVendor = async () => {
+    if (!cvName.trim()) return;
+    setCvCreating(true);
+    try {
+      const res = await fetch("/api/vendors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: cvName.trim(), currency: cvCurrency || "SGD", address: cvAddress || null, contactPerson: cvContact || null, contactEmail: cvEmail || null, isActive: true }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Failed to create vendor"); }
+      const created = await res.json();
+      await qc.invalidateQueries({ queryKey: ["vendors"] });
+      handleSelectVendor(created);
+      setCreateMode(false);
+      setCvName(""); setCvCurrency("SGD"); setCvAddress(""); setCvContact(""); setCvEmail("");
+      toast({ title: "Vendor created", description: created.name });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally { setCvCreating(false); }
+  };
 
   const [piNumber, setPiNumber] = useState("");
   const [piDate, setPiDate] = useState(new Date().toISOString().split("T")[0]);
@@ -306,6 +338,7 @@ export default function NewVendorInvoiceDialog({
           </div>
 
           {!prefillVendorName ? (
+            <>
             <div className="space-y-1.5">
               <Label>Vendor <span className="text-destructive">*</span></Label>
               <div className="relative">
@@ -336,10 +369,10 @@ export default function NewVendorInvoiceDialog({
                   </div>
                 </div>
 
-                {dropdownOpen && !prefillVendorName && (
+                {dropdownOpen && !prefillVendorName && !createMode && (
                   <div
                     ref={dropdownRef}
-                    className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto"
+                    className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-52 overflow-y-auto"
                   >
                     {filteredVendors.length === 0 ? (
                       <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -366,6 +399,16 @@ export default function NewVendorInvoiceDialog({
                         )}
                       </>
                     )}
+                    <div className="border-t">
+                      <button
+                        type="button"
+                        onMouseDown={e => { e.preventDefault(); setDropdownOpen(false); setCvName(vendorSearch.trim()); setCreateMode(true); }}
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-accent font-medium"
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        Create new vendor{vendorSearch.trim() ? ` "${vendorSearch.trim()}"` : ""}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -379,10 +422,52 @@ export default function NewVendorInvoiceDialog({
                   <Check className="h-3 w-3" /> Auto-filled from PO — PO list locked to this vendor
                 </p>
               )}
-              {!selectedVendor && !vendorFromPo && vendorSearch && (
+              {!selectedVendor && !vendorFromPo && vendorSearch && !createMode && (
                 <p className="text-xs text-muted-foreground">Not in directory — will be saved as typed</p>
               )}
             </div>
+
+            {/* Inline vendor create panel */}
+            {createMode && (
+              <div className="border rounded-md p-3 space-y-2.5 bg-muted/20">
+                <div className="flex items-center gap-2 mb-1">
+                  <button type="button" onClick={() => { setCreateMode(false); setCvName(""); }} className="text-muted-foreground hover:text-foreground">
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-sm font-medium">New Vendor</span>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
+                  <Input autoFocus placeholder="Vendor name" value={cvName} onChange={e => setCvName(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Currency</Label>
+                    <Input placeholder="SGD" value={cvCurrency} onChange={e => setCvCurrency(e.target.value.toUpperCase())} className="h-8 text-sm" maxLength={3} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Contact Person</Label>
+                    <Input placeholder="Full name" value={cvContact} onChange={e => setCvContact(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Address</Label>
+                  <Input placeholder="Street address" value={cvAddress} onChange={e => setCvAddress(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Email</Label>
+                  <Input type="email" placeholder="email@example.com" value={cvEmail} onChange={e => setCvEmail(e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => { setCreateMode(false); setCvName(""); }}>Cancel</Button>
+                  <Button type="button" size="sm" className="flex-1 gap-1" disabled={cvCreating || !cvName.trim()} onClick={handleCreateVendor}>
+                    {cvCreating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    Create & Select
+                  </Button>
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <div className="space-y-1.5">
               <Label>Vendor</Label>

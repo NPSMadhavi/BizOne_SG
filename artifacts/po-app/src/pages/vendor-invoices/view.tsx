@@ -41,7 +41,7 @@ export default function VendorInvoiceView() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAccountant } = useAuth();
   const queryClient = useQueryClient();
 
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -289,7 +289,7 @@ export default function VendorInvoiceView() {
               Record Payment
             </Button>
           )}
-          {isAdmin && (
+          {(isAdmin || isAccountant) && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="icon">
@@ -436,7 +436,7 @@ export default function VendorInvoiceView() {
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditPayment(p)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        {isAdmin && (
+                        {(isAdmin || isAccountant) && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
