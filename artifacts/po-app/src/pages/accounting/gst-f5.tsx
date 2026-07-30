@@ -1,12 +1,12 @@
-import { useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
-import { Download, Loader2, Info, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Download, Loader2, Info, ChevronDown, ChevronRight, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateGstF5_PDF } from "@/lib/pdf";
 
@@ -97,6 +97,14 @@ export default function GstF5Page() {
   const [backfilling,        setBackfilling]        = useState(false);
   const [backfillResult,     setBackfillResult]     = useState<{ updated: number; failed: number } | null>(null);
 
+  // Vendor invoices sort state
+  type VISortKey = "piNumber" | "vendorName" | "piDate" | "currency" | "netAmount" | "gstAmount" | "totalAmount";
+  const [viSortKey, setViSortKey] = useState<VISortKey>("piDate");
+  const [viSortDir, setViSortDir] = useState<"asc" | "desc">("desc");
+
+  const queryClient = useQueryClient();
+  const autoBackfillDone = useRef(false);
+
   const from = useCustom ? customFrom : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].from}` : "");
   const to   = useCustom ? customTo   : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].to}`   : "");
   const enabled = !!(from && to);
@@ -112,16 +120,35 @@ export default function GstF5Page() {
     staleTime: 30_000,
   });
 
-  const handleBackfill = useCallback(async () => {
-    if (!confirm("This will auto-fetch historical exchange rates for all non-SGD records that still have the default rate. Continue?")) return;
-    setBackfilling(true); setBackfillResult(null);
+  const runBackfill = useCallback(async (silent = false) => {
+    if (!silent && !confirm("This will auto-fetch historical exchange rates for all non-SGD records that still have the default rate. Continue?")) return;
+    setBackfilling(true); if (!silent) setBackfillResult(null);
     try {
       const res = await fetch("/api/accounting/exchange-rate/backfill", { method: "POST", credentials: "include" });
       const d = await res.json();
-      setBackfillResult(d);
-    } catch { setBackfillResult({ updated: 0, failed: -1 }); }
+      if (!silent) setBackfillResult(d);
+      if (d.updated > 0) {
+        // Refetch F5 data so the new rates show immediately
+        queryClient.invalidateQueries({ queryKey: ["gst-f5"] });
+        if (!silent) setBackfillResult(d);
+      }
+    } catch { if (!silent) setBackfillResult({ updated: 0, failed: -1 }); }
     finally { setBackfilling(false); }
-  }, []);
+  }, [queryClient]);
+
+  const handleBackfill = useCallback(() => runBackfill(false), [runBackfill]);
+
+  // Auto-backfill silently when data loads and non-SGD records still have rate = 1
+  useEffect(() => {
+    if (!data || autoBackfillDone.current) return;
+    const needsFix = data.vendorInvoices.some(
+      v => (v.currency ?? "SGD") !== "SGD" && ((v as any).exchangeRate ?? 1) === 1
+    );
+    if (needsFix) {
+      autoBackfillDone.current = true;
+      runBackfill(true);
+    }
+  }, [data, runBackfill]);
 
   async function handleDownloadPDF() {
     if (!data) return;
@@ -417,12 +444,44 @@ export default function GstF5Page() {
 
               {/* Vendor invoices */}
               {(() => {
-                const viSR    = data.vendorInvoices.filter(v => !v.gstTreatment || v.gstTreatment === "standard_rated");
-                const viOther = data.vendorInvoices.filter(v => v.gstTreatment && v.gstTreatment !== "standard_rated");
-                const hasFX   = data.vendorInvoices.some(v => (v.currency ?? "SGD") !== "SGD");
+                // Sort
+                const sortedVI = [...data.vendorInvoices].sort((a, b) => {
+                  let av: any, bv: any;
+                  switch (viSortKey) {
+                    case "piNumber":   av = a.piNumber;   bv = b.piNumber;   break;
+                    case "vendorName": av = a.vendorName; bv = b.vendorName; break;
+                    case "piDate":     av = a.piDate ?? ""; bv = b.piDate ?? ""; break;
+                    case "currency":   av = a.currency ?? "SGD"; bv = b.currency ?? "SGD"; break;
+                    case "netAmount":  av = a.netAmount;  bv = b.netAmount;  break;
+                    case "gstAmount":  av = a.gstAmount;  bv = b.gstAmount;  break;
+                    case "totalAmount":av = a.totalAmount;bv = b.totalAmount;break;
+                    default:           av = a.piDate ?? ""; bv = b.piDate ?? "";
+                  }
+                  if (typeof av === "string") return viSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+                  return viSortDir === "asc" ? av - bv : bv - av;
+                });
+
+                const viSR    = sortedVI.filter(v => !v.gstTreatment || v.gstTreatment === "standard_rated");
+                const viOther = sortedVI.filter(v => v.gstTreatment && v.gstTreatment !== "standard_rated");
+                const hasFX   = sortedVI.some(v => (v.currency ?? "SGD") !== "SGD");
                 const totalInputGst = viSR.reduce((s, v) => s + (hasFX ? (v.gstAmountSGD ?? v.gstAmount) : v.gstAmount), 0);
                 const totalNet      = viSR.reduce((s, v) => s + (hasFX ? (v.netAmountSGD ?? v.netAmount) : v.netAmount), 0);
-                const totalAll      = data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0);
+                const totalAll      = sortedVI.reduce((s, v) => s + v.totalAmount, 0);
+
+                function SortTh({ col, children, right }: { col: VISortKey; children: React.ReactNode; right?: boolean }) {
+                  const active = viSortKey === col;
+                  return (
+                    <th
+                      className={cn("px-4 py-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground group", right ? "text-right" : "text-left")}
+                      onClick={() => { if (active) setViSortDir(d => d === "asc" ? "desc" : "asc"); else { setViSortKey(col); setViSortDir("asc"); } }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {children}
+                        {active ? (viSortDir === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />) : <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-40" />}
+                      </span>
+                    </th>
+                  );
+                }
 
                 const GST_TREATMENT_BADGE: Record<string, { label: string; cls: string }> = {
                   standard_rated: { label: "SR 9%",       cls: "bg-green-100 text-green-800 border-green-300" },
@@ -458,21 +517,21 @@ export default function GstF5Page() {
                           <table className="w-full text-sm">
                             <thead className="bg-muted/20 border-b">
                               <tr>
-                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">PI Number</th>
-                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Vendor</th>
-                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Date</th>
-                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Currency</th>
+                                <SortTh col="piNumber">PI Number</SortTh>
+                                <SortTh col="vendorName">Vendor</SortTh>
+                                <SortTh col="piDate">Date</SortTh>
+                                <SortTh col="currency">Currency</SortTh>
                                 {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">FX Rate</th>}
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">GST Treatment</th>
-                                <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Net (Box 4)</th>
+                                <SortTh col="netAmount" right>Net (Box 4)</SortTh>
                                 {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">Net SGD</th>}
-                                <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">GST (Box 7)</th>
+                                <SortTh col="gstAmount" right>GST (Box 7)</SortTh>
                                 {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">GST SGD</th>}
-                                <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Total</th>
+                                <SortTh col="totalAmount" right>Total</SortTh>
                               </tr>
                             </thead>
                             <tbody>
-                              {data.vendorInvoices.map((vi, i) => {
+                              {sortedVI.map((vi, i) => {
                                 const isSR = !vi.gstTreatment || vi.gstTreatment === "standard_rated";
                                 const badge = GST_TREATMENT_BADGE[vi.gstTreatment] ?? GST_TREATMENT_BADGE.standard_rated;
                                 return (
