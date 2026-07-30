@@ -228,7 +228,7 @@ export default function NewVendorInvoiceDialog({
     if (prefillPoId) return prefillAmount || 0;
     if (selectedPoIds.length === 0) return 0;
     return pos.filter((p: any) => selectedPoIds.includes(p.id))
-      .reduce((sum: number, p: any) => sum + parseFloat(p.totalAmount || "0"), 0);
+      .reduce((sum: number, p: any) => sum + parseFloat(p.remainingAmount ?? p.totalAmount ?? "0"), 0);
   }, [prefillPoId, prefillAmount, selectedPoIds, pos]);
 
   const enteredAmount = parseFloat(amount) || 0;
