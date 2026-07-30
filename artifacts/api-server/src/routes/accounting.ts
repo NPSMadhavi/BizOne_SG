@@ -607,16 +607,17 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     box7: parseFloat(totalBox7.toFixed(2)),
     box8: parseFloat(box8.toFixed(2)),
     invoices: invRows.map(r => {
-      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
-      const net = parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0");
-      const gst = parseFloat(r.tax ?? "0");
+      const fx  = parseFloat(r.exchangeRate ?? "1") || 1;
+      // Round to 2 dp before FX multiply — keeps SGD = displayed amount × rate
+      const net = parseFloat((parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")).toFixed(2));
+      const gst = parseFloat(parseFloat(r.tax ?? "0").toFixed(2));
       return {
         id:           r.id,
         invNumber:    r.invNumber,
         customerName: r.customerName,
         issueDate:    r.issueDate,
-        netAmount:    parseFloat(net.toFixed(2)),
-        gstAmount:    parseFloat(gst.toFixed(2)),
+        netAmount:    net,
+        gstAmount:    gst,
         totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
         netAmountSGD: parseFloat((net * fx).toFixed(2)),
         gstAmountSGD: parseFloat((gst * fx).toFixed(2)),
@@ -626,19 +627,21 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       };
     }),
     vendorInvoices: viRows.map(r => {
-      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
-      const netFx = (parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")) * fx;
-      const gstFx = parseFloat(r.gstAmount ?? "0") * fx;
+      const fx  = parseFloat(r.exchangeRate ?? "1") || 1;
+      // Round net and gst to 2 dp BEFORE the FX multiply so the SGD values
+      // match exactly what a user would compute: Net(Box4) × FX rate.
+      const net = parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2));
+      const gst = parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2));
       return {
         id:           r.id,
         piNumber:     r.piNumber,
         vendorName:   r.vendorName,
         piDate:       r.piDate,
-        netAmount:    parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2)),
-        gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
+        netAmount:    net,
+        gstAmount:    gst,
         totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
-        netAmountSGD: parseFloat(netFx.toFixed(2)),
-        gstAmountSGD: parseFloat(gstFx.toFixed(2)),
+        netAmountSGD: parseFloat((net * fx).toFixed(2)),
+        gstAmountSGD: parseFloat((gst * fx).toFixed(2)),
         gstTreatment: r.gstTreatment ?? "standard_rated",
         currency:     r.currency,
         exchangeRate: fx,
