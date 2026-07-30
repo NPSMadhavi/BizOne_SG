@@ -108,7 +108,7 @@ export default function IncomeNew() {
     if (curr === "SGD") { setExchangeRate("1.000000"); return; }
     setFetchingRate(true);
     try {
-      const res = await fetch(`/api/accounting/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
+      const res = await fetch(`/api/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
       if (res.ok) { const d = await res.json(); setExchangeRate(d.rateSGD.toFixed(6)); }
     } catch { /* silently ignore */ } finally { setFetchingRate(false); }
   };

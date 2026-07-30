@@ -109,7 +109,7 @@ export default function NewVendorInvoiceDialog({
     if (curr === "SGD") { setExchangeRate("1.000000"); return; }
     setFetchingRate(true);
     try {
-      const res = await fetch(`/api/accounting/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
+      const res = await fetch(`/api/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setExchangeRate(data.rateSGD.toFixed(6));

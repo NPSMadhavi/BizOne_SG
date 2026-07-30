@@ -167,7 +167,7 @@ export default function GstF5Page() {
     if (!silent && !confirm("This will auto-fetch historical exchange rates for all non-SGD records that still have the default rate. Continue?")) return;
     setBackfilling(true); if (!silent) setBackfillResult(null);
     try {
-      const res = await fetch("/api/accounting/exchange-rate/backfill", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/exchange-rate/backfill", { method: "POST", credentials: "include" });
       const d = await res.json();
       if (!silent) setBackfillResult(d);
       if (d.updated > 0) {
