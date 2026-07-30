@@ -468,11 +468,11 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   ));
 
   const invBox1 = invRows.reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + (parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")) * fx;
   }, 0);
   const invBox6 = invRows.reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + parseFloat(r.tax ?? "0") * fx;
   }, 0);
 
@@ -498,24 +498,24 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   ));
 
   const incomeBox1 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + parseFloat(r.amount ?? "0") * fx;
   }, 0);
   const incomeBox2 = incomeRows.filter(r => r.gstTreatment === "zero_rated").reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + parseFloat(r.amount ?? "0") * fx;
   }, 0);
   const incomeBox3 = incomeRows.filter(r => r.gstTreatment === "exempt").reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + parseFloat(r.amount ?? "0") * fx;
   }, 0);
   // Box 5 = out-of-scope SUPPLIES (sales/income side only — e.g. grants, non-business receipts)
   const incomeBox5 = incomeRows.filter(r => r.gstTreatment === "out_of_scope").reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + parseFloat(r.amount ?? "0") * fx;
   }, 0);
   const incomeBox6 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
     return s + parseFloat(r.gstAmount ?? "0") * fx;
   }, 0);
 
@@ -553,14 +553,18 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   const viSR = viRows.filter(r => !r.gstTreatment || r.gstTreatment === "standard_rated");
 
   // Box 4: net amount (excl. GST) of SR purchases — converted to SGD via exchange rate
+  // FX rate is rounded to 4dp to match what's displayed in the FX Rate column,
+  // so every SGD value is exactly verifiable: Net(Box4) × displayed_rate = Net SGD.
   const viBox4 = viSR.reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
-    return s + (parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")) * fx;
+    const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+    const net = parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2));
+    return s + net * fx;
   }, 0);
   // Box 7 contribution from vendor invoices: GST amount on SR purchases — converted to SGD
   const viBox7 = viSR.reduce((s, r) => {
-    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
-    return s + parseFloat(r.gstAmount ?? "0") * fx;
+    const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+    const gst = parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2));
+    return s + gst * fx;
   }, 0);
 
   // ─ Confirmed expenses with GST claimable → also contribute to Box 4 (net) + Box 7 (GST) ─
@@ -607,8 +611,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     box7: parseFloat(totalBox7.toFixed(2)),
     box8: parseFloat(box8.toFixed(2)),
     invoices: invRows.map(r => {
-      const fx  = parseFloat(r.exchangeRate ?? "1") || 1;
-      // Round to 2 dp before FX multiply — keeps SGD = displayed amount × rate
+      const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+      // Round net/gst to 2dp and fx to 4dp before multiply — result matches displayed_net × displayed_rate
       const net = parseFloat((parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")).toFixed(2));
       const gst = parseFloat(parseFloat(r.tax ?? "0").toFixed(2));
       return {
@@ -627,9 +631,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       };
     }),
     vendorInvoices: viRows.map(r => {
-      const fx  = parseFloat(r.exchangeRate ?? "1") || 1;
-      // Round net and gst to 2 dp BEFORE the FX multiply so the SGD values
-      // match exactly what a user would compute: Net(Box4) × FX rate.
+      const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+      // Round net/gst to 2dp and fx to 4dp — result = displayed_net × displayed_rate exactly.
       const net = parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2));
       const gst = parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2));
       return {
