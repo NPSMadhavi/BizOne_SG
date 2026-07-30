@@ -1,13 +1,23 @@
 /**
- * Startup exchange-rate backfill.
- * Runs once per server boot; finds every non-SGD record whose exchange_rate
- * is still the default 1.000000 and fills it from the free CDN API.
- * Safe to call on every startup — it skips records that already have a real rate.
+ * Startup migrations + exchange-rate backfill.
+ * Safe to call on every boot — all DDL uses IF NOT EXISTS / idempotent checks.
  */
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { getExchangeRateToSGD } from "./exchange-rate.js";
 import { logger } from "./logger.js";
+
+/** Ensure any schema columns added after initial deploy exist on the live DB. */
+export async function runStartupMigrations(): Promise<void> {
+  try {
+    await db.execute(sql`
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text
+    `);
+    logger.info("[startup-migrations] schema up to date");
+  } catch (err) {
+    logger.warn({ err }, "[startup-migrations] non-fatal error — continuing");
+  }
+}
 
 interface FxRow { id: number; currency: string; date: string | null; }
 
