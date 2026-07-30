@@ -502,20 +502,20 @@ export default function PurchaseOrderNew() {
             </CardHeader>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
+                <thead className="bg-muted/30 text-xs text-muted-foreground uppercase border-b">
                   <tr>
-                    <th className="px-4 py-3 font-medium text-center w-12">#</th>
-                    <th className="px-4 py-3 font-medium w-48">Item / Part Number</th>
-                    <th className="px-4 py-3 font-medium">Description</th>
-                    <th className="px-4 py-3 font-medium w-24 text-center">Qty</th>
-                    <th className="px-4 py-3 font-medium w-16 text-center">UOM</th>
-                    <th className="px-4 py-3 font-medium w-32 text-right">Unit Price</th>
-                    <th className="px-4 py-3 font-medium w-32 text-right">Amount</th>
-                    <th className="px-4 py-3 font-medium w-20 text-center">Stock Item</th>
-                    <th className="px-4 py-3 font-medium w-16 text-center"></th>
+                    <th className="px-2 py-3 text-left w-8">#</th>
+                    <th className="px-2 py-3 text-left w-28">Item / Part Number</th>
+                    <th className="px-2 py-3 text-left">Description</th>
+                    <th className="px-2 py-3 text-right w-16">Qty</th>
+                    <th className="px-2 py-3 text-center w-20">UOM</th>
+                    <th className="px-2 py-3 text-right w-28">Unit Price</th>
+                    <th className="px-2 py-3 text-right w-28">Amount</th>
+                    <th className="px-2 py-3 text-center w-20">Stock Item</th>
+                    <th className="px-2 py-3 w-10"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody>
                   {(() => { let _n = 0; return [...fields.map((field, index) => {
                     const itemType = form.watch(`items.${index}.type`);
                     const _itemNo = itemType !== "section" ? ++_n : null;
