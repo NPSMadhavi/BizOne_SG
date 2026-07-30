@@ -499,8 +499,12 @@ export default function NewVendorInvoiceDialog({
                         ? `No confirmed POs for "${vendorName}"`
                         : "No confirmed POs found"}
                   </p>
-                ) : filteredPos.map((po: any) => (
-                  <div key={po.id} className="flex items-center gap-2 px-1 py-0.5">
+                ) : filteredPos.map((po: any) => {
+                  const invoiced = po.invoicedAmount || 0;
+                  const remaining = po.remainingAmount ?? po.totalAmount;
+                  const hasPartial = invoiced > 0;
+                  return (
+                  <div key={po.id} className="flex items-center gap-2 px-1 py-1">
                     <Checkbox
                       id={`po-${po.id}`}
                       checked={selectedPoIds.includes(po.id)}
@@ -508,13 +512,22 @@ export default function NewVendorInvoiceDialog({
                     />
                     <label htmlFor={`po-${po.id}`} className="text-sm cursor-pointer flex-1 min-w-0">
                       <span className="font-medium font-mono">{po.poNumber}</span>
-                      <span className="text-muted-foreground ml-2 truncate">{po.vendorName}</span>
+                      <span className="text-muted-foreground ml-2">{po.vendorName}</span>
+                      {hasPartial && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 uppercase tracking-wide">partial</span>}
                     </label>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {po.currency} {parseFloat(po.totalAmount).toLocaleString()}
-                    </span>
+                    <div className="text-right shrink-0">
+                      {hasPartial ? (
+                        <>
+                          <div className="text-xs font-semibold text-emerald-700">{po.currency} {remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} left</div>
+                          <div className="text-[10px] text-muted-foreground line-through">{po.currency} {parseFloat(po.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{po.currency} {parseFloat(po.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      )}
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               {selectedPoIds.length > 0 && (
                 <p className="text-xs text-muted-foreground">

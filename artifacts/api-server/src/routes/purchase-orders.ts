@@ -117,13 +117,30 @@ router.get("/purchase-orders", async (req, res): Promise<void> => {
   let visible = visibilityFilter(pos, userId, isAdmin, isExternal).map(parsePO);
 
   if (excludeLinked && companyId) {
-    const vendorInvoices = await db.select({ poIds: vendorInvoicesTable.poIds })
+    const vendorInvoices = await db.select({ poIds: vendorInvoicesTable.poIds, totalAmount: vendorInvoicesTable.totalAmount })
       .from(vendorInvoicesTable)
       .where(eq(vendorInvoicesTable.companyId, companyId));
-    const linkedPoIds = new Set<number>(
-      vendorInvoices.flatMap(vi => (vi.poIds as number[]) || [])
-    );
-    visible = visible.filter(po => !linkedPoIds.has(po.id));
+
+    // Build map: PO id → total amount already invoiced (sum across all vendor invoices)
+    const invoicedByPo = new Map<number, number>();
+    for (const vi of vendorInvoices) {
+      for (const poId of (vi.poIds as number[]) || []) {
+        invoicedByPo.set(poId, (invoicedByPo.get(poId) || 0) + parseFloat(String(vi.totalAmount ?? "0")));
+      }
+    }
+
+    // Only exclude POs that are FULLY invoiced (total invoiced >= PO amount − $0.01 tolerance)
+    visible = visible.filter(po => {
+      const invoiced = invoicedByPo.get(po.id) || 0;
+      return invoiced < po.totalAmount - 0.005;
+    });
+
+    // Attach invoiced/remaining amounts so the dialog can show remaining balance
+    visible = visible.map(po => ({
+      ...po,
+      invoicedAmount: invoicedByPo.get(po.id) || 0,
+      remainingAmount: Math.max(0, po.totalAmount - (invoicedByPo.get(po.id) || 0)),
+    }));
   }
 
   res.json(await withUsernames(visible));
