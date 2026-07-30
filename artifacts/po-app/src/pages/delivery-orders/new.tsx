@@ -279,7 +279,7 @@ export default function DeliveryOrderNew() {
                         <td className="px-4 py-2 align-top">
                           <div className="flex gap-1 items-center">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem className="flex-1"><FormControl><Input className="h-8 text-sm font-mono" placeholder="PN-123" {...field} /></FormControl></FormItem>
+                              <FormItem className="flex-1"><FormControl><Input className="h-8 text-sm font-mono" placeholder="Item no." {...field} /></FormControl></FormItem>
                             )} />
                             <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary" title="Pick from stock catalog" onClick={() => setStockPickerIndex(index)}>
                               <Package className="h-3.5 w-3.5" />
