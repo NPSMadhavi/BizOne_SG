@@ -1022,6 +1022,9 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   doc.setTextColor(80, 80, 80);
   doc.text(`PO Number: ${po.poNumber}`, marginRight, 30, { align: "right" });
   doc.text(`Date: ${fmtDate((po as any).issueDate || po.createdAt)}`, marginRight, 36, { align: "right" });
+  if ((po as any).quoteRefNo) {
+    doc.text(`Sales Quote Ref: ${(po as any).quoteRefNo}`, marginRight, 42, { align: "right" });
+  }
 
   doc.setFontSize(11);
   doc.setFont(PDF_FONT, "bold");
@@ -1132,13 +1135,45 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
   const totalsBlockH = 28; // subtotal + tax + rule + total ≈ 28 mm
   const notesLineH = 5;
 
+  // Pre-flight: estimate if the first data row is too tall to fit on page 1.
+  // With rowPageBreak:"avoid", jsPDF pushes the entire row to page 2 but still
+  // draws the table header on page 1, leaving an empty-looking first page.
+  // If the estimated row height exceeds available space, force a page break first.
+  const TABLE_START_Y_DEFAULT = 113;
+  const TABLE_TOP_MARGIN = 20;
+  let tableStartY = TABLE_START_Y_DEFAULT;
+  {
+    const firstDataItem = filteredPOItems.find((i: any) => i.type !== "section");
+    if (firstDataItem) {
+      const richLines = htmlToRichLines(firstDataItem.description || "");
+      doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal");
+      const scaleFactor = (doc.internal as any).scaleFactor || 2.8346;
+      const LINE_H = (9.5 * 1.15) / scaleFactor;
+      const cellPadV = 8; // top(4) + bottom(4)
+      const descW = Math.max(20, poKnownDescW - 8);
+      let estH = 0;
+      for (const rl of richLines) {
+        if (!rl.text) { estH += LINE_H; continue; }
+        const st = rl.bold && rl.italic ? "bolditalic" : rl.bold ? "bold" : rl.italic ? "italic" : "normal";
+        doc.setFont(PDF_FONT, st);
+        estH += doc.splitTextToSize(rl.text, descW).length * LINE_H;
+      }
+      const estimatedRowH = estH + cellPadV;
+      const availableFirstPage = pageHeight - TABLE_START_Y_DEFAULT - FOOTER_RESERVE;
+      if (estimatedRowH > availableFirstPage) {
+        doc.addPage();
+        tableStartY = TABLE_TOP_MARGIN;
+      }
+    }
+  }
+
   const poUnitPriceIdx = poHeaders.indexOf(`Unit Price (${currSymbol(poCurrency)})`);
   const poAmountIdx = poHeaders.indexOf(`Amount (${currSymbol(poCurrency)})`);
   const poQtyIdx = poHeaders.indexOf("Qty");
   const poTablePages: number[] = [];
 
   autoTableRich(doc, {
-    startY: 113,
+    startY: tableStartY,
     head: [poHeaders],
     body: tableData,
     theme: "striped",
