@@ -144,7 +144,9 @@ export default function GstF5Page() {
   }, []);
 
   const queryClient = useQueryClient();
-  const autoBackfillDone = useRef(false);
+  // Tracks which period key has already been auto-backfilled, so it retries
+  // when the user switches quarters but doesn't loop within the same period.
+  const autoBackfillDone = useRef<string | null>(null);
 
   const from = useCustom ? customFrom : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].from}` : "");
   const to   = useCustom ? customTo   : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].to}`   : "");
@@ -179,17 +181,20 @@ export default function GstF5Page() {
 
   const handleBackfill = useCallback(() => runBackfill(false), [runBackfill]);
 
-  // Auto-backfill silently when data loads and non-SGD records still have rate = 1
+  // Auto-backfill silently when data loads and non-SGD records still have rate = 1.
+  // Keyed to the period so switching quarters always re-checks.
   useEffect(() => {
-    if (!data || autoBackfillDone.current) return;
+    if (!data) return;
+    const periodKey = `${from}_${to}`;
+    if (autoBackfillDone.current === periodKey) return;
     const needsFix = data.vendorInvoices.some(
       v => (v.currency ?? "SGD") !== "SGD" && ((v as any).exchangeRate ?? 1) === 1
     );
     if (needsFix) {
-      autoBackfillDone.current = true;
+      autoBackfillDone.current = periodKey;
       runBackfill(true);
     }
-  }, [data, runBackfill]);
+  }, [data, runBackfill, from, to]);
 
   async function handleDownloadPDF() {
     if (!data) return;
