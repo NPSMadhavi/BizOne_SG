@@ -49,6 +49,11 @@ const CreditNoteNew  = lazy(() => import("@/pages/credit-notes/new"));
 const CreditNoteView = lazy(() => import("@/pages/credit-notes/view"));
 const CreditNoteEdit = lazy(() => import("@/pages/credit-notes/edit"));
 
+const DebitNoteList = lazy(() => import("@/pages/debit-notes/list"));
+const DebitNoteNew  = lazy(() => import("@/pages/debit-notes/new"));
+const DebitNoteView = lazy(() => import("@/pages/debit-notes/view"));
+const DebitNoteEdit = lazy(() => import("@/pages/debit-notes/edit"));
+
 const DeliveryOrderList = lazy(() => import("@/pages/delivery-orders/list"));
 const DeliveryOrderNew  = lazy(() => import("@/pages/delivery-orders/new"));
 const DeliveryOrderView = lazy(() => import("@/pages/delivery-orders/view"));
@@ -109,6 +114,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/invoices": "Invoices",
   "/proforma-invoices": "Proforma Invoices",
   "/credit-notes": "Credit Notes",
+  "/debit-notes": "Debit Notes",
   "/delivery-orders": "Delivery Orders",
   "/grn": "Goods Receipt Notes",
   "/stock": "Stock Items",
@@ -279,6 +285,12 @@ function Router() {
           <Route path="/credit-notes/new">{() => <ProtectedRoute component={CreditNoteNew} module="credit_notes" />}</Route>
           <Route path="/credit-notes/:id/edit">{() => <ProtectedRoute component={CreditNoteEdit} module="credit_notes" />}</Route>
           <Route path="/credit-notes/:id">{() => <ProtectedRoute component={CreditNoteView} module="credit_notes" />}</Route>
+
+          {/* Debit Notes */}
+          <Route path="/debit-notes">{() => <ProtectedRoute component={DebitNoteList} module="debit_notes" />}</Route>
+          <Route path="/debit-notes/new">{() => <ProtectedRoute component={DebitNoteNew} module="debit_notes" />}</Route>
+          <Route path="/debit-notes/:id/edit">{() => <ProtectedRoute component={DebitNoteEdit} module="debit_notes" />}</Route>
+          <Route path="/debit-notes/:id">{() => <ProtectedRoute component={DebitNoteView} module="debit_notes" />}</Route>
 
           {/* Delivery Orders */}
           <Route path="/delivery-orders">{() => <ProtectedRoute component={DeliveryOrderList} module="delivery_orders" />}</Route>

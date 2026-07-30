@@ -24,6 +24,7 @@ export * from "./tax-filings";
 export * from "./invoice-payments";
 export * from "./customer-deposits";
 export * from "./credit-notes";
+export * from "./debit-notes";
 export * from "./proforma-invoices";
 export * from "./projects";
 export * from "./vouchers";

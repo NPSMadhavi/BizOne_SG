@@ -3272,6 +3272,155 @@ export async function generateCreditNote_PDF(
   doc.save(`CreditNote_${cn.cnNumber}.pdf`);
 }
 
+// ── Debit Note PDF ────────────────────────────────────────────────────────────
+interface DebitNote {
+  id: number; dnNumber: string; customerName: string; customerAddress?: string | null;
+  contactPerson?: string | null; contactEmail?: string | null;
+  refInvNumber?: string | null; reason?: string | null;
+  issueDate?: string | null; currency: string; paymentTerms?: string | null;
+  subtotal: number; discountAmount: number; taxRate: number; tax: number; totalAmount: number;
+  status: string; notes?: string | null; items: any[];
+}
+
+export async function generateDebitNote_PDF(
+  dn: DebitNote,
+  company?: Company | null,
+  options?: { returnBase64?: boolean }
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 14;
+  const marginRight = pageWidth - 14;
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+
+  buildDocHeader(doc, logo, "DEBIT NOTE", dn.dnNumber, fmtDate((dn as any).issueDate || new Date().toISOString()), dn.status, info);
+
+  doc.setFontSize(9.5);
+  doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  if (dn.refInvNumber) {
+    doc.text(`Ref Invoice: ${dn.refInvNumber}`, marginRight, 42, { align: "right" });
+  }
+  if (dn.paymentTerms) {
+    doc.text(`Payment Terms: ${dn.paymentTerms}`, marginRight, dn.refInvNumber ? 48 : 42, { align: "right" });
+  }
+
+  // Bill To
+  doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+  doc.text("Bill To:", marginLeft, 67);
+  const entityBottom = renderEntityBlock(doc, dn.customerName, [dn.customerAddress, dn.contactPerson ? `\nAttn: ${dn.contactPerson}` : null], marginLeft, 74, 85);
+
+  // Reason block
+  let tableStartY = entityBottom + 10;
+  if (dn.reason) {
+    doc.setFontSize(9); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Reason for Debit:", marginLeft, tableStartY);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    const reasonLines = doc.splitTextToSize(dn.reason, marginRight - marginLeft);
+    doc.text(reasonLines, marginLeft, tableStartY + 5);
+    tableStartY += 5 + reasonLines.length * 5 + 5;
+  }
+
+  const dnCurrency = dn.currency || "SGD";
+  const allItems = (dn.items as any[]).filter(item => {
+    if (item.type === "section") return (item.sectionLabel || "").trim() !== "";
+    return (item.description || "").trim() !== "" || (item.partNumber || "").trim() !== "";
+  });
+  const regularItems = allItems.filter(i => i.type !== "section");
+  const hasPartNo = regularItems.some((i: any) => i.partNumber && String(i.partNumber).trim());
+  const hasDiscount = regularItems.some(i => Number(i.discount) > 0);
+
+  const headers: string[] = ["#"];
+  if (hasPartNo) headers.push("Item / Part Number");
+  headers.push("Description", "Qty", `Unit Price (${currSymbol(dnCurrency)})`);
+  if (hasDiscount) headers.push("Disc %");
+  headers.push(`Amount (${currSymbol(dnCurrency)})`);
+
+  const tableWidth = marginRight - marginLeft;
+  const amtW = 28; const qtyW = 14; const upW = 28; const discW = hasDiscount ? 14 : 0;
+  const partW = hasPartNo ? 32 : 0;
+  const descW = tableWidth - 8 - partW - qtyW - upW - discW - amtW;
+
+  const colStyles: Record<number, any> = {};
+  let ci = 0;
+  colStyles[ci++] = { cellWidth: 8, halign: "center" };
+  if (hasPartNo) colStyles[ci++] = { cellWidth: partW };
+  colStyles[ci++] = { cellWidth: descW };
+  colStyles[ci++] = { cellWidth: qtyW, halign: "right" };
+  colStyles[ci++] = { cellWidth: upW, halign: "right" };
+  if (hasDiscount) colStyles[ci++] = { cellWidth: discW, halign: "right" };
+  colStyles[ci++] = { cellWidth: amtW, halign: "right" };
+
+  let lineNum = 0;
+  const bodyRows: any[][] = allItems.map(item => {
+    if (item.type === "section") {
+      const row: any[] = [{ content: item.sectionLabel || "", colSpan: headers.length, styles: { fontStyle: "bold", fillColor: [240, 240, 240], textColor: [40, 40, 40] } }];
+      return row;
+    }
+    lineNum++;
+    const row: any[] = [String(lineNum)];
+    if (hasPartNo) row.push(item.partNumber || "");
+    row.push(item.description || "");
+    row.push(String(item.qty ?? 1));
+    row.push(fmtMoney(dnCurrency, Number(item.unitPrice)));
+    if (hasDiscount) row.push(Number(item.discount) > 0 ? `${item.discount}%` : "");
+    row.push(fmtMoney(dnCurrency, Number(item.amount)));
+    return row;
+  });
+
+  (doc as any).autoTable({
+    startY: tableStartY,
+    head: [headers],
+    body: bodyRows,
+    columnStyles: colStyles,
+    headStyles: { fillColor: [234, 88, 12], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5 },
+    bodyStyles: { fontSize: 9 },
+    alternateRowStyles: { fillColor: [255, 247, 237] },
+    margin: { left: marginLeft, right: 14, bottom: 40 },
+    didDrawPage: () => {},
+  });
+
+  const afterTable = (doc as any).lastAutoTable.finalY + 8;
+  const docDiscount = Number(dn.discountAmount) || 0;
+  const valueX = marginRight;
+  const labelX = marginRight - 35;
+  let ty = afterTable;
+
+  doc.setFontSize(9.5); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
+  doc.text("Subtotal:", labelX, ty, { align: "right" });
+  doc.text(fmtMoney(dnCurrency, dn.subtotal), valueX, ty, { align: "right" });
+  ty += 7;
+  if (docDiscount > 0) {
+    doc.text("Discount:", labelX, ty, { align: "right" });
+    doc.text(`- ${fmtMoney(dnCurrency, docDiscount)}`, valueX, ty, { align: "right" });
+    ty += 7;
+  }
+  doc.text(`GST (${Number(dn.taxRate).toFixed(1)}%):`, labelX, ty, { align: "right" });
+  doc.text(fmtMoney(dnCurrency, dn.tax), valueX, ty, { align: "right" });
+  ty += 2;
+  doc.setDrawColor(234, 88, 12); doc.setLineWidth(0.4);
+  doc.line(labelX - 10, ty, marginRight, ty);
+  ty += 5;
+  doc.setFontSize(11); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(234, 88, 12);
+  doc.text("Debit Total:", labelX, ty, { align: "right" });
+  doc.text(fmtMoney(dnCurrency, dn.totalAmount), valueX, ty, { align: "right" });
+
+  if (dn.notes) {
+    ty += 14;
+    doc.setFontSize(9); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+    doc.text("Notes:", marginLeft, ty);
+    doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
+    const noteLines = doc.splitTextToSize(dn.notes, marginRight - marginLeft - 20);
+    doc.text(noteLines, marginLeft + 18, ty);
+  }
+
+  buildDocFooter(doc, "Debit Note");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`DebitNote_${dn.dnNumber}.pdf`);
+}
+
 // ── PROFORMA INVOICE PDF ──────────────────────────────────────────────────────
 export async function generatePI_PDF(pi: any, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const invShape: Invoice = {

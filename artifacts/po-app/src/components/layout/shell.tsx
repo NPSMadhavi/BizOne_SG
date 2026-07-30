@@ -30,6 +30,7 @@ import {
   Scale,
   Calculator,
   FileMinus,
+  FilePlus,
   UserCheck,
   FileDiff,
   Building,
@@ -451,8 +452,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "documents"}
         onToggle={toggleGroup}
         visible={hasDocuments}
-        hasActive={location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") || location.startsWith("/quotations") || location.startsWith("/invoices") || location.startsWith("/proforma-invoices") || location.startsWith("/delivery-orders") || location.startsWith("/grn")}
+        hasActive={
+          location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") ||
+          location.startsWith("/quotations") || location.startsWith("/invoices") ||
+          location.startsWith("/proforma-invoices") || location.startsWith("/credit-notes") ||
+          location.startsWith("/debit-notes") || location.startsWith("/delivery-orders") ||
+          location.startsWith("/grn")
+        }
       >
+        {/* ── Purchases ── */}
+        {(hasModuleAccess("purchase_orders") || (isAdmin || hasModuleAccess("grn"))) && (
+          <div className="px-3 pt-2 pb-0.5">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Purchases</span>
+          </div>
+        )}
         {hasModuleAccess("purchase_orders") && (
           <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")} inGroup>
             Purchase Orders
@@ -463,14 +476,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Vendor Invoices
           </NavItem>
         )}
+        {(isAdmin || hasModuleAccess("grn")) && (
+          <NavItem href="/grn" icon={ClipboardList} active={location.startsWith("/grn")} inGroup>
+            Goods Receipt
+          </NavItem>
+        )}
+
+        {/* ── Sales ── */}
+        {(hasModuleAccess("quotations") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("debit_notes") || hasModuleAccess("delivery_orders")) && (
+          <div className="px-3 pt-3 pb-0.5">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Sales</span>
+          </div>
+        )}
         {hasModuleAccess("quotations") && (
           <NavItem href="/quotations" icon={FileSpreadsheet} active={location.startsWith("/quotations")} inGroup>
             Quotations
-          </NavItem>
-        )}
-        {hasModuleAccess("invoices") && (
-          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices") && !location.startsWith("/invoices/")} inGroup>
-            Invoices
           </NavItem>
         )}
         {hasModuleAccess("proforma_invoices") && (
@@ -478,19 +498,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Proforma Invoices
           </NavItem>
         )}
+        {hasModuleAccess("invoices") && (
+          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices") && !location.startsWith("/invoices/")} inGroup>
+            Invoices
+          </NavItem>
+        )}
         {hasModuleAccess("credit_notes") && (
           <NavItem href="/credit-notes" icon={FileMinus} active={location.startsWith("/credit-notes")} inGroup>
             Credit Notes
           </NavItem>
         )}
+        {hasModuleAccess("debit_notes") && (
+          <NavItem href="/debit-notes" icon={FilePlus} active={location.startsWith("/debit-notes")} inGroup>
+            Debit Notes
+          </NavItem>
+        )}
         {hasModuleAccess("delivery_orders") && (
           <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")} inGroup>
             Delivery Orders
-          </NavItem>
-        )}
-        {(isAdmin || hasModuleAccess("grn")) && (
-          <NavItem href="/grn" icon={ClipboardList} active={location.startsWith("/grn")} inGroup>
-            Goods Receipt
           </NavItem>
         )}
       </NavGroup>

@@ -13,6 +13,36 @@ export async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text
     `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS debit_notes (
+        id              serial       PRIMARY KEY,
+        dn_number       text         NOT NULL,
+        company_id      integer      NOT NULL DEFAULT 1,
+        customer_name   text         NOT NULL,
+        customer_address text,
+        contact_person  text,
+        contact_email   text,
+        ref_inv_number  text,
+        reason          text,
+        issue_date      text,
+        currency        text         NOT NULL DEFAULT 'SGD',
+        payment_terms   text,
+        notes           text,
+        is_private      boolean      NOT NULL DEFAULT false,
+        items           jsonb        NOT NULL DEFAULT '[]',
+        subtotal        numeric(15,2) NOT NULL DEFAULT 0,
+        discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+        tax_rate        numeric(5,2)  NOT NULL DEFAULT 9,
+        tax             numeric(15,2) NOT NULL DEFAULT 0,
+        total_amount    numeric(15,2) NOT NULL DEFAULT 0,
+        status          text         NOT NULL DEFAULT 'draft',
+        void_reason     text,
+        email_sent_to   text,
+        created_by      integer      NOT NULL,
+        created_at      timestamptz  NOT NULL DEFAULT now(),
+        CONSTRAINT debit_notes_company_dn_number_unique UNIQUE (company_id, dn_number)
+      )
+    `);
     logger.info("[startup-migrations] schema up to date");
   } catch (err) {
     logger.warn({ err }, "[startup-migrations] non-fatal error — continuing");
