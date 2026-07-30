@@ -26,6 +26,7 @@ import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
@@ -88,6 +89,7 @@ export default function InvoiceEdit() {
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");

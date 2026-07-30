@@ -26,6 +26,7 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
@@ -81,6 +82,7 @@ export default function QuotationEdit() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [importQtOpen, setImportQtOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
@@ -282,27 +284,30 @@ export default function QuotationEdit() {
             <Card>
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
-                <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
-                    form.setValue("customerName", c.name);
-                    form.setValue("customerAddress", c.fullAddress);
-                    form.setValue("customerContact", c.contactPerson);
-                    form.setValue("customerContactEmail", c.contactEmail);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
-                    if (c.currency) {
-                      form.setValue("currency", c.currency);
-                      setDirectoryCurrency(c.currency);
-                      setDirectoryCurrencyName(c.name);
-                    }
-                    // Use customer-specific T&C if set; otherwise fall back to settings default
-                    if (c.quotationTerms) {
-                      form.setValue("notes", c.quotationTerms);
-                    } else {
-                      form.setValue("notes", docSettings?.quotationTerms ?? "");
-                    }
-                  }}
-                />
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setNewCustomerOpen(true)}><Plus className="h-3.5 w-3.5" /> New Customer</Button>
+                  <DirectoryPickerButton
+                    type="customer"
+                    onSelect={(c) => {
+                      form.setValue("customerName", c.name);
+                      form.setValue("customerAddress", c.fullAddress);
+                      form.setValue("customerContact", c.contactPerson);
+                      form.setValue("customerContactEmail", c.contactEmail);
+                      if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
+                      if (c.currency) {
+                        form.setValue("currency", c.currency);
+                        setDirectoryCurrency(c.currency);
+                        setDirectoryCurrencyName(c.name);
+                      }
+                      // Use customer-specific T&C if set; otherwise fall back to settings default
+                      if (c.quotationTerms) {
+                        form.setValue("notes", c.quotationTerms);
+                      } else {
+                        form.setValue("notes", docSettings?.quotationTerms ?? "");
+                      }
+                    }}
+                  />
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="customerName" render={({ field }) => (

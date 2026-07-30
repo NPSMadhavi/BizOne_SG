@@ -34,6 +34,7 @@ import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { VendorCreateDialog } from "@/components/vendor-create-dialog";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { useAuth } from "@/contexts/auth-context";
@@ -92,6 +93,7 @@ export default function PurchaseOrderNew() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [newVendorOpen, setNewVendorOpen] = useState(false);
 
   const { data: customers = [] } = useQuery<any[]>({
     queryKey: ["customers-for-po"],
@@ -288,21 +290,24 @@ export default function PurchaseOrderNew() {
             <Card>
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Vendor Details</CardTitle>
-                <DirectoryPickerButton
-                  type="vendor"
-                  onSelect={(v) => {
-                    form.setValue("vendorName", v.name);
-                    form.setValue("vendorAddress", v.fullAddress);
-                    form.setValue("vendorContact", v.contactPerson);
-                    form.setValue("vendorContactEmail", v.contactEmail);
-                    if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
-                    if (v.currency) {
-                      form.setValue("currency", v.currency);
-                      setDirectoryCurrency(v.currency);
-                      setDirectoryCurrencyName(v.name);
-                    }
-                  }}
-                />
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => setNewVendorOpen(true)}><Plus className="h-3.5 w-3.5" /> New Vendor</Button>
+                  <DirectoryPickerButton
+                    type="vendor"
+                    onSelect={(v) => {
+                      form.setValue("vendorName", v.name);
+                      form.setValue("vendorAddress", v.fullAddress);
+                      form.setValue("vendorContact", v.contactPerson);
+                      form.setValue("vendorContactEmail", v.contactEmail);
+                      if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
+                      if (v.currency) {
+                        form.setValue("currency", v.currency);
+                        setDirectoryCurrency(v.currency);
+                        setDirectoryCurrencyName(v.name);
+                      }
+                    }}
+                  />
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <FormField

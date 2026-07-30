@@ -16,6 +16,7 @@ import { Trash2, Save, Eye, Lock, Plus, Layers, ArrowLeft, FileInput } from "luc
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateDebitNote_PDF } from "@/lib/pdf";
@@ -67,6 +68,7 @@ export default function DebitNoteEdit() {
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
   const [showPreview, setShowPreview] = useState(false);
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [ready, setReady] = useState(false);

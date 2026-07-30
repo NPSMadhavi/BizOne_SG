@@ -26,6 +26,7 @@ import { StockItemPickerDialog, type StockItemSelection } from "@/components/sto
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
@@ -89,6 +90,7 @@ export default function InvoiceNew() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
