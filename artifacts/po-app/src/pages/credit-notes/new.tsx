@@ -140,6 +140,14 @@ export default function CreditNoteNew() {
   const currency = form.watch("currency");
   const fmt = (n: number) => new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
+  const nextCnNumber = (() => {
+    if (!settings) return null;
+    const prefix = (settings as any).cnPrefix ?? "CN";
+    const counter = (parseInt((settings as any).cnCounter) || 0) + 1;
+    const suffix = (settings as any).cnSuffix ?? "";
+    return `${prefix}${String(counter)}${suffix}`;
+  })();
+
   return (
     <div className="max-w-[1600px] mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between pb-4 border-b border-gray-200">
@@ -147,13 +155,21 @@ export default function CreditNoteNew() {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
           <h1 className="text-2xl font-bold text-gray-900">New Credit Note</h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
-            <Save className="h-4 w-4" />Save Draft
-          </Button>
-          <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
-            <Eye className="h-4 w-4" />Save & Preview
-          </Button>
+        <div className="flex items-center gap-4">
+          {nextCnNumber && (
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Credit Note Number</p>
+              <p className="text-lg font-semibold font-mono">{nextCnNumber}</p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
+              <Save className="h-4 w-4" />Save Draft
+            </Button>
+            <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
+              <Eye className="h-4 w-4" />Save & Preview
+            </Button>
+          </div>
         </div>
       </div>
 
