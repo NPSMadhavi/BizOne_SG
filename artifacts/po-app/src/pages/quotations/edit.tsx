@@ -497,7 +497,7 @@ export default function QuotationEdit() {
                           <tr className="border-b last:border-0 hover:bg-muted/20">
                             <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
                             <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} /></FormControl></FormItem>
                             )} /></td>
                             <td className="px-4 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
                               <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>

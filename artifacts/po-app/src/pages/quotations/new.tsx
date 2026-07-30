@@ -480,7 +480,7 @@ export default function QuotationNew() {
                             <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
                             <td className="px-4 py-2">
                               <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                                <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} /></FormControl></FormItem>
+                                <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} /></FormControl></FormItem>
                               )} />
                             </td>
                             <td className="px-4 py-2 align-top">
