@@ -512,7 +512,12 @@ export default function GstF5Page() {
                 const hasFX   = sortedVI.some(v => (v.currency ?? "SGD") !== "SGD");
                 const totalInputGst = viSR.reduce((s, v) => s + (hasFX ? (v.gstAmountSGD ?? v.gstAmount) : v.gstAmount), 0);
                 const totalNet      = viSR.reduce((s, v) => s + (hasFX ? (v.netAmountSGD ?? v.netAmount) : v.netAmount), 0);
-                const totalAll      = sortedVI.reduce((s, v) => s + v.totalAmount, 0);
+                const totalAll      = sortedVI.reduce((s, v) => {
+                  const isFX = (v.currency ?? "SGD") !== "SGD";
+                  const net  = isFX ? ((v as any).netAmountSGD ?? v.netAmount) : v.netAmount;
+                  const gst  = isFX ? ((v as any).gstAmountSGD ?? v.gstAmount) : v.gstAmount;
+                  return s + net + gst;
+                }, 0);
 
                 const GST_TREATMENT_BADGE: Record<string, { label: string; cls: string }> = {
                   standard_rated: { label: "SR 9%",       cls: "bg-green-100 text-green-800 border-green-300" },
@@ -597,7 +602,11 @@ export default function GstF5Page() {
                                         {isSR && (vi.currency ?? "SGD") !== "SGD" ? fmtAmt((vi as any).gstAmountSGD ?? vi.gstAmount) : <span className="text-muted-foreground/30">—</span>}
                                       </td>
                                     )}
-                                    <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{fmtAmt(vi.totalAmount)}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs font-semibold">
+                                      {(vi.currency ?? "SGD") !== "SGD"
+                                        ? fmtAmt(((vi as any).netAmountSGD ?? vi.netAmount) + ((vi as any).gstAmountSGD ?? vi.gstAmount))
+                                        : fmtAmt(vi.totalAmount)}
+                                    </td>
                                   </tr>
                                 );
                               })}
