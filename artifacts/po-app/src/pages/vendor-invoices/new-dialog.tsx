@@ -201,7 +201,8 @@ export default function NewVendorInvoiceDialog({
     setSelectedPoIds(newIds);
 
     const newSelectedPos = pos.filter((p: any) => newIds.includes(p.id));
-    const total = newSelectedPos.reduce((sum: number, p: any) => sum + parseFloat(p.totalAmount || "0"), 0);
+    // Use remainingAmount (uninvoiced balance) for partial POs, full totalAmount otherwise
+    const total = newSelectedPos.reduce((sum: number, p: any) => sum + parseFloat(p.remainingAmount ?? p.totalAmount ?? "0"), 0);
     setAmount(newIds.length > 0 ? total.toFixed(2) : "");
     setAmountAutoFilled(newIds.length > 0);
 
