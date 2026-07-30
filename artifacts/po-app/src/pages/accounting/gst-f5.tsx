@@ -79,6 +79,40 @@ function fmtDateLong(d: string | null) {
   return dt.toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" });
 }
 
+// ─── SortTh — standalone so it doesn't remount on every parent re-render ─────
+
+type VISortKey = "piNumber" | "vendorName" | "piDate" | "currency" | "netAmount" | "gstAmount" | "totalAmount";
+
+interface SortThProps {
+  col: VISortKey;
+  sortKey: VISortKey;
+  sortDir: "asc" | "desc";
+  onSort: (col: VISortKey) => void;
+  right?: boolean;
+  children: React.ReactNode;
+}
+
+function SortTh({ col, sortKey, sortDir, onSort, right, children }: SortThProps) {
+  const active = sortKey === col;
+  return (
+    <th
+      className={cn(
+        "px-4 py-2 text-xs font-semibold cursor-pointer select-none hover:text-foreground group",
+        active ? "text-foreground" : "text-muted-foreground",
+        right ? "text-right" : "text-left",
+      )}
+      onClick={() => onSort(col)}
+    >
+      <span className={cn("inline-flex items-center gap-1", right ? "justify-end w-full" : "")}>
+        {children}
+        {active
+          ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3 text-primary shrink-0" /> : <ArrowDown className="h-3 w-3 text-primary shrink-0" />)
+          : <ArrowUpDown className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-40 transition-opacity" />}
+      </span>
+    </th>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function GstF5Page() {
@@ -98,9 +132,16 @@ export default function GstF5Page() {
   const [backfillResult,     setBackfillResult]     = useState<{ updated: number; failed: number } | null>(null);
 
   // Vendor invoices sort state
-  type VISortKey = "piNumber" | "vendorName" | "piDate" | "currency" | "netAmount" | "gstAmount" | "totalAmount";
   const [viSortKey, setViSortKey] = useState<VISortKey>("piDate");
   const [viSortDir, setViSortDir] = useState<"asc" | "desc">("desc");
+
+  const handleViSort = useCallback((col: VISortKey) => {
+    setViSortKey(prev => {
+      if (prev === col) { setViSortDir(d => d === "asc" ? "desc" : "asc"); return col; }
+      setViSortDir("asc");
+      return col;
+    });
+  }, []);
 
   const queryClient = useQueryClient();
   const autoBackfillDone = useRef(false);
@@ -468,21 +509,6 @@ export default function GstF5Page() {
                 const totalNet      = viSR.reduce((s, v) => s + (hasFX ? (v.netAmountSGD ?? v.netAmount) : v.netAmount), 0);
                 const totalAll      = sortedVI.reduce((s, v) => s + v.totalAmount, 0);
 
-                function SortTh({ col, children, right }: { col: VISortKey; children: React.ReactNode; right?: boolean }) {
-                  const active = viSortKey === col;
-                  return (
-                    <th
-                      className={cn("px-4 py-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground group", right ? "text-right" : "text-left")}
-                      onClick={() => { if (active) setViSortDir(d => d === "asc" ? "desc" : "asc"); else { setViSortKey(col); setViSortDir("asc"); } }}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {children}
-                        {active ? (viSortDir === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />) : <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-40" />}
-                      </span>
-                    </th>
-                  );
-                }
-
                 const GST_TREATMENT_BADGE: Record<string, { label: string; cls: string }> = {
                   standard_rated: { label: "SR 9%",       cls: "bg-green-100 text-green-800 border-green-300" },
                   zero_rated:     { label: "ZR 0%",       cls: "bg-blue-100 text-blue-800 border-blue-300" },
@@ -517,17 +543,17 @@ export default function GstF5Page() {
                           <table className="w-full text-sm">
                             <thead className="bg-muted/20 border-b">
                               <tr>
-                                <SortTh col="piNumber">PI Number</SortTh>
-                                <SortTh col="vendorName">Vendor</SortTh>
-                                <SortTh col="piDate">Date</SortTh>
-                                <SortTh col="currency">Currency</SortTh>
+                                <SortTh col="piNumber"    sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>PI Number</SortTh>
+                                <SortTh col="vendorName"  sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Vendor</SortTh>
+                                <SortTh col="piDate"      sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Date</SortTh>
+                                <SortTh col="currency"    sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Currency</SortTh>
                                 {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">FX Rate</th>}
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">GST Treatment</th>
-                                <SortTh col="netAmount" right>Net (Box 4)</SortTh>
+                                <SortTh col="netAmount"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>Net (Box 4)</SortTh>
                                 {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">Net SGD</th>}
-                                <SortTh col="gstAmount" right>GST (Box 7)</SortTh>
+                                <SortTh col="gstAmount"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>GST (Box 7)</SortTh>
                                 {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">GST SGD</th>}
-                                <SortTh col="totalAmount" right>Total</SortTh>
+                                <SortTh col="totalAmount" sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>Total</SortTh>
                               </tr>
                             </thead>
                             <tbody>
