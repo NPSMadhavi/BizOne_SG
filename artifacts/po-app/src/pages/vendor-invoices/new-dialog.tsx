@@ -356,6 +356,16 @@ export default function NewVendorInvoiceDialog({
                       </div>
                     ) : (
                       <>
+                        <div className="border-b">
+                          <button
+                            type="button"
+                            onMouseDown={e => { e.preventDefault(); setDropdownOpen(false); setNewVendorOpen(true); }}
+                            className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-accent font-medium"
+                          >
+                            <Plus className="h-3.5 w-3.5 shrink-0" />
+                            Create new vendor{vendorSearch.trim() ? ` "${vendorSearch.trim()}"` : ""}
+                          </button>
+                        </div>
                         {filteredVendors.map((v: any) => (
                           <button
                             key={v.id}
@@ -375,16 +385,6 @@ export default function NewVendorInvoiceDialog({
                         )}
                       </>
                     )}
-                    <div className="border-t">
-                      <button
-                        type="button"
-                        onMouseDown={e => { e.preventDefault(); setDropdownOpen(false); setNewVendorOpen(true); }}
-                        className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-accent font-medium"
-                      >
-                        <Plus className="h-3.5 w-3.5 shrink-0" />
-                        Create new vendor{vendorSearch.trim() ? ` "${vendorSearch.trim()}"` : ""}
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
