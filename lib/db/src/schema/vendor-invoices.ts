@@ -22,6 +22,8 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   gstAmount: decimal("gst_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   // When true, the totalAmount entered by the user already INCLUDES GST (net is back-calculated)
   gstInclusive: boolean("gst_inclusive").notNull().default(false),
+  // Exchange rate to SGD at invoice date (1.000000 for SGD invoices)
+  exchangeRate: decimal("exchange_rate", { precision: 10, scale: 6 }).notNull().default("1.000000"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

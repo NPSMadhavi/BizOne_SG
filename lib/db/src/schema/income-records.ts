@@ -30,6 +30,8 @@ export const incomeRecordsTable = pgTable("income_records", {
   gstAmount:      decimal("gst_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   gstTreatment:   text("gst_treatment").notNull().default("standard_rated"),
   currency:       text("currency").notNull().default("SGD"),
+  // Exchange rate to SGD at income date (1.000000 for SGD records)
+  exchangeRate:   decimal("exchange_rate", { precision: 10, scale: 6 }).notNull().default("1.000000"),
   paymentMethod:  text("payment_method").default("bank_transfer"),
   accountId:      integer("account_id"),
   reference:      text("reference"),

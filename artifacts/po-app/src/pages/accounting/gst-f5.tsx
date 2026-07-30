@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
-import { Download, Loader2, Info, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, Loader2, Info, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateGstF5_PDF } from "@/lib/pdf";
 
@@ -26,7 +26,9 @@ interface F5Data {
   vendorInvoices: Array<{
     id: number; piNumber: string; vendorName: string;
     piDate: string | null; netAmount: number; gstAmount: number;
+    netAmountSGD?: number; gstAmountSGD?: number;
     totalAmount: number; gstTreatment: string; currency: string;
+    exchangeRate?: number;
   }>;
   expenses: Array<{
     id: number; vendorName: string; description: string; category: string;
@@ -92,6 +94,8 @@ export default function GstF5Page() {
   const [showVendorInvoices, setShowVendorInvoices] = useState(false);
   const [showExpenses,       setShowExpenses]       = useState(false);
   const [pdfLoading,         setPdfLoading]         = useState(false);
+  const [backfilling,        setBackfilling]        = useState(false);
+  const [backfillResult,     setBackfillResult]     = useState<{ updated: number; failed: number } | null>(null);
 
   const from = useCustom ? customFrom : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].from}` : "");
   const to   = useCustom ? customTo   : (selQuarter >= 0 ? `${selYear}${QUARTERS[selQuarter].to}`   : "");
@@ -107,6 +111,17 @@ export default function GstF5Page() {
     enabled,
     staleTime: 30_000,
   });
+
+  const handleBackfill = useCallback(async () => {
+    if (!confirm("This will auto-fetch historical exchange rates for all non-SGD records that still have the default rate. Continue?")) return;
+    setBackfilling(true); setBackfillResult(null);
+    try {
+      const res = await fetch("/api/accounting/exchange-rate/backfill", { method: "POST", credentials: "include" });
+      const d = await res.json();
+      setBackfillResult(d);
+    } catch { setBackfillResult({ updated: 0, failed: -1 }); }
+    finally { setBackfilling(false); }
+  }, []);
 
   async function handleDownloadPDF() {
     if (!data) return;
@@ -130,12 +145,18 @@ export default function GstF5Page() {
             <h1 className="text-2xl font-bold text-gray-900">GST F5 Return</h1>
             <p className="text-sm text-muted-foreground mt-0.5">IRAS Form F5 — Singapore GST Reporting</p>
           </div>
-          {data && (
-            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
-              {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-              Download PDF
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleBackfill} disabled={backfilling} title="Auto-fill exchange rates for non-SGD records" className="border-amber-200 text-amber-700 hover:text-amber-900 hover:bg-amber-50">
+              <RefreshCw className={`h-4 w-4 mr-2 ${backfilling ? "animate-spin" : ""}`} />
+              Backfill FX Rates
             </Button>
-          )}
+            {data && (
+              <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
+                {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                Download PDF
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Period selector */}
@@ -398,8 +419,9 @@ export default function GstF5Page() {
               {(() => {
                 const viSR    = data.vendorInvoices.filter(v => !v.gstTreatment || v.gstTreatment === "standard_rated");
                 const viOther = data.vendorInvoices.filter(v => v.gstTreatment && v.gstTreatment !== "standard_rated");
-                const totalInputGst = viSR.reduce((s, v) => s + v.gstAmount, 0);
-                const totalNet      = viSR.reduce((s, v) => s + v.netAmount, 0);
+                const hasFX   = data.vendorInvoices.some(v => (v.currency ?? "SGD") !== "SGD");
+                const totalInputGst = viSR.reduce((s, v) => s + (hasFX ? (v.gstAmountSGD ?? v.gstAmount) : v.gstAmount), 0);
+                const totalNet      = viSR.reduce((s, v) => s + (hasFX ? (v.netAmountSGD ?? v.netAmount) : v.netAmount), 0);
                 const totalAll      = data.vendorInvoices.reduce((s, v) => s + v.totalAmount, 0);
 
                 const GST_TREATMENT_BADGE: Record<string, { label: string; cls: string }> = {
@@ -440,9 +462,12 @@ export default function GstF5Page() {
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Vendor</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Date</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Currency</th>
+                                {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">FX Rate</th>}
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">GST Treatment</th>
                                 <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Net (Box 4)</th>
+                                {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">Net SGD</th>}
                                 <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">GST (Box 7)</th>
+                                {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">GST SGD</th>}
                                 <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Total</th>
                               </tr>
                             </thead>
@@ -455,7 +480,12 @@ export default function GstF5Page() {
                                     <td className="px-4 py-2 font-mono text-xs font-medium">{vi.piNumber}</td>
                                     <td className="px-4 py-2 text-xs">{vi.vendorName}</td>
                                     <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(vi.piDate)}</td>
-                                    <td className="px-4 py-2 text-xs text-muted-foreground">{vi.currency}</td>
+                                    <td className="px-4 py-2 text-xs text-muted-foreground">{vi.currency ?? "SGD"}</td>
+                                    {hasFX && (
+                                      <td className="px-4 py-2 text-right font-mono text-xs text-amber-700">
+                                        {(vi.currency ?? "SGD") !== "SGD" ? ((vi as any).exchangeRate ?? 1).toFixed(4) : <span className="text-muted-foreground/30">—</span>}
+                                      </td>
+                                    )}
                                     <td className="px-4 py-2">
                                       <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold", badge.cls)}>
                                         {badge.label}
@@ -464,17 +494,29 @@ export default function GstF5Page() {
                                     <td className="px-4 py-2 text-right font-mono text-xs">
                                       {isSR ? fmtAmt(vi.netAmount) : <span className="text-muted-foreground/40">—</span>}
                                     </td>
+                                    {hasFX && (
+                                      <td className="px-4 py-2 text-right font-mono text-xs text-amber-700 font-semibold">
+                                        {isSR && (vi.currency ?? "SGD") !== "SGD" ? fmtAmt((vi as any).netAmountSGD ?? vi.netAmount) : <span className="text-muted-foreground/30">—</span>}
+                                      </td>
+                                    )}
                                     <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">
                                       {isSR ? fmtAmt(vi.gstAmount) : <span className="text-muted-foreground/40">—</span>}
                                     </td>
+                                    {hasFX && (
+                                      <td className="px-4 py-2 text-right font-mono text-xs text-amber-700 font-semibold">
+                                        {isSR && (vi.currency ?? "SGD") !== "SGD" ? fmtAmt((vi as any).gstAmountSGD ?? vi.gstAmount) : <span className="text-muted-foreground/30">—</span>}
+                                      </td>
+                                    )}
                                     <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{fmtAmt(vi.totalAmount)}</td>
                                   </tr>
                                 );
                               })}
                               <tr className="bg-muted/30 font-semibold border-t-2">
-                                <td colSpan={5} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals</td>
+                                <td colSpan={hasFX ? 6 : 5} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals (SGD)</td>
                                 <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalNet)}</td>
+                                {hasFX && <td />}
                                 <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(totalInputGst)}</td>
+                                {hasFX && <td />}
                                 <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalAll)}</td>
                               </tr>
                               {viOther.length > 0 && (

@@ -75,7 +75,7 @@ router.post("/income", async (req, res): Promise<void> => {
   const companyId = req.session.companyId!;
   const {
     incomeDate, payerName, description, category,
-    amount, gstAmount, gstTreatment, currency,
+    amount, gstAmount, gstTreatment, currency, exchangeRate,
     paymentMethod, accountId, reference, notes, status,
   } = req.body;
 
@@ -95,6 +95,7 @@ router.post("/income", async (req, res): Promise<void> => {
     gstAmount:    parseFloat(gstAmount ?? 0).toFixed(2),
     gstTreatment: gstTreatment || "standard_rated",
     currency:     currency || "SGD",
+    exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
     paymentMethod: paymentMethod || "bank_transfer",
     accountId:    accountId ? parseInt(accountId) : null,
     reference:    reference?.trim() || null,
@@ -129,7 +130,7 @@ router.put("/income/:id", async (req, res): Promise<void> => {
 
   const {
     incomeDate, payerName, description, category,
-    amount, gstAmount, gstTreatment, currency,
+    amount, gstAmount, gstTreatment, currency, exchangeRate,
     paymentMethod, accountId, reference, notes, status,
   } = req.body;
 
@@ -142,6 +143,7 @@ router.put("/income/:id", async (req, res): Promise<void> => {
   if (gstAmount !== undefined)      updateData.gstAmount     = parseFloat(gstAmount ?? 0).toFixed(2);
   if (gstTreatment !== undefined)   updateData.gstTreatment  = gstTreatment;
   if (currency !== undefined)       updateData.currency      = currency;
+  if (exchangeRate !== undefined)   updateData.exchangeRate  = parseFloat(exchangeRate).toFixed(6);
   if (paymentMethod !== undefined)  updateData.paymentMethod = paymentMethod;
   if (accountId !== undefined)      updateData.accountId     = accountId ? parseInt(accountId) : null;
   if (reference !== undefined)      updateData.reference     = reference?.trim() || null;

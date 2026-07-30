@@ -3,6 +3,7 @@ import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTab
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
+import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
 
 const router: IRouter = Router();
 
@@ -453,6 +454,8 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     discountAmount: invoicesTable.discountAmount,
     tax:            invoicesTable.tax,
     totalAmount:    invoicesTable.totalAmount,
+    currency:       invoicesTable.currency,
+    exchangeRate:   (invoicesTable as any).exchangeRate,
     status:         invoicesTable.status,
   })
   .from(invoicesTable)
@@ -464,9 +467,14 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
   ));
 
-  const invBox1 = invRows.reduce((s, r) =>
-    s + parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0"), 0);
-  const invBox6 = invRows.reduce((s, r) => s + parseFloat(r.tax ?? "0"), 0);
+  const invBox1 = invRows.reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + (parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")) * fx;
+  }, 0);
+  const invBox6 = invRows.reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.tax ?? "0") * fx;
+  }, 0);
 
   // ─ Box 1/2/3/6: confirmed income records (non-trade income) ─
   const incomeRows = await db.select({
@@ -479,6 +487,7 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     gstAmount:    incomeRecordsTable.gstAmount,
     gstTreatment: incomeRecordsTable.gstTreatment,
     currency:     incomeRecordsTable.currency,
+    exchangeRate: (incomeRecordsTable as any).exchangeRate,
   })
   .from(incomeRecordsTable)
   .where(and(
@@ -488,12 +497,27 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     ...(toDate   ? [sql`${incomeRecordsTable.incomeDate} <= ${toDate}`]   : []),
   ));
 
-  const incomeBox1 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
-  const incomeBox2 = incomeRows.filter(r => r.gstTreatment === "zero_rated").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
-  const incomeBox3 = incomeRows.filter(r => r.gstTreatment === "exempt").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
+  const incomeBox1 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.amount ?? "0") * fx;
+  }, 0);
+  const incomeBox2 = incomeRows.filter(r => r.gstTreatment === "zero_rated").reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.amount ?? "0") * fx;
+  }, 0);
+  const incomeBox3 = incomeRows.filter(r => r.gstTreatment === "exempt").reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.amount ?? "0") * fx;
+  }, 0);
   // Box 5 = out-of-scope SUPPLIES (sales/income side only — e.g. grants, non-business receipts)
-  const incomeBox5 = incomeRows.filter(r => r.gstTreatment === "out_of_scope").reduce((s, r) => s + parseFloat(r.amount ?? "0"), 0);
-  const incomeBox6 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
+  const incomeBox5 = incomeRows.filter(r => r.gstTreatment === "out_of_scope").reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.amount ?? "0") * fx;
+  }, 0);
+  const incomeBox6 = incomeRows.filter(r => r.gstTreatment === "standard_rated").reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.gstAmount ?? "0") * fx;
+  }, 0);
 
   const box1 = invBox1 + incomeBox1;
   const box6 = invBox6 + incomeBox6;
@@ -512,6 +536,7 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     gstAmount:    vendorInvoicesTable.gstAmount,
     gstTreatment: vendorInvoicesTable.gstTreatment,
     currency:     vendorInvoicesTable.currency,
+    exchangeRate: (vendorInvoicesTable as any).exchangeRate,
   })
   .from(vendorInvoicesTable)
   .where(and(
@@ -527,11 +552,16 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
   // ZR, exempt, and out-of-scope purchases are non-claimable and have no F5 box.
   const viSR = viRows.filter(r => !r.gstTreatment || r.gstTreatment === "standard_rated");
 
-  // Box 4: net amount (excl. GST) of SR purchases
-  const viBox4 = viSR.reduce((s, r) =>
-    s + parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0"), 0);
-  // Box 7 contribution from vendor invoices: GST amount on SR purchases
-  const viBox7 = viSR.reduce((s, r) => s + parseFloat(r.gstAmount ?? "0"), 0);
+  // Box 4: net amount (excl. GST) of SR purchases — converted to SGD via exchange rate
+  const viBox4 = viSR.reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + (parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")) * fx;
+  }, 0);
+  // Box 7 contribution from vendor invoices: GST amount on SR purchases — converted to SGD
+  const viBox7 = viSR.reduce((s, r) => {
+    const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+    return s + parseFloat(r.gstAmount ?? "0") * fx;
+  }, 0);
 
   // ─ Confirmed expenses with GST claimable → also contribute to Box 4 (net) + Box 7 (GST) ─
   const expenseRows = await db.select({
@@ -576,27 +606,44 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     box6: parseFloat(box6.toFixed(2)),
     box7: parseFloat(totalBox7.toFixed(2)),
     box8: parseFloat(box8.toFixed(2)),
-    invoices: invRows.map(r => ({
-      id:           r.id,
-      invNumber:    r.invNumber,
-      customerName: r.customerName,
-      issueDate:    r.issueDate,
-      netAmount:    parseFloat((parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")).toFixed(2)),
-      gstAmount:    parseFloat(parseFloat(r.tax ?? "0").toFixed(2)),
-      totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
-      status:       r.status,
-    })),
-    vendorInvoices: viRows.map(r => ({
-      id:           r.id,
-      piNumber:     r.piNumber,
-      vendorName:   r.vendorName,
-      piDate:       r.piDate,
-      netAmount:    parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2)),
-      gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
-      totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
-      gstTreatment: r.gstTreatment ?? "standard_rated",
-      currency:     r.currency,
-    })),
+    invoices: invRows.map(r => {
+      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+      const net = parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0");
+      const gst = parseFloat(r.tax ?? "0");
+      return {
+        id:           r.id,
+        invNumber:    r.invNumber,
+        customerName: r.customerName,
+        issueDate:    r.issueDate,
+        netAmount:    parseFloat(net.toFixed(2)),
+        gstAmount:    parseFloat(gst.toFixed(2)),
+        totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+        netAmountSGD: parseFloat((net * fx).toFixed(2)),
+        gstAmountSGD: parseFloat((gst * fx).toFixed(2)),
+        currency:     r.currency ?? "SGD",
+        exchangeRate: fx,
+        status:       r.status,
+      };
+    }),
+    vendorInvoices: viRows.map(r => {
+      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+      const netFx = (parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")) * fx;
+      const gstFx = parseFloat(r.gstAmount ?? "0") * fx;
+      return {
+        id:           r.id,
+        piNumber:     r.piNumber,
+        vendorName:   r.vendorName,
+        piDate:       r.piDate,
+        netAmount:    parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2)),
+        gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
+        totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+        netAmountSGD: parseFloat(netFx.toFixed(2)),
+        gstAmountSGD: parseFloat(gstFx.toFixed(2)),
+        gstTreatment: r.gstTreatment ?? "standard_rated",
+        currency:     r.currency,
+        exchangeRate: fx,
+      };
+    }),
     expenses: expenseRows.map(r => ({
       id:          r.id,
       vendorName:  r.vendorName,
@@ -607,17 +654,23 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       gstAmount:   parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
       currency:    r.currency,
     })),
-    incomeRecords: incomeRows.map(r => ({
-      id:           r.id,
-      payerName:    r.payerName,
-      description:  r.description,
-      category:     r.category,
-      incomeDate:   r.incomeDate,
-      amount:       parseFloat(parseFloat(r.amount ?? "0").toFixed(2)),
-      gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
-      gstTreatment: r.gstTreatment,
-      currency:     r.currency,
-    })),
+    incomeRecords: incomeRows.map(r => {
+      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+      return {
+        id:           r.id,
+        payerName:    r.payerName,
+        description:  r.description,
+        category:     r.category,
+        incomeDate:   r.incomeDate,
+        amount:       parseFloat(parseFloat(r.amount ?? "0").toFixed(2)),
+        gstAmount:    parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2)),
+        amountSGD:    parseFloat((parseFloat(r.amount ?? "0") * fx).toFixed(2)),
+        gstAmountSGD: parseFloat((parseFloat(r.gstAmount ?? "0") * fx).toFixed(2)),
+        gstTreatment: r.gstTreatment,
+        currency:     r.currency,
+        exchangeRate: fx,
+      };
+    }),
   });
 });
 
@@ -1972,4 +2025,81 @@ router.get("/ap/vendor-invoices", async (req, res): Promise<void> => {
       currency: r.currency, status: r.status,
     })),
   });
+});
+
+// ─── Exchange Rate ────────────────────────────────────────────────────────────
+
+/** GET /exchange-rate?currency=USD&date=2025-04-15
+ *  Returns the exchange rate from `currency` to SGD on the given date (or latest). */
+router.get("/exchange-rate", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const currency = ((req.query.currency as string) || "SGD").toUpperCase();
+  const date = (req.query.date as string) || undefined;
+  if (currency === "SGD") { res.json({ currency: "SGD", date: date || "latest", rateSGD: 1 }); return; }
+  try {
+    const rate = await getExchangeRateToSGD(currency, date);
+    res.json({ currency, date: date || "latest", rateSGD: parseFloat(rate.toFixed(6)) });
+  } catch (e: any) {
+    res.status(502).json({ error: `Could not fetch exchange rate: ${e.message}` });
+  }
+});
+
+/** POST /exchange-rate/backfill
+ *  Auto-fills exchange rates for all existing non-SGD records in the current company
+ *  that still have the default rate of 1.000000. */
+router.post("/exchange-rate/backfill", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  let updated = 0; let failed = 0; const errors: string[] = [];
+
+  // Vendor invoices
+  const vis = await db.select({
+    id: vendorInvoicesTable.id, currency: vendorInvoicesTable.currency,
+    piDate: vendorInvoicesTable.piDate,
+    exchangeRate: (vendorInvoicesTable as any).exchangeRate,
+  }).from(vendorInvoicesTable).where(eq(vendorInvoicesTable.companyId, companyId));
+  for (const vi of vis) {
+    if ((vi.currency ?? "SGD") === "SGD") continue;
+    if (parseFloat(vi.exchangeRate ?? "1") !== 1.0) continue; // already set
+    try {
+      const rate = await getExchangeRateToSGD(vi.currency!, vi.piDate || undefined);
+      await db.update(vendorInvoicesTable).set({ exchangeRate: rate.toFixed(6) } as any).where(eq(vendorInvoicesTable.id, vi.id));
+      updated++;
+    } catch (e: any) { failed++; errors.push(`VI #${vi.id}: ${e.message}`); }
+  }
+
+  // Sales invoices
+  const invs = await db.select({
+    id: invoicesTable.id, currency: invoicesTable.currency,
+    issueDate: invoicesTable.issueDate,
+    exchangeRate: (invoicesTable as any).exchangeRate,
+  }).from(invoicesTable).where(eq(invoicesTable.companyId, companyId));
+  for (const inv of invs) {
+    if ((inv.currency ?? "SGD") === "SGD") continue;
+    if (parseFloat(inv.exchangeRate ?? "1") !== 1.0) continue;
+    try {
+      const rate = await getExchangeRateToSGD(inv.currency!, inv.issueDate || undefined);
+      await db.update(invoicesTable).set({ exchangeRate: rate.toFixed(6) } as any).where(eq(invoicesTable.id, inv.id));
+      updated++;
+    } catch (e: any) { failed++; errors.push(`INV #${inv.id}: ${e.message}`); }
+  }
+
+  // Income records
+  const incomes = await db.select({
+    id: incomeRecordsTable.id, currency: incomeRecordsTable.currency,
+    incomeDate: incomeRecordsTable.incomeDate,
+    exchangeRate: (incomeRecordsTable as any).exchangeRate,
+  }).from(incomeRecordsTable).where(eq(incomeRecordsTable.companyId, companyId));
+  for (const inc of incomes) {
+    if ((inc.currency ?? "SGD") === "SGD") continue;
+    if (parseFloat(inc.exchangeRate ?? "1") !== 1.0) continue;
+    try {
+      const rate = await getExchangeRateToSGD(inc.currency!, inc.incomeDate || undefined);
+      await db.update(incomeRecordsTable).set({ exchangeRate: rate.toFixed(6) } as any).where(eq(incomeRecordsTable.id, inc.id));
+      updated++;
+    } catch (e: any) { failed++; errors.push(`INC #${inc.id}: ${e.message}`); }
+  }
+
+  res.json({ updated, failed, errors: errors.slice(0, 20) });
 });

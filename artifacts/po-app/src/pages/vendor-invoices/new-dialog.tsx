@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation } from "wouter";
-import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle } from "lucide-react";
+import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -53,6 +53,8 @@ export default function NewVendorInvoiceDialog({
   const [gstTreatment, setGstTreatment] = useState("standard_rated");
   const [gstInclusive, setGstInclusive] = useState(false);
   const [expenseAccountPickerOpen, setExpenseAccountPickerOpen] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState("1.000000");
+  const [fetchingRate, setFetchingRate] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -100,6 +102,26 @@ export default function NewVendorInvoiceDialog({
   }, [vendors, vendorSearch]);
 
   const vendorName = selectedVendor ? selectedVendor.name : vendorSearch.trim();
+
+  // Auto-fetch exchange rate when currency ≠ SGD and piDate changes
+  const fetchExchangeRate = async (curr: string, date: string) => {
+    if (curr === "SGD") { setExchangeRate("1.000000"); return; }
+    setFetchingRate(true);
+    try {
+      const res = await fetch(`/api/accounting/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setExchangeRate(data.rateSGD.toFixed(6));
+      }
+    } catch { /* silently ignore; user can enter manually */ }
+    finally { setFetchingRate(false); }
+  };
+
+  useEffect(() => {
+    if (open && currency !== "SGD") fetchExchangeRate(currency, piDate);
+    if (currency === "SGD") setExchangeRate("1.000000");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, piDate, open]);
 
   const filteredPos = useMemo(() => {
     if (!vendorName) return pos;
@@ -210,6 +232,7 @@ export default function NewVendorInvoiceDialog({
     setExpenseAccountId("none");
     setGstTreatment("standard_rated");
     setGstInclusive(false);
+    setExchangeRate("1.000000");
   };
 
   const handleSave = async () => {
@@ -235,6 +258,7 @@ export default function NewVendorInvoiceDialog({
           gstRate: gstRateNum,
           gstAmount: computedGstAmount,
           gstInclusive,
+          exchangeRate: currency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1,
           notes: notes || null,
           expenseAccountId: (expenseAccountId && expenseAccountId !== "none") ? parseInt(expenseAccountId) : null,
         }),
@@ -445,9 +469,41 @@ export default function NewVendorInvoiceDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Currency</Label>
-              <Input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="SGD" />
+              <Input value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} placeholder="SGD" />
             </div>
           </div>
+
+          {/* Exchange Rate (shown only for non-SGD invoices) */}
+          {currency !== "SGD" && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
+              <Label className="text-amber-800 font-medium text-xs flex items-center gap-1.5">
+                <AlertTriangle className="h-3 w-3" />
+                Exchange Rate to SGD <span className="font-normal">(required for IRAS GST reporting)</span>
+              </Label>
+              <div className="flex gap-2 items-center">
+                <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
+                  <span className="font-mono">1 {currency} =</span>
+                  <Input
+                    type="number" step="0.000001" min="0.000001" placeholder="e.g. 1.350000"
+                    value={exchangeRate}
+                    onChange={e => setExchangeRate(e.target.value)}
+                    className="h-7 font-mono text-xs w-32 bg-white"
+                  />
+                  <span className="font-mono">SGD</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchExchangeRate(currency, piDate)}
+                  disabled={fetchingRate}
+                  className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} />
+                  Fetch Rate
+                </button>
+              </div>
+              <p className="text-[10px] text-amber-600">Rate auto-fetched from public exchange rates for {piDate}. Verify with MAS (mas.gov.sg) for IRAS compliance.</p>
+            </div>
+          )}
 
           {/* GST Treatment */}
           <div className="grid grid-cols-2 gap-4">

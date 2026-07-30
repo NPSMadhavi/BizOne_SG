@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Info } from "lucide-react";
+import { ArrowLeft, Info, RefreshCw } from "lucide-react";
 
 interface IncomeForm {
   incomeDate: string;
@@ -73,6 +73,8 @@ export default function IncomeEdit() {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [revenueAccounts, setRevenueAccounts] = useState<Account[]>([]);
+  const [exchangeRate, setExchangeRate] = useState("1.000000");
+  const [fetchingRate, setFetchingRate] = useState(false);
 
   const { data: settings } = useGetSettings({});
   const gstRate = settings?.gstRate ?? 9;
@@ -97,6 +99,8 @@ export default function IncomeEdit() {
   const watchedCategory     = watch("category");
   const watchedGstTreatment = watch("gstTreatment");
   const watchedAmount       = watch("amount");
+  const watchedCurrency     = watch("currency");
+  const watchedDate         = watch("incomeDate");
 
   // Populate form when data loads
   useEffect(() => {
@@ -115,8 +119,18 @@ export default function IncomeEdit() {
         reference:     existing.reference ?? "",
         notes:         existing.notes ?? "",
       });
+      if (existing.exchangeRate) setExchangeRate(parseFloat(existing.exchangeRate).toFixed(6));
     }
   }, [existing, reset]);
+
+  const fetchExchangeRateIncome = async (curr: string, date: string) => {
+    if (curr === "SGD") { setExchangeRate("1.000000"); return; }
+    setFetchingRate(true);
+    try {
+      const res = await fetch(`/api/accounting/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
+      if (res.ok) { const d = await res.json(); setExchangeRate(d.rateSGD.toFixed(6)); }
+    } catch { /* silently ignore */ } finally { setFetchingRate(false); }
+  };
 
   // Fetch revenue accounts
   useEffect(() => {
@@ -135,7 +149,7 @@ export default function IncomeEdit() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, exchangeRate: watchedCurrency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1 }),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to save"); }
       toast({ title: "Income record updated." });
@@ -182,6 +196,30 @@ export default function IncomeEdit() {
                     )} />
                   </div>
                 </div>
+
+                {watchedCurrency !== "SGD" && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
+                    <Label className="text-amber-800 font-medium text-xs flex items-center gap-1.5">
+                      <Info className="h-3 w-3" />
+                      Exchange Rate to SGD <span className="font-normal">(required for IRAS GST reporting)</span>
+                    </Label>
+                    <div className="flex gap-2 items-center">
+                      <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
+                        <span className="font-mono">1 {watchedCurrency} =</span>
+                        <Input type="number" step="0.000001" min="0.000001" value={exchangeRate}
+                          onChange={e => setExchangeRate(e.target.value)}
+                          className="h-7 font-mono text-xs w-32 bg-white" />
+                        <span className="font-mono">SGD</span>
+                      </div>
+                      <button type="button" onClick={() => fetchExchangeRateIncome(watchedCurrency, watchedDate)}
+                        disabled={fetchingRate}
+                        className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50">
+                        <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} /> Fetch Rate
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-amber-600">Auto-fetched from public exchange rates for {watchedDate}. Verify with MAS for IRAS compliance.</p>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <Label>Payer Name <span className="text-destructive">*</span></Label>

@@ -114,7 +114,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
-    currency, discountAmount, isPrivate, status, poRefNo,
+    currency, discountAmount, isPrivate, status, poRefNo, exchangeRate,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
@@ -131,6 +131,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
     customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
     currency: currency || "SGD",
+    exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
     isPrivate: isPrivate === true,
     poRefNo: poRefNo || null,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
@@ -227,7 +228,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
-    currency, discountAmount, isPrivate, poRefNo,
+    currency, discountAmount, isPrivate, poRefNo, exchangeRate,
   } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
@@ -244,6 +245,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     poRefNo: poRefNo ?? null,
   };
   if (currency !== undefined) updateData.currency = currency;
+  if (exchangeRate !== undefined) updateData.exchangeRate = parseFloat(exchangeRate).toFixed(6);
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
 

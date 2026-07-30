@@ -20,6 +20,8 @@ export const invoicesTable = pgTable("invoices", {
   tax: decimal("tax", { precision: 15, scale: 2 }).notNull().default("0"),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("SGD"),
+  // Exchange rate to SGD at invoice date (1.000000 for SGD invoices)
+  exchangeRate: decimal("exchange_rate", { precision: 10, scale: 6 }).notNull().default("1.000000"),
   poRefNo: text("po_ref_no"),
   status: text("status").notNull().default("draft"),
   emailSentTo: text("email_sent_to"),
