@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail, CheckCircle2, TrendingUp } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -395,61 +396,106 @@ export default function PurchaseOrderView() {
         </Card>
       )}
 
-      {["confirmed", "sent"].includes(po.status) && linkedPIs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between text-base">
-              <span className="flex items-center gap-2">
-                <FileInput className="h-4 w-4 text-muted-foreground" />
-                Vendor Purchase Invoices
-              </span>
-              <Button variant="outline" size="sm" className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50" onClick={() => setPiDialogOpen(true)}>
-                <FileInput className="h-3.5 w-3.5" />
-                Add PI
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Vendor PI #</th>
-                  <th className="px-4 py-2 font-medium">PI Date</th>
-                  <th className="px-4 py-2 font-medium text-right">PI Amount</th>
-                  <th className="px-4 py-2 font-medium text-right">Paid</th>
-                  <th className="px-4 py-2 font-medium text-right">Balance</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {linkedPIs.map((pi: any) => {
-                  const piStatus = pi.status;
-                  return (
-                    <tr key={pi.id} className="bg-card">
-                      <td className="px-4 py-2 font-medium font-mono">{pi.piNumber}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{pi.piDate ? fmtDate(pi.piDate) : "—"}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(pi.totalAmount)}</td>
-                      <td className="px-4 py-2 text-right text-emerald-600">{formatCurrency(pi.paidAmount)}</td>
-                      <td className="px-4 py-2 text-right font-medium text-orange-600">{formatCurrency(pi.balance)}</td>
-                      <td className="px-4 py-2">
-                        {piStatus === "paid" ? <Badge className="bg-emerald-600 hover:bg-emerald-700">Paid</Badge>
-                          : piStatus === "partial" ? <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Partial</Badge>
-                          : <Badge variant="outline" className="text-orange-600 border-orange-300">Pending</Badge>}
-                      </td>
-                      <td className="px-4 py-2">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setLocation(`/vendor-invoices/${pi.id}`)}>
-                          <ArrowUpRight className="h-4 w-4" />
-                        </Button>
-                      </td>
+      {["confirmed", "sent"].includes(po.status) && (() => {
+        const totalInvoiced = linkedPIs.reduce((sum: number, pi: any) => sum + Number(pi.totalAmount || 0), 0);
+        const poTotal = Number(po.totalAmount) || 0;
+        const remaining = poTotal - totalInvoiced;
+        const pct = poTotal > 0 ? Math.min(100, Math.round((totalInvoiced / poTotal) * 100)) : 0;
+        const fmtSGD = (v: number) =>
+          new Intl.NumberFormat("en-SG", { style: "currency", currency: (po as any).currency || "SGD" }).format(v);
+
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between text-base">
+                <span className="flex items-center gap-2">
+                  <FileInput className="h-4 w-4 text-muted-foreground" />
+                  Vendor Invoices
+                </span>
+                <Button variant="outline" size="sm" className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50" onClick={() => setPiDialogOpen(true)}>
+                  <FileInput className="h-3.5 w-3.5" />
+                  Record PI
+                </Button>
+              </CardTitle>
+            </CardHeader>
+
+            {/* Progress / Summary */}
+            <div className="px-6 pb-4 space-y-3">
+              <div className="flex items-end justify-between text-sm">
+                <div>
+                  <span className="text-muted-foreground">Invoiced </span>
+                  <span className="font-semibold text-foreground">{fmtSGD(totalInvoiced)}</span>
+                  <span className="text-muted-foreground"> of </span>
+                  <span className="font-semibold text-foreground">{fmtSGD(poTotal)}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">({pct}%)</span>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground mb-0.5">Remaining to invoice</div>
+                  <div className={`text-base font-bold ${remaining > 0 ? "text-orange-600" : "text-emerald-600"}`}>
+                    {fmtSGD(remaining)}
+                  </div>
+                </div>
+              </div>
+              <Progress
+                value={pct}
+                className="h-2"
+              />
+              {remaining <= 0 && totalInvoiced > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit">
+                  <TrendingUp className="h-3 w-3" />
+                  Fully invoiced
+                </div>
+              )}
+            </div>
+
+            {linkedPIs.length > 0 ? (
+              <div className="overflow-x-auto border-t">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Vendor PI #</th>
+                      <th className="px-4 py-2 font-medium">PI Date</th>
+                      <th className="px-4 py-2 font-medium text-right">PI Amount</th>
+                      <th className="px-4 py-2 font-medium text-right">Paid</th>
+                      <th className="px-4 py-2 font-medium text-right">Balance</th>
+                      <th className="px-4 py-2 font-medium">Status</th>
+                      <th className="px-4 py-2"></th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+                  </thead>
+                  <tbody className="divide-y">
+                    {linkedPIs.map((pi: any) => {
+                      const piStatus = pi.status;
+                      return (
+                        <tr key={pi.id} className="bg-card hover:bg-muted/30 cursor-pointer" onClick={() => setLocation(`/vendor-invoices/${pi.id}`)}>
+                          <td className="px-4 py-2.5 font-medium font-mono text-primary">{pi.piNumber}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground">{pi.piDate ? fmtDate(pi.piDate) : "—"}</td>
+                          <td className="px-4 py-2.5 text-right font-medium">{fmtSGD(pi.totalAmount)}</td>
+                          <td className="px-4 py-2.5 text-right text-emerald-600">{fmtSGD(pi.paidAmount)}</td>
+                          <td className="px-4 py-2.5 text-right font-medium text-orange-600">{fmtSGD(pi.balance)}</td>
+                          <td className="px-4 py-2.5">
+                            {piStatus === "paid"
+                              ? <Badge className="bg-emerald-600 hover:bg-emerald-700">Paid</Badge>
+                              : piStatus === "partial"
+                              ? <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Partial</Badge>
+                              : <Badge variant="outline" className="text-orange-600 border-orange-300">Pending</Badge>}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="px-6 pb-6 text-sm text-muted-foreground italic border-t pt-4">
+                No vendor invoices recorded yet.
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       <NewVendorInvoiceDialog
         open={piDialogOpen}
