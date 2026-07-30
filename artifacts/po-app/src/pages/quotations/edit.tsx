@@ -295,6 +295,12 @@ export default function QuotationEdit() {
                       setDirectoryCurrency(c.currency);
                       setDirectoryCurrencyName(c.name);
                     }
+                    // Use customer-specific T&C if set; otherwise fall back to settings default
+                    if (c.quotationTerms) {
+                      form.setValue("notes", c.quotationTerms);
+                    } else {
+                      form.setValue("notes", docSettings?.quotationTerms ?? "");
+                    }
                   }}
                 />
               </CardHeader>

@@ -39,6 +39,7 @@ interface Customer {
   gstRegistered: boolean;
   gstNo: string | null;
   shipToAddress: string | null;
+  quotationTerms: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -46,7 +47,7 @@ interface Customer {
 const blank = (): Partial<Customer> => ({
   name: "", address: "", postalCode: "", country: "", contactPerson: "",
   contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "",
-  shipToAddress: "", isActive: true,
+  shipToAddress: "", quotationTerms: "", isActive: true,
 });
 
 async function fetchCustomers(): Promise<Customer[]> {
@@ -441,6 +442,20 @@ export default function CustomersPage() {
                 Select a country to determine if GST applies to this customer.
               </div>
             )}
+
+            <div className="space-y-1.5">
+              <Label>Quotation Terms &amp; Conditions <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+              <Textarea
+                value={form.quotationTerms || ""}
+                onChange={e => setField("quotationTerms", e.target.value)}
+                placeholder="Enter customer-specific T&C for quotations. Leave blank to use the default from Settings."
+                className="resize-none text-sm"
+                rows={5}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                When this customer is selected in a quotation, these T&C will auto-fill the Notes field. If left blank, the default from Settings → Documents is used.
+              </p>
+            </div>
 
             {editing && (
               <div className="flex items-center justify-between border rounded-lg p-3">

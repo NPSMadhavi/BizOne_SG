@@ -15,6 +15,7 @@ export const customersTable = pgTable("customers", {
   gstRegistered: boolean("gst_registered").notNull().default(false),
   gstNo: text("gst_no"),
   shipToAddress: text("ship_to_address"),
+  quotationTerms: text("quotation_terms"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
