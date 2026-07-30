@@ -27,7 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +36,7 @@ import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generatePO_PDF } from "@/lib/pdf";
@@ -93,6 +94,7 @@ export default function PurchaseOrderEdit() {
   const queryClient = useQueryClient();
   const [initialized, setInitialized] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
@@ -640,14 +642,21 @@ export default function PurchaseOrderEdit() {
                     return (
                       <Fragment key={field.id}>
                         {insertBar}
-                        <tr className="bg-card">
-                          <td className="px-4 py-2 text-center text-muted-foreground">{_itemNo}</td>
-                          <td className="px-4 py-2">
+                        <tr className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="px-2 py-2 text-muted-foreground text-xs">{_itemNo}</td>
+                          <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8" placeholder="PN-123" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl>
+                                <div className="flex items-center gap-1">
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                    <Package className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2 align-top">
+                          <td className="px-2 py-2 align-top">
                             <div className="flex gap-2 items-start">
                               <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
                                 <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
@@ -657,35 +666,58 @@ export default function PurchaseOrderEdit() {
                               )} />
                             </div>
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-center" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-center" placeholder="Nos" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl>
+                                <select className="h-8 text-sm w-full border-0 bg-transparent focus:outline-none cursor-pointer" {...field}>
+                                  <option value="">—</option>
+                                  <option value="Nos">Nos</option>
+                                  <option value="Pcs">Pcs</option>
+                                  <option value="Set">Set</option>
+                                  <option value="Lot">Lot</option>
+                                  <option value="Hr">Hr</option>
+                                  <option value="Day">Day</option>
+                                  <option value="Month">Month</option>
+                                  <option value="Yr">Yr</option>
+                                  <option value="Job">Job</option>
+                                  <option value="kg">kg</option>
+                                  <option value="m">m</option>
+                                  <option value="L">L</option>
+                                  <option value="Box">Box</option>
+                                  <option value="Roll">Roll</option>
+                                  <option value="Pair">Pair</option>
+                                  <option value="Unit">Unit</option>
+                                  <option value="ls">ls</option>
+                                </select>
+                              </FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-right" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2 text-right font-medium text-muted-foreground bg-muted/10">
+                          <td className="px-2 py-2 text-right text-sm font-medium text-muted-foreground">
                             {formatCurrency(itemAmount)}
                           </td>
-                          <td className="px-4 py-2 text-center">
+                          <td className="px-2 py-2 text-center">
                             <FormField control={form.control} name={`items.${index}.isStockItem`} render={({ field }) => (
                               <FormItem><FormControl>
                                 <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Track serials for this item" />
                               </FormControl></FormItem>
                             )} />
                           </td>
-                          <td className="px-4 py-2 text-center">
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => remove(index)} disabled={fields.length === 1}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <td className="px-2 py-2">
+                            {fields.length > 1 && (
+                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </td>
                         </tr>
                       </Fragment>
@@ -794,6 +826,19 @@ export default function PurchaseOrderEdit() {
         }}
       />
 
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        onSelect={({ item, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
+          setStockPickerIndex(null);
+        }}
+      />
       <ImportItemsDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}

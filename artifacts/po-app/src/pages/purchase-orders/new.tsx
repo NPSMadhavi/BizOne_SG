@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,6 +32,7 @@ import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
@@ -84,6 +85,7 @@ export default function PurchaseOrderNew() {
   const { selectedCompany } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [savedPo, setSavedPo] = useState<any>(null);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
@@ -580,7 +582,12 @@ export default function PurchaseOrderNew() {
                           <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
-                                <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
+                                <div className="flex items-center gap-1">
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                    <Package className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </FormControl></FormItem>
                             )} />
                           </td>
@@ -764,6 +771,19 @@ export default function PurchaseOrderNew() {
         }}
       />
 
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        onSelect={({ item, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
+          setStockPickerIndex(null);
+        }}
+      />
       {savedPo && (
         <PdfPreviewModal
           open={previewOpen}
