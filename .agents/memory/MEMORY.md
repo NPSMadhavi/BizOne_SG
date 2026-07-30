@@ -1,7 +1,7 @@
 - [Vendor invoice GST fields + F5 fix + accountant role](vendor-invoice-gst.md) — GST columns migrated, F5 Box 4/5/7 fixed, JE split, UserRole enum updated everywhere
 - [Exchange rate feature](exchange-rate-feature.md) — lib/db dist must be rebuilt (npx tsc -p tsconfig.json) whenever schema columns are added; api-server uses project references → stale dist = TS2769 on insert
 - [Invoice section rows + poRefNo](invoice-section-rows.md) — section items stored as `{type:"section",sectionLabel:"..."}` in JSONB; excluded from subtotal, doSubmit, auto-append
-- [Pre-existing TS errors in po-app](preexisting-ts-errors.md) — deliveryAddress setValue + form.handleSubmit(onSubmit) signature errors are pre-existing; don't investigate
+- [Pre-existing TS errors in po-app](preexisting-ts-errors.md) — deliveryAddress setValue + form.handleSubmit(onSubmit) + settings.quotationTerms errors are pre-existing; don't investigate
 - [Item image feature](item-image-feature.md) — per-line-item image field in all 8 forms + 4 view pages + PDF rendering via autoTableRich 5th param
 - [Vendor invoice auto-posting](vendor-invoice-auto-post.md) — accrual JEs for AP: create→DR expense/CR AP(2000), payment→DR AP/CR bank(1010), delete→reversal; expenseAccountId nullable on vendor_invoices table
 - [AR payment tracking](ar-payment-tracking.md) — invoice_payments table mirrors vendor_payments; status auto-computes (confirmed→partial→paid); JE: DR Bank(1010)/CR AR(1100); knock-off now creates a payment record too
@@ -11,3 +11,4 @@
 - [PDF gap root cause](pdf-gap-root-cause.md) — 3 causes fixed: totals bottom-pinning; rowPageBreak:"avoid" blank cells; htmlToText \n in description fighting minCellHeight. Fix: keep rowPageBreak:avoid, draw totals at currentY+4, clear desc column in cleanedBody.
 - [drawNotesHtml walkList multi-paragraph li](pdf-notes-walkList.md) — walkList only processed first <p> per <li>; continuation paragraphs (e.g. bold heading + body) were silently dropped. Fix: iterate all <p> children, first gets prefix, rest get same indent with no prefix.
 - [API route path prefix](api-route-prefix.md) — routes must NOT use /api/ prefix; app mounts at app.use("/api", router) so handlers use /projects not /api/projects.
+- [Debit Notes + sidebar sub-cats + inline create](debit-notes-feature.md) — DN doc type mirrors CN; sidebar has Purchases/Sales sublabels; DirectoryPickerButton has inline create flow.
