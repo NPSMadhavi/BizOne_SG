@@ -246,15 +246,15 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
         {step === "serials" && selectedItem && (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2 min-w-0">
                 <button
                   type="button"
                   onClick={() => setStep("items")}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground shrink-0"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <span className="truncate">{selectedItem.name}</span>
+                <span className="truncate min-w-0" title={selectedItem.name}>{selectedItem.name}</span>
                 <span className="font-mono text-sm font-normal text-muted-foreground shrink-0">
                   {selectedItem.code}
                 </span>
@@ -359,15 +359,15 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
         {step === "qty" && selectedItem && (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2 min-w-0">
                 <button
                   type="button"
                   onClick={() => setStep("items")}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground shrink-0"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <span className="truncate">{selectedItem.name}</span>
+                <span className="truncate min-w-0" title={selectedItem.name}>{selectedItem.name}</span>
                 <span className="font-mono text-sm font-normal text-muted-foreground shrink-0">
                   {selectedItem.code}
                 </span>

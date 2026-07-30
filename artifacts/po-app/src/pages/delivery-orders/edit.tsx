@@ -36,6 +36,7 @@ const itemSchema = z.object({
   qty: z.coerce.number().min(1),
   uom: z.string().default(""),
   itemImage: z.string().default(""),
+  serialNumbers: z.string().default(""),
 });
 
 const schema = z.object({
@@ -97,7 +98,8 @@ export default function DeliveryOrderEdit() {
           qty: Number(i.qty) || 1,
           uom: i.uom || "",
           itemImage: (i as any).itemImage || "",
-        })) : [{ partNumber: "", description: "", qty: 1, uom: "", itemImage: "" }],
+          serialNumbers: (i as any).serialNumbers || "",
+        })) : [{ partNumber: "", description: "", qty: 1, uom: "", itemImage: "", serialNumbers: "" }],
       });
       initialized.current = true;
     }
@@ -271,12 +273,14 @@ export default function DeliveryOrderEdit() {
             <CardHeader className="pb-4 bg-muted/20 border-b">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Items to Deliver</CardTitle>
-                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
-                  <FileInput className="h-3 w-3" /> Import from PO
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
-                  <FileInput className="h-3 w-3" /> Import from Excel / PDF
-                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from PO
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from Excel / PDF
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -376,6 +380,7 @@ export default function DeliveryOrderEdit() {
           form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom);
           form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length > 0 ? selectedSerials.length : (qty ?? 1));
+          form.setValue(`items.${stockPickerIndex}.serialNumbers`, selectedSerials.join("\n"));
           setStockPickerIndex(null);
         }}
       />

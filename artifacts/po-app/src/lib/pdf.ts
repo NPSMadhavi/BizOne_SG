@@ -2005,11 +2005,20 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const doHeaders = doHeaderArr;
   const doDescColIdx = hasPartNo ? 2 : 1;
 
-  const doRichDesc = filteredDOItems.map((item: any) => htmlToRichLines(item.description));
+  const doRichDesc = filteredDOItems.map((item: any) => {
+    const lines = htmlToRichLines(item.description);
+    const serials = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
+    if (serials.length > 0) {
+      lines.push({ text: `S/N: ${serials.join(", ")}`, bold: false, italic: true });
+    }
+    return lines;
+  });
   const doTableData = filteredDOItems.map((item, i) => {
     const row: any[] = [i + 1];
     if (hasPartNo) row.push(item.partNumber || "");
-    row.push(htmlToText(item.description), item.qty);
+    const serials = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
+    const descText = htmlToText(item.description) + (serials.length > 0 ? `\nS/N: ${serials.join(", ")}` : "");
+    row.push(descText, item.qty);
     if (hasDOUom) row.push(item.uom || "");
     return row;
   });
