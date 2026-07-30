@@ -919,8 +919,11 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
   const gstRate    = parseFloat((settings as any)?.gstRate ?? "9");
 
   async function computeF5Boxes(fDate: string | null, tDate: string | null) {
+    // Sales invoices — apply exchange rate so amounts are always in SGD
     const invRows = await db.select({
-      subtotal: invoicesTable.subtotal, discountAmount: invoicesTable.discountAmount, tax: invoicesTable.tax,
+      subtotal: invoicesTable.subtotal, discountAmount: invoicesTable.discountAmount,
+      tax: invoicesTable.tax, gstTreatment: (invoicesTable as any).gstTreatment,
+      exchangeRate: (invoicesTable as any).exchangeRate,
     })
     .from(invoicesTable)
     .where(and(
@@ -930,24 +933,48 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
       ...(fDate ? [sql`${invoicesTable.issueDate} >= ${fDate}`] : []),
       ...(tDate ? [sql`${invoicesTable.issueDate} <= ${tDate}`] : []),
     ));
-    const box1 = invRows.reduce((s, r) => s + parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0"), 0);
-    const box6 = invRows.reduce((s, r) => s + parseFloat(r.tax ?? "0"), 0);
+    const box1 = invRows.reduce((s, r) => {
+      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+      return s + (parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")) * fx;
+    }, 0);
+    const box6 = invRows.reduce((s, r) => {
+      const fx = parseFloat(r.exchangeRate ?? "1") || 1;
+      return s + parseFloat(r.tax ?? "0") * fx;
+    }, 0);
 
-    const viRows = await db.select({ totalAmount: vendorInvoicesTable.totalAmount })
+    // Vendor invoices — apply exchange rate; use net amount (excl. GST) for box4
+    const viRows = await db.select({
+      totalAmount: vendorInvoicesTable.totalAmount,
+      gstAmount:   vendorInvoicesTable.gstAmount,
+      gstTreatment: vendorInvoicesTable.gstTreatment,
+      exchangeRate: (vendorInvoicesTable as any).exchangeRate,
+    })
       .from(vendorInvoicesTable)
       .where(and(
         eq(vendorInvoicesTable.companyId, companyId),
         ...(fDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fDate}`] : []),
         ...(tDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${tDate}`] : []),
       ));
-    const box4 = viRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+    const box4 = viRows.reduce((s, r) => {
+      if (r.gstTreatment && r.gstTreatment !== "standard_rated") return s;
+      const fx  = parseFloat(r.exchangeRate ?? "1") || 1;
+      const net = parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0");
+      return s + net * fx;
+    }, 0);
+    const box7raw = viRows.reduce((s, r) => {
+      if (r.gstTreatment && r.gstTreatment !== "standard_rated") return s;
+      const fx  = parseFloat(r.exchangeRate ?? "1") || 1;
+      return s + parseFloat(r.gstAmount ?? "0") * fx;
+    }, 0);
 
+    // Also include journal-line box7 contributions for manually-entered entries
     const [gstInputAcct] = await db.select().from(accountsTable)
       .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, "1110"))).limit(1);
-    let box7 = 0;
+    let box7je = 0;
     if (gstInputAcct) {
       const entries = await db.select({ entryId: journalEntriesTable.id }).from(journalEntriesTable)
         .where(and(eq(journalEntriesTable.companyId, companyId), eq(journalEntriesTable.status, "posted"),
+          sql`${journalEntriesTable.refType} IS NULL`,  // manual entries only — avoid double-counting
           ...(fDate ? [sql`${journalEntriesTable.entryDate} >= ${fDate}`] : []),
           ...(tDate ? [sql`${journalEntriesTable.entryDate} <= ${tDate}`] : []),
         ));
@@ -955,9 +982,10 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
       if (eIds.length > 0) {
         const lines = await db.select().from(journalLinesTable)
           .where(and(eq(journalLinesTable.accountId, gstInputAcct.id), sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${eIds.join(",")}]::int[]`)})`));
-        box7 = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
+        box7je = lines.reduce((s, l) => s + parseFloat(l.debit ?? "0"), 0);
       }
     }
+    const box7 = box7raw + box7je;
     return { box1, box2: 0, box3: 0, box4, box5: 0, box6, box7, box8: box6 - box7 };
   }
 
