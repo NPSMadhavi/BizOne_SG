@@ -321,15 +321,18 @@ function useWakeWord(
   onWakeWord: () => void,
   enabled: boolean,
   onMicError?: (code: string) => void,
+  onHeard?: (text: string) => void,
 ) {
   const recRef = useRef<any>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enabledRef = useRef(enabled);
   const onWakeRef = useRef(onWakeWord);
   const onMicErrRef = useRef(onMicError);
+  const onHeardRef = useRef(onHeard);
   enabledRef.current = enabled;
   onWakeRef.current = onWakeWord;
   onMicErrRef.current = onMicError;
+  onHeardRef.current = onHeard;
 
   const stopListening = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
@@ -352,26 +355,32 @@ function useWakeWord(
       recRef.current = rec;
 
       rec.onresult = (evt: any) => {
+        // Collect all alternatives from all results
+        const heard: string[] = [];
         for (let i = 0; i < evt.results.length; i++) {
           for (let j = 0; j < evt.results[i].length; j++) {
             const t = (evt.results[i][j].transcript || "").toLowerCase().trim();
-            if (WAKE_WORDS.test(t)) {
-              recRef.current = null;
-              onWakeRef.current();
-              return;
-            }
+            if (t) heard.push(t);
+          }
+        }
+        // Surface the first (most likely) transcript for debug display
+        if (heard.length > 0) onHeardRef.current?.(heard[0]);
+
+        for (const t of heard) {
+          if (WAKE_WORDS.test(t)) {
+            recRef.current = null;
+            onWakeRef.current();
+            return;
           }
         }
       };
 
       rec.onerror = (e: any) => {
         recRef.current = null;
-        // Permission blocked → stop retrying, surface the error to the UI
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           onMicErrRef.current?.(e.error);
-          return; // do NOT restart — would just loop permission errors
+          return;
         }
-        // "no-speech" is normal — restart fast; other transient errors wait
         const delay = e.error === "no-speech" ? 100 : 1500;
         if (enabledRef.current) timerRef.current = setTimeout(startListening, delay);
       };
@@ -390,8 +399,6 @@ function useWakeWord(
 
   useEffect(() => {
     if (enabled) {
-      // 600 ms buffer — lets any just-finished conversation mic fully release
-      // before we open the wake-word SpeechRecognition
       timerRef.current = setTimeout(startListening, 600);
     } else {
       stopListening();
@@ -636,12 +643,21 @@ export function AgentPanel() {
 
   // Wake word error state (set when mic permission is denied/blocked in this context)
   const [wakeError, setWakeError] = useState<string | null>(null);
+  const [lastHeard, setLastHeard] = useState<string>("");
+  const lastHeardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleHeard = useCallback((text: string) => {
+    setLastHeard(text);
+    if (lastHeardTimerRef.current) clearTimeout(lastHeardTimerRef.current);
+    lastHeardTimerRef.current = setTimeout(() => setLastHeard(""), 3000);
+  }, []);
 
   // Wake word only active when ambient on AND no active conversation
   const { supported: wakeSupported } = useWakeWord(
     handleWakeWord,
     ambientMode && convState === "idle",
     (code) => setWakeError(code),
+    handleHeard,
   );
 
   const toggleAmbient = useCallback(() => {
@@ -814,6 +830,13 @@ export function AgentPanel() {
       {/* ── FAB trigger ── */}
       {!open && (
         <div className="group fixed bottom-6 right-0 z-40 flex flex-col items-end gap-2 translate-x-[calc(100%-10px)] hover:translate-x-0 transition-transform duration-300 ease-in-out pr-3">
+          {/* Debug: show what wake-word listener last heard */}
+          {ambientMode && convState === "idle" && lastHeard && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs bg-muted border border-border shadow-sm max-w-[200px]">
+              <span className="text-muted-foreground shrink-0">heard:</span>
+              <span className="truncate font-mono text-foreground">{lastHeard}</span>
+            </div>
+          )}
           {/* Ambient mode toggle chip */}
           {wakeSupported && (
             <button
