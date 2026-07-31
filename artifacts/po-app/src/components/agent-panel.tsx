@@ -315,7 +315,7 @@ function useVoice() {
 }
 
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
-const WAKE_WORDS = /\b(veda|veeda|vida|beta|beda|vetta|weda)\b/i;
+const WAKE_WORDS = /\b(veda|veeda|vida|beta|beda|vetta|weda|weather|weeder|veeder|vader|vector|better|letter|feder|cedar|reader|feeder|meter|leader)\b/i;
 
 function useWakeWord(
   onWakeWord: () => void,
