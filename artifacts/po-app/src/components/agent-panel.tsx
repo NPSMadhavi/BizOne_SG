@@ -562,6 +562,18 @@ export function AgentPanel() {
       }
 
       let silenceStreak = 0;
+      // Track the last thing Veda said so we can detect mic echo
+      let lastSpokenWords: string[] = [];
+
+      // Helper: is this command just Veda's own TTS echoing back?
+      const isEcho = (cmd: string) => {
+        if (lastSpokenWords.length === 0) return false;
+        const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        if (cmdWords.length === 0) return false;
+        const matches = cmdWords.filter(w => lastSpokenWords.includes(w)).length;
+        // If >40% of the command's words came from what Veda just said, treat as echo
+        return matches / cmdWords.length > 0.4;
+      };
 
       while (convActiveRef.current) {
         setConvState("listening");
@@ -571,13 +583,18 @@ export function AgentPanel() {
         if (ctrl.signal.aborted || !convActiveRef.current) break;
 
         if (!command.trim()) {
-          // listenForCommand only returns "" after its 20s hard cap (no-speech restarts internally)
-          // One empty round = user was genuinely silent for 20s → end conversation
           silenceStreak++;
           if (silenceStreak >= 1) break;
           continue;
         }
         silenceStreak = 0;
+
+        // Discard if it looks like Veda's own TTS being picked up by the mic
+        if (isEcho(command)) {
+          lastSpokenWords = []; // clear so next round is not filtered
+          continue;
+        }
+        lastSpokenWords = [];
 
         if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
           setConvState("speaking");
@@ -607,13 +624,13 @@ export function AgentPanel() {
               { role: "user", content: command },
               { role: "assistant", content: response },
             ].slice(-16);
+            // Remember what Veda is about to say so we can filter the echo
+            lastSpokenWords = response.toLowerCase().split(/\s+/).filter(w => w.length > 3);
             setConvState("speaking");
             setConvText(response.slice(0, 240));
-            // Speak the response — no concurrent mic listener here to avoid
-            // the TTS-feedback loop (mic picking up Veda's own voice as a command)
             await speak(response.slice(0, 600));
-            // Brief pause so audio hardware fully switches speaker→mic before next listen
-            await new Promise(r => setTimeout(r, 300));
+            // Longer pause so speaker→mic switch is complete before next listen
+            await new Promise(r => setTimeout(r, 1200));
           }
         } catch (e: any) {
           if (e.name === "AbortError" || ctrl.signal.aborted) break;
