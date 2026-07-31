@@ -769,7 +769,6 @@ export function AgentPanel() {
   };
 
   const stopAudio = () => {
-    if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; }
     window.speechSynthesis?.cancel();
     _browserTtsResolve?.();
   };
