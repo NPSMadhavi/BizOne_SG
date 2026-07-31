@@ -315,7 +315,11 @@ function useVoice() {
 }
 
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
-const WAKE_WORDS = /\b(veda|veeda|vida|beta|beda|vetta|weda|weather|weeder|veeder|vader|vector|better|letter|feder|cedar|reader|feeder|meter|leader)\b/i;
+// Keep as a plain variable (not const) so HMR always refreshes it in place.
+// The hook reads it via a ref so stale useCallback closures always see the latest value.
+let WAKE_WORDS = /\b(veda|veeda|vida|beta|beda|vetta|weda|weather|weeder|veeder|vader|vector|better|letter|feder|cedar|reader|feeder|meter|leader)\b/i;
+const WAKE_WORDS_REF = { current: WAKE_WORDS };
+WAKE_WORDS_REF.current = WAKE_WORDS;
 
 function useWakeWord(
   onWakeWord: () => void,
@@ -367,7 +371,7 @@ function useWakeWord(
         if (heard.length > 0) onHeardRef.current?.(heard[0]);
 
         for (const t of heard) {
-          if (WAKE_WORDS.test(t)) {
+          if (WAKE_WORDS_REF.current.test(t)) {
             recRef.current = null;
             onWakeRef.current();
             return;
