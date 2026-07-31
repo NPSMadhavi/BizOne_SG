@@ -119,6 +119,15 @@ const SUGGESTIONS = [
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// ── Track user gesture so we know TTS is unblocked ────────────────────────
+let _userHasInteracted = false;
+if (typeof window !== "undefined") {
+  const _markInteracted = () => { _userHasInteracted = true; };
+  window.addEventListener("click", _markInteracted, { once: false, capture: true, passive: true });
+  window.addEventListener("keydown", _markInteracted, { once: false, capture: true, passive: true });
+  window.addEventListener("touchstart", _markInteracted, { once: false, capture: true, passive: true });
+}
+
 // ── Browser TTS — voice cache (must load BEFORE first speak call) ─────────
 let _cachedVoice: SpeechSynthesisVoice | null = null;
 
@@ -541,11 +550,18 @@ export function AgentPanel() {
     try {
       setConvState("greeting");
       setConvText(greeting);
-      await speak(greeting);
-      // Give the audio hardware ~400 ms to switch from speaker → mic
-      // before we open a SpeechRecognition session. Without this pause
-      // rec.start() can fail silently and the loop exits immediately.
-      await new Promise(r => setTimeout(r, 400));
+      // Only speak the greeting if the browser has received a user gesture
+      // (click/keydown). On page-load with ambient restored from localStorage,
+      // speechSynthesis.speak() is silently blocked — we skip speech but still
+      // show the visual overlay and proceed straight to listening.
+      if (_userHasInteracted) {
+        await speak(greeting);
+        // Give the audio hardware ~400 ms to switch from speaker → mic
+        await new Promise(r => setTimeout(r, 400));
+      } else {
+        // No user gesture yet — just wait a beat so the UI updates before mic opens
+        await new Promise(r => setTimeout(r, 200));
+      }
 
       let silenceStreak = 0;
 
