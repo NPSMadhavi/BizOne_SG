@@ -177,63 +177,50 @@ if (typeof window !== "undefined" && window.speechSynthesis) {
 }
 
 let _browserTtsResolve: (() => void) | null = null;
+let _browserTtsTimeout: ReturnType<typeof setTimeout> | null = null;
 function speakBrowser(text: string): Promise<void> {
   return new Promise((resolve) => {
     if (!window.speechSynthesis) { resolve(); return; }
+
+    // Clear any prior pending promise and utterance
+    if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
     window.speechSynthesis.cancel();
     _browserTtsResolve?.();
     _browserTtsResolve = resolve;
+
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
     if (!clean) { _browserTtsResolve = null; resolve(); return; }
-    const utt = new SpeechSynthesisUtterance(clean);
-    utt.rate = 1.0;
-    utt.pitch = 1.05;
-    utt.volume = 1.0;
-    // Use pre-cached voice; fall back to fresh lookup if voiceschanged hasn't fired yet
-    const voice = _cachedVoice ?? pickBestVoice(window.speechSynthesis.getVoices());
-    if (voice) utt.voice = voice;
-    utt.onend = () => { _browserTtsResolve = null; resolve(); };
-    utt.onerror = () => { _browserTtsResolve = null; resolve(); };
-    window.speechSynthesis.speak(utt);
-  });
-}
 
-// ── API Audio ──────────────────────────────────────────────────────────────
-let _audio: HTMLAudioElement | null = null;
-function playAudio(b64: string): Promise<void> {
-  return new Promise((resolve) => {
-    if (_audio) { _audio.pause(); _audio.src = ""; _audio = null; }
-    const a = new Audio(`data:audio/mp3;base64,${b64}`);
-    _audio = a;
-    a.onended = () => { _audio = null; resolve(); };
-    a.onerror = () => { _audio = null; resolve(); };
-    a.play().catch(() => { _audio = null; resolve(); });
-  });
-}
+    const done = () => {
+      if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
+      if (_browserTtsResolve === resolve) { _browserTtsResolve = null; resolve(); }
+    };
 
-async function speakApi(text: string): Promise<boolean> {
-  try {
-    const r = await fetch(`${BASE}/api/agent/speak`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      credentials: "include", body: JSON.stringify({ text }),
-    });
-    if (!r.ok) return false;
-    const { audio } = await r.json();
-    if (!audio) return false;
-    await playAudio(audio);
-    return true;
-  } catch {
-    return false;
-  }
+    // Chrome bug: after cancel(), speak() must be deferred or the utterance is silently dropped.
+    // Also set a hard timeout (words * ~80ms + 3s buffer) so the loop never hangs if onend
+    // never fires (another known Chrome SpeechSynthesis bug).
+    const estimatedMs = Math.max(3000, clean.split(/\s+/).length * 400 + 2000);
+    _browserTtsTimeout = setTimeout(done, estimatedMs);
+
+    setTimeout(() => {
+      if (_browserTtsResolve !== resolve) return; // already cancelled by a newer call
+      const utt = new SpeechSynthesisUtterance(clean);
+      utt.rate = 1.0;
+      utt.pitch = 1.05;
+      utt.volume = 1.0;
+      const voice = _cachedVoice ?? pickBestVoice(window.speechSynthesis.getVoices());
+      if (voice) utt.voice = voice;
+      utt.onend = done;
+      utt.onerror = done;
+      window.speechSynthesis.speak(utt);
+    }, 80); // 80 ms gap after cancel() before next speak()
+  });
 }
 
 async function speak(text: string): Promise<void> {
   const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim().slice(0, 600);
   if (!clean) return;
-  // Use browser TTS (instant, always available). Try API in background for future quality upgrade.
   await speakBrowser(clean);
-  // Silently attempt API for higher-quality audio (non-blocking, just warms it up)
-  speakApi(clean).catch(() => {});
 }
 
 // ── SSE stream ────────────────────────────────────────────────────────────────
