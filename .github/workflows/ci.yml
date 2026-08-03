@@ -48,21 +48,32 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const deployment = await github.rest.repos.createDeployment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: context.sha,
-              environment: 'production',
-              description: 'Replit production deploy',
-              auto_merge: false,
-              required_contexts: [],
-            });
+            try {
+              const deployment = await github.rest.repos.createDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.sha,
+                environment: 'production',
+                description: 'Replit production deploy',
+                auto_merge: false,
+                required_contexts: [],
+              });
 
-            await github.rest.repos.createDeploymentStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: deployment.data.id,
-              state: 'success',
-              description: 'CI passed — publish via Replit Publish button to go live',
-              environment_url: 'https://replit.com',
-            });
+              // Status 202 means GitHub queued it but didn't create the deployment yet
+              // (e.g. pending merge). In that case data.id is absent — skip status update.
+              if (!deployment.data.id) {
+                core.warning('Deployment not created (likely a 202 response). Skipping status update.');
+                return;
+              }
+
+              await github.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.data.id,
+                state: 'success',
+                description: 'CI passed — publish via Replit Publish button to go live',
+                environment_url: 'https://replit.com',
+              });
+            } catch (err) {
+              core.warning(`Deployment step failed (non-fatal): ${err.message}`);
+            }
