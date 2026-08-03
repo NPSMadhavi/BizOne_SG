@@ -273,6 +273,7 @@ export interface Settings {
   defaultUom?: string;
   bankDetails?: string;
   termsAndConditions?: string;
+  quotationTerms?: string;
 }
 
 export interface UpdateSettingsBody {
@@ -296,6 +297,7 @@ export interface UpdateSettingsBody {
   doSuffix?: string;
   bankDetails?: string;
   termsAndConditions?: string;
+  quotationTerms?: string;
 }
 
 export interface DocStats {

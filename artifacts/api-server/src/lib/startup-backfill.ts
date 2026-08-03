@@ -52,7 +52,7 @@ export async function runStartupMigrations(): Promise<void> {
   }
 }
 
-interface FxRow { id: number; currency: string; date: string | null; }
+interface FxRow extends Record<string, unknown> { id: number; currency: string; date: string | null; }
 
 async function backfillTable(
   table: string,

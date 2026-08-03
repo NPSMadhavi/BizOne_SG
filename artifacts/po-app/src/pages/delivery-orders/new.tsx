@@ -114,7 +114,7 @@ export default function DeliveryOrderNew() {
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
-        append({ partNumber: "", description: "", qty: 1, uom: "", itemImage: "" });
+        append({ partNumber: "", description: "", qty: 1, uom: "", itemImage: "", serialNumbers: "" });
         requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
       }
     });
@@ -356,7 +356,7 @@ export default function DeliveryOrderNew() {
         open={importExcelOpen}
         onClose={() => setImportExcelOpen(false)}
         onImport={(imported, replace) => {
-          const newItems = imported.map(it => ({ partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, itemImage: "" }));
+          const newItems = imported.map(it => ({ partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, itemImage: "", serialNumbers: "" }));
           if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
         }}
       />
