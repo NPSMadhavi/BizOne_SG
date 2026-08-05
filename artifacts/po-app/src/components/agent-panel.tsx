@@ -317,7 +317,10 @@ function useVoice() {
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
 // Keep as a plain variable (not const) so HMR always refreshes it in place.
 // The hook reads it via a ref so stale useCallback closures always see the latest value.
-let WAKE_WORDS = /\b(veda|veeda|vida|beta|beda|vetta|weda|weather|weeder|veeder|vader|vector|better|letter|feder|cedar|reader|feeder|meter|leader)\b/i;
+// Only keep phonetically-close variants of "Veda".
+// Removed common English words (weather, better, letter, meter, leader, reader,
+// feeder, cedar, vector) that were causing constant false positives.
+let WAKE_WORDS = /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder)\b/i;
 const WAKE_WORDS_REF = { current: WAKE_WORDS };
 WAKE_WORDS_REF.current = WAKE_WORDS;
 
@@ -327,24 +330,30 @@ function useWakeWord(
   onMicError?: (code: string) => void,
   onHeard?: (text: string) => void,
 ) {
-  const recRef = useRef<any>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recRef     = useRef<any>(null);
+  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogRef= useRef<ReturnType<typeof setTimeout> | null>(null);
   const enabledRef = useRef(enabled);
-  const onWakeRef = useRef(onWakeWord);
-  const onMicErrRef = useRef(onMicError);
+  const onWakeRef  = useRef(onWakeWord);
+  const onMicErrRef= useRef(onMicError);
   const onHeardRef = useRef(onHeard);
   enabledRef.current = enabled;
-  onWakeRef.current = onWakeWord;
-  onMicErrRef.current = onMicError;
+  onWakeRef.current  = onWakeWord;
+  onMicErrRef.current= onMicError;
   onHeardRef.current = onHeard;
 
+  const clearWatchdog = useCallback(() => {
+    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+  }, []);
+
   const stopListening = useCallback(() => {
+    clearWatchdog();
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     if (recRef.current) {
       try { recRef.current.abort(); } catch {}
       recRef.current = null;
     }
-  }, []);
+  }, [clearWatchdog]);
 
   const startListening = useCallback(() => {
     if (!enabledRef.current || recRef.current) return;
@@ -352,14 +361,26 @@ function useWakeWord(
     if (!SR) return;
     try {
       const rec = new SR();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = "en-US";
-      rec.maxAlternatives = 5;
-      recRef.current = rec;
+      rec.continuous      = false;
+      rec.interimResults  = false;
+      rec.lang            = "en-US";
+      rec.maxAlternatives = 8; // more alternatives → more chances to catch "Veda"
+      recRef.current      = rec;
+
+      // Watchdog: Chrome sometimes silently hangs (no onresult/onerror/onend).
+      // If no event fires within 14 s, force-abort and restart.
+      clearWatchdog();
+      watchdogRef.current = setTimeout(() => {
+        if (recRef.current) {
+          try { recRef.current.abort(); } catch {}
+          recRef.current = null;
+        }
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, 400);
+      }, 14_000);
 
       rec.onresult = (evt: any) => {
-        // Collect all alternatives from all results
+        clearWatchdog();
+        // Collect all alternatives, sorted best-first (Chrome already orders them).
         const heard: string[] = [];
         for (let i = 0; i < evt.results.length; i++) {
           for (let j = 0; j < evt.results[i].length; j++) {
@@ -367,7 +388,7 @@ function useWakeWord(
             if (t) heard.push(t);
           }
         }
-        // Surface the first (most likely) transcript for debug display
+        // Show whatever was best-heard in the debug chip
         if (heard.length > 0) onHeardRef.current?.(heard[0]);
 
         for (const t of heard) {
@@ -380,30 +401,37 @@ function useWakeWord(
       };
 
       rec.onerror = (e: any) => {
+        clearWatchdog();
         recRef.current = null;
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           onMicErrRef.current?.(e.error);
           return;
         }
-        const delay = e.error === "no-speech" ? 100 : 1500;
+        // no-speech is normal — restart quickly; other errors give browser more breathing room
+        const delay = e.error === "no-speech" ? 200 : 1500;
         if (enabledRef.current) timerRef.current = setTimeout(startListening, delay);
       };
 
       rec.onend = () => {
+        clearWatchdog();
         recRef.current = null;
-        if (enabledRef.current) timerRef.current = setTimeout(startListening, 150);
+        // 300 ms is the sweet spot — fast enough to feel responsive, long enough that
+        // Chrome's mic-release doesn't cause the next session to silently fail.
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, 300);
       };
 
       rec.start();
     } catch {
+      clearWatchdog();
       recRef.current = null;
-      if (enabledRef.current) timerRef.current = setTimeout(startListening, 800);
+      if (enabledRef.current) timerRef.current = setTimeout(startListening, 900);
     }
-  }, []);
+  }, [clearWatchdog]);
 
   useEffect(() => {
     if (enabled) {
-      timerRef.current = setTimeout(startListening, 600);
+      // Small initial delay so the page/mic is ready before the first session
+      timerRef.current = setTimeout(startListening, 800);
     } else {
       stopListening();
     }
