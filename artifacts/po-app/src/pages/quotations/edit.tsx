@@ -19,7 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
@@ -29,6 +29,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -82,6 +83,7 @@ export default function QuotationEdit() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importQtOpen, setImportQtOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
@@ -497,7 +499,14 @@ export default function QuotationEdit() {
                           <tr className="border-b last:border-0 hover:bg-muted/20">
                             <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
                             <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl>
+                                <div className="flex items-center gap-1">
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                    <Package className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </FormControl></FormItem>
                             )} /></td>
                             <td className="px-4 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
                               <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
@@ -642,6 +651,20 @@ export default function QuotationEdit() {
           } else {
             for (const item of newItems) append(item);
           }
+        }}
+      />
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        onSelect={({ item, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "");
+          if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
+          setStockPickerIndex(null);
         }}
       />
 

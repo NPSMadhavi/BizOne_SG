@@ -8,6 +8,7 @@ import {
   postPaymentJE,
   reversePaymentJE,
 } from "../lib/vendor-invoice-auto-post.js";
+import { nextDocNumber } from "../lib/running-numbers.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -90,48 +91,67 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
 
   const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId,
           gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate } = req.body;
-  if (!piNumber?.trim()) { res.status(400).json({ error: "Vendor PI number is required" }); return; }
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
   if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
     res.status(400).json({ error: "Valid total amount is required" }); return;
   }
 
-  const [doc] = await db.insert(vendorInvoicesTable).values({
-    companyId,
-    piNumber: piNumber.trim(),
-    piDate: piDate || new Date().toISOString().split("T")[0],
-    vendorName: vendorName.trim(),
-    poIds: Array.isArray(poIds) ? poIds : [],
-    poNumbers: poNumbers || null,
-    currency: currency || "SGD",
-    totalAmount: parseFloat(totalAmount).toFixed(2),
-    paidAmount: "0",
-    status: "pending",
-    notes: notes || null,
-    expenseAccountId: expenseAccountId ? parseInt(expenseAccountId) : null,
-    gstTreatment: gstTreatment || "standard_rated",
-    gstRate: parseFloat(gstRate ?? "9").toFixed(2),
-    gstAmount: parseFloat(gstAmount ?? "0").toFixed(2),
-    gstInclusive: !!gstInclusive,
-    exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
-    createdBy: userId,
-  }).returning();
+  const resolvedPiNumber = (typeof piNumber === "string" && piNumber.trim())
+    ? piNumber.trim()
+    : await nextDocNumber("pi", companyId);
 
-  logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
+  const parsedExpenseAccountId = (() => {
+    if (expenseAccountId == null || expenseAccountId === "" || expenseAccountId === "none") return null;
+    const n = typeof expenseAccountId === "number" ? expenseAccountId : parseInt(String(expenseAccountId), 10);
+    return Number.isFinite(n) ? n : null;
+  })();
 
-  await postVendorInvoiceJE(
-    {
-      id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName,
-      piDate: doc.piDate, totalAmount: parseFloat(totalAmount),
-      gstAmount: parseFloat(gstAmount ?? "0"),
+  const netAmount = Math.max(0, parseFloat(String(totalAmount)) - parseFloat(String(gstAmount ?? "0")));
+
+  try {
+    const [doc] = await db.insert(vendorInvoicesTable).values({
+      companyId,
+      piNumber: resolvedPiNumber,
+      piDate: piDate || new Date().toISOString().split("T")[0],
+      vendorName: vendorName.trim(),
+      poIds: Array.isArray(poIds) ? poIds : [],
+      poNumbers: poNumbers || null,
+      currency: currency || "SGD",
+      totalAmount: parseFloat(totalAmount).toFixed(2),
+      paidAmount: "0",
+      status: "pending",
+      notes: notes || null,
+      expenseAccountId: parsedExpenseAccountId,
+      items: [],
+      subtotal: netAmount.toFixed(2),
+      tax: parseFloat(String(gstAmount ?? "0")).toFixed(2),
       gstTreatment: gstTreatment || "standard_rated",
-      expenseAccountId: doc.expenseAccountId,
-    },
-    userId,
-    req.log,
-  );
+      gstRate: parseFloat(String(gstRate ?? "9")).toFixed(2),
+      gstAmount: parseFloat(String(gstAmount ?? "0")).toFixed(2),
+      gstInclusive: !!gstInclusive,
+      exchangeRate: parseFloat(String(exchangeRate ?? "1")).toFixed(6) as any,
+      createdBy: userId,
+    }).returning();
 
-  res.status(201).json(parsePI(doc));
+    logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
+
+    await postVendorInvoiceJE(
+      {
+        id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName,
+        piDate: doc.piDate, totalAmount: parseFloat(totalAmount),
+        gstAmount: parseFloat(String(gstAmount ?? "0")),
+        gstTreatment: gstTreatment || "standard_rated",
+        expenseAccountId: doc.expenseAccountId,
+      },
+      userId,
+      req.log,
+    );
+
+    res.status(201).json(parsePI(doc));
+  } catch (err: any) {
+    const message = err?.cause?.message || err?.message || "Failed to create vendor invoice";
+    res.status(500).json({ error: message });
+  }
 });
 
 router.get("/vendor-invoices/:id", async (req, res): Promise<void> => {

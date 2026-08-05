@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -28,6 +28,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { ItemImageField } from "@/components/item-image-field";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -83,6 +84,7 @@ export default function QuotationNew() {
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importQtOpen, setImportQtOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -230,13 +232,24 @@ export default function QuotationNew() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">New Quotation</h1>
-          <p className="text-muted-foreground mt-1">Create a new customer quotation.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/quotations")}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">New Quotation</h1>
+            <p className="text-muted-foreground mt-1">Create a new customer quotation.</p>
+          </div>
         </div>
         {nextQtNumber && (
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Quotation Number</p>
             <p className="text-lg font-semibold font-mono">{nextQtNumber}</p>
           </div>
@@ -480,7 +493,14 @@ export default function QuotationNew() {
                             <td className="px-4 py-2 text-muted-foreground text-xs">{_itemNo}</td>
                             <td className="px-4 py-2">
                               <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                                <FormItem><FormControl><Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} /></FormControl></FormItem>
+                                <FormItem><FormControl>
+                                  <div className="flex items-center gap-1">
+                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                      <Package className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                </FormControl></FormItem>
                               )} />
                             </td>
                             <td className="px-4 py-2 align-top">
@@ -641,6 +661,20 @@ export default function QuotationNew() {
           } else {
             for (const item of newItems) append(item);
           }
+        }}
+      />
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        onSelect={({ item, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "");
+          if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
+          setStockPickerIndex(null);
         }}
       />
 

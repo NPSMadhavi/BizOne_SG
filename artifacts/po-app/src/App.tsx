@@ -1,5 +1,6 @@
 import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/operations-8june/lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense, useEffect } from "react";
@@ -11,7 +12,9 @@ import { MaintenanceGuard } from "@/components/maintenance-guard";
 // ── Eagerly-loaded shells (tiny, always needed) ────────────────────────────
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
+import Register from "@/pages/register";
 import SelectCompany from "@/pages/select-company/index";
+import WebsiteLanding from "@/Website";
 
 // ── Route-level lazy bundles ───────────────────────────────────────────────
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -63,6 +66,9 @@ const GrnList = lazy(() => import("@/pages/grn/list"));
 const GrnView = lazy(() => import("@/pages/grn/view"));
 
 const StockList = lazy(() => import("@/pages/stock/list"));
+const WarehousesPage = lazy(() => import("@/pages/inventory/warehouses"));
+const TransfersPage = lazy(() => import("@/pages/inventory/transfers"));
+const InventoryReportsPage = lazy(() => import("@/pages/inventory/reports"));
 
 const VendorsPage    = lazy(() => import("@/pages/vendors/index"));
 const CustomersPage  = lazy(() => import("@/pages/customers/index"));
@@ -106,6 +112,11 @@ const IncomeNew          = lazy(() => import("@/pages/accounting/income-new"));
 const IncomeEdit         = lazy(() => import("@/pages/accounting/income-edit"));
 const IncomeView         = lazy(() => import("@/pages/accounting/income-view"));
 
+const AssetsPage         = lazy(() => import("@/operations-8june/pages/assets"));
+const LicensesPage       = lazy(() => import("@/operations-8june/pages/licenses"));
+const EmployeesPage      = lazy(() => import("@/operations-8june/pages/employees"));
+const PayrollPage        = lazy(() => import("@/operations-8june/pages/payroll"));
+
 // ── Route title map ────────────────────────────────────────────────────────
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -118,11 +129,18 @@ const ROUTE_TITLES: Record<string, string> = {
   "/delivery-orders": "Delivery Orders",
   "/grn": "Goods Receipt Notes",
   "/stock": "Stock Items",
+  "/inventory/warehouses": "Warehouses",
+  "/inventory/transfers": "Stock Transfer",
+  "/inventory/reports": "Stock Reports",
   "/vendor-invoices": "Vendor Invoices",
   "/projects": "Projects",
   "/vendors": "Vendors",
   "/customers": "Customers",
   "/address-book": "Address Book",
+  "/assets": "Assets",
+  "/licenses": "Licenses",
+  "/employees": "Employees",
+  "/payroll": "Payroll",
   "/accounting/chart-of-accounts": "Chart of Accounts",
   "/accounting/journal-entries": "Journal Entries",
   "/accounting/profit-loss": "Profit & Loss",
@@ -147,6 +165,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/settings": "Settings",
   "/select-company": "Select Company",
   "/login": "Sign In",
+  "/register": "Sign Up",
+  "/": "BizOne",
 };
 
 function useDocumentTitle() {
@@ -169,8 +189,6 @@ function useDocumentTitle() {
     }
   }, [location, selectedCompany]);
 }
-
-const queryClient = new QueryClient();
 
 function LoadingSpinner() {
   return (
@@ -229,7 +247,7 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
 function SmartHomeRedirect() {
   const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
   if (isLoading) return <LoadingSpinner />;
-  if (!user) return <Redirect to="/login" />;
+  if (!user) return <WebsiteLanding />;
   const hasMultiple = (user.companies?.length ?? 0) > 1;
   if (!selectedCompany && hasMultiple) return <Redirect to="/select-company" />;
   return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
@@ -242,10 +260,17 @@ function Router() {
       <Suspense fallback={<LoadingSpinner />}>
         <Switch>
           <Route path="/login" component={Login} />
+          <Route path="/register" component={Register} />
           <Route path="/select-company" component={SelectCompany} />
           <Route path="/">{() => <SmartHomeRedirect />}</Route>
 
           <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>
+
+          {/* Operations */}
+          <Route path="/assets">{() => <ProtectedRoute component={AssetsPage} module="assets" />}</Route>
+          <Route path="/licenses">{() => <ProtectedRoute component={LicensesPage} module="licenses" />}</Route>
+          <Route path="/employees">{() => <ProtectedRoute component={EmployeesPage} module="employees" />}</Route>
+          <Route path="/payroll">{() => <ProtectedRoute component={PayrollPage} module="payroll" />}</Route>
 
           {/* Projects & Vouchers */}
           <Route path="/projects">{() => <ProtectedRoute component={ProjectList} module="projects" />}</Route>
@@ -302,8 +327,11 @@ function Router() {
           <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
           <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="grn" />}</Route>
 
-          {/* Stock Items */}
+          {/* Stock / Inventory */}
           <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
+          <Route path="/inventory/warehouses">{() => <ProtectedRoute component={WarehousesPage} module="warehouses" />}</Route>
+          <Route path="/inventory/transfers">{() => <ProtectedRoute component={TransfersPage} module="stock_transfer" />}</Route>
+          <Route path="/inventory/reports">{() => <ProtectedRoute component={InventoryReportsPage} module="inventory_reports" />}</Route>
 
           {/* Vendor Invoices */}
           <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="purchase_orders" />}</Route>

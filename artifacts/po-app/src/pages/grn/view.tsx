@@ -25,6 +25,9 @@ interface GrnItem {
   received: boolean;
   isStockItem: boolean;
   serialNumbers: string;
+  warehouseName?: string;
+  warehouseId?: number;
+  stockItemId?: number;
 }
 
 interface Grn {
@@ -224,7 +227,7 @@ export default function GrnView() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -239,70 +242,91 @@ export default function GrnView() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-t">
-                <tr>
-                  <th className="px-4 py-3 font-medium w-12 text-center">
+            <table className="w-full table-fixed text-sm border-collapse">
+              <colgroup>
+                <col className="w-[72px]" />
+                <col className="w-[18%]" />
+                <col className="w-[22%]" />
+                <col className="w-[64px]" />
+                <col className="w-[100px]" />
+                <col />
+              </colgroup>
+              <thead>
+                <tr className="border-y border-emerald-100 bg-[#F0FDFA] text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <th className="px-3 py-3 text-center align-bottom">
                     <div className="flex flex-col items-center gap-1">
                       <Checkbox
                         checked={allReceived}
                         data-state={someReceived ? "indeterminate" : allReceived ? "checked" : "unchecked"}
                         onCheckedChange={(checked) => handleSelectAll(checked === true)}
-                        className={allReceived ? "border-emerald-600 data-[state=checked]:bg-emerald-600" : ""}
+                        className="border-emerald-500 data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=indeterminate]:border-emerald-500 data-[state=indeterminate]:bg-emerald-500"
                         aria-label="Select all"
                       />
                       <span>Recv</span>
                     </div>
                   </th>
-                  <th className="px-4 py-3 font-medium">Part No.</th>
-                  <th className="px-4 py-3 font-medium">Description</th>
-                  <th className="px-4 py-3 font-medium text-center w-16">Qty</th>
-                  <th className="px-4 py-3 font-medium text-center w-24">Stock Item</th>
-                  <th className="px-4 py-3 font-medium">Serial Numbers</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Part No.</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Description</th>
+                  <th className="px-3 py-3 text-center whitespace-nowrap">Qty</th>
+                  <th className="px-3 py-3 text-center whitespace-nowrap">Stock Item</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Serial Numbers</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody>
                 {items.map((item, index) => (
                   <tr
                     key={index}
-                    className={`transition-colors ${
+                    className={`border-b border-emerald-100/80 align-middle transition-colors last:border-b-0 ${
                       item.received
-                        ? "bg-emerald-50 hover:bg-emerald-100/80"
-                        : "hover:bg-muted/30"
+                        ? "bg-[#ECFDF5] hover:bg-[#D1FAE5]/70"
+                        : "bg-white hover:bg-muted/20"
                     }`}
                   >
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3.5 text-center">
                       <Checkbox
                         checked={item.received}
                         onCheckedChange={(checked) =>
                           handleToggleReceived(index, checked === true)
                         }
-                        className={item.received ? "border-emerald-600 data-[state=checked]:bg-emerald-600" : ""}
+                        className="border-emerald-500 data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
                       />
                     </td>
-                    <td className="px-4 py-3 font-mono text-muted-foreground text-xs">
-                      {item.partNumber || "—"}
+                    <td className="px-4 py-3.5 text-left">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-xs text-foreground">
+                          {item.partNumber || "—"}
+                        </p>
+                        {item.warehouseName ? (
+                          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                            → {item.warehouseName}
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={item.received ? "font-medium text-emerald-800" : ""}>
-                        {stripHtml(item.description || "")}
-                      </span>
+                    <td className="px-4 py-3.5 text-left">
+                      <p className={`truncate text-sm ${item.received ? "font-medium text-emerald-900" : "text-foreground"}`}>
+                        {stripHtml(item.description || "") || (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
+                      </p>
                     </td>
-                    <td className="px-4 py-3 text-center font-medium">{item.qty}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3.5 text-center text-base font-bold text-foreground">
+                      {item.qty}
+                    </td>
+                    <td className="px-3 py-3.5 text-center">
                       <Checkbox
                         checked={item.isStockItem}
                         onCheckedChange={(checked) => handleToggleIsStockItem(index, checked === true)}
                       />
                     </td>
-                    <td className="px-4 py-3 min-w-[200px]">
+                    <td className="px-4 py-3 text-left">
                       {item.isStockItem ? (
                         <Textarea
                           value={item.serialNumbers}
                           onChange={(e) => handleSerialNumbers(index, e.target.value)}
                           placeholder={`Enter serial numbers (1 per line)\nQty: ${item.qty}`}
-                          className="text-xs font-mono resize-none min-h-[64px]"
-                          rows={Math.max(2, item.qty)}
+                          className="h-[52px] min-h-[52px] max-h-24 w-full resize-y overflow-y-auto rounded-lg border border-emerald-200/80 bg-[#F7FFFC] px-3 py-2 text-xs font-mono leading-snug text-foreground placeholder:whitespace-pre-line placeholder:text-muted-foreground/70 focus-visible:ring-emerald-400/40"
+                          rows={2}
                         />
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>

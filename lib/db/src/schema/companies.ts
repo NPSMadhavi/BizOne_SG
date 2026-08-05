@@ -9,6 +9,7 @@ export const companiesTable = pgTable("companies", {
   gstRegNo: text("gst_reg_no"),
   email: text("email"),
   phone: text("phone"),
+  domain: text("domain"),
   logoUrl: text("logo_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

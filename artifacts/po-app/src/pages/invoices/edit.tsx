@@ -15,11 +15,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
-import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
@@ -46,6 +44,9 @@ const itemSchema = z.object({
   discount: z.coerce.number().min(0).max(100).default(0),
   isFoc: z.boolean().default(false),
   isStockItem: z.boolean().default(false),
+  stockItemId: z.number().optional(),
+  warehouseId: z.number().optional(),
+  warehouseName: z.string().optional(),
   selectedSerials: z.array(z.string()).default([]),
   selectedSerialIds: z.array(z.number()).default([]),
   itemImage: z.string().default(""),
@@ -162,7 +163,6 @@ export default function InvoiceEdit() {
       items: [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" }],
     },
   });
-  useVedaFormFill(form);
 
   useEffect(() => {
     if (doc && !initialized.current) {
@@ -204,6 +204,7 @@ export default function InvoiceEdit() {
           discount: Number(i.discount) || 0,
           isFoc: !!(i.isFoc),
           isStockItem: i.isStockItem ?? false,
+          stockItemId: i.stockItemId ? Number(i.stockItemId) : undefined,
           selectedSerials: i.selectedSerials ?? [],
           selectedSerialIds: i.selectedSerialIds ?? [],
           itemImage: (i as any).itemImage || "",
@@ -228,7 +229,6 @@ export default function InvoiceEdit() {
   const taxPercent = form.watch("tax") || 0;
 
   const [importPOOpen, setImportPOOpen] = useState(false);
-  const [importExcelOpen, setImportExcelOpen] = useState(false);
   function handleImportFromPO(imported: InvoiceImportItem[]) {
     if (!imported.length) return;
     const current = form.getValues("items");
@@ -309,11 +309,14 @@ export default function InvoiceEdit() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section" as const, sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
       const disc = Number(i.discount) || 0;
-      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      const partNumber = (i.partNumber || "").replace(/<[^>]*>/g, "").trim();
+      return { ...i, partNumber, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    updateMutation.mutate({ id, data: { ...values, status: values.status, discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
+    updateMutation.mutate({ id, data: { ...values, status: "confirmed", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+        queryClient.invalidateQueries({ queryKey: ["stock-items"] });
+        queryClient.invalidateQueries({ queryKey: ["inventory"] });
         setIsSubmitting(false);
         if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Invoice saved." }); }
@@ -478,9 +481,6 @@ export default function InvoiceEdit() {
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
                     <FileInput className="h-3 w-3" /> Import from PO
                   </Button>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
-                    <FileInput className="h-3 w-3" /> Import from Excel / PDF
-                  </Button>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
@@ -587,7 +587,7 @@ export default function InvoiceEdit() {
                           <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                             <FormItem><FormControl>
                               <div className="flex items-center gap-1">
-                                <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
                                 <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                   <Package className="h-3.5 w-3.5" />
                                 </Button>
@@ -794,7 +794,7 @@ export default function InvoiceEdit() {
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         currentInvoiceId={id}
-        onSelect={({ item, selectedSerials, selectedSerialIds, qty }: StockItemSelection) => {
+        onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
           const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
@@ -814,6 +814,11 @@ export default function InvoiceEdit() {
           form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
+          form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
+          if (warehouseId) {
+            form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+            form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
+          }
           if (selectedSerials.length > 0) {
             form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length);
             form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
@@ -854,15 +859,6 @@ export default function InvoiceEdit() {
         mode="invoice"
         onImport={imported => handleImportFromPO(imported as InvoiceImportItem[])}
       />
-      <ImportItemsDialog
-        open={importExcelOpen}
-        onClose={() => setImportExcelOpen(false)}
-        onImport={(imported, replace) => {
-          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
-          const newItems = imported.map(it => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
-          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
-        }}
-      />
       <PdfPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}
@@ -871,15 +867,6 @@ export default function InvoiceEdit() {
         pdfFilename={doc ? `${doc.invNumber}.pdf` : "invoice.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
-        docInfo={doc ? {
-          docType: "Tax Invoice",
-          docNumber: doc.invNumber,
-          customerName: doc.customerName,
-          companyName: (selectedCompany as any)?.name || "RSV Infotech",
-          items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
-          currency: (doc as any).currency || "SGD",
-          totalAmount: Number(doc.totalAmount) || 0,
-        } : undefined}
         onEdit={() => { setPreviewOpen(false); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });

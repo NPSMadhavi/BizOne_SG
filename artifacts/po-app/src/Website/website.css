@@ -1,0 +1,33 @@
+/* Scoped styles from Downloads BizOne_landing_page (index.css) — do not reset the whole app */
+html {
+  scroll-behavior: smooth;
+}
+
+.bizone-landing {
+  background: #ffffff;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: "Poppins", sans-serif;
+  min-height: 100vh;
+}
+
+.bizone-landing * {
+  box-sizing: border-box;
+  font-family: "Poppins", sans-serif;
+}
+
+.bizone-landing .my-masonry-grid {
+  display: flex;
+  margin-left: -32px;
+  width: auto;
+}
+
+.bizone-landing .my-masonry-grid_column {
+  padding-left: 45px;
+  background-clip: padding-box;
+}
+
+.bizone-landing .my-masonry-grid_column > div {
+  margin-bottom: 30px;
+}

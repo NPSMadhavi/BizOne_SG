@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface StockItem {
   id: number;
@@ -27,11 +28,21 @@ interface Serial {
   reservedByUser?: string;
 }
 
+interface Warehouse {
+  id: number;
+  name: string;
+  code: string;
+  quantity: number;
+  isDefault?: boolean;
+}
+
 export interface StockItemSelection {
   item: StockItem;
   selectedSerials: string[];
   selectedSerialIds: number[];
   qty?: number;
+  warehouseId?: number;
+  warehouseName?: string;
 }
 
 interface StockItemPickerDialogProps {
@@ -39,9 +50,17 @@ interface StockItemPickerDialogProps {
   onOpenChange: (open: boolean) => void;
   onSelect: (selection: StockItemSelection) => void;
   currentInvoiceId?: number;
+  /**
+   * "issue"   (default) — for sales invoices: only shows warehouses that have stock,
+   *                        enforces qty ≤ available, button says "Confirm".
+   * "receive"           — for vendor invoices: shows ALL warehouses (we're adding stock),
+   *                        no qty upper limit, button says "Receive".
+   */
+  mode?: "issue" | "receive";
 }
 
-export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInvoiceId }: StockItemPickerDialogProps) {
+export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInvoiceId, mode = "issue" }: StockItemPickerDialogProps) {
+  const isReceiveMode = mode === "receive";
   const [step, setStep] = useState<"items" | "serials" | "qty">("items");
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
@@ -50,6 +69,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
   const [serialSearch, setSerialSearch] = useState("");
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [qtyInput, setQtyInput] = useState("1");
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("");
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -61,6 +81,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
       setSerialSearch("");
       setChosen(new Set());
       setQtyInput("1");
+      setSelectedWarehouseId("");
     }
   }, [open]);
 
@@ -81,6 +102,81 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
     },
     enabled: open && step === "items",
   });
+
+  const { data: warehouses = [] } = useQuery<Warehouse[]>({
+    queryKey: ["warehouse-stock", selectedItem?.id, isReceiveMode],
+    queryFn: async () => {
+      if (!selectedItem) return [];
+
+      // Always load all active warehouses + balances so Main Warehouse
+      // (and others) appear whether stock was transferred or not.
+      const [allRes, balRes] = await Promise.all([
+        fetch("/api/warehouses", { credentials: "include" }),
+        fetch(
+          `/api/inventory/warehouse-stock?stockItemId=${selectedItem.id}`,
+          { credentials: "include" }
+        ),
+      ]);
+      if (!allRes.ok) return [];
+      const all: any[] = await allRes.json();
+      const balances: Warehouse[] = balRes.ok ? await balRes.json() : [];
+      const balMap = new Map(balances.map((b) => [b.id, Number(b.quantity) || 0]));
+
+      const byId = new Map(
+        all
+          .filter((w: any) => w.isActive !== false)
+          .map((w: any) => [
+            w.id,
+            {
+              id: w.id as number,
+              name: String(w.name),
+              code: String(w.code),
+              quantity: balMap.has(w.id) ? (balMap.get(w.id) as number) : 0,
+              isDefault: !!w.isDefault,
+            } satisfies Warehouse,
+          ])
+      );
+
+      // Merge stock API balances (includes Main / legacy qty fallback)
+      for (const b of balances) {
+        const existing = byId.get(b.id);
+        if (existing) {
+          existing.quantity = Number(b.quantity) || 0;
+          existing.isDefault = existing.isDefault || !!b.isDefault;
+        } else {
+          byId.set(b.id, {
+            id: b.id,
+            name: b.name,
+            code: b.code,
+            quantity: Number(b.quantity) || 0,
+            isDefault: !!b.isDefault,
+          });
+        }
+      }
+
+      // Show every active warehouse (Main included even at 0 pcs)
+      return Array.from(byId.values()).sort((a, b) => {
+        if (a.isDefault && !b.isDefault) return -1;
+        if (!a.isDefault && b.isDefault) return 1;
+        if (a.code === "MAIN" && b.code !== "MAIN") return -1;
+        if (a.code !== "MAIN" && b.code === "MAIN") return 1;
+        return b.quantity - a.quantity;
+      });
+    },
+    enabled: open && step === "qty" && selectedItem !== null,
+  });
+
+  useEffect(() => {
+    if (warehouses.length > 0 && !selectedWarehouseId) {
+      // Prefer default warehouse when it has stock; otherwise first warehouse with stock; else Main.
+      const defaultWh =
+        warehouses.find((w) => w.isDefault && w.quantity > 0) ??
+        warehouses.find((w) => w.quantity > 0) ??
+        warehouses.find((w) => w.isDefault) ??
+        warehouses[0];
+      setSelectedWarehouseId(String(defaultWh.id));
+    }
+  }, [warehouses, selectedWarehouseId]);
 
   async function handleItemClick(item: StockItem) {
     setSelectedItem(item);
@@ -139,13 +235,18 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
     if (!selectedItem) return;
     const qty = parseInt(qtyInput, 10);
     if (!qty || qty < 1) return;
-    const maxQty = Number(selectedItem.stockQty) || 0;
-    if (qty > maxQty) return;
+    if (!isReceiveMode && qty > maxQty) return;
+    
+    const selectedWarehouse = warehouses.find(w => String(w.id) === selectedWarehouseId);
+    if (!selectedWarehouse) return;
+    
     onSelect({
       item: selectedItem,
       selectedSerials: [],
       selectedSerialIds: [],
       qty,
+      warehouseId: selectedWarehouse.id,
+      warehouseName: selectedWarehouse.name,
     });
     onOpenChange(false);
   }
@@ -157,10 +258,16 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
   const availableCount = serials.filter(s => s.status === "available").length;
   const allAvailableSelected = availableCount > 0 && filteredSerials.filter(s => s.status === "available").every(s => chosen.has(s.id));
 
-  const maxQty = selectedItem ? Number(selectedItem.stockQty) || 0 : 0;
+  const selectedWarehouse = warehouses.find(w => String(w.id) === selectedWarehouseId);
+  const maxQty = selectedWarehouse
+    ? Number(selectedWarehouse.quantity) || 0
+    : selectedItem
+      ? Number(selectedItem.stockQty) || 0
+      : 0;
   const parsedQty = parseInt(qtyInput, 10);
-  const qtyIsValid = !isNaN(parsedQty) && parsedQty >= 1 && parsedQty <= maxQty;
-  const qtyOverMax = !isNaN(parsedQty) && parsedQty > maxQty;
+  // In receive mode there is no upper-bound (we are adding stock)
+  const qtyIsValid = !isNaN(parsedQty) && parsedQty >= 1 && (isReceiveMode || parsedQty <= maxQty);
+  const qtyOverMax = !isReceiveMode && !isNaN(parsedQty) && parsedQty > maxQty;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
@@ -246,15 +353,15 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
         {step === "serials" && selectedItem && (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 min-w-0">
+              <DialogTitle className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setStep("items")}
-                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <span className="truncate min-w-0" title={selectedItem.name}>{selectedItem.name}</span>
+                <span className="truncate">{selectedItem.name}</span>
                 <span className="font-mono text-sm font-normal text-muted-foreground shrink-0">
                   {selectedItem.code}
                 </span>
@@ -359,15 +466,15 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
         {step === "qty" && selectedItem && (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 min-w-0">
+              <DialogTitle className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setStep("items")}
-                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <span className="truncate min-w-0" title={selectedItem.name}>{selectedItem.name}</span>
+                <span className="truncate">{selectedItem.name}</span>
                 <span className="font-mono text-sm font-normal text-muted-foreground shrink-0">
                   {selectedItem.code}
                 </span>
@@ -377,40 +484,92 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
             <div className="py-4 space-y-4">
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                  QTY / <span className="text-foreground">{maxQty} {selectedItem.uom} available</span>
+                  {isReceiveMode ? (
+                    <>
+                      QTY TO RECEIVE /{" "}
+                      <span className="text-foreground">
+                        {selectedWarehouse
+                          ? `currently ${maxQty} ${selectedItem.uom} in ${selectedWarehouse.name}`
+                          : `enter quantity to receive`}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      QTY / <span className="text-foreground">
+                        {selectedWarehouse
+                          ? `${maxQty} ${selectedItem.uom} in ${selectedWarehouse.name}`
+                          : `${maxQty} ${selectedItem.uom} available`}
+                      </span>
+                    </>
+                  )}
                 </span>
               </div>
 
-              <div className="space-y-1">
-                <Input
-                  ref={qtyInputRef}
-                  type="number"
-                  min={1}
-                  max={maxQty}
-                  value={qtyInput}
-                  onChange={(e) => setQtyInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && qtyIsValid) handleConfirmQty();
-                  }}
-                  className={`text-lg font-semibold w-36 ${qtyOverMax ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
-                  placeholder="Enter qty"
-                  autoFocus
-                />
-                {qtyOverMax && (
-                  <p className="text-xs text-red-600">
-                    Qty cannot exceed available stock ({maxQty} {selectedItem.uom})
-                  </p>
-                )}
-                {!isNaN(parsedQty) && parsedQty < 1 && qtyInput !== "" && (
-                  <p className="text-xs text-red-600">Qty must be at least 1</p>
-                )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Quantity</label>
+                  <Input
+                    ref={qtyInputRef}
+                    type="number"
+                    min={1}
+                    max={isReceiveMode ? undefined : maxQty}
+                    value={qtyInput}
+                    onChange={(e) => setQtyInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && qtyIsValid && selectedWarehouseId) handleConfirmQty();
+                    }}
+                    className={`text-lg font-semibold ${qtyOverMax ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
+                    placeholder="Enter qty"
+                    autoFocus
+                  />
+                  {qtyOverMax && (
+                    <p className="text-xs text-red-600">
+                      Qty cannot exceed available stock ({maxQty} {selectedItem.uom})
+                    </p>
+                  )}
+                </div>
+
+                  {!isNaN(parsedQty) && parsedQty < 1 && qtyInput !== "" && (
+                    <p className="text-xs text-red-600">Qty must be at least 1</p>
+                  )}
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {isReceiveMode ? "Receive Into Warehouse" : "Warehouse"}
+                  </label>
+                  <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId}>
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select warehouse" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warehouses.length === 0 ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          {isReceiveMode ? "No warehouses found" : "No warehouses with stock"}
+                        </div>
+                      ) : (
+                        warehouses.map(wh => (
+                          <SelectItem key={wh.id} value={String(wh.id)}>
+                            <span className="font-medium">{wh.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">
+                              {isReceiveMode
+                                ? `(current: ${Number(wh.quantity).toFixed(0)} ${selectedItem.uom})`
+                                : `(${Number(wh.quantity).toFixed(0)} ${selectedItem.uom})`}
+                            </span>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={handleConfirmQty} disabled={!qtyIsValid}>
-                Import ({qtyIsValid ? parsedQty : "—"} {selectedItem.uom})
+              <Button onClick={handleConfirmQty} disabled={!qtyIsValid || !selectedWarehouseId}>
+                {isReceiveMode
+                  ? `Receive (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`
+                  : `Confirm (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`}
               </Button>
             </DialogFooter>
           </>

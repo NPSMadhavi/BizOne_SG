@@ -141,15 +141,20 @@ export default function Settings() {
   const [quotationTerms, setQuotationTerms] = useState("");
   const [docsEditing, setDocsEditing] = useState(false);
 
-  const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "1", suffix: "" });
-  const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "1", suffix: "" });
-  const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "1", suffix: "" });
-  const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "1", suffix: "" });
-  const [rnGRN, setRnGRN] = useState<RunningNumberConfig>({ prefix: "GRN", counter: "1", suffix: "" });
-  const [rnCN, setRnCN] = useState<RunningNumberConfig>({ prefix: "CN", counter: "1", suffix: "" });
-  const [rnDN, setRnDN] = useState<RunningNumberConfig>({ prefix: "DN", counter: "1", suffix: "" });
-  const [rnPI, setRnPI] = useState<RunningNumberConfig>({ prefix: "PI", counter: "1", suffix: "" });
-  const [rnPV, setRnPV] = useState<RunningNumberConfig>({ prefix: "PV", counter: "1", suffix: "" });
+  const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "0", suffix: "" });
+  const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "0", suffix: "" });
+  const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "0", suffix: "" });
+  const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "0", suffix: "" });
+  const [rnGRN, setRnGRN] = useState<RunningNumberConfig>({ prefix: "GRN", counter: "0", suffix: "" });
+  const [rnCN, setRnCN] = useState<RunningNumberConfig>({ prefix: "CN", counter: "0", suffix: "" });
+  const [rnDN, setRnDN] = useState<RunningNumberConfig>({ prefix: "DN", counter: "0", suffix: "" });
+  const [rnPI, setRnPI] = useState<RunningNumberConfig>({ prefix: "PI", counter: "0", suffix: "" });
+  const [rnPV, setRnPV] = useState<RunningNumberConfig>({ prefix: "PV", counter: "0", suffix: "" });
+  const [rnIGR, setRnIGR] = useState<RunningNumberConfig>({ prefix: "IGR", counter: "0", suffix: "" });
+  const [rnGIN, setRnGIN] = useState<RunningNumberConfig>({ prefix: "GIN", counter: "0", suffix: "" });
+  const [rnST, setRnST] = useState<RunningNumberConfig>({ prefix: "ST", counter: "0", suffix: "" });
+  const [rnSA, setRnSA] = useState<RunningNumberConfig>({ prefix: "SA", counter: "0", suffix: "" });
+  const [rnSI, setRnSI] = useState<RunningNumberConfig>({ prefix: "STK", counter: "0", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
 
   const [maintEnabled, setMaintEnabled] = useState(false);
@@ -221,15 +226,20 @@ export default function Settings() {
       setSmtpFrom(settings.smtpFrom || "");
     }
     if (settings && !rnEditing) {
-      setRnPO({ prefix: (settings as any).poPrefix ?? "PO", counter: String((settings as any).poCounter ?? 1), suffix: (settings as any).poSuffix ?? "" });
-      setRnQT({ prefix: (settings as any).qtPrefix ?? "QT", counter: String((settings as any).qtCounter ?? 1), suffix: (settings as any).qtSuffix ?? "" });
-      setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 1), suffix: (settings as any).invSuffix ?? "" });
-      setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 1), suffix: (settings as any).doSuffix ?? "" });
-      setRnGRN({ prefix: (settings as any).grnPrefix ?? "GRN", counter: String((settings as any).grnCounter ?? 1), suffix: (settings as any).grnSuffix ?? "" });
-      setRnCN({ prefix: (settings as any).cnPrefix ?? "CN", counter: String((settings as any).cnCounter ?? 1), suffix: (settings as any).cnSuffix ?? "" });
-      setRnDN({ prefix: (settings as any).dnPrefix ?? "DN", counter: String((settings as any).dnCounter ?? 1), suffix: (settings as any).dnSuffix ?? "" });
-      setRnPI({ prefix: (settings as any).piPrefix ?? "PI", counter: String((settings as any).piCounter ?? 1), suffix: (settings as any).piSuffix ?? "" });
-      setRnPV({ prefix: (settings as any).pvPrefix ?? "PV", counter: String((settings as any).pvCounter ?? 1), suffix: (settings as any).pvSuffix ?? "" });
+      setRnPO({ prefix: (settings as any).poPrefix ?? "PO", counter: String((settings as any).poCounter ?? 0), suffix: (settings as any).poSuffix ?? "" });
+      setRnQT({ prefix: (settings as any).qtPrefix ?? "QT", counter: String((settings as any).qtCounter ?? 0), suffix: (settings as any).qtSuffix ?? "" });
+      setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 0), suffix: (settings as any).invSuffix ?? "" });
+      setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 0), suffix: (settings as any).doSuffix ?? "" });
+      setRnGRN({ prefix: (settings as any).grnPrefix ?? "GRN", counter: String((settings as any).grnCounter ?? 0), suffix: (settings as any).grnSuffix ?? "" });
+      setRnCN({ prefix: (settings as any).cnPrefix ?? "CN", counter: String((settings as any).cnCounter ?? 0), suffix: (settings as any).cnSuffix ?? "" });
+      setRnDN({ prefix: (settings as any).dnPrefix ?? "DN", counter: String((settings as any).dnCounter ?? 0), suffix: (settings as any).dnSuffix ?? "" });
+      setRnPI({ prefix: (settings as any).piPrefix ?? "PI", counter: String((settings as any).piCounter ?? 0), suffix: (settings as any).piSuffix ?? "" });
+      setRnPV({ prefix: (settings as any).pvPrefix ?? "PV", counter: String((settings as any).pvCounter ?? 0), suffix: (settings as any).pvSuffix ?? "" });
+      setRnIGR({ prefix: (settings as any).igrPrefix ?? "IGR", counter: String((settings as any).igrCounter ?? 0), suffix: (settings as any).igrSuffix ?? "" });
+      setRnGIN({ prefix: (settings as any).ginPrefix ?? "GIN", counter: String((settings as any).ginCounter ?? 0), suffix: (settings as any).ginSuffix ?? "" });
+      setRnST({ prefix: (settings as any).stPrefix ?? "ST", counter: String((settings as any).stCounter ?? 0), suffix: (settings as any).stSuffix ?? "" });
+      setRnSA({ prefix: (settings as any).saPrefix ?? "SA", counter: String((settings as any).saCounter ?? 0), suffix: (settings as any).saSuffix ?? "" });
+      setRnSI({ prefix: (settings as any).siPrefix ?? "STK", counter: String((settings as any).siCounter ?? 0), suffix: (settings as any).siSuffix ?? "" });
     }
     if (settings && !docsEditing) {
       setBankDetails((settings as any).bankDetails ?? "");
@@ -301,15 +311,20 @@ export default function Settings() {
     updateSettings.mutate(
       {
         data: {
-          poPrefix: rnPO.prefix, poCounter: parseInt(rnPO.counter) || 1, poSuffix: rnPO.suffix,
-          qtPrefix: rnQT.prefix, qtCounter: parseInt(rnQT.counter) || 1, qtSuffix: rnQT.suffix,
-          invPrefix: rnINV.prefix, invCounter: parseInt(rnINV.counter) || 1, invSuffix: rnINV.suffix,
-          doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 1, doSuffix: rnDO.suffix,
-          grnPrefix: rnGRN.prefix, grnCounter: parseInt(rnGRN.counter) || 1, grnSuffix: rnGRN.suffix,
-          cnPrefix: rnCN.prefix, cnCounter: parseInt(rnCN.counter) || 1, cnSuffix: rnCN.suffix,
-          dnPrefix: rnDN.prefix, dnCounter: parseInt(rnDN.counter) || 1, dnSuffix: rnDN.suffix,
-          piPrefix: rnPI.prefix, piCounter: parseInt(rnPI.counter) || 1, piSuffix: rnPI.suffix,
-          pvPrefix: rnPV.prefix, pvCounter: parseInt(rnPV.counter) || 1, pvSuffix: rnPV.suffix,
+          poPrefix: rnPO.prefix, poCounter: parseInt(rnPO.counter) || 0, poSuffix: rnPO.suffix,
+          qtPrefix: rnQT.prefix, qtCounter: parseInt(rnQT.counter) || 0, qtSuffix: rnQT.suffix,
+          invPrefix: rnINV.prefix, invCounter: parseInt(rnINV.counter) || 0, invSuffix: rnINV.suffix,
+          doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 0, doSuffix: rnDO.suffix,
+          grnPrefix: rnGRN.prefix, grnCounter: parseInt(rnGRN.counter) || 0, grnSuffix: rnGRN.suffix,
+          cnPrefix: rnCN.prefix, cnCounter: parseInt(rnCN.counter) || 0, cnSuffix: rnCN.suffix,
+          dnPrefix: rnDN.prefix, dnCounter: parseInt(rnDN.counter) || 0, dnSuffix: rnDN.suffix,
+          piPrefix: rnPI.prefix, piCounter: parseInt(rnPI.counter) || 0, piSuffix: rnPI.suffix,
+          pvPrefix: rnPV.prefix, pvCounter: parseInt(rnPV.counter) || 0, pvSuffix: rnPV.suffix,
+          igrPrefix: rnIGR.prefix, igrCounter: parseInt(rnIGR.counter) || 0, igrSuffix: rnIGR.suffix,
+          ginPrefix: rnGIN.prefix, ginCounter: parseInt(rnGIN.counter) || 0, ginSuffix: rnGIN.suffix,
+          stPrefix: rnST.prefix, stCounter: parseInt(rnST.counter) || 0, stSuffix: rnST.suffix,
+          saPrefix: rnSA.prefix, saCounter: parseInt(rnSA.counter) || 0, saSuffix: rnSA.suffix,
+          siPrefix: rnSI.prefix, siCounter: parseInt(rnSI.counter) || 0, siSuffix: rnSI.suffix,
         } as any,
       },
       {
@@ -548,7 +563,7 @@ export default function Settings() {
                 Running Numbers
               </CardTitle>
               <CardDescription>
-                Configure the prefix, starting counter, and suffix for each document type. Pattern: <strong>PREFIX-NNNN</strong> (zero-padded to 4+ digits).
+                Configure the prefix, last-used counter, and suffix for each document type. Next number = PREFIX + (counter + 1) + SUFFIX.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -563,11 +578,16 @@ export default function Settings() {
                     { label: "Quotation", state: rnQT, setter: setRnQT },
                     { label: "Invoice (Tax Invoice)", state: rnINV, setter: setRnINV },
                     { label: "Delivery Order", state: rnDO, setter: setRnDO },
-                    { label: "Goods Receipt Note", state: rnGRN, setter: setRnGRN },
+                    { label: "Goods Receipt Note (PO GRN)", state: rnGRN, setter: setRnGRN },
                     { label: "Credit Note", state: rnCN, setter: setRnCN },
                     { label: "Debit Note", state: rnDN, setter: setRnDN },
                     { label: "Proforma Invoice / Vendor PI", state: rnPI, setter: setRnPI },
                     { label: "Payment / Project Voucher", state: rnPV, setter: setRnPV },
+                    { label: "Inventory Goods Receipt (IGR)", state: rnIGR, setter: setRnIGR },
+                    { label: "Goods Issue Note (GIN)", state: rnGIN, setter: setRnGIN },
+                    { label: "Stock Transfer", state: rnST, setter: setRnST },
+                    { label: "Stock Adjustment", state: rnSA, setter: setRnSA },
+                    { label: "Stock Item Code", state: rnSI, setter: setRnSI },
                   ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
                     <div key={label} className="rounded-lg border p-4 space-y-3">
                       <div className="flex items-center justify-between">
@@ -588,7 +608,7 @@ export default function Settings() {
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <Label className="text-xs">Next Counter</Label>
+                          <Label className="text-xs">Last Counter</Label>
                           <Input
                             type="text"
                             inputMode="numeric"
@@ -596,7 +616,7 @@ export default function Settings() {
                             value={state.counter}
                             onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ""); setter({ ...state, counter: v }); setRnEditing(true); }}
                             disabled={!isAdmin}
-                            placeholder="e.g. 1000"
+                            placeholder="e.g. 0"
                             className="font-mono w-full"
                           />
                         </div>

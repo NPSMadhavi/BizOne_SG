@@ -15,6 +15,10 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   status: text("status").notNull().default("pending"),
   notes: text("notes"),
   expenseAccountId: integer("expense_account_id"),
+  // Optional line-items payload (WMS / stock receive flows)
+  items: jsonb("items").notNull().default([]),
+  subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
+  tax: decimal("tax", { precision: 15, scale: 2 }).notNull().default("0"),
   // GST fields (IRAS-compliant)
   // gstTreatment: 'standard_rated' (SR 9%) | 'zero_rated' (ZR 0%) | 'exempt' | 'out_of_scope' (OS)
   gstTreatment: text("gst_treatment").notNull().default("standard_rated"),

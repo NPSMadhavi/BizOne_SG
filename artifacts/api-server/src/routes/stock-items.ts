@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, stockItemsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { nextDocNumber } from "../lib/running-numbers.js";
 
 const router: IRouter = Router();
 
@@ -38,11 +39,15 @@ router.post("/stock-items", async (req, res): Promise<void> => {
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
   const { code, name, description, uom, type, unitPrice, stockQty } = req.body;
-  if (!code || !name) { res.status(400).json({ error: "code and name are required" }); return; }
+  if (!name) { res.status(400).json({ error: "name is required" }); return; }
+
+  const resolvedCode = (typeof code === "string" && code.trim())
+    ? code.trim()
+    : await nextDocNumber("si", companyId);
 
   const [item] = await db.insert(stockItemsTable).values({
     companyId,
-    code,
+    code: resolvedCode,
     name,
     description: description || null,
     uom: uom || "pcs",

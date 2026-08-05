@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,8 +11,10 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput, Package, ArrowLeft } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
+import { InvoiceRefPicker, type InvoiceRefOption } from "@/components/invoice-ref-picker";
 import { cn } from "@/lib/utils";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
@@ -60,6 +62,43 @@ function calcAmount(qty: number, unitPrice: number, discount: number): number {
   return base - (base * discount / 100);
 }
 
+function stripHtml(html: string): string {
+  return (html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function mapInvoiceItemsToDn(items: any[]): FormValues["items"] {
+  const mapped = (items || []).map((it: any) => {
+    if (it.type === "section") {
+      return {
+        type: "section" as const,
+        sectionLabel: it.sectionLabel || stripHtml(it.description || "") || "Section",
+        partNumber: "",
+        description: "",
+        qty: 1,
+        unitPrice: 0,
+        discount: 0,
+        amount: 0,
+      };
+    }
+    const qty = Number(it.qty) || 0;
+    const unitPrice = Number(it.unitPrice) || 0;
+    const discount = Number(it.discount) || 0;
+    return {
+      type: "item" as const,
+      sectionLabel: "",
+      partNumber: (it.partNumber || "").trim(),
+      description: stripHtml(it.description || it.name || ""),
+      qty,
+      unitPrice,
+      discount,
+      amount: calcAmount(qty, unitPrice, discount),
+    };
+  });
+  return mapped.length > 0
+    ? mapped
+    : [{ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 }];
+}
+
 export default function DebitNoteNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -68,6 +107,9 @@ export default function DebitNoteNew() {
   const [showPreview, setShowPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [importExcelOpen, setImportExcelOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+  const [loadingInvoice, setLoadingInvoice] = useState(false);
+  const lastLoadedRef = useRef("");
 
   const { data: settings } = useGetSettings();
 
@@ -108,6 +150,61 @@ export default function DebitNoteNew() {
     const amt = calcAmount(item.qty, item.unitPrice, item.discount);
     form.setValue(`items.${idx}.amount`, amt);
   }
+
+  function applyInvoiceToForm(inv: InvoiceRefOption) {
+    form.setValue("refInvNumber", inv.invNumber || "");
+    form.setValue("customerName", inv.customerName || "");
+    form.setValue("customerAddress", inv.customerAddress || "");
+    form.setValue("contactPerson", inv.customerContact || "");
+    form.setValue("contactEmail", inv.customerContactEmail || "");
+    form.setValue("currency", inv.currency || "SGD");
+    form.setValue("paymentTerms", inv.paymentTerms || "");
+    if (inv.notes) form.setValue("notes", inv.notes);
+
+    const sub = Number(inv.subtotal) || 0;
+    const disc = Number(inv.discountAmount) || 0;
+    const taxAmt = Number(inv.tax) || 0;
+    const taxable = sub - disc;
+    if (taxable > 0 && taxAmt > 0) {
+      form.setValue("taxRate", Math.round((taxAmt / taxable) * 1000) / 10);
+    }
+    if (disc > 0) form.setValue("discountAmount", disc);
+
+    form.setValue("items", mapInvoiceItemsToDn(inv.items || []));
+    lastLoadedRef.current = inv.invNumber || "";
+    toast({
+      title: "Invoice loaded",
+      description: `${inv.invNumber}: customer and stock line items filled automatically.`,
+    });
+  }
+
+  const loadFromInvoice = useCallback(async (rawNumber: string) => {
+    const invNumber = rawNumber.trim();
+    if (!invNumber) return;
+    if (lastLoadedRef.current.toLowerCase() === invNumber.toLowerCase()) return;
+
+    setLoadingInvoice(true);
+    try {
+      const res = await fetch(`/api/invoices/by-number/${encodeURIComponent(invNumber)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({
+          title: "Invoice not found",
+          description: err.error || `No invoice matching "${invNumber}"`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const inv = await res.json();
+      applyInvoiceToForm(inv);
+    } catch {
+      toast({ title: "Failed to load invoice", variant: "destructive" });
+    } finally {
+      setLoadingInvoice(false);
+    }
+  }, [form, toast]);
 
   async function doSubmit(status: "draft" | "confirmed") {
     const valid = await form.trigger();
@@ -151,9 +248,20 @@ export default function DebitNoteNew() {
   return (
     <div className="max-w-[1600px] mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-        <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
-          <h1 className="text-2xl font-bold text-gray-900">New Debit Note</h1>
+        <div className="flex items-center gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/debit-notes")}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
+            <h1 className="text-2xl font-bold text-gray-900">New Debit Note</h1>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           {nextDnNumber && (
@@ -226,7 +334,27 @@ export default function DebitNoteNew() {
                   <FormField control={form.control} name="refInvNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Reference Invoice No.</FormLabel>
-                      <FormControl><Input {...field} placeholder="e.g. INV-0042" /></FormControl>
+                      <FormControl>
+                        <InvoiceRefPicker
+                          value={field.value || ""}
+                          loading={loadingInvoice}
+                          onChange={(v) => {
+                            field.onChange(v);
+                            if (!v) lastLoadedRef.current = "";
+                          }}
+                          onSelectInvoice={(inv) => {
+                            if (Array.isArray(inv.items) && inv.items.length > 0) {
+                              applyInvoiceToForm(inv);
+                            } else {
+                              void loadFromInvoice(inv.invNumber);
+                            }
+                          }}
+                          onCommitTyped={(v) => void loadFromInvoice(v)}
+                        />
+                      </FormControl>
+                      <p className="text-[11px] text-muted-foreground">
+                        Type invoice no. or pick from list — stock items fill automatically
+                      </p>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
@@ -323,7 +451,19 @@ export default function DebitNoteNew() {
                           ) : (
                             <>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.partNumber`)} placeholder="Part #" className="text-xs h-8" />
+                                <div className="flex items-center gap-1">
+                                  <Input {...form.register(`items.${idx}.partNumber`)} placeholder="Part #" className="text-xs h-8" />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+                                    onClick={() => setStockPickerIndex(idx)}
+                                    title="Pick from stock"
+                                  >
+                                    <Package className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </td>
                               <td className="px-3 py-2">
                                 <Input {...form.register(`items.${idx}.description`)} placeholder="Description" className="text-xs h-8" />
@@ -388,6 +528,21 @@ export default function DebitNoteNew() {
         onImport={(imported, replace) => {
           const newItems = imported.map(it => ({ type: "item" as const, sectionLabel: "", partNumber: it.partNumber, description: it.description, qty: it.qty, unitPrice: it.unitPrice, discount: 0, amount: 0 }));
           if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        }}
+      />
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        mode="receive"
+        onSelect={({ item, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, item.name);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
+          updateItemAmount(stockPickerIndex);
+          setStockPickerIndex(null);
         }}
       />
       {savedDoc && showPreview && (

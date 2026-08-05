@@ -4,9 +4,11 @@
 
 export const ALL_MODULES = [
   "dashboard",
-  "purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "grn", "stock_items",
+  "purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "grn",
+  "stock_items", "warehouses", "stock_transfer", "inventory_reports",
   "vendors", "customers",
   "projects",
+  "assets", "licenses", "employees", "payroll",
   "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs",
   "accounting_pl", "accounting_cf",
   "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io",
@@ -31,9 +33,16 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   delivery_orders: "Delivery Orders",
   grn: "Goods Receipt",
   stock_items: "Stock Items",
+  warehouses: "Warehouses",
+  stock_transfer: "Stock Transfer",
+  inventory_reports: "Stock Reports",
   vendors: "Vendors",
   customers: "Customers",
   projects: "Projects",
+  assets: "Assets",
+  licenses: "Licenses",
+  employees: "Employees",
+  payroll: "Payroll",
   accounting_coa: "Chart of Accounts",
   accounting_je: "Journal Entries",
   accounting_gl: "General Ledger",
@@ -69,7 +78,12 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "documents",
     label: "Documents",
-    modules: ["purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "grn", "stock_items"],
+    modules: ["purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "grn"],
+  },
+  {
+    id: "inventory",
+    label: "Inventory",
+    modules: ["warehouses", "stock_items", "stock_transfer", "inventory_reports"],
   },
   {
     id: "directory",
@@ -80,6 +94,11 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     id: "projects",
     label: "Projects",
     modules: ["projects"],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    modules: ["assets", "licenses", "employees", "payroll"],
   },
   {
     id: "accounting",

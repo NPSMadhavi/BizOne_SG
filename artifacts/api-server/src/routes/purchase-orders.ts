@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, purchaseOrdersTable, usersTable, vendorsTable, vendorInvoicesTable, customersTable } from "@workspace/db";
 import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
-import { autoCreateGrn, autoDeleteGrnIfEmpty } from "./grn.js";
+import { autoCreateGrn, autoDeleteGrnIfEmpty, postPurchaseOrderWarehouseStock } from "./grn.js";
 import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
@@ -11,6 +11,7 @@ declare module "express-session" {
     companyId?: number;
     isAdmin?: boolean;
     userRole?: string;
+    username?: string;
   }
 }
 
@@ -190,6 +191,14 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
 
   if (po.status === "confirmed") {
     await autoCreateGrn(po, req.session.userId!);
+    const withStock = await postPurchaseOrderWarehouseStock({
+      po,
+      userId: req.session.userId,
+      username: req.session.username,
+    });
+    logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
+    res.status(201).json(parsePO(withStock));
+    return;
   }
 
   logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
@@ -268,6 +277,14 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
 
   if (newStatus === "confirmed") {
     await autoCreateGrn(updated, req.session.userId!);
+    const withStock = await postPurchaseOrderWarehouseStock({
+      po: updated,
+      userId: req.session.userId,
+      username: req.session.username,
+    });
+    logAudit({ req, action: updateData.status && updateData.status !== existing[0].status ? `status:${updateData.status}` : "update", entityType: "purchase_order", entityId: id, entityLabel: updated.poNumber });
+    res.json(parsePO(withStock));
+    return;
   } else if (previousStatus === "confirmed" && newStatus !== "confirmed") {
     const result = await autoDeleteGrnIfEmpty(id);
     if (result.blocked) {

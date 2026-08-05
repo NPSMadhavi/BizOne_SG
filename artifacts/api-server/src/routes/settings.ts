@@ -27,15 +27,20 @@ async function ensureSettings(companyId: number) {
   const [created] = await db.insert(settingsTable).values({
     companyId,
     gstRate: defaultGst,
-    poPrefix: "PO",  poCounter: 1,  poSuffix: "",
-    invPrefix: "INV", invCounter: 1, invSuffix: "",
-    qtPrefix: "QT",  qtCounter: 1,  qtSuffix: "",
-    doPrefix: "DO",  doCounter: 1,  doSuffix: "",
-    grnPrefix: "GRN", grnCounter: 1, grnSuffix: "",
-    cnPrefix: "CN",  cnCounter: 1,  cnSuffix: "",
-    dnPrefix: "DN",  dnCounter: 1,  dnSuffix: "",
-    piPrefix: "PI",  piCounter: 1,  piSuffix: "",
-    pvPrefix: "PV",  pvCounter: 1,  pvSuffix: "",
+    poPrefix: "PO",  poCounter: 0,  poSuffix: "",
+    invPrefix: "INV", invCounter: 0, invSuffix: "",
+    qtPrefix: "QT",  qtCounter: 0,  qtSuffix: "",
+    doPrefix: "DO",  doCounter: 0,  doSuffix: "",
+    grnPrefix: "GRN", grnCounter: 0, grnSuffix: "",
+    cnPrefix: "CN",  cnCounter: 0,  cnSuffix: "",
+    dnPrefix: "DN",  dnCounter: 0,  dnSuffix: "",
+    piPrefix: "PI",  piCounter: 0,  piSuffix: "",
+    pvPrefix: "PV",  pvCounter: 0,  pvSuffix: "",
+    siPrefix: "STK", siCounter: 0,  siSuffix: "",
+    igrPrefix: "IGR", igrCounter: 0, igrSuffix: "",
+    ginPrefix: "GIN", ginCounter: 0, ginSuffix: "",
+    stPrefix: "ST",  stCounter: 0,  stSuffix: "",
+    saPrefix: "SA",  saCounter: 0,  saSuffix: "",
   }).returning();
   return created;
 }
@@ -52,32 +57,47 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     smtpFrom: s.smtpFrom || "",
     smtpConfigured: !!(s.smtpHost && s.smtpUser && s.smtpPass),
     poPrefix: s.poPrefix ?? "PO",
-    poCounter: s.poCounter ?? 1,
+    poCounter: s.poCounter ?? 0,
     poSuffix: s.poSuffix ?? "",
     invPrefix: s.invPrefix ?? "INV",
-    invCounter: s.invCounter ?? 1,
+    invCounter: s.invCounter ?? 0,
     invSuffix: s.invSuffix ?? "",
     qtPrefix: s.qtPrefix ?? "QT",
-    qtCounter: s.qtCounter ?? 1,
+    qtCounter: s.qtCounter ?? 0,
     qtSuffix: s.qtSuffix ?? "",
     doPrefix: s.doPrefix ?? "DO",
-    doCounter: s.doCounter ?? 1,
+    doCounter: s.doCounter ?? 0,
     doSuffix: s.doSuffix ?? "",
     grnPrefix: s.grnPrefix ?? "GRN",
-    grnCounter: s.grnCounter ?? 1,
+    grnCounter: s.grnCounter ?? 0,
     grnSuffix: s.grnSuffix ?? "",
     cnPrefix: s.cnPrefix ?? "CN",
-    cnCounter: s.cnCounter ?? 1,
+    cnCounter: s.cnCounter ?? 0,
     cnSuffix: s.cnSuffix ?? "",
-    dnPrefix: (s as any).dnPrefix ?? "DN",
-    dnCounter: (s as any).dnCounter ?? 1,
-    dnSuffix: (s as any).dnSuffix ?? "",
+    dnPrefix: s.dnPrefix ?? "DN",
+    dnCounter: s.dnCounter ?? 0,
+    dnSuffix: s.dnSuffix ?? "",
     piPrefix: s.piPrefix ?? "PI",
-    piCounter: s.piCounter ?? 1,
+    piCounter: s.piCounter ?? 0,
     piSuffix: s.piSuffix ?? "",
     pvPrefix: s.pvPrefix ?? "PV",
-    pvCounter: s.pvCounter ?? 1,
+    pvCounter: s.pvCounter ?? 0,
     pvSuffix: s.pvSuffix ?? "",
+    siPrefix: s.siPrefix ?? "STK",
+    siCounter: s.siCounter ?? 0,
+    siSuffix: s.siSuffix ?? "",
+    igrPrefix: s.igrPrefix ?? "IGR",
+    igrCounter: s.igrCounter ?? 0,
+    igrSuffix: s.igrSuffix ?? "",
+    ginPrefix: s.ginPrefix ?? "GIN",
+    ginCounter: s.ginCounter ?? 0,
+    ginSuffix: s.ginSuffix ?? "",
+    stPrefix: s.stPrefix ?? "ST",
+    stCounter: s.stCounter ?? 0,
+    stSuffix: s.stSuffix ?? "",
+    saPrefix: s.saPrefix ?? "SA",
+    saCounter: s.saCounter ?? 0,
+    saSuffix: s.saSuffix ?? "",
     allowNegativeStock: s.allowNegativeStock ?? false,
     autoDeductOnDo: s.autoDeductOnDo ?? false,
     lowStockWarning: parseFloat(s.lowStockWarning ?? "0"),
@@ -120,6 +140,11 @@ router.put("/", async (req, res) => {
     dnPrefix, dnCounter, dnSuffix,
     piPrefix, piCounter, piSuffix,
     pvPrefix, pvCounter, pvSuffix,
+    siPrefix, siCounter, siSuffix,
+    igrPrefix, igrCounter, igrSuffix,
+    ginPrefix, ginCounter, ginSuffix,
+    stPrefix, stCounter, stSuffix,
+    saPrefix, saCounter, saSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
     bankDetails, termsAndConditions, quotationTerms,
     defaultVerifierId, defaultApproverId, defaultPaidById,
@@ -163,6 +188,21 @@ router.put("/", async (req, res) => {
   if (pvPrefix !== undefined) updateData.pvPrefix = pvPrefix;
   if (pvCounter !== undefined) updateData.pvCounter = Number(pvCounter);
   if (pvSuffix !== undefined) updateData.pvSuffix = pvSuffix;
+  if (siPrefix !== undefined) updateData.siPrefix = siPrefix;
+  if (siCounter !== undefined) updateData.siCounter = Number(siCounter);
+  if (siSuffix !== undefined) updateData.siSuffix = siSuffix;
+  if (igrPrefix !== undefined) updateData.igrPrefix = igrPrefix;
+  if (igrCounter !== undefined) updateData.igrCounter = Number(igrCounter);
+  if (igrSuffix !== undefined) updateData.igrSuffix = igrSuffix;
+  if (ginPrefix !== undefined) updateData.ginPrefix = ginPrefix;
+  if (ginCounter !== undefined) updateData.ginCounter = Number(ginCounter);
+  if (ginSuffix !== undefined) updateData.ginSuffix = ginSuffix;
+  if (stPrefix !== undefined) updateData.stPrefix = stPrefix;
+  if (stCounter !== undefined) updateData.stCounter = Number(stCounter);
+  if (stSuffix !== undefined) updateData.stSuffix = stSuffix;
+  if (saPrefix !== undefined) updateData.saPrefix = saPrefix;
+  if (saCounter !== undefined) updateData.saCounter = Number(saCounter);
+  if (saSuffix !== undefined) updateData.saSuffix = saSuffix;
   if (allowNegativeStock !== undefined) updateData.allowNegativeStock = Boolean(allowNegativeStock);
   if (autoDeductOnDo !== undefined) updateData.autoDeductOnDo = Boolean(autoDeductOnDo);
   if (lowStockWarning !== undefined) updateData.lowStockWarning = String(lowStockWarning);

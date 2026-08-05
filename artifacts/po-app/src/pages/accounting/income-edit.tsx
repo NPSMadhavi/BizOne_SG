@@ -251,10 +251,13 @@ export default function IncomeEdit() {
                 <div className="space-y-1.5">
                   <Label>Revenue Account</Label>
                   <Controller name="accountId" control={form.control} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value || "none"}
+                      onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
+                    >
                       <SelectTrigger><SelectValue placeholder="Select account…" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">— None (defaults to 4200) —</SelectItem>
+                        <SelectItem value="none">— None (defaults to 4200) —</SelectItem>
                         {revenueAccounts.map(a => <SelectItem key={a.id} value={String(a.id)}>{a.code} {a.name}</SelectItem>)}
                       </SelectContent>
                     </Select>

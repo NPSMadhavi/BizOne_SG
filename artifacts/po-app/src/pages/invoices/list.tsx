@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useListInvoices, getListInvoicesQueryKey } from "@workspace/api-client-react";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, ArrowRight, MailCheck } from "lucide-react";
+import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -24,16 +24,41 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   );
 }
 
+function fmt(amount: number, currency = "SGD") {
+  return new Intl.NumberFormat("en-SG", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
+}
+
+const QUARTERS = [
+  { label: "Q1", months: [0, 1, 2] },
+  { label: "Q2", months: [3, 4, 5] },
+  { label: "Q3", months: [6, 7, 8] },
+  { label: "Q4", months: [9, 10, 11] },
+];
+
+type FilterMode = "all" | "q1" | "q2" | "q3" | "q4" | "custom";
+
+function paymentBucket(doc: any): "pending" | "partial" | "paid" | "other" {
+  if (doc.status === "cancelled" || doc.status === "void") return "other";
+  if (doc.status === "paid") return "paid";
+  if (doc.status === "partial") return "partial";
+  const paid = Number(doc.paidAmount) || 0;
+  const total = Number(doc.totalAmount) || 0;
+  if (total > 0 && paid >= total - 0.005) return "paid";
+  if (paid > 0.004) return "partial";
+  return "pending";
+}
+
 export default function InvoiceList() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
-  const { data: docs, isLoading } = useListInvoices({
+  const { data: docs = [], isLoading } = useListInvoices({
     query: { queryKey: getListInvoicesQueryKey() },
   });
-
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(value);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -48,13 +73,69 @@ export default function InvoiceList() {
     }
   };
 
-  const filtered = docs?.filter((d) => {
+  const filteredByDate = useMemo(() => {
+    const list = docs as any[];
+    if (filterMode === "all") return list;
+    if (filterMode === "custom") {
+      if (!customFrom && !customTo) return list;
+      return list.filter((inv) => {
+        const raw = inv.issueDate || (inv.createdAt ? String(inv.createdAt).slice(0, 10) : "");
+        if (!raw) return false;
+        const d = raw.slice(0, 10);
+        if (customFrom && d < customFrom) return false;
+        if (customTo && d > customTo) return false;
+        return true;
+      });
+    }
+    const qIdx = ["q1", "q2", "q3", "q4"].indexOf(filterMode);
+    const months = QUARTERS[qIdx].months;
+    return list.filter((inv) => {
+      const raw = inv.issueDate || (inv.createdAt ? String(inv.createdAt).slice(0, 10) : "");
+      if (!raw) return false;
+      const d = new Date(raw);
+      return d.getFullYear() === filterYear && months.includes(d.getMonth());
+    });
+  }, [docs, filterMode, filterYear, customFrom, customTo]);
+
+  const activeInvoices = useMemo(
+    () => filteredByDate.filter((inv: any) => inv.status !== "cancelled" && inv.status !== "void"),
+    [filteredByDate]
+  );
+
+  const filtered = useMemo(() => {
     const t = searchTerm.toLowerCase();
-    return d.invNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-  });
+    return filteredByDate.filter((d: any) =>
+      d.invNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t)
+    );
+  }, [filteredByDate, searchTerm]);
+
+  const stats = useMemo(() => {
+    const byCurrency: Record<string, { total: number; outstanding: number; count: number }> = {};
+    for (const inv of activeInvoices) {
+      const c = inv.currency || "SGD";
+      if (!byCurrency[c]) byCurrency[c] = { total: 0, outstanding: 0, count: 0 };
+      byCurrency[c].total += Number(inv.totalAmount) || 0;
+      byCurrency[c].outstanding += Number(inv.balance) || Math.max(0, (Number(inv.totalAmount) || 0) - (Number(inv.paidAmount) || 0));
+      byCurrency[c].count += 1;
+    }
+    return Object.entries(byCurrency).sort((a, b) => b[1].total - a[1].total);
+  }, [activeInvoices]);
+
+  const statusCounts = useMemo(() => {
+    const counts = { pending: 0, partial: 0, paid: 0 };
+    for (const inv of activeInvoices) {
+      const bucket = paymentBucket(inv);
+      if (bucket === "pending") counts.pending += 1;
+      else if (bucket === "partial") counts.partial += 1;
+      else if (bucket === "paid") counts.paid += 1;
+    }
+    return counts;
+  }, [activeInvoices]);
+
+  const currentYear = new Date().getFullYear();
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
@@ -65,19 +146,151 @@ export default function InvoiceList() {
         </Link>
       </div>
 
-      <Card className="p-4">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by INV Number or Customer..."
-            className="pl-9"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {/* Filter bar — same as Vendor Invoices */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+          <button
+            onClick={() => setFilterMode("all")}
+            className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${filterMode === "all" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            All Time
+          </button>
+          {QUARTERS.map((q) => {
+            const key = q.label.toLowerCase() as FilterMode;
+            return (
+              <button
+                key={key}
+                onClick={() => setFilterMode(key)}
+                className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${filterMode === key ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {q.label}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setFilterMode("custom")}
+            className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center gap-1 ${filterMode === "custom" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            Custom
+          </button>
         </div>
-      </Card>
+
+        {filterMode !== "all" && filterMode !== "custom" && (
+          <div className="flex items-center gap-1 border rounded-lg px-2 py-1.5 bg-background text-sm">
+            <button onClick={() => setFilterYear(y => y - 1)} className="text-muted-foreground hover:text-foreground p-0.5">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="font-medium w-12 text-center">{filterYear}</span>
+            <button onClick={() => setFilterYear(y => y + 1)} disabled={filterYear >= currentYear} className="text-muted-foreground hover:text-foreground p-0.5 disabled:opacity-30">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {filterMode === "custom" && (
+          <div className="flex items-center gap-2">
+            <Input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="h-9 w-36 text-sm" />
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="h-9 w-36 text-sm" />
+          </div>
+        )}
+
+        {filterMode !== "all" && (
+          <span className="text-xs text-muted-foreground ml-1">
+            {filteredByDate.length} invoice{filteredByDate.length !== 1 ? "s" : ""}
+            {filterMode !== "custom" ? ` in ${filterMode.toUpperCase()} ${filterYear}` : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Dashboard cards — same layout as Vendor Invoices */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Invoice Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-end justify-between">
+              <span className="text-3xl font-bold">{activeInvoices.length}</span>
+              <span className="text-sm text-muted-foreground mb-1">total invoices</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-1 border-t">
+              <div className="text-center">
+                <div className="text-lg font-semibold text-orange-600">{statusCounts.pending}</div>
+                <div className="text-xs text-muted-foreground">Pending</div>
+              </div>
+              <div className="text-center border-x">
+                <div className="text-lg font-semibold text-amber-500">{statusCounts.partial}</div>
+                <div className="text-xs text-muted-foreground">Partial</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-emerald-600">{statusCounts.paid}</div>
+                <div className="text-xs text-muted-foreground">Paid</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Invoice Amount</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-32" />
+            ) : stats.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No invoices</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stats.map(([currency, s]) => (
+                  <div key={currency} className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{currency}</span>
+                    <span className="font-semibold text-base font-mono">{fmt(s.total, currency)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Outstanding Balance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-32" />
+            ) : stats.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No invoices</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stats.map(([currency, s]) => (
+                  <div key={currency} className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{currency}</span>
+                    <span className={`font-semibold text-base font-mono ${s.outstanding > 0 ? "text-orange-600" : "text-emerald-600"}`}>
+                      {fmt(s.outstanding, currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
+        <div className="p-4 border-b">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by INV Number or Customer..."
+              className="pl-9"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
@@ -111,14 +324,14 @@ export default function InvoiceList() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((doc) => (
+                filtered.map((doc: any) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/invoices/${doc.id}`)}>
                     <td className="px-6 py-4 font-medium text-primary">{doc.invNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.issueDate || doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                    <td className="px-6 py-4 text-right font-medium">{formatCurrency(Number(doc.totalAmount))}</td>
+                    <td className="px-6 py-4 text-right font-medium">{fmt(Number(doc.totalAmount), doc.currency || "SGD")}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
-                    <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo} /></td>
+                    <td className="px-6 py-4"><SentToCell emailSentTo={doc.emailSentTo} /></td>
                     <td className="px-6 py-4 text-right">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                         <ArrowRight className="h-4 w-4" />

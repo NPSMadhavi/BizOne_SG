@@ -44,6 +44,13 @@ import {
   ChevronRight,
   FolderKanban,
   ReceiptText,
+  Monitor,
+  KeyRound,
+  DollarSign,
+  Briefcase,
+  Warehouse,
+  ArrowLeftRight,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,7 +97,13 @@ function getGroupForRoute(loc: string): string | null {
     loc.startsWith("/grn")
   ) return "documents";
   if (loc.startsWith("/projects")) return "projects";
-  if (loc.startsWith("/stock")) return "inventory";
+  if (
+    loc.startsWith("/assets") ||
+    loc.startsWith("/licenses") ||
+    loc.startsWith("/employees") ||
+    loc.startsWith("/payroll")
+  ) return "operations";
+  if (loc.startsWith("/stock") || loc.startsWith("/inventory")) return "inventory";
   if (
     loc.startsWith("/vendors") ||
     loc.startsWith("/customers") ||
@@ -422,6 +435,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     hasModuleAccess("invoices") ||
     hasModuleAccess("quotations") ||
     hasModuleAccess("delivery_orders");
+  const hasOperations =
+    isAdmin ||
+    hasModuleAccess("assets") ||
+    hasModuleAccess("licenses") ||
+    hasModuleAccess("employees") ||
+    hasModuleAccess("payroll");
+  const inventoryGroupModules = MODULE_GROUPS.find(g => g.id === "inventory")?.modules ?? [];
+  const hasInventory = isAdmin || inventoryGroupModules.some(m => hasModuleAccess(m as AppModule));
 
   const navItems = (
     <div className="space-y-0.5">
@@ -435,7 +456,44 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </NavItem>
       )}
 
-      {(isAdmin || hasModuleAccess("projects")) && (
+      <NavGroup
+        id="operations"
+        label="Operations"
+        icon={Briefcase}
+        isOpen={openGroup === "operations"}
+        onToggle={toggleGroup}
+        visible={hasOperations}
+        hasActive={
+          location.startsWith("/assets") ||
+          location.startsWith("/licenses") ||
+          location.startsWith("/employees") ||
+          location.startsWith("/payroll")
+        }
+      >
+        {(isAdmin || hasModuleAccess("assets")) && (
+          <NavItem href="/assets" icon={Monitor} active={location.startsWith("/assets")} inGroup>
+            Assets
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("licenses")) && (
+          <NavItem href="/licenses" icon={KeyRound} active={location.startsWith("/licenses")} inGroup>
+            Licenses
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("employees")) && (
+          <NavItem href="/employees" icon={Users} active={location.startsWith("/employees")} inGroup>
+            Employees
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("payroll")) && (
+          <NavItem href="/payroll" icon={DollarSign} active={location.startsWith("/payroll")} inGroup>
+            Payroll
+          </NavItem>
+        )}
+      </NavGroup>
+
+      {/* Projects — hidden from sidebar; routes/functionality kept */}
+      {/* {(isAdmin || hasModuleAccess("projects")) && (
         <NavItem
           href="/projects"
           icon={FolderKanban}
@@ -443,7 +501,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         >
           Projects
         </NavItem>
-      )}
+      )} */}
 
       <NavGroup
         id="documents"
@@ -526,12 +584,29 @@ export function Shell({ children }: { children: React.ReactNode }) {
         icon={Package}
         isOpen={openGroup === "inventory"}
         onToggle={toggleGroup}
-        visible={isAdmin || hasModuleAccess("stock_items")}
-        hasActive={location.startsWith("/stock")}
+        visible={hasInventory}
+        hasActive={location.startsWith("/stock") || location.startsWith("/inventory")}
       >
-        <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")} inGroup>
-          Stock Items
-        </NavItem>
+        {(isAdmin || hasModuleAccess("warehouses")) && (
+          <NavItem href="/inventory/warehouses" icon={Warehouse} active={location.startsWith("/inventory/warehouses")} inGroup>
+            Warehouses
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("stock_items")) && (
+          <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")} inGroup>
+            Stock Items
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("stock_transfer")) && (
+          <NavItem href="/inventory/transfers" icon={ArrowLeftRight} active={location.startsWith("/inventory/transfers")} inGroup>
+            Stock Transfer
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("inventory_reports")) && (
+          <NavItem href="/inventory/reports" icon={BarChart3} active={location.startsWith("/inventory/reports")} inGroup>
+            Stock Reports
+          </NavItem>
+        )}
       </NavGroup>
 
       <NavGroup

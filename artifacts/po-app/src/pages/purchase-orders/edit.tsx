@@ -53,6 +53,9 @@ const itemSchema = z.object({
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
+  stockItemId: z.number().optional(),
+  warehouseId: z.number().optional(),
+  warehouseName: z.string().optional(),
   itemImage: z.string().default(""),
 });
 
@@ -163,6 +166,9 @@ export default function PurchaseOrderEdit() {
           uom: item.uom ?? "",
           unitPrice: item.unitPrice ?? 0,
           isStockItem: item.isStockItem ?? false,
+          stockItemId: item.stockItemId,
+          warehouseId: item.warehouseId,
+          warehouseName: item.warehouseName ?? "",
           itemImage: (item as any).itemImage ?? "",
         })),
       });
@@ -647,11 +653,18 @@ export default function PurchaseOrderEdit() {
                           <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
-                                <div className="flex items-center gap-1">
-                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
-                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
-                                    <Package className="h-3.5 w-3.5" />
-                                  </Button>
+                                <div className="flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-1">
+                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                      <Package className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                  {items[index]?.warehouseName ? (
+                                    <span className="text-[10px] text-muted-foreground pl-1 truncate" title={items[index].warehouseName}>
+                                      → {items[index].warehouseName}
+                                    </span>
+                                  ) : null}
                                 </div>
                               </FormControl></FormItem>
                             )} />
@@ -830,11 +843,19 @@ export default function PurchaseOrderEdit() {
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        onSelect={({ item, qty }: StockItemSelection) => {
+        mode="receive"
+        onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
+          form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
+          form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
+          if (warehouseId) {
+            form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+            form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
+          }
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}

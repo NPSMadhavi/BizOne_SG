@@ -45,6 +45,10 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      "@shared/schema": path.resolve(
+        import.meta.dirname,
+        "src/operations-8june/types/shared-schema-client.ts",
+      ),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -83,8 +87,15 @@ export default defineConfig({
   },
   server: {
     port,
+    strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: `http://localhost:${process.env.API_PORT || "8080"}`,
+        changeOrigin: true,
+      },
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],

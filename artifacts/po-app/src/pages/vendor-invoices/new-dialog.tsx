@@ -17,6 +17,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { CURRENCIES } from "@/lib/currencies";
+import { previewRunningNumber } from "@/lib/running-number";
+import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 
 interface Props {
   open: boolean;
@@ -40,7 +42,12 @@ export default function NewVendorInvoiceDialog({
   const [, setLocation] = useLocation();
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
-
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+  const nextPiPreview = previewRunningNumber(
+    (settings as any)?.piPrefix ?? "PI",
+    (settings as any)?.piCounter,
+    (settings as any)?.piSuffix ?? "",
+  );
   const [newVendorOpen, setNewVendorOpen] = useState(false);
 
   const [piNumber, setPiNumber] = useState("");
@@ -245,7 +252,6 @@ export default function NewVendorInvoiceDialog({
   };
 
   const handleSave = async () => {
-    if (!piNumber.trim()) { toast({ title: "Error", description: "Vendor PI number is required", variant: "destructive" }); return; }
     if (!vendorName) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) { toast({ title: "Error", description: "Valid amount is required", variant: "destructive" }); return; }
 
@@ -256,7 +262,7 @@ export default function NewVendorInvoiceDialog({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          piNumber: piNumber.trim(),
+          piNumber: piNumber.trim() || undefined,
           piDate,
           vendorName,
           poIds: selectedPoIds,
@@ -281,8 +287,8 @@ export default function NewVendorInvoiceDialog({
       toast({
         title: "Vendor PI Recorded",
         description: hasJE
-          ? `${piNumber} saved — journal entry posted automatically.`
-          : `${piNumber} has been saved.`,
+          ? `${created.piNumber} saved — journal entry posted automatically.`
+          : `${created.piNumber} has been saved.`,
       });
       onOpenChange(false);
       if (onCreated) onCreated(created);
@@ -304,8 +310,13 @@ export default function NewVendorInvoiceDialog({
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Vendor PI / Invoice Number <span className="text-destructive">*</span></Label>
-              <Input placeholder="e.g. INV-2024-001" value={piNumber} onChange={e => setPiNumber(e.target.value)} />
+              <Label>Vendor PI / Invoice Number</Label>
+              <Input
+                placeholder={`Auto: ${nextPiPreview} (or enter vendor's number)`}
+                value={piNumber}
+                onChange={e => setPiNumber(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">Leave blank to use Settings → Running Numbers (PI series).</p>
             </div>
             <div className="space-y-1.5">
               <Label>PI Date</Label>

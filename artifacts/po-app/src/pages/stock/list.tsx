@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListStockItems, useCreateStockItem, useUpdateStockItem, useDeleteStockItem, getListStockItemsQueryKey } from "@workspace/api-client-react";
+import { useListStockItems, useCreateStockItem, useUpdateStockItem, useDeleteStockItem, getListStockItemsQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Search, Package, Wrench } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { previewRunningNumber } from "@/lib/running-number";
 
 const EMPTY_FORM = {
   code: "", name: "", description: "", uom: "pcs",
@@ -43,7 +44,12 @@ export default function StockList() {
   const createMutation = useCreateStockItem();
   const updateMutation = useUpdateStockItem();
   const deleteMutation = useDeleteStockItem();
-
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+  const nextStockCode = previewRunningNumber(
+    (settings as any)?.siPrefix ?? "STK",
+    (settings as any)?.siCounter,
+    (settings as any)?.siSuffix ?? "",
+  );
   function openCreate() {
     setEditItem(null);
     setForm({ ...EMPTY_FORM });
@@ -66,13 +72,17 @@ export default function StockList() {
   }
 
   function handleSave() {
-    if (!form.code.trim() || !form.name.trim()) {
-      toast({ title: "Error", description: "Code and Name are required.", variant: "destructive" });
+    if (!form.name.trim()) {
+      toast({ title: "Error", description: "Name is required.", variant: "destructive" });
+      return;
+    }
+    if (editItem && !form.code.trim()) {
+      toast({ title: "Error", description: "Code is required.", variant: "destructive" });
       return;
     }
 
     const payload = {
-      code: form.code.trim(),
+      code: form.code.trim() || undefined,
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       uom: form.uom.trim() || "pcs",
@@ -269,12 +279,15 @@ export default function StockList() {
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Code <span className="text-destructive">*</span></Label>
+                <Label>Code {!editItem ? "" : <span className="text-destructive">*</span>}</Label>
                 <Input
-                  placeholder="SKU-001"
+                  placeholder={editItem ? "SKU-001" : `Auto: ${nextStockCode}`}
                   value={form.code}
                   onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
                 />
+                {!editItem && (
+                  <p className="text-[11px] text-muted-foreground">Leave blank to auto-generate from Settings → Running Numbers.</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>UOM</Label>

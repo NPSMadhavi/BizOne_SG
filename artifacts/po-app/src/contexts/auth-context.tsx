@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       onSuccess: () => {
         queryClient.setQueryData(getGetMeQueryKey(), null);
         setLocalCompanyId(null);
-        setLocation("/login");
+        setLocation("/");
       },
     });
   };

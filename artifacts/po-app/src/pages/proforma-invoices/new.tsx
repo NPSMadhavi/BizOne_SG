@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput, ArrowLeft } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -268,10 +268,21 @@ export default function ProformaInvoiceNew() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">New Proforma Invoice</h1>
-          <p className="text-muted-foreground mt-1">Create a new proforma invoice.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/proforma-invoices")}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">New Proforma Invoice</h1>
+            <p className="text-muted-foreground mt-1">Create a new proforma invoice.</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {nextPiNumber && (

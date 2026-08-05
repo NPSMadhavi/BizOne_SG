@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, FileInput, Package } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, FileInput, Package, ArrowLeft } from "lucide-react";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { DOImportItem } from "@/components/import-from-po-dialog";
@@ -149,13 +149,24 @@ export default function DeliveryOrderNew() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">New Delivery Order</h1>
-          <p className="text-muted-foreground mt-1">Create a new delivery order.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/delivery-orders")}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">New Delivery Order</h1>
+            <p className="text-muted-foreground mt-1">Create a new delivery order.</p>
+          </div>
         </div>
         {nextDoNumber && (
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">DO Number</p>
             <p className="text-lg font-semibold font-mono">{nextDoNumber}</p>
           </div>

@@ -1,95 +1,105 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
-type DocType = "po" | "inv" | "qt" | "do" | "grn" | "cn" | "dn" | "pi" | "pv";
+export type DocType =
+  | "po" | "inv" | "qt" | "do" | "grn" | "cn" | "dn" | "pi" | "pv"
+  | "igr" | "gin" | "st" | "sa" | "si";
 
-const TABLE_MAP: Record<DocType, { table: string; col: string }> = {
-  po:  { table: "purchase_orders",    col: "po_number" },
-  inv: { table: "invoices",           col: "inv_number" },
-  qt:  { table: "quotations",         col: "qt_number" },
-  do:  { table: "delivery_orders",    col: "do_number" },
-  grn: { table: "grn",                col: "grn_number" },
-  cn:  { table: "credit_notes",       col: "cn_number" },
-  dn:  { table: "debit_notes",        col: "dn_number" },
-  pi:  { table: "proforma_invoices",  col: "pi_number" },
-  pv:  { table: "vouchers",           col: "voucher_number" },
+type TableCol = { table: string; col: string };
+
+const TABLE_MAP: Record<DocType, TableCol[]> = {
+  po:  [{ table: "purchase_orders",   col: "po_number" }],
+  inv: [{ table: "invoices",          col: "inv_number" }],
+  qt:  [{ table: "quotations",        col: "qt_number" }],
+  do:  [{ table: "delivery_orders",   col: "do_number" }],
+  grn: [{ table: "grn",               col: "grn_number" }],
+  cn:  [{ table: "credit_notes",      col: "cn_number" }],
+  dn:  [{ table: "debit_notes",       col: "dn_number" }],
+  // Sales PI and Vendor PI share the same settings counter
+  pi:  [
+    { table: "proforma_invoices", col: "pi_number" },
+    { table: "vendor_invoices",   col: "pi_number" },
+  ],
+  pv:  [{ table: "vouchers",          col: "voucher_number" }],
+  igr: [{ table: "goods_receipts",    col: "grn_number" }],
+  gin: [{ table: "goods_issues",      col: "gin_number" }],
+  st:  [{ table: "stock_transfers",   col: "transfer_number" }],
+  sa:  [{ table: "stock_adjustments", col: "adjustment_number" }],
+  si:  [{ table: "stock_items",       col: "code" }],
 };
 
-function buildNumber(prefix: string, counter: number, suffix: string): string {
-  return `${prefix}${String(counter)}${suffix}`;
+const COL_MAP: Record<DocType, { prefix: string; counter: string; suffix: string; fallbackPrefix: string }> = {
+  po:  { prefix: "po_prefix",  counter: "po_counter",  suffix: "po_suffix",  fallbackPrefix: "PO" },
+  inv: { prefix: "inv_prefix", counter: "inv_counter", suffix: "inv_suffix", fallbackPrefix: "INV" },
+  qt:  { prefix: "qt_prefix",  counter: "qt_counter",  suffix: "qt_suffix",  fallbackPrefix: "QT" },
+  do:  { prefix: "do_prefix",  counter: "do_counter",  suffix: "do_suffix",  fallbackPrefix: "DO" },
+  grn: { prefix: "grn_prefix", counter: "grn_counter", suffix: "grn_suffix", fallbackPrefix: "GRN" },
+  cn:  { prefix: "cn_prefix",  counter: "cn_counter",  suffix: "cn_suffix",  fallbackPrefix: "CN" },
+  dn:  { prefix: "dn_prefix",  counter: "dn_counter",  suffix: "dn_suffix",  fallbackPrefix: "DN" },
+  pi:  { prefix: "pi_prefix",  counter: "pi_counter",  suffix: "pi_suffix",  fallbackPrefix: "PI" },
+  pv:  { prefix: "pv_prefix",  counter: "pv_counter",  suffix: "pv_suffix",  fallbackPrefix: "PV" },
+  igr: { prefix: "igr_prefix", counter: "igr_counter", suffix: "igr_suffix", fallbackPrefix: "IGR" },
+  gin: { prefix: "gin_prefix", counter: "gin_counter", suffix: "gin_suffix", fallbackPrefix: "GIN" },
+  st:  { prefix: "st_prefix",  counter: "st_counter",  suffix: "st_suffix",  fallbackPrefix: "ST" },
+  sa:  { prefix: "sa_prefix",  counter: "sa_counter",  suffix: "sa_suffix",  fallbackPrefix: "SA" },
+  si:  { prefix: "si_prefix",  counter: "si_counter",  suffix: "si_suffix",  fallbackPrefix: "STK" },
+};
+
+export function buildDocNumber(prefix: string, counter: number, suffix: string): string {
+  return `${prefix || ""}${String(counter)}${suffix || ""}`;
 }
 
 async function numberExists(type: DocType, number: string, companyId?: number): Promise<boolean> {
-  const { table, col } = TABLE_MAP[type];
-  const companyClause = companyId ? sql` AND company_id = ${companyId}` : sql``;
-  const rows = await db.execute(
-    sql`SELECT 1 FROM ${sql.raw(table)} WHERE ${sql.raw(col)} = ${number}${companyClause} LIMIT 1`
-  ) as unknown as any[];
-  const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-  return arr.length > 0;
+  const tables = TABLE_MAP[type];
+  for (const { table, col } of tables) {
+    const companyClause = companyId ? sql` AND company_id = ${companyId}` : sql``;
+    try {
+      const rows = await db.execute(
+        sql`SELECT 1 FROM ${sql.raw(table)} WHERE ${sql.raw(col)} = ${number}${companyClause} LIMIT 1`
+      ) as unknown as any[];
+      const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+      if (arr.length > 0) return true;
+    } catch {
+      // Table may not exist yet in some environments — skip
+    }
+  }
+  return false;
 }
 
 export async function nextDocNumber(type: DocType, companyId?: number): Promise<string> {
-  const counterCol =
-    type === "po"  ? "po_counter"  :
-    type === "inv" ? "inv_counter" :
-    type === "qt"  ? "qt_counter"  :
-    type === "grn" ? "grn_counter" :
-    type === "cn"  ? "cn_counter"  :
-    type === "dn"  ? "dn_counter"  :
-    type === "pi"  ? "pi_counter"  :
-    type === "pv"  ? "pv_counter"  : "do_counter";
-
-  const prefixCol =
-    type === "po"  ? "po_prefix"  :
-    type === "inv" ? "inv_prefix" :
-    type === "qt"  ? "qt_prefix"  :
-    type === "grn" ? "grn_prefix" :
-    type === "cn"  ? "cn_prefix"  :
-    type === "dn"  ? "dn_prefix"  :
-    type === "pi"  ? "pi_prefix"  :
-    type === "pv"  ? "pv_prefix"  : "do_prefix";
-
-  const suffixCol =
-    type === "po"  ? "po_suffix"  :
-    type === "inv" ? "inv_suffix" :
-    type === "qt"  ? "qt_suffix"  :
-    type === "grn" ? "grn_suffix" :
-    type === "cn"  ? "cn_suffix"  :
-    type === "dn"  ? "dn_suffix"  :
-    type === "pi"  ? "pi_suffix"  :
-    type === "pv"  ? "pv_suffix"  : "do_suffix";
+  const cols = COL_MAP[type];
+  const counterCol = cols.counter;
+  const prefixCol = cols.prefix;
+  const suffixCol = cols.suffix;
 
   let rows: any[];
 
   if (companyId) {
     rows = await db.execute(
-      sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE company_id = ${companyId} RETURNING *`
+      sql`UPDATE settings SET ${sql.raw(counterCol)} = COALESCE(${sql.raw(counterCol)}, 0) + 1 WHERE company_id = ${companyId} RETURNING *`
     ) as unknown as any[];
   } else {
     rows = await db.execute(
-      sql`UPDATE settings SET ${sql.raw(counterCol)} = ${sql.raw(counterCol)} + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
+      sql`UPDATE settings SET ${sql.raw(counterCol)} = COALESCE(${sql.raw(counterCol)}, 0) + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
     ) as unknown as any[];
   }
 
   const s = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
 
   if (!s) {
-    return `${type.toUpperCase()}1`;
+    return `${cols.fallbackPrefix}1`;
   }
 
-  const prefix  = s[prefixCol] ?? type.toUpperCase();
-  const suffix  = s[suffixCol] ?? "";
-  let counter   = s[counterCol] ?? 1;
-  let candidate = buildNumber(prefix, counter, suffix);
+  const prefix = s[prefixCol] ?? cols.fallbackPrefix;
+  const suffix = s[suffixCol] ?? "";
+  let counter = Number(s[counterCol]) || 1;
+  let candidate = buildDocNumber(prefix, counter, suffix);
 
-  // Skip any numbers that already exist (handles gaps from auto-creation or retries)
   let safety = 0;
   while (await numberExists(type, candidate, companyId) && safety < 50) {
     safety++;
     counter++;
-    candidate = buildNumber(prefix, counter, suffix);
-    // Advance the counter in DB to stay in sync
+    candidate = buildDocNumber(prefix, counter, suffix);
     if (companyId) {
       await db.execute(
         sql`UPDATE settings SET ${sql.raw(counterCol)} = ${counter} WHERE company_id = ${companyId}`
@@ -102,4 +112,10 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
   }
 
   return candidate;
+}
+
+/** Preview next number without consuming the counter (for UI). */
+export function previewDocNumber(prefix: string, counter: number | string, suffix: string): string {
+  const n = (parseInt(String(counter), 10) || 0) + 1;
+  return buildDocNumber(prefix || "", n, suffix || "");
 }

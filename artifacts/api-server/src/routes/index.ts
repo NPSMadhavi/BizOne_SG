@@ -35,6 +35,8 @@ import projectsRouter from "./projects";
 import ackRouter from "./ack";
 import expensesRouter from "./expenses";
 import incomeRouter from "./income";
+import operationsRouter from "./operations";
+import inventoryRouter from "./inventory";
 
 const router: IRouter = Router();
 
@@ -74,5 +76,7 @@ router.use(projectsRouter);
 router.use(ackRouter);
 router.use(expensesRouter);
 router.use(incomeRouter);
+router.use(operationsRouter);
+router.use(inventoryRouter);
 
 export default router;

@@ -1,15 +1,16 @@
 import { pgTable, serial, integer, unique, jsonb } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { companiesTable } from "./companies";
+import { APP_ALL_MODULES } from "../modules";
 
-export const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders"] as const;
-export type AppModule = typeof ALL_MODULES[number];
+export { APP_ALL_MODULES as ALL_MODULES };
+export type AppModule = (typeof APP_ALL_MODULES)[number];
 
 export const userCompaniesTable = pgTable("user_companies", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
-  modules: jsonb("modules").$type<string[]>().notNull().default(["purchase_orders", "quotations", "invoices", "delivery_orders"]),
+  modules: jsonb("modules").$type<string[]>().notNull().default([...APP_ALL_MODULES]),
 }, (table) => [
   unique().on(table.userId, table.companyId),
 ]);

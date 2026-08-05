@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +48,9 @@ const itemSchema = z.object({
   qty: z.coerce.number().min(0).default(1),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
+  stockItemId: z.number().optional(),
+  warehouseId: z.number().optional(),
+  warehouseName: z.string().optional(),
   itemImage: z.string().default(""),
 });
 
@@ -249,13 +252,24 @@ export default function PurchaseOrderNew() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Create Purchase Order</h1>
-          <p className="text-muted-foreground mt-1">Draft a new professional PO document.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/purchase-orders")}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Create Purchase Order</h1>
+            <p className="text-muted-foreground mt-1">Draft a new professional PO document.</p>
+          </div>
         </div>
         {nextPoNumber && (
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">PO Number</p>
             <p className="text-lg font-semibold font-mono">{nextPoNumber}</p>
           </div>
@@ -582,11 +596,18 @@ export default function PurchaseOrderNew() {
                           <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
-                                <div className="flex items-center gap-1">
-                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
-                                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
-                                    <Package className="h-3.5 w-3.5" />
-                                  </Button>
+                                <div className="flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-1">
+                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                      <Package className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                  {items[index]?.warehouseName ? (
+                                    <span className="text-[10px] text-muted-foreground pl-1 truncate" title={items[index].warehouseName}>
+                                      → {items[index].warehouseName}
+                                    </span>
+                                  ) : null}
                                 </div>
                               </FormControl></FormItem>
                             )} />
@@ -775,11 +796,19 @@ export default function PurchaseOrderNew() {
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        onSelect={({ item, qty }: StockItemSelection) => {
+        mode="receive"
+        onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
+          form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
+          form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
+          if (warehouseId) {
+            form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+            form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
+          }
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}

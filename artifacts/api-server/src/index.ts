@@ -2,6 +2,9 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
 import { backfillExchangeRatesOnStartup, runStartupMigrations } from "./lib/startup-backfill.js";
+import { migrateAuthFields } from "./migrate-auth-fields";
+import { migrateOperationsTables } from "./migrate-operations-tables";
+import { migrateWmsTables } from "./migrate-wms-tables";
 
 const rawPort = process.env["PORT"];
 
@@ -17,8 +20,11 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-seedIfEmpty()
+migrateAuthFields()
+  .then(() => seedIfEmpty())
   .then(() => runStartupMigrations())
+  .then(() => migrateOperationsTables())
+  .then(() => migrateWmsTables())
   .then(() => backfillExchangeRatesOnStartup())
   .then(() => {
     app.listen(port, (err) => {
