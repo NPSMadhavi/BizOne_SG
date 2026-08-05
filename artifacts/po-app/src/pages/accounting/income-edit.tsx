@@ -294,7 +294,7 @@ export default function IncomeEdit() {
                     <div className="flex gap-2 items-center">
                       <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
                         <span className="font-mono">1 {watchedCurrency} =</span>
-                        <Input type="number" step="0.000001" min="0.000001" value={exchangeRate}
+                        <Input type="text" inputMode="decimal" value={exchangeRate}
                           onChange={e => setExchangeRate(e.target.value)}
                           className="h-7 font-mono text-xs w-32 bg-white" />
                         <span className="font-mono">SGD</span>

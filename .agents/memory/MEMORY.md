@@ -1,3 +1,4 @@
+- [Financial input fields — no spinners](financial-inputs.md) — ALL monetary inputs must use type=text inputMode=decimal, never type=number; format to 2dp on blur
 - [Vendor invoice GST fields + F5 fix + accountant role](vendor-invoice-gst.md) — GST columns migrated, F5 Box 4/5/7 fixed, JE split, UserRole enum updated everywhere
 - [Exchange rate feature](exchange-rate-feature.md) — lib/db dist must be rebuilt (npx tsc -p tsconfig.json) whenever schema columns are added; api-server uses project references → stale dist = TS2769 on insert
 - [Invoice section rows + poRefNo](invoice-section-rows.md) — section items stored as `{type:"section",sectionLabel:"..."}` in JSONB; excluded from subtotal, doSubmit, auto-append

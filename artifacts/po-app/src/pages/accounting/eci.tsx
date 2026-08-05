@@ -229,9 +229,14 @@ export default function EciPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">SGD</span>
-                  <Input type="number" step="0.01" min="0" value={revenue}
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={revenue}
                     onChange={e => setRevenue(e.target.value)}
-                    className="text-right tabular-nums font-medium" />
+                    onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) setRevenue(n.toFixed(2)); }}
+                    className="text-right tabular-nums font-medium"
+                  />
                 </div>
                 {data && Math.abs(rev - data.computedRevenue) > 0.01 && (
                   <p className="text-xs text-muted-foreground mt-1.5">
