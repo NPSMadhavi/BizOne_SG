@@ -1186,12 +1186,12 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
   const [account] = accounts.filter(a => a.id === accountId);
   if (!account) { res.status(404).json({ error: "Account not found" }); return; }
 
-  // Opening balance: all posted entries BEFORE fromDate
+  // Opening balance: all posted/reversed entries BEFORE fromDate
   let openingDebit = 0, openingCredit = 0;
   if (fromDate) {
     const obEntries = await db.select({ entryId: journalEntriesTable.id })
       .from(journalEntriesTable)
-      .where(and(eq(journalEntriesTable.companyId, companyId), eq(journalEntriesTable.status, "posted"), sql`${journalEntriesTable.entryDate} < ${fromDate}`));
+      .where(and(eq(journalEntriesTable.companyId, companyId), sql`${journalEntriesTable.status} IN ('posted','reversed')`, sql`${journalEntriesTable.entryDate} < ${fromDate}`));
     const obIds = obEntries.map(e => e.entryId);
     if (obIds.length > 0) {
       const obLines = await db.select().from(journalLinesTable)
@@ -1207,7 +1207,7 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.status, "posted"),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
       ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
       ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
     ))
