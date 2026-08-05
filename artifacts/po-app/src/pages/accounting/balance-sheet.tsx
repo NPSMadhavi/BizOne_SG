@@ -27,6 +27,14 @@ function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-SG", { day: "2-digit", month: "long", year: "numeric" });
 }
 
+// Quarter end dates (calendar year)
+const QUARTER_ENDS = [
+  { label: "Q1", month: "03", day: "31" },
+  { label: "Q2", month: "06", day: "30" },
+  { label: "Q3", month: "09", day: "30" },
+  { label: "Q4", month: "12", day: "31" },
+];
+
 function GroupLabel({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-3 px-5 py-2.5 bg-gray-50 border-b border-gray-100">
@@ -75,8 +83,25 @@ function SubtotalBar({ label, amount }: { label: string; amount: number }) {
 export default function BalanceSheetPage() {
   const { selectedCompany } = useAuth();
   const today = new Date().toISOString().split("T")[0];
+  const currentYear = new Date().getFullYear();
+
   const [asOf, setAsOf] = useState(today);
+  const [selYear, setSelYear] = useState(currentYear);
+  const [selQuarter, setSelQuarter] = useState<number | null>(null); // null = custom
   const [pdfLoading, setPdfLoading] = useState(false);
+
+  function selectQuarter(qi: number, year: number) {
+    const q = QUARTER_ENDS[qi];
+    const d = `${year}-${q.month}-${q.day}`;
+    setAsOf(d);
+    setSelYear(year);
+    setSelQuarter(qi);
+  }
+
+  function handleDateChange(val: string) {
+    setAsOf(val);
+    setSelQuarter(null); // switch to custom
+  }
 
   const { data, isLoading, isError, error } = useQuery<BSData>({
     queryKey: ["balance-sheet", asOf],
@@ -109,6 +134,8 @@ export default function BalanceSheetPage() {
     }
   }
 
+  const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - i);
+
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
@@ -117,10 +144,6 @@ export default function BalanceSheetPage() {
           <h1 className="text-2xl font-bold text-gray-900">Balance Sheet</h1>
         </div>
         <div className="flex items-end gap-4 flex-wrap">
-          <div className="space-y-1">
-            <Label className="text-xs text-gray-500">As of Date</Label>
-            <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
-          </div>
           {data && (
             <span className={cn("text-xs font-semibold px-2.5 py-1 rounded border mb-0.5", data.balanced ? "border-green-200 text-green-700 bg-green-50" : "border-red-200 text-red-700 bg-red-50")}>
               {data.balanced ? "Balanced ✓" : "Out of balance"}
@@ -132,6 +155,61 @@ export default function BalanceSheetPage() {
               Download PDF
             </Button>
           )}
+        </div>
+      </div>
+
+      {/* Date / quarter selector */}
+      <div className="flex flex-wrap items-end gap-4 p-4 bg-muted/20 border rounded-lg">
+        {/* Year */}
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Year</Label>
+          <select
+            value={selYear}
+            onChange={e => {
+              const y = parseInt(e.target.value);
+              setSelYear(y);
+              if (selQuarter !== null) selectQuarter(selQuarter, y);
+            }}
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+
+        {/* Quarter buttons */}
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Quarter end</Label>
+          <div className="flex gap-1.5">
+            {QUARTER_ENDS.map((q, i) => (
+              <button
+                key={q.label}
+                onClick={() => selectQuarter(i, selYear)}
+                className={cn(
+                  "h-8 px-3 text-xs font-semibold rounded-md border transition-colors",
+                  selQuarter === i
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-input text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                {q.label}
+                <span className="ml-1 font-normal opacity-60">
+                  {new Date(`${selYear}-${q.month}-${q.day}T00:00:00`).toLocaleDateString("en-SG", { month: "short", day: "numeric" })}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom date */}
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Or custom date</Label>
+          <Input
+            type="date"
+            value={asOf}
+            max={today}
+            onChange={e => handleDateChange(e.target.value)}
+            className="w-40 text-sm h-8 border-gray-200"
+          />
         </div>
       </div>
 

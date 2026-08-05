@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, expensesTable, companiesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
+import { postExpenseJE, reverseExpenseJE, backfillExpenseJEs } from "../lib/expense-auto-post.js";
 
 const router: IRouter = Router();
 
@@ -172,6 +173,11 @@ router.delete("/expenses/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Only admins and accountants can delete expenses." }); return;
   }
 
+  // If confirmed, reverse the journal entry before deleting
+  if (existing.status === "confirmed") {
+    await reverseExpenseJE(id, existing.companyId, existing.vendorName, req.session.userId!);
+  }
+
   await db.delete(expensesTable).where(eq(expensesTable.id, id));
   logAudit({ req, action: "delete", entityType: "expense", entityId: id, entityLabel: existing.vendorName });
   res.json({ success: true });
@@ -195,6 +201,9 @@ router.post("/expenses/:id/confirm", async (req, res): Promise<void> => {
   const [updated] = await db.update(expensesTable)
     .set({ status: "confirmed", updatedAt: new Date() })
     .where(eq(expensesTable.id, id)).returning();
+
+  // Auto-post journal entry for this confirmed expense
+  await postExpenseJE(updated, req.session.userId!);
 
   logAudit({ req, action: "status:confirmed", entityType: "expense", entityId: id, entityLabel: updated.vendorName });
   res.json({ ...updated, receiptData: undefined });

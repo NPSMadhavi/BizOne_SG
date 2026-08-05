@@ -4,6 +4,7 @@ import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
 import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
+import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
 
 const router: IRouter = Router();
 
@@ -287,7 +288,7 @@ router.get("/trial-balance", async (req, res): Promise<void> => {
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.status, "posted"),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
       ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
       ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
     ));
@@ -854,6 +855,20 @@ router.get("/balance-sheet", async (req, res): Promise<void> => {
     totalLiabilitiesAndEquity: parseFloat((totalLiabilities + totalEquity).toFixed(2)),
     balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
   });
+});
+
+// ─── Backfill: post JEs for confirmed expenses missing one ────────────────────
+
+router.post("/backfill-expense-jes", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const userId    = req.session.userId!;
+
+  const posted = await backfillExpenseJEs(companyId, userId);
+  res.json({ posted, message: posted === 0 ? "All confirmed expenses already have journal entries." : `Posted ${posted} new journal entr${posted === 1 ? "y" : "ies"}.` });
 });
 
 // ─── Customer Statement ───────────────────────────────────────────────────────

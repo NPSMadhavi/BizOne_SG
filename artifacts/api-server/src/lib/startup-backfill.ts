@@ -2,9 +2,10 @@
  * Startup migrations + exchange-rate backfill.
  * Safe to call on every boot — all DDL uses IF NOT EXISTS / idempotent checks.
  */
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, companiesTable } from "@workspace/db";
+import { sql, eq } from "drizzle-orm";
 import { getExchangeRateToSGD } from "./exchange-rate.js";
+import { backfillExpenseJEs } from "./expense-auto-post.js";
 import { logger } from "./logger.js";
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
@@ -77,6 +78,27 @@ async function backfillTable(
   }
 
   return { updated, failed };
+}
+
+/** Post JEs for any confirmed expenses that were confirmed before auto-posting was added. */
+export async function backfillExpenseJEsOnStartup(): Promise<void> {
+  try {
+    const companies = await db.select({ id: companiesTable.id })
+      .from(companiesTable)
+      .where(eq(companiesTable.country, "Singapore"));
+
+    let total = 0;
+    for (const co of companies) {
+      // Use a system user id of 1 (the first seeded admin); idempotent — safe to re-run
+      const posted = await backfillExpenseJEs(co.id, 1, logger);
+      total += posted;
+    }
+    if (total > 0) {
+      logger.info({ posted: total }, "[startup-backfill] expense JE backfill complete");
+    }
+  } catch (e: any) {
+    logger.warn({ err: e.message }, "[startup-backfill] expense JE backfill failed (non-fatal)");
+  }
 }
 
 export async function backfillExchangeRatesOnStartup(): Promise<void> {

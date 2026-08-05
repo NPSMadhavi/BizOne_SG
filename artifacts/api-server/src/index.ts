@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
-import { backfillExchangeRatesOnStartup, runStartupMigrations } from "./lib/startup-backfill.js";
+import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, runStartupMigrations } from "./lib/startup-backfill.js";
 
 const rawPort = process.env["PORT"];
 
@@ -19,6 +19,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 seedIfEmpty()
   .then(() => runStartupMigrations())
+  .then(() => backfillExpenseJEsOnStartup())
   .then(() => backfillExchangeRatesOnStartup())
   .then(() => {
     app.listen(port, (err) => {
