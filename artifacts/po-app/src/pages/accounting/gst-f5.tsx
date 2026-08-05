@@ -338,8 +338,14 @@ export default function GstF5Page() {
                       <div>
                         <p className="text-sm font-semibold">{box.label}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{box.desc}</p>
-                        {(n === 2 || n === 3 || n === 5) && val === 0 && (
-                          <p className="text-[10px] text-blue-600 mt-1 flex items-center gap-1"><Info className="h-3 w-3" /> Enter manually if applicable — not tracked by the system</p>
+                        {val === 0 && (
+                          <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                            <Info className="h-3 w-3 shrink-0" />
+                            {n === 2 && "Sourced from confirmed Income records marked as zero-rated"}
+                            {n === 3 && "Sourced from confirmed Income records marked as exempt"}
+                            {n === 5 && "Sourced from confirmed Income records marked as out-of-scope"}
+                            {n === 1 && "No standard-rated invoices or income records in this period"}
+                          </p>
                         )}
                       </div>
                       <div className={cn("text-right font-mono font-semibold text-sm tabular-nums", val === 0 ? "text-muted-foreground/40" : "")}>
