@@ -4,13 +4,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { Download, Loader2, Search } from "lucide-react";
+import { Download, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { generateCustomerStatement_PDF } from "@/lib/pdf";
 
-interface StmtEntry { id: number; invNumber: string; issueDate: string | null; amount: number; status: string; paymentTerms: string | null }
-interface StmtData { customer: string; customerNames: string[]; entries: StmtEntry[]; totalBilled: number; totalPaid: number; balance: number }
+interface StmtEntry {
+  id: number;
+  invNumber: string;
+  issueDate: string | null;
+  amount: number;
+  paidAmount: number;
+  balance: number;
+  status: string;
+  paymentTerms: string | null;
+}
+interface CustomerSummaryRow {
+  name: string;
+  billed: number;
+  paid: number;
+  balance: number;
+  invoices: number;
+}
+interface StmtData {
+  customer: string;
+  customerNames: string[];
+  customerSummary: CustomerSummaryRow[];
+  entries: StmtEntry[];
+  totalBilled: number;
+  totalPaid: number;
+  balance: number;
+}
 
 function fmtAmt(n: number) {
   return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -24,9 +48,9 @@ export default function CustomerStatementPage() {
   const { selectedCompany } = useAuth();
   const [, navigate] = useLocation();
 
-  const today = new Date().toISOString().split("T")[0];
-  const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-  const defaultFrom = threeMonthsAgo.toISOString().split("T")[0];
+  const today       = new Date().toISOString().split("T")[0];
+  const currentYear = new Date().getFullYear();
+  const defaultFrom = `${currentYear}-01-01`;
 
   const [customer, setCustomer] = useState("");
   const [search, setSearch]     = useState("");
@@ -53,31 +77,30 @@ export default function CustomerStatementPage() {
     n.toLowerCase().includes(search.toLowerCase()) && n !== customer
   );
 
-  function selectCustomer(name: string) {
-    setCustomer(name);
-    setSearch(name);
-    setShowSuggestions(false);
-  }
+  function selectCustomer(name: string) { setCustomer(name); setSearch(name); setShowSuggestions(false); }
+  function clearCustomer()              { setCustomer(""); setSearch(""); }
 
   async function handleDownloadPDF() {
     if (!data || !customer) return;
     setPdfLoading(true);
     try {
       await generateCustomerStatement_PDF(
-        selectedCompany as any,
-        customer,
-        from || null,
-        to || null,
-        data.entries,
-        { totalBilled: data.totalBilled, totalPaid: data.totalPaid, balance: data.balance }
+        selectedCompany as any, customer, from || null, to || null,
+        data.entries, { totalBilled: data.totalBilled, totalPaid: data.totalPaid, balance: data.balance }
       );
     } finally {
       setPdfLoading(false);
     }
   }
 
+  const summary = data?.customerSummary ?? [];
+  const grandBilled  = summary.reduce((s, r) => s + r.billed,  0);
+  const grandPaid    = summary.reduce((s, r) => s + r.paid,    0);
+  const grandBalance = summary.reduce((s, r) => s + r.balance, 0);
+
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
+
       {/* Page header */}
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -103,9 +126,18 @@ export default function CustomerStatementPage() {
               onChange={e => { setSearch(e.target.value); setShowSuggestions(true); if (!e.target.value) setCustomer(""); }}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              placeholder="Type to search customers…"
-              className="pl-8 text-sm h-8 border-gray-200"
+              placeholder="Search customers… or leave blank to see all"
+              className="pl-8 pr-8 text-sm h-8 border-gray-200"
             />
+            {customer && (
+              <button
+                onClick={clearCustomer}
+                className="absolute right-2.5 top-2 text-gray-300 hover:text-gray-500"
+                title="Clear customer filter"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
           {showSuggestions && suggestions.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-200 rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
@@ -125,22 +157,78 @@ export default function CustomerStatementPage() {
         </div>
       </div>
 
-      {/* Empty prompt */}
-      {!customer && !isLoading && (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <p className="text-sm font-medium text-gray-600 mb-1">No customer selected</p>
-          <p className="text-xs text-gray-400">Search for a customer above to view their statement</p>
-        </div>
-      )}
-
-      {isLoading && customer && <div className="text-center py-16 text-sm text-gray-400">Loading…</div>}
+      {isLoading && <div className="text-center py-16 text-sm text-gray-400">Loading…</div>}
       {isError   && <div className="text-center py-16 text-sm text-red-500">{(error as Error).message}</div>}
 
+      {/* ── All-customers summary (when no customer selected) ── */}
+      {!customer && !isLoading && data && (
+        summary.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <p className="text-sm font-medium text-gray-600 mb-1">No invoices found</p>
+            <p className="text-xs text-gray-400">Try widening the date range above.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">
+              Showing all {summary.length} customer{summary.length !== 1 ? "s" : ""} with invoices in this period.
+              Click a row to drill into a customer's statement.
+            </p>
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-200 bg-gray-50">
+                      <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Customer</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider w-20">Invoices</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Total Billed</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Total Paid</th>
+                      <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Balance Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.map((c, i) => (
+                      <tr
+                        key={c.name}
+                        className={cn("border-b border-gray-100 cursor-pointer transition-colors hover:bg-blue-50/60", i % 2 === 0 ? "" : "bg-gray-50/40")}
+                        onClick={() => selectCustomer(c.name)}
+                      >
+                        <td className="px-4 py-3 font-medium text-sm text-gray-800">{c.name}</td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-400 tabular-nums">{c.invoices}</td>
+                        <td className="px-4 py-3 text-right font-mono text-sm tabular-nums text-gray-800">S$ {fmtAmt(c.billed)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-sm tabular-nums text-gray-500">S$ {fmtAmt(c.paid)}</td>
+                        <td className={cn("px-4 py-3 text-right font-mono text-sm tabular-nums font-semibold", c.balance > 0.005 ? "text-gray-900" : "text-gray-300")}>
+                          S$ {fmtAmt(c.balance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-900 text-white">
+                      <td className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-gray-300">Total — {summary.length} customer{summary.length !== 1 ? "s" : ""}</td>
+                      <td className="px-4 py-3 text-right font-mono text-sm tabular-nums text-gray-400">{summary.reduce((s, c) => s + c.invoices, 0)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-sm tabular-nums">S$ {fmtAmt(grandBilled)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-sm tabular-nums text-gray-300">S$ {fmtAmt(grandPaid)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-base font-bold tabular-nums">S$ {fmtAmt(grandBalance)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      )}
+
+      {/* ── Single customer detail ── */}
       {data && customer && (
         <>
+          <button onClick={clearCustomer} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
+            <X className="h-3.5 w-3.5" />
+            Back to all customers
+          </button>
+
           {/* Summary strip */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
             <div className="grid grid-cols-3 divide-x divide-gray-100">
@@ -171,12 +259,14 @@ export default function CustomerStatementPage() {
                     <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Invoice No.</th>
                     <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Terms</th>
                     <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider w-28">Status</th>
-                    <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Amount (SGD)</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Total</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Paid</th>
+                    <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Balance</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.entries.length === 0 && (
-                    <tr><td colSpan={5} className="text-center py-16 text-sm text-gray-400">No invoices found for {customer} in this period.</td></tr>
+                    <tr><td colSpan={7} className="text-center py-16 text-sm text-gray-400">No invoices found for <span className="font-medium">{customer}</span> in this period.</td></tr>
                   )}
                   {data.entries.map(e => (
                     <tr
@@ -190,15 +280,18 @@ export default function CustomerStatementPage() {
                       <td className="px-4 py-3">
                         <span className={cn(
                           "inline-block px-2 py-0.5 rounded text-xs font-semibold",
-                          e.status === "paid"   ? "bg-gray-100 text-gray-500" :
-                          e.status === "active" ? "bg-blue-50 text-blue-700 border border-blue-100" :
-                                                  "bg-gray-50 text-gray-400"
+                          e.status === "paid"    ? "bg-gray-100 text-gray-500" :
+                          e.status === "partial" ? "bg-blue-50 text-blue-700 border border-blue-100" :
+                          e.status === "active"  ? "bg-amber-50 text-amber-700 border border-amber-100" :
+                                                   "bg-gray-50 text-gray-400"
                         )}>
-                          {e.status === "paid" ? "Paid" : e.status === "active" ? "Outstanding" : e.status}
+                          {e.status === "paid" ? "Paid" : e.status === "partial" ? "Partial" : e.status === "active" ? "Outstanding" : e.status}
                         </span>
                       </td>
-                      <td className="text-right px-4 py-3 font-mono text-sm tabular-nums text-gray-800">
-                        S$ {fmtAmt(e.amount)}
+                      <td className="text-right px-4 py-3 font-mono text-sm tabular-nums text-gray-800">S$ {fmtAmt(e.amount)}</td>
+                      <td className="text-right px-4 py-3 font-mono text-sm tabular-nums text-gray-500">S$ {fmtAmt(e.paidAmount)}</td>
+                      <td className={cn("text-right px-4 py-3 font-mono text-sm tabular-nums font-semibold", e.balance > 0.005 ? "text-gray-900" : "text-gray-300")}>
+                        S$ {fmtAmt(e.balance)}
                       </td>
                     </tr>
                   ))}
@@ -206,7 +299,7 @@ export default function CustomerStatementPage() {
                 {data.entries.length > 0 && (
                   <tfoot>
                     <tr className="bg-gray-900 text-white">
-                      <td colSpan={4} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-gray-300">Outstanding Balance</td>
+                      <td colSpan={6} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-gray-300">Outstanding Balance</td>
                       <td className={cn("text-right px-4 py-3 font-mono text-base font-bold tabular-nums", data.balance > 0 ? "text-white" : "text-gray-500")}>
                         S$ {fmtAmt(data.balance)}
                       </td>

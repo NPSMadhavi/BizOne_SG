@@ -883,13 +883,56 @@ router.get("/customer-statement", async (req, res): Promise<void> => {
   const fromDate  = (req.query.from as string) || null;
   const toDate    = (req.query.to   as string) || null;
 
-  const nameRows = await db.selectDistinct({ name: invoicesTable.customerName })
-    .from(invoicesTable)
-    .where(and(eq(invoicesTable.companyId, companyId), sql`${invoicesTable.status} != 'draft'`, sql`${invoicesTable.customerName} IS NOT NULL`))
-    .orderBy(asc(invoicesTable.customerName));
-  const customerNames = nameRows.map(r => r.name).filter(Boolean) as string[];
+  const dateFilter = [
+    sql`${invoicesTable.status} NOT IN ('draft', 'void')`,
+    ...(fromDate ? [sql`${invoicesTable.issueDate} >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
+  ];
 
-  if (!customer) { res.json({ customer: "", customerNames, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 }); return; }
+  // Helper: sum confirmed payments per invoice id
+  async function getPaidByInvoice(invoiceIds: number[]): Promise<Record<number, number>> {
+    if (invoiceIds.length === 0) return {};
+    const payRows = await db.execute<{ invoice_id: number; total: string }>(
+      sql.raw(`SELECT invoice_id, SUM(amount) AS total FROM invoice_payments WHERE invoice_id = ANY(ARRAY[${invoiceIds.join(",")}]::int[]) GROUP BY invoice_id`)
+    );
+    const map: Record<number, number> = {};
+    for (const r of payRows.rows) map[r.invoice_id] = parseFloat(r.total ?? "0");
+    return map;
+  }
+
+  // Summary across all customers (for "no customer selected" overview)
+  const allRows = await db.select({
+    customerName: invoicesTable.customerName,
+    id:           invoicesTable.id,
+    totalAmount:  invoicesTable.totalAmount,
+    status:       invoicesTable.status,
+  })
+    .from(invoicesTable)
+    .where(and(eq(invoicesTable.companyId, companyId), ...dateFilter))
+    .orderBy(asc(invoicesTable.customerName));
+
+  const allIds = allRows.map(r => r.id);
+  const allPaid = await getPaidByInvoice(allIds);
+
+  const summaryMap: Record<string, { billed: number; paid: number; invoices: number }> = {};
+  for (const r of allRows) {
+    const name = r.customerName ?? "Unknown";
+    if (!summaryMap[name]) summaryMap[name] = { billed: 0, paid: 0, invoices: 0 };
+    const total = parseFloat(r.totalAmount ?? "0");
+    summaryMap[name].billed   += total;
+    summaryMap[name].paid     += (allPaid[r.id] ?? 0);
+    summaryMap[name].invoices += 1;
+  }
+  const customerSummary = Object.entries(summaryMap)
+    .map(([name, s]) => ({ name, billed: +s.billed.toFixed(2), paid: +s.paid.toFixed(2), balance: +(s.billed - s.paid).toFixed(2), invoices: s.invoices }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const customerNames = customerSummary.map(c => c.name);
+
+  if (!customer) {
+    res.json({ customer: "", customerNames, customerSummary, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 });
+    return;
+  }
 
   const invRows = await db.select({
     id: invoicesTable.id, invNumber: invoicesTable.invNumber,
@@ -900,21 +943,27 @@ router.get("/customer-statement", async (req, res): Promise<void> => {
   .where(and(
     eq(invoicesTable.companyId, companyId),
     sql`LOWER(${invoicesTable.customerName}) = LOWER(${customer})`,
-    sql`${invoicesTable.status} NOT IN ('draft', 'void')`,
-    ...(fromDate ? [sql`${invoicesTable.issueDate} >= ${fromDate}`] : []),
-    ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
+    ...dateFilter,
   ))
   .orderBy(asc(invoicesTable.issueDate), asc(invoicesTable.id));
 
+  const paidMap = await getPaidByInvoice(invRows.map(r => r.id));
+
   const totalBilled = invRows.reduce((s, i) => s + parseFloat(i.totalAmount ?? "0"), 0);
-  const totalPaid   = invRows.filter(i => i.status === "paid").reduce((s, i) => s + parseFloat(i.totalAmount ?? "0"), 0);
+  const totalPaid   = invRows.reduce((s, i) => s + (paidMap[i.id] ?? 0), 0);
 
   res.json({
-    customer, customerNames,
-    entries: invRows.map(inv => ({ id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate, amount: parseFloat(parseFloat(inv.totalAmount ?? "0").toFixed(2)), status: inv.status, paymentTerms: inv.paymentTerms })),
-    totalBilled: parseFloat(totalBilled.toFixed(2)),
-    totalPaid:   parseFloat(totalPaid.toFixed(2)),
-    balance:     parseFloat((totalBilled - totalPaid).toFixed(2)),
+    customer, customerNames, customerSummary: [],
+    entries: invRows.map(inv => ({
+      id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate,
+      amount:     +parseFloat(inv.totalAmount ?? "0").toFixed(2),
+      paidAmount: +(paidMap[inv.id] ?? 0).toFixed(2),
+      balance:    +Math.max(0, parseFloat(inv.totalAmount ?? "0") - (paidMap[inv.id] ?? 0)).toFixed(2),
+      status: inv.status, paymentTerms: inv.paymentTerms,
+    })),
+    totalBilled: +totalBilled.toFixed(2),
+    totalPaid:   +totalPaid.toFixed(2),
+    balance:     +Math.max(0, totalBilled - totalPaid).toFixed(2),
   });
 });
 
