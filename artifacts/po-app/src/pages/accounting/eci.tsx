@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CUR_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 6 }, (_, i) => CUR_YEAR - 1 - i);
+// Include current FY so in-progress year is always selectable
+const YEARS = Array.from({ length: 6 }, (_, i) => CUR_YEAR - i);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,9 +56,11 @@ function ExpRow({ label, value, onChange }: { label: string; value: string; onCh
     <div className="flex items-center gap-3 py-2 border-b border-muted/60 last:border-0">
       <span className="flex-1 text-sm text-muted-foreground">{label}</span>
       <Input
-        type="number" step="0.01" min="0"
+        type="text"
+        inputMode="decimal"
         value={value}
         onChange={e => onChange(e.target.value)}
+        onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) onChange(n.toFixed(2)); }}
         className="w-36 text-right tabular-nums h-8 text-sm"
         placeholder="0.00"
       />
@@ -70,7 +73,7 @@ function ExpRow({ label, value, onChange }: { label: string; value: string; onCh
 export default function EciPage() {
   const { selectedCompany } = useAuth();
   const qc = useQueryClient();
-  const [year, setYear] = useState(CUR_YEAR - 1);
+  const [year, setYear] = useState(CUR_YEAR);
 
   // Form state
   const [revenue,       setRevenue]       = useState("");
