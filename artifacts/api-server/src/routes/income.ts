@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, incomeRecordsTable, companiesTable, accountsTable } from "@workspace/db";
+import { db, incomeRecordsTable, incomeAttachmentsTable, companiesTable, accountsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { postIncomeJE, reverseIncomeJE } from "../lib/income-auto-post.js";
@@ -63,7 +63,16 @@ router.get("/income/:id", async (req, res): Promise<void> => {
     if (acct) accountName = `${acct.code} ${acct.name}`;
   }
 
-  res.json({ ...record, accountName });
+  // Attachment count
+  const attachments = await db.select({
+    id: incomeAttachmentsTable.id,
+    fileName: incomeAttachmentsTable.fileName,
+    mimeType: incomeAttachmentsTable.mimeType,
+    createdAt: incomeAttachmentsTable.createdAt,
+  }).from(incomeAttachmentsTable).where(eq(incomeAttachmentsTable.incomeId, id))
+    .orderBy(incomeAttachmentsTable.createdAt);
+
+  res.json({ ...record, accountName, attachmentCount: attachments.length });
 });
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -250,6 +259,111 @@ router.post("/income/:id/void", async (req, res): Promise<void> => {
 
   logAudit({ req, action: "status:void", entityType: "income_record", entityId: id, entityLabel: updated.payerName });
   res.json(updated);
+});
+
+// ── Attachments: List ─────────────────────────────────────────────────────────
+router.get("/income/:id/attachments", async (req: any, res: any): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const id = parseInt(req.params.id);
+  try {
+    const [record] = await db.select({ id: incomeRecordsTable.id })
+      .from(incomeRecordsTable)
+      .where(and(eq(incomeRecordsTable.id, id), eq(incomeRecordsTable.companyId, companyId)));
+    if (!record) { res.status(404).json({ error: "Not found" }); return; }
+
+    const rows = await db.select({
+      id: incomeAttachmentsTable.id,
+      fileName: incomeAttachmentsTable.fileName,
+      mimeType: incomeAttachmentsTable.mimeType,
+      createdAt: incomeAttachmentsTable.createdAt,
+    }).from(incomeAttachmentsTable)
+      .where(eq(incomeAttachmentsTable.incomeId, id))
+      .orderBy(incomeAttachmentsTable.createdAt);
+
+    res.json(rows);
+  } catch (err: any) {
+    req.log.error({ err }, "GET /income/:id/attachments error");
+    res.status(500).json({ error: "Failed to fetch attachments" });
+  }
+});
+
+// ── Attachments: Get one (with fileData) ─────────────────────────────────────
+router.get("/income/:id/attachments/:attId", async (req: any, res: any): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const incomeId = parseInt(req.params.id);
+  const attId = parseInt(req.params.attId);
+  try {
+    const [record] = await db.select({ id: incomeRecordsTable.id })
+      .from(incomeRecordsTable)
+      .where(and(eq(incomeRecordsTable.id, incomeId), eq(incomeRecordsTable.companyId, companyId)));
+    if (!record) { res.status(404).json({ error: "Not found" }); return; }
+
+    const [att] = await db.select().from(incomeAttachmentsTable)
+      .where(and(eq(incomeAttachmentsTable.id, attId), eq(incomeAttachmentsTable.incomeId, incomeId)));
+    if (!att) { res.status(404).json({ error: "Attachment not found" }); return; }
+
+    res.json({ id: att.id, fileName: att.fileName, mimeType: att.mimeType, fileData: att.fileData });
+  } catch (err: any) {
+    req.log.error({ err }, "GET /income/:id/attachments/:attId error");
+    res.status(500).json({ error: "Failed to fetch attachment" });
+  }
+});
+
+// ── Attachments: Upload ───────────────────────────────────────────────────────
+router.post("/income/:id/attachments", async (req: any, res: any): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const incomeId = parseInt(req.params.id);
+  try {
+    const [record] = await db.select({ id: incomeRecordsTable.id })
+      .from(incomeRecordsTable)
+      .where(and(eq(incomeRecordsTable.id, incomeId), eq(incomeRecordsTable.companyId, companyId)));
+    if (!record) { res.status(404).json({ error: "Not found" }); return; }
+
+    const { fileName, mimeType, fileData } = req.body;
+    if (!fileData || !mimeType) { res.status(400).json({ error: "fileData and mimeType are required" }); return; }
+
+    const [att] = await db.insert(incomeAttachmentsTable).values({
+      incomeId, fileName: fileName || "attachment", mimeType, fileData,
+    }).returning({
+      id: incomeAttachmentsTable.id,
+      fileName: incomeAttachmentsTable.fileName,
+      mimeType: incomeAttachmentsTable.mimeType,
+      createdAt: incomeAttachmentsTable.createdAt,
+    });
+
+    res.json(att);
+  } catch (err: any) {
+    req.log.error({ err }, "POST /income/:id/attachments error");
+    res.status(500).json({ error: "Failed to upload attachment" });
+  }
+});
+
+// ── Attachments: Delete ───────────────────────────────────────────────────────
+router.delete("/income/:id/attachments/:attId", async (req: any, res: any): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  const companyId = req.session.companyId!;
+  const incomeId = parseInt(req.params.id);
+  const attId = parseInt(req.params.attId);
+  try {
+    const [record] = await db.select({ id: incomeRecordsTable.id })
+      .from(incomeRecordsTable)
+      .where(and(eq(incomeRecordsTable.id, incomeId), eq(incomeRecordsTable.companyId, companyId)));
+    if (!record) { res.status(404).json({ error: "Not found" }); return; }
+
+    await db.delete(incomeAttachmentsTable)
+      .where(and(eq(incomeAttachmentsTable.id, attId), eq(incomeAttachmentsTable.incomeId, incomeId)));
+    res.json({ ok: true });
+  } catch (err: any) {
+    req.log.error({ err }, "DELETE /income/:id/attachments/:attId error");
+    res.status(500).json({ error: "Failed to delete attachment" });
+  }
 });
 
 export default router;
