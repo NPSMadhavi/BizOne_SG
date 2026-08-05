@@ -34,7 +34,7 @@ async function fetchRevenue(companyId: number, from: string, to: string): Promis
     .from(invoicesTable)
     .where(and(
       eq(invoicesTable.companyId, companyId),
-      inArray(invoicesTable.status, ["confirmed", "paid"]),
+      inArray(invoicesTable.status, ["active", "paid", "partial"]),
       gte(sql`coalesce(${invoicesTable.issueDate}, ${invoicesTable.createdAt}::text::date::text)`, from),
       lte(sql`coalesce(${invoicesTable.issueDate}, ${invoicesTable.createdAt}::text::date::text)`, to),
     ));
