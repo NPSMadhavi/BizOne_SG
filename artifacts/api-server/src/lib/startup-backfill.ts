@@ -6,6 +6,7 @@ import { db, companiesTable } from "@workspace/db";
 import { sql, eq } from "drizzle-orm";
 import { getExchangeRateToSGD } from "./exchange-rate.js";
 import { backfillExpenseJEs } from "./expense-auto-post.js";
+import { backfillInvoiceJEs } from "./invoice-auto-post.js";
 import { logger } from "./logger.js";
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
@@ -98,6 +99,26 @@ export async function backfillExpenseJEsOnStartup(): Promise<void> {
     }
   } catch (e: any) {
     logger.warn({ err: e.message }, "[startup-backfill] expense JE backfill failed (non-fatal)");
+  }
+}
+
+/** Post JEs for any confirmed invoices that were created before auto-posting was added. */
+export async function backfillInvoiceJEsOnStartup(): Promise<void> {
+  try {
+    const companies = await db.select({ id: companiesTable.id })
+      .from(companiesTable)
+      .where(eq(companiesTable.country, "Singapore"));
+
+    let total = 0;
+    for (const co of companies) {
+      const posted = await backfillInvoiceJEs(co.id, 1, logger);
+      total += posted;
+    }
+    if (total > 0) {
+      logger.info({ posted: total }, "[startup-backfill] invoice JE backfill complete");
+    }
+  } catch (e: any) {
+    logger.warn({ err: e.message }, "[startup-backfill] invoice JE backfill failed (non-fatal)");
   }
 }
 
