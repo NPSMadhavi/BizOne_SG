@@ -135,6 +135,25 @@ export default function GstF5Page() {
   const [viSortKey, setViSortKey] = useState<VISortKey>("piDate");
   const [viSortDir, setViSortDir] = useState<"asc" | "desc">("desc");
 
+  // Row selection state (Ctrl+click for multi-select)
+  const [selInv, setSelInv]  = useState<Set<number>>(new Set());
+  const [selVI,  setSelVI]   = useState<Set<number>>(new Set());
+  const [selExp, setSelExp]  = useState<Set<number>>(new Set());
+
+  function toggleRow(e: React.MouseEvent, id: number, set: Set<number>, setter: React.Dispatch<React.SetStateAction<Set<number>>>) {
+    setter(prev => {
+      const next = new Set(prev);
+      if (e.ctrlKey || e.metaKey) {
+        next.has(id) ? next.delete(id) : next.add(id);
+      } else {
+        if (next.size === 1 && next.has(id)) { next.clear(); } else { next.clear(); next.add(id); }
+      }
+      return next;
+    });
+    // prevent text selection on multi-click
+    if (e.detail > 1) e.preventDefault();
+  }
+
   const handleViSort = useCallback((col: VISortKey) => {
     setViSortKey(prev => {
       if (prev === col) { setViSortDir(d => d === "asc" ? "desc" : "asc"); return col; }
@@ -338,8 +357,14 @@ export default function GstF5Page() {
                       <div>
                         <p className="text-sm font-semibold">{box.label}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{box.desc}</p>
-                        {(n === 2 || n === 3 || n === 5) && val === 0 && (
-                          <p className="text-[10px] text-blue-600 mt-1 flex items-center gap-1"><Info className="h-3 w-3" /> Enter manually if applicable — not tracked by the system</p>
+                        {val === 0 && (
+                          <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                            <Info className="h-3 w-3 shrink-0" />
+                            {n === 2 && "Sourced from confirmed Income records marked as zero-rated"}
+                            {n === 3 && "Sourced from confirmed Income records marked as exempt"}
+                            {n === 5 && "Sourced from confirmed Income records marked as out-of-scope"}
+                            {n === 1 && "No standard-rated invoices or income records in this period"}
+                          </p>
                         )}
                       </div>
                       <div className={cn("text-right font-mono font-semibold text-sm tabular-nums", val === 0 ? "text-muted-foreground/40" : "")}>
@@ -463,7 +488,7 @@ export default function GstF5Page() {
                         </thead>
                         <tbody>
                           {data.invoices.map((inv, i) => (
-                            <tr key={inv.id} className={cn("border-b last:border-b-0", i % 2 === 0 ? "" : "bg-muted/10")}>
+                            <tr key={inv.id} onClick={e => toggleRow(e, inv.id, selInv, setSelInv)} className={cn("border-b last:border-b-0 cursor-pointer select-none transition-colors", selInv.has(inv.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30")}>
                               <td className="px-4 py-2 font-mono text-xs font-medium">{inv.invNumber}</td>
                               <td className="px-4 py-2 text-xs">{inv.customerName}</td>
                               <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(inv.issueDate)}</td>
@@ -571,7 +596,7 @@ export default function GstF5Page() {
                                 const isSR = !vi.gstTreatment || vi.gstTreatment === "standard_rated";
                                 const badge = GST_TREATMENT_BADGE[vi.gstTreatment] ?? GST_TREATMENT_BADGE.standard_rated;
                                 return (
-                                  <tr key={vi.id} className={cn("border-b last:border-b-0", i % 2 === 0 ? "" : "bg-muted/10", !isSR ? "opacity-70" : "")}>
+                                  <tr key={vi.id} onClick={e => toggleRow(e, vi.id, selVI, setSelVI)} className={cn("border-b last:border-b-0 cursor-pointer select-none transition-colors", selVI.has(vi.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30", !isSR ? "opacity-70" : "")}>
                                     <td className="px-4 py-2 font-mono text-xs font-medium">{vi.piNumber}</td>
                                     <td className="px-4 py-2 text-xs">{vi.vendorName}</td>
                                     <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(vi.piDate)}</td>
@@ -664,7 +689,7 @@ export default function GstF5Page() {
                         </thead>
                         <tbody>
                           {data.expenses.map((exp, i) => (
-                            <tr key={exp.id} className={cn("border-b last:border-b-0", i % 2 === 0 ? "" : "bg-muted/10")}>
+                            <tr key={exp.id} onClick={e => toggleRow(e, exp.id, selExp, setSelExp)} className={cn("border-b last:border-b-0 cursor-pointer select-none transition-colors", selExp.has(exp.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30")}>
                               <td className="px-4 py-2 text-xs font-medium">{exp.vendorName}</td>
                               <td className="px-4 py-2 text-xs text-muted-foreground max-w-[200px] truncate">{exp.description}</td>
                               <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(exp.expenseDate)}</td>
@@ -687,8 +712,8 @@ export default function GstF5Page() {
 
             {/* IRAS disclaimer */}
             <div className="rounded-md bg-muted/30 border px-4 py-3 text-xs text-muted-foreground">
-              <span className="font-semibold">Note:</span> Boxes 2, 3, and 5 require manual entry if applicable and are not auto-computed by the system.
-              Box 4 and Box 7 include confirmed expenses marked as GST-claimable. Box 7 also includes any manual input tax posted to GL account 1110.
+              <span className="font-semibold">Note:</span> Boxes 2, 3, and 5 are sourced from confirmed Income records with the matching GST treatment.
+              Box 4 and Box 7 include confirmed vendor invoices and expenses marked as GST-claimable. Box 7 also includes any manual input tax posted to GL account 1110.
               File your GST return at{" "}
               <a href="https://mytax.iras.gov.sg" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">mytax.iras.gov.sg</a>.
             </div>

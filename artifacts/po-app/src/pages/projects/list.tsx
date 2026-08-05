@@ -459,7 +459,7 @@ export default function ProjectList() {
                       </Select>
                       <Input
                         className="border-0 shadow-none focus-visible:ring-0 px-0 text-sm text-right h-8"
-                        type="number"
+                        type="text" inputMode="decimal"
                         min="0"
                         step="0.01"
                         placeholder="0.00"

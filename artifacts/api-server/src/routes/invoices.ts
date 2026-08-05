@@ -5,7 +5,6 @@ import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { postInvoiceJE, reverseInvoiceJE } from "../lib/invoice-auto-post.js";
 import { postARPaymentJE, reverseARPaymentJE } from "../lib/invoice-payment-je.js";
-import { deductInvoiceStock, restoreInvoiceStock, syncInvoiceStock } from "../lib/invoice-stock.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -104,31 +103,25 @@ router.get("/invoices", async (req, res): Promise<void> => {
     : await db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt));
 
   const visible = visibilityFilter(docs, userId, isAdmin, isExternal).map(parseDoc);
-  const withNames = await withUsernames(visible);
 
-  const ids = withNames.map((d) => d.id);
-  let paidMap: Record<number, number> = {};
-  if (ids.length > 0) {
-    const payments = await db
-      .select({
-        invoiceId: invoicePaymentsTable.invoiceId,
-        amount: invoicePaymentsTable.amount,
-      })
-      .from(invoicePaymentsTable)
-      .where(inArray(invoicePaymentsTable.invoiceId, ids));
+  // Fetch all payments for visible invoices and attach paidAmount + balance
+  const invoiceIds = visible.map(d => d.id);
+  let paymentsByInvoice: Record<number, number> = {};
+  if (invoiceIds.length > 0) {
+    const payments = await db.select().from(invoicePaymentsTable)
+      .where(inArray(invoicePaymentsTable.invoiceId, invoiceIds));
     for (const p of payments) {
-      paidMap[p.invoiceId] = (paidMap[p.invoiceId] || 0) + parseFloat(p.amount ?? "0");
+      paymentsByInvoice[p.invoiceId] = (paymentsByInvoice[p.invoiceId] ?? 0) + parseFloat(p.amount ?? "0");
     }
   }
 
-  res.json(
-    withNames.map((d) => {
-      const paidAmount = paidMap[d.id] || 0;
-      const totalAmount = Number(d.totalAmount) || 0;
-      const balance = Math.max(0, totalAmount - paidAmount);
-      return { ...d, paidAmount, balance };
-    })
-  );
+  const withBalances = visible.map(d => {
+    const paidAmount = paymentsByInvoice[d.id] ?? 0;
+    const balance = ["cancelled", "void"].includes(d.status) ? 0 : Math.max(0, d.totalAmount - paidAmount);
+    return { ...d, paidAmount, balance };
+  });
+
+  res.json(await withUsernames(withBalances));
 });
 
 router.post("/invoices", async (req, res): Promise<void> => {
@@ -139,7 +132,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
-    currency, discountAmount, isPrivate, status, poRefNo,
+    currency, discountAmount, isPrivate, status, poRefNo, exchangeRate,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
@@ -156,6 +149,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
     customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
     currency: currency || "SGD",
+    exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
     isPrivate: isPrivate === true,
     poRefNo: poRefNo || null,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
@@ -163,19 +157,22 @@ router.post("/invoices", async (req, res): Promise<void> => {
   }).returning();
   await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
 
-  try {
-    await deductInvoiceStock({
-      companyId,
-      invoiceId: doc.id,
-      invNumber: doc.invNumber,
-      items: items as any[],
-      userId: req.session.userId!,
-      username: req.session.username,
-    });
-  } catch (stockErr: any) {
-    await db.delete(invoicesTable).where(eq(invoicesTable.id, doc.id));
-    res.status(400).json({ error: stockErr.message || "Insufficient stock for one or more invoice items." });
-    return;
+  // Deduct stockQty for non-serial stock items immediately on invoice save
+  for (const item of (items as any[])) {
+    const selectedSerials: string[] = item.selectedSerials || [];
+    if (!item.isStockItem || selectedSerials.length > 0) continue;
+    const partNumber = (item.partNumber || "").trim();
+    if (!partNumber) continue;
+    const qty = Number(item.qty) || 0;
+    if (qty <= 0) continue;
+    const [stockItem] = await db.select({ id: stockItemsTable.id })
+      .from(stockItemsTable)
+      .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+      .limit(1);
+    if (!stockItem) continue;
+    await db.update(stockItemsTable)
+      .set({ stockQty: sql`GREATEST(0, ${stockItemsTable.stockQty} - ${qty})` })
+      .where(eq(stockItemsTable.id, stockItem.id));
   }
 
   logAudit({ req, action: "create", entityType: "invoice", entityId: doc.id, entityLabel: doc.invNumber });
@@ -209,38 +206,6 @@ async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
     await db.update(invoicesTable).set({ status: newStatus }).where(eq(invoicesTable.id, invoiceId));
   }
 }
-
-router.get("/invoices/by-number/:invNumber", async (req, res): Promise<void> => {
-  if (!requireAuth(req, res)) return;
-  const companyId = req.session.companyId;
-  if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
-
-  const invNumber = String(req.params.invNumber || "").trim();
-  if (!invNumber) { res.status(400).json({ error: "Invoice number is required" }); return; }
-
-  const [doc] = await db
-    .select()
-    .from(invoicesTable)
-    .where(and(
-      eq(invoicesTable.companyId, companyId),
-      ilike(invoicesTable.invNumber, invNumber),
-    ))
-    .limit(1);
-
-  if (!doc) { res.status(404).json({ error: "Invoice not found" }); return; }
-
-  const userId = req.session.userId!;
-  const isAdmin = req.session.isAdmin ?? false;
-  const isExternal = req.session.userRole === "external";
-  if (isExternal && doc.createdBy !== userId) {
-    res.status(403).json({ error: "Access denied" }); return;
-  }
-  if (doc.isPrivate && doc.createdBy !== userId && !isAdmin) {
-    res.status(403).json({ error: "Access denied" }); return;
-  }
-
-  res.json(parseDoc(doc));
-});
 
 router.get("/invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
@@ -281,7 +246,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
-    currency, discountAmount, isPrivate, poRefNo,
+    currency, discountAmount, isPrivate, poRefNo, exchangeRate,
   } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
@@ -298,6 +263,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     poRefNo: poRefNo ?? null,
   };
   if (currency !== undefined) updateData.currency = currency;
+  if (exchangeRate !== undefined) updateData.exchangeRate = parseFloat(exchangeRate).toFixed(6);
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
 
@@ -309,40 +275,6 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
 
   const companyId = updated.companyId;
   const isNewlyConfirmed = status === "confirmed" && existing.status !== "confirmed";
-
-  if (updated.status !== "void") {
-    try {
-      await syncInvoiceStock({
-        companyId,
-        invoiceId: id,
-        invNumber: updated.invNumber,
-        items: (updated.items as any[]) || [],
-        userId: req.session.userId!,
-        username: req.session.username,
-      });
-    } catch (stockErr: any) {
-      await db.update(invoicesTable).set({
-        customerName: existing.customerName,
-        customerAddress: existing.customerAddress,
-        customerContact: existing.customerContact,
-        customerContactEmail: existing.customerContactEmail,
-        deliveryAddress: existing.deliveryAddress,
-        issueDate: existing.issueDate,
-        deliveryDate: existing.deliveryDate,
-        paymentTerms: existing.paymentTerms,
-        notes: existing.notes,
-        items: existing.items,
-        subtotal: existing.subtotal,
-        discountAmount: existing.discountAmount,
-        tax: existing.tax,
-        totalAmount: existing.totalAmount,
-        poRefNo: existing.poRefNo,
-        status: existing.status,
-      }).where(eq(invoicesTable.id, id));
-      res.status(400).json({ error: stockErr.message || "Insufficient stock for one or more invoice items." });
-      return;
-    }
-  }
 
   if (isNewlyConfirmed) {
     try {
@@ -450,18 +382,6 @@ router.post("/invoices/:id/void", async (req, res): Promise<void> => {
     req.session.userId!,
     req.log,
   );
-
-  try {
-    await restoreInvoiceStock({
-      companyId: existing.companyId,
-      invoiceId: id,
-      invNumber: existing.invNumber,
-      userId: req.session.userId!,
-      username: req.session.username,
-    });
-  } catch (stockErr: any) {
-    req.log.error({ err: stockErr }, "Invoice void stock restore failed (non-fatal)");
-  }
 
   logAudit({ req, action: "void", entityType: "invoice", entityId: id, entityLabel: updated.invNumber, details: { voidReason } });
   res.json(parseDoc(updated));
@@ -630,27 +550,10 @@ router.delete("/invoices/:id", async (req, res): Promise<void> => {
   if (!req.session.isAdmin) { res.status(403).json({ error: "Only administrators can delete invoices." }); return; }
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-  const [existing] = await db.select({
-    id: invoicesTable.id,
-    status: invoicesTable.status,
-    invNumber: invoicesTable.invNumber,
-    companyId: invoicesTable.companyId,
-  }).from(invoicesTable).where(eq(invoicesTable.id, id));
+  const [existing] = await db.select({ id: invoicesTable.id, status: invoicesTable.status, invNumber: invoicesTable.invNumber })
+    .from(invoicesTable).where(eq(invoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
   if (existing.status !== "draft") { res.status(400).json({ error: "Only draft invoices can be deleted. Confirmed invoices must be Voided." }); return; }
-
-  try {
-    await restoreInvoiceStock({
-      companyId: existing.companyId,
-      invoiceId: id,
-      invNumber: existing.invNumber,
-      userId: req.session.userId!,
-      username: req.session.username,
-    });
-  } catch (stockErr: any) {
-    req.log.error({ err: stockErr }, "Draft invoice delete stock restore failed (non-fatal)");
-  }
-
   await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
   logAudit({ req, action: "delete", entityType: "invoice", entityId: id, entityLabel: existing.invNumber });
   res.json({ success: true });

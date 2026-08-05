@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useForm, Controller } from "react-hook-form";
 import { useGetSettings } from "@workspace/api-client-react";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Info, RefreshCw } from "lucide-react";
+import { ArrowLeft, Info, RefreshCw, Paperclip, X, FileText, FileImage, Upload } from "lucide-react";
 
 interface IncomeForm {
   incomeDate: string;
@@ -28,6 +28,13 @@ interface IncomeForm {
 }
 
 interface Account { id: number; code: string; name: string; }
+
+interface AttachFile {
+  data: string;
+  mimeType: string;
+  name: string;
+  sizeKB: number;
+}
 
 const CATEGORY_CONFIG: Record<string, { label: string; defaultGst: string; note: string }> = {
   rental_income:     { label: "Rental Income",                  defaultGst: "standard_rated", note: "Standard-rated if you charge GST on rent. Residential rent is exempt." },
@@ -58,6 +65,9 @@ const PAYMENT_METHODS = [
 ];
 
 const CURRENCIES = ["SGD", "USD", "EUR", "GBP", "MYR"];
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILES = 10;
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
@@ -68,6 +78,11 @@ function numericOnly(val: string): string {
   return cleaned;
 }
 
+function AttachmentIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  if (mimeType === "application/pdf") return <FileText className={className} />;
+  return <FileImage className={className} />;
+}
+
 export default function IncomeNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -75,6 +90,8 @@ export default function IncomeNew() {
   const [revenueAccounts, setRevenueAccounts] = useState<Account[]>([]);
   const [exchangeRate, setExchangeRate] = useState("1.000000");
   const [fetchingRate, setFetchingRate] = useState(false);
+  const [attachments, setAttachments] = useState<AttachFile[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: settings } = useGetSettings({});
   const gstRate = settings?.gstRate ?? 9;
@@ -144,6 +161,33 @@ export default function IncomeNew() {
     }
   }, [watchedAmount, watchedGstTreatment, gstRate, setValue]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const remaining = MAX_FILES - attachments.length;
+    if (remaining <= 0) { toast({ title: `Max ${MAX_FILES} files allowed`, variant: "destructive" }); return; }
+    files.slice(0, remaining).forEach(file => {
+      if (!ACCEPTED_TYPES.includes(file.type)) {
+        toast({ title: `${file.name}: unsupported type. Use PDF, JPG, PNG, or WebP.`, variant: "destructive" });
+        return;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        toast({ title: `${file.name}: exceeds 5 MB limit`, variant: "destructive" });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        setAttachments(prev => [...prev, { data: base64, mimeType: file.type, name: file.name, sizeKB: Math.round(file.size / 1024) }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  const removeAttachment = (i: number) => setAttachments(prev => prev.filter((_, idx) => idx !== i));
+
   const onSubmit = async (data: IncomeForm, status: "draft" | "confirmed") => {
     setSaving(true);
     try {
@@ -156,6 +200,16 @@ export default function IncomeNew() {
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to save"); }
       const created = await res.json();
+
+      // Upload attachments
+      for (const att of attachments) {
+        await fetch(`/api/income/${created.id}/attachments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ fileName: att.name, mimeType: att.mimeType, fileData: att.data }),
+        });
+      }
 
       if (status === "confirmed") {
         const confirmRes = await fetch(`/api/income/${created.id}/confirm`, { method: "POST", credentials: "include" });
@@ -218,7 +272,7 @@ export default function IncomeNew() {
                     <div className="flex gap-2 items-center">
                       <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
                         <span className="font-mono">1 {watchedCurrency} =</span>
-                        <Input type="number" step="0.000001" min="0.000001" value={exchangeRate}
+                        <Input type="text" inputMode="decimal" value={exchangeRate}
                           onChange={e => setExchangeRate(e.target.value)}
                           className="h-7 font-mono text-xs w-32 bg-white" />
                         <span className="font-mono">SGD</span>
@@ -266,10 +320,7 @@ export default function IncomeNew() {
                 <div className="space-y-1.5">
                   <Label>Revenue Account</Label>
                   <Controller name="accountId" control={form.control} render={({ field }) => (
-                    <Select
-                      value={field.value || "none"}
-                      onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
-                    >
+                    <Select value={field.value || "none"} onValueChange={v => field.onChange(v === "none" ? "" : v)}>
                       <SelectTrigger><SelectValue placeholder="Select account…" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">— None (defaults to 4200) —</SelectItem>
@@ -304,6 +355,72 @@ export default function IncomeNew() {
                   <Label htmlFor="notes">Notes</Label>
                   <Textarea id="notes" placeholder="Any additional notes" rows={3} {...register("notes")} />
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Attachments card */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Paperclip className="h-4 w-4" />
+                    Attachments
+                    {attachments.length > 0 && (
+                      <span className="text-xs font-normal bg-primary/10 text-primary rounded-full px-2 py-0.5">
+                        {attachments.length}
+                      </span>
+                    )}
+                  </CardTitle>
+                  {attachments.length < MAX_FILES && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <Upload className="h-3.5 w-3.5 mr-1.5" />Add Files
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+
+                {attachments.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center hover:border-primary/40 hover:bg-muted/20 transition-colors"
+                  >
+                    <Paperclip className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                    <p className="text-sm font-medium text-muted-foreground">Click to attach receipts or bills</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">PDF, JPG, PNG, WebP — up to 5 MB each, max {MAX_FILES} files</p>
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    {attachments.map((att, i) => (
+                      <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
+                        <AttachmentIcon mimeType={att.mimeType} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{att.name}</p>
+                          <p className="text-xs text-muted-foreground">{att.sizeKB} KB</p>
+                        </div>
+                        <button type="button" onClick={() => removeAttachment(i)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-1 rounded">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {attachments.length < MAX_FILES && (
+                      <button type="button" onClick={() => fileInputRef.current?.click()}
+                        className="w-full flex items-center justify-center gap-2 p-2 rounded-lg border-2 border-dashed border-muted-foreground/20 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors">
+                        <Upload className="h-3 w-3" /> Add more files
+                      </button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

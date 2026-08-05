@@ -44,3 +44,14 @@ export const incomeRecordsTable = pgTable("income_records", {
 });
 
 export type IncomeRecord = typeof incomeRecordsTable.$inferSelect;
+
+export const incomeAttachmentsTable = pgTable("income_attachments", {
+  id:         serial("id").primaryKey(),
+  incomeId:   integer("income_id").notNull().references(() => incomeRecordsTable.id, { onDelete: "cascade" }),
+  fileName:   text("file_name").notNull().default("attachment"),
+  mimeType:   text("mime_type").notNull().default("application/octet-stream"),
+  fileData:   text("file_data").notNull(),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type IncomeAttachment = typeof incomeAttachmentsTable.$inferSelect;

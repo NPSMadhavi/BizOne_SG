@@ -9,9 +9,12 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { ArrowLeft, Edit, Trash2, CheckCircle2, TrendingUp, Ban } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, CheckCircle2, TrendingUp, Ban, Paperclip, FileText, FileImage, Download, Eye, X } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
 interface IncomeRecord {
@@ -33,6 +36,14 @@ interface IncomeRecord {
   journalEntryId: number | null;
   createdAt: string;
   updatedAt: string;
+  attachmentCount?: number;
+}
+
+interface AttachmentMeta {
+  id: number;
+  fileName: string;
+  mimeType: string;
+  createdAt: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -84,6 +95,11 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function AttachmentIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  if (mimeType === "application/pdf") return <FileText className={className} />;
+  return <FileImage className={className} />;
+}
+
 export default function IncomeView() {
   const params = useParams<{ id: string }>();
   const id = parseInt(params.id);
@@ -94,12 +110,24 @@ export default function IncomeView() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [previewAtt, setPreviewAtt] = useState<{ url: string; mimeType: string; fileName: string } | null>(null);
+  const [loadingAttId, setLoadingAttId] = useState<number | null>(null);
 
   const { data: record, isLoading, error } = useQuery<IncomeRecord>({
     queryKey: ["income", id],
     queryFn: async () => {
       const res = await fetch(`/api/income/${id}`, { credentials: "include" });
       if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
+    enabled: !isNaN(id),
+  });
+
+  const { data: attachments = [] } = useQuery<AttachmentMeta[]>({
+    queryKey: ["income-attachments", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/income/${id}/attachments`, { credentials: "include" });
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !isNaN(id),
@@ -138,6 +166,48 @@ export default function IncomeView() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["income"] }); toast({ title: "Income record deleted." }); setLocation("/accounting/income"); },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
+
+  const openAttachment = async (att: AttachmentMeta) => {
+    setLoadingAttId(att.id);
+    try {
+      const res = await fetch(`/api/income/${id}/attachments/${att.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load attachment");
+      const data = await res.json();
+      const byteStr = atob(data.fileData);
+      const bytes = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+      const blob = new Blob([bytes], { type: data.mimeType });
+      const url = URL.createObjectURL(blob);
+      setPreviewAtt({ url, mimeType: data.mimeType, fileName: data.fileName });
+    } catch {
+      toast({ title: "Failed to load attachment", variant: "destructive" });
+    } finally {
+      setLoadingAttId(null);
+    }
+  };
+
+  const downloadAttachment = async (att: AttachmentMeta) => {
+    setLoadingAttId(att.id);
+    try {
+      const res = await fetch(`/api/income/${id}/attachments/${att.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load attachment");
+      const data = await res.json();
+      const byteStr = atob(data.fileData);
+      const bytes = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+      const blob = new Blob([bytes], { type: data.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Failed to download attachment", variant: "destructive" });
+    } finally {
+      setLoadingAttId(null);
+    }
+  };
 
   if (isLoading) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-muted-foreground">Loading…</div>;
   if (error || !record) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-destructive">Income record not found.</div>;
@@ -250,6 +320,65 @@ export default function IncomeView() {
               )}
             </CardContent>
           </Card>
+
+          {/* Attachments */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Attachments
+                {attachments.length > 0 && (
+                  <span className="text-xs font-normal bg-primary/10 text-primary rounded-full px-2 py-0.5">
+                    {attachments.length}
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {attachments.length === 0 ? (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  <Paperclip className="h-7 w-7 mx-auto mb-2 opacity-30" />
+                  No attachments
+                  {record.status === "draft" && (
+                    <p className="text-xs mt-1">
+                      <button className="text-primary underline" onClick={() => setLocation(`/accounting/income/${id}/edit`)}>
+                        Edit this record
+                      </button>{" "}
+                      to add receipts or bills.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {attachments.map(att => (
+                    <div key={att.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/20">
+                      <AttachmentIcon mimeType={att.mimeType} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{att.fileName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(att.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                          disabled={loadingAttId === att.id}
+                          onClick={() => openAttachment(att)}
+                          title="Preview">
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                          disabled={loadingAttId === att.id}
+                          onClick={() => downloadAttachment(att)}
+                          title="Download">
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Amount summary */}
@@ -276,6 +405,39 @@ export default function IncomeView() {
           </Card>
         </div>
       </div>
+
+      {/* Attachment preview dialog */}
+      <Dialog open={!!previewAtt} onOpenChange={open => { if (!open) { if (previewAtt) URL.revokeObjectURL(previewAtt.url); setPreviewAtt(null); }}}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-sm font-medium truncate pr-4">{previewAtt?.fileName}</DialogTitle>
+              <div className="flex gap-2 shrink-0">
+                {previewAtt && (
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const a = document.createElement("a");
+                    a.href = previewAtt.url;
+                    a.download = previewAtt.fileName;
+                    a.click();
+                  }}>
+                    <Download className="h-3.5 w-3.5 mr-1.5" />Download
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { if (previewAtt) URL.revokeObjectURL(previewAtt.url); setPreviewAtt(null); }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto min-h-0">
+            {previewAtt?.mimeType === "application/pdf" ? (
+              <iframe src={previewAtt.url} className="w-full h-full min-h-[70vh] rounded border" title={previewAtt.fileName} />
+            ) : previewAtt ? (
+              <img src={previewAtt.url} alt={previewAtt.fileName} className="max-w-full max-h-[70vh] mx-auto rounded object-contain" />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm dialog */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

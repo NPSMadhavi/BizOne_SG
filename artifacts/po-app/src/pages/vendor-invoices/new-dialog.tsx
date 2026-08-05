@@ -487,7 +487,7 @@ export default function NewVendorInvoiceDialog({
             <div className="space-y-1.5">
               <Label>{gstInclusive && gstTreatment === "standard_rated" ? "PI Amount (incl. GST)" : "PI Amount (excl. GST)"} <span className="text-destructive">*</span></Label>
               <Input
-                type="number" min="0" step="0.01" placeholder="0.00"
+                type="text" inputMode="decimal" min="0" step="0.01" placeholder="0.00"
                 value={amount}
                 onChange={e => { setAmount(e.target.value); setAmountAutoFilled(false); }}
               />
@@ -548,7 +548,7 @@ export default function NewVendorInvoiceDialog({
                 <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
                   <span className="font-mono">1 {currency} =</span>
                   <Input
-                    type="number" step="0.000001" min="0.000001" placeholder="e.g. 1.350000"
+                    type="text" inputMode="decimal" step="0.000001" min="0.000001" placeholder="e.g. 1.350000"
                     value={exchangeRate}
                     onChange={e => setExchangeRate(e.target.value)}
                     className="h-7 font-mono text-xs w-32 bg-white"

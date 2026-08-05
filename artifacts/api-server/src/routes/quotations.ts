@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, quotationsTable, usersTable, customersTable } from "@workspace/db";
+import { db, quotationsTable, invoicesTable, proformaInvoicesTable, usersTable, customersTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
@@ -153,7 +153,17 @@ router.get("/quotations/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Access denied" }); return;
   }
 
-  res.json(parseDoc(doc));
+  // Include customer's custom quotation terms (if set) so the PDF can use them
+  let customerQuotationTerms: string | null = null;
+  if (doc.customerName && doc.companyId) {
+    const [cust] = await db
+      .select({ quotationTerms: customersTable.quotationTerms })
+      .from(customersTable)
+      .where(and(eq(customersTable.companyId, doc.companyId), ilike(customersTable.name, doc.customerName)));
+    customerQuotationTerms = cust?.quotationTerms || null;
+  }
+
+  res.json({ ...parseDoc(doc), customerQuotationTerms });
 });
 
 router.put("/quotations/:id", async (req, res): Promise<void> => {
@@ -229,6 +239,86 @@ router.post("/quotations/:id/mark-confirmed", async (req, res): Promise<void> =>
   const [updated] = await db.update(quotationsTable).set({ status: "confirmed" }).where(eq(quotationsTable.id, id)).returning();
   logAudit({ req, action: "status:confirmed", entityType: "quotation", entityId: id, entityLabel: updated.qtNumber });
   res.json(updated);
+});
+
+// ── Convert quotation → Proforma Invoice or Tax Invoice ───────────────────────
+router.post("/quotations/:id/convert", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const { type } = req.body; // "proforma" | "tax"
+  if (!["proforma", "tax"].includes(type)) {
+    res.status(400).json({ error: "type must be 'proforma' or 'tax'" }); return;
+  }
+
+  const companyId = req.session.companyId!;
+  const userId    = req.session.userId!;
+
+  const [qt] = await db.select().from(quotationsTable)
+    .where(and(eq(quotationsTable.id, id), eq(quotationsTable.companyId, companyId)));
+  if (!qt) { res.status(404).json({ error: "Quotation not found" }); return; }
+
+  const today = new Date().toISOString().split("T")[0];
+
+  if (type === "proforma") {
+    const piNumber = await nextDocNumber("pi", companyId);
+    const [doc] = await db.insert(proformaInvoicesTable).values({
+      piNumber, companyId,
+      customerName: qt.customerName,
+      customerAddress: qt.customerAddress ?? null,
+      customerContact: qt.customerContact ?? null,
+      customerContactEmail: qt.customerContactEmail ?? null,
+      issueDate: today,
+      deliveryDate: qt.deliveryDate ?? null,
+      paymentTerms: qt.paymentTerms ?? null,
+      notes: qt.notes ?? null,
+      items: (qt.items ?? []) as any,
+      subtotal: String(qt.subtotal ?? 0),
+      discountAmount: String(qt.discountAmount ?? 0),
+      tax: String(qt.tax ?? 0),
+      totalAmount: String(qt.totalAmount ?? 0),
+      currency: qt.currency || "SGD",
+      qtRefNo: qt.qtNumber,
+      status: "draft",
+      isPrivate: qt.isPrivate ?? false,
+      createdBy: userId,
+    }).returning();
+    logAudit({ req, action: "convert-to-pi", entityType: "quotation", entityId: id, entityLabel: qt.qtNumber });
+    res.status(201).json({ type: "proforma", id: doc.id, number: doc.piNumber });
+  } else {
+    // type === "tax"
+    const invNumber = await nextDocNumber("inv", companyId);
+    const subtotal     = parseFloat(String(qt.subtotal   ?? 0));
+    const discountAmt  = parseFloat(String(qt.discountAmount ?? 0));
+    const taxAmt       = parseFloat(String(qt.tax        ?? 0));
+    const totalAmount  = parseFloat(String(qt.totalAmount ?? 0));
+    const [doc] = await db.insert(invoicesTable).values({
+      invNumber, companyId,
+      customerName: qt.customerName,
+      customerAddress: qt.customerAddress ?? null,
+      customerContact: qt.customerContact ?? null,
+      customerContactEmail: qt.customerContactEmail ?? null,
+      issueDate: today,
+      deliveryDate: qt.deliveryDate ?? null,
+      paymentTerms: qt.paymentTerms ?? null,
+      notes: qt.notes ?? null,
+      items: (qt.items ?? []) as any,
+      subtotal: subtotal.toFixed(2),
+      discountAmount: discountAmt.toFixed(2),
+      tax: taxAmt.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+      currency: qt.currency || "SGD",
+      poRefNo: qt.qtNumber,
+      status: "draft",
+      isPrivate: qt.isPrivate ?? false,
+      createdBy: userId,
+    }).returning();
+    logAudit({ req, action: "convert-to-invoice", entityType: "quotation", entityId: id, entityLabel: qt.qtNumber });
+    res.status(201).json({ type: "tax", id: doc.id, number: doc.invNumber });
+  }
 });
 
 router.delete("/quotations/:id", async (req, res): Promise<void> => {

@@ -428,6 +428,7 @@ export const InvoiceStatus = {
   sent: "sent",
   cancelled: "cancelled",
   void: "void",
+  partial: "partial",
   paid: "paid",
 } as const;
 

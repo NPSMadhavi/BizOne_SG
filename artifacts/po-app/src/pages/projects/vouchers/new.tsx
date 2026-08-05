@@ -322,7 +322,7 @@ export default function VoucherNew() {
                     </Select>
                   </div>
                   <div className="col-span-2">
-                    <Input type="number" min="0" step="0.01" placeholder="0.00" value={it.amount}
+                    <Input type="text" inputMode="decimal" min="0" step="0.01" placeholder="0.00" value={it.amount}
                       onChange={e => setItem(i, "amount", e.target.value)}
                       className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                   </div>

@@ -53,8 +53,8 @@ export function IssueDateField({ value, onChange, label = "Document Date", class
       {isStale && (
         <p className="flex items-center gap-1.5 text-xs text-amber-600">
           <AlertTriangle className="h-3 w-3 shrink-0" />
-          Backdated {diff} days. India GST requires invoices within 30 days of supply.
-          Ensure compliance with your local tax authority before issuing.
+          Backdated {diff} days. IRAS recommends invoices be issued within 30 days of supply.
+          Verify the invoice date is correct before issuing.
         </p>
       )}
     </div>

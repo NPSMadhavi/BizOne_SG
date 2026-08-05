@@ -14,8 +14,8 @@
  *   CR 4000  Sales Revenue                = total amount
  */
 
-import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
 
 interface InvoiceSnap {
@@ -129,6 +129,61 @@ export async function postInvoiceJE(invoice: InvoiceSnap, userId: number, log?: 
   } catch (err) {
     if (log) log.error({ err, invNumber }, "invoice-auto-post: DB insert failed (non-fatal)");
   }
+}
+
+/**
+ * Backfill JEs for all confirmed/paid invoices that were created before
+ * auto-posting was introduced. Idempotent — skips any invoice that already
+ * has a JE. Returns the number of JEs newly posted.
+ */
+export async function backfillInvoiceJEs(
+  companyId: number,
+  userId: number,
+  log?: any,
+): Promise<number> {
+  // Only act on Singapore companies
+  if (!(await isSingapore(companyId))) return 0;
+
+  // Confirmed, paid, or partial invoices that have no JE yet
+  const rows = await db.execute<{
+    id: number; inv_number: string; customer_name: string; issue_date: string | null;
+    total_amount: string; subtotal: string; discount_amount: string; tax: string;
+  }>(
+    sql.raw(`
+      SELECT i.id, i.inv_number, i.customer_name, i.issue_date,
+             i.total_amount, i.subtotal, i.discount_amount, i.tax
+      FROM invoices i
+      WHERE i.company_id = ${companyId}
+        AND i.status NOT IN ('draft','void')
+        AND NOT EXISTS (
+          SELECT 1 FROM journal_entries je
+          WHERE je.company_id = ${companyId}
+            AND je.ref_type = 'invoice'
+            AND je.ref_id = i.id
+        )
+    `)
+  );
+
+  let posted = 0;
+  for (const r of rows.rows) {
+    try {
+      await postInvoiceJE({
+        id: r.id,
+        companyId,
+        invNumber: r.inv_number,
+        customerName: r.customer_name,
+        issueDate: r.issue_date,
+        totalAmount: r.total_amount,
+        subtotal: r.subtotal,
+        discountAmount: r.discount_amount,
+        tax: r.tax,
+      }, userId, log);
+      posted++;
+    } catch (err) {
+      if (log) log.warn({ err, invNumber: r.inv_number }, "invoice backfill: JE post failed (non-fatal)");
+    }
+  }
+  return posted;
 }
 
 /**

@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils";
 
 const CUR_YEAR = new Date().getFullYear();
 // YA = FY + 1 (e.g. FY 2024 → YA 2025)
-const YAS = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i); // YA years
+// Include CUR_YEAR+1 so the current FY (which files next year) is visible.
+const YAS = Array.from({ length: 6 }, (_, i) => CUR_YEAR + 1 - i); // e.g. 2027→2022
 
 // Singapore corporate tax: partial exemption (from YA 2020)
 //   First $10K chargeable income: 75% exempt → effective 4.25%
@@ -72,8 +73,18 @@ function InputRow({ label, value, onChange, hint }: { label: string; value: stri
     <div className="py-2 border-b border-muted/60 last:border-0">
       <div className="flex items-center gap-3">
         <span className="flex-1 text-sm text-muted-foreground">{label}</span>
-        <Input type="number" step="0.01" min="0" value={value} onChange={e => onChange(e.target.value)}
-          className="w-36 text-right tabular-nums h-8 text-sm" placeholder="0.00" />
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onBlur={e => {
+            const n = parseFloat(e.target.value);
+            if (!isNaN(n)) onChange(n.toFixed(2));
+          }}
+          className="w-36 text-right tabular-nums h-8 text-sm"
+          placeholder="0.00"
+        />
       </div>
       {hint && <p className="text-xs text-muted-foreground mt-0.5 pl-1">{hint}</p>}
     </div>
@@ -84,7 +95,7 @@ function InputRow({ label, value, onChange, hint }: { label: string; value: stri
 
 export default function FormCsPage() {
   const qc = useQueryClient();
-  const [ya, setYa] = useState(CUR_YEAR); // Year of Assessment
+  const [ya, setYa] = useState(CUR_YEAR + 1); // Default to upcoming YA (covers current FY)
   const fy = ya - 1; // Financial Year
 
   const [revenue,         setRevenue]         = useState("");

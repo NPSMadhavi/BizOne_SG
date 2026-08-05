@@ -200,13 +200,17 @@ function WhtFormDialog({ open, onClose, vendors, editing }: WhtFormDialogProps) 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Gross Amount *</Label>
-              <Input type="number" step="0.01" min="0" value={form.grossAmount}
-                onChange={e => set("grossAmount", e.target.value)} placeholder="0.00" className="mt-1" />
+              <Input type="text" inputMode="decimal" value={form.grossAmount}
+                onChange={e => set("grossAmount", e.target.value)}
+                onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) set("grossAmount", n.toFixed(2)); }}
+                placeholder="0.00" className="mt-1" />
             </div>
             <div>
               <Label>WHT Rate (%) *</Label>
-              <Input type="number" step="0.01" min="0" max="100" value={form.whtRate}
-                onChange={e => set("whtRate", e.target.value)} placeholder="0" className="mt-1" />
+              <Input type="text" inputMode="decimal" value={form.whtRate}
+                onChange={e => set("whtRate", e.target.value)}
+                onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) set("whtRate", n.toFixed(2)); }}
+                placeholder="0" className="mt-1" />
             </div>
           </div>
 

@@ -2115,7 +2115,7 @@ function drawAccountingHeader(
 
 export interface StmtPDFEntry {
   id: number; invNumber: string; issueDate: string | null;
-  amount: number; status: string; paymentTerms: string | null;
+  amount: number; paidAmount: number; balance: number; status: string; paymentTerms: string | null;
 }
 
 export async function generateCustomerStatement_PDF(
@@ -2151,13 +2151,15 @@ export async function generateCustomerStatement_PDF(
 
   // Invoice table
   const tStartY = y + 22;
-  const tableHeaders = ["Date", "Invoice No.", "Payment Terms", "Status", "Amount (SGD)"];
+  const tableHeaders = ["Date", "Invoice No.", "Payment Terms", "Status", "Total", "Paid", "Balance"];
   const tableBody = entries.map(e => [
     fmtDate(e.issueDate),
     e.invNumber,
     e.paymentTerms || "—",
-    e.status === "paid" ? "Paid" : e.status === "active" ? "Outstanding" : e.status,
+    e.status === "paid" ? "Paid" : e.status === "partial" ? "Partial" : e.status === "active" ? "Outstanding" : e.status,
     fmtNum(e.amount),
+    fmtNum(e.paidAmount),
+    fmtNum(e.balance),
   ]);
 
   (doc as any).autoTable({
@@ -2170,8 +2172,10 @@ export async function generateCustomerStatement_PDF(
     alternateRowStyles: { fillColor: [245, 247, 249] },
     styles: { cellPadding: 3, font: PDF_FONT },
     columnStyles: {
-      0: { cellWidth: 25 }, 1: { cellWidth: 32 }, 2: { cellWidth: 32 }, 3: { cellWidth: 25 },
-      4: { cellWidth: "auto", halign: "right" as const },
+      0: { cellWidth: 24 }, 1: { cellWidth: 30 }, 2: { cellWidth: 28 }, 3: { cellWidth: 22 },
+      4: { halign: "right" as const, cellWidth: 26 },
+      5: { halign: "right" as const, cellWidth: 26 },
+      6: { halign: "right" as const, cellWidth: "auto" as const },
     },
     margin: { top: 20, left: mL, right: 14, bottom: FOOTER_RESERVE },
   });

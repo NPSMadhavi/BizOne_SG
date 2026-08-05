@@ -4,6 +4,7 @@ import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
 import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
+import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
 
 const router: IRouter = Router();
 
@@ -287,7 +288,7 @@ router.get("/trial-balance", async (req, res): Promise<void> => {
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.status, "posted"),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
       ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
       ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
     ));
@@ -856,6 +857,20 @@ router.get("/balance-sheet", async (req, res): Promise<void> => {
   });
 });
 
+// ─── Backfill: post JEs for confirmed expenses missing one ────────────────────
+
+router.post("/backfill-expense-jes", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+  if (!(await requireSingapore(req, res))) return;
+
+  const companyId = req.session.companyId!;
+  const userId    = req.session.userId!;
+
+  const posted = await backfillExpenseJEs(companyId, userId);
+  res.json({ posted, message: posted === 0 ? "All confirmed expenses already have journal entries." : `Posted ${posted} new journal entr${posted === 1 ? "y" : "ies"}.` });
+});
+
 // ─── Customer Statement ───────────────────────────────────────────────────────
 
 router.get("/customer-statement", async (req, res): Promise<void> => {
@@ -868,13 +883,56 @@ router.get("/customer-statement", async (req, res): Promise<void> => {
   const fromDate  = (req.query.from as string) || null;
   const toDate    = (req.query.to   as string) || null;
 
-  const nameRows = await db.selectDistinct({ name: invoicesTable.customerName })
-    .from(invoicesTable)
-    .where(and(eq(invoicesTable.companyId, companyId), sql`${invoicesTable.status} != 'draft'`, sql`${invoicesTable.customerName} IS NOT NULL`))
-    .orderBy(asc(invoicesTable.customerName));
-  const customerNames = nameRows.map(r => r.name).filter(Boolean) as string[];
+  const dateFilter = [
+    sql`${invoicesTable.status} NOT IN ('draft', 'void')`,
+    ...(fromDate ? [sql`${invoicesTable.issueDate} >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
+  ];
 
-  if (!customer) { res.json({ customer: "", customerNames, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 }); return; }
+  // Helper: sum confirmed payments per invoice id
+  async function getPaidByInvoice(invoiceIds: number[]): Promise<Record<number, number>> {
+    if (invoiceIds.length === 0) return {};
+    const payRows = await db.execute<{ invoice_id: number; total: string }>(
+      sql.raw(`SELECT invoice_id, SUM(amount) AS total FROM invoice_payments WHERE invoice_id = ANY(ARRAY[${invoiceIds.join(",")}]::int[]) GROUP BY invoice_id`)
+    );
+    const map: Record<number, number> = {};
+    for (const r of payRows.rows) map[r.invoice_id] = parseFloat(r.total ?? "0");
+    return map;
+  }
+
+  // Summary across all customers (for "no customer selected" overview)
+  const allRows = await db.select({
+    customerName: invoicesTable.customerName,
+    id:           invoicesTable.id,
+    totalAmount:  invoicesTable.totalAmount,
+    status:       invoicesTable.status,
+  })
+    .from(invoicesTable)
+    .where(and(eq(invoicesTable.companyId, companyId), ...dateFilter))
+    .orderBy(asc(invoicesTable.customerName));
+
+  const allIds = allRows.map(r => r.id);
+  const allPaid = await getPaidByInvoice(allIds);
+
+  const summaryMap: Record<string, { billed: number; paid: number; invoices: number }> = {};
+  for (const r of allRows) {
+    const name = r.customerName ?? "Unknown";
+    if (!summaryMap[name]) summaryMap[name] = { billed: 0, paid: 0, invoices: 0 };
+    const total = parseFloat(r.totalAmount ?? "0");
+    summaryMap[name].billed   += total;
+    summaryMap[name].paid     += (allPaid[r.id] ?? 0);
+    summaryMap[name].invoices += 1;
+  }
+  const customerSummary = Object.entries(summaryMap)
+    .map(([name, s]) => ({ name, billed: +s.billed.toFixed(2), paid: +s.paid.toFixed(2), balance: +(s.billed - s.paid).toFixed(2), invoices: s.invoices }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const customerNames = customerSummary.map(c => c.name);
+
+  if (!customer) {
+    res.json({ customer: "", customerNames, customerSummary, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 });
+    return;
+  }
 
   const invRows = await db.select({
     id: invoicesTable.id, invNumber: invoicesTable.invNumber,
@@ -885,21 +943,27 @@ router.get("/customer-statement", async (req, res): Promise<void> => {
   .where(and(
     eq(invoicesTable.companyId, companyId),
     sql`LOWER(${invoicesTable.customerName}) = LOWER(${customer})`,
-    sql`${invoicesTable.status} NOT IN ('draft', 'void')`,
-    ...(fromDate ? [sql`${invoicesTable.issueDate} >= ${fromDate}`] : []),
-    ...(toDate   ? [sql`${invoicesTable.issueDate} <= ${toDate}`]   : []),
+    ...dateFilter,
   ))
   .orderBy(asc(invoicesTable.issueDate), asc(invoicesTable.id));
 
+  const paidMap = await getPaidByInvoice(invRows.map(r => r.id));
+
   const totalBilled = invRows.reduce((s, i) => s + parseFloat(i.totalAmount ?? "0"), 0);
-  const totalPaid   = invRows.filter(i => i.status === "paid").reduce((s, i) => s + parseFloat(i.totalAmount ?? "0"), 0);
+  const totalPaid   = invRows.reduce((s, i) => s + (paidMap[i.id] ?? 0), 0);
 
   res.json({
-    customer, customerNames,
-    entries: invRows.map(inv => ({ id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate, amount: parseFloat(parseFloat(inv.totalAmount ?? "0").toFixed(2)), status: inv.status, paymentTerms: inv.paymentTerms })),
-    totalBilled: parseFloat(totalBilled.toFixed(2)),
-    totalPaid:   parseFloat(totalPaid.toFixed(2)),
-    balance:     parseFloat((totalBilled - totalPaid).toFixed(2)),
+    customer, customerNames, customerSummary: [],
+    entries: invRows.map(inv => ({
+      id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate,
+      amount:     +parseFloat(inv.totalAmount ?? "0").toFixed(2),
+      paidAmount: +(paidMap[inv.id] ?? 0).toFixed(2),
+      balance:    +Math.max(0, parseFloat(inv.totalAmount ?? "0") - (paidMap[inv.id] ?? 0)).toFixed(2),
+      status: inv.status, paymentTerms: inv.paymentTerms,
+    })),
+    totalBilled: +totalBilled.toFixed(2),
+    totalPaid:   +totalPaid.toFixed(2),
+    balance:     +Math.max(0, totalBilled - totalPaid).toFixed(2),
   });
 });
 
@@ -1029,29 +1093,59 @@ router.get("/vendor-statement", async (req, res): Promise<void> => {
   const fromDate  = (req.query.from   as string) || null;
   const toDate    = (req.query.to     as string) || null;
 
-  const nameRows = await db.selectDistinct({ name: vendorInvoicesTable.vendorName })
-    .from(vendorInvoicesTable)
-    .where(and(eq(vendorInvoicesTable.companyId, companyId), sql`${vendorInvoicesTable.vendorName} IS NOT NULL`))
-    .orderBy(asc(vendorInvoicesTable.vendorName));
-  const vendorNames = nameRows.map(r => r.name).filter(Boolean) as string[];
+  const dateFilter = [
+    ...(fromDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`]   : []),
+  ];
 
-  if (!vendor) { res.json({ vendor: "", vendorNames, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 }); return; }
+  // Summary across all vendors (used for the "no vendor selected" overview table)
+  const allRows = await db.select({
+    vendorName:  vendorInvoicesTable.vendorName,
+    totalAmount: vendorInvoicesTable.totalAmount,
+    paidAmount:  vendorInvoicesTable.paidAmount,
+    status:      vendorInvoicesTable.status,
+  })
+    .from(vendorInvoicesTable)
+    .where(and(eq(vendorInvoicesTable.companyId, companyId), ...dateFilter))
+    .orderBy(asc(vendorInvoicesTable.vendorName));
+
+  // Build summary grouped by vendor
+  const summaryMap: Record<string, { billed: number; paid: number; invoices: number }> = {};
+  for (const r of allRows) {
+    const name = r.vendorName ?? "Unknown";
+    if (!summaryMap[name]) summaryMap[name] = { billed: 0, paid: 0, invoices: 0 };
+    const total = parseFloat(r.totalAmount ?? "0");
+    const paid  = parseFloat(r.paidAmount  ?? "0");
+    summaryMap[name].billed   += total;
+    summaryMap[name].paid     += paid;
+    summaryMap[name].invoices += 1;
+  }
+  const vendorSummary = Object.entries(summaryMap)
+    .map(([name, s]) => ({ name, billed: +s.billed.toFixed(2), paid: +s.paid.toFixed(2), balance: +(s.billed - s.paid).toFixed(2), invoices: s.invoices }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const vendorNames = vendorSummary.map(v => v.name);
+
+  if (!vendor) {
+    res.json({ vendor: "", vendorNames, vendorSummary, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 });
+    return;
+  }
 
   const piRows = await db.select()
     .from(vendorInvoicesTable)
     .where(and(
       eq(vendorInvoicesTable.companyId, companyId),
       sql`LOWER(${vendorInvoicesTable.vendorName}) = LOWER(${vendor})`,
-      ...(fromDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`] : []),
-      ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`]   : []),
+      ...dateFilter,
     ))
     .orderBy(asc(vendorInvoicesTable.piDate), asc(vendorInvoicesTable.id));
 
   const totalBilled = piRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
-  const totalPaid   = piRows.filter(r => r.status === "paid").reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+  // Fix: use paidAmount column (not status=paid filter) so partial payments are included
+  const totalPaid   = piRows.reduce((s, r) => s + parseFloat(r.paidAmount  ?? "0"), 0);
 
   res.json({
-    vendor, vendorNames,
+    vendor, vendorNames, vendorSummary: [],
     entries: piRows.map(r => ({
       id: r.id, piNumber: r.piNumber, piDate: r.piDate,
       amount: +parseFloat(r.totalAmount ?? "0").toFixed(2),
@@ -1061,7 +1155,7 @@ router.get("/vendor-statement", async (req, res): Promise<void> => {
     })),
     totalBilled: +totalBilled.toFixed(2),
     totalPaid:   +totalPaid.toFixed(2),
-    balance:     +(totalBilled - totalPaid).toFixed(2),
+    balance:     +Math.max(0, totalBilled - totalPaid).toFixed(2),
   });
 });
 
@@ -1092,12 +1186,12 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
   const [account] = accounts.filter(a => a.id === accountId);
   if (!account) { res.status(404).json({ error: "Account not found" }); return; }
 
-  // Opening balance: all posted entries BEFORE fromDate
+  // Opening balance: all posted/reversed entries BEFORE fromDate
   let openingDebit = 0, openingCredit = 0;
   if (fromDate) {
     const obEntries = await db.select({ entryId: journalEntriesTable.id })
       .from(journalEntriesTable)
-      .where(and(eq(journalEntriesTable.companyId, companyId), eq(journalEntriesTable.status, "posted"), sql`${journalEntriesTable.entryDate} < ${fromDate}`));
+      .where(and(eq(journalEntriesTable.companyId, companyId), sql`${journalEntriesTable.status} IN ('posted','reversed')`, sql`${journalEntriesTable.entryDate} < ${fromDate}`));
     const obIds = obEntries.map(e => e.entryId);
     if (obIds.length > 0) {
       const obLines = await db.select().from(journalLinesTable)
@@ -1113,7 +1207,7 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.status, "posted"),
+      sql`${journalEntriesTable.status} IN ('posted','reversed')`,
       ...(fromDate ? [sql`${journalEntriesTable.entryDate} >= ${fromDate}`] : []),
       ...(toDate   ? [sql`${journalEntriesTable.entryDate} <= ${toDate}`]   : []),
     ))

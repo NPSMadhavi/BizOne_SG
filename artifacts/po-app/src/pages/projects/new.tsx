@@ -119,7 +119,7 @@ export default function ProjectNew() {
               <Input
                 id="budget"
                 className="mt-1"
-                type="number"
+                type="text" inputMode="decimal"
                 min="0"
                 step="0.01"
                 placeholder="0.00"
