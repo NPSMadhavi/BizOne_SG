@@ -252,7 +252,7 @@ export default function DebitNoteNew() {
                   <FormField control={form.control} name="taxRate" render={({ field }) => (
                     <FormItem>
                       <FormLabel>GST %</FormLabel>
-                      <FormControl><Input {...field} type="number" min={0} max={100} step={0.1} /></FormControl>
+                      <FormControl><Input {...field} type="text" inputMode="decimal" min={0} max={100} step={0.1} /></FormControl>
                     </FormItem>
                   )} />
                 </div>
@@ -329,13 +329,13 @@ export default function DebitNoteNew() {
                                 <Input {...form.register(`items.${idx}.description`)} placeholder="Description" className="text-xs h-8" />
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="number" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
+                                <Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.unitPrice`, { onChange: () => updateItemAmount(idx) })} type="number" min={0} step={0.01} className="text-xs h-8 text-right w-28 ml-auto" />
+                                <Input {...form.register(`items.${idx}.unitPrice`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-28 ml-auto" />
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.discount`, { onChange: () => updateItemAmount(idx) })} type="number" min={0} max={100} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
+                                <Input {...form.register(`items.${idx}.discount`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} max={100} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
                               </td>
                               <td className="px-3 py-2 text-right font-mono text-xs text-gray-700 w-28">
                                 {fmt(calcAmount(watchItems[idx]?.qty || 0, watchItems[idx]?.unitPrice || 0, watchItems[idx]?.discount || 0))}

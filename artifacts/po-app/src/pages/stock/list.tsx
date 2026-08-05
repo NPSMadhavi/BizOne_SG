@@ -327,7 +327,7 @@ export default function StockList() {
               <div className="space-y-1.5">
                 <Label>Unit Price</Label>
                 <Input
-                  type="number"
+                  type="text" inputMode="decimal"
                   min="0"
                   step="0.01"
                   value={form.unitPrice}
@@ -337,7 +337,7 @@ export default function StockList() {
               <div className="space-y-1.5">
                 <Label>Stock Quantity</Label>
                 <Input
-                  type="number"
+                  type="text" inputMode="decimal"
                   min="0"
                   step="0.001"
                   value={form.stockQty}

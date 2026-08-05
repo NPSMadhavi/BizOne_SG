@@ -507,7 +507,7 @@ export default function Settings() {
                       <div className="relative">
                         <Input
                           id="gstRate"
-                          type="number"
+                          type="text" inputMode="decimal"
                           min="0"
                           max="100"
                           step="0.1"

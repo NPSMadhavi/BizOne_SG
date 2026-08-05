@@ -129,7 +129,7 @@ export default function ProjectEdit() {
           <div className="grid grid-cols-3 gap-4">
             <div>
               <Label htmlFor="budget">Budget</Label>
-              <Input id="budget" className="mt-1" type="number" min="0" step="0.01" value={form.budget} onChange={e => set("budget", e.target.value)} />
+              <Input id="budget" className="mt-1" type="text" inputMode="decimal" min="0" step="0.01" value={form.budget} onChange={e => set("budget", e.target.value)} />
             </div>
             <div>
               <Label htmlFor="startDate">Start Date</Label>

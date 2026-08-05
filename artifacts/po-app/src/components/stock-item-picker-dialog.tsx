@@ -384,7 +384,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
               <div className="space-y-1">
                 <Input
                   ref={qtyInputRef}
-                  type="number"
+                  type="text" inputMode="decimal"
                   min={1}
                   max={maxQty}
                   value={qtyInput}
