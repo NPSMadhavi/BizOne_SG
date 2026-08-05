@@ -1,13 +1,19 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, FileText, FilePlus } from "lucide-react";
+import { Plus, Search, Eye, FilePlus, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const QUARTERS = [
+  { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
+  { label: "Q3", months: [6,7,8] }, { label: "Q4", months: [9,10,11] },
+];
+type FilterMode = "all"|"q1"|"q2"|"q3"|"q4"|"custom";
 
 interface DebitNote {
   id: number; dnNumber: string; customerName: string; refInvNumber: string | null;
@@ -28,9 +34,14 @@ function fmtDate(d: string | null) {
 
 export default function DebitNoteList() {
   const [search, setSearch] = useState("");
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
   const { canManage } = useAuth();
+  const currentYear = new Date().getFullYear();
 
   const { data = [], isLoading } = useQuery<DebitNote[]>({
     queryKey: ["debit-notes"],
@@ -41,7 +52,28 @@ export default function DebitNoteList() {
     },
   });
 
-  const filtered = data.filter(note =>
+  const filteredByDate = useMemo(() => {
+    if (filterMode === "all") return data;
+    if (filterMode === "custom") {
+      if (!customFrom && !customTo) return data;
+      return data.filter(d => {
+        const s = (d.issueDate || "").slice(0, 10);
+        if (!s) return false;
+        if (customFrom && s < customFrom) return false;
+        if (customTo && s > customTo) return false;
+        return true;
+      });
+    }
+    const qIdx = ["q1","q2","q3","q4"].indexOf(filterMode);
+    const months = QUARTERS[qIdx].months;
+    return data.filter(d => {
+      if (!d.issueDate) return false;
+      const dt = new Date(d.issueDate + "T00:00:00");
+      return dt.getFullYear() === filterYear && months.includes(dt.getMonth());
+    });
+  }, [data, filterMode, filterYear, customFrom, customTo]);
+
+  const filtered = filteredByDate.filter(note =>
     !search.trim() ||
     note.dnNumber.toLowerCase().includes(search.toLowerCase()) ||
     note.customerName.toLowerCase().includes(search.toLowerCase()) ||
@@ -59,15 +91,47 @@ export default function DebitNoteList() {
           <p className="text-sm text-gray-500 mt-0.5">Manual debit notes issued to customers</p>
         </div>
         <Link href="/debit-notes/new">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />New Debit Note
-          </Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />New Debit Note</Button>
         </Link>
+      </div>
+
+      {/* Quarter filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+          {(["all","q1","q2","q3","q4"] as FilterMode[]).map(m => (
+            <button key={m} onClick={() => setFilterMode(m)}
+              className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${filterMode===m?"bg-background shadow text-foreground":"text-muted-foreground hover:text-foreground"}`}
+            >{m==="all"?"All Time":m.toUpperCase()}</button>
+          ))}
+          <button onClick={() => setFilterMode("custom")}
+            className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center gap-1 ${filterMode==="custom"?"bg-background shadow text-foreground":"text-muted-foreground hover:text-foreground"}`}
+          ><Calendar className="h-3.5 w-3.5"/>Custom</button>
+        </div>
+        {filterMode!=="all"&&filterMode!=="custom"&&(
+          <div className="flex items-center gap-1 border rounded-lg px-2 py-1.5 bg-background text-sm">
+            <button onClick={()=>setFilterYear(y=>y-1)} className="text-muted-foreground hover:text-foreground p-0.5"><ChevronLeft className="h-4 w-4"/></button>
+            <span className="font-medium w-12 text-center">{filterYear}</span>
+            <button onClick={()=>setFilterYear(y=>y+1)} disabled={filterYear>=currentYear} className="text-muted-foreground hover:text-foreground p-0.5 disabled:opacity-30"><ChevronRight className="h-4 w-4"/></button>
+          </div>
+        )}
+        {filterMode==="custom"&&(
+          <div className="flex items-center gap-2">
+            <Input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} className="h-9 w-36 text-sm"/>
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} className="h-9 w-36 text-sm"/>
+          </div>
+        )}
+        {filterMode!=="all"&&(
+          <span className="text-xs text-muted-foreground ml-1">
+            {filteredByDate.length} note{filteredByDate.length!==1?"s":""}
+            {filterMode!=="custom"?` in ${filterMode.toUpperCase()} ${filterYear}`:""}
+          </span>
+        )}
       </div>
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input placeholder="Search CN number, customer…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+        <Input placeholder="Search DN number, customer…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
       </div>
 
       {isLoading && <div className="text-center py-16 text-gray-400 text-sm">Loading…</div>}
@@ -77,7 +141,7 @@ export default function DebitNoteList() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">CN Number</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">DN Number</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Customer</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Ref Invoice</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Date</th>
@@ -91,7 +155,7 @@ export default function DebitNoteList() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-16 text-gray-400">
-                    {search ? "No debit notes match your search." : "No debit notes yet. Create your first one."}
+                    {search || filterMode !== "all" ? "No debit notes match your filters." : "No debit notes yet. Create your first one."}
                   </td>
                 </tr>
               )}
@@ -108,9 +172,7 @@ export default function DebitNoteList() {
                   <td className="px-4 py-3 text-gray-400 text-xs">{note.createdByUsername || "—"}</td>
                   <td className="px-4 py-3 text-right">
                     <Link href={`/debit-notes/${note.id}`}>
-                      <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs">
-                        <Eye className="h-3.5 w-3.5" />View
-                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs"><Eye className="h-3.5 w-3.5"/>View</Button>
                     </Link>
                   </td>
                 </tr>

@@ -1,13 +1,19 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, FileText, FileMinus } from "lucide-react";
+import { Plus, Search, Eye, FileMinus, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const QUARTERS = [
+  { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
+  { label: "Q3", months: [6,7,8] }, { label: "Q4", months: [9,10,11] },
+];
+type FilterMode = "all"|"q1"|"q2"|"q3"|"q4"|"custom";
 
 interface CreditNote {
   id: number; cnNumber: string; customerName: string; refInvNumber: string | null;
@@ -28,9 +34,14 @@ function fmtDate(d: string | null) {
 
 export default function CreditNoteList() {
   const [search, setSearch] = useState("");
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const qc = useQueryClient();
   const { toast } = useToast();
   const { canManage } = useAuth();
+  const currentYear = new Date().getFullYear();
 
   const { data = [], isLoading } = useQuery<CreditNote[]>({
     queryKey: ["credit-notes"],
@@ -41,7 +52,28 @@ export default function CreditNoteList() {
     },
   });
 
-  const filtered = data.filter(note =>
+  const filteredByDate = useMemo(() => {
+    if (filterMode === "all") return data;
+    if (filterMode === "custom") {
+      if (!customFrom && !customTo) return data;
+      return data.filter(d => {
+        const s = (d.issueDate || "").slice(0, 10);
+        if (!s) return false;
+        if (customFrom && s < customFrom) return false;
+        if (customTo && s > customTo) return false;
+        return true;
+      });
+    }
+    const qIdx = ["q1","q2","q3","q4"].indexOf(filterMode);
+    const months = QUARTERS[qIdx].months;
+    return data.filter(d => {
+      if (!d.issueDate) return false;
+      const dt = new Date(d.issueDate + "T00:00:00");
+      return dt.getFullYear() === filterYear && months.includes(dt.getMonth());
+    });
+  }, [data, filterMode, filterYear, customFrom, customTo]);
+
+  const filtered = filteredByDate.filter(note =>
     !search.trim() ||
     note.cnNumber.toLowerCase().includes(search.toLowerCase()) ||
     note.customerName.toLowerCase().includes(search.toLowerCase()) ||
@@ -59,10 +91,42 @@ export default function CreditNoteList() {
           <p className="text-sm text-gray-500 mt-0.5">Manual credit notes issued to customers</p>
         </div>
         <Link href="/credit-notes/new">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />New Credit Note
-          </Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />New Credit Note</Button>
         </Link>
+      </div>
+
+      {/* Quarter filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+          {(["all","q1","q2","q3","q4"] as FilterMode[]).map(m => (
+            <button key={m} onClick={() => setFilterMode(m)}
+              className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${filterMode===m?"bg-background shadow text-foreground":"text-muted-foreground hover:text-foreground"}`}
+            >{m==="all"?"All Time":m.toUpperCase()}</button>
+          ))}
+          <button onClick={() => setFilterMode("custom")}
+            className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center gap-1 ${filterMode==="custom"?"bg-background shadow text-foreground":"text-muted-foreground hover:text-foreground"}`}
+          ><Calendar className="h-3.5 w-3.5"/>Custom</button>
+        </div>
+        {filterMode!=="all"&&filterMode!=="custom"&&(
+          <div className="flex items-center gap-1 border rounded-lg px-2 py-1.5 bg-background text-sm">
+            <button onClick={()=>setFilterYear(y=>y-1)} className="text-muted-foreground hover:text-foreground p-0.5"><ChevronLeft className="h-4 w-4"/></button>
+            <span className="font-medium w-12 text-center">{filterYear}</span>
+            <button onClick={()=>setFilterYear(y=>y+1)} disabled={filterYear>=currentYear} className="text-muted-foreground hover:text-foreground p-0.5 disabled:opacity-30"><ChevronRight className="h-4 w-4"/></button>
+          </div>
+        )}
+        {filterMode==="custom"&&(
+          <div className="flex items-center gap-2">
+            <Input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} className="h-9 w-36 text-sm"/>
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} className="h-9 w-36 text-sm"/>
+          </div>
+        )}
+        {filterMode!=="all"&&(
+          <span className="text-xs text-muted-foreground ml-1">
+            {filteredByDate.length} note{filteredByDate.length!==1?"s":""}
+            {filterMode!=="custom"?` in ${filterMode.toUpperCase()} ${filterYear}`:""}
+          </span>
+        )}
       </div>
 
       <div className="relative max-w-sm">
@@ -91,7 +155,7 @@ export default function CreditNoteList() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-16 text-gray-400">
-                    {search ? "No credit notes match your search." : "No credit notes yet. Create your first one."}
+                    {search || filterMode !== "all" ? "No credit notes match your filters." : "No credit notes yet. Create your first one."}
                   </td>
                 </tr>
               )}
@@ -108,9 +172,7 @@ export default function CreditNoteList() {
                   <td className="px-4 py-3 text-gray-400 text-xs">{note.createdByUsername || "—"}</td>
                   <td className="px-4 py-3 text-right">
                     <Link href={`/credit-notes/${note.id}`}>
-                      <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs">
-                        <Eye className="h-3.5 w-3.5" />View
-                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs"><Eye className="h-3.5 w-3.5"/>View</Button>
                     </Link>
                   </td>
                 </tr>
