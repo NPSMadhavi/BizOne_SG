@@ -1044,29 +1044,59 @@ router.get("/vendor-statement", async (req, res): Promise<void> => {
   const fromDate  = (req.query.from   as string) || null;
   const toDate    = (req.query.to     as string) || null;
 
-  const nameRows = await db.selectDistinct({ name: vendorInvoicesTable.vendorName })
-    .from(vendorInvoicesTable)
-    .where(and(eq(vendorInvoicesTable.companyId, companyId), sql`${vendorInvoicesTable.vendorName} IS NOT NULL`))
-    .orderBy(asc(vendorInvoicesTable.vendorName));
-  const vendorNames = nameRows.map(r => r.name).filter(Boolean) as string[];
+  const dateFilter = [
+    ...(fromDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`] : []),
+    ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`]   : []),
+  ];
 
-  if (!vendor) { res.json({ vendor: "", vendorNames, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 }); return; }
+  // Summary across all vendors (used for the "no vendor selected" overview table)
+  const allRows = await db.select({
+    vendorName:  vendorInvoicesTable.vendorName,
+    totalAmount: vendorInvoicesTable.totalAmount,
+    paidAmount:  vendorInvoicesTable.paidAmount,
+    status:      vendorInvoicesTable.status,
+  })
+    .from(vendorInvoicesTable)
+    .where(and(eq(vendorInvoicesTable.companyId, companyId), ...dateFilter))
+    .orderBy(asc(vendorInvoicesTable.vendorName));
+
+  // Build summary grouped by vendor
+  const summaryMap: Record<string, { billed: number; paid: number; invoices: number }> = {};
+  for (const r of allRows) {
+    const name = r.vendorName ?? "Unknown";
+    if (!summaryMap[name]) summaryMap[name] = { billed: 0, paid: 0, invoices: 0 };
+    const total = parseFloat(r.totalAmount ?? "0");
+    const paid  = parseFloat(r.paidAmount  ?? "0");
+    summaryMap[name].billed   += total;
+    summaryMap[name].paid     += paid;
+    summaryMap[name].invoices += 1;
+  }
+  const vendorSummary = Object.entries(summaryMap)
+    .map(([name, s]) => ({ name, billed: +s.billed.toFixed(2), paid: +s.paid.toFixed(2), balance: +(s.billed - s.paid).toFixed(2), invoices: s.invoices }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const vendorNames = vendorSummary.map(v => v.name);
+
+  if (!vendor) {
+    res.json({ vendor: "", vendorNames, vendorSummary, entries: [], totalBilled: 0, totalPaid: 0, balance: 0 });
+    return;
+  }
 
   const piRows = await db.select()
     .from(vendorInvoicesTable)
     .where(and(
       eq(vendorInvoicesTable.companyId, companyId),
       sql`LOWER(${vendorInvoicesTable.vendorName}) = LOWER(${vendor})`,
-      ...(fromDate ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) >= ${fromDate}`] : []),
-      ...(toDate   ? [sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt},'YYYY-MM-DD')) <= ${toDate}`]   : []),
+      ...dateFilter,
     ))
     .orderBy(asc(vendorInvoicesTable.piDate), asc(vendorInvoicesTable.id));
 
   const totalBilled = piRows.reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
-  const totalPaid   = piRows.filter(r => r.status === "paid").reduce((s, r) => s + parseFloat(r.totalAmount ?? "0"), 0);
+  // Fix: use paidAmount column (not status=paid filter) so partial payments are included
+  const totalPaid   = piRows.reduce((s, r) => s + parseFloat(r.paidAmount  ?? "0"), 0);
 
   res.json({
-    vendor, vendorNames,
+    vendor, vendorNames, vendorSummary: [],
     entries: piRows.map(r => ({
       id: r.id, piNumber: r.piNumber, piDate: r.piDate,
       amount: +parseFloat(r.totalAmount ?? "0").toFixed(2),
@@ -1076,7 +1106,7 @@ router.get("/vendor-statement", async (req, res): Promise<void> => {
     })),
     totalBilled: +totalBilled.toFixed(2),
     totalPaid:   +totalPaid.toFixed(2),
-    balance:     +(totalBilled - totalPaid).toFixed(2),
+    balance:     +Math.max(0, totalBilled - totalPaid).toFixed(2),
   });
 });
 
