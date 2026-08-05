@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils";
 
 const CUR_YEAR = new Date().getFullYear();
 // YA = FY + 1 (e.g. FY 2024 → YA 2025)
-const YAS = Array.from({ length: 5 }, (_, i) => CUR_YEAR - i); // YA years
+// Include CUR_YEAR+1 so the current FY (which files next year) is visible.
+const YAS = Array.from({ length: 6 }, (_, i) => CUR_YEAR + 1 - i); // e.g. 2027→2022
 
 // Singapore corporate tax: partial exemption (from YA 2020)
 //   First $10K chargeable income: 75% exempt → effective 4.25%
