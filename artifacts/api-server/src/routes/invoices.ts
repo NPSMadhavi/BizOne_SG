@@ -103,7 +103,25 @@ router.get("/invoices", async (req, res): Promise<void> => {
     : await db.select().from(invoicesTable).orderBy(desc(invoicesTable.createdAt));
 
   const visible = visibilityFilter(docs, userId, isAdmin, isExternal).map(parseDoc);
-  res.json(await withUsernames(visible));
+
+  // Fetch all payments for visible invoices and attach paidAmount + balance
+  const invoiceIds = visible.map(d => d.id);
+  let paymentsByInvoice: Record<number, number> = {};
+  if (invoiceIds.length > 0) {
+    const payments = await db.select().from(invoicePaymentsTable)
+      .where(inArray(invoicePaymentsTable.invoiceId, invoiceIds));
+    for (const p of payments) {
+      paymentsByInvoice[p.invoiceId] = (paymentsByInvoice[p.invoiceId] ?? 0) + parseFloat(p.amount ?? "0");
+    }
+  }
+
+  const withBalances = visible.map(d => {
+    const paidAmount = paymentsByInvoice[d.id] ?? 0;
+    const balance = ["cancelled", "void"].includes(d.status) ? 0 : Math.max(0, d.totalAmount - paidAmount);
+    return { ...d, paidAmount, balance };
+  });
+
+  res.json(await withUsernames(withBalances));
 });
 
 router.post("/invoices", async (req, res): Promise<void> => {
