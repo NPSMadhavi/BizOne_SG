@@ -95,7 +95,7 @@ function InputRow({ label, value, onChange, hint }: { label: string; value: stri
 
 export default function FormCsPage() {
   const qc = useQueryClient();
-  const [ya, setYa] = useState(CUR_YEAR); // Year of Assessment
+  const [ya, setYa] = useState(CUR_YEAR + 1); // Default to upcoming YA (covers current FY)
   const fy = ya - 1; // Financial Year
 
   const [revenue,         setRevenue]         = useState("");
