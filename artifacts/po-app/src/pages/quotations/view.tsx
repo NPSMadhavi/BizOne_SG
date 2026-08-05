@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, FileText, Receipt } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -29,7 +29,31 @@ export default function QuotationView() {
   const { toast } = useToast();
   const { selectedCompany, canManage } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [converting, setConverting] = useState<"proforma" | "tax" | null>(null);
   const qc = useQueryClient();
+
+  const handleConvert = async (type: "proforma" | "tax") => {
+    setConverting(type);
+    try {
+      const res = await fetch(`/api/quotations/${id}/convert`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      const result = await res.json();
+      toast({
+        title: type === "proforma" ? "Proforma Invoice Created" : "Tax Invoice Created",
+        description: `${result.number} created successfully`,
+      });
+      setLocation(type === "proforma" ? `/proforma-invoices/${result.id}` : `/invoices/${result.id}`);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setConverting(null);
+    }
+  };
 
   const { data: doc, isLoading, refetch } = useGetQuotation(id, {
     query: { queryKey: getGetQuotationQueryKey(id), enabled: !!id },
@@ -103,6 +127,24 @@ export default function QuotationView() {
           )}
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-4 w-4" />Preview
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+            onClick={() => handleConvert("proforma")}
+            disabled={!!converting}
+          >
+            {converting === "proforma" ? <span className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <FileText className="h-4 w-4" />}
+            Convert to PI
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            onClick={() => handleConvert("tax")}
+            disabled={!!converting}
+          >
+            {converting === "tax" ? <span className="h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /> : <Receipt className="h-4 w-4" />}
+            Convert to Invoice
           </Button>
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/quotations/${id}/edit`)}>
             <Pencil className="h-4 w-4" />Edit
