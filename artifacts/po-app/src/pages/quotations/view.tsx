@@ -146,7 +146,13 @@ export default function QuotationView() {
             {converting === "tax" ? <span className="h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /> : <Receipt className="h-4 w-4" />}
             Convert to Invoice
           </Button>
-          <Button variant="outline" className="gap-2" onClick={() => setLocation(`/quotations/${id}/edit`)}>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setLocation(`/quotations/${id}/edit`)}
+            disabled={(doc as any).status === "sent"}
+            title={(doc as any).status === "sent" ? "Quotation has been sent — editing is disabled" : undefined}
+          >
             <Pencil className="h-4 w-4" />Edit
           </Button>
           {canManage && (
@@ -271,7 +277,16 @@ export default function QuotationView() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         title={`Quotation ${doc.qtNumber}`}
-        generatePdf={(opts) => generateQuotation_PDF(doc, selectedCompany, docSettings as any, opts)}
+        generatePdf={(opts) => generateQuotation_PDF(
+          doc,
+          selectedCompany,
+          {
+            ...(docSettings as any),
+            // Customer-specific terms take priority over company-wide quotation terms
+            quotationTerms: (doc as any).customerQuotationTerms || (docSettings as any)?.quotationTerms || "",
+          },
+          opts
+        )}
         pdfFilename={`${doc.qtNumber}.pdf`}
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Quotation ${doc.qtNumber}`}
@@ -285,7 +300,7 @@ export default function QuotationView() {
           currency: (doc as any).currency || "SGD",
           totalAmount: Number(doc.totalAmount) || 0,
         }}
-        onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${id}/edit`); }}
+        onEdit={(doc as any).status === "sent" ? undefined : () => { setPreviewOpen(false); setLocation(`/quotations/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() });

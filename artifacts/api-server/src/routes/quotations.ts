@@ -153,7 +153,17 @@ router.get("/quotations/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Access denied" }); return;
   }
 
-  res.json(parseDoc(doc));
+  // Include customer's custom quotation terms (if set) so the PDF can use them
+  let customerQuotationTerms: string | null = null;
+  if (doc.customerName && doc.companyId) {
+    const [cust] = await db
+      .select({ quotationTerms: customersTable.quotationTerms })
+      .from(customersTable)
+      .where(and(eq(customersTable.companyId, doc.companyId), ilike(customersTable.name, doc.customerName)));
+    customerQuotationTerms = cust?.quotationTerms || null;
+  }
+
+  res.json({ ...parseDoc(doc), customerQuotationTerms });
 });
 
 router.put("/quotations/:id", async (req, res): Promise<void> => {
