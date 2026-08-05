@@ -72,8 +72,18 @@ function InputRow({ label, value, onChange, hint }: { label: string; value: stri
     <div className="py-2 border-b border-muted/60 last:border-0">
       <div className="flex items-center gap-3">
         <span className="flex-1 text-sm text-muted-foreground">{label}</span>
-        <Input type="number" step="0.01" min="0" value={value} onChange={e => onChange(e.target.value)}
-          className="w-36 text-right tabular-nums h-8 text-sm" placeholder="0.00" />
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onBlur={e => {
+            const n = parseFloat(e.target.value);
+            if (!isNaN(n)) onChange(n.toFixed(2));
+          }}
+          className="w-36 text-right tabular-nums h-8 text-sm"
+          placeholder="0.00"
+        />
       </div>
       {hint && <p className="text-xs text-muted-foreground mt-0.5 pl-1">{hint}</p>}
     </div>
