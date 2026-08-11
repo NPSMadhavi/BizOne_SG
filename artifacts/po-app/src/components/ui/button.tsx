@@ -11,8 +11,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-           // @replit: no hover, and add primary border
-           "bg-primary text-primary-foreground border border-primary-border",
+           // India_BizOne blue primary (#1a73e8 → hover #1557b0)
+           "bg-primary text-primary-foreground border border-primary-border hover:bg-[#1557b0] hover:border-[#1557b0]",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm border-destructive-border",
         outline:

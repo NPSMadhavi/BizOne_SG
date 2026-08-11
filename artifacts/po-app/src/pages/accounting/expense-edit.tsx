@@ -309,7 +309,7 @@ export default function ExpenseEdit() {
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/accounting/expenses/${id}`)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold">Edit Expense</h1>
+        <h1 className="text-2xl font-bold text-[#2563EB]">Edit Expense</h1>
       </div>
 
       <form onSubmit={handleSubmit(d => onSubmit(d))} className="grid grid-cols-1 lg:grid-cols-3 gap-6">

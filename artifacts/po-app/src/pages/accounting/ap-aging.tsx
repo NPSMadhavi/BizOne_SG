@@ -80,7 +80,7 @@ export default function ApAgingPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Payable</p>
-          <h1 className="text-2xl font-bold text-gray-900">Aging Report</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Aging Report</h1>
         </div>
         <div className="flex items-end gap-3">
           <div className="space-y-1">

@@ -258,7 +258,7 @@ export default function IncomeEdit() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Edit Income Entry</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Edit Income Entry</h1>
           <p className="text-sm text-muted-foreground">Record #{id}</p>
         </div>
       </div>

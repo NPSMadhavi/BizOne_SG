@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertAssetSchema, type Employee, type Asset } from "@shared/schema";
@@ -25,17 +26,34 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DatePicker } from "@/operations-8june/components/ui/date-picker";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
+import {
+  formatFileSize,
+  loadAssetAttachments,
+  readFileAsDataUrl,
+  saveAssetAttachments,
+  type AssetAttachment,
+} from "@/operations-8june/lib/asset-attachments";
 import { 
-  Loader2, 
   Package, 
   User, 
   CreditCard, 
   Calculator,
   FileText,
   HelpCircle,
-  UserPlus
+  UserPlus,
+  Plus,
+  Paperclip,
+  Upload,
+  X
 } from "lucide-react";
 import {
   Tooltip,
@@ -43,30 +61,48 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import EmployeeForm from "./EmployeeForm";
 
 // Asset types for dropdown
 const assetTypes = [
   "Laptop", "Desktop", "Monitor", "Phone", "Tablet", "Server", 
-  "Printer", "Scanner", "Router", "Switch", "Projector", "Camera", "Other"
+  "Printer", "Scanner", "Router", "Switch", "Projector", "Camera"
 ];
 
 // Asset categories for dropdown
 const assetCategories = [
-  "Hardware", "Software", "Furniture", "Office Equipment", "Network Equipment", "Other"
+  "Hardware", "Software", "Furniture", "Office Equipment", "Network Equipment"
 ];
 
 // Manufacturers for dropdown
 const manufacturers = [
   "Apple", "Dell", "HP", "Lenovo", "Microsoft", "Samsung", "LG", 
-  "Asus", "Acer", "Canon", "Epson", "Cisco", "Netgear", "Other"
+  "Asus", "Acer", "Canon", "Epson", "Cisco", "Netgear"
 ];
 
 // Locations for dropdown
 const locations = [
   "Headquarters", "Branch Office", "Remote", "Warehouse", "IT Room", 
-  "Conference Room", "Reception", "Other"
+  "Conference Room", "Reception"
 ];
+
+type CustomOptionTarget = "type" | "category" | "manufacturer" | "location";
+
+const optionLabels: Record<CustomOptionTarget, string> = {
+  type: "Asset Type",
+  category: "Category",
+  manufacturer: "Manufacturer",
+  location: "Location",
+};
+
+function loadCustomOptions(target: CustomOptionTarget): string[] {
+  try {
+    const value = localStorage.getItem(`asset-custom-options-${target}`);
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 // Depreciation methods
 const depreciationMethods = [
@@ -134,6 +170,7 @@ function normalizeAssetRecord(data: AssetRecord): AssetRecord {
 function matchSelectValue(stored: unknown, options: readonly string[]): string {
   if (stored == null || stored === "") return "";
   const normalized = String(stored).trim().toLowerCase();
+  if (normalized === "other") return "";
   const match = options.find((option) => option.toLowerCase() === normalized);
   return match ? match.toLowerCase() : normalized;
 }
@@ -141,8 +178,38 @@ function matchSelectValue(stored: unknown, options: readonly string[]): string {
 function withStoredOption(options: readonly string[], stored: unknown): string[] {
   if (stored == null || String(stored).trim() === "") return [...options];
   const normalized = String(stored).trim().toLowerCase();
+  if (normalized === "other") return [...options];
   if (options.some((option) => option.toLowerCase() === normalized)) return [...options];
   return [...options, String(stored).trim()];
+}
+
+function getExistingAssetOptions(
+  assets: AssetRecord[],
+  camelField: string,
+  snakeField: string,
+): string[] {
+  const seen = new Set<string>();
+  return assets.flatMap((asset) => {
+    const value = pickField(asset, camelField, snakeField);
+    if (value == null) return [];
+    const label = String(value).trim();
+    const normalized = label.toLowerCase();
+    if (!label || normalized === "other" || seen.has(normalized)) return [];
+    seen.add(normalized);
+    return [label];
+  });
+}
+
+function mergeOptions(...groups: readonly string[][]): string[] {
+  const seen = new Set<string>();
+  return groups.flatMap((group) =>
+    group.filter((option) => {
+      const normalized = option.trim().toLowerCase();
+      if (!normalized || normalized === "other" || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    }),
+  );
 }
 
 function toDateValue(value: unknown): Date | undefined {
@@ -172,7 +239,9 @@ function mapAssetToFormValues(data: AssetRecord): AssetFormData {
     purchaseDate: toDateValue(normalized.purchaseDate),
     warrantyExpiry: toDateValue(normalized.warrantyExpiry),
     depreciationStartDate: toDateValue(normalized.depreciationStartDate),
-    usefulLifeYears: normalized.usefulLifeYears != null ? Number(normalized.usefulLifeYears) : 3,
+    usefulLifeYears: normalized.usefulLifeYears != null && normalized.usefulLifeYears !== ""
+      ? Number(normalized.usefulLifeYears)
+      : undefined,
     depreciationMethod:
       matchSelectValue(normalized.depreciationMethod, depreciationMethods) || "straight line",
     description: String(normalized.description ?? ""),
@@ -197,7 +266,7 @@ const emptyFormValues: AssetFormData = {
   purchaseDate: undefined,
   warrantyExpiry: undefined,
   depreciationStartDate: undefined,
-  usefulLifeYears: 3,
+  usefulLifeYears: undefined,
   depreciationMethod: "straight line",
   description: "",
   vendorId: undefined,
@@ -207,9 +276,18 @@ const emptyFormValues: AssetFormData = {
 export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hideFooter, onPendingChange }: AssetFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const isEditMode = !!assetId;
-  const [isEmployeeFormOpen, setIsEmployeeFormOpen] = useState(false);
-  const [employeeCountBeforeCreate, setEmployeeCountBeforeCreate] = useState(-1);
+  const [customOptions, setCustomOptions] = useState<Record<CustomOptionTarget, string[]>>(() => ({
+    type: loadCustomOptions("type"),
+    category: loadCustomOptions("category"),
+    manufacturer: loadCustomOptions("manufacturer"),
+    location: loadCustomOptions("location"),
+  }));
+  const [createOptionTarget, setCreateOptionTarget] = useState<CustomOptionTarget | null>(null);
+  const [newOptionName, setNewOptionName] = useState("");
+  const [attachments, setAttachments] = useState<AssetAttachment[]>(() => loadAssetAttachments(assetId));
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Fetch vendors for dropdown
   const { data: vendors = [] } = useQuery({
@@ -219,6 +297,12 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   // Fetch employees for dropdown
   const { data: employees = [], isLoading: isLoadingEmployees } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
+  });
+
+  // Existing asset values make newly created options available to every user
+  // in the selected company, not only in the browser that created them.
+  const { data: existingAssets = [] } = useQuery<Asset[]>({
+    queryKey: ["/api/assets"],
   });
   
   // Fetch asset data if in edit mode
@@ -239,20 +323,48 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   }, [assetId, resolvedAsset]);
 
   const typeOptions = useMemo(
-    () => withStoredOption(assetTypes, resolvedAsset?.type),
-    [resolvedAsset?.type],
+    () => withStoredOption(
+      mergeOptions(
+        assetTypes,
+        getExistingAssetOptions(existingAssets as AssetRecord[], "type", "asset_type"),
+        customOptions.type,
+      ),
+      resolvedAsset?.type,
+    ),
+    [customOptions.type, existingAssets, resolvedAsset?.type],
   );
   const categoryOptions = useMemo(
-    () => withStoredOption(assetCategories, resolvedAsset?.category),
-    [resolvedAsset?.category],
+    () => withStoredOption(
+      mergeOptions(
+        assetCategories,
+        getExistingAssetOptions(existingAssets as AssetRecord[], "category", "category"),
+        customOptions.category,
+      ),
+      resolvedAsset?.category,
+    ),
+    [customOptions.category, existingAssets, resolvedAsset?.category],
   );
   const manufacturerOptions = useMemo(
-    () => withStoredOption(manufacturers, resolvedAsset?.manufacturer),
-    [resolvedAsset?.manufacturer],
+    () => withStoredOption(
+      mergeOptions(
+        manufacturers,
+        getExistingAssetOptions(existingAssets as AssetRecord[], "manufacturer", "manufacturer"),
+        customOptions.manufacturer,
+      ),
+      resolvedAsset?.manufacturer,
+    ),
+    [customOptions.manufacturer, existingAssets, resolvedAsset?.manufacturer],
   );
   const locationOptions = useMemo(
-    () => withStoredOption(locations, resolvedAsset?.location),
-    [resolvedAsset?.location],
+    () => withStoredOption(
+      mergeOptions(
+        locations,
+        getExistingAssetOptions(existingAssets as AssetRecord[], "location", "location"),
+        customOptions.location,
+      ),
+      resolvedAsset?.location,
+    ),
+    [customOptions.location, existingAssets, resolvedAsset?.location],
   );
   const depreciationMethodOptions = useMemo(
     () => withStoredOption(depreciationMethods, resolvedAsset?.depreciationMethod),
@@ -269,34 +381,98 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const hasAssignedEmployeeOption = employees.some(
     (employee) => employee.name === assignedEmployeeName,
   );
-  
-  // Auto-select newly created employee
-  useEffect(() => {
-    if (!isEmployeeFormOpen && employeeCountBeforeCreate >= 0 && employees.length > employeeCountBeforeCreate) {
-      // A new employee was created, select the newest one (last in array or highest ID)
-      const newestEmployee = employees.reduce((prev, current) => 
-        (current.id > prev.id) ? current : prev
-      );
-      if (newestEmployee) {
-        form.setValue("assignedTo", newestEmployee.name);
-        // Also update status to "Assigned" if it was "Available"
-        if (form.getValues("status") === "available") {
-          form.setValue("status", "assigned");
-        }
-      }
-      setEmployeeCountBeforeCreate(-1); // Reset to -1 to prevent re-triggering
-    }
-  }, [isEmployeeFormOpen, employeeCountBeforeCreate, employees, form]);
-  
-  const handleEmployeeFormClose = () => {
-    setIsEmployeeFormOpen(false);
-  };
-  
+
   const handleOpenEmployeeForm = () => {
-    setEmployeeCountBeforeCreate(employees.length);
-    setIsEmployeeFormOpen(true);
+    setLocation("/employees/new");
+  };
+
+  const handleOpenCreateOption = (target: CustomOptionTarget) => {
+    setCreateOptionTarget(target);
+    setNewOptionName("");
+  };
+
+  const handleCreateOption = () => {
+    if (!createOptionTarget) return;
+    const name = newOptionName.trim();
+    if (!name) {
+      toast({
+        title: "Name required",
+        description: `Enter a ${optionLabels[createOptionTarget].toLowerCase()} name.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const existingOptions = {
+      type: typeOptions,
+      category: categoryOptions,
+      manufacturer: manufacturerOptions,
+      location: locationOptions,
+    }[createOptionTarget];
+
+    const existing = existingOptions.find((option) => option.toLowerCase() === name.toLowerCase());
+    const selectedName = existing ?? name;
+
+    if (!existing) {
+      setCustomOptions((current) => {
+        const nextValues = [...current[createOptionTarget], name];
+        try {
+          localStorage.setItem(
+            `asset-custom-options-${createOptionTarget}`,
+            JSON.stringify(nextValues),
+          );
+        } catch {
+          // The value still remains available for the current session.
+        }
+        return { ...current, [createOptionTarget]: nextValues };
+      });
+    }
+
+    form.setValue(createOptionTarget, selectedName.toLowerCase(), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setCreateOptionTarget(null);
+    setNewOptionName("");
+    toast({
+      title: existing ? "Option selected" : `${optionLabels[createOptionTarget]} created`,
+      description: `${selectedName} is now selected.`,
+    });
   };
   
+  const handleFilesSelected = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+
+    try {
+      const uploaded = await Promise.all(
+        files.map(async (file) => ({
+          id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          dataUrl: await readFileAsDataUrl(file),
+        })),
+      );
+      if (uploaded.length === 0) return;
+      setAttachments((current) => [...current, ...uploaded]);
+      toast({
+        title: uploaded.length === 1 ? "File attached" : "Files attached",
+        description: `${uploaded.map((file) => file.name).join(", ")} will be saved with this asset.`,
+      });
+    } catch {
+      toast({
+        title: "Upload failed",
+        description: "The selected file could not be read. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  };
+
   const createAssetMutation = useMutation({
     mutationFn: async (data: AssetFormData) => {
       console.log("📤 Submitting asset data:", data);
@@ -308,14 +484,16 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       }
       return responseData;
     },
-    onSuccess: async () => {
+    onSuccess: async (created: any) => {
       toast({
         title: "Asset created",
         description: "The asset has been created successfully.",
       });
+      if (created?.id != null) saveAssetAttachments(created.id, attachments);
       await queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
       await queryClient.refetchQueries({ queryKey: ["/api/assets"] });
       form.reset(emptyFormValues);
+      setAttachments([]);
       if (onSuccess) onSuccess();
     },
     onError: (error: any) => {
@@ -339,6 +517,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
         title: "Asset updated",
         description: "The asset has been updated successfully.",
       });
+      if (assetId != null) saveAssetAttachments(assetId, attachments);
       queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/assets", assetId] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
@@ -382,9 +561,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   
   if (isEditMode && isLoadingAsset && !initialAsset) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
-      </div>
+      <p className="py-8 text-center text-sm text-[#6B7280]">Loading...</p>
     );
   }
   
@@ -446,7 +623,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                   <SelectValue placeholder="Select asset type" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[14rem]">
+                                <div
+                                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    handleOpenCreateOption("type");
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Create New Asset Type
+                                </div>
+                                <div className="my-1 border-t" />
                                 {typeOptions.map((type) => (
                                   <SelectItem key={type} value={type.toLowerCase()}>
                                     {type}
@@ -475,7 +663,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                   <SelectValue placeholder="Select category" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[14rem]">
+                                <div
+                                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    handleOpenCreateOption("category");
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Create New Category
+                                </div>
+                                <div className="my-1 border-t" />
                                 {categoryOptions.map((category) => (
                                   <SelectItem key={category} value={category.toLowerCase()}>
                                     {category}
@@ -532,7 +731,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                   <SelectValue placeholder="Select manufacturer" />
                                 </SelectTrigger>
                               </FormControl>
-                              <SelectContent>
+                              <SelectContent className="max-h-[14rem]">
+                                <div
+                                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    handleOpenCreateOption("manufacturer");
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Create New Manufacturer
+                                </div>
+                                <div className="my-1 border-t" />
                                 {manufacturerOptions.map((manufacturer) => (
                                   <SelectItem key={manufacturer} value={manufacturer.toLowerCase()}>
                                     {manufacturer}
@@ -563,7 +773,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 <SelectValue placeholder="Select status" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[14rem]">
                               <SelectItem value="available">Available</SelectItem>
                               <SelectItem value="assigned">Assigned</SelectItem>
                               <SelectItem value="maintenance">Under Repair</SelectItem>
@@ -587,7 +797,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 <SelectValue placeholder="Select condition" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[14rem]">
                               <SelectItem value="new">New</SelectItem>
                               <SelectItem value="used">Used</SelectItem>
                               <SelectItem value="refurbished">Refurbished</SelectItem>
@@ -621,7 +831,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 } />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[14rem]">
                               <div 
                                 className="flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-primary cursor-pointer hover:bg-accent rounded-sm"
                                 onClick={(e) => {
@@ -671,7 +881,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 <SelectValue placeholder="Select location" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="max-h-[14rem]">
+                              <div
+                                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  handleOpenCreateOption("location");
+                                }}
+                              >
+                                <Plus className="h-4 w-4" />
+                                Create New Location
+                              </div>
+                              <div className="my-1 border-t" />
                               {locationOptions.map((location) => (
                                 <SelectItem key={location} value={location.toLowerCase()}>
                                   {location}
@@ -783,12 +1004,17 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                               <FormLabel className="text-sm font-medium text-[#111827]">Useful Life (Years)</FormLabel>
                               <FormControl>
                                 <Input
-                                  type="number"
-                                  min="1"
-                                  max="20"
-                                  placeholder="3"
-                                  {...field}
-                                  onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                  type="text"
+                                  inputMode="numeric"
+                                  placeholder="e.g. 3"
+                                  value={field.value ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value.replace(/\D/g, "");
+                                    field.onChange(v === "" ? undefined : parseInt(v, 10));
+                                  }}
+                                  onBlur={field.onBlur}
+                                  name={field.name}
+                                  ref={field.ref}
                                 />
                               </FormControl>
                               <FormDescription className="text-xs text-[#6B7280]">
@@ -811,7 +1037,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                     <SelectValue placeholder="Select method" />
                                   </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent className="max-h-[14rem]">
                                   {depreciationMethodOptions.map((method) => (
                                     <SelectItem key={method} value={method.toLowerCase()}>
                                       {method}
@@ -851,6 +1077,69 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                   />
           </section>
 
+          {/* Attachments */}
+          <section className="space-y-4">
+            <ModalSectionHeader icon={Paperclip} title="Attachments" />
+            <div className="space-y-3">
+              <div className="flex flex-col items-start gap-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    void handleFilesSelected(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-[#E5E7EB] text-[#111827]"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Files
+                </Button>
+                <p className="text-xs text-[#6B7280]">
+                  Attach invoices, warranty cards or photos.
+                </p>
+              </div>
+
+              {attachments.length > 0 && (
+                <ul className="space-y-2">
+                  {attachments.map((attachment) => (
+                    <li
+                      key={attachment.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
+                    >
+                      <a
+                        href={attachment.dataUrl}
+                        download={attachment.name}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 flex-1 truncate text-sm font-medium text-[#2563EB] hover:underline"
+                      >
+                        {attachment.name}
+                      </a>
+                      <span className="shrink-0 text-xs text-[#6B7280]">
+                        {formatFileSize(attachment.size)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAttachment(attachment.id)}
+                        className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#F3F4F6] hover:text-[#DC2626]"
+                        aria-label={`Remove ${attachment.name}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
           {!hideFooter && (
             <div className="flex justify-end gap-3">
               <Button
@@ -868,21 +1157,54 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                 disabled={createAssetMutation.isPending || updateAssetMutation.isPending}
                 className="bg-[#2563EB] text-white hover:bg-[#2563EB]"
               >
-                {(createAssetMutation.isPending || updateAssetMutation.isPending) && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
                 {isEditMode ? "Update Asset" : "Create Asset"}
               </Button>
             </div>
           )}
         </form>
       </Form>
-      
-      {/* Employee Creation Sheet */}
-      <EmployeeForm 
-        isOpen={isEmployeeFormOpen}
-        onClose={handleEmployeeFormClose}
-      />
+
+      <Dialog
+        open={createOptionTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOptionTarget(null);
+            setNewOptionName("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Create New {createOptionTarget ? optionLabels[createOptionTarget] : "Option"}
+            </DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={newOptionName}
+            onChange={(event) => setNewOptionName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                handleCreateOption();
+              }
+            }}
+            placeholder={`Enter ${createOptionTarget ? optionLabels[createOptionTarget].toLowerCase() : "option"} name`}
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateOptionTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleCreateOption}>
+              Create & Select
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }

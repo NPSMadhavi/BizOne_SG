@@ -1,20 +1,129 @@
 import { Router, type IRouter } from "express";
-import { db, invoicesTable, invoicePaymentsTable, usersTable, customersTable, deliveryOrdersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
-import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
+import {
+  db,
+  invoicesTable,
+  invoicePaymentsTable,
+  usersTable,
+  customersTable,
+  deliveryOrdersTable,
+  stockSerialsTable,
+  stockItemsTable,
+  salesOrdersTable,
+  warehousesTable,
+} from "@workspace/db";
+import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { postInvoiceJE, reverseInvoiceJE } from "../lib/invoice-auto-post.js";
 import { postARPaymentJE, reverseARPaymentJE } from "../lib/invoice-payment-je.js";
+import {
+  deductInvoiceStock,
+  restoreInvoiceStock,
+  syncInvoiceStock,
+  loadInvoiceNetDeducted,
+  alignInvoiceItemsToIssuedWarehouse,
+} from "../lib/invoice-stock.js";
 
 declare module "express-session" {
   interface SessionData {
     userId?: number;
     companyId?: number;
     isAdmin?: boolean;
+    userRole?: string;
+    username?: string;
   }
 }
 
 const router: IRouter = Router();
+
+/**
+ * Preserve stockItemId when the client omits it on resave.
+ * Warehouse MUST come from the client (cube picker) for that same stock item.
+ * Never invent MAIN / index / other-line warehouses — that caused WH1 vs WH2 mix-ups.
+ */
+export async function mergeInvoiceStockMeta(
+  companyId: number,
+  incoming: any[] | undefined,
+  previous: any[] | undefined,
+): Promise<any[]> {
+  const items = Array.isArray(incoming) ? incoming : [];
+  const prev = Array.isArray(previous) ? previous : [];
+
+  const allStockItems = await db
+    .select({ id: stockItemsTable.id, code: stockItemsTable.code })
+    .from(stockItemsTable)
+    .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.type, "product")));
+
+  const stockByCode = new Map<string, number>();
+  for (const s of allStockItems) {
+    if (s.code) stockByCode.set(s.code.toLowerCase().trim(), s.id);
+  }
+
+  return items.map((item) => {
+    if (!item || item.type === "section") return item;
+
+    const qty = Number(item.qty) || 0;
+    const cleanPart = String(item.partNumber || "").replace(/<[^>]*>/g, "").trim().toLowerCase();
+
+    let incomingStockId = Number(item.stockItemId) > 0 ? Number(item.stockItemId) : undefined;
+    if (!incomingStockId && cleanPart) {
+      incomingStockId = stockByCode.get(cleanPart);
+    }
+
+    // Match previous line by stockItemId or part number ONLY — never by row index
+    // (index matching assigned the wrong warehouse across lines).
+    const prevLine =
+      (incomingStockId
+        ? prev.find((p) => p && p.type !== "section" && Number(p.stockItemId) === incomingStockId)
+        : undefined)
+      ?? (cleanPart
+        ? prev.find((p) =>
+          p && p.type !== "section"
+          && String(p.partNumber || "").replace(/<[^>]*>/g, "").trim().toLowerCase() === cleanPart
+        )
+        : undefined);
+
+    const prevStockId = Number(prevLine?.stockItemId) > 0 ? Number(prevLine.stockItemId) : undefined;
+    const stockItemId = incomingStockId ?? prevStockId;
+
+    if (!stockItemId) {
+      return {
+        ...item,
+        qty,
+        isStockItem: false,
+        stockItemId: undefined,
+        warehouseId: undefined,
+        warehouseName: undefined,
+      };
+    }
+
+    const incomingWh = Number(item.warehouseId) > 0 ? Number(item.warehouseId) : undefined;
+    // Only reuse previous warehouse when it belongs to the SAME stock item.
+    const prevSameItem = prevStockId === stockItemId;
+    const prevWh = prevSameItem && Number(prevLine?.warehouseId) > 0
+      ? Number(prevLine.warehouseId)
+      : undefined;
+    const warehouseId = incomingWh ?? prevWh;
+
+    if (qty > 0 && !warehouseId) {
+      throw new Error(
+        `Warehouse is required for ${cleanPart || `stock item #${stockItemId}`}. `
+        + `Pick the item again with the cube icon and select the warehouse to reduce.`,
+      );
+    }
+
+    return {
+      ...item,
+      qty,
+      isStockItem: true,
+      stockItemId,
+      warehouseId,
+      warehouseName: incomingWh
+        ? (item.warehouseName || (incomingWh === prevWh ? prevLine?.warehouseName : undefined))
+        : (item.warehouseName || prevLine?.warehouseName),
+    };
+  });
+}
 
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return false; }
@@ -67,6 +176,50 @@ async function withUsernames(docs: any[]): Promise<any[]> {
     usernameMap = Object.fromEntries(users.map(u => [u.id, u.username]));
   }
   return docs.map(d => ({ ...d, createdByUsername: usernameMap[d.createdBy] || null }));
+}
+
+/** Returns the DO number that now exists for this invoice, or null when creation was skipped. */
+async function createDeliveryOrderFromInvoice(invoice: any, userId: number): Promise<string | null> {
+  const existingDo = await db.select({ doNumber: deliveryOrdersTable.doNumber })
+    .from(deliveryOrdersTable)
+    .where(and(
+      eq(deliveryOrdersTable.companyId, invoice.companyId),
+      eq(deliveryOrdersTable.invId, invoice.id),
+    ))
+    .limit(1);
+  if (existingDo.length > 0) return existingDo[0].doNumber;
+
+  const doNumber = await nextDocNumber("do", invoice.companyId);
+  const doItems = ((invoice.items as any[]) || [])
+    .filter((item: any) => item.type !== "section")
+    .map((item: any) => ({
+      partNumber: item.partNumber || "",
+      description: item.description || "",
+      qty: item.qty,
+      serialNumbers: item.selectedSerials ? item.selectedSerials.join("\n") : "",
+    }));
+
+  await db.insert(deliveryOrdersTable).values({
+    doNumber,
+    companyId: invoice.companyId,
+    customerName: invoice.customerName,
+    customerAddress: invoice.customerAddress || null,
+    customerContact: invoice.customerContact || null,
+    issueDate: invoice.issueDate || new Date().toISOString().split("T")[0],
+    deliveryDate: invoice.deliveryDate || null,
+    paymentTerms: invoice.paymentTerms || null,
+    notes: `Created from Invoice ${invoice.invNumber}`,
+    items: doItems,
+    isPrivate: invoice.isPrivate,
+    status: "draft",
+    invId: invoice.id,
+    invNumber: invoice.invNumber,
+    soId: invoice.soId ?? null,
+    soNumber: invoice.soNumber ?? null,
+    createdBy: userId,
+  });
+
+  return doNumber;
 }
 
 router.get("/invoices/stats", async (req, res): Promise<void> => {
@@ -133,6 +286,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
     currency, discountAmount, isPrivate, status, poRefNo, exchangeRate,
+    createDeliveryOrder,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
@@ -144,39 +298,134 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const totalAmount = taxableAmount + taxAmt;
 
   const invNumber = await nextDocNumber("inv", companyId);
+  const createdStatus = status || "draft";
+  const stockItems = await mergeInvoiceStockMeta(companyId, items as any[], items as any[]);
 
-  const [doc] = await db.insert(invoicesTable).values({
-    invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-    customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
-    currency: currency || "SGD",
-    exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
-    isPrivate: isPrivate === true,
-    poRefNo: poRefNo || null,
-    subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
-    totalAmount: totalAmount.toFixed(2), status: status || "draft", createdBy: req.session.userId!,
-  }).returning();
+  console.log("[TAX_INVOICE_TRACE:CREATE_PAYLOAD]", JSON.stringify({
+    invNumber,
+    incomingItems: (items as any[] || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
+    mergedStockItems: (stockItems || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
+  }));
+
+  let doc: any;
+  let stockApply: { reducedThisSave: any[]; putBackThisSave: any[]; alreadyIssued: any[] } = {
+    reducedThisSave: [],
+    putBackThisSave: [],
+    alreadyIssued: [],
+  };
+  try {
+    // Invoice row + stock movements must commit together (no orphan invoice / partial issue).
+    doc = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(invoicesTable).values({
+        invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
+        customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes,
+        items: stockItems,
+        currency: currency || "SGD",
+        exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
+        isPrivate: isPrivate === true,
+        poRefNo: poRefNo || null,
+        subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
+        totalAmount: totalAmount.toFixed(2), status: createdStatus, createdBy: req.session.userId!,
+      }).returning();
+
+      // Tax Invoice with cube-picked stock always reduces warehouse qty on confirm.
+      // Draft create skips stock; UI now confirms on both Save buttons.
+      if (createdStatus === "confirmed") {
+        stockApply = await deductInvoiceStock({
+          companyId,
+          invoiceId: created.id,
+          invNumber: created.invNumber,
+          items: stockItems,
+          userId: req.session.userId!,
+          username: req.session.username,
+        }, tx);
+        const netMap = await loadInvoiceNetDeducted(tx, companyId, created.id);
+        const whIds = [...new Set(Array.from(netMap.values()).map((l) => l.warehouseId))];
+        const whNameMap = new Map<number, string>();
+        if (whIds.length > 0) {
+          const whRows = await tx
+            .select({ id: warehousesTable.id, name: warehousesTable.name })
+            .from(warehousesTable)
+            .where(and(eq(warehousesTable.companyId, companyId), inArray(warehousesTable.id, whIds)));
+          for (const w of whRows) whNameMap.set(w.id, w.name);
+        }
+        const alignedItems = alignInvoiceItemsToIssuedWarehouse(stockItems, netMap, whNameMap);
+        const [aligned] = await tx.update(invoicesTable)
+          .set({ items: alignedItems })
+          .where(eq(invoicesTable.id, created.id))
+          .returning();
+        return aligned ?? created;
+      }
+      return created;
+    });
+  } catch (stockErr: any) {
+    res.status(400).json({ error: stockErr?.message || "Failed to create invoice / deduct stock" });
+    return;
+  }
+
   await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
 
-  // Deduct stockQty for non-serial stock items immediately on invoice save
-  for (const item of (items as any[])) {
-    const selectedSerials: string[] = item.selectedSerials || [];
-    if (!item.isStockItem || selectedSerials.length > 0) continue;
-    const partNumber = (item.partNumber || "").trim();
-    if (!partNumber) continue;
-    const qty = Number(item.qty) || 0;
-    if (qty <= 0) continue;
-    const [stockItem] = await db.select({ id: stockItemsTable.id })
-      .from(stockItemsTable)
-      .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
-      .limit(1);
-    if (!stockItem) continue;
-    await db.update(stockItemsTable)
-      .set({ stockQty: sql`GREATEST(0, ${stockItemsTable.stockQty} - ${qty})` })
-      .where(eq(stockItemsTable.id, stockItem.id));
+  let deliveryOrderNumber: string | null = null;
+  if (createDeliveryOrder === true) {
+    try {
+      deliveryOrderNumber = await createDeliveryOrderFromInvoice(doc, req.session.userId!);
+    } catch (deliveryOrderErr: any) {
+      req.log?.error({ err: deliveryOrderErr }, "Invoice saved but delivery order creation failed");
+    }
+  }
+
+  if (createdStatus === "confirmed") {
+    try {
+      const invoiceItems = (doc.items as any[]) || [];
+      for (const item of invoiceItems) {
+        const selectedSerials: string[] = item.selectedSerials || [];
+        if (selectedSerials.length === 0) continue;
+        const stockItemId = Number(item.stockItemId) > 0 ? Number(item.stockItemId) : 0;
+        let resolvedStockId = stockItemId;
+        if (!resolvedStockId) {
+          const partNumber = (item.partNumber || "").trim();
+          if (!partNumber) continue;
+          const [stockItem] = await db.select({ id: stockItemsTable.id })
+            .from(stockItemsTable)
+            .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+            .limit(1);
+          if (!stockItem) continue;
+          resolvedStockId = stockItem.id;
+        }
+        for (const sn of selectedSerials) {
+          await db.update(stockSerialsTable)
+            .set({ status: "reserved", invoiceId: doc.id, invoiceNumber: doc.invNumber })
+            .where(and(
+              eq(stockSerialsTable.companyId, companyId),
+              eq(stockSerialsTable.stockItemId, resolvedStockId),
+              eq(stockSerialsTable.serialNumber, sn),
+              eq(stockSerialsTable.status, "available")
+            ));
+        }
+      }
+    } catch (serialErr: any) {
+      req.log?.error({ err: serialErr }, "Serial reservation failed on create (non-fatal)");
+    }
+
+    await postInvoiceJE(
+      {
+        id: doc.id,
+        companyId,
+        invNumber: doc.invNumber,
+        customerName: doc.customerName,
+        issueDate: doc.issueDate,
+        totalAmount: doc.totalAmount,
+        subtotal: doc.subtotal,
+        discountAmount: doc.discountAmount,
+        tax: doc.tax,
+      },
+      req.session.userId!,
+      req.log,
+    );
   }
 
   logAudit({ req, action: "create", entityType: "invoice", entityId: doc.id, entityLabel: doc.invNumber });
-  res.status(201).json(parseDoc(doc));
+  res.status(201).json({ ...parseDoc(doc), deliveryOrderNumber, stockApply });
 });
 
 async function getPaymentsForInvoice(invoiceId: number) {
@@ -246,7 +495,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
-    currency, discountAmount, isPrivate, poRefNo, exchangeRate,
+    currency, discountAmount, isPrivate, poRefNo, exchangeRate, createDeliveryOrder,
   } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
@@ -270,62 +519,108 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
 
-  const [updated] = await db.update(invoicesTable).set(updateData).where(eq(invoicesTable.id, id)).returning();
+  const nextStatus = status || existing.status;
+  // Confirmed invoices keep stock issued. Draft/void/cancelled do not issue.
+  // Never restore stock by flipping back to draft — only Void restores.
+  const stockTrackedStatus = !["draft", "void", "cancelled"].includes(String(nextStatus));
+  const wasStockTracked = !["draft", "void", "cancelled"].includes(String(existing.status));
+
+  if (wasStockTracked && nextStatus === "draft") {
+    res.status(400).json({
+      error: "Cannot move a stock-issued invoice back to draft. Void the invoice to restore stock.",
+    });
+    return;
+  }
+
+  let updated: any;
+  let stockApply: { reducedThisSave: any[]; putBackThisSave: any[]; alreadyIssued: any[] } = {
+    reducedThisSave: [],
+    putBackThisSave: [],
+    alreadyIssued: [],
+  };
+  try {
+    updated = await db.transaction(async (tx) => {
+      if (wasStockTracked || stockTrackedStatus) {
+        const stockItems = stockTrackedStatus ? await mergeInvoiceStockMeta(existing.companyId, items as any[], existing.items as any[]) : [];
+        console.log("[TAX_INVOICE_TRACE:UPDATE_PAYLOAD]", JSON.stringify({
+          invoiceId: id,
+          invNumber: existing.invNumber,
+          incomingItems: (items as any[] || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
+          existingItems: ((existing.items as any[]) || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
+          mergedStockItems: (stockItems || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
+        }));
+        stockApply = await syncInvoiceStock({
+          companyId: existing.companyId,
+          invoiceId: id,
+          invNumber: existing.invNumber,
+          items: stockItems,
+          userId: req.session.userId!,
+          username: req.session.username,
+        }, tx);
+        if (stockTrackedStatus) {
+          const netMap = await loadInvoiceNetDeducted(tx, existing.companyId, id);
+          const whIds = [...new Set([
+            ...Array.from(netMap.values()).map((l) => l.warehouseId),
+            ...stockItems.map((i: any) => Number(i.warehouseId)).filter((n: number) => n > 0),
+          ])];
+          const whNameMap = new Map<number, string>();
+          if (whIds.length > 0) {
+            const whRows = await tx
+              .select({ id: warehousesTable.id, name: warehousesTable.name })
+              .from(warehousesTable)
+              .where(and(eq(warehousesTable.companyId, existing.companyId), inArray(warehousesTable.id, whIds)));
+            for (const w of whRows) whNameMap.set(w.id, w.name);
+          }
+          // Persist the warehouse from this save (desired), with resolved names.
+          updateData.items = alignInvoiceItemsToIssuedWarehouse(stockItems, netMap, whNameMap);
+        }
+      }
+
+      const [row] = await tx.update(invoicesTable).set(updateData).where(eq(invoicesTable.id, id)).returning();
+      return row;
+    });
+  } catch (stockErr: any) {
+    res.status(400).json({ error: stockErr?.message || "Failed to update stock for this invoice" });
+    return;
+  }
   if (!updated) { res.status(404).json({ error: "Invoice not found" }); return; }
 
   const companyId = updated.companyId;
   const isNewlyConfirmed = status === "confirmed" && existing.status !== "confirmed";
 
+  let deliveryOrderNumber: string | null = null;
+  if (createDeliveryOrder === true) {
+    try {
+      deliveryOrderNumber = await createDeliveryOrderFromInvoice(updated, req.session.userId!);
+    } catch (deliveryOrderErr: any) {
+      req.log?.error({ err: deliveryOrderErr }, "Invoice updated but delivery order creation failed");
+    }
+  }
+
   if (isNewlyConfirmed) {
     try {
-      const existingDo = await db.select({ id: deliveryOrdersTable.id })
-        .from(deliveryOrdersTable)
-        .where(and(eq(deliveryOrdersTable.companyId, companyId), eq(deliveryOrdersTable.invId, id)))
-        .limit(1);
-
-      if (existingDo.length === 0) {
-        const doNumber = await nextDocNumber("do", companyId);
-        const doItems = ((updated.items as any[]) || []).map((item: any) => ({
-          partNumber: item.partNumber || "",
-          description: item.description || "",
-          qty: item.qty,
-          serialNumbers: item.selectedSerials ? item.selectedSerials.join("\n") : "",
-        }));
-        await db.insert(deliveryOrdersTable).values({
-          doNumber, companyId,
-          customerName: updated.customerName,
-          customerAddress: updated.customerAddress || null,
-          customerContact: updated.customerContact || null,
-          issueDate: updated.issueDate || new Date().toISOString().split("T")[0],
-          deliveryDate: updated.deliveryDate || null,
-          paymentTerms: updated.paymentTerms || null,
-          notes: `Auto-created from Invoice ${updated.invNumber}`,
-          items: doItems,
-          isPrivate: updated.isPrivate,
-          status: "draft",
-          invId: id,
-          invNumber: updated.invNumber,
-          createdBy: req.session.userId!,
-        });
-      }
-
       const invoiceItems = (updated.items as any[]) || [];
       for (const item of invoiceItems) {
         const selectedSerials: string[] = item.selectedSerials || [];
         if (selectedSerials.length === 0) continue;
-        const partNumber = (item.partNumber || "").trim();
-        if (!partNumber) continue;
-        const [stockItem] = await db.select({ id: stockItemsTable.id })
-          .from(stockItemsTable)
-          .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
-          .limit(1);
-        if (!stockItem) continue;
+        const stockItemId = Number(item.stockItemId) > 0 ? Number(item.stockItemId) : 0;
+        let resolvedStockId = stockItemId;
+        if (!resolvedStockId) {
+          const partNumber = (item.partNumber || "").trim();
+          if (!partNumber) continue;
+          const [stockItem] = await db.select({ id: stockItemsTable.id })
+            .from(stockItemsTable)
+            .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
+            .limit(1);
+          if (!stockItem) continue;
+          resolvedStockId = stockItem.id;
+        }
         for (const sn of selectedSerials) {
           await db.update(stockSerialsTable)
             .set({ status: "reserved", invoiceId: id, invoiceNumber: updated.invNumber })
             .where(and(
               eq(stockSerialsTable.companyId, companyId),
-              eq(stockSerialsTable.stockItemId, stockItem.id),
+              eq(stockSerialsTable.stockItemId, resolvedStockId),
               eq(stockSerialsTable.serialNumber, sn),
               eq(stockSerialsTable.status, "available")
             ));
@@ -354,7 +649,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   }
 
   logAudit({ req, action: isNewlyConfirmed ? "status:confirmed" : "update", entityType: "invoice", entityId: id, entityLabel: updated.invNumber });
-  res.json(parseDoc(updated));
+  res.json({ ...parseDoc(updated), deliveryOrderNumber, stockApply });
 });
 
 router.post("/invoices/:id/void", async (req, res): Promise<void> => {
@@ -371,10 +666,29 @@ router.post("/invoices/:id/void", async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
   if (existing.status === "void") { res.status(400).json({ error: "Invoice is already voided" }); return; }
 
-  const [updated] = await db.update(invoicesTable)
-    .set({ status: "void", voidReason: String(voidReason).trim() })
-    .where(eq(invoicesTable.id, id))
-    .returning();
+  let updated: any;
+  try {
+    // Void status + stock restore must be atomic.
+    updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(invoicesTable)
+        .set({ status: "void", voidReason: String(voidReason).trim() })
+        .where(eq(invoicesTable.id, id))
+        .returning();
+
+      await restoreInvoiceStock({
+        companyId: existing.companyId,
+        invoiceId: id,
+        invNumber: existing.invNumber,
+        userId: req.session.userId!,
+        username: req.session.username,
+      }, tx);
+
+      return row;
+    });
+  } catch (stockErr: any) {
+    res.status(400).json({ error: stockErr?.message || "Failed to void invoice / restore stock" });
+    return;
+  }
 
   // Reverse the accounting entry if one was posted (Singapore companies only)
   await reverseInvoiceJE(
@@ -547,14 +861,40 @@ router.delete("/invoices/:id/payments/:paymentId", async (req, res): Promise<voi
 
 router.delete("/invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  if (!req.session.isAdmin) { res.status(403).json({ error: "Only administrators can delete invoices." }); return; }
+  const role = req.session.userRole;
+  const canDelete = (req.session.isAdmin ?? false) || role === "accountant";
+  if (!canDelete) { res.status(403).json({ error: "Only administrators or accountants can delete invoices." }); return; }
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-  const [existing] = await db.select({ id: invoicesTable.id, status: invoicesTable.status, invNumber: invoicesTable.invNumber })
+  const [existing] = await db.select({ id: invoicesTable.id, status: invoicesTable.status, invNumber: invoicesTable.invNumber, companyId: invoicesTable.companyId })
     .from(invoicesTable).where(eq(invoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
   if (existing.status !== "draft") { res.status(400).json({ error: "Only draft invoices can be deleted. Confirmed invoices must be Voided." }); return; }
+
+  try {
+    await restoreInvoiceStock({
+      companyId: existing.companyId,
+      invoiceId: id,
+      invNumber: existing.invNumber,
+      userId: req.session.userId!,
+      username: req.session.username,
+    });
+  } catch (stockErr: any) {
+    req.log.error({ err: stockErr }, "Failed to restore stock for deleted invoice");
+  }
+
   await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
+
+  // Clear reverse links on sales orders so convert can be retried
+  try {
+    await db.update(salesOrdersTable).set({
+      invId: null,
+      invNumber: null,
+    } as any).where(eq(salesOrdersTable.invId, id));
+  } catch (linkErr: any) {
+    req.log?.warn?.({ err: linkErr }, "Failed to clear sales_order inv link after invoice delete");
+  }
+
   logAudit({ req, action: "delete", entityType: "invoice", entityId: id, entityLabel: existing.invNumber });
   res.json({ success: true });
 });

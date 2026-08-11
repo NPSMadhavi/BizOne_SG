@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Loader2, Search, ChevronLeft } from "lucide-react";
+import { Search, ChevronLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -122,8 +122,8 @@ export function ManagementTableContainer({ children }: { children: ReactNode }) 
 export function ManagementLoadingRow({ colSpan }: { colSpan: number }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="px-5 py-16 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#2563EB]" />
+      <td colSpan={colSpan} className="px-5 py-16 text-center text-sm text-[#6B7280]">
+        Loading...
       </td>
     </tr>
   );

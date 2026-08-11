@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/operations-8june/lib/queryClient";
 import { ManagementTableCard, ManagementTableContainer, ManagementEmptyState, ManagementPageHeader, ManagementToolbarRow } from "@/operations-8june/components/layout/ManagementPageUI";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,15 +28,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FormModalShell } from "@/operations-8june/components/forms/FormModalShell";
 import {
   EntityViewDialog,
   EntityViewField,
   EntityViewFieldGrid,
   EntityViewStatusBadge,
 } from "@/operations-8june/components/ui/entity-view-dialog";
-import PayrollConfigForm from "@/operations-8june/components/forms/PayrollConfigForm";
-import ProcessPayrollForm from "@/operations-8june/components/forms/ProcessPayrollForm";
 import PayslipPreviewModal from "@/operations-8june/components/payroll/PayslipPreviewModal";
 import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
 import {
@@ -71,7 +68,6 @@ import {
   Edit,
   Eye,
   Download,
-  Loader2,
   Trash2,
 } from "lucide-react";
 
@@ -182,9 +178,8 @@ function formatPeriod(period: string) {
 
 export default function PayrollPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const [configFormOpen, setConfigFormOpen] = useState(false);
-  const [processFormOpen, setProcessFormOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<PayrollConfig | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -362,8 +357,11 @@ export default function PayrollPage() {
   }, [configs, employees]);
 
   const openConfigForm = (config?: PayrollConfig) => {
-    setSelectedConfig(config || null);
-    setConfigFormOpen(true);
+    if (config?.id) {
+      setLocation(`/payroll/config/${config.id}/edit`);
+    } else {
+      setLocation("/payroll/config/new");
+    }
   };
 
   const openConfigDetails = (config: PayrollConfig) => {
@@ -871,9 +869,9 @@ export default function PayrollPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <Button className={payrollPrimaryButtonClass} onClick={() => openConfigForm()}>
-              <Plus className="mr-2 h-4 w-4" /> Add Payroll Config
+              <Plus className="mr-2 h-4 w-4" /> Create Payroll Config
             </Button>
-            <Button className={payrollPrimaryButtonClass} onClick={() => setProcessFormOpen(true)}>
+            <Button className={payrollPrimaryButtonClass} onClick={() => setLocation("/payroll/process")}>
               <Calculator className="mr-2 h-4 w-4" /> Process Payroll
             </Button>
           </div>
@@ -961,9 +959,7 @@ export default function PayrollPage() {
 
       <ManagementTableCard>
         {configsLoading ? (
-          <div className="flex justify-center py-16">
-            <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
-          </div>
+          <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
         ) : configs.length === 0 ? (
           <ManagementEmptyState
             title="No payroll configurations"
@@ -989,7 +985,7 @@ export default function PayrollPage() {
                   <TableHead>Department</TableHead>
                   <TableHead>Designation</TableHead>
                   <TableHead>Payroll Period</TableHead>
-                  <TableHead>Base Salary</TableHead>
+                  <TableHead>Basic Salary</TableHead>
                   <TableHead>Annual Salary</TableHead>
                   <TableHead>CPF Rate (Employee)</TableHead>
                   <TableHead>CPF Amount (Employee)</TableHead>
@@ -1104,52 +1100,6 @@ export default function PayrollPage() {
         )}
       </ManagementTableCard>
 
-      <Dialog open={configFormOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setConfigFormOpen(false);
-            setSelectedConfig(null);
-          }
-        }}
-      >
-        <FormModalShell
-          title={
-            selectedConfig?.id ? "Edit payroll configuration" : "Add payroll configuration"
-          }
-          maxWidth="max-w-5xl"
-          onClose={() => {
-            setConfigFormOpen(false);
-            setSelectedConfig(null);
-          }}
-        >
-          <PayrollConfigForm
-            onSuccess={() => {
-              setConfigFormOpen(false);
-              setSelectedConfig(null);
-            }}
-            onCancel={() => {
-              setConfigFormOpen(false);
-              setSelectedConfig(null);
-            }}
-            editData={selectedConfig}
-          />
-        </FormModalShell>
-      </Dialog>
-
-      <Dialog open={processFormOpen} onOpenChange={setProcessFormOpen}>
-        <FormModalShell
-          title="Generate Payroll Records"
-          description="Create and process monthly payroll for employees"
-          maxWidth="max-w-5xl"
-          onClose={() => setProcessFormOpen(false)}
-        >
-          <ProcessPayrollForm
-            onSuccess={() => setProcessFormOpen(false)}
-            onCancel={() => setProcessFormOpen(false)}
-          />
-        </FormModalShell>
-      </Dialog>
-
       <EntityViewDialog
         open={detailOpen}
         onOpenChange={(open) => !open && closeDetails()}
@@ -1163,7 +1113,7 @@ export default function PayrollPage() {
             <EntityViewField label="Department" value={selectedConfig.department} />
             <EntityViewField label="Designation" value={selectedConfig.designation} />
             <EntityViewField label="Payroll Period" value={formatPeriod(selectedConfig.payrollPeriod)} />
-            <EntityViewField label="Base Salary" value={formatCurrency(selectedConfig.baseSalary)} />
+            <EntityViewField label="Basic Salary" value={formatCurrency(selectedConfig.baseSalary)} />
             <EntityViewField
               label="Annual Salary"
               value={formatCurrency((parseFloat(selectedConfig.baseSalary) || 0) * 12)}
@@ -1284,14 +1234,7 @@ export default function PayrollPage() {
               onClick={confirmBatchProcess}
               disabled={isBatchProcessing}
             >
-              {isBatchProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Save & Process"
-              )}
+              {isBatchProcessing ? "Processing..." : "Save & Process"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1353,14 +1296,7 @@ export default function PayrollPage() {
                   onClick={() => void handleBatchConfirmProceed()}
                   disabled={isBatchProcessing}
                 >
-                  {isBatchProcessing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    "Yes, Proceed"
-                  )}
+                  {isBatchProcessing ? "Processing..." : "Yes, Proceed"}
                 </Button>
               </>
             ) : (
@@ -1414,10 +1350,7 @@ export default function PayrollPage() {
 
             {openDetail === "gross" &&
               (recordsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                  Loading payroll records...
-                </div>
+                <p className="py-8 text-center text-sm text-[#6B7280]">Loading payroll records...</p>
               ) : uniquePayrollRecords.length ? (
                 <table className="min-w-full overflow-hidden rounded-lg border text-sm">
                   <thead>
@@ -1448,10 +1381,7 @@ export default function PayrollPage() {
 
             {openDetail === "net" &&
               (recordsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                  Loading payroll records...
-                </div>
+                <p className="py-8 text-center text-sm text-[#6B7280]">Loading payroll records...</p>
               ) : uniquePayrollRecords.length ? (
                 <table className="min-w-full overflow-hidden rounded-lg border text-sm">
                   <thead>
@@ -1482,10 +1412,7 @@ export default function PayrollPage() {
 
             {openDetail === "records" &&
               (recordsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                  Loading payroll records...
-                </div>
+                <p className="py-8 text-center text-sm text-[#6B7280]">Loading payroll records...</p>
               ) : uniquePayrollRecords.length ? (
                 <table className="min-w-full overflow-hidden rounded-lg border text-sm">
                   <thead>
@@ -1541,15 +1468,16 @@ export default function PayrollPage() {
                 </label>
                 <input
                   id="payslip-year"
-                  type="number"
-                  min={2000}
-                  max={new Date().getFullYear()}
+                  type="text"
+                  inputMode="numeric"
                   value={payslipYear}
                   onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "");
+                    if (digits === "") return;
                     const currentYear = new Date().getFullYear();
                     const nextYear = Math.min(
                       currentYear,
-                      parseInt(e.target.value, 10) || currentYear
+                      Math.max(2000, parseInt(digits, 10) || currentYear)
                     );
                     setPayslipYear(nextYear);
                     if (payslipConfig) {
@@ -1652,10 +1580,7 @@ export default function PayrollPage() {
               className={payrollCancelButtonClass}
             >
               {isPayslipViewing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading...
-                </>
+                "Loading..."
               ) : (
                 <>
                   <Eye className="mr-2 h-4 w-4" />
@@ -1674,10 +1599,7 @@ export default function PayrollPage() {
               }
             >
               {isPayslipDownloading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Downloading...
-                </>
+                "Downloading..."
               ) : (
                 <>
                   <Download className="mr-2 h-4 w-4" />

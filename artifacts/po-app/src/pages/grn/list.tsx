@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { Search, ArrowRight, ClipboardList, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ArrowRight, ClipboardList, Calendar, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -74,16 +74,23 @@ export default function GrnList() {
 
   const filtered = filteredByDate.filter((g) => {
     const term = searchTerm.toLowerCase();
-    return g.grnNumber.toLowerCase().includes(term) || g.poNumber.toLowerCase().includes(term) || g.vendorName.toLowerCase().includes(term);
+    return g.grnNumber.toLowerCase().includes(term) || String(g.poNumber || "").toLowerCase().includes(term) || g.vendorName.toLowerCase().includes(term);
   });
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Goods Receipt Notes</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Goods Receipt Notes</h1>
           <p className="text-muted-foreground mt-1">Track received goods against Purchase Orders.</p>
         </div>
+        <Button
+          onClick={() => setLocation("/grn/new")}
+          className="gap-2 bg-[#2563EB] hover:bg-[#1d4ed8] text-white"
+        >
+          <Plus className="h-4 w-4" />
+          Create Goods Receipt Note
+        </Button>
       </div>
 
       {/* Quarter filter */}
@@ -152,7 +159,11 @@ export default function GrnList() {
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <ClipboardList className="h-10 w-10 text-muted-foreground/40"/>
                       <p className="font-medium">No GRNs found.</p>
-                      <p className="text-xs">GRNs are automatically created when a Purchase Order is confirmed.</p>
+                      <p className="text-xs">Create a GRN from a confirmed Purchase Order to start receiving goods.</p>
+                      <Button className="gap-2 mt-1" onClick={() => setLocation("/grn/new")}>
+                        <Plus className="h-4 w-4" />
+                        Create Goods Receipt Note
+                      </Button>
                       {searchTerm && <Button variant="link" onClick={() => setSearchTerm("")}>Clear search</Button>}
                     </div>
                   </td>
@@ -162,10 +173,10 @@ export default function GrnList() {
                   const receivedCount = grn.items.filter((i) => i.received).length;
                   return (
                     <tr key={grn.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/grn/${grn.id}`)}>
-                      <td className="px-6 py-4 font-medium text-primary">{grn.grnNumber}</td>
-                      <td className="px-6 py-4 font-medium">{grn.poNumber}</td>
+                      <td className="px-6 py-4 font-medium">{grn.grnNumber}</td>
+                      <td className="px-6 py-4 font-medium">{grn.poNumber || "—"}</td>
                       <td className="px-6 py-4">{grn.vendorName}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{fmtDate(grn.createdAt)}</td>
+                      <td className="px-6 py-4 font-medium">{fmtDate(grn.createdAt)}</td>
                       <td className="px-6 py-4 text-center text-muted-foreground">{receivedCount}/{grn.items.length} received</td>
                       <td className="px-6 py-4 text-center">{getStatusBadge(grn.status)}</td>
                       <td className="px-6 py-4 text-right">

@@ -234,7 +234,7 @@ export default function IncomeNew() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">New Income Entry</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">New Income Entry</h1>
           <p className="text-sm text-muted-foreground">Record non-trade income — Singapore IRAS-aligned</p>
         </div>
       </div>

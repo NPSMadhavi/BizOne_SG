@@ -107,7 +107,7 @@ router.post("/credit-notes", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, contactPerson, contactEmail,
-    refInvNumber, reason, issueDate, currency,
+    refInvNumber, soId, soNumber, reason, issueDate, currency,
     paymentTerms, notes, isPrivate,
     items, subtotal, discountAmount, taxRate, tax, totalAmount,
     status,
@@ -125,6 +125,8 @@ router.post("/credit-notes", async (req, res): Promise<void> => {
     contactPerson: contactPerson || null,
     contactEmail: contactEmail || null,
     refInvNumber: refInvNumber || null,
+    soId: soId ? Number(soId) : null,
+    soNumber: soNumber || null,
     reason: reason || null,
     issueDate: issueDate || null,
     currency: currency || "SGD",

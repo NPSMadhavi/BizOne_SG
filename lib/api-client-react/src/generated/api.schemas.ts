@@ -28,7 +28,6 @@ export const UserRole = {
   admin: "admin",
   user: "user",
   external: "external",
-  accountant: "accountant",
 } as const;
 
 /**
@@ -64,7 +63,6 @@ export interface Company {
   country: string;
   address?: string;
   registrationNo?: string;
-  gstRegNo?: string;
   email?: string;
   phone?: string;
 }
@@ -88,7 +86,6 @@ export const CreateUserBodyRole = {
   admin: "admin",
   user: "user",
   external: "external",
-  accountant: "accountant",
 } as const;
 
 export interface CreateUserBody {
@@ -105,7 +102,6 @@ export const UpdateUserBodyRole = {
   admin: "admin",
   user: "user",
   external: "external",
-  accountant: "accountant",
 } as const;
 
 export interface UpdateUserBody {
@@ -141,6 +137,8 @@ export interface POItem {
   unitPrice: number;
   amount: number;
   isStockItem?: boolean;
+  stockItemId?: number;
+  warehouseId?: number;
   itemImage?: string;
 }
 
@@ -273,7 +271,6 @@ export interface Settings {
   defaultUom?: string;
   bankDetails?: string;
   termsAndConditions?: string;
-  quotationTerms?: string;
 }
 
 export interface UpdateSettingsBody {
@@ -297,7 +294,6 @@ export interface UpdateSettingsBody {
   doSuffix?: string;
   bankDetails?: string;
   termsAndConditions?: string;
-  quotationTerms?: string;
 }
 
 export interface DocStats {
@@ -428,7 +424,6 @@ export const InvoiceStatus = {
   sent: "sent",
   cancelled: "cancelled",
   void: "void",
-  partial: "partial",
   paid: "paid",
 } as const;
 
@@ -586,6 +581,77 @@ export interface UpdateDeliveryOrderBody {
   isPrivate?: boolean;
   status?: UpdateDeliveryOrderBodyStatus;
   items: DOItem[];
+}
+
+export interface SalesOrder {
+  id: number;
+  soNumber: string;
+  qtId?: number | null;
+  qtNumber?: string | null;
+  invId?: number | null;
+  invNumber?: string | null;
+  doId?: number | null;
+  doNumber?: string | null;
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  customerContactEmail?: string;
+  deliveryAddress?: string;
+  issueDate?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
+  items: DocItem[];
+  subtotal: string;
+  tax: string;
+  totalAmount: string;
+  status: string;
+  createdBy: number;
+  createdByUsername?: string;
+  createdAt: string;
+}
+
+export interface CreateSalesOrderBody {
+  qtId?: number;
+  qtNumber?: string;
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  customerContactEmail?: string;
+  deliveryAddress?: string;
+  issueDate?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
+  items: DocItem[];
+  tax?: number;
+  status?: string;
+}
+
+export interface UpdateSalesOrderBody {
+  qtId?: number;
+  qtNumber?: string;
+  customerName: string;
+  customerAddress?: string;
+  customerContact?: string;
+  customerContactEmail?: string;
+  deliveryAddress?: string;
+  issueDate?: string;
+  deliveryDate?: string;
+  paymentTerms?: string;
+  notes?: string;
+  currency?: string;
+  isPrivate?: boolean;
+  discountAmount?: number;
+  tax?: number;
+  status?: string;
+  items: DocItem[];
 }
 
 export type StockItemType = (typeof StockItemType)[keyof typeof StockItemType];

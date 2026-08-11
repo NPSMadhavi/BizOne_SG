@@ -6,6 +6,7 @@ import { useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateInvoice, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey, useGetQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { previewRunningNumber } from "@/lib/running-number";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
@@ -48,8 +49,8 @@ const itemSchema = z.object({
   discount: z.coerce.number().min(0).max(100).default(0),
   isFoc: z.boolean().default(false),
   isStockItem: z.boolean().default(false),
-  stockItemId: z.number().optional(),
-  warehouseId: z.number().optional(),
+  stockItemId: z.number().positive().optional(),
+  warehouseId: z.number().positive().optional(),
   warehouseName: z.string().optional(),
   selectedSerials: z.array(z.string()).default([]),
   selectedSerialIds: z.array(z.number()).default([]),
@@ -103,6 +104,7 @@ export default function InvoiceNew() {
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [createDeliveryOrder, setCreateDeliveryOrder] = useState(false);
 
   const allReservedIds = useRef<Set<number>>(new Set());
 
@@ -250,7 +252,19 @@ export default function InvoiceNew() {
         uom: it.uom || "",
         unitPrice: Number(it.unitPrice) || 0,
       }));
-    if (mappedItems.length > 0) form.setValue("items", mappedItems);
+    const current = form.getValues();
+    form.reset({
+      ...current,
+      customerName: data.customerName?.trim() || current.customerName || "",
+      customerAddress: data.customerAddress?.trim() || current.customerAddress || "",
+      customerContact: data.customerContact?.trim() || current.customerContact || "",
+      customerContactEmail: data.customerContactEmail?.trim() || current.customerContactEmail || "",
+      currency: data.currency?.trim() || current.currency || "SGD",
+      paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "30 Days Net",
+      notes: data.notes?.trim() || current.notes || "",
+      poRefNo: data.poRefNo?.trim() || current.poRefNo || "",
+      items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
+    });
   }
 
   // Aria prefill — populated by the AI agent via navigateTo
@@ -355,6 +369,7 @@ export default function InvoiceNew() {
   }
 
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (isSubmitting) return;
     setIsSubmitting(true);
     const filledItems = values.items.filter(i =>
       (i as any).type === "section"
@@ -370,21 +385,103 @@ export default function InvoiceNew() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section" as const, sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
       const disc = Number(i.discount) || 0;
+      const qty = Number(i.qty) || 0;
       const partNumber = (i.partNumber || "").replace(/<[^>]*>/g, "").trim();
-      return { ...i, partNumber, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      const stockItemId = Number((i as any).stockItemId);
+      const warehouseId = Number((i as any).warehouseId);
+      return {
+        ...i,
+        qty,
+        partNumber,
+        discount: disc,
+        isFoc: !!(i as any).isFoc,
+        isStockItem: !!(i as any).isStockItem || (Number.isFinite(stockItemId) && stockItemId > 0),
+        stockItemId: Number.isFinite(stockItemId) && stockItemId > 0 ? stockItemId : undefined,
+        warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
+        warehouseName: (i as any).warehouseName || undefined,
+        amount: (qty * i.unitPrice * (1 - disc / 100)).toFixed(2),
+      };
     });
-    createMutation.mutate({ data: { ...values, status: "draft", discountAmount: values.discountAmount, poRefNo: values.poRefNo || null, items: itemsWithAmount } as any }, {
-      onSuccess: (data) => {
-        invalidateDocumentList(queryClient, "invoices");
-        queryClient.invalidateQueries({ queryKey: ["stock-items"] });
-        queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
-        queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    for (const item of itemsWithAmount) {
+      if ((item as any).type === "section") continue;
+      const serials = Array.isArray((item as any).selectedSerials) ? (item as any).selectedSerials.filter((s: string) => String(s).trim()) : [];
+      if (serials.length > 0 && serials.length !== Number(item.qty)) {
+        toast({
+          title: "Serial count must match quantity",
+          description: `${item.partNumber || "Item"}: qty ${item.qty} but ${serials.length} serials selected.`,
+          variant: "destructive",
+        });
         setIsSubmitting(false);
+        return;
+      }
+      if ((item as any).stockItemId && !(item as any).warehouseId) {
+        toast({
+          title: "Warehouse required",
+          description: `${item.partNumber || "Item"}: pick the item again with the cube icon and select the warehouse to reduce.`,
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+    }
+    console.log("[TAX INVOICE SAVE]", {
+      mode: "create",
+      items: itemsWithAmount
+        .filter((i: any) => i.type !== "section" && i.stockItemId)
+        .map((i: any) => ({
+          warehouseId: i.warehouseId,
+          stockItemId: i.stockItemId,
+          quantity: i.qty,
+          partNumber: i.partNumber,
+        })),
+    });
+    const payload = {
+      ...values,
+      discountAmount: values.discountAmount,
+      poRefNo: values.poRefNo || null,
+      items: itemsWithAmount,
+      createDeliveryOrder,
+    };
+    // Tax invoice always confirms on save so entered stock qty is reduced once
+    // (Save Changes used to stay draft and never touch stock).
+    createMutation.mutate({ data: { ...payload, status: "confirmed" } as any }, {
+      onSuccess: async (data) => {
+        const saved: any = data;
+        await invalidateDocumentList(queryClient, "invoices");
+        await Promise.all([
+          invalidateInventoryQueries(queryClient),
+          invalidateDocumentList(queryClient, "delivery-orders"),
+        ]);
+        // The invoice now owns these reservations; unmount cleanup must not
+        // release serials that were successfully saved.
+        allReservedIds.current.clear();
+        setIsSubmitting(false);
+        const doNumber = (saved as any)?.deliveryOrderNumber ?? (data as any)?.deliveryOrderNumber;
+        if (createDeliveryOrder) {
+          toast(doNumber
+            ? { title: `Delivery Order ${doNumber} created.` }
+            : { title: "Delivery Order was not created.", description: "Please try again from the invoice.", variant: "destructive" });
+        }
         if (openPreview) {
-          setSavedDoc(data);
+          setSavedDoc(saved);
           setPreviewOpen(true);
         } else {
-          toast({ title: "Invoice saved." });
+          const apply = (saved as any)?.stockApply;
+          const reduced = Array.isArray(apply?.reducedThisSave) ? apply.reducedThisSave : [];
+          if (reduced.length > 0) {
+            const summary = reduced
+              .map((l: any) => `${l.warehouseName || `WH#${l.warehouseId}`}: −${l.quantity}`)
+              .join(", ");
+            toast({
+              title: "Invoice saved — stock reduced",
+              description: `${summary}. Open Warehouses or Stock Items to verify qty.`,
+            });
+          } else {
+            toast({
+              title: "Invoice saved",
+              description: "No warehouse stock was reduced (pick stock with the cube icon and warehouse).",
+            });
+          }
           setLocation("/invoices");
         }
       },
@@ -410,7 +507,7 @@ export default function InvoiceNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">New Invoice</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Invoice</h1>
             <p className="text-muted-foreground mt-1">Create a new customer invoice.</p>
           </div>
         </div>
@@ -548,6 +645,10 @@ export default function InvoiceNew() {
                   <FormItem><FormLabel>PO Reference No.</FormLabel>
                     <FormControl><PORefSelect value={field.value ?? ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
+                <div>
+                  <p className="text-sm font-medium mb-1.5">Sales Order</p>
+                  <p className="h-9 flex items-center px-3 rounded-md border bg-muted/40 text-sm font-mono text-muted-foreground">—</p>
+                </div>
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -685,7 +786,29 @@ export default function InvoiceNew() {
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
                                 <div className="flex items-center gap-1">
-                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background" placeholder="Optional" {...field} />
+                                  <Input
+                                    className="h-8 text-sm border-0 bg-transparent focus:bg-background"
+                                    placeholder="Optional"
+                                    value={field.value}
+                                    onChange={(e) => {
+                                      const next = e.target.value;
+                                      field.onChange(next);
+                                      // Manual part edits must not keep a stale cube-picked binding
+                                      // (that deducted the wrong stock item / warehouse).
+                                      const boundId = form.getValues(`items.${index}.stockItemId`);
+                                      if (boundId) {
+                                        form.setValue(`items.${index}.stockItemId`, undefined as any);
+                                        form.setValue(`items.${index}.warehouseId`, undefined as any);
+                                        form.setValue(`items.${index}.warehouseName`, "" as any);
+                                        form.setValue(`items.${index}.isStockItem`, false);
+                                        form.setValue(`items.${index}.selectedSerials`, []);
+                                        form.setValue(`items.${index}.selectedSerialIds`, []);
+                                      }
+                                    }}
+                                    onBlur={field.onBlur}
+                                    name={field.name}
+                                    ref={field.ref}
+                                  />
                                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                     <Package className="h-3.5 w-3.5" />
                                   </Button>
@@ -705,7 +828,17 @@ export default function InvoiceNew() {
                           </td>
                           <td className="px-2 py-2">
                             <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl>
+                                <Input
+                                  type="number"
+                                  inputMode="decimal"
+                                  min="0"
+                                  step="any"
+                                  className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background"
+                                  {...field}
+                                  onChange={(event) => field.onChange(event.target.value === "" ? "" : Number(event.target.value))}
+                                />
+                              </FormControl></FormItem>
                             )} />
                           </td>
                           <td className="px-2 py-2">
@@ -857,27 +990,38 @@ export default function InvoiceNew() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
-            <Button type="button" variant="outline" onClick={() => setLocation("/invoices")}>Cancel</Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => doSubmit(v, false))}
-            >
-              <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save as Draft"}
-            </Button>
-            <Button
-              type="button"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true))}
-            >
-              <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save & Preview"}
-            </Button>
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <Checkbox
+                  checked={createDeliveryOrder}
+                  onCheckedChange={(checked) => setCreateDeliveryOrder(checked === true)}
+                />
+                Converted into Delivery Order
+              </label>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setLocation("/invoices")}>Cancel</Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSubmitting}
+                className="gap-2"
+                onClick={form.handleSubmit(v => doSubmit(v, false))}
+              >
+                <Save className="h-4 w-4" />
+                {isSubmitting ? "Saving..." : "Save as Draft"}
+              </Button>
+              <Button
+                type="button"
+                disabled={isSubmitting}
+                className="gap-2"
+                onClick={form.handleSubmit(v => onSubmit(v, true))}
+              >
+                <Eye className="h-4 w-4" />
+                {isSubmitting ? "Saving..." : "Save & Preview"}
+              </Button>
+            </div>
           </div>
         </form>
       </Form>
@@ -897,6 +1041,8 @@ export default function InvoiceNew() {
             toReserve.forEach(id => allReservedIds.current.add(id));
             releaseSerials(toRelease);
             reserveSerials(toReserve);
+            // Pick S/N sets quantity from the chosen serials for this line only.
+            form.setValue(`items.${pickerIndex!}.qty`, serials.length);
             form.setValue(`items.${pickerIndex!}.selectedSerials`, serials);
             form.setValue(`items.${pickerIndex!}.selectedSerialIds`, serialIds);
             setPickerIndex(null);
@@ -909,6 +1055,7 @@ export default function InvoiceNew() {
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          if (!warehouseId) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
           const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
           toRelease.forEach(id => allReservedIds.current.delete(id));
@@ -923,24 +1070,18 @@ export default function InvoiceNew() {
           const desc = selectedSerials.length > 0
             ? `<p>${item.name}</p><p><strong>Serial Numbers:</strong></p>${serialHtml}`
             : `<p>${item.name}</p>`;
+          const importQty = Number(qty);
+          if (!Number.isFinite(importQty) || importQty <= 0) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
           form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
-          if (warehouseId) {
-            form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
-            form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
-          }
-          if (selectedSerials.length > 0) {
-            form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length);
-            form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
-            form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
-          } else if (qty && qty > 0) {
-            form.setValue(`items.${stockPickerIndex}.qty`, qty);
-            form.setValue(`items.${stockPickerIndex}.selectedSerials`, []);
-            form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, []);
-          }
+          form.setValue(`items.${stockPickerIndex}.qty`, importQty);
+          form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
+          form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+          form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
           setStockPickerIndex(null);
         }}
       />
@@ -988,7 +1129,10 @@ export default function InvoiceNew() {
       {savedDoc && (
         <PdfPreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/invoices`);
+          }}
           title={`Invoice ${savedDoc.invNumber}`}
           generatePdf={(opts) => generateInvoice_PDF(savedDoc, selectedCompany, undefined, opts)}
           pdfFilename={`${savedDoc.invNumber}.pdf`}

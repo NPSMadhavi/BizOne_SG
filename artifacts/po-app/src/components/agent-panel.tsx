@@ -275,8 +275,9 @@ async function transcribe(blob: Blob): Promise<string> {
     method: "POST", headers: { "Content-Type": "application/json" },
     credentials: "include", body: JSON.stringify({ audio: btoa(bin) }),
   });
-  if (!r.ok) throw new Error("Transcription failed");
-  return (await r.json()).text;
+  const data = await r.json().catch(() => ({} as { text?: string; error?: string }));
+  if (!r.ok) throw new Error(data.error || "Transcription failed");
+  return data.text || "";
 }
 
 function useVoice() {
@@ -543,6 +544,7 @@ export function AgentPanel() {
   const [thinking, setThinking] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [micError, setMicError] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [ambientMode, setAmbientMode] = useState(() => {
     try { return localStorage.getItem("veda_ambient") === "1"; } catch { return false; }
   });
@@ -807,11 +809,23 @@ export function AgentPanel() {
     if (transcribing) return;
     if (recording) {
       const blob = await stop();
-      if (blob.size < 1000) return;
+      if (blob.size < 1000) {
+        setVoiceError("Recording too short — hold and speak a bit longer.");
+        return;
+      }
       setTranscribing(true);
-      try { const t = await transcribe(blob); if (t.trim()) await send(t, true); }
-      catch {} finally { setTranscribing(false); }
+      setVoiceError(null);
+      try {
+        const t = await transcribe(blob);
+        if (t.trim()) await send(t, true);
+        else setVoiceError("Couldn't catch that — try again.");
+      } catch (e: any) {
+        setVoiceError(e?.message || "Voice transcription failed. Check API key and restart API server.");
+      } finally {
+        setTranscribing(false);
+      }
     } else {
+      setVoiceError(null);
       const ok = await start();
       if (!ok) setMicError(true);
     }
@@ -1040,6 +1054,10 @@ export function AgentPanel() {
                             </span>
                           )}
                         </button>
+
+                        {voiceError && (
+                          <p className="text-xs text-red-600 text-center max-w-sm px-2">{voiceError}</p>
+                        )}
 
                         <div className="flex items-center gap-3 w-full">
                           <div className="flex-1 h-px bg-border" />

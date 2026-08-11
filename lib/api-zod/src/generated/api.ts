@@ -26,7 +26,7 @@ export const LoginResponse = zod.object({
   user: zod.object({
     id: zod.number(),
     username: zod.string(),
-    role: zod.enum(["admin", "user", "external", "accountant"]),
+    role: zod.enum(["admin", "user", "external"]),
     createdAt: zod.string(),
     companies: zod.array(
       zod
@@ -59,7 +59,7 @@ export const LogoutResponse = zod.object({
 export const GetMeResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external", "accountant"]),
+  role: zod.enum(["admin", "user", "external"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -109,7 +109,7 @@ export const ListCompaniesResponse = zod.array(ListCompaniesResponseItem);
 export const ListUsersResponseItem = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external", "accountant"]),
+  role: zod.enum(["admin", "user", "external"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -135,7 +135,7 @@ export const ListUsersResponse = zod.array(ListUsersResponseItem);
 export const CreateUserBody = zod.object({
   username: zod.string(),
   password: zod.string(),
-  role: zod.enum(["admin", "user", "external", "accountant"]),
+  role: zod.enum(["admin", "user", "external"]),
   companyAccess: zod
     .array(
       zod
@@ -158,7 +158,7 @@ export const UpdateUserParams = zod.object({
 export const UpdateUserBody = zod.object({
   username: zod.string().optional(),
   password: zod.string().optional(),
-  role: zod.enum(["admin", "user", "external", "accountant"]).optional(),
+  role: zod.enum(["admin", "user", "external"]).optional(),
   companyAccess: zod
     .array(
       zod
@@ -174,7 +174,7 @@ export const UpdateUserBody = zod.object({
 export const UpdateUserResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
-  role: zod.enum(["admin", "user", "external", "accountant"]),
+  role: zod.enum(["admin", "user", "external"]),
   createdAt: zod.string(),
   companies: zod.array(
     zod
@@ -236,6 +236,8 @@ export const ListPurchaseOrdersResponseItem = zod.object({
       unitPrice: zod.number(),
       amount: zod.number(),
       isStockItem: zod.boolean().optional(),
+      stockItemId: zod.number().optional(),
+      warehouseId: zod.number().optional(),
       itemImage: zod.string().optional(),
     }),
   ),
@@ -280,6 +282,8 @@ export const CreatePurchaseOrderBody = zod.object({
       unitPrice: zod.number(),
       amount: zod.number(),
       isStockItem: zod.boolean().optional(),
+      stockItemId: zod.number().optional(),
+      warehouseId: zod.number().optional(),
       itemImage: zod.string().optional(),
     }),
   ),
@@ -323,6 +327,8 @@ export const GetPurchaseOrderResponse = zod.object({
       unitPrice: zod.number(),
       amount: zod.number(),
       isStockItem: zod.boolean().optional(),
+      stockItemId: zod.number().optional(),
+      warehouseId: zod.number().optional(),
       itemImage: zod.string().optional(),
     }),
   ),
@@ -369,6 +375,8 @@ export const UpdatePurchaseOrderBody = zod.object({
       unitPrice: zod.number(),
       amount: zod.number(),
       isStockItem: zod.boolean().optional(),
+      stockItemId: zod.number().optional(),
+      warehouseId: zod.number().optional(),
       itemImage: zod.string().optional(),
     }),
   ),
@@ -404,6 +412,8 @@ export const UpdatePurchaseOrderResponse = zod.object({
       unitPrice: zod.number(),
       amount: zod.number(),
       isStockItem: zod.boolean().optional(),
+      stockItemId: zod.number().optional(),
+      warehouseId: zod.number().optional(),
       itemImage: zod.string().optional(),
     }),
   ),
@@ -735,6 +745,231 @@ export const DeleteQuotationParams = zod.object({
 });
 
 export const DeleteQuotationResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List sales orders
+ */
+export const ListSalesOrdersResponseItem = zod.object({
+  id: zod.number(),
+  soNumber: zod.string(),
+  qtId: zod.number().nullish(),
+  qtNumber: zod.string().nullish(),
+  invId: zod.number().nullish(),
+  invNumber: zod.string().nullish(),
+  doId: zod.number().nullish(),
+  doNumber: zod.string().nullish(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  customerContactEmail: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
+  items: zod.array(
+    zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      uom: zod.string().optional(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.string(),
+  createdBy: zod.number(),
+  createdByUsername: zod.string().optional(),
+  createdAt: zod.string(),
+});
+export const ListSalesOrdersResponse = zod.array(ListSalesOrdersResponseItem);
+
+/**
+ * @summary Create a sales order
+ */
+export const CreateSalesOrderBody = zod.object({
+  qtId: zod.number().optional(),
+  qtNumber: zod.string().optional(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  customerContactEmail: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
+  items: zod.array(
+    zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      uom: zod.string().optional(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  tax: zod.number().optional(),
+  status: zod.string().optional(),
+});
+
+/**
+ * @summary Get a sales order
+ */
+export const GetSalesOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSalesOrderResponse = zod.object({
+  id: zod.number(),
+  soNumber: zod.string(),
+  qtId: zod.number().nullish(),
+  qtNumber: zod.string().nullish(),
+  invId: zod.number().nullish(),
+  invNumber: zod.string().nullish(),
+  doId: zod.number().nullish(),
+  doNumber: zod.string().nullish(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  customerContactEmail: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
+  items: zod.array(
+    zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      uom: zod.string().optional(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.string(),
+  createdBy: zod.number(),
+  createdByUsername: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Update a sales order
+ */
+export const UpdateSalesOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateSalesOrderBody = zod.object({
+  qtId: zod.number().optional(),
+  qtNumber: zod.string().optional(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  customerContactEmail: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
+  tax: zod.number().optional(),
+  status: zod.string().optional(),
+  items: zod.array(
+    zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      uom: zod.string().optional(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+});
+
+export const UpdateSalesOrderResponse = zod.object({
+  id: zod.number(),
+  soNumber: zod.string(),
+  qtId: zod.number().nullish(),
+  qtNumber: zod.string().nullish(),
+  invId: zod.number().nullish(),
+  invNumber: zod.string().nullish(),
+  doId: zod.number().nullish(),
+  doNumber: zod.string().nullish(),
+  customerName: zod.string(),
+  customerAddress: zod.string().optional(),
+  customerContact: zod.string().optional(),
+  customerContactEmail: zod.string().optional(),
+  deliveryAddress: zod.string().optional(),
+  issueDate: zod.string().optional(),
+  deliveryDate: zod.string().optional(),
+  paymentTerms: zod.string().optional(),
+  notes: zod.string().optional(),
+  currency: zod.string().optional(),
+  isPrivate: zod.boolean().optional(),
+  discountAmount: zod.number().optional(),
+  items: zod.array(
+    zod.object({
+      type: zod.enum(["item", "section"]).optional(),
+      sectionLabel: zod.string().optional(),
+      sectionAlign: zod.enum(["left", "center"]).optional(),
+      itemPartNumber: zod.string().optional(),
+      description: zod.string(),
+      qty: zod.string(),
+      uom: zod.string().optional(),
+      unitPrice: zod.string().optional(),
+      amount: zod.string().optional(),
+    }),
+  ),
+  subtotal: zod.string(),
+  tax: zod.string(),
+  totalAmount: zod.string(),
+  status: zod.string(),
+  createdBy: zod.number(),
+  createdByUsername: zod.string().optional(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Delete a sales order
+ */
+export const DeleteSalesOrderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteSalesOrderResponse = zod.object({
   success: zod.boolean(),
 });
 

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, deliveryOrdersTable, usersTable, customersTable, stockSerialsTable, stockItemsTable } from "@workspace/db";
-import { eq, desc, inArray, ilike, and, sql } from "drizzle-orm";
+import { db, deliveryOrdersTable, usersTable, customersTable, stockSerialsTable, stockItemsTable, salesOrdersTable } from "@workspace/db";
+import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 
@@ -160,6 +160,10 @@ router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
   if (isNewlyConfirmed) {
     const companyId = updated.companyId;
     const doItems = (updated.items as any[]) || [];
+    // Stock for an invoice-linked DO was already issued from the warehouse when
+    // the invoice was saved. Standalone DOs must NOT touch stock_items.stock_qty
+    // directly — that drifted from warehouse_stock and broke Stock Transfer
+    // availability. Warehouse qty changes only via applyMovement (invoice / GRN / WMS).
     for (const item of doItems) {
       const serialLines = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
       if (serialLines.length === 0) continue;
@@ -179,9 +183,6 @@ router.put("/delivery-orders/:id", async (req, res): Promise<void> => {
             eq(stockSerialsTable.serialNumber, sn)
           ));
       }
-      await db.update(stockItemsTable)
-        .set({ stockQty: sql`GREATEST(0, ${stockItemsTable.stockQty} - ${serialLines.length})` })
-        .where(eq(stockItemsTable.id, stockItem.id));
     }
   }
 
@@ -220,6 +221,14 @@ router.delete("/delivery-orders/:id", async (req, res): Promise<void> => {
   if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete delivery orders" }); return; }
   const id = parseInt(req.params.id);
   const [deleted] = await db.delete(deliveryOrdersTable).where(eq(deliveryOrdersTable.id, id)).returning();
+  try {
+    await db.update(salesOrdersTable).set({
+      doId: null,
+      doNumber: null,
+    } as any).where(eq(salesOrdersTable.doId, id));
+  } catch (linkErr: any) {
+    req.log?.warn?.({ err: linkErr }, "Failed to clear sales_order do link after DO delete");
+  }
   logAudit({ req, action: "delete", entityType: "delivery_order", entityId: id, entityLabel: deleted?.doNumber });
   res.json({ success: true });
 });

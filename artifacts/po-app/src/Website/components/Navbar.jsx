@@ -19,7 +19,7 @@ export default function Navbar() {
       <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <BizOneLogo className="h-8 w-auto" />
+          <BizOneLogo className="h-12 w-auto" />
         </Link>
 
         {/* Desktop Navigation */}

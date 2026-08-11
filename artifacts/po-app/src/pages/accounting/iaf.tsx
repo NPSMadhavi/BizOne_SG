@@ -93,7 +93,7 @@ export default function IafPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">IRAS Audit File (IAF)</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">IRAS Audit File (IAF)</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             Pipe-delimited text file for IRAS GST audit — SA (supply) · PA (purchase) · GA (general ledger)
           </p>

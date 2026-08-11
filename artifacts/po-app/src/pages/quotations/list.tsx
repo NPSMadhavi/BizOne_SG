@@ -96,6 +96,7 @@ export default function QuotationList() {
       case "sent":      return <Badge className="bg-violet-600 hover:bg-violet-700">Sent</Badge>;
       case "draft":     return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
+      case "converted_to_so": return <Badge className="bg-sky-600 hover:bg-sky-700">Converted to SO</Badge>;
       default:          return <Badge variant="outline">{status}</Badge>;
     }
   };
@@ -104,11 +105,11 @@ export default function QuotationList() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Quotations</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Quotations</h1>
           <p className="text-muted-foreground mt-1">Manage and track all quotations.</p>
         </div>
         <Link href="/quotations/new">
-          <Button className="gap-2"><Plus className="h-4 w-4" />New Quotation</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />Create Quotation</Button>
         </Link>
       </div>
 
@@ -185,8 +186,8 @@ export default function QuotationList() {
               ) : (
                 filtered.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/quotations/${doc.id}`)}>
-                    <td className="px-6 py-4 font-medium text-primary">{doc.qtNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
+                    <td className="px-6 py-4 font-medium">{doc.qtNumber}</td>
+                    <td className="px-6 py-4 font-medium">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
                     <td className="px-6 py-4 text-right font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:"SGD"}).format(Number(doc.totalAmount))}</td>
                     <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>

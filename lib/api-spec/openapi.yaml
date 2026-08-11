@@ -20,6 +20,8 @@ tags:
     description: Purchase order operations
   - name: quotations
     description: Quotation operations
+  - name: sales-orders
+    description: Sales order operations
   - name: invoices
     description: Invoice operations
   - name: delivery-orders
@@ -443,6 +445,97 @@ paths:
       operationId: deleteQuotation
       tags: [quotations]
       summary: Delete a quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /sales-orders:
+    get:
+      operationId: listSalesOrders
+      tags: [sales-orders]
+      summary: List sales orders
+      responses:
+        "200":
+          description: List of sales orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SalesOrder"
+    post:
+      operationId: createSalesOrder
+      tags: [sales-orders]
+      summary: Create a sales order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSalesOrderBody"
+      responses:
+        "201":
+          description: Sales order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+
+  /sales-orders/{id}:
+    get:
+      operationId: getSalesOrder
+      tags: [sales-orders]
+      summary: Get a sales order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sales order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+    put:
+      operationId: updateSalesOrder
+      tags: [sales-orders]
+      summary: Update a sales order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSalesOrderBody"
+      responses:
+        "200":
+          description: Sales order updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+    delete:
+      operationId: deleteSalesOrder
+      tags: [sales-orders]
+      summary: Delete a sales order
       parameters:
         - in: path
           name: id
@@ -978,6 +1071,10 @@ components:
           type: number
         isStockItem:
           type: boolean
+        stockItemId:
+          type: integer
+        warehouseId:
+          type: integer
         itemImage:
           type: string
       required: [partNumber, description, qty, unitPrice, amount]
@@ -1631,6 +1728,157 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DOItem"
+      required: [customerName, items]
+
+    SalesOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        soNumber:
+          type: string
+        qtId:
+          type: integer
+          nullable: true
+        qtNumber:
+          type: string
+          nullable: true
+        invId:
+          type: integer
+          nullable: true
+        invNumber:
+          type: string
+          nullable: true
+        doId:
+          type: integer
+          nullable: true
+        doNumber:
+          type: string
+          nullable: true
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        customerContactEmail:
+          type: string
+        deliveryAddress:
+          type: string
+        issueDate:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        subtotal:
+          type: string
+        tax:
+          type: string
+        totalAmount:
+          type: string
+        status:
+          type: string
+        createdBy:
+          type: integer
+        createdByUsername:
+          type: string
+        createdAt:
+          type: string
+      required: [id, soNumber, customerName, items, subtotal, tax, totalAmount, status, createdBy, createdAt]
+
+    CreateSalesOrderBody:
+      type: object
+      properties:
+        qtId:
+          type: integer
+        qtNumber:
+          type: string
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        customerContactEmail:
+          type: string
+        deliveryAddress:
+          type: string
+        issueDate:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        tax:
+          type: number
+        status:
+          type: string
+      required: [customerName, items]
+
+    UpdateSalesOrderBody:
+      type: object
+      properties:
+        qtId:
+          type: integer
+        qtNumber:
+          type: string
+        customerName:
+          type: string
+        customerAddress:
+          type: string
+        customerContact:
+          type: string
+        customerContactEmail:
+          type: string
+        deliveryAddress:
+          type: string
+        issueDate:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
+        tax:
+          type: number
+        status:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
       required: [customerName, items]
 
     StockItem:

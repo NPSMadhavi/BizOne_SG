@@ -3,7 +3,9 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useCreateQuotation, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCreateQuotation, useGetSettings, getGetSettingsQueryKey, getListQuotationsQueryKey } from "@workspace/api-client-react";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,6 +30,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { ItemImageField } from "@/components/item-image-field";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
+import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 
 const itemSchema = z.object({
@@ -73,6 +76,7 @@ const schema = z.object({
 export default function QuotationNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { selectedCompany } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -84,6 +88,7 @@ export default function QuotationNew() {
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importQtOpen, setImportQtOpen] = useState(false);
+  const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
@@ -195,6 +200,38 @@ export default function QuotationNew() {
     await doSubmit(values, openPreview);
   }
 
+  function handlePoExtracted(data: ExtractedPoData) {
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+    const mappedItems = data.items
+      .filter((it) => it.description?.trim())
+      .map((it) => ({
+        ...blankItem,
+        partNumber: it.partNumber || "",
+        description: it.description,
+        qty: Number(it.qty) || 1,
+        uom: it.uom || "",
+        unitPrice: Number(it.unitPrice) || 0,
+      }));
+    const current = form.getValues();
+    const poRef = data.poRefNo?.trim();
+    const notesFromPo = data.notes?.trim() || "";
+    const notes =
+      poRef && !notesFromPo.toLowerCase().includes(poRef.toLowerCase())
+        ? [notesFromPo, `Customer PO Ref: ${poRef}`].filter(Boolean).join("\n")
+        : notesFromPo || current.notes || "";
+    form.reset({
+      ...current,
+      customerName: data.customerName?.trim() || current.customerName || "",
+      customerAddress: data.customerAddress?.trim() || current.customerAddress || "",
+      customerContact: data.customerContact?.trim() || current.customerContact || "",
+      customerContactEmail: data.customerContactEmail?.trim() || current.customerContactEmail || "",
+      currency: data.currency?.trim() || current.currency || "SGD",
+      paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "30 Days Net",
+      notes: notes || current.notes || "",
+      items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
+    });
+  }
+
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => {
@@ -213,7 +250,12 @@ export default function QuotationNew() {
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
+        // Show the new quotation in the list immediately (no manual refresh).
+        queryClient.setQueryData(getListQuotationsQueryKey(), (old: any) =>
+          Array.isArray(old) ? [data, ...old.filter((d: any) => d.id !== (data as any)?.id)] : [data],
+        );
+        await invalidateDocumentList(queryClient, "quotations");
         setIsSubmitting(false);
         if (openPreview) {
           setSavedDoc(data);
@@ -244,16 +286,27 @@ export default function QuotationNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">New Quotation</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Quotation</h1>
             <p className="text-muted-foreground mt-1">Create a new customer quotation.</p>
           </div>
         </div>
-        {nextQtNumber && (
-          <div className="text-right shrink-0">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Quotation Number</p>
-            <p className="text-lg font-semibold font-mono">{nextQtNumber}</p>
-          </div>
-        )}
+        <div className="flex items-center gap-3 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
+            onClick={() => setPoUploadOpen(true)}
+          >
+            <Upload className="h-4 w-4" />
+            Import Customer PO
+          </Button>
+          {nextQtNumber && (
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Quotation Number</p>
+              <p className="text-lg font-semibold font-mono">{nextQtNumber}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <Form {...form}>
@@ -644,7 +697,7 @@ export default function QuotationNew() {
               onClick={form.handleSubmit(v => onSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save"}
+              {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
           </div>
         </form>
@@ -662,6 +715,12 @@ export default function QuotationNew() {
             for (const item of newItems) append(item);
           }
         }}
+      />
+
+      <CustomerPoUploadDialog
+        open={poUploadOpen}
+        onOpenChange={setPoUploadOpen}
+        onApply={handlePoExtracted}
       />
 
       <StockItemPickerDialog
@@ -710,7 +769,10 @@ export default function QuotationNew() {
       {savedDoc && (
         <PdfPreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/quotations`);
+          }}
           title={`Quotation ${savedDoc.qtNumber}`}
           generatePdf={(opts) => generateQuotation_PDF(savedDoc, selectedCompany, settings as any, opts)}
           pdfFilename={`${savedDoc.qtNumber}.pdf`}

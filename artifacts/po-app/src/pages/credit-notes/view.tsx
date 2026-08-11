@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateCreditNote_PDF } from "@/lib/pdf";
-import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
 interface CreditNote {
@@ -85,16 +84,20 @@ export default function CreditNoteView() {
     <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
-        <div>
-          <Link href="/credit-notes" className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 mb-2">
-            <ArrowLeft className="h-3 w-3" />Back to Credit Notes
-          </Link>
-          <div className="flex items-center gap-3">
-            <FileMinus className="h-6 w-6 text-gray-700" />
-            <h1 className="text-2xl font-bold text-gray-900">{doc.cnNumber}</h1>
-            {doc.isPrivate && <Lock className="h-4 w-4 text-gray-400" />}
-            {statusBadge(doc.status)}
-          </div>
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation("/credit-notes")}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <FileMinus className="h-6 w-6 text-gray-700" />
+          <h1 className="text-2xl font-bold text-[#2563EB]">{doc.cnNumber}</h1>
+          {doc.isPrivate && <Lock className="h-4 w-4 text-gray-400" />}
+          {statusBadge(doc.status)}
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" className="gap-2" onClick={() => setShowPreview(true)}>

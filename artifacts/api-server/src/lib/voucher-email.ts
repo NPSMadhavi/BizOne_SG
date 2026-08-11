@@ -1,8 +1,9 @@
 import nodemailer from "nodemailer";
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { resolveSmtpSettings } from "./smtp.js";
 
-function createTransporter(s: any) {
+function createTransporter(s: { smtpHost: string; smtpPort: string; smtpUser: string; smtpPass: string }) {
   return nodemailer.createTransport({
     host: s.smtpHost,
     port: parseInt(s.smtpPort || "587"),
@@ -41,8 +42,9 @@ export async function sendVoucherEmail(params: VoucherEmailParams): Promise<void
   if (!params.toEmail) return; // No email on user — skip silently
 
   try {
-    const [settings] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, params.companyId)).limit(1);
-    if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) return; // SMTP not configured
+    const [row] = await db.select().from(settingsTable).where(eq(settingsTable.companyId, params.companyId)).limit(1);
+    const settings = resolveSmtpSettings(row);
+    if (!settings) return; // SMTP not configured
 
     const transporter = createTransporter(settings);
     await transporter.sendMail({

@@ -6,9 +6,12 @@ import { useLocation, useParams } from "wouter";
 import {
   useGetPurchaseOrder,
   getGetPurchaseOrderQueryKey,
+  getListPurchaseOrdersQueryKey,
   useUpdatePurchaseOrder,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -27,8 +30,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,8 +57,8 @@ const itemSchema = z.object({
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
-  stockItemId: z.number().optional(),
-  warehouseId: z.number().optional(),
+  stockItemId: z.number().nullish(),
+  warehouseId: z.number().nullish(),
   warehouseName: z.string().optional(),
   itemImage: z.string().default(""),
 });
@@ -103,6 +107,7 @@ export default function PurchaseOrderEdit() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [poUploadOpen, setPoUploadOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
     query: {
@@ -157,17 +162,20 @@ export default function PurchaseOrderEdit() {
         isPrivate: (po as any).isPrivate ?? false,
         customerId: (po as any).customerId ?? null,
         customerPoRef: (po as any).customerPoRef ?? "",
-        status: (po.status as "draft" | "confirmed" | "cancelled") ?? "confirmed",
+        status: po.status === "draft" || po.status === "cancelled" ? po.status : "confirmed",
         tax: po.subtotal && Number(po.subtotal) > 0 ? Math.round((Number(po.tax) / Number(po.subtotal)) * 1000) / 10 : 9,
         items: po.items.map((item: any) => ({
+          type: item.type === "section" ? "section" : "item",
+          sectionLabel: item.sectionLabel ?? "",
+          sectionAlign: item.sectionAlign === "center" ? "center" : "left",
           partNumber: item.partNumber ?? "",
           description: item.description ?? "",
-          qty: item.qty ?? 1,
+          qty: Number(item.qty) || 1,
           uom: item.uom ?? "",
-          unitPrice: item.unitPrice ?? 0,
-          isStockItem: item.isStockItem ?? false,
-          stockItemId: item.stockItemId,
-          warehouseId: item.warehouseId,
+          unitPrice: Number(item.unitPrice) || 0,
+          isStockItem: item.isStockItem === true || Number(item.stockItemId) > 0,
+          stockItemId: Number(item.stockItemId) > 0 ? Number(item.stockItemId) : undefined,
+          warehouseId: Number(item.warehouseId) > 0 ? Number(item.warehouseId) : undefined,
           warehouseName: item.warehouseName ?? "",
           itemImage: (item as any).itemImage ?? "",
         })),
@@ -244,13 +252,25 @@ export default function PurchaseOrderEdit() {
     const itemsWithAmount = filledItems.map((item) => ({
       ...item,
       amount: (item as any).type === "section" ? 0 : item.qty * item.unitPrice,
+      isStockItem: item.isStockItem === true || Number((item as any).stockItemId) > 0,
+      stockItemId: Number((item as any).stockItemId) > 0 ? Number((item as any).stockItemId) : undefined,
+      warehouseId: Number((item as any).warehouseId) > 0 ? Number((item as any).warehouseId) : undefined,
+      warehouseName: (item as any).warehouseName || undefined,
     }));
 
     updateMutation.mutate(
       { id, data: { ...values, status: "draft", items: itemsWithAmount, customerId: values.customerId ?? undefined } },
       {
-        onSuccess: (data) => {
-          queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
+        onSuccess: async (data) => {
+          queryClient.setQueryData(getListPurchaseOrdersQueryKey(), (old: any) =>
+            Array.isArray(old)
+              ? old.map((d: any) => (d.id === (data as any)?.id ? data : d))
+              : old,
+          );
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(id) }),
+            invalidateDocumentList(queryClient, "purchase-orders"),
+          ]);
           toast({ title: "Draft saved." });
         },
         onError: (error: any) => {
@@ -267,12 +287,40 @@ export default function PurchaseOrderEdit() {
   async function doSaveConfirmed(values: z.infer<typeof poSchema>) {
     const filledItems = values.items.filter(i => (i as any).type === "section" ? ((i as any).sectionLabel || "").trim() !== "" : (i.partNumber.trim() !== "" || i.description.trim() !== ""));
     if (!filledItems.length) return;
-    const itemsWithAmount = filledItems.map(i => ({ ...i, amount: (i as any).type === "section" ? 0 : i.qty * i.unitPrice }));
+    for (const item of filledItems) {
+      if ((item as any).type === "section") continue;
+      const hasStock = item.isStockItem === true || Number((item as any).stockItemId) > 0;
+      if (hasStock && !(Number((item as any).warehouseId) > 0)) {
+        toast({
+          title: "Warehouse required",
+          description: `Select a warehouse for "${item.partNumber || "stock item"}" using the cube icon before saving.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    const itemsWithAmount = filledItems.map((i) => ({
+      ...i,
+      amount: (i as any).type === "section" ? 0 : i.qty * i.unitPrice,
+      isStockItem: i.isStockItem === true || Number((i as any).stockItemId) > 0,
+      stockItemId: Number((i as any).stockItemId) > 0 ? Number((i as any).stockItemId) : undefined,
+      warehouseId: Number((i as any).warehouseId) > 0 ? Number((i as any).warehouseId) : undefined,
+      warehouseName: (i as any).warehouseName || undefined,
+    }));
     updateMutation.mutate(
       { id, data: { ...values, status: "confirmed", items: itemsWithAmount, customerId: values.customerId ?? undefined } },
       {
-        onSuccess: async () => {
-          await queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) });
+        onSuccess: async (data) => {
+          queryClient.setQueryData(getListPurchaseOrdersQueryKey(), (old: any) =>
+            Array.isArray(old)
+              ? old.map((d: any) => (d.id === (data as any)?.id ? data : d))
+              : old,
+          );
+          await Promise.all([
+            queryClient.refetchQueries({ queryKey: getGetPurchaseOrderQueryKey(id) }),
+            invalidateDocumentList(queryClient, "purchase-orders"),
+            invalidateInventoryQueries(queryClient),
+          ]);
           setPreviewOpen(true);
         },
         onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -292,16 +340,54 @@ export default function PurchaseOrderEdit() {
 
   if (!po) return <div>Purchase order not found.</div>;
 
+  function handlePoExtracted(data: ExtractedPoData) {
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+    const mappedItems = data.items
+      .filter((it) => it.description?.trim())
+      .map((it) => ({
+        ...blankItem,
+        partNumber: it.partNumber || "",
+        description: it.description,
+        qty: Number(it.qty) || 1,
+        uom: it.uom || "",
+        unitPrice: Number(it.unitPrice) || 0,
+      }));
+    const current = form.getValues();
+    form.reset({
+      ...current,
+      vendorName: data.customerName?.trim() || current.vendorName || "",
+      vendorAddress: data.customerAddress?.trim() || current.vendorAddress || "",
+      vendorContact: data.customerContact?.trim() || current.vendorContact || "",
+      vendorContactEmail: data.customerContactEmail?.trim() || current.vendorContactEmail || "",
+      currency: data.currency?.trim() || current.currency || "SGD",
+      paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "",
+      quoteRefNo: data.poRefNo?.trim() || current.quoteRefNo || "",
+      notes: data.notes?.trim() || current.notes || "",
+      items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
+    });
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(`/purchase-orders/${id}`)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edit {po.poNumber}</h1>
-          <p className="text-muted-foreground mt-1">Update the purchase order details.</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => setLocation(`/purchase-orders/${id}`)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit {po.poNumber}</h1>
+            <p className="text-muted-foreground mt-1">Update the purchase order details.</p>
+          </div>
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 shrink-0"
+          onClick={() => setPoUploadOpen(true)}
+        >
+          <Upload className="h-4 w-4" />
+          Import Customer PO
+        </Button>
       </div>
 
       <Form {...form}>
@@ -811,7 +897,7 @@ export default function PurchaseOrderEdit() {
               })}
             >
               <Eye className="h-4 w-4" />
-              Save
+              Save & Preview
             </Button>
           </div>
         </form>
@@ -846,16 +932,22 @@ export default function PurchaseOrderEdit() {
         mode="receive"
         onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          if (!warehouseId) {
+            toast({
+              title: "Warehouse required",
+              description: "Select a warehouse before adding the stock item.",
+              variant: "destructive",
+            });
+            return;
+          }
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
           form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
-          if (warehouseId) {
-            form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
-            form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
-          }
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+          form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}
@@ -873,11 +965,19 @@ export default function PurchaseOrderEdit() {
           }
         }}
       />
+      <CustomerPoUploadDialog
+        open={poUploadOpen}
+        onOpenChange={setPoUploadOpen}
+        onApply={handlePoExtracted}
+      />
 
       {po && (
         <PdfPreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/purchase-orders`);
+          }}
           title={`Purchase Order ${po.poNumber}`}
           generatePdf={(opts) => generatePO_PDF(po, selectedCompany, opts)}
           pdfFilename={`${po.poNumber}.pdf`}

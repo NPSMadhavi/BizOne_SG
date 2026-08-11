@@ -17,6 +17,8 @@ export const deliveryOrdersTable = pgTable("delivery_orders", {
   emailSentTo: text("email_sent_to"),
   invId: integer("inv_id"),
   invNumber: text("inv_number"),
+  soId: integer("so_id"),
+  soNumber: text("so_number"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

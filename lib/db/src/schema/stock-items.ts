@@ -14,6 +14,7 @@ export const stockItemsTable = pgTable("stock_items", {
   minStockLevel: decimal("min_stock_level", { precision: 15, scale: 3 }).default("0"),
   reorderLevel: decimal("reorder_level", { precision: 15, scale: 3 }).default("0"),
   maxStockLevel: decimal("max_stock_level", { precision: 15, scale: 3 }).default("0"),
+  batchNo: text("batch_no"),
   isActive: boolean("is_active").default(true).notNull(),
   createdBy: integer("created_by"),
   updatedBy: integer("updated_by"),

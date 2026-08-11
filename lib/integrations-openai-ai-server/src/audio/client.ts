@@ -6,24 +6,53 @@ import { randomUUID } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_BASE_URL must be set. Did you forget to provision the OpenAI AI integration?",
+function resolveApiKey() {
+  return (
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    ""
   );
 }
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_API_KEY must be set. Did you forget to provision the OpenAI AI integration?",
+function resolveBaseUrl() {
+  return (
+    process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.openai.com/v1"
   );
 }
 
-export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+let _client: OpenAI | null = null;
+let _boundKey = "";
+let _boundBase = "";
+
+function getClient(): OpenAI {
+  const apiKey = resolveApiKey();
+  const baseURL = resolveBaseUrl();
+  if (!apiKey) {
+    throw new Error(
+      "AI_INTEGRATIONS_OPENAI_API_KEY (or OPENAI_API_KEY) must be set. Did you forget to provision the OpenAI AI integration?",
+    );
+  }
+  if (!_client || _boundKey !== apiKey || _boundBase !== baseURL) {
+    _client = new OpenAI({ apiKey, baseURL });
+    _boundKey = apiKey;
+    _boundBase = baseURL;
+  }
+  return _client;
+}
+
+/** Lazy OpenAI client — reads env at call time so .env loaded after process start still works. */
+export const openai = new Proxy({} as OpenAI, {
+  get(_target, prop, receiver) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
 });
 
 export type AudioFormat = "wav" | "mp3" | "webm" | "mp4" | "ogg" | "unknown";
+
+/** Formats OpenAI Whisper / gpt-4o-mini-transcribe accept without conversion. */
+export type TranscriptionFormat = "wav" | "mp3" | "webm" | "mp4" | "ogg" | "m4a";
 
 /**
  * Detect audio format from buffer magic bytes.
@@ -85,7 +114,13 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
         if (code === 0) resolve();
         else reject(new Error(`ffmpeg exited with code ${code}`));
       });
-      ffmpeg.on("error", reject);
+      ffmpeg.on("error", (err) => {
+        reject(
+          new Error(
+            `ffmpeg is not available (${err.message}). Install ffmpeg or send wav/mp3/webm audio.`,
+          ),
+        );
+      });
     });
 
     return await readFile(outputPath);
@@ -96,16 +131,26 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
 }
 
 /**
- * Auto-detect and convert audio to OpenAI-compatible format.
+ * Prefer formats OpenAI accepts natively (no ffmpeg). Chrome MediaRecorder → webm.
+ * Only convert when format is unknown / unsupported.
  */
 export async function ensureCompatibleFormat(
   audioBuffer: Buffer
-): Promise<{ buffer: Buffer; format: "wav" | "mp3" }> {
+): Promise<{ buffer: Buffer; format: TranscriptionFormat }> {
   const detected = detectAudioFormat(audioBuffer);
   if (detected === "wav") return { buffer: audioBuffer, format: "wav" };
   if (detected === "mp3") return { buffer: audioBuffer, format: "mp3" };
-  const wavBuffer = await convertToWav(audioBuffer);
-  return { buffer: wavBuffer, format: "wav" };
+  if (detected === "webm") return { buffer: audioBuffer, format: "webm" };
+  if (detected === "ogg") return { buffer: audioBuffer, format: "ogg" };
+  if (detected === "mp4") return { buffer: audioBuffer, format: "mp4" };
+
+  // Unknown container — try ffmpeg if present, else send as webm (common browser case).
+  try {
+    const wavBuffer = await convertToWav(audioBuffer);
+    return { buffer: wavBuffer, format: "wav" };
+  } catch {
+    return { buffer: audioBuffer, format: "webm" };
+  }
 }
 
 /** Voice Chat: audio-in, audio-out using gpt-audio. */
@@ -219,7 +264,7 @@ export async function textToSpeechStream(
 /** Speech-to-Text using gpt-4o-mini-transcribe. */
 export async function speechToText(
   audioBuffer: Buffer,
-  format: "wav" | "mp3" | "webm" = "wav"
+  format: TranscriptionFormat = "wav"
 ): Promise<string> {
   const file = await toFile(audioBuffer, `audio.${format}`);
   const response = await openai.audio.transcriptions.create({
@@ -232,7 +277,7 @@ export async function speechToText(
 /** Streaming Speech-to-Text. */
 export async function speechToTextStream(
   audioBuffer: Buffer,
-  format: "wav" | "mp3" | "webm" = "wav"
+  format: TranscriptionFormat = "wav"
 ): Promise<AsyncIterable<string>> {
   const file = await toFile(audioBuffer, `audio.${format}`);
   const stream = await openai.audio.transcriptions.create({

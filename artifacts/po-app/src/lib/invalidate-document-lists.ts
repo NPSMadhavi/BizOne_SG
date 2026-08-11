@@ -4,12 +4,14 @@ import {
   getListPurchaseOrdersQueryKey,
   getListQuotationsQueryKey,
   getListDeliveryOrdersQueryKey,
+  getListSalesOrdersQueryKey,
 } from "@workspace/api-client-react";
 
 export type DocumentListKind =
   | "invoices"
   | "purchase-orders"
   | "quotations"
+  | "sales-orders"
   | "delivery-orders"
   | "proforma-invoices"
   | "credit-notes"
@@ -20,10 +22,11 @@ const QUERY_KEYS: Record<DocumentListKind, readonly unknown[]> = {
   invoices: getListInvoicesQueryKey(),
   "purchase-orders": getListPurchaseOrdersQueryKey(),
   quotations: getListQuotationsQueryKey(),
+  "sales-orders": getListSalesOrdersQueryKey(),
   "delivery-orders": getListDeliveryOrdersQueryKey(),
   "proforma-invoices": ["/api/proforma-invoices"],
-  "credit-notes": ["/api/credit-notes"],
-  "debit-notes": ["/api/debit-notes"],
+  "credit-notes": ["credit-notes"],
+  "debit-notes": ["debit-notes"],
   grn: ["grns"],
 };
 
@@ -31,9 +34,8 @@ const QUERY_KEYS: Record<DocumentListKind, readonly unknown[]> = {
 export function invalidateDocumentList(
   queryClient: QueryClient,
   kind: DocumentListKind,
-): void {
+): Promise<void> {
   const key = QUERY_KEYS[kind];
-  if (key) {
-    void queryClient.invalidateQueries({ queryKey: key });
-  }
+  if (!key) return Promise.resolve();
+  return queryClient.invalidateQueries({ queryKey: key }).then(() => undefined);
 }

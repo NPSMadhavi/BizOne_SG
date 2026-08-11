@@ -86,11 +86,11 @@ export default function ProformaInvoiceList() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Proforma Invoices</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Proforma Invoices</h1>
           <p className="text-muted-foreground mt-1">Manage and track all proforma invoices.</p>
         </div>
         <Link href="/proforma-invoices/new">
-          <Button className="gap-2"><Plus className="h-4 w-4" />New Proforma Invoice</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />Create Proforma Invoice</Button>
         </Link>
       </div>
 
@@ -167,8 +167,8 @@ export default function ProformaInvoiceList() {
               ) : (
                 filtered.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/proforma-invoices/${doc.id}`)}>
-                    <td className="px-6 py-4 font-medium text-primary">{doc.piNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
+                    <td className="px-6 py-4 font-medium">{doc.piNumber}</td>
+                    <td className="px-6 py-4 font-medium">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
                     <td className="px-6 py-4 text-right font-medium">
                       {new Intl.NumberFormat("en-SG",{style:"currency",currency:doc.currency||"SGD"}).format(Number(doc.totalAmount))}

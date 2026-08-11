@@ -121,7 +121,7 @@ export default function ProformaInvoiceView() {
           <Button variant="ghost" size="icon" onClick={() => setLocation("/proforma-invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{doc.piNumber}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{doc.piNumber}</h1>
               {getStatusBadge(doc.status)}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>

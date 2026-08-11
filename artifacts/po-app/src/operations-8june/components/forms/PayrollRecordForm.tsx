@@ -39,7 +39,7 @@ const payrollRecordSchema = z.object({
   employeeId: z.number().min(1, "Please select an employee"),
   payPeriodStart: z.string().min(1, "Pay period start is required"),
   payPeriodEnd: z.string().min(1, "Pay period end is required"),
-  overtimeHours: z.string().default("0.00"),
+  overtimeHours: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -107,10 +107,10 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
   const form = useForm<PayrollRecordFormData>({
     resolver: zodResolver(payrollRecordSchema),
     defaultValues: {
-      employeeId: record?.employeeId || 0,
+      employeeId: record?.employeeId || undefined,
       payPeriodStart: record?.payPeriodStart || "",
       payPeriodEnd: record?.payPeriodEnd || "",
-      overtimeHours: record?.overtimeHours || "0.00",
+      overtimeHours: record?.overtimeHours || "",
       notes: record?.notes || "",
     },
   });
@@ -415,11 +415,19 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
                           <FormLabel>Overtime Hours</FormLabel>
                           <FormControl>
                             <Input
-                              type="number"
-                              step="0.5"
-                              placeholder="0.0"
-                              {...field}
+                              type="text"
+                              inputMode="decimal"
+                              placeholder=""
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? ""}
                               disabled={isEditMode}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
+                                field.onChange(v);
+                              }}
                             />
                           </FormControl>
                           <FormDescription>
@@ -467,7 +475,7 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Base Salary:</span>
+                              <span className="text-muted-foreground">Basic Salary:</span>
                               <span className="font-medium">{formatCurrency(record!.baseSalary)}</span>
                             </div>
                             {parseFloat(record!.overtimeHours) > 0 && (
@@ -515,7 +523,7 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Base Salary:</span>
+                              <span className="text-muted-foreground">Basic Salary:</span>
                               <span className="font-medium">{formatCurrency(projectedPay.baseSalary)}</span>
                             </div>
                             {projectedPay.overtimePay > 0 && (

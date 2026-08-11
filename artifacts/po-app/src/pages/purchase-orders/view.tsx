@@ -18,8 +18,6 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
   AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import NewVendorInvoiceDialog from "@/pages/vendor-invoices/new-dialog";
-
 export default function PurchaseOrderView() {
   const params = useParams();
   const id = Number(params.id);
@@ -34,8 +32,6 @@ export default function PurchaseOrderView() {
     query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
   });
 
-  const [piDialogOpen, setPiDialogOpen] = useState(false);
-
   const { data: grns } = useQuery<any[]>({
     queryKey: ["grns"],
     queryFn: async () => {
@@ -47,7 +43,7 @@ export default function PurchaseOrderView() {
   });
   const linkedGrn = grns?.find((g: any) => g.poId === id);
 
-  const { data: linkedPIs = [], refetch: refetchPIs } = useQuery<any[]>({
+  const { data: linkedPIs = [] } = useQuery<any[]>({
     queryKey: ["vendor-invoices-po", id],
     queryFn: async () => {
       const res = await fetch(`/api/vendor-invoices?poId=${id}`, { credentials: "include" });
@@ -129,7 +125,7 @@ export default function PurchaseOrderView() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight">{po.poNumber}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">{po.poNumber}</h1>
             {getStatusBadge(po.status)}
             {(po as any).isPrivate && (
               <Badge variant="outline" className="gap-1 text-muted-foreground">
@@ -172,14 +168,16 @@ export default function PurchaseOrderView() {
               disabled={createGrnMutation.isPending}
             >
               <ClipboardList className="h-4 w-4" />
-              {createGrnMutation.isPending ? "Creating..." : "Create GRN"}
+              {createGrnMutation.isPending ? "Creating..." : "GRN"}
             </Button>
           )}
           {["confirmed", "sent"].includes(po.status) && (
             <Button
               variant="outline"
               className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-              onClick={() => setPiDialogOpen(true)}
+              onClick={() => setLocation(
+                `/vendor-invoices/new?poId=${id}&poNumber=${encodeURIComponent(po.poNumber)}&vendorName=${encodeURIComponent(po.vendorName)}&amount=${po.totalAmount}&currency=${encodeURIComponent((po as any).currency || "SGD")}`
+              )}
             >
               <FileInput className="h-4 w-4" />
               Record Vendor PI
@@ -412,7 +410,21 @@ export default function PurchaseOrderView() {
                   <FileInput className="h-4 w-4 text-muted-foreground" />
                   Vendor Invoices
                 </span>
-                <Button variant="outline" size="sm" className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50" onClick={() => setPiDialogOpen(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50"
+                  onClick={() => {
+                    const q = new URLSearchParams({
+                      poId: String(id),
+                      poNumber: po.poNumber || "",
+                      vendorName: po.vendorName || "",
+                      amount: String(Math.max(0, remaining)),
+                      currency: (po as any).currency || "SGD",
+                    });
+                    setLocation(`/vendor-invoices/new?${q.toString()}`);
+                  }}
+                >
                   <FileInput className="h-3.5 w-3.5" />
                   Record PI
                 </Button>
@@ -467,7 +479,7 @@ export default function PurchaseOrderView() {
                       const piStatus = pi.status;
                       return (
                         <tr key={pi.id} className="bg-card hover:bg-muted/30 cursor-pointer" onClick={() => setLocation(`/vendor-invoices/${pi.id}`)}>
-                          <td className="px-4 py-2.5 font-medium font-mono text-primary">{pi.piNumber}</td>
+                          <td className="px-4 py-2.5 font-medium font-mono">{pi.piNumber}</td>
                           <td className="px-4 py-2.5 text-muted-foreground">{pi.piDate ? fmtDate(pi.piDate) : "—"}</td>
                           <td className="px-4 py-2.5 text-right font-medium">{fmtSGD(pi.totalAmount)}</td>
                           <td className="px-4 py-2.5 text-right text-emerald-600">{fmtSGD(pi.paidAmount)}</td>
@@ -496,17 +508,6 @@ export default function PurchaseOrderView() {
           </Card>
         );
       })()}
-
-      <NewVendorInvoiceDialog
-        open={piDialogOpen}
-        onOpenChange={setPiDialogOpen}
-        prefillPoId={id}
-        prefillPoNumber={(po as any).poNumber}
-        prefillVendorName={po.vendorName}
-        prefillAmount={po.totalAmount}
-        prefillCurrency={(po as any).currency}
-        onCreated={() => refetchPIs()}
-      />
 
       <PdfPreviewModal
         open={previewOpen}

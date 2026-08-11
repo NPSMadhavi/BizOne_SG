@@ -283,7 +283,7 @@ export default function ProformaInvoiceEdit() {
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/proforma-invoices/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Proforma Invoice</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Proforma Invoice</h1>
           <p className="text-muted-foreground mt-1">{doc.piNumber}</p>
         </div>
       </div>
@@ -732,7 +732,10 @@ export default function ProformaInvoiceEdit() {
       {doc && (
         <PdfPreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/proforma-invoices`);
+          }}
           title={`Proforma Invoice ${doc.piNumber}`}
           generatePdf={(opts) => generatePI_PDF(doc, selectedCompany, undefined, opts)}
           pdfFilename={`${doc.piNumber}.pdf`}

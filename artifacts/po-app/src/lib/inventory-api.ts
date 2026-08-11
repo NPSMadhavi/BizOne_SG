@@ -30,11 +30,14 @@ export const inventoryApi = {
   getGoodsIssues: () => request<any[]>("/inventory/goods-issues"),
   createGoodsIssue: (data: any) => request<any>("/inventory/goods-issues", { method: "POST", body: JSON.stringify(data) }),
 
-  getTransfers: () => request<any[]>("/inventory/stock-transfers"),
-  createTransfer: (data: any) => request<any>("/inventory/stock-transfers", { method: "POST", body: JSON.stringify(data) }),
-
   getAdjustments: () => request<any[]>("/inventory/stock-adjustments"),
   createAdjustment: (data: any) => request<any>("/inventory/stock-adjustments", { method: "POST", body: JSON.stringify(data) }),
+
+  getStockTransfers: () => request<any[]>("/inventory/stock-transfers"),
+  createStockTransfer: (data: any) => request<any>("/inventory/stock-transfers", { method: "POST", body: JSON.stringify(data) }),
+  updateStockTransfer: (id: number, data: any) =>
+    request<any>(`/inventory/stock-transfers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  getStockActivity: (limit = 50) => request<any[]>(`/inventory/stock-activity?limit=${limit}`),
 
   getMovements: (params?: Record<string, string>) => {
     const q = params ? "?" + new URLSearchParams(params).toString() : "";
@@ -44,8 +47,12 @@ export const inventoryApi = {
     const q = params ? "?" + new URLSearchParams(params).toString() : "";
     return request<any[]>(`/inventory/ledger${q}`);
   },
-  getCurrentStockReport: (warehouseId?: number) =>
-    request<any[]>(`/inventory/reports/current-stock${warehouseId ? `?warehouseId=${warehouseId}` : ""}`),
+  getCurrentStockReport: (warehouseId?: number) => {
+    const base = `/inventory/reports/current-stock${warehouseId ? `?warehouseId=${warehouseId}` : ""}`;
+    // Bust browser/proxy cache so live stock always shows post-invoice qty.
+    const sep = base.includes("?") ? "&" : "?";
+    return request<any[]>(`${base}${sep}_=${Date.now()}`);
+  },
   search: (q: string) => request<any>(`/inventory/search?q=${encodeURIComponent(q)}`),
 };
 

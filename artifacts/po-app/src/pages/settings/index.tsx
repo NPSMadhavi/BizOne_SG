@@ -404,7 +404,7 @@ export default function Settings() {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage company preferences and account settings.</p>
       </div>
 
@@ -585,7 +585,6 @@ export default function Settings() {
                     { label: "Payment / Project Voucher", state: rnPV, setter: setRnPV },
                     { label: "Inventory Goods Receipt (IGR)", state: rnIGR, setter: setRnIGR },
                     { label: "Goods Issue Note (GIN)", state: rnGIN, setter: setRnGIN },
-                    { label: "Stock Transfer", state: rnST, setter: setRnST },
                     { label: "Stock Adjustment", state: rnSA, setter: setRnSA },
                     { label: "Stock Item Code", state: rnSI, setter: setRnSI },
                   ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (

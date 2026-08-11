@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, settingsTable, companiesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { isSmtpConfigured } from "../lib/smtp.js";
 
 const router = Router();
 
@@ -55,7 +56,7 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     smtpPort: s.smtpPort || "587",
     smtpUser: s.smtpUser || "",
     smtpFrom: s.smtpFrom || "",
-    smtpConfigured: !!(s.smtpHost && s.smtpUser && s.smtpPass),
+    smtpConfigured: isSmtpConfigured(s),
     poPrefix: s.poPrefix ?? "PO",
     poCounter: s.poCounter ?? 0,
     poSuffix: s.poSuffix ?? "",

@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 export type DocType =
-  | "po" | "inv" | "qt" | "do" | "grn" | "cn" | "dn" | "pi" | "pv"
+  | "po" | "inv" | "qt" | "so" | "do" | "grn" | "cn" | "dn" | "pi" | "pv"
   | "igr" | "gin" | "st" | "sa" | "si";
 
 type TableCol = { table: string; col: string };
@@ -11,6 +11,7 @@ const TABLE_MAP: Record<DocType, TableCol[]> = {
   po:  [{ table: "purchase_orders",   col: "po_number" }],
   inv: [{ table: "invoices",          col: "inv_number" }],
   qt:  [{ table: "quotations",        col: "qt_number" }],
+  so:  [{ table: "sales_orders",      col: "so_number" }],
   do:  [{ table: "delivery_orders",   col: "do_number" }],
   grn: [{ table: "grn",               col: "grn_number" }],
   cn:  [{ table: "credit_notes",      col: "cn_number" }],
@@ -32,6 +33,7 @@ const COL_MAP: Record<DocType, { prefix: string; counter: string; suffix: string
   po:  { prefix: "po_prefix",  counter: "po_counter",  suffix: "po_suffix",  fallbackPrefix: "PO" },
   inv: { prefix: "inv_prefix", counter: "inv_counter", suffix: "inv_suffix", fallbackPrefix: "INV" },
   qt:  { prefix: "qt_prefix",  counter: "qt_counter",  suffix: "qt_suffix",  fallbackPrefix: "QT" },
+  so:  { prefix: "so_prefix",  counter: "so_counter",  suffix: "so_suffix",  fallbackPrefix: "SO" },
   do:  { prefix: "do_prefix",  counter: "do_counter",  suffix: "do_suffix",  fallbackPrefix: "DO" },
   grn: { prefix: "grn_prefix", counter: "grn_counter", suffix: "grn_suffix", fallbackPrefix: "GRN" },
   cn:  { prefix: "cn_prefix",  counter: "cn_counter",  suffix: "cn_suffix",  fallbackPrefix: "CN" },

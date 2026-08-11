@@ -8,13 +8,145 @@ import { getExchangeRateToSGD } from "./exchange-rate.js";
 import { backfillExpenseJEs } from "./expense-auto-post.js";
 import { backfillInvoiceJEs } from "./invoice-auto-post.js";
 import { logger } from "./logger.js";
+import { migrateWmsTables } from "../migrate-wms-tables.js";
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
 export async function runStartupMigrations(): Promise<void> {
+  try {
+    await migrateWmsTables();
+  } catch (err) {
+    logger.error({ err }, "WMS tables migration failed");
+    throw err;
+  }
+
   const steps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
+    {
+      name: "stock_items.batch_no",
+      sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batch_no text`,
+    },
     {
       name: "customers.quotation_terms",
       sql: sql`ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
+    },
+    {
+      name: "settings.so running numbers",
+      sql: sql`
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_prefix text DEFAULT 'SO';
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_counter integer NOT NULL DEFAULT 0;
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_suffix text DEFAULT '';
+      `,
+    },
+    {
+      name: "sales_orders table",
+      sql: sql`
+      CREATE TABLE IF NOT EXISTS sales_orders (
+        id                      serial       PRIMARY KEY,
+        so_number               text         NOT NULL UNIQUE,
+        company_id              integer      NOT NULL DEFAULT 1,
+        qt_id                   integer,
+        qt_number               text,
+        customer_name           text         NOT NULL,
+        customer_address        text,
+        customer_contact        text,
+        customer_contact_email  text,
+        delivery_address        text,
+        issue_date              text,
+        delivery_date           text,
+        payment_terms           text,
+        notes                   text,
+        is_private              boolean      NOT NULL DEFAULT false,
+        items                   jsonb        NOT NULL DEFAULT '[]',
+        subtotal                numeric(15,2) NOT NULL DEFAULT 0,
+        discount_amount         numeric(15,2) NOT NULL DEFAULT 0,
+        tax                     numeric(15,2) NOT NULL DEFAULT 0,
+        total_amount            numeric(15,2) NOT NULL DEFAULT 0,
+        currency                text         NOT NULL DEFAULT 'SGD',
+        status                  text         NOT NULL DEFAULT 'draft',
+        email_sent_to           text,
+        created_by              integer      NOT NULL,
+        created_at              timestamptz  NOT NULL DEFAULT now()
+      )
+    `,
+    },
+    {
+      name: "sales_orders.inv_id",
+      sql: sql`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS inv_id integer`,
+    },
+    {
+      name: "sales_orders.inv_number",
+      sql: sql`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS inv_number text`,
+    },
+    {
+      name: "sales_orders.do_id",
+      sql: sql`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS do_id integer`,
+    },
+    {
+      name: "sales_orders.do_number",
+      sql: sql`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS do_number text`,
+    },
+    {
+      name: "invoices.so_id",
+      sql: sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS so_id integer`,
+    },
+    {
+      name: "invoices.so_number",
+      sql: sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS so_number text`,
+    },
+    {
+      name: "delivery_orders.so_id",
+      sql: sql`ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS so_id integer`,
+    },
+    {
+      name: "delivery_orders.so_number",
+      sql: sql`ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS so_number text`,
+    },
+    {
+      name: "credit_notes.so_id",
+      sql: sql`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS so_id integer`,
+    },
+    {
+      name: "credit_notes.so_number",
+      sql: sql`ALTER TABLE credit_notes ADD COLUMN IF NOT EXISTS so_number text`,
+    },
+    {
+      name: "debit_notes.so_id",
+      sql: sql`ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS so_id integer`,
+    },
+    {
+      name: "debit_notes.so_number",
+      sql: sql`ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS so_number text`,
+    },
+    {
+      name: "clear orphan sales_orders.inv links",
+      sql: sql`
+        UPDATE sales_orders so
+        SET inv_id = NULL, inv_number = NULL
+        WHERE so.inv_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = so.inv_id)
+      `,
+    },
+    {
+      name: "clear orphan sales_orders.do links",
+      sql: sql`
+        UPDATE sales_orders so
+        SET do_id = NULL, do_number = NULL
+        WHERE so.do_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM delivery_orders d WHERE d.id = so.do_id)
+      `,
+    },
+    {
+      name: "backfill invoices.so from sales_orders",
+      sql: sql`
+        UPDATE invoices i
+        SET so_id = so.id, so_number = so.so_number
+        FROM sales_orders so
+        WHERE so.inv_id = i.id
+          AND (i.so_id IS NULL OR i.so_number IS NULL OR i.so_number = '')
+      `,
+    },
+    {
+      name: "grn.po_id nullable for manual GRN",
+      sql: sql`ALTER TABLE grn ALTER COLUMN po_id DROP NOT NULL`,
     },
     {
       name: "debit_notes table",
@@ -284,6 +416,96 @@ export async function runStartupMigrations(): Promise<void> {
         created_at timestamptz NOT NULL DEFAULT now()
       )`,
     },
+    {
+      name: "expenses table",
+      sql: sql`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id serial PRIMARY KEY,
+        company_id integer NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        expense_date text NOT NULL,
+        vendor_name text NOT NULL,
+        description text NOT NULL,
+        category text NOT NULL,
+        amount numeric(15,2) NOT NULL,
+        gst_amount numeric(15,2) NOT NULL DEFAULT 0,
+        gst_claimable boolean NOT NULL DEFAULT false,
+        is_deductible boolean NOT NULL DEFAULT true,
+        deductible_pct integer NOT NULL DEFAULT 100,
+        currency text NOT NULL DEFAULT 'SGD',
+        payment_method text DEFAULT 'bank_transfer',
+        receipt_data text,
+        receipt_mime_type text,
+        vendor_id integer,
+        project_id integer,
+        voucher_id integer,
+        journal_entry_id integer,
+        status text NOT NULL DEFAULT 'draft',
+        notes text,
+        created_by integer NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )`,
+    },
+    {
+      name: "expenses.gst_amount",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS gst_amount numeric(15,2) NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "expenses.gst_claimable",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS gst_claimable boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: "expenses.is_deductible",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_deductible boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: "expenses.deductible_pct",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS deductible_pct integer NOT NULL DEFAULT 100`,
+    },
+    {
+      name: "expenses.currency",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'SGD'`,
+    },
+    {
+      name: "expenses.payment_method",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method text DEFAULT 'bank_transfer'`,
+    },
+    {
+      name: "expenses.receipt_data",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_data text`,
+    },
+    {
+      name: "expenses.receipt_mime_type",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_mime_type text`,
+    },
+    {
+      name: "expenses.vendor_id",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS vendor_id integer`,
+    },
+    {
+      name: "expenses.project_id",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id integer`,
+    },
+    {
+      name: "expenses.voucher_id",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS voucher_id integer`,
+    },
+    {
+      name: "expenses.journal_entry_id",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS journal_entry_id integer`,
+    },
+    {
+      name: "expenses.status",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft'`,
+    },
+    {
+      name: "expenses.notes",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes text`,
+    },
+    {
+      name: "expenses.updated_at",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+    },
   ];
 
   for (const step of steps) {
@@ -376,6 +598,36 @@ export async function backfillInvoiceJEsOnStartup(): Promise<void> {
     }
   } catch (e: any) {
     logger.warn({ err: e.message }, "[startup-backfill] invoice JE backfill failed (non-fatal)");
+  }
+}
+
+/**
+ * Warehouse balances are the source of truth for stock. Older code paths wrote
+ * stock_items.stock_qty directly, so the cached total can drift from the
+ * warehouse rows and make documents look like they deducted the wrong amount.
+ */
+export async function reconcileStockQuantitiesOnStartup(): Promise<void> {
+  try {
+    if (!(await tableExists("warehouse_stock"))) return;
+
+    const result = await db.execute<{ id: number }>(sql`
+      UPDATE stock_items AS si
+      SET stock_qty = totals.total, updated_at = now()
+      FROM (
+        SELECT stock_item_id, SUM(quantity) AS total
+        FROM warehouse_stock
+        GROUP BY stock_item_id
+      ) AS totals
+      WHERE si.id = totals.stock_item_id
+        AND si.stock_qty <> totals.total
+      RETURNING si.id
+    `);
+
+    if (result.rows.length > 0) {
+      logger.info({ items: result.rows.length }, "[startup-backfill] stock quantities reconciled with warehouse balances");
+    }
+  } catch (e: any) {
+    logger.warn({ err: e.message }, "[startup-backfill] stock reconciliation failed (non-fatal)");
   }
 }
 

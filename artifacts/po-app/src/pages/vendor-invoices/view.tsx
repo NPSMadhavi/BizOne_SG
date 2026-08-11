@@ -19,7 +19,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, Plus, Trash2, Building, Calendar, CreditCard, FileText, Pencil } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { fmtDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -51,17 +50,6 @@ export default function VendorInvoiceView() {
   const [payMethod, setPayMethod] = useState("bank_transfer");
   const [payNotes, setPayNotes] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const [editOpen, setEditOpen] = useState(false);
-  const [editPiNumber, setEditPiNumber] = useState("");
-  const [editPiDate, setEditPiDate] = useState("");
-  const [editVendorName, setEditVendorName] = useState("");
-  const [editAmount, setEditAmount] = useState("");
-  const [editCurrency, setEditCurrency] = useState("SGD");
-  const [editNotes, setEditNotes] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-  const [editGstTreatment, setEditGstTreatment] = useState("standard_rated");
-  const [editGstInclusive, setEditGstInclusive] = useState(false);
 
   const [editPaymentOpen, setEditPaymentOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<any>(null);
@@ -173,73 +161,6 @@ export default function VendorInvoiceView() {
     }
   };
 
-  const openEdit = () => {
-    const piGstInclusive = (pi as any).gstInclusive || false;
-    const piTotalAmount  = parseFloat(String((pi as any).totalAmount ?? "0"));
-    const piGstAmount    = parseFloat(String((pi as any).gstAmount ?? "0"));
-    setEditPiNumber(pi.piNumber || "");
-    setEditPiDate(pi.piDate ? pi.piDate.split("T")[0] : new Date().toISOString().split("T")[0]);
-    setEditVendorName(pi.vendorName || "");
-    // Always show net (excl. GST) in the field regardless of inclusive mode
-    setEditAmount(String(+(piTotalAmount - piGstAmount).toFixed(2)));
-    setEditCurrency(pi.currency || "SGD");
-    setEditNotes(pi.notes || "");
-    setEditGstTreatment((pi as any).gstTreatment || "standard_rated");
-    setEditGstInclusive(piGstInclusive);
-    setEditOpen(true);
-  };
-
-  const handleEditSave = async () => {
-    if (!editPiNumber.trim()) { toast({ title: "Error", description: "Vendor PI number is required", variant: "destructive" }); return; }
-    if (!editVendorName.trim()) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
-    if (!editAmount || isNaN(Number(editAmount)) || Number(editAmount) <= 0) { toast({ title: "Error", description: "Valid amount is required", variant: "destructive" }); return; }
-    // Compute GST before save
-    const editGstRateNum = editGstTreatment === "standard_rated" ? 9 : 0;
-    const editAmountNum  = parseFloat(editAmount) || 0;
-    let editComputedGst: number, editComputedTotal: number;
-    if (editGstRateNum === 0) {
-      editComputedGst = 0; editComputedTotal = editAmountNum;
-    } else if (editGstInclusive) {
-      editComputedTotal = editAmountNum;
-      editComputedGst   = +(editAmountNum * editGstRateNum / (100 + editGstRateNum)).toFixed(2);
-    } else {
-      editComputedGst   = +(editAmountNum * editGstRateNum / 100).toFixed(2);
-      editComputedTotal = +(editAmountNum + editComputedGst).toFixed(2);
-    }
-    setEditSaving(true);
-    try {
-      const res = await fetch(`/api/vendor-invoices/${id}`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          piNumber: editPiNumber.trim(),
-          piDate: editPiDate,
-          vendorName: editVendorName.trim(),
-          currency: editCurrency,
-          totalAmount: editComputedTotal,
-          gstTreatment: editGstTreatment,
-          gstRate: editGstRateNum,
-          gstAmount: editComputedGst,
-          gstInclusive: editGstInclusive,
-          notes: editNotes || null,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to update");
-      }
-      toast({ title: "Vendor PI Updated" });
-      setEditOpen(false);
-      refetch();
-      queryClient.invalidateQueries({ queryKey: ["vendor-invoices"] });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
   const handleDeletePI = async () => {
     try {
       const res = await fetch(`/api/vendor-invoices/${id}`, { method: "DELETE", credentials: "include" });
@@ -273,13 +194,13 @@ export default function VendorInvoiceView() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight font-mono">{pi.piNumber}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] font-mono">{pi.piNumber}</h1>
             {statusBadge(pi.status)}
           </div>
           <p className="text-muted-foreground mt-1">Recorded on {fmtDate(pi.createdAt)}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" onClick={openEdit} className="gap-2">
+          <Button variant="outline" onClick={() => setLocation(`/vendor-invoices/${id}/edit`)} className="gap-2">
             <Pencil className="h-4 w-4" />
             Edit
           </Button>
@@ -515,93 +436,6 @@ export default function VendorInvoiceView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPaymentOpen(false)}>Cancel</Button>
             <Button onClick={handleEditPaymentSave} disabled={epSaving}>{epSaving ? "Saving..." : "Save Changes"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Vendor Invoice</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Vendor PI / Invoice Number <span className="text-destructive">*</span></Label>
-                <Input placeholder="e.g. INV-2024-001" value={editPiNumber} onChange={e => setEditPiNumber(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>PI Date</Label>
-                <Input type="date" value={editPiDate} onChange={e => setEditPiDate(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Vendor Name <span className="text-destructive">*</span></Label>
-              <Input placeholder="Vendor name" value={editVendorName} onChange={e => setEditVendorName(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>PI Amount (excl. GST) <span className="text-destructive">*</span></Label>
-                <Input type="text" inputMode="decimal" placeholder="0.00" value={editAmount} onChange={e => setEditAmount(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Currency</Label>
-                <Input value={editCurrency} onChange={e => setEditCurrency(e.target.value)} placeholder="SGD" />
-              </div>
-            </div>
-            {/* GST Treatment */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>GST Treatment</Label>
-                <Select value={editGstTreatment} onValueChange={v => { setEditGstTreatment(v); if (v !== "standard_rated") setEditGstInclusive(false); }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="standard_rated">Standard Rate (SR 9%)</SelectItem>
-                    <SelectItem value="zero_rated">Zero-Rated (ZR 0%)</SelectItem>
-                    <SelectItem value="exempt">Exempt (ES)</SelectItem>
-                    <SelectItem value="out_of_scope">Out of Scope (OS)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {editGstTreatment === "standard_rated" && (
-                <div className="flex items-center gap-2 pt-6">
-                  <Switch id="edit-gst-inclusive" checked={editGstInclusive} onCheckedChange={setEditGstInclusive} />
-                  <Label htmlFor="edit-gst-inclusive" className="cursor-pointer font-normal text-sm">GST Inclusive</Label>
-                </div>
-              )}
-            </div>
-            {editGstTreatment === "standard_rated" && parseFloat(editAmount) > 0 && (() => {
-              const r = 9; const a = parseFloat(editAmount) || 0;
-              const gst  = editGstInclusive ? +(a * r / (100 + r)).toFixed(2) : +(a * r / 100).toFixed(2);
-              const net  = editGstInclusive ? +(a - gst).toFixed(2) : a;
-              const tot  = editGstInclusive ? a : +(a + gst).toFixed(2);
-              return (
-                <div className="rounded-md bg-muted/40 border px-3 py-2.5 space-y-1.5 text-sm">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Net Amount (excl. GST)</span>
-                    <span className="font-mono">{editCurrency} {net.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-primary">
-                    <span>GST (9%)</span>
-                    <span className="font-mono">+ {editCurrency} {gst.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold border-t pt-1.5">
-                    <span>Total Invoice Amount</span>
-                    <span className="font-mono">{editCurrency} {tot.toFixed(2)}</span>
-                  </div>
-                </div>
-              );
-            })()}
-            <div className="space-y-1.5">
-              <Label>Notes (internal)</Label>
-              <Textarea placeholder="Any notes..." value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={2} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={handleEditSave} disabled={editSaving}>{editSaving ? "Saving..." : "Save Changes"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

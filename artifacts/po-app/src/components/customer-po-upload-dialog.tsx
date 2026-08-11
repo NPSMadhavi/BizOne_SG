@@ -1,11 +1,18 @@
 import { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Pencil, X } from "lucide-react";
+import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Pencil, X, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ExtractedPoData {
+  customerName?: string;
+  customerAddress?: string;
+  customerContact?: string;
+  customerContactEmail?: string;
+  currency?: string;
+  paymentTerms?: string;
+  poRefNo?: string;
+  notes?: string;
   items: Array<{
     partNumber: string;
     description: string;
@@ -22,6 +29,20 @@ interface CustomerPoUploadDialogProps {
 }
 
 type Step = "upload" | "extracting" | "preview" | "error";
+
+const ACCEPTED =
+  ".pdf,image/jpeg,image/jpg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif";
+
+function isSupportedFile(file: File) {
+  const name = file.name.toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return (
+    type === "application/pdf" ||
+    name.endsWith(".pdf") ||
+    type.startsWith("image/") ||
+    /\.(jpe?g|png|webp|gif)$/i.test(name)
+  );
+}
 
 export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: CustomerPoUploadDialogProps) {
   const [step, setStep] = useState<Step>("upload");
@@ -44,8 +65,8 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
   }
 
   async function processFile(file: File) {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setErrorMsg("Please upload a PDF file.");
+    if (!isSupportedFile(file)) {
+      setErrorMsg("Please upload a PDF or image (JPG, PNG, WEBP).");
       setStep("error");
       return;
     }
@@ -67,7 +88,17 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
         setStep("error");
         return;
       }
-      setExtracted(data as ExtractedPoData);
+      setExtracted({
+        customerName: data.customerName || "",
+        customerAddress: data.customerAddress || "",
+        customerContact: data.customerContact || "",
+        customerContactEmail: data.customerContactEmail || "",
+        currency: data.currency || "",
+        paymentTerms: data.paymentTerms || "",
+        poRefNo: data.poRefNo || "",
+        notes: data.notes || "",
+        items: Array.isArray(data.items) ? data.items : [],
+      });
       setStep("preview");
     } catch {
       setErrorMsg("Network error. Please check your connection and try again.");
@@ -94,6 +125,11 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
     handleClose(false);
   }
 
+  const canApply =
+    !!extracted &&
+    (extracted.items.some((it) => it.description?.trim()) ||
+      !!(extracted.customerName || extracted.poRefNo || extracted.customerAddress));
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
@@ -105,11 +141,10 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
-          {/* ── UPLOAD STEP ─────────────────────────────────────────── */}
           {step === "upload" && (
             <div className="space-y-4 py-2">
               <p className="text-sm text-muted-foreground">
-                Upload the customer's Purchase Order PDF. AI will extract the line items — you'll get a chance to review before applying.
+                Upload a Customer PO as PDF or image (JPG/PNG). AI reads the document and extracts fields — the file/image itself is not kept on the invoice; only the data is prefilled.
               </p>
               <div
                 className={cn(
@@ -121,39 +156,39 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-                <p className="font-medium text-sm">Drop PDF here or click to browse</p>
-                <p className="text-xs text-muted-foreground mt-1">Supports text-based PDFs up to 20 MB</p>
+                <div className="flex justify-center gap-3 mb-3 text-muted-foreground">
+                  <Upload className="h-10 w-10" />
+                  <ImageIcon className="h-10 w-10" />
+                </div>
+                <p className="font-medium text-sm">Drop PDF or image here, or click to browse</p>
+                <p className="text-xs text-muted-foreground mt-1">PDF, JPG, PNG, WEBP — up to 20 MB</p>
               </div>
-              <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
+              <input ref={fileInputRef} type="file" accept={ACCEPTED} className="hidden" onChange={handleFileChange} />
             </div>
           )}
 
-          {/* ── EXTRACTING STEP ─────────────────────────────────────── */}
           {step === "extracting" && (
             <div className="flex flex-col items-center justify-center gap-4 py-16">
               <Loader2 className="h-10 w-10 animate-spin text-primary" />
               <div className="text-center">
-                <p className="font-semibold">Extracting data from PDF…</p>
+                <p className="font-semibold">Extracting data from document…</p>
                 <p className="text-sm text-muted-foreground mt-1 truncate max-w-xs">{fileName}</p>
               </div>
               <p className="text-xs text-muted-foreground">This usually takes 5–15 seconds</p>
             </div>
           )}
 
-          {/* ── ERROR STEP ──────────────────────────────────────────── */}
           {step === "error" && (
             <div className="flex flex-col items-center justify-center gap-4 py-12">
               <AlertCircle className="h-10 w-10 text-destructive" />
               <div className="text-center">
                 <p className="font-semibold">Extraction failed</p>
-                <p className="text-sm text-muted-foreground mt-1 max-w-sm">{errorMsg}</p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-sm whitespace-pre-wrap">{errorMsg}</p>
               </div>
               <Button variant="outline" onClick={reset}>Try Again</Button>
             </div>
           )}
 
-          {/* ── PREVIEW STEP ────────────────────────────────────────── */}
           {step === "preview" && extracted && (
             <div className="space-y-5 py-2">
               <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
@@ -161,7 +196,36 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
                 Extracted successfully from <span className="text-muted-foreground font-normal">{fileName}</span>
               </div>
 
-              {/* Line items */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border p-3 bg-muted/20">
+                <HeaderField
+                  label="Customer"
+                  value={extracted.customerName || ""}
+                  onChange={(v) => setExtracted((p) => (p ? { ...p, customerName: v } : p))}
+                />
+                <HeaderField
+                  label="PO Reference"
+                  value={extracted.poRefNo || ""}
+                  onChange={(v) => setExtracted((p) => (p ? { ...p, poRefNo: v } : p))}
+                />
+                <HeaderField
+                  label="Contact"
+                  value={extracted.customerContact || ""}
+                  onChange={(v) => setExtracted((p) => (p ? { ...p, customerContact: v } : p))}
+                />
+                <HeaderField
+                  label="Currency"
+                  value={extracted.currency || ""}
+                  onChange={(v) => setExtracted((p) => (p ? { ...p, currency: v } : p))}
+                />
+                <div className="sm:col-span-2">
+                  <HeaderField
+                    label="Address"
+                    value={extracted.customerAddress || ""}
+                    onChange={(v) => setExtracted((p) => (p ? { ...p, customerAddress: v } : p))}
+                  />
+                </div>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -229,7 +293,7 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
           {step === "preview" && (
             <>
               <Button variant="outline" onClick={reset}>Upload Different File</Button>
-              <Button onClick={handleApply} disabled={!extracted || extracted.items.length === 0} className="gap-2">
+              <Button onClick={handleApply} disabled={!canApply} className="gap-2">
                 <CheckCircle2 className="h-4 w-4" />
                 Apply to Invoice ({extracted?.items.length ?? 0} items)
               </Button>
@@ -244,6 +308,23 @@ export function CustomerPoUploadDialog({ open, onOpenChange, onApply }: Customer
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function HeaderField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{label}</p>
+      <EditableField value={value} onChange={onChange} />
+    </div>
   );
 }
 

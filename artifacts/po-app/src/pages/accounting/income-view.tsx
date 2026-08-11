@@ -231,7 +231,7 @@ export default function IncomeView() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />{record.payerName}
             </h1>
             <p className="text-sm text-muted-foreground">

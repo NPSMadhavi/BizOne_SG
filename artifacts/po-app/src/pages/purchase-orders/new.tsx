@@ -3,8 +3,10 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +38,7 @@ import { StockItemPickerDialog, type StockItemSelection } from "@/components/sto
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
@@ -48,8 +51,8 @@ const itemSchema = z.object({
   qty: z.coerce.number().min(0).default(1),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
-  stockItemId: z.number().optional(),
-  warehouseId: z.number().optional(),
+  stockItemId: z.number().nullish(),
+  warehouseId: z.number().nullish(),
   warehouseName: z.string().optional(),
   itemImage: z.string().default(""),
 });
@@ -85,6 +88,7 @@ const poSchema = z.object({
 export default function PurchaseOrderNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { selectedCompany } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -95,6 +99,7 @@ export default function PurchaseOrderNew() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [poUploadOpen, setPoUploadOpen] = useState(false);
 
   const { data: customers = [] } = useQuery<any[]>({
     queryKey: ["customers-for-po"],
@@ -197,16 +202,42 @@ export default function PurchaseOrderNew() {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
       return null;
     }
+    for (const item of filledItems) {
+      if ((item as any).type === "section") continue;
+      const hasStock = item.isStockItem === true || Number((item as any).stockItemId) > 0;
+      if (hasStock && !(Number((item as any).warehouseId) > 0)) {
+        toast({
+          title: "Warehouse required",
+          description: `Select a warehouse for "${item.partNumber || "stock item"}" using the cube icon before saving.`,
+          variant: "destructive",
+        });
+        return null;
+      }
+    }
     const itemsWithAmount = filledItems.map(item => ({
       ...item,
-      amount: (item as any).type === "section" ? 0 : item.qty * item.unitPrice
+      amount: (item as any).type === "section" ? 0 : item.qty * item.unitPrice,
+      isStockItem: item.isStockItem === true || Number((item as any).stockItemId) > 0,
+      stockItemId: Number((item as any).stockItemId) > 0 ? Number((item as any).stockItemId) : undefined,
+      warehouseId: Number((item as any).warehouseId) > 0 ? Number((item as any).warehouseId) : undefined,
+      warehouseName: (item as any).warehouseName || undefined,
     }));
 
     return new Promise<any>((resolve, reject) => {
       createMutation.mutate(
         { data: { ...values, items: itemsWithAmount, status, customerId: values.customerId ?? undefined } },
         {
-          onSuccess: (data) => resolve(data),
+          onSuccess: async (data) => {
+            // Show the new PO in the list immediately (no manual refresh).
+            queryClient.setQueryData(getListPurchaseOrdersQueryKey(), (old: any) =>
+              Array.isArray(old) ? [data, ...old.filter((d: any) => d.id !== (data as any)?.id)] : [data],
+            );
+            await Promise.all([
+              invalidateDocumentList(queryClient, "purchase-orders"),
+              invalidateInventoryQueries(queryClient),
+            ]);
+            resolve(data);
+          },
           onError: (error: any) => reject(error),
         }
       );
@@ -239,7 +270,7 @@ export default function PurchaseOrderNew() {
   async function doSaveAndPreview(values: z.infer<typeof poSchema>) {
     setIsGenerating(true);
     try {
-      const data = await saveDocument(values, "draft");
+      const data = await saveDocument(values, "confirmed");
       if (!data) return;
       setSavedPo(data);
       setPreviewOpen(true);
@@ -248,6 +279,33 @@ export default function PurchaseOrderNew() {
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  function handlePoExtracted(data: ExtractedPoData) {
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+    const mappedItems = data.items
+      .filter((it) => it.description?.trim())
+      .map((it) => ({
+        ...blankItem,
+        partNumber: it.partNumber || "",
+        description: it.description,
+        qty: Number(it.qty) || 1,
+        uom: it.uom || "",
+        unitPrice: Number(it.unitPrice) || 0,
+      }));
+    const current = form.getValues();
+    form.reset({
+      ...current,
+      vendorName: data.customerName?.trim() || current.vendorName || "",
+      vendorAddress: data.customerAddress?.trim() || current.vendorAddress || "",
+      vendorContact: data.customerContact?.trim() || current.vendorContact || "",
+      vendorContactEmail: data.customerContactEmail?.trim() || current.vendorContactEmail || "",
+      currency: data.currency?.trim() || current.currency || "SGD",
+      paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "30 Days Net",
+      quoteRefNo: data.poRefNo?.trim() || current.quoteRefNo || "",
+      notes: data.notes?.trim() || current.notes || "",
+      items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
+    });
   }
 
   return (
@@ -264,16 +322,27 @@ export default function PurchaseOrderNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Create Purchase Order</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Create Purchase Order</h1>
             <p className="text-muted-foreground mt-1">Draft a new professional PO document.</p>
           </div>
         </div>
-        {nextPoNumber && (
-          <div className="text-right shrink-0">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">PO Number</p>
-            <p className="text-lg font-semibold font-mono">{nextPoNumber}</p>
-          </div>
-        )}
+        <div className="flex items-center gap-3 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
+            onClick={() => setPoUploadOpen(true)}
+          >
+            <Upload className="h-4 w-4" />
+            Import Customer PO
+          </Button>
+          {nextPoNumber && (
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">PO Number</p>
+              <p className="text-lg font-semibold font-mono">{nextPoNumber}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <Form {...form}>
@@ -748,7 +817,7 @@ export default function PurchaseOrderNew() {
               ) : (
                 <>
                   <Eye className="h-4 w-4" />
-                  Save
+                  Save & Preview
                 </>
               )}
             </Button>
@@ -791,6 +860,11 @@ export default function PurchaseOrderNew() {
           }
         }}
       />
+      <CustomerPoUploadDialog
+        open={poUploadOpen}
+        onOpenChange={setPoUploadOpen}
+        onApply={handlePoExtracted}
+      />
 
 
       <StockItemPickerDialog
@@ -799,16 +873,22 @@ export default function PurchaseOrderNew() {
         mode="receive"
         onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          if (!warehouseId) {
+            toast({
+              title: "Warehouse required",
+              description: "Select a warehouse before adding the stock item.",
+              variant: "destructive",
+            });
+            return;
+          }
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
           form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
-          if (warehouseId) {
-            form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
-            form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
-          }
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+          form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}
@@ -818,7 +898,7 @@ export default function PurchaseOrderNew() {
           open={previewOpen}
           onOpenChange={(open) => {
             setPreviewOpen(open);
-            if (!open) setLocation(`/purchase-orders/${savedPo.id}`);
+            if (!open) setLocation(`/purchase-orders`);
           }}
           title={`Purchase Order ${savedPo.poNumber}`}
           generatePdf={(opts) => generatePO_PDF(savedPo, selectedCompany, opts)}

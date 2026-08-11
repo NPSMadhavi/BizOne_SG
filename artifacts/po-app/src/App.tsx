@@ -29,6 +29,11 @@ const QuotationNew  = lazy(() => import("@/pages/quotations/new"));
 const QuotationView = lazy(() => import("@/pages/quotations/view"));
 const QuotationEdit = lazy(() => import("@/pages/quotations/edit"));
 
+const SalesOrderList = lazy(() => import("@/pages/sales-orders/list"));
+const SalesOrderNew  = lazy(() => import("@/pages/sales-orders/new"));
+const SalesOrderView = lazy(() => import("@/pages/sales-orders/view"));
+const SalesOrderEdit = lazy(() => import("@/pages/sales-orders/edit"));
+
 const InvoiceList = lazy(() => import("@/pages/invoices/list"));
 const InvoiceNew  = lazy(() => import("@/pages/invoices/new"));
 const InvoiceView = lazy(() => import("@/pages/invoices/view"));
@@ -62,19 +67,27 @@ const DeliveryOrderNew  = lazy(() => import("@/pages/delivery-orders/new"));
 const DeliveryOrderView = lazy(() => import("@/pages/delivery-orders/view"));
 const DeliveryOrderEdit = lazy(() => import("@/pages/delivery-orders/edit"));
 
+const PointOfSalePage = lazy(() => import("@/pages/point-of-sale/index"));
+const BillOfMaterialsPage = lazy(() => import("@/pages/bill-of-materials/index"));
+
 const GrnList = lazy(() => import("@/pages/grn/list"));
+const GrnNew = lazy(() => import("@/pages/grn/new"));
 const GrnView = lazy(() => import("@/pages/grn/view"));
 
 const StockList = lazy(() => import("@/pages/stock/list"));
+const StockItemForm = lazy(() => import("@/pages/stock/form"));
 const WarehousesPage = lazy(() => import("@/pages/inventory/warehouses"));
-const TransfersPage = lazy(() => import("@/pages/inventory/transfers"));
+const StockTransferPage = lazy(() => import("@/pages/inventory/stock-transfer"));
 const InventoryReportsPage = lazy(() => import("@/pages/inventory/reports"));
+const BatchExpiryPage = lazy(() => import("@/pages/inventory/batch-expiry"));
 
 const VendorsPage    = lazy(() => import("@/pages/vendors/index"));
 const CustomersPage  = lazy(() => import("@/pages/customers/index"));
 const AddressBookPage = lazy(() => import("@/pages/address-book/index"));
 
 const VendorInvoiceList = lazy(() => import("@/pages/vendor-invoices/list"));
+const VendorInvoiceNew = lazy(() => import("@/pages/vendor-invoices/new"));
+const VendorInvoiceEdit = lazy(() => import("@/pages/vendor-invoices/edit"));
 const VendorInvoiceView = lazy(() => import("@/pages/vendor-invoices/view"));
 
 const Admin    = lazy(() => import("@/pages/admin/index"));
@@ -113,34 +126,57 @@ const IncomeEdit         = lazy(() => import("@/pages/accounting/income-edit"));
 const IncomeView         = lazy(() => import("@/pages/accounting/income-view"));
 
 const AssetsPage         = lazy(() => import("@/operations-8june/pages/assets"));
+const AssetNewPage       = lazy(() => import("@/operations-8june/pages/asset-new"));
+const AssetEditPage      = lazy(() => import("@/operations-8june/pages/asset-edit"));
 const LicensesPage       = lazy(() => import("@/operations-8june/pages/licenses"));
+const LicenseNewPage     = lazy(() => import("@/operations-8june/pages/license-new"));
+const LicenseEditPage    = lazy(() => import("@/operations-8june/pages/license-edit"));
 const EmployeesPage      = lazy(() => import("@/operations-8june/pages/employees"));
+const EmployeeNewPage    = lazy(() => import("@/operations-8june/pages/employee-new"));
+const EmployeeEditPage   = lazy(() => import("@/operations-8june/pages/employee-edit"));
 const PayrollPage        = lazy(() => import("@/operations-8june/pages/payroll"));
+const PayrollConfigNewPage = lazy(() => import("@/operations-8june/pages/payroll-config-new"));
+const PayrollConfigEditPage = lazy(() => import("@/operations-8june/pages/payroll-config-edit"));
+const PayrollProcessPage = lazy(() => import("@/operations-8june/pages/payroll-process"));
 
 // ── Route title map ────────────────────────────────────────────────────────
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/purchase-orders": "Purchase Orders",
   "/quotations": "Quotations",
+  "/sales-orders": "Sales Orders",
   "/invoices": "Invoices",
   "/proforma-invoices": "Proforma Invoices",
   "/credit-notes": "Credit Notes",
   "/debit-notes": "Debit Notes",
   "/delivery-orders": "Delivery Orders",
+  "/point-of-sale": "Point of Sale",
+  "/bill-of-materials": "Bill of Materials",
   "/grn": "Goods Receipt Notes",
+  "/grn/new": "Create Goods Receipt Note",
   "/stock": "Stock Items",
+  "/stock/new": "New Stock Item",
+  "/stock/:id/edit": "Edit Stock Item",
   "/inventory/warehouses": "Warehouses",
-  "/inventory/transfers": "Stock Transfer",
+  "/inventory/stock-transfer": "Stock Transfer",
   "/inventory/reports": "Stock Reports",
+  "/inventory/batch-expiry": "Batch & Expiry",
   "/vendor-invoices": "Vendor Invoices",
+  "/vendor-invoices/new": "New Vendor Invoice",
+  "/vendor-invoices/:id/edit": "Edit Vendor Invoice",
   "/projects": "Projects",
   "/vendors": "Vendors",
   "/customers": "Customers",
   "/address-book": "Address Book",
   "/assets": "Assets",
+  "/assets/new": "Create Asset",
   "/licenses": "Licenses",
+  "/licenses/new": "Create License",
   "/employees": "Employees",
+  "/employees/new": "Create Employee",
   "/payroll": "Payroll",
+  "/payroll/config/new": "Add Payroll Configuration",
+  "/payroll/process": "Process Payroll",
   "/accounting/chart-of-accounts": "Chart of Accounts",
   "/accounting/journal-entries": "Journal Entries",
   "/accounting/profit-loss": "Profit & Loss",
@@ -267,9 +303,18 @@ function Router() {
           <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>
 
           {/* Operations */}
+          <Route path="/assets/new">{() => <ProtectedRoute component={AssetNewPage} module="assets" />}</Route>
+          <Route path="/assets/:id/edit">{() => <ProtectedRoute component={AssetEditPage} module="assets" />}</Route>
           <Route path="/assets">{() => <ProtectedRoute component={AssetsPage} module="assets" />}</Route>
+          <Route path="/licenses/new">{() => <ProtectedRoute component={LicenseNewPage} module="licenses" />}</Route>
+          <Route path="/licenses/:id/edit">{() => <ProtectedRoute component={LicenseEditPage} module="licenses" />}</Route>
           <Route path="/licenses">{() => <ProtectedRoute component={LicensesPage} module="licenses" />}</Route>
+          <Route path="/employees/new">{() => <ProtectedRoute component={EmployeeNewPage} module="employees" />}</Route>
+          <Route path="/employees/:id/edit">{() => <ProtectedRoute component={EmployeeEditPage} module="employees" />}</Route>
           <Route path="/employees">{() => <ProtectedRoute component={EmployeesPage} module="employees" />}</Route>
+          <Route path="/payroll/config/new">{() => <ProtectedRoute component={PayrollConfigNewPage} module="payroll" />}</Route>
+          <Route path="/payroll/config/:id/edit">{() => <ProtectedRoute component={PayrollConfigEditPage} module="payroll" />}</Route>
+          <Route path="/payroll/process">{() => <ProtectedRoute component={PayrollProcessPage} module="payroll" />}</Route>
           <Route path="/payroll">{() => <ProtectedRoute component={PayrollPage} module="payroll" />}</Route>
 
           {/* Projects & Vouchers */}
@@ -292,6 +337,12 @@ function Router() {
           <Route path="/quotations/new">{() => <ProtectedRoute component={QuotationNew} module="quotations" />}</Route>
           <Route path="/quotations/:id/edit">{() => <ProtectedRoute component={QuotationEdit} module="quotations" />}</Route>
           <Route path="/quotations/:id">{() => <ProtectedRoute component={QuotationView} module="quotations" />}</Route>
+
+          {/* Sales Orders */}
+          <Route path="/sales-orders">{() => <ProtectedRoute component={SalesOrderList} module="sales_orders" />}</Route>
+          <Route path="/sales-orders/new">{() => <ProtectedRoute component={SalesOrderNew} module="sales_orders" />}</Route>
+          <Route path="/sales-orders/:id/edit">{() => <ProtectedRoute component={SalesOrderEdit} module="sales_orders" />}</Route>
+          <Route path="/sales-orders/:id">{() => <ProtectedRoute component={SalesOrderView} module="sales_orders" />}</Route>
 
           {/* Invoices */}
           <Route path="/invoices">{() => <ProtectedRoute component={InvoiceList} module="invoices" />}</Route>
@@ -323,18 +374,28 @@ function Router() {
           <Route path="/delivery-orders/:id/edit">{() => <ProtectedRoute component={DeliveryOrderEdit} module="delivery_orders" />}</Route>
           <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
+          {/* Point of Sale */}
+          <Route path="/point-of-sale">{() => <ProtectedRoute component={PointOfSalePage} anyOf={["point_of_sale", "delivery_orders"]} />}</Route>
+          <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} anyOf={["bill_of_materials", "point_of_sale", "stock_items"]} />}</Route>
+
           {/* Goods Receipt Notes */}
           <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
+          <Route path="/grn/new">{() => <ProtectedRoute component={GrnNew} module="grn" />}</Route>
           <Route path="/grn/:id">{() => <ProtectedRoute component={GrnView} module="grn" />}</Route>
 
           {/* Stock / Inventory */}
+          <Route path="/stock/new">{() => <ProtectedRoute component={StockItemForm} module="stock_items" />}</Route>
+          <Route path="/stock/:id/edit">{() => <ProtectedRoute component={StockItemForm} module="stock_items" />}</Route>
           <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
           <Route path="/inventory/warehouses">{() => <ProtectedRoute component={WarehousesPage} module="warehouses" />}</Route>
-          <Route path="/inventory/transfers">{() => <ProtectedRoute component={TransfersPage} module="stock_transfer" />}</Route>
+          <Route path="/inventory/stock-transfer">{() => <ProtectedRoute component={StockTransferPage} anyOf={["stock_transfer", "warehouses"]} />}</Route>
           <Route path="/inventory/reports">{() => <ProtectedRoute component={InventoryReportsPage} module="inventory_reports" />}</Route>
+          <Route path="/inventory/batch-expiry">{() => <ProtectedRoute component={BatchExpiryPage} anyOf={["batch_expiry", "inventory_reports", "stock_items"]} />}</Route>
 
           {/* Vendor Invoices */}
           <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="purchase_orders" />}</Route>
+          <Route path="/vendor-invoices/new">{() => <ProtectedRoute component={VendorInvoiceNew} module="purchase_orders" />}</Route>
+          <Route path="/vendor-invoices/:id/edit">{() => <ProtectedRoute component={VendorInvoiceEdit} module="purchase_orders" />}</Route>
           <Route path="/vendor-invoices/:id">{() => <ProtectedRoute component={VendorInvoiceView} module="purchase_orders" />}</Route>
 
           {/* Directory */}

@@ -3,10 +3,11 @@ import nodemailer from "nodemailer";
 import { db, settingsTable, companiesTable, purchaseOrdersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { resolveSmtpSettings } from "../lib/smtp.js";
 
 const router = Router();
 
-function createTransporter(settings: any) {
+function createTransporter(settings: { smtpHost: string; smtpPort: string; smtpUser: string; smtpPass: string }) {
   return nodemailer.createTransport({
     host: settings.smtpHost,
     port: parseInt(settings.smtpPort || "587"),
@@ -137,10 +138,10 @@ router.post("/send-email", async (req, res): Promise<void> => {
   }
 
   const settingsRows = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
-  const settings = settingsRows[0];
+  const settings = resolveSmtpSettings(settingsRows[0]);
 
-  if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
-    res.status(503).json({ error: "SMTP is not configured for this company. Please configure SMTP in Settings → Email." });
+  if (!settings) {
+    res.status(503).json({ error: "SMTP is not configured for this company. Please configure SMTP in Settings → Email, or set SMTP_HOST / SMTP_USER / SMTP_PASS in .env." });
     return;
   }
 
@@ -224,10 +225,10 @@ router.post("/test-email", async (req, res): Promise<void> => {
   }
 
   const settingsRows = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
-  const settings = settingsRows[0];
+  const settings = resolveSmtpSettings(settingsRows[0]);
 
-  if (!settings?.smtpHost || !settings?.smtpUser || !settings?.smtpPass) {
-    res.status(400).json({ error: "SMTP settings are incomplete for this company. Please fill in all fields and save first." });
+  if (!settings) {
+    res.status(400).json({ error: "SMTP settings are incomplete. Configure Settings → Email, or set SMTP_HOST / SMTP_USER / SMTP_PASS in .env." });
     return;
   }
 

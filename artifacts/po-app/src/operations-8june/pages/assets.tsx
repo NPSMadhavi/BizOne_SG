@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import {
   ManagementPageHeader,
   ManagementTableCard,
@@ -20,13 +21,9 @@ import { Asset } from "@shared/schema";
 import { apiRequest, parseApiResponse } from "@/operations-8june/lib/queryClient";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog } from "@/components/ui/dialog";
-import { FormModalShell, ModalCancelButton, ModalSaveButton } from "@/operations-8june/components/forms/FormModalShell";
-import AssetForm from "@/operations-8june/components/forms/AssetForm";
 import AssetViewDialog from "@/operations-8june/components/forms/AssetViewDialog";
 import {
   Plus,
-  Loader2,
   Trash2,
   Laptop,
   Monitor,
@@ -50,16 +47,14 @@ import AssignAssetModal from "@/operations-8june/components/modals/AssignAssetMo
 
 export default function AssetsPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { selectedCompany, isLoading: authLoading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
-  const [assetFormPending, setAssetFormPending] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
   
   const { data: assets = [], isLoading, isError, error } = useQuery<Asset[]>({
@@ -100,9 +95,7 @@ export default function AssetsPage() {
   };
 
   const handleEditAsset = (asset: Asset) => {
-    setEditingAsset(asset);
-    setSelectedAssetId(asset.id);
-    setIsFormDialogOpen(true);
+    setLocation(`/assets/${asset.id}/edit`);
   };
   
   const handleDeleteAsset = (id: number) => {
@@ -167,13 +160,9 @@ export default function AssetsPage() {
         action={
           <Button
             className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
-            onClick={() => {
-              setEditingAsset(null);
-              setSelectedAssetId(null);
-              setIsFormDialogOpen(true);
-            }}
+            onClick={() => setLocation("/assets/new")}
           >
-            <Plus className="mr-2 h-4 w-4" /> Add Asset
+            <Plus className="mr-2 h-4 w-4" /> Create Asset
           </Button>
         }
       />
@@ -186,9 +175,7 @@ export default function AssetsPage() {
 
       <ManagementTableCard>
           {isLoading || authLoading ? (
-            <div className="flex justify-center items-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
-            </div>
+            <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
           ) : isError ? (
             <ManagementEmptyState
               title="Failed to load assets"
@@ -295,11 +282,7 @@ export default function AssetsPage() {
                 !searchTerm ? (
                   <Button
                     className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
-                    onClick={() => {
-                      setEditingAsset(null);
-                      setSelectedAssetId(null);
-                      setIsFormDialogOpen(true);
-                    }}
+                    onClick={() => setLocation("/assets/new")}
                   >
                     <Plus className="mr-2 h-4 w-4" /> Add Asset
                   </Button>
@@ -308,35 +291,6 @@ export default function AssetsPage() {
             />
           )}
       </ManagementTableCard>
-      
-      <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
-        <FormModalShell
-          title={selectedAssetId ? "Edit asset" : "Create new asset"}
-          maxWidth="max-w-5xl"
-          onClose={() => setIsFormDialogOpen(false)}
-          footer={
-            <>
-              <ModalCancelButton onClick={() => setIsFormDialogOpen(false)} />
-              <ModalSaveButton
-                form="asset-form"
-                loading={assetFormPending}
-                label="Save"
-                loadingLabel="Saving..."
-              />
-            </>
-          }
-        >
-          <AssetForm
-            key={selectedAssetId ?? "new"}
-            assetId={selectedAssetId || undefined}
-            initialAsset={editingAsset}
-            onSuccess={() => setIsFormDialogOpen(false)}
-            formId="asset-form"
-            hideFooter
-            onPendingChange={setAssetFormPending}
-          />
-        </FormModalShell>
-      </Dialog>
       
       <AssetViewDialog
         open={isViewDialogOpen}
@@ -362,14 +316,7 @@ export default function AssetsPage() {
               className="bg-red-600 hover:bg-red-700"
               disabled={deleteAssetMutation.isPending}
             >
-              {deleteAssetMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
+              {deleteAssetMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

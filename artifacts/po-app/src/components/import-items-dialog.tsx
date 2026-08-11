@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { Upload, FileSpreadsheet, FileText, AlertTriangle, CheckCircle2, RefreshCw, Sparkles } from "lucide-react";
+import { Upload, FileSpreadsheet, FileText, AlertTriangle, CheckCircle2, RefreshCw, Sparkles, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -34,6 +34,52 @@ const FIELD_OPTIONS: { value: ColumnField; label: string }[] = [
   { value: "unitPrice", label: "Unit Price" },
   { value: "uom", label: "UOM" },
 ];
+
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif)$/i;
+
+function isImageFile(file: File) {
+  const name = file.name.toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return type.startsWith("image/") || IMAGE_EXT.test(name);
+}
+
+function isPdfFile(file: File) {
+  const name = file.name.toLowerCase();
+  return file.type === "application/pdf" || name.endsWith(".pdf");
+}
+
+function isExcelFile(file: File) {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".xlsx") || name.endsWith(".xls");
+}
+
+async function extractItemsViaAi(file: File): Promise<ImportedItem[]> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/invoices/extract-po", {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error((errData as any)?.error || `Server error ${res.status}`);
+  }
+  const data = await res.json() as { items?: any[] };
+  const items: ImportedItem[] = (data.items ?? []).map((it: any) => ({
+    partNumber: String(it.partNumber ?? ""),
+    description: String(it.description ?? ""),
+    qty: Number(it.qty) || 1,
+    unitPrice: Number(it.unitPrice) || 0,
+    uom: String(it.uom ?? ""),
+  }));
+  if (items.length === 0) {
+    throw new Error(
+      "No line items could be extracted from this file. Please check that it contains product/service line items."
+    );
+  }
+  return items;
+}
 
 export function ImportItemsDialog({ open, onClose, onImport }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -78,46 +124,21 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
     setError("");
     setStage("parsing");
     try {
-      const lower = file.name.toLowerCase();
-
-      if (lower.endsWith(".pdf")) {
-        // Use the AI-powered backend extractor (same engine as "Import from PO")
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch("/api/invoices/extract-po", {
-          method: "POST",
-          body: form,
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error((errData as any)?.error || `Server error ${res.status}`);
-        }
-        const data = await res.json() as { items?: any[] };
-        const items: ImportedItem[] = (data.items ?? []).map((it: any) => ({
-          partNumber: String(it.partNumber ?? ""),
-          description: String(it.description ?? ""),
-          qty: Number(it.qty) || 1,
-          unitPrice: Number(it.unitPrice) || 0,
-          uom: String(it.uom ?? ""),
-        }));
-        if (items.length === 0) {
-          throw new Error("No line items could be extracted from this PDF. Please check that it contains product/service line items.");
-        }
+      if (isPdfFile(file) || isImageFile(file)) {
+        const items = await extractItemsViaAi(file);
         setAiItems(items);
         setIsAiParsed(true);
         setParseResult(null);
         setStage("preview");
-
-      } else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+      } else if (isExcelFile(file)) {
         const result = await parseExcel(file);
         setAiItems(null);
         setIsAiParsed(false);
         setParseResult(result);
         setColumnMap(result.columnMap);
         setStage("preview");
-
       } else {
-        setError("Unsupported file type. Please upload a PDF, XLSX, or XLS file.");
+        setError("Unsupported file type. Please upload a PDF, image (JPG/PNG), XLSX, or XLS file.");
         setStage("upload");
       }
     } catch (e: any) {
@@ -184,6 +205,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
     onClose();
   };
 
+  const isImage = IMAGE_EXT.test(fileName);
   const isPdf = fileName.toLowerCase().endsWith(".pdf");
 
   return (
@@ -201,8 +223,8 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
           {stage === "upload" && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Upload a supplier quote or PO in <strong>PDF</strong> or <strong>Excel (.xlsx / .xls)</strong> format.
-                The system will extract Part Number, Description, Qty, and Unit Price.
+                Upload a supplier quote or PO as <strong>PDF</strong>, <strong>image (JPG / PNG)</strong>, or{" "}
+                <strong>Excel (.xlsx / .xls)</strong>. The system will extract Part Number, Description, Qty, and Unit Price.
               </p>
               <div
                 className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors
@@ -214,11 +236,18 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
               >
                 <div className="flex justify-center gap-3 mb-3 text-muted-foreground">
                   <FileText className="h-8 w-8" />
+                  <ImageIcon className="h-8 w-8" />
                   <FileSpreadsheet className="h-8 w-8" />
                 </div>
                 <p className="text-sm font-medium">Drop file here or click to browse</p>
-                <p className="text-xs text-muted-foreground mt-1">Supports: PDF, XLSX, XLS</p>
-                <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls" className="hidden" onChange={handleInputChange} />
+                <p className="text-xs text-muted-foreground mt-1">Supports: PDF, JPG, JPEG, PNG, XLSX, XLS</p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.xlsx,.xls,image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                  className="hidden"
+                  onChange={handleInputChange}
+                />
               </div>
               {error && (
                 <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-3">
@@ -226,7 +255,7 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
                 </div>
               )}
               <div className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-md p-3">
-                <strong>PDF:</strong> AI-powered extraction — same engine as "Import from PO". Works best with text-based PDFs (not scanned images).
+                <strong>PDF / Image:</strong> AI extracts line-item data (not the image itself). Use a clear photo or scan of the quote/PO.
               </div>
             </div>
           )}
@@ -236,11 +265,11 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <RefreshCw className="h-8 w-8 text-primary animate-spin" />
               <p className="text-sm text-muted-foreground">
-                {isPdf
+                {isPdf || isImage || isAiParsed
                   ? <>Extracting line items from <strong>{fileName}</strong> using AI…</>
                   : <>Parsing <strong>{fileName}</strong>…</>}
               </p>
-              {isPdf && (
+              {(isPdf || isImage) && (
                 <p className="text-xs text-muted-foreground">This may take a few seconds</p>
               )}
             </div>
@@ -252,8 +281,8 @@ export function ImportItemsDialog({ open, onClose, onImport }: Props) {
               {/* File info */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {isPdf
-                    ? <FileText className="h-4 w-4" />
+                  {isAiParsed
+                    ? (isImage ? <ImageIcon className="h-4 w-4" /> : <FileText className="h-4 w-4" />)
                     : <FileSpreadsheet className="h-4 w-4" />}
                   <span className="font-medium text-foreground">{fileName}</span>
                   <Badge variant="secondary">{previewItems.length} item{previewItems.length !== 1 ? "s" : ""} detected</Badge>

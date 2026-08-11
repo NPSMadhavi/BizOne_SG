@@ -1,7 +1,8 @@
+import "./load-env";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
-import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, runStartupMigrations } from "./lib/startup-backfill.js";
+import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, reconcileStockQuantitiesOnStartup, runStartupMigrations } from "./lib/startup-backfill.js";
 
 const rawPort = process.env["PORT"];
 
@@ -22,6 +23,7 @@ seedIfEmpty()
   .then(() => backfillExpenseJEsOnStartup())
   .then(() => backfillInvoiceJEsOnStartup())
   .then(() => backfillExchangeRatesOnStartup())
+  .then(() => reconcileStockQuantitiesOnStartup())
   .then(() => {
     app.listen(port, (err) => {
       if (err) {

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, FileText, Receipt } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, FileText, Receipt, ShoppingBag } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -29,8 +30,31 @@ export default function QuotationView() {
   const { toast } = useToast();
   const { selectedCompany, canManage } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [converting, setConverting] = useState<"proforma" | "tax" | null>(null);
+  const [converting, setConverting] = useState<"proforma" | "tax" | "so" | null>(null);
   const qc = useQueryClient();
+
+  const handleConvertToSo = async () => {
+    setConverting("so");
+    try {
+      const res = await fetch(`/api/quotations/${id}/mark-converted-to-so`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getGetQuotationQueryKey(id) }),
+        qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() }),
+      ]);
+
+      toast({ title: "Marked as Converted", description: "Opening new Sales Order…" });
+      setLocation(`/sales-orders/new?quotationId=${id}`);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setConverting(null);
+    }
+  };
 
   const handleConvert = async (type: "proforma" | "tax") => {
     setConverting(type);
@@ -43,6 +67,15 @@ export default function QuotationView() {
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
       const result = await res.json();
+
+      // Refresh quotation + target document lists so the new invoice appears
+      // immediately without requiring a manual browser refresh.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getGetQuotationQueryKey(id) }),
+        qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() }),
+        invalidateDocumentList(qc, type === "proforma" ? "proforma-invoices" : "invoices"),
+      ]);
+
       toast({
         title: type === "proforma" ? "Proforma Invoice Created" : "Tax Invoice Created",
         description: `${result.number} created successfully`,
@@ -73,6 +106,7 @@ export default function QuotationView() {
       case "draft": return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
       case "sent": return <Badge className="bg-violet-600 hover:bg-violet-700 text-sm py-1">Sent</Badge>;
+      case "converted_to_so": return <Badge className="bg-sky-600 hover:bg-sky-700 text-sm py-1">Converted to SO</Badge>;
       default: return <Badge variant="outline" className="text-sm py-1">{s}</Badge>;
     }
   };
@@ -107,7 +141,7 @@ export default function QuotationView() {
           <Button variant="ghost" size="icon" onClick={() => setLocation("/quotations")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{doc.qtNumber}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{doc.qtNumber}</h1>
               {getStatusBadge(doc.status)}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
@@ -127,6 +161,16 @@ export default function QuotationView() {
           )}
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-4 w-4" />Preview
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-sky-300 text-sky-700 hover:bg-sky-50"
+            onClick={handleConvertToSo}
+            disabled={!!converting || (doc as any).status === "converted_to_so"}
+            title={(doc as any).status === "converted_to_so" ? "Already converted to Sales Order" : undefined}
+          >
+            {converting === "so" ? <span className="h-4 w-4 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
+            Convert to SO
           </Button>
           <Button
             variant="outline"
@@ -168,7 +212,14 @@ export default function QuotationView() {
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction onClick={() => deleteMutation.mutate({ id }, {
-                    onSuccess: () => { toast({ title: "Deleted" }); setLocation("/quotations"); },
+                    onSuccess: async () => {
+                      qc.setQueryData(getListQuotationsQueryKey(), (old: any) =>
+                        Array.isArray(old) ? old.filter((d: any) => d.id !== id) : old,
+                      );
+                      await invalidateDocumentList(qc, "quotations");
+                      toast({ title: "Deleted" });
+                      setLocation("/quotations");
+                    },
                     onError: () => toast({ title: "Error", description: "Failed to delete", variant: "destructive" }),
                   })}>Delete</AlertDialogAction>
                 </AlertDialogFooter>

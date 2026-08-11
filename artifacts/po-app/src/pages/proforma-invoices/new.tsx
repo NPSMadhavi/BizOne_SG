@@ -280,7 +280,7 @@ export default function ProformaInvoiceNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">New Proforma Invoice</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Proforma Invoice</h1>
             <p className="text-muted-foreground mt-1">Create a new proforma invoice.</p>
           </div>
         </div>
@@ -750,7 +750,10 @@ export default function ProformaInvoiceNew() {
       {savedDoc && (
         <PdfPreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/proforma-invoices`);
+          }}
           title={`Proforma Invoice ${savedDoc.piNumber}`}
           generatePdf={(opts) => generatePI_PDF(savedDoc, selectedCompany, undefined, opts)}
           pdfFilename={`${savedDoc.piNumber}.pdf`}

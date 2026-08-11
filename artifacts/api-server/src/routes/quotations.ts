@@ -241,6 +241,24 @@ router.post("/quotations/:id/mark-confirmed", async (req, res): Promise<void> =>
   res.json(updated);
 });
 
+router.post("/quotations/:id/mark-converted-to-so", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const companyId = req.session.companyId!;
+  const [existing] = await db.select().from(quotationsTable).where(eq(quotationsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Quotation not found" }); return; }
+  if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (existing.status === "converted_to_so") {
+    res.status(400).json({ error: "Quotation is already converted to Sales Order" }); return;
+  }
+
+  const [updated] = await db.update(quotationsTable).set({ status: "converted_to_so" }).where(eq(quotationsTable.id, id)).returning();
+  logAudit({ req, action: "status:converted_to_so", entityType: "quotation", entityId: id, entityLabel: updated.qtNumber });
+  res.json(parseDoc(updated));
+});
+
 // ── Convert quotation → Proforma Invoice or Tax Invoice ───────────────────────
 router.post("/quotations/:id/convert", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;

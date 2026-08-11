@@ -277,7 +277,7 @@ export default function VoucherView() {
           <div>
             <div className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-primary" />
-              <h1 className="text-xl font-bold">{voucher.voucherNumber}</h1>
+              <h1 className="text-xl font-bold text-[#2563EB]">{voucher.voucherNumber}</h1>
               <Badge className={`text-xs border ${STATUS_COLORS[status] || ""}`}>
                 {status === "paid" ? (
                   <span className="flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Paid</span>

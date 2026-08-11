@@ -90,7 +90,7 @@ function CompanyModuleSelector({
       {companies.map(company => {
         const isSelected = selectedCompanyIds.includes(company.id);
         const entry = value.find(v => v.companyId === company.id);
-        const isSg = company.country?.toLowerCase() === "singapore";
+        const isSg = company.country?.toLowerCase() === "singapore" || company.country?.toUpperCase() === "SG";
         const visibleGroups = MODULE_GROUPS.filter((g: ModuleGroup) => !g.sgOnly || isSg);
 
         return (
@@ -351,7 +351,7 @@ export default function Admin() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">User Management</h1>
           <p className="text-muted-foreground mt-1">Manage system access, roles, and module permissions per company.</p>
         </div>
 

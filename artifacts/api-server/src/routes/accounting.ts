@@ -5,6 +5,7 @@ import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
 import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
 import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
+import { isSingaporeCountry } from "../lib/singapore.js";
 
 const router: IRouter = Router();
 
@@ -22,7 +23,7 @@ async function requireSingapore(req: any, res: any): Promise<boolean> {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return false; }
   const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
-  if (!company || company.country?.toLowerCase() !== "singapore") {
+  if (!company || !isSingaporeCountry(company.country)) {
     res.status(403).json({ error: "Accounting features are only available for Singapore companies." });
     return false;
   }
@@ -976,6 +977,7 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
 
+  try {
   const companyId  = req.session.companyId!;
   const fromDate   = (req.query.from  as string) || null;
   const toDate     = (req.query.to    as string) || null;
@@ -991,9 +993,10 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
   async function computeF5Boxes(fDate: string | null, tDate: string | null) {
     // Sales invoices — apply exchange rate so amounts are always in SGD
     const invRows = await db.select({
-      subtotal: invoicesTable.subtotal, discountAmount: invoicesTable.discountAmount,
-      tax: invoicesTable.tax, gstTreatment: (invoicesTable as any).gstTreatment,
-      exchangeRate: (invoicesTable as any).exchangeRate,
+      subtotal: invoicesTable.subtotal,
+      discountAmount: invoicesTable.discountAmount,
+      tax: invoicesTable.tax,
+      exchangeRate: invoicesTable.exchangeRate,
     })
     .from(invoicesTable)
     .where(and(
@@ -1017,7 +1020,7 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
       totalAmount: vendorInvoicesTable.totalAmount,
       gstAmount:   vendorInvoicesTable.gstAmount,
       gstTreatment: vendorInvoicesTable.gstTreatment,
-      exchangeRate: (vendorInvoicesTable as any).exchangeRate,
+      exchangeRate: vendorInvoicesTable.exchangeRate,
     })
       .from(vendorInvoicesTable)
       .where(and(
@@ -1080,6 +1083,10 @@ router.get("/gst-f7", async (req, res): Promise<void> => {
     amended:  { box1: +amended.box1.toFixed(2),  box2: 0, box3: 0, box4: +amended.box4.toFixed(2),  box5: 0, box6: +amended.box6.toFixed(2),  box7: +amended.box7.toFixed(2),  box8: +amended.box8.toFixed(2) },
     delta:    { box1: +delta.box1.toFixed(2),    box2: 0, box3: 0, box4: +delta.box4.toFixed(2),    box5: 0, box6: +delta.box6.toFixed(2),    box7: +delta.box7.toFixed(2),    box8: +delta.box8.toFixed(2) },
   });
+  } catch (err: any) {
+    req.log?.error({ err }, "GST F7 failed");
+    res.status(500).json({ error: err?.message || "Failed to load GST F7 data" });
+  }
 });
 
 // ─── Vendor Statement ─────────────────────────────────────────────────────────
@@ -1479,7 +1486,7 @@ router.get("/gst-io-listing", async (req, res): Promise<void> => {
       const totalAmt   = +parseFloat(r.totalAmount ?? "0").toFixed(2);
       const date       = r.piDate ?? r.createdAt?.toISOString().slice(0, 10) ?? "";
       const vendor     = vendorMap.get((r.vendorName ?? "").toLowerCase());
-      const isOverseas = vendor?.country && vendor.country.toLowerCase() !== "singapore";
+      const isOverseas = vendor?.country && !isSingaporeCountry(vendor.country);
       const isReg      = !!vendor?.gstRegistered;
       const hasGst     = !isOverseas && isReg && (r.currency ?? "SGD") === "SGD";
       const gstAmt     = hasGst ? +(totalAmt * gstRate / (100 + gstRate)).toFixed(2) : 0;
@@ -1795,7 +1802,7 @@ router.post("/ar/bulk-payment", async (req, res): Promise<void> => {
   ]);
 
   const [co] = await db.select({ country: companiesTable.country }).from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
-  const isSgp = co?.country?.toLowerCase() === "singapore";
+  const isSgp = isSingaporeCountry(co?.country);
 
   const processedPayments: Array<{ paymentId: number; invoiceId: number; invNumber: string; amount: number }> = [];
 
@@ -1983,7 +1990,7 @@ router.post("/ar/apply-credit", async (req, res): Promise<void> => {
 
   // JE: DR 2035 / CR 1100 per invoice
   const [co] = await db.select({ country: companiesTable.country }).from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
-  if (co?.country?.toLowerCase() === "singapore") {
+  if (isSingaporeCountry(co?.country)) {
     await ensureAccountsSeeded(companyId);
     const getAcct = async (code: string) => {
       const [a] = await db.select().from(accountsTable).where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.code, code))).limit(1);
@@ -2043,7 +2050,7 @@ router.post("/ap/bulk-payment", async (req, res): Promise<void> => {
 
   const [co] = await db.select({ country: companiesTable.country })
     .from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
-  const isSgp = co?.country?.toLowerCase() === "singapore";
+  const isSgp = isSingaporeCountry(co?.country);
 
   const processedPayments: Array<{ paymentId: number; vendorInvoiceId: number; piNumber: string; amount: number }> = [];
   let totalPaid = 0;

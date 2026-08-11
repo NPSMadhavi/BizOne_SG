@@ -49,8 +49,12 @@ import {
   DollarSign,
   Briefcase,
   Warehouse,
-  ArrowLeftRight,
   BarChart3,
+  Store,
+  Hourglass,
+  Boxes,
+  ShoppingBag,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -92,9 +96,17 @@ function getGroupForRoute(loc: string): string | null {
     loc.startsWith("/purchase-orders") ||
     loc.startsWith("/vendor-invoices") ||
     loc.startsWith("/quotations") ||
+    loc.startsWith("/sales-orders") ||
     loc.startsWith("/invoices") ||
     loc.startsWith("/delivery-orders") ||
+    loc.startsWith("/point-of-sale") ||
+    loc.startsWith("/bill-of-materials") ||
     loc.startsWith("/grn")
+  ) return "documents";
+  if (
+    loc.startsWith("/credit-notes") ||
+    loc.startsWith("/debit-notes") ||
+    loc.startsWith("/proforma-invoices")
   ) return "documents";
   if (loc.startsWith("/projects")) return "projects";
   if (
@@ -131,18 +143,19 @@ interface NavItemProps {
 function NavItem({ href, icon: Icon, children, active, inGroup = false }: NavItemProps) {
   const collapsed = React.useContext(SidebarCtx);
 
+  const activeCls =
+    "bg-[#1a73e8] text-white shadow-[0_4px_12px_rgba(26,115,232,0.35)]";
+  const idleCls =
+    "text-[#64748b] hover:bg-[#f0f4ff] hover:text-[#1a73e8]";
+
   const expandedEl = (
     <Link href={href} className="block">
       <div
-        className={`flex items-center gap-3 rounded-md text-sm font-medium transition-colors ${
-          inGroup ? "px-2 py-1.5" : "px-3 py-2"
-        } ${
-          active
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-        }`}
+        className={`flex items-center gap-3 rounded-xl text-sm font-medium transition-all ${
+          inGroup ? "px-2.5 py-1.5" : "px-3 py-2.5"
+        } ${active ? activeCls : idleCls}`}
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        <Icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#1a73e8]/80"}`} />
         {children}
       </div>
     </Link>
@@ -155,13 +168,11 @@ function NavItem({ href, icon: Icon, children, active, inGroup = false }: NavIte
       <TooltipTrigger asChild>
         <Link href={href} className="block">
           <div
-            className={`flex items-center justify-center rounded-md h-9 w-9 mx-auto transition-colors ${
-              active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            className={`flex items-center justify-center rounded-xl h-9 w-9 mx-auto transition-all ${
+              active ? activeCls : idleCls
             }`}
           >
-            <Icon className="h-4 w-4 shrink-0" />
+            <Icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#1a73e8]/80"}`} />
           </div>
         </Link>
       </TooltipTrigger>
@@ -197,13 +208,13 @@ function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible =
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className={`flex items-center justify-center rounded-md h-9 w-9 mx-auto transition-colors ${
+                className={`flex items-center justify-center rounded-xl h-9 w-9 mx-auto transition-all ${
                   hasActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-[#1a73e8] text-white shadow-[0_4px_12px_rgba(26,115,232,0.35)]"
+                    : "text-[#64748b] hover:bg-[#f0f4ff] hover:text-[#1a73e8]"
                 }`}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className={`h-4 w-4 shrink-0 ${hasActive ? "text-white" : "text-[#1a73e8]/80"}`} />
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
@@ -227,13 +238,13 @@ function NavGroup({ id, label, icon: Icon, children, isOpen, onToggle, visible =
       <button
         type="button"
         onClick={() => onToggle(id)}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-          isOpen
-            ? "text-foreground bg-muted/50"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+          isOpen || hasActive
+            ? "text-[#1a73e8] bg-[#f0f4ff]"
+            : "text-[#64748b] hover:bg-[#f0f4ff] hover:text-[#1a73e8]"
         }`}
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        <Icon className={`h-4 w-4 shrink-0 ${isOpen || hasActive ? "text-[#1a73e8]" : "text-[#1a73e8]/80"}`} />
         <span className="flex-1 text-left">{label}</span>
         <ChevronDown
           className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
@@ -426,9 +437,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const hasDocuments =
     hasModuleAccess("purchase_orders") ||
     hasModuleAccess("quotations") ||
+    hasModuleAccess("sales_orders") ||
     hasModuleAccess("invoices") ||
     hasModuleAccess("credit_notes") ||
-    hasModuleAccess("delivery_orders");
+    hasModuleAccess("delivery_orders") ||
+    hasModuleAccess("point_of_sale") ||
+    hasModuleAccess("bill_of_materials");
   const hasDirectory =
     isAdmin ||
     hasModuleAccess("purchase_orders") ||
@@ -512,7 +526,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         visible={hasDocuments}
         hasActive={
           location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") ||
-          location.startsWith("/quotations") || location.startsWith("/invoices") ||
+          location.startsWith("/quotations") || location.startsWith("/sales-orders") ||
+          location.startsWith("/invoices") ||
           location.startsWith("/proforma-invoices") || location.startsWith("/credit-notes") ||
           location.startsWith("/debit-notes") || location.startsWith("/delivery-orders") ||
           location.startsWith("/grn")
@@ -536,12 +551,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
         {(isAdmin || hasModuleAccess("grn")) && (
           <NavItem href="/grn" icon={ClipboardList} active={location.startsWith("/grn")} inGroup>
-            Goods Receipt
+            GoodsReceipt Note
           </NavItem>
         )}
 
         {/* ── Sales ── */}
-        {(hasModuleAccess("quotations") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("debit_notes") || hasModuleAccess("delivery_orders")) && (
+        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("debit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("point_of_sale") || hasModuleAccess("bill_of_materials")) && (
           <div className="px-3 pt-3 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Sales</span>
           </div>
@@ -551,6 +566,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Quotations
           </NavItem>
         )}
+        {hasModuleAccess("sales_orders") && (
+          <NavItem href="/sales-orders" icon={ShoppingBag} active={location.startsWith("/sales-orders")} inGroup>
+            Sales Orders
+          </NavItem>
+        )}
         {hasModuleAccess("proforma_invoices") && (
           <NavItem href="/proforma-invoices" icon={FileMinus} active={location.startsWith("/proforma-invoices")} inGroup>
             Proforma Invoices
@@ -558,7 +578,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
         {hasModuleAccess("invoices") && (
           <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices") && !location.startsWith("/invoices/")} inGroup>
-            Invoices
+            Tax Invoices
           </NavItem>
         )}
         {hasModuleAccess("credit_notes") && (
@@ -574,6 +594,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("delivery_orders") && (
           <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")} inGroup>
             Delivery Orders
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("point_of_sale") || hasModuleAccess("delivery_orders")) && (
+          <NavItem href="/point-of-sale" icon={Store} active={location.startsWith("/point-of-sale")} inGroup>
+            Point of Sale
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("bill_of_materials") || hasModuleAccess("point_of_sale") || hasModuleAccess("stock_items")) && (
+          <NavItem href="/bill-of-materials" icon={Boxes} active={location.startsWith("/bill-of-materials")} inGroup>
+            Bill of Materials
           </NavItem>
         )}
       </NavGroup>
@@ -597,14 +627,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Stock Items
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("stock_transfer")) && (
-          <NavItem href="/inventory/transfers" icon={ArrowLeftRight} active={location.startsWith("/inventory/transfers")} inGroup>
+        {(isAdmin || hasModuleAccess("stock_transfer") || hasModuleAccess("warehouses")) && (
+          <NavItem href="/inventory/stock-transfer" icon={ArrowLeftRight} active={location.startsWith("/inventory/stock-transfer")} inGroup>
             Stock Transfer
           </NavItem>
         )}
         {(isAdmin || hasModuleAccess("inventory_reports")) && (
           <NavItem href="/inventory/reports" icon={BarChart3} active={location.startsWith("/inventory/reports")} inGroup>
             Stock Reports
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("batch_expiry") || hasModuleAccess("inventory_reports") || hasModuleAccess("stock_items")) && (
+          <NavItem href="/inventory/batch-expiry" icon={Hourglass} active={location.startsWith("/inventory/batch-expiry")} inGroup>
+            Batch & Expiry
           </NavItem>
         )}
       </NavGroup>
@@ -787,14 +822,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <SidebarCtx.Provider value={collapsed}>
       <TooltipProvider delayDuration={0}>
         {/* Header: logo + toggle */}
-        <div className={`border-b border-border/50 flex items-center shrink-0 ${collapsed ? "justify-center py-4 px-2" : "px-5 py-4 justify-between"}`}>
+        <div className={`border-b border-border/50 flex items-center shrink-0 ${collapsed ? "justify-center py-4 px-2" : "px-4 py-4 gap-2"}`}>
           {!collapsed && (
-            <img src={activeLogo} alt="BizOne" className="h-11 w-auto object-contain max-w-[160px]" />
+            <img src={activeLogo} alt="BizOne" className="h-14 w-auto object-contain object-left max-w-[200px] flex-1 min-w-0" />
           )}
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 ml-auto"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}

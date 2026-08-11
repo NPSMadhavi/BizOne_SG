@@ -19,5 +19,7 @@ export interface POItem {
   unitPrice: number;
   amount: number;
   isStockItem?: boolean;
+  stockItemId?: number;
+  warehouseId?: number;
   itemImage?: string;
 }

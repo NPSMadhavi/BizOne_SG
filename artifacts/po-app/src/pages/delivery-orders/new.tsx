@@ -3,7 +3,8 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey, getListDeliveryOrdersQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -19,8 +20,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, Eye, Lock, Plus, FileInput, Package, ArrowLeft } from "lucide-react";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
-import { ImportFromPODialog } from "@/components/import-from-po-dialog";
-import type { DOImportItem } from "@/components/import-from-po-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { generateDO_PDF } from "@/lib/pdf";
 import { DeliveryDateField } from "@/components/delivery-date-field";
@@ -55,6 +54,7 @@ const schema = z.object({
 export default function DeliveryOrderNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { selectedCompany } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -74,21 +74,8 @@ export default function DeliveryOrderNew() {
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
   const createMutation = useCreateDeliveryOrder();
 
-  const [importPOOpen, setImportPOOpen] = useState(false);
   const [importExcelOpen, setImportExcelOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
-  function handleImportFromPO(imported: DOImportItem[]) {
-    if (!imported.length) return;
-    const current = form.getValues("items");
-    const allBlank = current.every(i => !i.description?.trim());
-    if (allBlank) {
-      form.setValue("items", imported as any);
-    } else {
-      const last = current[current.length - 1];
-      const trailingBlank = last && !last.description?.trim();
-      form.setValue("items", [...(trailingBlank ? current.slice(0, -1) : current), ...(imported as any)]);
-    }
-  }
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
   const nextDoNumber = (() => {
@@ -130,7 +117,8 @@ export default function DeliveryOrderNew() {
       return;
     }
     createMutation.mutate({ data: { ...values, status: "draft", items: filledItems as any } }, {
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
+        await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
         setIsSubmitting(false);
         if (openPreview) {
           setSavedDoc(data);
@@ -161,7 +149,7 @@ export default function DeliveryOrderNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">New Delivery Order</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Delivery Order</h1>
             <p className="text-muted-foreground mt-1">Create a new delivery order.</p>
           </div>
         </div>
@@ -236,6 +224,10 @@ export default function DeliveryOrderNew() {
                   <FormItem><FormLabel>Payment Terms</FormLabel>
                     <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
+                <div>
+                  <p className="text-sm font-medium mb-1.5">Sales Order</p>
+                  <p className="h-9 flex items-center px-3 rounded-md border bg-muted/40 text-sm font-mono text-muted-foreground">—</p>
+                </div>
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem><FormLabel>Notes</FormLabel>
                     <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Special delivery instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
@@ -261,9 +253,6 @@ export default function DeliveryOrderNew() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Items to Deliver</CardTitle>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
-                    <FileInput className="h-3 w-3" /> Import from PO
-                  </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
                     <FileInput className="h-3 w-3" /> Import from Excel / PDF
                   </Button>
@@ -357,12 +346,6 @@ export default function DeliveryOrderNew() {
         </form>
       </Form>
 
-      <ImportFromPODialog
-        open={importPOOpen}
-        onOpenChange={setImportPOOpen}
-        mode="do"
-        onImport={imported => handleImportFromPO(imported as DOImportItem[])}
-      />
       <ImportItemsDialog
         open={importExcelOpen}
         onClose={() => setImportExcelOpen(false)}
@@ -380,7 +363,7 @@ export default function DeliveryOrderNew() {
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom);
-          form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length > 0 ? selectedSerials.length : (qty ?? 1));
+          form.setValue(`items.${stockPickerIndex}.qty`, Number(qty) > 0 ? Number(qty) : 1);
           form.setValue(`items.${stockPickerIndex}.serialNumbers`, selectedSerials.join("\n"));
           setStockPickerIndex(null);
         }}
@@ -388,7 +371,10 @@ export default function DeliveryOrderNew() {
       {savedDoc && (
         <PdfPreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/delivery-orders`);
+          }}
           title={`Delivery Order ${savedDoc.doNumber}`}
           generatePdf={(opts) => generateDO_PDF(savedDoc, selectedCompany, opts)}
           pdfFilename={`${savedDoc.doNumber}.pdf`}

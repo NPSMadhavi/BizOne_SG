@@ -21,6 +21,8 @@ export interface InvoiceImportItem {
   discount: number;
   isFoc: boolean;
   isStockItem: boolean;
+  stockItemId?: number;
+  warehouseId?: number;
   selectedSerials: string[];
   selectedSerialIds: number[];
   itemImage: string;
@@ -108,7 +110,9 @@ export function ImportFromPODialog({ open, onOpenChange, mode, onImport }: Props
         unitPrice: Number(it.unitPrice) || 0,
         discount: 0,
         isFoc: false,
-        isStockItem: false,
+        isStockItem: it.isStockItem === true,
+        stockItemId: it.stockItemId,
+        warehouseId: it.warehouseId,
         selectedSerials: [],
         selectedSerialIds: [],
         itemImage: "",

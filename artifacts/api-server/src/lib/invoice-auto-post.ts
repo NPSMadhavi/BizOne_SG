@@ -17,6 +17,7 @@
 import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
+import { isSingaporeCountry } from "./singapore.js";
 
 interface InvoiceSnap {
   id: number;
@@ -35,7 +36,7 @@ async function isSingapore(companyId: number): Promise<boolean> {
     .from(companiesTable)
     .where(eq(companiesTable.id, companyId))
     .limit(1);
-  return co?.country?.toLowerCase() === "singapore";
+  return isSingaporeCountry(co?.country);
 }
 
 async function getAccountByCode(companyId: number, code: string) {

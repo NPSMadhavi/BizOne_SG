@@ -360,7 +360,7 @@ export default function ApPaymentsPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Payable</p>
-          <h1 className="text-2xl font-bold text-gray-900">Payments</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Payments</h1>
           <p className="text-sm text-gray-500 mt-0.5">Record payments to vendors and settle open vendor invoices</p>
         </div>
         {grandTotal > 0 && (

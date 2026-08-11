@@ -1,16 +1,16 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { useLocation } from "wouter";
-import { Check, ChevronsUpDown, X, BookOpen, AlertTriangle, RefreshCw, Plus } from "lucide-react";
+import { useLocation, useSearch } from "wouter";
+import { Check, BookOpen, AlertTriangle, RefreshCw, Plus, ArrowLeft } from "lucide-react";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,26 +20,18 @@ import { CURRENCIES } from "@/lib/currencies";
 import { previewRunningNumber } from "@/lib/running-number";
 import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 
-interface Props {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  onCreated?: (pi: any) => void;
-  prefillPoId?: number;
-  prefillPoNumber?: string;
-  prefillVendorName?: string;
-  prefillAmount?: number;
-  prefillCurrency?: string;
-}
-
-const EXPENSE_ACCOUNT_TYPES = ["expense"];
-
-export default function NewVendorInvoiceDialog({
-  open, onOpenChange, onCreated,
-  prefillPoId, prefillPoNumber, prefillVendorName, prefillAmount, prefillCurrency,
-}: Props) {
+export default function VendorInvoiceNew() {
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const params = new URLSearchParams(search);
+  const prefillPoId = params.get("poId") ? Number(params.get("poId")) : undefined;
+  const prefillPoNumber = params.get("poNumber") || undefined;
+  const prefillVendorName = params.get("vendorName") || undefined;
+  const prefillAmount = params.get("amount") ? Number(params.get("amount")) : undefined;
+  const prefillCurrency = params.get("currency") || undefined;
+
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
@@ -65,10 +57,16 @@ export default function NewVendorInvoiceDialog({
   const [gstTreatment, setGstTreatment] = useState("standard_rated");
   const [gstInclusive, setGstInclusive] = useState(false);
   const [expenseAccountPickerOpen, setExpenseAccountPickerOpen] = useState(false);
+  const [poPickerOpen, setPoPickerOpen] = useState(false);
   const [exchangeRate, setExchangeRate] = useState("1.000000");
   const [fetchingRate, setFetchingRate] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleCancel = () => {
+    if (prefillPoId) setLocation(`/purchase-orders/${prefillPoId}`);
+    else setLocation("/vendor-invoices");
+  };
 
   const { data: vendors = [] } = useQuery<any[]>({
     queryKey: ["vendors", selectedCompany?.id],
@@ -77,7 +75,7 @@ export default function NewVendorInvoiceDialog({
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: open && !prefillVendorName,
+    enabled: !prefillVendorName,
   });
 
   const { data: pos = [] } = useQuery<any[]>({
@@ -88,7 +86,7 @@ export default function NewVendorInvoiceDialog({
       const all = await res.json();
       return all.filter((p: any) => p.status === "confirmed");
     },
-    enabled: open && !prefillPoId,
+    enabled: !prefillPoId,
   });
 
   const { data: allAccounts = [] } = useQuery<any[]>({
@@ -98,7 +96,6 @@ export default function NewVendorInvoiceDialog({
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: open,
   });
 
   const expenseAccounts = useMemo(() =>
@@ -115,7 +112,6 @@ export default function NewVendorInvoiceDialog({
 
   const vendorName = selectedVendor ? selectedVendor.name : vendorSearch.trim();
 
-  // Auto-fetch exchange rate when currency ≠ SGD and piDate changes
   const fetchExchangeRate = async (curr: string, date: string) => {
     if (curr === "SGD") { setExchangeRate("1.000000"); return; }
     setFetchingRate(true);
@@ -130,10 +126,10 @@ export default function NewVendorInvoiceDialog({
   };
 
   useEffect(() => {
-    if (open && currency !== "SGD") fetchExchangeRate(currency, piDate);
+    if (currency !== "SGD") fetchExchangeRate(currency, piDate);
     if (currency === "SGD") setExchangeRate("1.000000");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currency, piDate, open]);
+  }, [currency, piDate]);
 
   const filteredPos = useMemo(() => {
     if (!vendorName) return pos;
@@ -164,14 +160,6 @@ export default function NewVendorInvoiceDialog({
     setDropdownOpen(false);
   };
 
-  const handleClearVendor = () => {
-    setSelectedVendor(null);
-    setVendorSearch("");
-    setVendorFromPo(false);
-    setSelectedPoIds([]);
-    vendorInputRef.current?.focus();
-  };
-
   const togglePo = (po: any) => {
     const alreadySelected = selectedPoIds.includes(po.id);
     const newIds = alreadySelected
@@ -180,7 +168,6 @@ export default function NewVendorInvoiceDialog({
     setSelectedPoIds(newIds);
 
     const newSelectedPos = pos.filter((p: any) => newIds.includes(p.id));
-    // Use remainingAmount (uninvoiced balance) for partial POs, full totalAmount otherwise
     const total = newSelectedPos.reduce((sum: number, p: any) => sum + parseFloat(p.remainingAmount ?? p.totalAmount ?? "0"), 0);
     setAmount(newIds.length > 0 ? total.toFixed(2) : "");
     setAmountAutoFilled(newIds.length > 0);
@@ -213,11 +200,9 @@ export default function NewVendorInvoiceDialog({
   const enteredAmount = parseFloat(amount) || 0;
   const poOverrun = poTotal > 0 && enteredAmount > poTotal + 0.005;
   const overrunBy = poOverrun ? enteredAmount - poTotal : 0;
-  // Advisory: amount differs from PO remaining balance by >5% (and is not already an overrun)
   const poMismatch = poTotal > 0 && !poOverrun && enteredAmount > 0 && !amountAutoFilled &&
     Math.abs(enteredAmount - poTotal) / poTotal > 0.05;
 
-  // GST calculations (IRAS-compliant)
   const gstRateNum = gstTreatment === "standard_rated" ? 9 : 0;
   const piAmountNum = parseFloat(amount) || 0;
   let computedNetAmount: number, computedGstAmount: number, computedTotal: number;
@@ -232,24 +217,6 @@ export default function NewVendorInvoiceDialog({
     computedGstAmount = +(piAmountNum * gstRateNum / 100).toFixed(2);
     computedTotal     = +(piAmountNum + computedGstAmount).toFixed(2);
   }
-
-  const resetForm = () => {
-    setPiNumber("");
-    setPiDate(new Date().toISOString().split("T")[0]);
-    setVendorSearch(prefillVendorName || "");
-    setSelectedVendor(null);
-    setVendorFromPo(false);
-    setAmount(prefillAmount ? String(prefillAmount) : "");
-    setAmountAutoFilled(false);
-    setCurrency(prefillCurrency || (selectedCompany as any)?.currency || "SGD");
-    setNotes("");
-    setSelectedPoIds(prefillPoId ? [prefillPoId] : []);
-    setDropdownOpen(false);
-    setExpenseAccountId("none");
-    setGstTreatment("standard_rated");
-    setGstInclusive(false);
-    setExchangeRate("1.000000");
-  };
 
   const handleSave = async () => {
     if (!vendorName) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
@@ -290,9 +257,7 @@ export default function NewVendorInvoiceDialog({
           ? `${created.piNumber} saved — journal entry posted automatically.`
           : `${created.piNumber} has been saved.`,
       });
-      onOpenChange(false);
-      if (onCreated) onCreated(created);
-      resetForm();
+      qc.invalidateQueries({ queryKey: ["vendor-invoices"] });
       setLocation(`/vendor-invoices/${created.id}`);
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -301,13 +266,33 @@ export default function NewVendorInvoiceDialog({
     }
   };
 
+  const saveButton = (
+    <Button
+      onClick={handleSave}
+      disabled={saving}
+      className="bg-[#2563EB] hover:bg-[#1d4ed8] text-white"
+    >
+      {saving ? "Saving..." : "Save"}
+    </Button>
+  );
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Record Vendor Purchase Invoice</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={handleCancel}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Vendor Invoice</h1>
+          <p className="text-muted-foreground mt-1">Record a vendor purchase invoice and optionally link it to purchase orders</p>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Invoice Details</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Vendor PI / Invoice Number</Label>
@@ -324,12 +309,11 @@ export default function NewVendorInvoiceDialog({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           {!prefillVendorName ? (
-            <>
             <div className="space-y-1.5">
               <Label>Vendor <span className="text-destructive">*</span></Label>
               <div className="relative">
-                <div className="relative">
                   <Input
                     ref={vendorInputRef}
                     placeholder="Type to search vendors…"
@@ -340,21 +324,8 @@ export default function NewVendorInvoiceDialog({
                       setDropdownOpen(true);
                     }}
                     onFocus={() => setDropdownOpen(true)}
-                    className={cn("pr-16", selectedVendor && "bg-primary/5 border-primary/40")}
+                    className={cn(selectedVendor && "bg-primary/5 border-primary/40")}
                   />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    {vendorSearch && (
-                      <button
-                        type="button"
-                        onClick={handleClearVendor}
-                        className="text-muted-foreground hover:text-foreground p-0.5"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                </div>
 
                 {dropdownOpen && !prefillVendorName && (
                   <div
@@ -413,7 +384,6 @@ export default function NewVendorInvoiceDialog({
                 <p className="text-xs text-muted-foreground">Not in directory — will be saved as typed</p>
               )}
             </div>
-            </>
           ) : (
             <div className="space-y-1.5">
               <Label>Vendor</Label>
@@ -436,45 +406,97 @@ export default function NewVendorInvoiceDialog({
                   </span>
                 )}
               </Label>
-              <div className="border rounded-md max-h-40 overflow-y-auto p-2 space-y-1">
-                {filteredPos.length === 0 ? (
-                  <p className="text-sm text-muted-foreground px-1">
-                    {pos.length === 0
-                      ? "No confirmed POs found"
-                      : vendorName
-                        ? `No confirmed POs for "${vendorName}"`
-                        : "No confirmed POs found"}
-                  </p>
-                ) : filteredPos.map((po: any) => {
-                  const invoiced = po.invoicedAmount || 0;
-                  const remaining = po.remainingAmount ?? po.totalAmount;
-                  const hasPartial = invoiced > 0;
-                  return (
-                  <div key={po.id} className="flex items-center gap-2 px-1 py-1">
-                    <Checkbox
-                      id={`po-${po.id}`}
-                      checked={selectedPoIds.includes(po.id)}
-                      onCheckedChange={() => togglePo(po)}
-                    />
-                    <label htmlFor={`po-${po.id}`} className="text-sm cursor-pointer flex-1 min-w-0">
-                      <span className="font-medium font-mono">{po.poNumber}</span>
-                      <span className="text-muted-foreground ml-2">{po.vendorName}</span>
-                      {hasPartial && <span className="ml-1.5 text-[10px] font-semibold text-amber-600 uppercase tracking-wide">partial</span>}
-                    </label>
-                    <div className="text-right shrink-0">
-                      {hasPartial ? (
-                        <>
-                          <div className="text-xs font-semibold text-emerald-700">{po.currency} {remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} left</div>
-                          <div className="text-[10px] text-muted-foreground line-through">{po.currency} {parseFloat(po.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">{po.currency} {parseFloat(po.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      )}
-                    </div>
+              <Popover modal={false} open={poPickerOpen} onOpenChange={setPoPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={poPickerOpen}
+                    className={cn(
+                      "w-full justify-between font-normal text-left h-9 px-3",
+                      selectedPoIds.length === 0 && "text-muted-foreground",
+                    )}
+                  >
+                    <span className="truncate">
+                      {selectedPoIds.length === 0
+                        ? "Select purchase order(s)…"
+                        : selectedPoIds.length === 1
+                          ? poNumbers
+                          : `${selectedPoIds.length} POs selected`}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <div className="max-h-56 overflow-y-auto p-2 space-y-1">
+                    {filteredPos.length === 0 ? (
+                      <p className="text-sm text-muted-foreground px-2 py-1.5">
+                        {pos.length === 0
+                          ? "No confirmed POs found"
+                          : vendorName
+                            ? `No confirmed POs for "${vendorName}"`
+                            : "No confirmed POs found"}
+                      </p>
+                    ) : filteredPos.map((po: any) => {
+                      const invoiced = po.invoicedAmount || 0;
+                      const remaining = po.remainingAmount ?? po.totalAmount;
+                      const hasPartial = invoiced > 0;
+                      return (
+                        <div
+                          key={po.id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
+                          onClick={() => togglePo(po)}
+                        >
+                          <Checkbox
+                            id={`po-${po.id}`}
+                            checked={selectedPoIds.includes(po.id)}
+                            onCheckedChange={() => togglePo(po)}
+                            onClick={e => e.stopPropagation()}
+                          />
+                          <div className="flex-1 min-w-0 text-sm">
+                            <span className="font-medium font-mono">{po.poNumber}</span>
+                            <span className="text-muted-foreground ml-2">{po.vendorName}</span>
+                            {hasPartial && (
+                              <span className="ml-1.5 text-[10px] font-semibold text-amber-600 uppercase tracking-wide">
+                                partial
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            {hasPartial ? (
+                              <>
+                                <div className="text-xs font-semibold text-emerald-700">
+                                  {po.currency}{" "}
+                                  {remaining.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}{" "}
+                                  left
+                                </div>
+                                <div className="text-[10px] text-muted-foreground line-through">
+                                  {po.currency}{" "}
+                                  {parseFloat(po.totalAmount).toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {po.currency}{" "}
+                                {parseFloat(po.totalAmount).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  );
-                })}
-              </div>
+                </PopoverContent>
+              </Popover>
               {selectedPoIds.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {selectedPoIds.length} PO{selectedPoIds.length > 1 ? "s" : ""} selected: {poNumbers}
@@ -482,6 +504,7 @@ export default function NewVendorInvoiceDialog({
               )}
             </div>
           )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -537,7 +560,6 @@ export default function NewVendorInvoiceDialog({
             </div>
           </div>
 
-          {/* Exchange Rate (shown only for non-SGD invoices) */}
           {currency !== "SGD" && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
               <Label className="text-amber-800 font-medium text-xs flex items-center gap-1.5">
@@ -569,7 +591,6 @@ export default function NewVendorInvoiceDialog({
             </div>
           )}
 
-          {/* GST Treatment */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>GST Treatment</Label>
@@ -593,7 +614,7 @@ export default function NewVendorInvoiceDialog({
             )}
           </div>
           {gstTreatment === "standard_rated" && piAmountNum > 0 && (
-            <div className="rounded-md bg-muted/40 border px-3 py-2.5 space-y-1.5 text-sm">
+            <div className="rounded-md bg-muted/40 border px-3 py-3 space-y-3 text-sm">
               <div className="flex justify-between text-muted-foreground">
                 <span>Net Amount (excl. GST)</span>
                 <span className="font-mono">{currency} {computedNetAmount.toFixed(2)}</span>
@@ -602,14 +623,13 @@ export default function NewVendorInvoiceDialog({
                 <span>GST (9%)</span>
                 <span className="font-mono">+ {currency} {computedGstAmount.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between font-semibold border-t pt-1.5">
+              <div className="flex justify-between font-semibold border-t pt-3">
                 <span>Total Invoice Amount</span>
                 <span className="font-mono">{currency} {computedTotal.toFixed(2)}</span>
               </div>
             </div>
           )}
 
-          {/* GL / Expense Account */}
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
               <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
@@ -632,7 +652,6 @@ export default function NewVendorInvoiceDialog({
                           ? <><span className="font-mono text-xs mr-2 opacity-60">{selectedAccount.code}</span>{selectedAccount.name}</>
                           : "— None (no journal entry) —"}
                       </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[420px] p-0" align="start">
@@ -685,12 +704,14 @@ export default function NewVendorInvoiceDialog({
             <Label>Notes (internal)</Label>
             <Textarea placeholder="Any notes..." value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Record Vendor PI"}</Button>
-        </DialogFooter>
-      </DialogContent>
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" onClick={handleCancel}>Cancel</Button>
+        {saveButton}
+      </div>
+
       <VendorCreateDialog
         open={newVendorOpen}
         onOpenChange={setNewVendorOpen}
@@ -698,6 +719,6 @@ export default function NewVendorInvoiceDialog({
           handleSelectVendor(vendor);
         }}
       />
-    </Dialog>
+    </div>
   );
 }

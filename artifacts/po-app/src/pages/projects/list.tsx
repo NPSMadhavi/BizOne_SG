@@ -184,7 +184,7 @@ export default function ProjectList() {
         <div className="flex items-center gap-3">
           <FolderKanban className="h-6 w-6 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Projects</h1>
+            <h1 className="text-2xl font-bold text-[#2563EB]">Projects</h1>
             <p className="text-sm text-muted-foreground">Track project expenses with vouchers</p>
           </div>
         </div>

@@ -113,7 +113,7 @@ export default function ExpensesList() {
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><ReceiptText className="h-6 w-6" /> Expenses</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2"><ReceiptText className="h-6 w-6" /> Expenses</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Singapore IRAS-compliant expense recording</p>
         </div>
         <Button onClick={() => setLocation("/accounting/expenses/new")}>

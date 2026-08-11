@@ -398,7 +398,7 @@ export default function ArCollectionsPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Receivable</p>
-          <h1 className="text-2xl font-bold text-gray-900">Collections</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Collections</h1>
           <p className="text-sm text-gray-500 mt-0.5">Record customer payments and knock off open invoices</p>
         </div>
         {grandTotal > 0 && (

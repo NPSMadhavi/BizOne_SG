@@ -3,8 +3,8 @@ import { pgTable, text, serial, timestamp, integer, jsonb, boolean } from "drizz
 export const grnTable = pgTable("grn", {
   id: serial("id").primaryKey(),
   grnNumber: text("grn_number").notNull().unique(),
-  poId: integer("po_id").notNull(),
-  poNumber: text("po_number").notNull(),
+  poId: integer("po_id"),
+  poNumber: text("po_number").notNull().default(""),
   vendorName: text("vendor_name").notNull(),
   companyId: integer("company_id").notNull().default(1),
   status: text("status").notNull().default("draft"),

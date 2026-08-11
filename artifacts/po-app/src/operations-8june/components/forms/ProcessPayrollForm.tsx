@@ -14,13 +14,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { StringDatePicker } from "@/operations-8june/components/ui/date-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/operations-8june/lib/queryClient";
@@ -42,6 +35,7 @@ import {
   payrollPrimaryButtonClass,
 } from "@/operations-8june/lib/payroll-ui";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
+import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
 import { Calculator, Clock, User } from "lucide-react";
 import {
   Dialog,
@@ -55,7 +49,7 @@ const processPayrollSchema = z.object({
   employeeId: z.coerce.number().min(1, "Please select an employee"),
   payPeriodStart: z.string().min(1, "Start date is required"),
   payPeriodEnd: z.string().min(1, "End date is required"),
-  overtimeHours: z.coerce.number().min(0).default(0),
+  overtimeHours: z.coerce.number().min(0).optional(),
   notes: z.string().optional(),
 });
 
@@ -126,7 +120,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const form = useForm<ProcessPayrollFormData>({
     resolver: zodResolver(processPayrollSchema),
     defaultValues: {
-      overtimeHours: 0,
+      overtimeHours: undefined,
       ...getLastCompletedPayPeriod(),
     },
   });
@@ -344,6 +338,27 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   }
 
   const activeConfigs = payrollConfigs.filter((c: any) => c.isActive);
+  const processEmployeeOptions = activeConfigs
+    .map((config: any) => {
+      const employee = employees.find(
+        (emp: any) => Number(emp.id) === Number(config.employeeId)
+      );
+      if (!employee) return null;
+      return {
+        id: Number(config.employeeId),
+        name: employee.name,
+        employeeId: employee.employeeId,
+        designation: `${employee.designation || ""} (${formatCurrency(parseFloat(config.baseSalary))}/month)`.trim(),
+        department: employee.department,
+      };
+    })
+    .filter(Boolean) as Array<{
+      id: number;
+      name: string;
+      employeeId: string;
+      designation: string;
+      department?: string;
+    }>;
 
   return (
     <>
@@ -360,33 +375,13 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={payrollFormLabelClass}>Employee *</FormLabel>
-                        <Select
-                          value={field.value?.toString()}
-                          onValueChange={(value) => field.onChange(parseInt(value))}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select employee" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {activeConfigs.map((config: any) => {
-                              const employee = employees.find(
-                                (emp: any) => Number(emp.id) === Number(config.employeeId)
-                              );
-                              if (!employee) return null;
-                              return (
-                                <SelectItem
-                                  key={config.id}
-                                  value={String(config.employeeId)}
-                                >
-                                  {employee.name} - {employee.designation} (
-                                  {formatCurrency(parseFloat(config.baseSalary))}/month)
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <EmployeeCombobox
+                            employees={processEmployeeOptions}
+                            value={field.value}
+                            onChange={(id) => field.onChange(id)}
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -402,7 +397,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                           <FormControl>
                             <StringDatePicker
                               value={field.value ?? ""}
-                              onChange={(v) => applyPayPeriodMonth(v, form.setValue)}
+                              onChange={(v) => applyPayPeriodMonth(v ?? "", form.setValue)}
                               disabledDate={isPayPeriodDateDisabled}
                             />
                           </FormControl>
@@ -419,7 +414,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                           <FormControl>
                             <StringDatePicker
                               value={field.value ?? ""}
-                              onChange={(v) => applyPayPeriodMonth(v, form.setValue)}
+                              onChange={(v) => applyPayPeriodMonth(v ?? "", form.setValue)}
                               disabledDate={isPayPeriodDateDisabled}
                             />
                           </FormControl>
@@ -444,17 +439,15 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                         </FormLabel>
                         <FormControl>
                           <Input
-                            type="number"
-                            step="0.5"
-                            max="72"
-                            min="0"
-                            placeholder="0"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder=""
                             value={field.value ?? ""}
-                            onChange={(e) =>
-                              field.onChange(
-                                e.target.value === "" ? 0 : parseFloat(e.target.value)
-                              )
-                            }
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
+                              field.onChange(v === "" ? undefined : parseFloat(v));
+                            }}
                           />
                         </FormControl>
                         <FormMessage />

@@ -19,7 +19,7 @@ export function exportPayrollTableToExcel(rows: PayrollTableExportRow[]) {
     Department: row.department,
     Designation: row.designation,
     "Payroll Period": row.payrollPeriod,
-    "Base Salary": row.baseSalary,
+    "Basic Salary": row.baseSalary,
     "Annual Salary": row.annualSalary,
     "CPF Rate (Employee)": row.cpfRateEmployee,
     "CPF Amount (Employee)": row.cpfAmountEmployee,

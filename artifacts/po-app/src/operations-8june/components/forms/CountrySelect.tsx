@@ -21,6 +21,8 @@ type CountrySelectProps = {
   onChange: (value: string) => void;
   /** Use a single chevron (e.g. company modals) instead of up/down pair */
   singleChevron?: boolean;
+  /** Override trigger styling so the control matches the host form's inputs */
+  className?: string;
 };
 
 /** Keep wheel/touch scroll inside the list when rendered inside a Dialog */
@@ -28,7 +30,7 @@ const keepScrollInList = (e: React.WheelEvent | React.TouchEvent) => {
   e.stopPropagation();
 };
 
-export function CountrySelect({ value, onChange, singleChevron = false }: CountrySelectProps) {
+export function CountrySelect({ value, onChange, singleChevron = false, className }: CountrySelectProps) {
   const [open, setOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const displayValue = value?.trim() || "";
@@ -43,7 +45,8 @@ export function CountrySelect({ value, onChange, singleChevron = false }: Countr
           className={cn(
             "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
             "hover:bg-background focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
-            "disabled:cursor-not-allowed disabled:opacity-50"
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            className
           )}
         >
           <span className={cn("truncate text-left", !displayValue && "text-muted-foreground")}>

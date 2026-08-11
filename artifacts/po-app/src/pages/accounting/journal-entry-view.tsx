@@ -102,7 +102,7 @@ export default function JournalEntryView() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight font-mono">
+              <h1 className="text-2xl font-bold tracking-tight text-[#2563EB] font-mono">
                 JE-{String(entry.id).padStart(4, "0")}
               </h1>
               {isManual

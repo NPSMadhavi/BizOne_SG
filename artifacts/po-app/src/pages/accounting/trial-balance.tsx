@@ -71,7 +71,7 @@ export default function TrialBalancePage() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">General Ledger</p>
-          <h1 className="text-2xl font-bold text-gray-900">Trial Balance</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Trial Balance</h1>
         </div>
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1">

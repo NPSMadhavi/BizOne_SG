@@ -3,6 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -11,13 +12,14 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput, Package, ArrowLeft } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput, Package, ArrowLeft, Pencil } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { InvoiceRefPicker, type InvoiceRefOption } from "@/components/invoice-ref-picker";
 import { cn } from "@/lib/utils";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateCreditNote_PDF } from "@/lib/pdf";
 import { useGetSettings } from "@workspace/api-client-react";
@@ -103,6 +105,7 @@ export default function CreditNoteNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const qc = useQueryClient();
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -226,9 +229,14 @@ export default function CreditNoteNew() {
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
       const doc = await r.json();
       setSavedDoc(doc);
+      qc.setQueryData(["credit-notes"], (old: any) =>
+        Array.isArray(old) ? [doc, ...old.filter((d: any) => d.id !== doc.id)] : [doc],
+      );
+      qc.setQueryData(["credit-note", String(doc.id)], doc);
+      await invalidateDocumentList(qc, "credit-notes");
       toast({ title: status === "confirmed" ? "Credit note confirmed" : "Draft saved", description: doc.cnNumber });
       if (status === "confirmed") { setShowPreview(true); }
-      else { setLocation(`/credit-notes/${doc.id}/edit`); }
+      else { setLocation(`/credit-notes/${doc.id}`); }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally { setSubmitting(false); }
@@ -260,7 +268,7 @@ export default function CreditNoteNew() {
           </Button>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
-            <h1 className="text-2xl font-bold text-gray-900">New Credit Note</h1>
+            <h1 className="text-2xl font-bold text-[#2563EB]">New Credit Note</h1>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -270,14 +278,6 @@ export default function CreditNoteNew() {
               <p className="text-lg font-semibold font-mono">{nextCnNumber}</p>
             </div>
           )}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
-              <Save className="h-4 w-4" />Save Draft
-            </Button>
-            <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
-              <Eye className="h-4 w-4" />Save & Preview
-            </Button>
-          </div>
         </div>
       </div>
 
@@ -431,7 +431,7 @@ export default function CreditNoteNew() {
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 w-28">Unit Price</th>
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 w-20">Disc %</th>
                       <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 w-28">Amount</th>
-                      <th className="w-10 px-2"></th>
+                      <th className="w-16 px-2"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -483,9 +483,23 @@ export default function CreditNoteNew() {
                             </>
                           )}
                           <td className="px-2 py-2">
-                            <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-400 hover:text-red-500" onClick={() => remove(idx)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-0.5">
+                              {!isSection && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-gray-400 hover:text-primary"
+                                  onClick={() => setStockPickerIndex(idx)}
+                                  title="Edit item"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-400 hover:text-red-500" onClick={() => remove(idx)} title="Delete">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -519,6 +533,18 @@ export default function CreditNoteNew() {
               </div>
             </CardContent>
           </Card>
+
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setLocation("/credit-notes")}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
+              <Save className="h-4 w-4" />
+              {submitting ? "Saving..." : "Save Draft"}
+            </Button>
+            <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
+              <Eye className="h-4 w-4" />
+              {submitting ? "Saving..." : "Save & Preview"}
+            </Button>
+          </div>
         </form>
       </Form>
 
@@ -548,7 +574,7 @@ export default function CreditNoteNew() {
       {savedDoc && showPreview && (
         <PdfPreviewModal
           open={showPreview}
-          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/credit-notes/${savedDoc.id}`); } }}
+          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/credit-notes`); } }}
           title={savedDoc.cnNumber}
           generatePdf={(opts) => generateCreditNote_PDF(savedDoc, selectedCompany, opts)}
           pdfFilename={`${savedDoc.cnNumber}.pdf`}

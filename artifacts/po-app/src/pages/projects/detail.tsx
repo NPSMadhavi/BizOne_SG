@@ -104,7 +104,7 @@ export default function ProjectDetail() {
           <div>
             <div className="flex items-center gap-2">
               <FolderKanban className="h-5 w-5 text-primary" />
-              <h1 className="text-xl font-bold">{project.name}</h1>
+              <h1 className="text-xl font-bold text-[#2563EB]">{project.name}</h1>
               {project.code && (
                 <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                   {project.code}

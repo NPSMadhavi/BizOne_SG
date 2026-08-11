@@ -3,7 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateDebitNote_PDF } from "@/lib/pdf";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { Link } from "wouter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -105,6 +106,7 @@ export default function DebitNoteEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const qc = useQueryClient();
   const [showPreview, setShowPreview] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -262,7 +264,12 @@ export default function DebitNoteEdit() {
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
       const updated = await r.json();
       setSavedDoc(updated);
-      toast({ title: status === "confirmed" ? "Credit note confirmed" : "Draft saved" });
+      qc.setQueryData(["debit-note", id], updated);
+      qc.setQueryData(["debit-notes"], (old: any) =>
+        Array.isArray(old) ? old.map((d: any) => (d.id === updated.id ? { ...d, ...updated } : d)) : old,
+      );
+      await invalidateDocumentList(qc, "debit-notes");
+      toast({ title: status === "confirmed" ? "Debit note confirmed" : "Draft saved" });
       setShowPreview(true);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -283,19 +290,17 @@ export default function DebitNoteEdit() {
   return (
     <div className="max-w-[1600px] mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-        <div>
-          <Link href={`/debit-notes/${id}`} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 mb-2">
-            <ArrowLeft className="h-3 w-3" />Back
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Edit Debit Note — {doc?.dnNumber}</h1>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
-            <Save className="h-4 w-4" />Save Draft
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation(`/debit-notes/${id}`)}
+            className="h-9 w-9 shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Button>
-          <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
-            <Eye className="h-4 w-4" />Save & Preview
-          </Button>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Edit Debit Note — {doc?.dnNumber}</h1>
         </div>
       </div>
 
@@ -505,6 +510,18 @@ export default function DebitNoteEdit() {
               </div>
             </CardContent>
           </Card>
+
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setLocation(`/debit-notes/${id}`)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
+              <Save className="h-4 w-4" />
+              {submitting ? "Saving..." : "Save Draft"}
+            </Button>
+            <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
+              <Eye className="h-4 w-4" />
+              {submitting ? "Saving..." : "Save & Preview"}
+            </Button>
+          </div>
         </form>
       </Form>
 
@@ -534,7 +551,7 @@ export default function DebitNoteEdit() {
       {showPreview && (savedDoc || doc) && (
         <PdfPreviewModal
           open={showPreview}
-          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/debit-notes/${id}`); } }}
+          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/debit-notes`); } }}
           title={(savedDoc ?? doc).dnNumber}
           generatePdf={(opts) => generateDebitNote_PDF(savedDoc ?? doc, selectedCompany, opts)}
           pdfFilename={`${(savedDoc ?? doc).dnNumber}.pdf`}

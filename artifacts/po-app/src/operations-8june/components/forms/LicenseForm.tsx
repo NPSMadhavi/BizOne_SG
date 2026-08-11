@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { format, isAfter, isBefore } from "date-fns";
-import { CalendarIcon, Loader2, Shield, DollarSign, Users, Building, RotateCcw, CheckCircle, Search, Plus } from "lucide-react";
+import { CalendarIcon, Shield, DollarSign, Users, Building, RotateCcw, CheckCircle, Search, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   TooltipProvider,
@@ -115,12 +115,18 @@ interface LicenseFormProps {
   isOpen: boolean;
   onClose: () => void;
   license?: License;
+  formId?: string;
+  hideShell?: boolean;
+  onPendingChange?: (pending: boolean) => void;
 }
 
 export default function LicenseForm({
   isOpen,
   onClose,
   license,
+  formId = "license-form",
+  hideShell = false,
+  onPendingChange,
 }: LicenseFormProps) {
   const { toast } = useToast();
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(
@@ -252,34 +258,17 @@ export default function LicenseForm({
     }
   };
 
-  return (
-    <>
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <FormModalShell
-        title={isEditMode ? "Edit license" : "Create new license"}
-        maxWidth="max-w-5xl"
-        onClose={onClose}
-        footer={
-          <>
-            <ModalCancelButton
-              onClick={() => {
-                form.reset();
-                onClose();
-              }}
-            />
-            <ModalSaveButton
-              form="license-form"
-              loading={createMutation.isPending || updateMutation.isPending}
-              label="Save"
-              loadingLabel="Saving..."
-            />
-          </>
-        }
-      >
+  useEffect(() => {
+    onPendingChange?.(createMutation.isPending || updateMutation.isPending);
+  }, [createMutation.isPending, updateMutation.isPending, onPendingChange]);
+
+  if (hideShell && !isOpen) return null;
+
+  const formBody = (
         <TooltipProvider>
           <Form {...form}>
             <form
-              id="license-form"
+              id={formId}
               onSubmit={form.handleSubmit(onSubmit)}
               onKeyDown={handleKeyDown}
               className="space-y-8"
@@ -411,14 +400,20 @@ export default function LicenseForm({
                                   <div className="relative">
                                     <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                     <Input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      placeholder="299.99"
+                                      type="text"
                                       inputMode="decimal"
+                                      placeholder=""
                                       className="pl-10"
-                                      {...field}
+                                      name={field.name}
+                                      ref={field.ref}
+                                      onBlur={field.onBlur}
                                       value={field.value || ""}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        if (v === "" || /^\d*\.?\d*$/.test(v)) {
+                                          field.onChange(v);
+                                        }
+                                      }}
                                     />
                                   </div>
                                 </FormControl>
@@ -652,7 +647,7 @@ export default function LicenseForm({
                               <FormControl>
                                 <Input
                                   type="text"
-                                  placeholder="e.g., 5"
+                                  placeholder=""
                                   {...field}
                                   value={field.value || ""}
                                   onChange={(e) => {
@@ -803,8 +798,39 @@ export default function LicenseForm({
             </form>
           </Form>
         </TooltipProvider>
-      </FormModalShell>
-    </Dialog>
+  );
+
+  return (
+    <>
+      {hideShell ? (
+        formBody
+      ) : (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+          <FormModalShell
+            title={isEditMode ? "Edit license" : "Create new license"}
+            maxWidth="max-w-5xl"
+            onClose={onClose}
+            footer={
+              <>
+                <ModalCancelButton
+                  onClick={() => {
+                    form.reset();
+                    onClose();
+                  }}
+                />
+                <ModalSaveButton
+                  form={formId}
+                  loading={createMutation.isPending || updateMutation.isPending}
+                  label="Save"
+                  loadingLabel="Saving..."
+                />
+              </>
+            }
+          >
+            {formBody}
+          </FormModalShell>
+        </Dialog>
+      )}
 
       {/* Quick Add Vendor Dialog */}
       <Dialog open={isVendorFormOpen} onOpenChange={setIsVendorFormOpen}>

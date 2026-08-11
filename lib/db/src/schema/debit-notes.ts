@@ -9,6 +9,8 @@ export const debitNotesTable = pgTable("debit_notes", {
   contactPerson: text("contact_person"),
   contactEmail: text("contact_email"),
   refInvNumber: text("ref_inv_number"),
+  soId: integer("so_id"),
+  soNumber: text("so_number"),
   reason: text("reason"),
   issueDate: text("issue_date"),
   currency: text("currency").notNull().default("SGD"),

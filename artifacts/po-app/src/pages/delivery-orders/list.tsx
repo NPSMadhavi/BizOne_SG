@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Plus, Eye, Pencil, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -81,11 +81,11 @@ export default function DeliveryOrderList() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Delivery Orders</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Delivery Orders</h1>
           <p className="text-muted-foreground mt-1">Manage and track all delivery orders.</p>
         </div>
         <Link href="/delivery-orders/new">
-          <Button className="gap-2"><Plus className="h-4 w-4" />New Delivery Order</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />Create Delivery Order</Button>
         </Link>
       </div>
 
@@ -136,6 +136,7 @@ export default function DeliveryOrderList() {
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
               <tr>
                 <th className="px-6 py-4 font-medium">DO Number</th>
+                <th className="px-6 py-4 font-medium">Sales Order</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
                 <th className="px-6 py-4 font-medium">Delivery Date</th>
@@ -147,11 +148,11 @@ export default function DeliveryOrderList() {
             <tbody className="divide-y">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>{[...Array(7)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
+                  <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50"/>
                       <p>No delivery orders found.</p>
@@ -161,15 +162,56 @@ export default function DeliveryOrderList() {
                 </tr>
               ) : (
                 filtered.map((doc) => (
-                  <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>
-                    <td className="px-6 py-4 font-medium text-primary">{doc.doNumber}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{fmtDate(doc.createdAt)}</td>
-                    <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{doc.deliveryDate ? fmtDate(doc.deliveryDate) : "—"}</td>
-                    <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
-                    <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo}/></td>
+                  <tr key={doc.id} className="hover:bg-muted/50 transition-colors">
+                    <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{doc.doNumber}</td>
+                    <td className="px-6 py-4 font-mono">
+                      {(doc as any).soNumber ? (
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if ((doc as any).soId) setLocation(`/sales-orders/${(doc as any).soId}`);
+                          }}
+                        >
+                          {(doc as any).soNumber}
+                        </button>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{fmtDate(doc.createdAt)}</td>
+                    <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{doc.customerName}</td>
+                    <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{doc.deliveryDate ? fmtDate(doc.deliveryDate) : "—"}</td>
+                    <td className="px-6 py-4 text-center cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{getStatusBadge(doc.status)}</td>
+                    <td className="px-6 py-4 cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}><SentToCell emailSentTo={(doc as any).emailSentTo}/></td>
                     <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"><ArrowRight className="h-4 w-4"/></Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="View"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLocation(`/delivery-orders/${doc.id}`);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Edit"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLocation(`/delivery-orders/${doc.id}/edit`);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

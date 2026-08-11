@@ -170,7 +170,7 @@ export default function EciPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Estimated Chargeable Income (ECI)</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Estimated Chargeable Income (ECI)</h1>
           <p className="text-sm text-muted-foreground mt-1">
             IRAS requires ECI filing within <strong>3 months</strong> of financial year end
           </p>

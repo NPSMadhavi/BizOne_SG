@@ -66,7 +66,7 @@ export default function DeliveryOrderView() {
           <Button variant="ghost" size="icon" onClick={() => setLocation("/delivery-orders")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{doc.doNumber}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{doc.doNumber}</h1>
               {getStatusBadge(doc.status)}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
@@ -103,7 +103,16 @@ export default function DeliveryOrderView() {
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction onClick={() => deleteMutation.mutate({ id }, {
-                    onSuccess: () => { toast({ title: "Deleted" }); setLocation("/delivery-orders"); },
+                    onSuccess: async () => {
+                      // Drop the deleted row from cache immediately so the list
+                      // does not show it until a manual refresh.
+                      qc.setQueryData(getListDeliveryOrdersQueryKey(), (old: any) =>
+                        Array.isArray(old) ? old.filter((d: any) => d.id !== id) : old,
+                      );
+                      await qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
+                      toast({ title: "Deleted" });
+                      setLocation("/delivery-orders");
+                    },
                     onError: () => toast({ title: "Error", description: "Failed to delete", variant: "destructive" }),
                   })}>Delete</AlertDialogAction>
                 </AlertDialogFooter>
@@ -127,6 +136,20 @@ export default function DeliveryOrderView() {
           <CardContent className="space-y-3 text-sm">
             {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
             {(doc as any).paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{(doc as any).paymentTerms}</span></div>}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Sales Order</span>
+              {(doc as any).soNumber ? (
+                <button
+                  type="button"
+                  className="font-mono text-primary hover:underline"
+                  onClick={() => (doc as any).soId && setLocation(`/sales-orders/${(doc as any).soId}`)}
+                >
+                  {(doc as any).soNumber}
+                </button>
+              ) : (
+                <span className="font-mono text-muted-foreground">—</span>
+              )}
+            </div>
             {doc.notes && <div><span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notes</span><div className="mt-1 text-sm prose prose-sm max-w-none [&_p]:my-1 [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5" dangerouslySetInnerHTML={{ __html: (doc as any).notes || "" }} /></div>}
           </CardContent>
         </Card>

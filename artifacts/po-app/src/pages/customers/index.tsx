@@ -20,9 +20,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, Users2, CheckCircle2, XCircle, MapPin, Globe, Info, ChevronsUpDown, Check } from "lucide-react";
+import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 import { useGetSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
-import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
 
 interface Customer {
@@ -86,7 +86,6 @@ export default function CustomersPage() {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<Partial<Customer>>(blank());
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [countryOpen, setCountryOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
 
   const { selectedCompany, canManage } = useAuth();
@@ -146,7 +145,7 @@ export default function CustomersPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Customers</h1>
           <p className="text-muted-foreground mt-1">Manage your customer directory for this company.</p>
         </div>
         <Button onClick={openNew} className="gap-2">
@@ -264,46 +263,15 @@ export default function CustomersPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Country</Label>
-                <Popover open={countryOpen} onOpenChange={setCountryOpen} modal={false}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={countryOpen}
-                      className="w-full justify-between font-normal"
-                    >
-                      <span className={form.country ? "text-foreground" : "text-muted-foreground"}>
-                        {form.country || "Select country"}
-                      </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search country…" />
-                      <CommandList>
-                        <CommandEmpty>No country found.</CommandEmpty>
-                        <CommandGroup>
-                          {COUNTRIES.map(c => (
-                            <CommandItem
-                              key={c}
-                              value={c}
-                              onSelect={v => {
-                                const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
-                                setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
-                                setCountryOpen(false);
-                              }}
-                            >
-                              <Check className={`mr-2 h-4 w-4 ${form.country === c ? "opacity-100" : "opacity-0"}`} />
-                              {c}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <CountrySelect
+                  value={form.country || ""}
+                  onChange={v => {
+                    const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                    setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
+                  }}
+                  singleChevron
+                  className="h-9 shadow-sm"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Phone</Label>

@@ -4,8 +4,8 @@
 
 export const ALL_MODULES = [
   "dashboard",
-  "purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "grn",
-  "stock_items", "warehouses", "stock_transfer", "inventory_reports",
+  "purchase_orders", "quotations", "sales_orders", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "point_of_sale", "bill_of_materials", "grn",
+  "stock_items", "warehouses", "stock_transfer", "inventory_reports", "batch_expiry",
   "vendors", "customers",
   "projects",
   "assets", "licenses", "employees", "payroll",
@@ -19,23 +19,27 @@ export const ALL_MODULES = [
   "accounting_income",
 ] as const;
 
-export const DEFAULT_MODULES = ["purchase_orders", "quotations", "invoices", "proforma_invoices", "delivery_orders"] as const;
+export const DEFAULT_MODULES = ["purchase_orders", "quotations", "sales_orders", "invoices", "proforma_invoices", "delivery_orders", "point_of_sale"] as const;
 export type AppModule = typeof ALL_MODULES[number];
 
 export const MODULE_LABELS: Record<AppModule, string> = {
   dashboard: "Dashboard",
   purchase_orders: "Purchase Orders",
   quotations: "Quotations",
+  sales_orders: "Sales Orders",
   invoices: "Invoices",
   proforma_invoices: "Proforma Invoices",
   credit_notes: "Credit Notes",
   debit_notes: "Debit Notes",
   delivery_orders: "Delivery Orders",
+  point_of_sale: "Point of Sale",
+  bill_of_materials: "Bill of Materials",
   grn: "Goods Receipt",
   stock_items: "Stock Items",
   warehouses: "Warehouses",
   stock_transfer: "Stock Transfer",
   inventory_reports: "Stock Reports",
+  batch_expiry: "Batch & Expiry",
   vendors: "Vendors",
   customers: "Customers",
   projects: "Projects",
@@ -78,12 +82,12 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "documents",
     label: "Documents",
-    modules: ["purchase_orders", "quotations", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "grn"],
+    modules: ["purchase_orders", "quotations", "sales_orders", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "point_of_sale", "bill_of_materials", "grn"],
   },
   {
     id: "inventory",
     label: "Inventory",
-    modules: ["warehouses", "stock_items", "stock_transfer", "inventory_reports"],
+    modules: ["warehouses", "stock_items", "stock_transfer", "inventory_reports", "batch_expiry"],
   },
   {
     id: "directory",

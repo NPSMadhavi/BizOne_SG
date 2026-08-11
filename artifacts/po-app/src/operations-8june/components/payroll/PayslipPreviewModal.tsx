@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Download, Loader2, Printer, X } from "lucide-react";
+import { Download, Printer, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,12 +52,8 @@ export default function PayslipPreviewModal({
                 onClick={onDownload}
                 disabled={isDownloading || !hasPreview}
               >
-                {isDownloading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="mr-2 h-4 w-4" />
-                )}
-                Download
+                <Download className="mr-2 h-4 w-4" />
+                {isDownloading ? "Downloading..." : "Download"}
               </Button>
             )}
             <Button
@@ -115,7 +111,6 @@ export default function PayslipPreviewModal({
               </div>
             ) : (
               <div className="flex min-h-[297mm] w-full max-w-[210mm] items-center justify-center bg-white text-sm text-muted-foreground shadow-xl">
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 Loading payslip...
               </div>
             )}

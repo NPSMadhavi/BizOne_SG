@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, purchaseOrdersTable, usersTable, vendorsTable, vendorInvoicesTable, customersTable } from "@workspace/db";
 import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
-import { autoCreateGrn, autoDeleteGrnIfEmpty, postPurchaseOrderWarehouseStock } from "./grn.js";
+import { autoCreateGrn, autoDeleteGrnIfEmpty, mergePurchaseOrderStockMeta, postPurchaseOrderWarehouseStock } from "./grn.js";
 import { logAudit } from "../lib/audit.js";
 
 declare module "express-session" {
@@ -190,15 +190,20 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
   await upsertVendorByName(companyId, vendorName, vendorAddress, vendorContact, vendorContactEmail);
 
   if (po.status === "confirmed") {
-    await autoCreateGrn(po, req.session.userId!);
-    const withStock = await postPurchaseOrderWarehouseStock({
-      po,
-      userId: req.session.userId,
-      username: req.session.username,
-    });
-    logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
-    res.status(201).json(parsePO(withStock));
-    return;
+    try {
+      await autoCreateGrn(po, req.session.userId!);
+      const withStock = await postPurchaseOrderWarehouseStock({
+        po,
+        userId: req.session.userId,
+        username: req.session.username,
+      });
+      logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
+      res.status(201).json(parsePO(withStock));
+      return;
+    } catch (stockErr: any) {
+      res.status(400).json({ error: stockErr?.message || "Failed to post purchase order stock" });
+      return;
+    }
   }
 
   logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
@@ -251,14 +256,17 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
     amount: (item.qty || 0) * (item.unitPrice || 0),
   }));
 
-  const subtotal = itemsWithAmounts.reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
+  // Keep cube-picked stockItemId/warehouseId if the edit payload omitted them.
+  const mergedItems = mergePurchaseOrderStockMeta(itemsWithAmounts, existing[0].items as any[]);
+
+  const subtotal = mergedItems.reduce((sum: number, item: any) => sum + (item.amount || 0), 0);
   const taxAmount = (subtotal * (Number(tax) || 0)) / 100;
   const totalAmount = subtotal + taxAmount;
 
   const updateData: any = {
     vendorName, vendorAddress, vendorContact, vendorContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, quoteRefNo, notes,
-    items: itemsWithAmounts,
+    items: mergedItems,
     subtotal: subtotal.toFixed(2),
     tax: taxAmount.toFixed(2),
     totalAmount: totalAmount.toFixed(2),
@@ -274,24 +282,47 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (!updated) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
   const newStatus = updateData.status ?? previousStatus;
+  const prevHoldsStock = previousStatus === "confirmed" || previousStatus === "sent";
+  const newHoldsStock = newStatus === "confirmed" || newStatus === "sent";
 
-  if (newStatus === "confirmed") {
-    await autoCreateGrn(updated, req.session.userId!);
-    const withStock = await postPurchaseOrderWarehouseStock({
-      po: updated,
-      userId: req.session.userId,
-      username: req.session.username,
-    });
-    logAudit({ req, action: updateData.status && updateData.status !== existing[0].status ? `status:${updateData.status}` : "update", entityType: "purchase_order", entityId: id, entityLabel: updated.poNumber });
-    res.json(parsePO(withStock));
-    return;
-  } else if (previousStatus === "confirmed" && newStatus !== "confirmed") {
+  if (prevHoldsStock && !newHoldsStock) {
     const result = await autoDeleteGrnIfEmpty(id);
     if (result.blocked) {
-      await db.update(purchaseOrdersTable).set({ status: "confirmed" }).where(eq(purchaseOrdersTable.id, id));
+      await db.update(purchaseOrdersTable).set({ status: previousStatus }).where(eq(purchaseOrdersTable.id, id));
       res.status(409).json({
         error: `Cannot revert PO to ${newStatus}. Goods have already been received in GRN ${result.grnNumber}. Please void the GRN first.`,
       });
+      return;
+    }
+  }
+
+  if (newHoldsStock) {
+    try {
+      await autoCreateGrn(updated, req.session.userId!);
+      const withStock = await postPurchaseOrderWarehouseStock({
+        po: updated,
+        userId: req.session.userId,
+        username: req.session.username,
+      });
+      logAudit({ req, action: updateData.status && updateData.status !== existing[0].status ? `status:${updateData.status}` : "update", entityType: "purchase_order", entityId: id, entityLabel: updated.poNumber });
+      res.json(parsePO(withStock));
+      return;
+    } catch (stockErr: any) {
+      res.status(400).json({ error: stockErr?.message || "Failed to post purchase order stock" });
+      return;
+    }
+  } else if (prevHoldsStock) {
+    try {
+      const withStock = await postPurchaseOrderWarehouseStock({
+        po: updated,
+        userId: req.session.userId,
+        username: req.session.username,
+      });
+      logAudit({ req, action: updateData.status && updateData.status !== existing[0].status ? `status:${updateData.status}` : "update", entityType: "purchase_order", entityId: id, entityLabel: updated.poNumber });
+      res.json(parsePO(withStock));
+      return;
+    } catch (stockErr: any) {
+      res.status(400).json({ error: stockErr?.message || "Failed to reverse purchase order stock" });
       return;
     }
   }
@@ -327,11 +358,29 @@ router.post("/purchase-orders/:id/mark-sent", async (req, res): Promise<void> =>
 router.delete("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const isAdmin = req.session.isAdmin ?? false;
-  const isExternal = req.session.userRole === "external";
   if (!isAdmin) { res.status(403).json({ error: "Only administrators can delete purchase orders" }); return; }
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [existing] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Purchase order not found" }); return; }
+
+  const grnResult = await autoDeleteGrnIfEmpty(id);
+  if (grnResult.blocked) {
+    res.status(409).json({
+      error: `Cannot delete PO. Goods have already been received in GRN ${grnResult.grnNumber}. Please void the GRN first.`,
+    });
+    return;
+  }
+
+  if (existing.status === "confirmed") {
+    await postPurchaseOrderWarehouseStock({
+      po: { ...existing, status: "draft" },
+      userId: req.session.userId,
+      username: req.session.username,
+    });
+  }
 
   const [po] = await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id)).returning();
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }

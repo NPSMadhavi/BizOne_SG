@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -27,11 +28,23 @@ interface Serial {
   reservedByUser?: string;
 }
 
+interface Warehouse {
+  id: number;
+  name: string;
+  code: string;
+  quantity?: number;
+  isDefault?: boolean;
+  isActive?: boolean;
+}
+
 export interface StockItemSelection {
   item: StockItem;
   selectedSerials: string[];
   selectedSerialIds: number[];
-  qty?: number;
+  /** Always the warehouse quantity to issue — never inferred from serial count alone. */
+  qty: number;
+  warehouseId?: number;
+  warehouseName?: string;
 }
 
 interface StockItemPickerDialogProps {
@@ -39,10 +52,12 @@ interface StockItemPickerDialogProps {
   onOpenChange: (open: boolean) => void;
   onSelect: (selection: StockItemSelection) => void;
   currentInvoiceId?: number;
+  /** Present on some callers; stock deduction always uses entered qty. */
+  mode?: string;
 }
 
-export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInvoiceId }: StockItemPickerDialogProps) {
-  const [step, setStep] = useState<"items" | "serials" | "qty">("items");
+export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockItemPickerDialogProps) {
+  const [step, setStep] = useState<"items" | "qty" | "serials">("items");
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
   const [serials, setSerials] = useState<Serial[]>([]);
@@ -50,7 +65,13 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
   const [serialSearch, setSerialSearch] = useState("");
   const [chosen, setChosen] = useState<Set<number>>(new Set());
   const [qtyInput, setQtyInput] = useState("1");
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | null>(null);
+  /** Once the user picks a warehouse, never auto-switch (that caused A OUT + B IN lookalikes). */
+  const [warehouseLockedByUser, setWarehouseLockedByUser] = useState(false);
+  /** Confirmed invoice qty from the qty step — serial picking must not replace this. */
+  const [confirmedQty, setConfirmedQty] = useState<number | null>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!open) {
@@ -61,8 +82,17 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
       setSerialSearch("");
       setChosen(new Set());
       setQtyInput("1");
+      setSelectedWarehouseId(null);
+      setWarehouseLockedByUser(false);
+      setConfirmedQty(null);
+      return;
     }
-  }, [open]);
+    // Balances move whenever another document is saved, so start each visit
+    // from the server instead of showing what was cached last time.
+    queryClient.removeQueries({ queryKey: ["stock-items-picker"] });
+    queryClient.removeQueries({ queryKey: ["invoice-warehouses"] });
+    queryClient.removeQueries({ queryKey: ["invoice-warehouse-stock"] });
+  }, [open, queryClient]);
 
   useEffect(() => {
     if (step === "qty") {
@@ -80,26 +110,73 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
       return res.json();
     },
     enabled: open && step === "items",
+    // Quantities change with every document, so never show a cached balance.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
+
+  const { data: warehouses = [], isFetching: warehousesFetching } = useQuery<Warehouse[]>({
+    queryKey: ["invoice-warehouses"],
+    queryFn: async () => {
+      const res = await fetch("/api/warehouses", { credentials: "include" });
+      if (!res.ok) return [];
+      const rows: Warehouse[] = await res.json();
+      return rows
+        .filter((warehouse) => warehouse.isActive !== false)
+        .sort((a, b) => {
+          if (!!a.isDefault !== !!b.isDefault) return a.isDefault ? -1 : 1;
+          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+        });
+    },
+    enabled: open,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  const { data: warehouseStock = [], isFetching: warehouseStockFetching } = useQuery<Warehouse[]>({
+    queryKey: ["invoice-warehouse-stock", selectedItem?.id],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/inventory/warehouse-stock?stockItemId=${selectedItem!.id}`,
+        { credentials: "include" },
+      );
+      return res.ok ? res.json() : [];
+    },
+    enabled: open && !!selectedItem,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  const warehouseOptions = useMemo(
+    () => warehouses.map((warehouse) => ({
+      ...warehouse,
+      quantity: warehouseStock.find((stock) => stock.id === warehouse.id)?.quantity ?? 0,
+    })),
+    [warehouses, warehouseStock],
+  );
+
+  // Warehouse is NEVER auto-selected (highest qty / default caused wrong-WH Tax Invoice OUTs).
+  // User must pick the warehouse explicitly before confirming.
 
   async function handleItemClick(item: StockItem) {
     setSelectedItem(item);
-    setSerialsLoading(true);
-    setStep("serials");
-    setSerialSearch("");
+    setSelectedWarehouseId(null);
+    setWarehouseLockedByUser(false);
+    setQtyInput("1");
+    setConfirmedQty(null);
     setChosen(new Set());
-
+    setSerialSearch("");
+    setSerials([]);
+    // Always enter quantity first. Serial count must never become the invoice qty.
+    setStep("qty");
+    setSerialsLoading(true);
     try {
       const res = await fetch(
         `/api/stock-serials?stockItemId=${item.id}`,
-        { credentials: "include" }
+        { credentials: "include" },
       );
       const data: Serial[] = res.ok ? await res.json() : [];
       setSerials(data);
-      if (data.length === 0) {
-        setQtyInput("1");
-        setStep("qty");
-      }
     } finally {
       setSerialsLoading(false);
     }
@@ -117,37 +194,65 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
 
   function selectAll() {
     const available = filteredSerials.filter(s => s.status === "available");
-    setChosen(new Set(available.map(s => s.id)));
+    const limit = confirmedQty ?? available.length;
+    setChosen(new Set(available.slice(0, limit).map(s => s.id)));
   }
 
   function selectNone() {
     setChosen(new Set());
   }
 
-  function handleConfirmSerials() {
+  function emitSelection(selectedSerials: string[], selectedSerialIds: number[], qty: number) {
     if (!selectedItem) return;
-    const chosenSerials = serials.filter(s => chosen.has(s.id));
+    if (!selectedWarehouseId) return;
+    const warehouse = warehouseOptions.find((item) => item.id === selectedWarehouseId);
+    if (!warehouse?.id) return;
     onSelect({
       item: selectedItem,
-      selectedSerials: chosenSerials.map(s => s.serialNumber),
-      selectedSerialIds: chosenSerials.map(s => s.id),
+      selectedSerials,
+      selectedSerialIds,
+      qty,
+      warehouseId: warehouse.id,
+      warehouseName: warehouse.name,
     });
     onOpenChange(false);
   }
 
   function handleConfirmQty() {
     if (!selectedItem) return;
-    const qty = parseInt(qtyInput, 10);
-    if (!qty || qty < 1) return;
-    const maxQty = Number(selectedItem.stockQty) || 0;
+    const qty = Number(qtyInput);
+    if (!Number.isFinite(qty) || qty <= 0) return;
+    const warehouse = warehouseOptions.find((item) => item.id === selectedWarehouseId);
+    const maxQty = Number(warehouse?.quantity) || 0;
     if (qty > maxQty) return;
-    onSelect({
-      item: selectedItem,
-      selectedSerials: [],
-      selectedSerialIds: [],
-      qty,
-    });
-    onOpenChange(false);
+
+    const availableSerials = serials.filter((s) => s.status === "available");
+    // Optional serial tracking: only prompt when serials exist. Qty stays authoritative.
+    if (availableSerials.length > 0) {
+      setConfirmedQty(qty);
+      setChosen(new Set());
+      setSerialSearch("");
+      setStep("serials");
+      return;
+    }
+
+    emitSelection([], [], qty);
+  }
+
+  function handleConfirmSerials() {
+    if (!selectedItem || confirmedQty == null) return;
+    if (chosen.size > 0 && chosen.size !== confirmedQty) return;
+    const chosenSerials = serials.filter(s => chosen.has(s.id));
+    emitSelection(
+      chosenSerials.map(s => s.serialNumber),
+      chosenSerials.map(s => s.id),
+      confirmedQty,
+    );
+  }
+
+  function handleSkipSerials() {
+    if (confirmedQty == null) return;
+    emitSelection([], [], confirmedQty);
   }
 
   const filteredSerials = serials.filter(s =>
@@ -157,10 +262,13 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
   const availableCount = serials.filter(s => s.status === "available").length;
   const allAvailableSelected = availableCount > 0 && filteredSerials.filter(s => s.status === "available").every(s => chosen.has(s.id));
 
-  const maxQty = selectedItem ? Number(selectedItem.stockQty) || 0 : 0;
-  const parsedQty = parseInt(qtyInput, 10);
-  const qtyIsValid = !isNaN(parsedQty) && parsedQty >= 1 && parsedQty <= maxQty;
-  const qtyOverMax = !isNaN(parsedQty) && parsedQty > maxQty;
+  const selectedWarehouse = warehouseOptions.find((warehouse) => warehouse.id === selectedWarehouseId);
+  const stockLoading = warehousesFetching || warehouseStockFetching;
+  const maxQty = selectedItem ? Number(selectedWarehouse?.quantity) || 0 : 0;
+  const parsedQty = Number(qtyInput);
+  const qtyIsValid = !stockLoading && Number.isFinite(parsedQty) && parsedQty > 0 && parsedQty <= maxQty;
+  const qtyOverMax = !stockLoading && !isNaN(parsedQty) && parsedQty > maxQty;
+  const serialSelectionOk = chosen.size === 0 || (confirmedQty != null && chosen.size === confirmedQty);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
@@ -210,7 +318,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
                       <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No stock items found.</TableCell>
                     </TableRow>
                   )}
-                  {items.map((item) => {
+                  {!isLoading && items.map((item) => {
                     const qty = Number(item.stockQty) || 0;
                     return (
                       <TableRow
@@ -243,7 +351,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
           </>
         )}
 
-        {step === "serials" && selectedItem && (
+        {step === "qty" && selectedItem && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 min-w-0">
@@ -261,12 +369,108 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
               </DialogTitle>
             </DialogHeader>
 
+            <div className="py-4 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Warehouse</label>
+                <Select
+                  value={selectedWarehouseId != null ? String(selectedWarehouseId) : ""}
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    setSelectedWarehouseId(Number(value));
+                    setWarehouseLockedByUser(true);
+                    setQtyInput("1");
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouseOptions.map((warehouse) => (
+                      <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                        {warehouse.name} ({stockLoading ? "…" : `${Number(warehouse.quantity) || 0} ${selectedItem.uom}`})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                  QTY / <span className="text-foreground">
+                    {stockLoading ? "Checking availability…" : `${maxQty} ${selectedItem.uom} available`}
+                  </span>
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <Input
+                  ref={qtyInputRef}
+                  type="text" inputMode="decimal"
+                  min={1}
+                  max={maxQty}
+                  value={qtyInput}
+                  onChange={(e) => setQtyInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && qtyIsValid) handleConfirmQty();
+                  }}
+                  className={`text-lg font-semibold w-36 ${qtyOverMax ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
+                  placeholder="Enter qty"
+                  autoFocus
+                />
+                {qtyOverMax && (
+                  <p className="text-xs text-red-600">
+                    Qty cannot exceed available stock ({maxQty} {selectedItem.uom})
+                  </p>
+                )}
+                {!isNaN(parsedQty) && parsedQty < 1 && qtyInput !== "" && (
+                  <p className="text-xs text-red-600">Qty must be at least 1</p>
+                )}
+                {serialsLoading && (
+                  <p className="text-xs text-muted-foreground">Checking serial numbers…</p>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button onClick={handleConfirmQty} disabled={!qtyIsValid || !selectedWarehouseId || serialsLoading}>
+                {availableCount > 0
+                  ? `Next · Pick serials (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`
+                  : `Import (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {step === "serials" && selectedItem && confirmedQty != null && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setStep("qty")}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <span className="truncate min-w-0" title={selectedItem.name}>{selectedItem.name}</span>
+                <span className="font-mono text-sm font-normal text-muted-foreground shrink-0">
+                  {selectedItem.code}
+                </span>
+              </DialogTitle>
+            </DialogHeader>
+
             {serialsLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : (
               <>
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  Invoice quantity: <span className="font-semibold">{confirmedQty} {selectedItem.uom}</span>
+                  <span className="text-muted-foreground"> — stock will reduce by this amount. Serials are optional.</span>
+                </div>
+
                 <div className="flex items-center gap-3">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -291,6 +495,11 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
 
                 <div className="text-xs text-muted-foreground px-1">
                   {chosen.size} selected · {availableCount} available · {serials.length - availableCount} reserved
+                  {chosen.size > 0 && chosen.size !== confirmedQty && (
+                    <span className="text-red-600 ml-2">
+                      Select exactly {confirmedQty} serials, or skip serials.
+                    </span>
+                  )}
                 </div>
 
                 <div className="border rounded-md overflow-hidden max-h-72 overflow-y-auto">
@@ -347,70 +556,16 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect, currentInv
               </>
             )}
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-2">
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={handleConfirmSerials} disabled={serialsLoading}>
-                {`Confirm${chosen.size > 0 ? ` (${chosen.size})` : ""}`}
+              <Button variant="secondary" onClick={handleSkipSerials} disabled={serialsLoading || stockLoading}>
+                Skip serials · Import {confirmedQty}
               </Button>
-            </DialogFooter>
-          </>
-        )}
-
-        {step === "qty" && selectedItem && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => setStep("items")}
-                  className="text-muted-foreground hover:text-foreground shrink-0"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-                <span className="truncate min-w-0" title={selectedItem.name}>{selectedItem.name}</span>
-                <span className="font-mono text-sm font-normal text-muted-foreground shrink-0">
-                  {selectedItem.code}
-                </span>
-              </DialogTitle>
-            </DialogHeader>
-
-            <div className="py-4 space-y-4">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                  QTY / <span className="text-foreground">{maxQty} {selectedItem.uom} available</span>
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <Input
-                  ref={qtyInputRef}
-                  type="text" inputMode="decimal"
-                  min={1}
-                  max={maxQty}
-                  value={qtyInput}
-                  onChange={(e) => setQtyInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && qtyIsValid) handleConfirmQty();
-                  }}
-                  className={`text-lg font-semibold w-36 ${qtyOverMax ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
-                  placeholder="Enter qty"
-                  autoFocus
-                />
-                {qtyOverMax && (
-                  <p className="text-xs text-red-600">
-                    Qty cannot exceed available stock ({maxQty} {selectedItem.uom})
-                  </p>
-                )}
-                {!isNaN(parsedQty) && parsedQty < 1 && qtyInput !== "" && (
-                  <p className="text-xs text-red-600">Qty must be at least 1</p>
-                )}
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={handleConfirmQty} disabled={!qtyIsValid}>
-                Import ({qtyIsValid ? parsedQty : "—"} {selectedItem.uom})
+              <Button
+                onClick={handleConfirmSerials}
+                disabled={serialsLoading || stockLoading || !selectedWarehouseId || !serialSelectionOk || chosen.size === 0}
+              >
+                {`Import with serials (${chosen.size}/${confirmedQty})`}
               </Button>
             </DialogFooter>
           </>

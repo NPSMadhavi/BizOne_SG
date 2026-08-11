@@ -13,7 +13,7 @@ import {
   warehouseStockTable,
   warehousesTable,
 } from "@workspace/db";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { logAudit } from "../../lib/audit";
 import { nextDocNumber } from "../../lib/running-numbers.js";
 import { applyMovement, assertSufficientStock, getLedgerSummary, getWarehouseBalance, getWarehouseStockSummary, resolveWarehouseId } from "../../lib/inventory-service";
@@ -213,32 +213,297 @@ router.post("/inventory/goods-issues", async (req, res) => {
 
 // ─── Stock Transfers ──────────────────────────────────────────────────────────
 
+async function loadWarehouseNameMap(companyId: number, ids: number[]): Promise<Map<number, string>> {
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+  const map = new Map<number, string>();
+  if (unique.length === 0) return map;
+  const rows = await db
+    .select({ id: warehousesTable.id, name: warehousesTable.name })
+    .from(warehousesTable)
+    .where(and(eq(warehousesTable.companyId, companyId), inArray(warehousesTable.id, unique)));
+  for (const row of rows) map.set(row.id, row.name);
+  return map;
+}
+
+function normalizeTransferLines(items: unknown): { stockItemId: number; qty: number }[] {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Items are required");
+  }
+  const normalizedLines: { stockItemId: number; qty: number }[] = [];
+  for (const line of items) {
+    const stockItemId = Number((line as any)?.stockItemId);
+    const qty = Number((line as any)?.quantity);
+    if (!Number.isFinite(stockItemId) || stockItemId <= 0) {
+      throw new Error("Invalid stock item on transfer line.");
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new Error("Transfer quantity must be greater than zero.");
+    }
+    normalizedLines.push({ stockItemId, qty });
+  }
+  return normalizedLines;
+}
+
 router.get("/inventory/stock-transfers", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
   const rows = await db.select().from(stockTransfersTable)
     .where(eq(stockTransfersTable.companyId, ctx.companyId))
-    .orderBy(desc(stockTransfersTable.transferDate));
-  res.json(rows);
+    .orderBy(desc(stockTransfersTable.transferDate), desc(stockTransfersTable.id));
+
+  const whMap = await loadWarehouseNameMap(
+    ctx.companyId,
+    rows.flatMap((r) => [r.fromWarehouseId, r.toWarehouseId]),
+  );
+
+  const transferIds = rows.map((r) => r.id);
+  const itemRows = transferIds.length
+    ? await db.select({
+      stockTransferId: stockTransferItemsTable.stockTransferId,
+      stockItemId: stockTransferItemsTable.stockItemId,
+      quantity: stockTransferItemsTable.quantity,
+      itemCode: stockItemsTable.code,
+      itemName: stockItemsTable.name,
+    })
+      .from(stockTransferItemsTable)
+      .innerJoin(stockItemsTable, eq(stockTransferItemsTable.stockItemId, stockItemsTable.id))
+      .where(inArray(stockTransferItemsTable.stockTransferId, transferIds))
+    : [];
+
+  const itemsByTransfer = new Map<number, typeof itemRows>();
+  for (const item of itemRows) {
+    const list = itemsByTransfer.get(item.stockTransferId) ?? [];
+    list.push(item);
+    itemsByTransfer.set(item.stockTransferId, list);
+  }
+
+  res.json(rows.map((r) => ({
+    ...r,
+    fromWarehouseName: whMap.get(r.fromWarehouseId) ?? `Warehouse #${r.fromWarehouseId}`,
+    toWarehouseName: whMap.get(r.toWarehouseId) ?? `Warehouse #${r.toWarehouseId}`,
+    items: (itemsByTransfer.get(r.id) ?? []).map((item) => ({
+      stockItemId: item.stockItemId,
+      quantity: Number(item.quantity),
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+    })),
+  })));
+});
+
+/**
+ * Unified stock history for the Stock Transfer page:
+ * Purchase Order (IN), Tax Invoice (OUT), and Stock Transfer (OUT+IN).
+ * Tax Invoice rows are aggregated by invoice+item so edits show the latest absolute qty
+ * (e.g. -20) instead of leftover delta rows (-10 then -10).
+ */
+router.get("/inventory/stock-activity", async (req, res) => {
+  const ctx = requireSession(req, res); if (!ctx) return;
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "50"), 10) || 50, 1), 200);
+
+  const transfers = await db.select().from(stockTransfersTable)
+    .where(eq(stockTransfersTable.companyId, ctx.companyId))
+    .orderBy(desc(stockTransfersTable.transferDate), desc(stockTransfersTable.id))
+    .limit(limit);
+
+  const whMap = await loadWarehouseNameMap(
+    ctx.companyId,
+    transfers.flatMap((r) => [r.fromWarehouseId, r.toWarehouseId]),
+  );
+
+  const transferActivity = transfers.map((t) => ({
+    id: `transfer-${t.id}`,
+    activityType: "transfer" as const,
+    documentNumber: t.transferNumber,
+    date: t.transferDate,
+    fromWarehouse: whMap.get(t.fromWarehouseId) ?? `Warehouse #${t.fromWarehouseId}`,
+    toWarehouse: whMap.get(t.toWarehouseId) ?? `Warehouse #${t.toWarehouseId}`,
+    referenceId: t.id,
+    quantity: null as number | null,
+    stockItemCode: null as string | null,
+    stockItemName: null as string | null,
+  }));
+
+  const docMovements = await db.select({
+    id: stockMovementsTable.id,
+    movementDate: stockMovementsTable.movementDate,
+    documentNumber: stockMovementsTable.documentNumber,
+    referenceType: stockMovementsTable.referenceType,
+    referenceId: stockMovementsTable.referenceId,
+    transactionType: stockMovementsTable.transactionType,
+    warehouseId: stockMovementsTable.warehouseId,
+    stockItemId: stockMovementsTable.stockItemId,
+    quantityIn: stockMovementsTable.quantityIn,
+    quantityOut: stockMovementsTable.quantityOut,
+    warehouseName: warehousesTable.name,
+    itemCode: stockItemsTable.code,
+    itemName: stockItemsTable.name,
+  })
+    .from(stockMovementsTable)
+    .innerJoin(warehousesTable, eq(stockMovementsTable.warehouseId, warehousesTable.id))
+    .innerJoin(stockItemsTable, eq(stockMovementsTable.stockItemId, stockItemsTable.id))
+    .where(and(
+      eq(stockMovementsTable.companyId, ctx.companyId),
+      or(
+        eq(stockMovementsTable.referenceType, "purchase_order"),
+        eq(stockMovementsTable.referenceType, "invoice"),
+        eq(stockMovementsTable.transactionType, "tax_invoice"),
+        eq(stockMovementsTable.transactionType, "purchase_order"),
+      ),
+    ))
+    .orderBy(desc(stockMovementsTable.movementDate), desc(stockMovementsTable.id))
+    .limit(500);
+
+  type Agg = {
+    id: string;
+    activityType: "purchase" | "sale";
+    documentNumber: string;
+    date: Date | string;
+    fromWarehouse: string | null;
+    toWarehouse: string | null;
+    referenceId: number | null;
+    quantity: number;
+    stockItemCode: string | null;
+    stockItemName: string | null;
+    sortTs: number;
+  };
+
+  const purchaseAgg = new Map<string, Agg>();
+  const saleAgg = new Map<string, Agg>();
+
+  for (const m of docMovements) {
+    const qtyIn = Number(m.quantityIn || 0);
+    const qtyOut = Number(m.quantityOut || 0);
+    const isPurchase =
+      m.referenceType === "purchase_order"
+      || m.transactionType === "purchase_order";
+    const key = `${m.referenceId ?? 0}:${m.stockItemId}`;
+    const sortTs = new Date(m.movementDate as any).getTime();
+
+    if (isPurchase) {
+      const existing = purchaseAgg.get(key);
+      if (m.transactionType === "purchase_order") {
+        purchaseAgg.set(key, {
+          id: `po-${m.referenceId}-${m.stockItemId}`,
+          activityType: "purchase",
+          documentNumber: m.documentNumber || `PO#${m.referenceId}`,
+          date: m.movementDate,
+          fromWarehouse: null,
+          toWarehouse: m.warehouseName,
+          referenceId: m.referenceId,
+          quantity: qtyIn,
+          stockItemCode: m.itemCode,
+          stockItemName: m.itemName,
+          sortTs,
+        });
+        continue;
+      }
+
+      if (existing?.id.startsWith("po-") && !existing.id.startsWith("po-net-")) {
+        continue;
+      }
+
+      purchaseAgg.set(key, {
+        id: `po-net-${m.referenceId}-${m.stockItemId}`,
+        activityType: "purchase",
+        documentNumber: m.documentNumber || `PO#${m.referenceId}`,
+        date: existing && existing.sortTs >= sortTs ? existing.date : m.movementDate,
+        fromWarehouse: null,
+        toWarehouse: m.warehouseName,
+        referenceId: m.referenceId,
+        quantity: (existing?.quantity ?? 0) + qtyIn - qtyOut,
+        stockItemCode: m.itemCode,
+        stockItemName: m.itemName,
+        sortTs: existing ? Math.max(existing.sortTs, sortTs) : sortTs,
+      });
+      continue;
+    }
+
+    // Tax Invoice: prefer canonical tax_invoice absolute qty_out; else net legacy deltas.
+    const existing = saleAgg.get(key);
+    if (m.transactionType === "tax_invoice") {
+      saleAgg.set(key, {
+        id: `inv-${m.referenceId}-${m.stockItemId}`,
+        activityType: "sale",
+        documentNumber: m.documentNumber || `INV#${m.referenceId}`,
+        date: m.movementDate,
+        fromWarehouse: m.warehouseName,
+        toWarehouse: null,
+        referenceId: m.referenceId,
+        quantity: qtyOut,
+        stockItemCode: m.itemCode,
+        stockItemName: m.itemName,
+        sortTs,
+      });
+      continue;
+    }
+
+    if (existing?.id.startsWith("inv-") && !existing.id.startsWith("inv-net-")) {
+      // Canonical tax_invoice already set absolute qty — ignore legacy delta rows.
+      continue;
+    }
+
+    saleAgg.set(key, {
+      id: `inv-net-${m.referenceId}-${m.stockItemId}`,
+      activityType: "sale",
+      documentNumber: m.documentNumber || `INV#${m.referenceId}`,
+      date: existing && existing.sortTs >= sortTs ? existing.date : m.movementDate,
+      fromWarehouse: m.warehouseName,
+      toWarehouse: null,
+      referenceId: m.referenceId,
+      quantity: (existing?.quantity ?? 0) + qtyOut - qtyIn,
+      stockItemCode: m.itemCode,
+      stockItemName: m.itemName,
+      sortTs: existing ? Math.max(existing.sortTs, sortTs) : sortTs,
+    });
+  }
+
+  const documentActivity = [...purchaseAgg.values(), ...saleAgg.values()]
+    .filter((row) => Math.abs(row.quantity) > 0.0005)
+    .map(({ sortTs: _s, ...row }) => row);
+
+  const merged = [...transferActivity, ...documentActivity]
+    .sort((a, b) => {
+      const da = new Date(a.date as any).getTime();
+      const db_ = new Date(b.date as any).getTime();
+      return db_ - da;
+    })
+    .slice(0, limit);
+
+  res.json(merged);
 });
 
 router.post("/inventory/stock-transfers", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
-  const { fromWarehouseId, toWarehouseId, transferDate, remarks, items } = req.body;
-  if (!fromWarehouseId || !toWarehouseId || fromWarehouseId === toWarehouseId) {
-    res.status(400).json({ error: "Valid from and to warehouses are required" });
+  const fromWarehouseId = Number(req.body?.fromWarehouseId);
+  const toWarehouseId = Number(req.body?.toWarehouseId);
+  const { transferDate, remarks, items } = req.body ?? {};
+
+  if (!Number.isFinite(fromWarehouseId) || fromWarehouseId <= 0
+    || !Number.isFinite(toWarehouseId) || toWarehouseId <= 0) {
+    res.status(400).json({ error: "Select both From and To warehouses." });
     return;
   }
-  if (!Array.isArray(items) || items.length === 0) {
-    res.status(400).json({ error: "Items are required" });
+  if (fromWarehouseId === toWarehouseId) {
+    res.status(400).json({ error: "From and To warehouse must be different." });
     return;
   }
 
   try {
+    const normalizedLines = normalizeTransferLines(items);
     const doc = await db.transaction(async (tx) => {
-      for (const line of items) {
-        const qty = Number(line.quantity);
-        if (!line.stockItemId || !qty || qty <= 0) throw new Error("Invalid line item");
-        await assertSufficientStock(tx, fromWarehouseId, line.stockItemId, qty);
+      // Ensure both warehouses belong to this company (prevents silent no-op / wrong WH).
+      const whRows = await tx
+        .select({ id: warehousesTable.id, name: warehousesTable.name })
+        .from(warehousesTable)
+        .where(and(
+          eq(warehousesTable.companyId, ctx.companyId),
+          inArray(warehousesTable.id, [fromWarehouseId, toWarehouseId]),
+        ));
+      if (whRows.length !== 2) {
+        throw new Error("From/To warehouse not found for this company.");
+      }
+
+      for (const line of normalizedLines) {
+        await assertSufficientStock(tx, fromWarehouseId, line.stockItemId, line.qty);
       }
 
       const transferNumber = await nextDocNumber("st", ctx.companyId);
@@ -253,13 +518,13 @@ router.post("/inventory/stock-transfers", async (req, res) => {
         updatedBy: ctx.userId,
       }).returning();
 
-      for (const line of items) {
-        const qty = Number(line.quantity);
+      for (const line of normalizedLines) {
         await tx.insert(stockTransferItemsTable).values({
           stockTransferId: header.id,
           stockItemId: line.stockItemId,
-          quantity: String(qty),
+          quantity: String(line.qty),
         });
+        // Source warehouse STOCK OUT
         await applyMovement(tx, {
           companyId: ctx.companyId,
           warehouseId: fromWarehouseId,
@@ -268,11 +533,12 @@ router.post("/inventory/stock-transfers", async (req, res) => {
           documentNumber: transferNumber,
           referenceType: "stock_transfer",
           referenceId: header.id,
-          quantityOut: qty,
-          reference: remarks,
+          quantityOut: line.qty,
+          reference: remarks || `Transfer ${transferNumber}`,
           userId: ctx.userId,
           username: ctx.username,
         });
+        // Destination warehouse STOCK IN
         await applyMovement(tx, {
           companyId: ctx.companyId,
           warehouseId: toWarehouseId,
@@ -281,8 +547,8 @@ router.post("/inventory/stock-transfers", async (req, res) => {
           documentNumber: transferNumber,
           referenceType: "stock_transfer",
           referenceId: header.id,
-          quantityIn: qty,
-          reference: remarks,
+          quantityIn: line.qty,
+          reference: remarks || `Transfer ${transferNumber}`,
           userId: ctx.userId,
           username: ctx.username,
         });
@@ -293,6 +559,153 @@ router.post("/inventory/stock-transfers", async (req, res) => {
     res.status(201).json(doc);
   } catch (e: any) {
     res.status(400).json({ error: e.message || "Failed to create stock transfer" });
+  }
+});
+
+/**
+ * Edit stock transfer: reverse previous OUT/IN, then apply the new transfer.
+ * Uses referenceId so the same transfer cannot double-post.
+ */
+router.put("/inventory/stock-transfers/:id", async (req, res) => {
+  const ctx = requireSession(req, res); if (!ctx) return;
+  const transferId = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(transferId) || transferId <= 0) {
+    res.status(400).json({ error: "Invalid stock transfer id" });
+    return;
+  }
+
+  const fromWarehouseId = Number(req.body?.fromWarehouseId);
+  const toWarehouseId = Number(req.body?.toWarehouseId);
+  const { transferDate, remarks, items } = req.body ?? {};
+
+  if (!Number.isFinite(fromWarehouseId) || fromWarehouseId <= 0
+    || !Number.isFinite(toWarehouseId) || toWarehouseId <= 0) {
+    res.status(400).json({ error: "Select both From and To warehouses." });
+    return;
+  }
+  if (fromWarehouseId === toWarehouseId) {
+    res.status(400).json({ error: "From and To warehouse must be different." });
+    return;
+  }
+
+  try {
+    const normalizedLines = normalizeTransferLines(items);
+    const doc = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${ctx.companyId}, ${transferId + 900000})`);
+
+      const [existing] = await tx.select().from(stockTransfersTable)
+        .where(and(
+          eq(stockTransfersTable.id, transferId),
+          eq(stockTransfersTable.companyId, ctx.companyId),
+        ))
+        .limit(1);
+      if (!existing) throw new Error("Stock transfer not found");
+
+      const whRows = await tx
+        .select({ id: warehousesTable.id })
+        .from(warehousesTable)
+        .where(and(
+          eq(warehousesTable.companyId, ctx.companyId),
+          inArray(warehousesTable.id, [fromWarehouseId, toWarehouseId]),
+        ));
+      if (whRows.length !== 2) {
+        throw new Error("From/To warehouse not found for this company.");
+      }
+
+      const previousItems = await tx.select().from(stockTransferItemsTable)
+        .where(eq(stockTransferItemsTable.stockTransferId, transferId));
+
+      // Reverse previous transfer: put back to source, remove from destination.
+      for (const line of previousItems) {
+        const qty = Number(line.quantity);
+        if (qty <= 0) continue;
+        await applyMovement(tx, {
+          companyId: ctx.companyId,
+          warehouseId: existing.toWarehouseId,
+          stockItemId: line.stockItemId,
+          transactionType: "transfer_out",
+          documentNumber: existing.transferNumber,
+          referenceType: "stock_transfer_reversal",
+          referenceId: existing.id,
+          quantityOut: qty,
+          reference: `Reverse transfer ${existing.transferNumber}`,
+          userId: ctx.userId,
+          username: ctx.username,
+        });
+        await applyMovement(tx, {
+          companyId: ctx.companyId,
+          warehouseId: existing.fromWarehouseId,
+          stockItemId: line.stockItemId,
+          transactionType: "transfer_in",
+          documentNumber: existing.transferNumber,
+          referenceType: "stock_transfer_reversal",
+          referenceId: existing.id,
+          quantityIn: qty,
+          reference: `Reverse transfer ${existing.transferNumber}`,
+          userId: ctx.userId,
+          username: ctx.username,
+        });
+      }
+
+      for (const line of normalizedLines) {
+        await assertSufficientStock(tx, fromWarehouseId, line.stockItemId, line.qty);
+      }
+
+      const [header] = await tx.update(stockTransfersTable)
+        .set({
+          fromWarehouseId,
+          toWarehouseId,
+          transferDate: transferDate || existing.transferDate,
+          remarks: remarks ?? existing.remarks,
+          updatedBy: ctx.userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(stockTransfersTable.id, transferId))
+        .returning();
+
+      await tx.delete(stockTransferItemsTable)
+        .where(eq(stockTransferItemsTable.stockTransferId, transferId));
+
+      for (const line of normalizedLines) {
+        await tx.insert(stockTransferItemsTable).values({
+          stockTransferId: transferId,
+          stockItemId: line.stockItemId,
+          quantity: String(line.qty),
+        });
+        await applyMovement(tx, {
+          companyId: ctx.companyId,
+          warehouseId: fromWarehouseId,
+          stockItemId: line.stockItemId,
+          transactionType: "transfer_out",
+          documentNumber: header.transferNumber,
+          referenceType: "stock_transfer",
+          referenceId: header.id,
+          quantityOut: line.qty,
+          reference: remarks || `Transfer ${header.transferNumber}`,
+          userId: ctx.userId,
+          username: ctx.username,
+        });
+        await applyMovement(tx, {
+          companyId: ctx.companyId,
+          warehouseId: toWarehouseId,
+          stockItemId: line.stockItemId,
+          transactionType: "transfer_in",
+          documentNumber: header.transferNumber,
+          referenceType: "stock_transfer",
+          referenceId: header.id,
+          quantityIn: line.qty,
+          reference: remarks || `Transfer ${header.transferNumber}`,
+          userId: ctx.userId,
+          username: ctx.username,
+        });
+      }
+
+      return header;
+    });
+    logAudit({ req, action: "update", entityType: "stock_transfer", entityId: doc.id, entityLabel: doc.transferNumber });
+    res.json(doc);
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Failed to update stock transfer" });
   }
 });
 
@@ -415,6 +828,8 @@ router.get("/inventory/movements", async (req, res) => {
     movementDate: stockMovementsTable.movementDate,
     transactionType: stockMovementsTable.transactionType,
     documentNumber: stockMovementsTable.documentNumber,
+    referenceType: stockMovementsTable.referenceType,
+    referenceId: stockMovementsTable.referenceId,
     warehouseId: stockMovementsTable.warehouseId,
     stockItemId: stockMovementsTable.stockItemId,
     quantityIn: stockMovementsTable.quantityIn,
@@ -458,7 +873,6 @@ router.get("/inventory/ledger", async (req, res) => {
 
 router.get("/inventory/dashboard", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
-  const today = new Date().toISOString().slice(0, 10);
 
   const [whCount] = await db.select({ count: sql<number>`count(*)::int` }).from(warehousesTable)
     .where(and(eq(warehousesTable.companyId, ctx.companyId), eq(warehousesTable.isActive, true)));
@@ -481,10 +895,20 @@ router.get("/inventory/dashboard", async (req, res) => {
     else if (reorder > 0 && qty <= reorder) nearReorder++;
   }
 
-  const [todayReceipts] = await db.select({ count: sql<number>`count(*)::int` }).from(goodsReceiptsTable)
-    .where(and(eq(goodsReceiptsTable.companyId, ctx.companyId), eq(goodsReceiptsTable.receiptDate, today)));
-  const [todayIssues] = await db.select({ count: sql<number>`count(*)::int` }).from(goodsIssuesTable)
-    .where(and(eq(goodsIssuesTable.companyId, ctx.companyId), eq(goodsIssuesTable.issueDate, today)));
+  // Count live stock movements for "today" (calendar date), not only WMS goods_receipts/issues tables.
+  // PO confirm + Tax Invoice are the main in/out paths in this app.
+  const [todayReceipts] = await db.select({ count: sql<number>`count(*)::int` }).from(stockMovementsTable)
+    .where(and(
+      eq(stockMovementsTable.companyId, ctx.companyId),
+      sql`${stockMovementsTable.movementDate}::date = CURRENT_DATE`,
+      sql`${stockMovementsTable.transactionType} IN ('goods_receipt', 'purchase_order', 'grn')`,
+    ));
+  const [todayIssues] = await db.select({ count: sql<number>`count(*)::int` }).from(stockMovementsTable)
+    .where(and(
+      eq(stockMovementsTable.companyId, ctx.companyId),
+      sql`${stockMovementsTable.movementDate}::date = CURRENT_DATE`,
+      sql`${stockMovementsTable.transactionType} IN ('goods_issue', 'tax_invoice')`,
+    ));
 
   const recentMovements = await db.select({
     id: stockMovementsTable.id,
@@ -500,7 +924,7 @@ router.get("/inventory/dashboard", async (req, res) => {
     .innerJoin(stockItemsTable, eq(stockMovementsTable.stockItemId, stockItemsTable.id))
     .innerJoin(warehousesTable, eq(stockMovementsTable.warehouseId, warehousesTable.id))
     .where(eq(stockMovementsTable.companyId, ctx.companyId))
-    .orderBy(desc(stockMovementsTable.movementDate))
+    .orderBy(desc(stockMovementsTable.movementDate), desc(stockMovementsTable.id))
     .limit(10);
 
   res.json({
@@ -519,6 +943,7 @@ router.get("/inventory/dashboard", async (req, res) => {
 router.get("/inventory/reports/current-stock", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
   const warehouseId = req.query.warehouseId ? parseInt(String(req.query.warehouseId)) : undefined;
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.json(await getWarehouseStockSummary(ctx.companyId, warehouseId));
 });
 
@@ -552,6 +977,7 @@ router.get("/inventory/warehouse-stock", async (req, res) => {
       id: r.id,
       name: r.name,
       code: r.code,
+      // Always show real on-hand warehouse qty (never inflate with invoice credits).
       quantity: Number(r.quantity) || 0,
       isDefault: r.isDefault,
     }))
@@ -596,60 +1022,31 @@ router.get("/inventory/warehouse-stock", async (req, res) => {
     return;
   }
 
-  const [item] = await db
-    .select({ stockQty: stockItemsTable.stockQty })
-    .from(stockItemsTable)
-    .where(and(eq(stockItemsTable.id, stockItemId), eq(stockItemsTable.companyId, ctx.companyId)));
-  const legacyQty = Number(item?.stockQty) || 0;
-  if (legacyQty <= 0) {
-    // Still return Main Warehouse at 0 so UI can show it
-    if (defaultWarehouseId) {
-      const [wh] = await db
-        .select({
-          id: warehousesTable.id,
-          name: warehousesTable.name,
-          code: warehousesTable.code,
-          isDefault: warehousesTable.isDefault,
-        })
-        .from(warehousesTable)
-        .where(and(eq(warehousesTable.id, defaultWarehouseId), eq(warehousesTable.companyId, ctx.companyId)));
-      if (wh) {
-        res.json([{
-          id: wh.id,
-          name: wh.name,
-          code: wh.code,
-          quantity: 0,
-          isDefault: wh.isDefault,
-        }]);
-        return;
-      }
+  // No warehouse_stock rows for this item. Do NOT invent availability from
+  // stock_items.stock_qty — that inflated Stock Transfer / cube-picker qty and
+  // made later invoice issues look like wrong-warehouse / double deductions.
+  if (defaultWarehouseId) {
+    const [wh] = await db
+      .select({
+        id: warehousesTable.id,
+        name: warehousesTable.name,
+        code: warehousesTable.code,
+        isDefault: warehousesTable.isDefault,
+      })
+      .from(warehousesTable)
+      .where(and(eq(warehousesTable.id, defaultWarehouseId), eq(warehousesTable.companyId, ctx.companyId)));
+    if (wh) {
+      res.json([{
+        id: wh.id,
+        name: wh.name,
+        code: wh.code,
+        quantity: 0,
+        isDefault: wh.isDefault,
+      }]);
+      return;
     }
-    res.json([]);
-    return;
   }
-
-  if (!defaultWarehouseId) {
-    res.json([]);
-    return;
-  }
-
-  const [wh] = await db
-    .select({ id: warehousesTable.id, name: warehousesTable.name, code: warehousesTable.code, isDefault: warehousesTable.isDefault })
-    .from(warehousesTable)
-    .where(and(eq(warehousesTable.id, defaultWarehouseId), eq(warehousesTable.companyId, ctx.companyId)));
-
-  if (!wh) {
-    res.json([]);
-    return;
-  }
-
-  res.json([{
-    id: wh.id,
-    name: wh.name,
-    code: wh.code,
-    quantity: legacyQty,
-    isDefault: wh.isDefault,
-  }]);
+  res.json([]);
 });
 
 router.get("/inventory/search", async (req, res) => {

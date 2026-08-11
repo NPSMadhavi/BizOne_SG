@@ -1466,6 +1466,16 @@ function renderBottomDocInfo(
 
 // ── QUOTATION PDF ─────────────────────────────────────────────────────────────
 
+export async function generateSalesOrder_PDF(
+  so: Quotation & { soNumber?: string; qtNumber?: string },
+  company?: Company | null,
+  settings?: { bankDetails?: string; termsAndConditions?: string; quotationTerms?: string } | null,
+  options?: { returnBase64?: boolean },
+): Promise<string | void> {
+  const qt = { ...so, qtNumber: so.soNumber || so.qtNumber || (so as any).qtNumber || "SO" };
+  return generateQuotation_PDF(qt as Quotation, company, settings, options);
+}
+
 export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string; quotationTerms?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });

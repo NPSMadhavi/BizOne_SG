@@ -7,7 +7,7 @@ export default function Footer() {
         <div className="grid gap-14 lg:grid-cols-[1.8fr_1fr_1fr]">
           {/* Brand */}
           <div>
-            <BizOneLogo className="h-10 w-auto" />
+            <BizOneLogo className="h-14 w-auto" />
 
             <p className="mt-6 max-w-sm text-[16px] leading-7 text-[#667085]">
               A complete multi-company ERP and Business Management System helping organizations manage daily operations from a single application.

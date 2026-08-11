@@ -10,7 +10,7 @@ export default function LedgerPage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div><p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1">Inventory</p><h1 className="text-2xl font-bold">Stock Ledger</h1></div>
+        <div><p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1">Inventory</p><h1 className="text-2xl font-bold text-[#2563EB]">Stock Ledger</h1></div>
         <Button variant="outline" className="gap-2" onClick={() => exportCsv("stock-ledger.csv", rows)}><Download className="h-4 w-4" /> Export CSV</Button>
       </div>
       <Card><CardContent className="pt-6 overflow-x-auto">

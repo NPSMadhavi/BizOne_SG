@@ -120,11 +120,11 @@ export default function InvoiceList() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Invoices</h1>
           <p className="text-muted-foreground mt-1">Manage and track all invoices.</p>
         </div>
         <Link href="/invoices/new">
-          <Button className="gap-2"><Plus className="h-4 w-4" />New Invoice</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />Create Invoice</Button>
         </Link>
       </div>
 
@@ -285,6 +285,7 @@ export default function InvoiceList() {
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
               <tr>
                 <th className="px-6 py-4 font-medium">INV Number</th>
+                <th className="px-6 py-4 font-medium">Sales Order</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
                 <th className="px-6 py-4 font-medium text-right">Amount</th>
@@ -298,14 +299,14 @@ export default function InvoiceList() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {[...Array(8)].map((_, j) => (
+                    {[...Array(9)].map((_, j) => (
                       <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50" />
                       <p>{docs.length === 0 ? "No invoices yet." : "No invoices match your filters."}</p>
@@ -323,8 +324,23 @@ export default function InvoiceList() {
                       className="hover:bg-muted/50 transition-colors cursor-pointer"
                       onClick={() => setLocation(`/invoices/${doc.id}`)}
                     >
-                      <td className="px-6 py-4 font-medium text-primary">{doc.invNumber}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{fmtDate((doc as any).issueDate || doc.createdAt)}</td>
+                      <td className="px-6 py-4 font-medium">{doc.invNumber}</td>
+                      <td className="px-6 py-4 font-mono" onClick={(e) => e.stopPropagation()}>
+                        {(doc as any).soNumber ? (
+                          <button
+                            type="button"
+                            className="text-primary hover:underline"
+                            onClick={() => {
+                              if ((doc as any).soId) setLocation(`/sales-orders/${(doc as any).soId}`);
+                            }}
+                          >
+                            {(doc as any).soNumber}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 font-medium">{fmtDate((doc as any).issueDate || doc.createdAt)}</td>
                       <td className="px-6 py-4 font-medium">{doc.customerName}</td>
                       <td className="px-6 py-4 text-right font-medium">{fmt(Number(doc.totalAmount), (doc as any).currency || "SGD")}</td>
                       <td className="px-6 py-4 text-right font-medium">

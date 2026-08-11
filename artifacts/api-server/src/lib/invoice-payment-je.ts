@@ -15,13 +15,14 @@
 import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
+import { isSingaporeCountry } from "./singapore.js";
 
 async function isSingapore(companyId: number): Promise<boolean> {
   const [co] = await db.select({ country: companiesTable.country })
     .from(companiesTable)
     .where(eq(companiesTable.id, companyId))
     .limit(1);
-  return co?.country?.toLowerCase() === "singapore";
+  return isSingaporeCountry(co?.country);
 }
 
 async function getAccountByCode(companyId: number, code: string) {

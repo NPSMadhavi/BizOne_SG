@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -89,6 +90,7 @@ export default function InvoiceView() {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+    void invalidateInventoryQueries(qc);
     refetch();
   };
 
@@ -238,7 +240,7 @@ export default function InvoiceView() {
           <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">{doc.invNumber}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{doc.invNumber}</h1>
               {getStatusBadge(doc.status)}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
@@ -294,9 +296,21 @@ export default function InvoiceView() {
                     className="bg-red-600 hover:bg-red-700"
                     onClick={async () => {
                       try {
-                        const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
-                        if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+                        const res = await fetch(`/api/invoices/${id}`, { method: "DELETE", credentials: "include" });
+                        const raw = await res.text();
+                        let e: any = null;
+                        try { e = raw ? JSON.parse(raw) : null; } catch { /* ignore */ }
+                        if (!res.ok) {
+                          // Stale page after invoice already gone — leave the view
+                          if (res.status === 404) {
+                            toast({ title: "Invoice already deleted." });
+                            setLocation("/invoices");
+                            return;
+                          }
+                          throw new Error(e?.error || "Failed");
+                        }
                         toast({ title: "Invoice deleted." });
+                        qc.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
                         setLocation("/invoices");
                       } catch (err: any) {
                         toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -349,6 +363,20 @@ export default function InvoiceView() {
           <CardContent className="space-y-3 text-sm">
             {doc.paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{doc.paymentTerms}</span></div>}
             {(doc as any).poRefNo && <div className="flex justify-between"><span className="text-muted-foreground">PO Reference</span><span className="font-mono">{(doc as any).poRefNo}</span></div>}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Sales Order</span>
+              {(doc as any).soNumber ? (
+                <button
+                  type="button"
+                  className="font-mono text-primary hover:underline"
+                  onClick={() => (doc as any).soId && setLocation(`/sales-orders/${(doc as any).soId}`)}
+                >
+                  {(doc as any).soNumber}
+                </button>
+              ) : (
+                <span className="font-mono text-muted-foreground">—</span>
+              )}
+            </div>
             {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
             {doc.notes && <div><span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notes</span><div className="mt-1 text-sm prose prose-sm max-w-none [&_p]:my-1 [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5" dangerouslySetInnerHTML={{ __html: (doc as any).notes || "" }} /></div>}
           </CardContent>

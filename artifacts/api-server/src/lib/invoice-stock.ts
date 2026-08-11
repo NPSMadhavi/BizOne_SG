@@ -2,16 +2,13 @@ import {
   db,
   stockItemsTable,
   stockMovementsTable,
-  warehouseStockTable,
   warehousesTable,
 } from "@workspace/db";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
-import {
-  applyMovement,
-  ensureDefaultWarehouse,
-  getItemTotalStock,
-  getWarehouseBalance,
-} from "./inventory-service.js";
+import { and, eq, or, sql } from "drizzle-orm";
+import { adjustWarehouseQuantity, getWarehouseBalance } from "./inventory-service.js";
+import { requireWarehouseId, type DocumentStockLine } from "./document-stock-sync.js";
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type InvoiceLineItem = {
   type?: string;
@@ -20,14 +17,32 @@ type InvoiceLineItem = {
   isStockItem?: boolean;
   qty?: number;
   selectedSerials?: string[];
-  isFoc?: boolean;
   warehouseId?: number;
+  warehouseName?: string;
 };
 
-type StockDeductionLine = {
-  stockItemId: number;
-  warehouseId?: number;
-  qty: number;
+type StockLine = DocumentStockLine;
+
+export type InvoiceStockApplyResult = {
+  /** Qty actually reduced from warehouses on THIS save (0 = already issued / no-op). */
+  reducedThisSave: Array<{
+    warehouseId: number;
+    warehouseName?: string;
+    stockItemId: number;
+    quantity: number;
+  }>;
+  /** Qty put back when invoice qty was lowered or warehouse remapped. */
+  putBackThisSave: Array<{
+    warehouseId: number;
+    warehouseName?: string;
+    stockItemId: number;
+    quantity: number;
+  }>;
+  alreadyIssued: Array<{
+    warehouseId: number;
+    stockItemId: number;
+    quantity: number;
+  }>;
 };
 
 function toQty(value: string | number | null | undefined): number {
@@ -39,365 +54,639 @@ function cleanPartNumber(raw: unknown): string {
   return String(raw ?? "").replace(/<[^>]*>/g, "").trim();
 }
 
-function normalizeCode(value: string): string {
-  return value.trim().replace(/\s+/g, "").toLowerCase();
+function normalizeId(raw: unknown): number | undefined {
+  if (raw == null || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-async function resolveStockItemId(
-  companyId: number,
-  item: InvoiceLineItem,
-): Promise<number | null> {
-  if (item.stockItemId) {
-    const [row] = await db
-      .select({ id: stockItemsTable.id, type: stockItemsTable.type })
-      .from(stockItemsTable)
-      .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.id, item.stockItemId)));
-    if (!row || row.type === "service") return null;
-    return row.id;
-  }
-
-  const partNumber = cleanPartNumber(item.partNumber);
-  if (!partNumber) return null;
-
-  const [exact] = await db
-    .select({ id: stockItemsTable.id, type: stockItemsTable.type })
-    .from(stockItemsTable)
-    .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
-    .limit(1);
-  if (exact) return exact.type === "service" ? null : exact.id;
-
-  const normalizedPart = normalizeCode(partNumber);
-  const items = await db
-    .select({ id: stockItemsTable.id, code: stockItemsTable.code, type: stockItemsTable.type })
-    .from(stockItemsTable)
-    .where(eq(stockItemsTable.companyId, companyId));
-
-  const match = items.find((row) => row.type !== "service" && normalizeCode(row.code) === normalizedPart);
-  return match?.id ?? null;
+function lineKey(warehouseId: number, stockItemId: number): string {
+  return `${warehouseId}:${stockItemId}`;
 }
 
-async function bootstrapWarehouseStockIfNeeded(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+function inventoryLog(payload: Record<string, unknown>): void {
+  console.log("[INVENTORY UPDATE]", JSON.stringify(payload));
+}
+
+async function assertStockItem(
+  tx: Tx,
   companyId: number,
-  warehouseId: number,
   stockItemId: number,
 ): Promise<void> {
-  const warehouseTotal = await getItemTotalStock(tx, companyId, stockItemId);
-  if (warehouseTotal > 0) return;
-
-  const [item] = await tx
-    .select({ stockQty: stockItemsTable.stockQty })
+  const [row] = await tx
+    .select({ id: stockItemsTable.id, type: stockItemsTable.type })
     .from(stockItemsTable)
-    .where(and(eq(stockItemsTable.id, stockItemId), eq(stockItemsTable.companyId, companyId)));
-  const legacyQty = toQty(item?.stockQty);
-  if (legacyQty <= 0) return;
-
-  await applyMovement(tx, {
-    companyId,
-    warehouseId,
-    stockItemId,
-    transactionType: "opening_stock",
-    documentNumber: `BOOT-${stockItemId}`,
-    referenceType: "stock_bootstrap",
-    referenceId: stockItemId,
-    quantityIn: legacyQty,
-    reference: "Synced from stock item quantity",
-  });
+    .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.id, stockItemId)));
+  if (!row || row.type === "service") {
+    throw new Error(
+      `Stock item #${stockItemId} not found. Pick the item again using the cube icon.`,
+    );
+  }
 }
 
-async function collectInvoiceStockLines(
+async function assertWarehouse(
+  tx: Tx,
+  companyId: number,
+  warehouseId: number,
+): Promise<{ id: number; name: string }> {
+  const [row] = await tx
+    .select({ id: warehousesTable.id, name: warehousesTable.name })
+    .from(warehousesTable)
+    .where(and(eq(warehousesTable.id, warehouseId), eq(warehousesTable.companyId, companyId)));
+  if (!row) {
+    throw new Error(`Warehouse #${warehouseId} not found for this company.`);
+  }
+  return row;
+}
+
+async function collectDesiredLines(
+  tx: Tx,
   companyId: number,
   items: InvoiceLineItem[],
-): Promise<StockDeductionLine[]> {
-  const lines = new Map<string, StockDeductionLine>();
+): Promise<StockLine[]> {
+  const lines = new Map<string, StockLine>();
 
   for (const item of items) {
-    if (item.type === "section" || item.isFoc) continue;
+    if (item?.type === "section") continue;
+
+    const stockItemId = normalizeId(item.stockItemId);
+    if (!stockItemId) continue;
+
+    const warehouseId = requireWarehouseId(
+      item.warehouseId,
+      cleanPartNumber(item.partNumber) || "stock item",
+    );
 
     const qty = Number(item.qty) || 0;
     if (qty <= 0) continue;
 
-    const stockItemId = await resolveStockItemId(companyId, item);
-    const partNumber = cleanPartNumber(item.partNumber);
-
-    if (!stockItemId) {
-      if (item.isStockItem || item.stockItemId) {
-        throw new Error(`Stock item not found for part number "${partNumber || "unknown"}". Pick the item from stock using the cube icon.`);
-      }
-      if (partNumber) {
-        const [maybe] = await db
-          .select({ id: stockItemsTable.id })
-          .from(stockItemsTable)
-          .where(and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, partNumber)))
-          .limit(1);
-        if (maybe) {
-          throw new Error(`Could not link invoice line "${partNumber}" to stock. Re-select the item using the cube icon.`);
-        }
-      }
-      continue;
+    const serialQty = Array.isArray(item.selectedSerials)
+      ? item.selectedSerials.filter((s) => String(s).trim()).length
+      : 0;
+    if (serialQty > 0 && serialQty !== qty) {
+      throw new Error(
+        `Selected serial count (${serialQty}) must match invoice quantity (${qty}).`,
+      );
     }
 
-    const warehouseId = item.warehouseId;
-    const key = `${stockItemId}:${warehouseId ?? "auto"}`;
+    await assertStockItem(tx, companyId, stockItemId);
+    const wh = await assertWarehouse(tx, companyId, warehouseId);
+
+    inventoryLog({
+      transactionType: "tax_invoice",
+      warehouseId,
+      warehouseName: wh.name,
+      stockItemId,
+      quantity: qty,
+      movementType: "OUT",
+    });
+
+    const key = lineKey(warehouseId, stockItemId);
     const existing = lines.get(key);
-    if (existing) {
-      existing.qty += qty;
-    } else {
-      lines.set(key, { stockItemId, warehouseId, qty });
-    }
+    if (existing) existing.qty += qty;
+    else lines.set(key, { warehouseId, stockItemId, qty });
   }
 
   return Array.from(lines.values());
 }
 
-async function deductQtyFromWarehouses(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+export async function loadInvoiceNetDeducted(
+  tx: Tx | typeof db,
+  companyId: number,
+  invoiceId: number,
+): Promise<Map<string, StockLine>> {
+  const movements = await tx
+    .select()
+    .from(stockMovementsTable)
+    .where(and(
+      eq(stockMovementsTable.companyId, companyId),
+      eq(stockMovementsTable.referenceId, invoiceId),
+      or(
+        eq(stockMovementsTable.referenceType, "invoice"),
+        eq(stockMovementsTable.referenceType, "invoice_reversal"),
+        eq(stockMovementsTable.referenceType, "invoice_void"),
+        eq(stockMovementsTable.transactionType, "tax_invoice"),
+      ),
+    ));
+
+  const net = new Map<string, StockLine>();
+  for (const m of movements) {
+    const warehouseId = Number(m.warehouseId);
+    const stockItemId = Number(m.stockItemId);
+    if (!warehouseId || !stockItemId) continue;
+    const key = lineKey(warehouseId, stockItemId);
+    const delta = toQty(m.quantityOut) - toQty(m.quantityIn);
+    const cur = net.get(key) ?? { warehouseId, stockItemId, qty: 0 };
+    cur.qty += delta;
+    net.set(key, cur);
+  }
+  return net;
+}
+
+/**
+ * Persist the warehouse stock was actually issued from.
+ */
+export function alignInvoiceItemsToIssuedWarehouse(
+  items: InvoiceLineItem[] | undefined,
+  netMap: Map<string, StockLine>,
+  warehouseNames: Map<number, string>,
+): InvoiceLineItem[] {
+  const list = Array.isArray(items) ? items : [];
+
+  const netByItem = new Map<number, StockLine>();
+  for (const line of netMap.values()) {
+    if (line.qty <= 0.0005) continue;
+    const prev = netByItem.get(line.stockItemId);
+    if (!prev || line.qty > prev.qty) netByItem.set(line.stockItemId, line);
+  }
+
+  return list.map((item) => {
+    if (!item || item.type === "section") return item;
+    const stockItemId = normalizeId(item.stockItemId);
+    if (!stockItemId) return item;
+
+    const issued = netByItem.get(stockItemId);
+    const lineWh = normalizeId(item.warehouseId);
+    const warehouseId = issued?.warehouseId ?? lineWh;
+    if (!warehouseId) return item;
+
+    return {
+      ...item,
+      warehouseId,
+      warehouseName: warehouseNames.get(warehouseId) || item.warehouseName,
+    };
+  });
+}
+
+/** Remove prior Tax Invoice movement rows for one stock item on this invoice. */
+async function clearInvoiceItemMovements(
+  tx: Tx,
+  companyId: number,
+  invoiceId: number,
+  stockItemId: number,
+): Promise<void> {
+  await tx.delete(stockMovementsTable).where(and(
+    eq(stockMovementsTable.companyId, companyId),
+    eq(stockMovementsTable.referenceId, invoiceId),
+    eq(stockMovementsTable.stockItemId, stockItemId),
+    or(
+      eq(stockMovementsTable.referenceType, "invoice"),
+      eq(stockMovementsTable.referenceType, "invoice_reversal"),
+      eq(stockMovementsTable.transactionType, "tax_invoice"),
+    ),
+  ));
+}
+
+/**
+ * Write/replace the single canonical Tax Invoice movement for this line.
+ * quantity_out always stores the absolute invoice qty (not a delta).
+ */
+async function upsertTaxInvoiceMovement(
+  tx: Tx,
   params: {
     companyId: number;
-    stockItemId: number;
-    qty: number;
     invoiceId: number;
     invNumber: string;
-    warehouseId?: number;
+    warehouseId: number;
+    stockItemId: number;
+    quantityOut: number;
+    balance: number;
     userId?: number;
     username?: string;
   },
 ): Promise<void> {
-  const defaultWarehouseId = await ensureDefaultWarehouse(params.companyId);
+  await clearInvoiceItemMovements(tx, params.companyId, params.invoiceId, params.stockItemId);
 
-  if (params.warehouseId) {
-    await bootstrapWarehouseStockIfNeeded(tx, params.companyId, params.warehouseId, params.stockItemId);
-    const available = await getWarehouseBalance(tx, params.warehouseId, params.stockItemId);
-    if (params.qty > available) {
-      const [item] = await tx
-        .select({ code: stockItemsTable.code })
-        .from(stockItemsTable)
-        .where(and(eq(stockItemsTable.id, params.stockItemId), eq(stockItemsTable.companyId, params.companyId)));
-      const [wh] = await tx
-        .select({ name: warehousesTable.name })
-        .from(warehousesTable)
-        .where(and(eq(warehousesTable.id, params.warehouseId), eq(warehousesTable.companyId, params.companyId)));
-      throw new Error(
-        `Insufficient stock for ${item?.code ?? "item"} in ${wh?.name ?? "warehouse"}. Available: ${available}, requested: ${params.qty}`,
-      );
+  if (params.quantityOut <= 0.0005) return;
+
+  await tx.insert(stockMovementsTable).values({
+    companyId: params.companyId,
+    warehouseId: params.warehouseId,
+    stockItemId: params.stockItemId,
+    transactionType: "tax_invoice",
+    documentNumber: params.invNumber,
+    referenceType: "invoice",
+    referenceId: params.invoiceId,
+    quantityIn: "0",
+    quantityOut: String(params.quantityOut),
+    balance: String(params.balance),
+    reference: `Tax Invoice ${params.invNumber}`,
+    userId: params.userId ?? null,
+    username: params.username ?? null,
+    movementDate: new Date(),
+  });
+}
+
+/**
+ * TAX INVOICE STOCK
+ * -----------------
+ * - Create: reduce warehouse by qty, write one tax_invoice movement (qty_out = invoice qty)
+ * - Edit same WH: apply only the delta to warehouse_stock, rewrite movement qty_out to absolute qty
+ * - Edit WH change: reverse old WH fully, apply new WH fully, rewrite movement
+ * - Same qty again: no-op on warehouse; ensure movement shows absolute qty
+ */
+async function syncInvoiceStockInTx(
+  tx: Tx,
+  params: {
+    companyId: number;
+    invoiceId: number;
+    invNumber: string;
+    items: InvoiceLineItem[];
+    userId?: number;
+    username?: string;
+  },
+): Promise<InvoiceStockApplyResult> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${params.companyId}, ${params.invoiceId})`);
+
+  const desiredLines = await collectDesiredLines(tx, params.companyId, params.items);
+  const netMap = await loadInvoiceNetDeducted(tx, params.companyId, params.invoiceId);
+
+  const previouslyApplied: StockLine[] = [];
+  for (const line of netMap.values()) {
+    if (line.qty > 0.0005) previouslyApplied.push({ ...line });
+  }
+
+  const previousByItem = new Map<number, StockLine[]>();
+  for (const line of previouslyApplied) {
+    const list = previousByItem.get(line.stockItemId) ?? [];
+    list.push(line);
+    previousByItem.set(line.stockItemId, list);
+  }
+
+  const desiredByItem = new Map<number, StockLine>();
+  for (const desired of desiredLines) {
+    const existing = desiredByItem.get(desired.stockItemId);
+    if (existing) {
+      if (existing.warehouseId !== desired.warehouseId) {
+        throw new Error(
+          `Keep a single warehouse per stock item on ${params.invNumber}.`,
+        );
+      }
+      existing.qty += desired.qty;
+    } else {
+      desiredByItem.set(desired.stockItemId, { ...desired });
     }
-
-    await applyMovement(tx, {
-      companyId: params.companyId,
-      warehouseId: params.warehouseId,
-      stockItemId: params.stockItemId,
-      transactionType: "goods_issue",
-      documentNumber: params.invNumber,
-      referenceType: "invoice",
-      referenceId: params.invoiceId,
-      quantityOut: params.qty,
-      reference: `Invoice ${params.invNumber}`,
-      userId: params.userId,
-      username: params.username,
-    });
-    return;
   }
 
-  await bootstrapWarehouseStockIfNeeded(tx, params.companyId, defaultWarehouseId, params.stockItemId);
-
-  let remaining = params.qty;
-
-  const warehouseRows = await tx
-    .select({
-      warehouseId: warehouseStockTable.warehouseId,
-      quantity: warehouseStockTable.quantity,
-    })
-    .from(warehouseStockTable)
-    .where(and(
-      eq(warehouseStockTable.companyId, params.companyId),
-      eq(warehouseStockTable.stockItemId, params.stockItemId),
-    ))
-    .orderBy(desc(warehouseStockTable.quantity));
-
-  for (const row of warehouseRows) {
-    if (remaining <= 0) break;
-    const available = toQty(row.quantity);
-    if (available <= 0) continue;
-    const take = Math.min(available, remaining);
-
-    await applyMovement(tx, {
-      companyId: params.companyId,
-      warehouseId: row.warehouseId,
-      stockItemId: params.stockItemId,
-      transactionType: "goods_issue",
-      documentNumber: params.invNumber,
-      referenceType: "invoice",
-      referenceId: params.invoiceId,
-      quantityOut: take,
-      reference: `Invoice ${params.invNumber}`,
-      userId: params.userId,
-      username: params.username,
-    });
-
-    remaining -= take;
-  }
-
-  if (remaining > 0) {
-    const total = await getItemTotalStock(tx, params.companyId, params.stockItemId);
-    const [item] = await tx
-      .select({ code: stockItemsTable.code })
-      .from(stockItemsTable)
-      .where(and(eq(stockItemsTable.id, params.stockItemId), eq(stockItemsTable.companyId, params.companyId)));
+  const stockIntent = (params.items || []).some((item) => {
+    if (!item || item.type === "section") return false;
+    const sid = normalizeId(item.stockItemId);
+    const qty = Number(item.qty) || 0;
+    return !!sid && qty > 0;
+  });
+  if (stockIntent && desiredByItem.size === 0) {
     throw new Error(
-      `Insufficient stock for ${item?.code ?? "item"}. Available: ${total}, requested: ${params.qty}`,
+      `No warehouse stock lines to issue on ${params.invNumber}. `
+      + `Pick each stock item with the cube icon and select a warehouse.`,
     );
   }
+
+  console.log("[TAX INVOICE SAVE]", JSON.stringify({
+    invoiceId: params.invoiceId,
+    invNumber: params.invNumber,
+    step: "upsert_tax_invoice_movement",
+    desired: Array.from(desiredByItem.values()),
+    previouslyApplied,
+  }));
+
+  const result: InvoiceStockApplyResult = {
+    reducedThisSave: [],
+    putBackThisSave: [],
+    alreadyIssued: [],
+  };
+
+  const stockItemIds = new Set<number>([
+    ...desiredByItem.keys(),
+    ...previousByItem.keys(),
+  ]);
+
+  for (const stockItemId of stockItemIds) {
+    const desired = desiredByItem.get(stockItemId);
+    const previousList = previousByItem.get(stockItemId) ?? [];
+    const previousTotal = previousList.reduce((s, l) => s + l.qty, 0);
+    const previousPrimary = previousList
+      .slice()
+      .sort((a, b) => b.qty - a.qty)[0];
+
+    // Line removed from invoice → reverse all previous nets for this item.
+    if (!desired) {
+      for (const prev of previousList) {
+        if (prev.qty <= 0.0005) continue;
+        const prevWh = await assertWarehouse(tx, params.companyId, prev.warehouseId);
+        await adjustWarehouseQuantity(tx, {
+          companyId: params.companyId,
+          warehouseId: prev.warehouseId,
+          stockItemId,
+          quantityIn: prev.qty,
+        });
+        result.putBackThisSave.push({
+          warehouseId: prev.warehouseId,
+          warehouseName: prevWh.name,
+          stockItemId,
+          quantity: prev.qty,
+        });
+      }
+      await clearInvoiceItemMovements(tx, params.companyId, params.invoiceId, stockItemId);
+      continue;
+    }
+
+    const wh = await assertWarehouse(tx, params.companyId, desired.warehouseId);
+    const warehouseChanged =
+      !!previousPrimary
+      && previousPrimary.warehouseId !== desired.warehouseId;
+
+    if (warehouseChanged) {
+      for (const prev of previousList) {
+        if (prev.qty <= 0.0005) continue;
+        const prevWh = await assertWarehouse(tx, params.companyId, prev.warehouseId);
+        await adjustWarehouseQuantity(tx, {
+          companyId: params.companyId,
+          warehouseId: prev.warehouseId,
+          stockItemId,
+          quantityIn: prev.qty,
+        });
+        result.putBackThisSave.push({
+          warehouseId: prev.warehouseId,
+          warehouseName: prevWh.name,
+          stockItemId,
+          quantity: prev.qty,
+        });
+      }
+
+      const before = await getWarehouseBalance(tx, desired.warehouseId, stockItemId);
+      if (desired.qty > before) {
+        throw new Error(
+          `Insufficient stock in ${wh.name}. Available: ${before}, requested: ${desired.qty}`,
+        );
+      }
+      const after = await adjustWarehouseQuantity(tx, {
+        companyId: params.companyId,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityOut: desired.qty,
+      });
+      await upsertTaxInvoiceMovement(tx, {
+        companyId: params.companyId,
+        invoiceId: params.invoiceId,
+        invNumber: params.invNumber,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityOut: desired.qty,
+        balance: after,
+        userId: params.userId,
+        username: params.username,
+      });
+      result.reducedThisSave.push({
+        warehouseId: desired.warehouseId,
+        warehouseName: wh.name,
+        stockItemId,
+        quantity: desired.qty,
+      });
+      continue;
+    }
+
+    // Same warehouse: apply quantity difference only.
+    const currentQty = previousTotal;
+    const adjustment = desired.qty - currentQty;
+
+    if (Math.abs(adjustment) < 0.0005) {
+      const balance = await getWarehouseBalance(tx, desired.warehouseId, stockItemId);
+      await upsertTaxInvoiceMovement(tx, {
+        companyId: params.companyId,
+        invoiceId: params.invoiceId,
+        invNumber: params.invNumber,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityOut: desired.qty,
+        balance,
+        userId: params.userId,
+        username: params.username,
+      });
+      result.alreadyIssued.push({
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantity: currentQty,
+      });
+      continue;
+    }
+
+    const before = await getWarehouseBalance(tx, desired.warehouseId, stockItemId);
+
+    if (adjustment > 0) {
+      if (adjustment > before) {
+        const [item] = await tx
+          .select({ code: stockItemsTable.code, name: stockItemsTable.name })
+          .from(stockItemsTable)
+          .where(and(
+            eq(stockItemsTable.id, stockItemId),
+            eq(stockItemsTable.companyId, params.companyId),
+          ));
+        throw new Error(
+          `Insufficient stock for ${item?.code ?? item?.name ?? "item"} in ${wh.name}. `
+          + `Available: ${before}, requested: ${adjustment}`,
+        );
+      }
+
+      inventoryLog({
+        transactionType: "tax_invoice",
+        transactionId: params.invoiceId,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantity: adjustment,
+        movementType: "OUT",
+        previouslyAppliedQty: currentQty,
+        invoiceQty: desired.qty,
+      });
+
+      const after = await adjustWarehouseQuantity(tx, {
+        companyId: params.companyId,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityOut: adjustment,
+      });
+
+      await upsertTaxInvoiceMovement(tx, {
+        companyId: params.companyId,
+        invoiceId: params.invoiceId,
+        invNumber: params.invNumber,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityOut: desired.qty,
+        balance: after,
+        userId: params.userId,
+        username: params.username,
+      });
+
+      result.reducedThisSave.push({
+        warehouseId: desired.warehouseId,
+        warehouseName: wh.name,
+        stockItemId,
+        quantity: adjustment,
+      });
+    } else {
+      const putBack = -adjustment;
+      inventoryLog({
+        transactionType: "tax_invoice",
+        transactionId: params.invoiceId,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantity: putBack,
+        movementType: "PUT_BACK_SAME_WAREHOUSE",
+        previouslyAppliedQty: currentQty,
+        invoiceQty: desired.qty,
+      });
+
+      const after = await adjustWarehouseQuantity(tx, {
+        companyId: params.companyId,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityIn: putBack,
+      });
+
+      await upsertTaxInvoiceMovement(tx, {
+        companyId: params.companyId,
+        invoiceId: params.invoiceId,
+        invNumber: params.invNumber,
+        warehouseId: desired.warehouseId,
+        stockItemId,
+        quantityOut: desired.qty,
+        balance: after,
+        userId: params.userId,
+        username: params.username,
+      });
+
+      result.putBackThisSave.push({
+        warehouseId: desired.warehouseId,
+        warehouseName: wh.name,
+        stockItemId,
+        quantity: putBack,
+      });
+    }
+  }
+
+  const finalNet = await loadInvoiceNetDeducted(tx, params.companyId, params.invoiceId);
+  let matchedIssued = 0;
+  for (const desired of desiredByItem.values()) {
+    const key = lineKey(desired.warehouseId, desired.stockItemId);
+    matchedIssued += Math.max(0, finalNet.get(key)?.qty ?? 0);
+  }
+  const desiredTotal = Array.from(desiredByItem.values()).reduce((s, l) => s + l.qty, 0);
+  if (Math.abs(desiredTotal - matchedIssued) > 0.0005) {
+    throw new Error(
+      `Stock must match invoice qty on ${params.invNumber}: invoice ${desiredTotal}, stock issued ${matchedIssued}.`,
+    );
+  }
+
+  return result;
+}
+
+export async function syncInvoiceStock(
+  params: {
+    companyId: number;
+    invoiceId: number;
+    invNumber: string;
+    items: InvoiceLineItem[];
+    userId?: number;
+    username?: string;
+  },
+  tx?: Tx,
+): Promise<InvoiceStockApplyResult> {
+  if (tx) {
+    return syncInvoiceStockInTx(tx, params);
+  }
+  return db.transaction(async (inner) => {
+    return syncInvoiceStockInTx(inner, params);
+  });
 }
 
 export async function invoiceStockAlreadyDeducted(companyId: number, invoiceId: number): Promise<boolean> {
-  const rows = await db
-    .select({ id: stockMovementsTable.id })
-    .from(stockMovementsTable)
-    .where(and(
-      eq(stockMovementsTable.companyId, companyId),
-      eq(stockMovementsTable.referenceType, "invoice"),
-      eq(stockMovementsTable.referenceId, invoiceId),
-      eq(stockMovementsTable.transactionType, "goods_issue"),
-    ))
-    .limit(1);
-  return rows.length > 0;
+  const net = await loadInvoiceNetDeducted(db, companyId, invoiceId);
+  return Array.from(net.values()).some((l) => l.qty > 0.0005);
 }
 
-/** Replace invoice stock deductions to match current line items. */
-export async function syncInvoiceStock(params: {
-  companyId: number;
-  invoiceId: number;
-  invNumber: string;
-  items: InvoiceLineItem[];
-  userId?: number;
-  username?: string;
-}): Promise<void> {
-  const lines = await collectInvoiceStockLines(params.companyId, params.items);
+export async function deductInvoiceStock(
+  params: {
+    companyId: number;
+    invoiceId: number;
+    invNumber: string;
+    items: InvoiceLineItem[];
+    userId?: number;
+    username?: string;
+  },
+  tx?: Tx,
+): Promise<InvoiceStockApplyResult> {
+  return syncInvoiceStock(params, tx);
+}
 
-  await db.transaction(async (tx) => {
-    const existingMovements = await tx
-      .select()
-      .from(stockMovementsTable)
-      .where(and(
-        eq(stockMovementsTable.companyId, params.companyId),
-        or(
-          and(
-            eq(stockMovementsTable.referenceType, "invoice"),
-            eq(stockMovementsTable.referenceId, params.invoiceId),
-          ),
-          and(
-            eq(stockMovementsTable.referenceType, "invoice_reversal"),
-            eq(stockMovementsTable.referenceId, params.invoiceId),
-          )
-        )
-      ));
+async function restoreInvoiceStockInTx(
+  tx: Tx,
+  params: {
+    companyId: number;
+    invoiceId: number;
+    invNumber: string;
+    userId?: number;
+    username?: string;
+  },
+): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${params.companyId}, ${params.invoiceId})`);
 
-    const netDeductedMap = new Map<string, { warehouseId: number; stockItemId: number; qty: number }>();
-    for (const m of existingMovements) {
-      const key = `${m.warehouseId}:${m.stockItemId}`;
-      const qtyOut = toQty(m.quantityOut);
-      const qtyIn = toQty(m.quantityIn);
-      const net = qtyOut - qtyIn;
-      const cur = netDeductedMap.get(key) || { warehouseId: m.warehouseId, stockItemId: m.stockItemId, qty: 0 };
-      cur.qty += net;
-      netDeductedMap.set(key, cur);
-    }
+  const netMap = await loadInvoiceNetDeducted(tx, params.companyId, params.invoiceId);
+  for (const source of netMap.values()) {
+    if (source.qty <= 0) continue;
 
-    for (const entry of netDeductedMap.values()) {
-      if (entry.qty <= 0) continue;
-      await applyMovement(tx, {
-        companyId: params.companyId,
-        warehouseId: entry.warehouseId,
-        stockItemId: entry.stockItemId,
-        transactionType: "adjustment_in",
-        documentNumber: params.invNumber,
-        referenceType: "invoice_reversal",
-        referenceId: params.invoiceId,
-        quantityIn: entry.qty,
-        reference: `Reversed before updating invoice ${params.invNumber}`,
-        userId: params.userId,
-        username: params.username,
-      });
-    }
+    inventoryLog({
+      transactionType: "invoice_void",
+      transactionId: params.invoiceId,
+      warehouseId: source.warehouseId,
+      stockItemId: source.stockItemId,
+      quantity: source.qty,
+      movementType: "IN",
+    });
 
-    await tx.delete(stockMovementsTable).where(and(
-      eq(stockMovementsTable.companyId, params.companyId),
-      or(
-        and(
-          eq(stockMovementsTable.referenceType, "invoice"),
-          eq(stockMovementsTable.referenceId, params.invoiceId),
-        ),
-        and(
-          eq(stockMovementsTable.referenceType, "invoice_reversal"),
-          eq(stockMovementsTable.referenceId, params.invoiceId),
-        )
-      )
-    ));
+    await adjustWarehouseQuantity(tx, {
+      companyId: params.companyId,
+      warehouseId: source.warehouseId,
+      stockItemId: source.stockItemId,
+      quantityIn: source.qty,
+    });
+  }
 
-    for (const line of lines) {
-      await deductQtyFromWarehouses(tx, {
-        companyId: params.companyId,
-        stockItemId: line.stockItemId,
-        qty: line.qty,
-        warehouseId: line.warehouseId,
-        invoiceId: params.invoiceId,
-        invNumber: params.invNumber,
-        userId: params.userId,
-        username: params.username,
-      });
-    }
+  // Remove Tax Invoice movement rows so Stock Transfer history no longer shows this invoice.
+  await tx.delete(stockMovementsTable).where(and(
+    eq(stockMovementsTable.companyId, params.companyId),
+    eq(stockMovementsTable.referenceId, params.invoiceId),
+    or(
+      eq(stockMovementsTable.referenceType, "invoice"),
+      eq(stockMovementsTable.referenceType, "invoice_reversal"),
+      eq(stockMovementsTable.referenceType, "invoice_void"),
+      eq(stockMovementsTable.transactionType, "tax_invoice"),
+    ),
+  ));
+}
+
+export async function restoreInvoiceStock(
+  params: {
+    companyId: number;
+    invoiceId: number;
+    invNumber: string;
+    userId?: number;
+    username?: string;
+  },
+  tx?: Tx,
+): Promise<void> {
+  if (tx) {
+    await restoreInvoiceStockInTx(tx, params);
+    return;
+  }
+  await db.transaction(async (inner) => {
+    await restoreInvoiceStockInTx(inner, params);
   });
 }
 
-export async function deductInvoiceStock(params: {
-  companyId: number;
-  invoiceId: number;
-  invNumber: string;
-  items: InvoiceLineItem[];
-  userId?: number;
-  username?: string;
-}): Promise<void> {
-  if (await invoiceStockAlreadyDeducted(params.companyId, params.invoiceId)) return;
-  await syncInvoiceStock(params);
-}
-
-export async function restoreInvoiceStock(params: {
-  companyId: number;
-  invoiceId: number;
-  invNumber: string;
-  userId?: number;
-  username?: string;
-}): Promise<void> {
-  const movements = await db
-    .select()
-    .from(stockMovementsTable)
-    .where(and(
-      eq(stockMovementsTable.companyId, params.companyId),
-      eq(stockMovementsTable.referenceType, "invoice"),
-      eq(stockMovementsTable.referenceId, params.invoiceId),
-      eq(stockMovementsTable.transactionType, "goods_issue"),
-    ));
-
-  if (movements.length === 0) return;
-
-  await db.transaction(async (tx) => {
-    for (const movement of movements) {
-      const qtyOut = toQty(movement.quantityOut);
-      if (qtyOut <= 0) continue;
-
-      await applyMovement(tx, {
-        companyId: params.companyId,
-        warehouseId: movement.warehouseId,
-        stockItemId: movement.stockItemId,
-        transactionType: "adjustment_in",
-        documentNumber: params.invNumber,
-        referenceType: "invoice_void",
-        referenceId: params.invoiceId,
-        quantityIn: qtyOut,
-        reference: `Restored from invoice ${params.invNumber}`,
-        userId: params.userId,
-        username: params.username,
-      });
-    }
-  });
+export async function assertInvoiceWarehouseBalance(
+  tx: Tx,
+  warehouseId: number,
+  stockItemId: number,
+): Promise<number> {
+  return getWarehouseBalance(tx, warehouseId, stockItemId);
 }

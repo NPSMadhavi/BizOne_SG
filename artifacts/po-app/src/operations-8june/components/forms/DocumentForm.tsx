@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/operations-8june/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload, FileText } from "lucide-react";
+import { Upload, FileText } from "lucide-react";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 
 const formSchema = insertEmployeeDocumentSchema
@@ -183,9 +183,7 @@ export default function DocumentForm({
 
   if (isEditMode && isLoadingDocument) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
-      </div>
+      <p className="py-8 text-center text-sm text-[#6B7280]">Loading...</p>
     );
   }
 

@@ -17,7 +17,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -58,7 +57,7 @@ const dependentSchema = z.object({
 
 // Extended employee form schema with dependents
 const employeeFormSchema = insertEmployeeSchema.extend({
-  employeeId: z.string().optional(),
+  employeeId: z.string().min(1, "Employee ID is required"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Valid email is required"),
   phone: z.string().min(8, "Phone number must be at least 8 characters"),
@@ -154,25 +153,6 @@ export default function EmployeeForm({
     dependents: [],
   });
 
-  const { data: runningNumbers = [] } = useQuery<any[]>({
-    queryKey: ["/api/running-numbers"],
-    enabled: isOpen && !isEditMode,
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
-
-  const employeeRunningNumber = runningNumbers.find((rn) => rn.type === "employee");
-  const nextEmployeeIdPreview = employeeRunningNumber
-    ? (() => {
-        const next = (employeeRunningNumber.currentNumber ?? 0) + 1;
-        const padLength = employeeRunningNumber.numberLength ?? 0;
-        const numberPart =
-          padLength > 0 ? next.toString().padStart(padLength, "0") : next.toString();
-        return `${employeeRunningNumber.prefix || ""}${numberPart}${employeeRunningNumber.suffix || ""}`;
-      })()
-    : "Auto-generated on save";
-  
-  // Fetch existing dependents for edit mode
   const { data: existingDependents = [] } = useQuery<any[]>({
     queryKey: ["/api/employees", employee?.id, "dependents"],
     enabled: !!employee?.id && isOpen,
@@ -237,7 +217,7 @@ export default function EmployeeForm({
       // Convert Date objects to ISO strings for API
       const serializedData = {
         ...data,
-        employeeId: undefined,
+        employeeId: data.employeeId?.trim(),
         joinDate: data.joinDate.toISOString(),
         dateOfBirth: data.dateOfBirth ? data.dateOfBirth.toISOString() : null,
         passportExpiry: data.passportExpiry ? data.passportExpiry.toISOString() : null,
@@ -258,7 +238,6 @@ export default function EmployeeForm({
         description: "Employee created successfully!",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/running-numbers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employee-payroll"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
@@ -280,7 +259,7 @@ export default function EmployeeForm({
       // Convert Date objects to ISO strings for API
       const serializedData = {
         ...data,
-        employeeId: isEditMode ? data.employeeId : undefined,
+        employeeId: data.employeeId?.trim(),
         joinDate: data.joinDate.toISOString(),
         dateOfBirth: data.dateOfBirth ? data.dateOfBirth.toISOString() : null,
         passportExpiry: data.passportExpiry ? data.passportExpiry.toISOString() : null,
@@ -395,18 +374,20 @@ export default function EmployeeForm({
             <div className="space-y-4">
               {/* Row 1: Employee ID | Full Name */}
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className={formLabelClass}>Employee ID</Label>
-                  <Input
-                    readOnly
-                    disabled
-                    value={isEditMode ? employee?.employeeId || "" : nextEmployeeIdPreview}
-                    className="bg-[#F9FAFB] font-mono"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {isEditMode ? "Employee ID cannot be changed" : "Auto-generated from Employee ID settings"}
-                  </p>
-                </div>
+                <FormField control={form.control} name="employeeId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Employee ID *</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g. EMP001"
+                        className="font-mono"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Full Name *</FormLabel>
@@ -448,11 +429,26 @@ export default function EmployeeForm({
                     <FormItem>
                       <FormLabel className={formLabelClass}>Salary *</FormLabel>
                       <FormControl>
-                        <Input type="number" min="0" step="0.01" placeholder="5000" {...field} onChange={(e) => {
-                          field.onChange(e);
-                          const monthly = parseFloat(e.target.value);
-                          if (!Number.isNaN(monthly)) form.setValue("annualSalary", (monthly * 12).toFixed(2));
-                        }} />
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder=""
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value || ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
+                            field.onChange(v);
+                            const monthly = parseFloat(v);
+                            if (!Number.isNaN(monthly)) {
+                              form.setValue("annualSalary", (monthly * 12).toFixed(2));
+                            } else {
+                              form.setValue("annualSalary", "");
+                            }
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -460,7 +456,21 @@ export default function EmployeeForm({
                   <FormField control={form.control} name="annualSalary" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Annual Salary</FormLabel>
-                      <FormControl><Input type="number" min="0" step="0.01" placeholder="60000" {...field} value={field.value || ""} /></FormControl>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder=""
+                          name={field.name}
+                          ref={field.ref}
+                          onBlur={field.onBlur}
+                          value={field.value || ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "" || /^\d*\.?\d*$/.test(v)) field.onChange(v);
+                          }}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />

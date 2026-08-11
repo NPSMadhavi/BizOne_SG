@@ -3,6 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateDebitNote_PDF } from "@/lib/pdf";
 import { useGetSettings } from "@workspace/api-client-react";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -103,6 +105,7 @@ export default function DebitNoteNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const qc = useQueryClient();
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -226,9 +229,15 @@ export default function DebitNoteNew() {
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
       const doc = await r.json();
       setSavedDoc(doc);
-      toast({ title: status === "confirmed" ? "Credit note confirmed" : "Draft saved", description: doc.dnNumber });
+      // Update list cache immediately so the new note appears without a manual refresh
+      qc.setQueryData(["debit-notes"], (old: any) =>
+        Array.isArray(old) ? [doc, ...old.filter((d: any) => d.id !== doc.id)] : [doc],
+      );
+      qc.setQueryData(["debit-note", String(doc.id)], doc);
+      await invalidateDocumentList(qc, "debit-notes");
+      toast({ title: status === "confirmed" ? "Debit note confirmed" : "Draft saved", description: doc.dnNumber });
       if (status === "confirmed") { setShowPreview(true); }
-      else { setLocation(`/debit-notes/${doc.id}/edit`); }
+      else { setLocation(`/debit-notes/${doc.id}`); }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally { setSubmitting(false); }
@@ -260,7 +269,7 @@ export default function DebitNoteNew() {
           </Button>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
-            <h1 className="text-2xl font-bold text-gray-900">New Debit Note</h1>
+            <h1 className="text-2xl font-bold text-[#2563EB]">New Debit Note</h1>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -270,14 +279,6 @@ export default function DebitNoteNew() {
               <p className="text-lg font-semibold font-mono">{nextDnNumber}</p>
             </div>
           )}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
-              <Save className="h-4 w-4" />Save Draft
-            </Button>
-            <Button onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
-              <Eye className="h-4 w-4" />Save & Preview
-            </Button>
-          </div>
         </div>
       </div>
 
@@ -519,6 +520,18 @@ export default function DebitNoteNew() {
               </div>
             </CardContent>
           </Card>
+
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => setLocation("/debit-notes")}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
+              <Save className="h-4 w-4" />
+              {submitting ? "Saving..." : "Save Draft"}
+            </Button>
+            <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
+              <Eye className="h-4 w-4" />
+              {submitting ? "Saving..." : "Save & Preview"}
+            </Button>
+          </div>
         </form>
       </Form>
 
@@ -548,7 +561,7 @@ export default function DebitNoteNew() {
       {savedDoc && showPreview && (
         <PdfPreviewModal
           open={showPreview}
-          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/debit-notes/${savedDoc.id}`); } }}
+          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/debit-notes`); } }}
           title={savedDoc.dnNumber}
           generatePdf={(opts) => generateDebitNote_PDF(savedDoc, selectedCompany, opts)}
           pdfFilename={`${savedDoc.dnNumber}.pdf`}

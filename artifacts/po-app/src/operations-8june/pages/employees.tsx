@@ -1,4 +1,5 @@
 import { useState, Fragment } from "react";
+import { useLocation } from "wouter";
 import {
   ManagementPageHeader,
   ManagementTableCard,
@@ -16,20 +17,30 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { FormModalShell, ModalCancelButton, ModalSaveButton } from "@/operations-8june/components/forms/FormModalShell";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Employee } from "@shared/schema";
 import { queryClient, apiRequest } from "@/operations-8june/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import {
+  exportEmployeesToExcel,
+  exportEmployeesToPdf,
+} from "@/operations-8june/lib/employee-export";
 
-import EmployeeForm from "@/operations-8june/components/forms/EmployeeForm";
 import {
   Plus,
-  Loader2,
   Trash2,
   FileText,
   Eye,
   Edit2,
+  Download,
+  ChevronDown,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -55,9 +66,8 @@ import DocumentForm from "@/operations-8june/components/forms/DocumentForm";
 
 export default function EmployeesPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
-  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
-  const [employeeFormPending, setEmployeeFormPending] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDocumentFormOpen, setIsDocumentFormOpen] = useState(false);
   const [documentFormPending, setDocumentFormPending] = useState(false);
@@ -97,8 +107,7 @@ export default function EmployeesPage() {
   };
 
   const handleEditEmployee = (id: number) => {
-    setSelectedEmployeeId(id);
-    setIsFormDialogOpen(true);
+    setLocation(`/employees/${id}/edit`);
   };
   
   const handleDeleteEmployee = (id: number) => {
@@ -130,21 +139,74 @@ export default function EmployeesPage() {
       employee.status,
     ].some((value) => String(value ?? "").toLowerCase().includes(q));
   });
+
+  const handleExport = (formatType: "excel" | "pdf") => {
+    if (filteredEmployees.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no employees matching the current search to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      if (formatType === "excel") {
+        exportEmployeesToExcel(filteredEmployees);
+        toast({
+          title: "Export successful",
+          description: "Employee data has been downloaded as an Excel file.",
+        });
+      } else {
+        exportEmployeesToPdf(filteredEmployees);
+        toast({
+          title: "Export successful",
+          description: "Employee data has been downloaded as a PDF file.",
+        });
+      }
+    } catch {
+      toast({
+        title: "Export failed",
+        description: "Unable to download the employee report. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
   
   return (
     <>
       <ManagementPageHeader
         title="Employees"
         action={
-          <Button
-            className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
-            onClick={() => {
-              setSelectedEmployeeId(null);
-              setIsFormDialogOpen(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add Employee
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2 border-[#E4E4E4]"
+                  disabled={filteredEmployees.length === 0}
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                  <ChevronDown className="h-4 w-4 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("excel")}>
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
+              onClick={() => setLocation("/employees/new")}
+            >
+              <Plus className="mr-2 h-4 w-4" /> Create Employee
+            </Button>
+          </div>
         }
       />
 
@@ -156,9 +218,7 @@ export default function EmployeesPage() {
 
       <ManagementTableCard>
           {isLoading ? (
-            <div className="flex justify-center items-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
-            </div>
+            <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
           ) : employees.length > 0 && filteredEmployees.length > 0 ? (
             <ManagementTableContainer>
               <Table>
@@ -275,10 +335,7 @@ export default function EmployeesPage() {
                 !searchTerm ? (
                   <Button
                     className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
-                    onClick={() => {
-                      setSelectedEmployeeId(null);
-                      setIsFormDialogOpen(true);
-                    }}
+                    onClick={() => setLocation("/employees/new")}
                   >
                     <Plus className="mr-2 h-4 w-4" /> Add Employee
                   </Button>
@@ -287,38 +344,6 @@ export default function EmployeesPage() {
             />
           )}
       </ManagementTableCard>
-      
-      <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
-        <FormModalShell
-          title={selectedEmployeeId ? "Edit employee" : "Create new employee"}
-          maxWidth="max-w-5xl"
-          onClose={() => setIsFormDialogOpen(false)}
-          footer={
-            <>
-              <ModalCancelButton onClick={() => setIsFormDialogOpen(false)} />
-              <ModalSaveButton
-                type="button"
-                onClick={() => {
-                  const formEl = document.getElementById("employee-form") as HTMLFormElement | null;
-                  formEl?.requestSubmit();
-                }}
-                loading={employeeFormPending}
-                label="Save"
-                loadingLabel="Saving..."
-              />
-            </>
-          }
-        >
-          <EmployeeForm
-            employee={selectedEmployeeId ? employees.find((e) => e.id === selectedEmployeeId) : undefined}
-            isOpen={isFormDialogOpen}
-            onClose={() => setIsFormDialogOpen(false)}
-            formId="employee-form"
-            hideShell
-            onPendingChange={setEmployeeFormPending}
-          />
-        </FormModalShell>
-      </Dialog>
       
       {/* Document Form Dialog */}
       <Dialog open={isDocumentFormOpen} onOpenChange={setIsDocumentFormOpen}>
@@ -374,14 +399,7 @@ export default function EmployeesPage() {
               className="bg-red-600 hover:bg-red-700"
               disabled={deleteEmployeeMutation.isPending}
             >
-              {deleteEmployeeMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
+              {deleteEmployeeMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -419,9 +437,7 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center py-10">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <p className="py-10 text-center text-sm text-[#6B7280]">Loading...</p>
     );
   }
 

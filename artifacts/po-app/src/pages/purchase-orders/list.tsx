@@ -49,7 +49,10 @@ export default function PurchaseOrderList() {
   const currentYear = new Date().getFullYear();
 
   const { data: pos, isLoading } = useListPurchaseOrders({
-    query: { queryKey: getListPurchaseOrdersQueryKey() },
+    query: {
+      queryKey: getListPurchaseOrdersQueryKey(),
+      refetchOnMount: "always",
+    },
   });
 
   const { data: vendorInvoices = [] } = useQuery<any[]>({
@@ -109,11 +112,11 @@ export default function PurchaseOrderList() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Purchase Orders</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Purchase Orders</h1>
           <p className="text-muted-foreground mt-1">Manage and track all purchase orders.</p>
         </div>
         <Link href="/purchase-orders/new">
-          <Button className="gap-2"><Plus className="h-4 w-4" />Create PO</Button>
+          <Button className="gap-2"><Plus className="h-4 w-4" />Create Purchase Order</Button>
         </Link>
       </div>
 
@@ -198,8 +201,8 @@ export default function PurchaseOrderList() {
                     : "pending";
                   return (
                     <tr key={po.id} className="hover:bg-muted/50 transition-colors group cursor-pointer" onClick={() => setLocation(`/purchase-orders/${po.id}`)}>
-                      <td className="px-6 py-4 font-medium text-primary">{po.poNumber}</td>
-                      <td className="px-6 py-4 text-muted-foreground">{fmtDate(po.createdAt)}</td>
+                      <td className="px-6 py-4 font-medium">{po.poNumber}</td>
+                      <td className="px-6 py-4 font-medium">{fmtDate(po.createdAt)}</td>
                       <td className="px-6 py-4 font-medium">{po.vendorName}</td>
                       <td className="px-6 py-4 text-muted-foreground">
                         {(po as any).customerName ? <span className="text-foreground font-medium">{(po as any).customerName}</span> : <span>—</span>}
@@ -211,12 +214,12 @@ export default function PurchaseOrderList() {
                         {pis.length === 0 ? <span className="text-muted-foreground">—</span>
                           : pis.length === 1 ? (
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-primary hover:underline cursor-pointer" onClick={e=>{e.stopPropagation();setLocation(`/vendor-invoices/${pis[0].id}`)}}>{pis[0].piNumber}</span>
+                              <span className="font-medium cursor-pointer" onClick={e=>{e.stopPropagation();setLocation(`/vendor-invoices/${pis[0].id}`)}}>{pis[0].piNumber}</span>
                               {piStatusBadge(pis[0].status)}
                             </div>
                           ) : (
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-primary hover:underline cursor-pointer" onClick={e=>{e.stopPropagation();setLocation(`/vendor-invoices`)}}>{pis.length} PIs</span>
+                              <span className="font-medium cursor-pointer" onClick={e=>{e.stopPropagation();setLocation(`/vendor-invoices`)}}>{pis.length} PIs</span>
                               {overallStatus && piStatusBadge(overallStatus)}
                             </div>
                           )}

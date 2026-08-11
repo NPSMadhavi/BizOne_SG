@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/operations-8june/lib/queryClient";
 import {
@@ -28,11 +29,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DownloadIcon, Edit2, Eye, Plus, Trash2, Loader2 } from "lucide-react";
+import { DownloadIcon, Edit2, Eye, Plus, Trash2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { License } from "@shared/schema";
 import { format, isAfter, isBefore, addDays } from "date-fns";
-import LicenseForm from "@/operations-8june/components/forms/LicenseForm";
 import LicenseViewDialog from "@/operations-8june/components/forms/LicenseViewDialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -47,8 +47,7 @@ type FilterTabId = (typeof FILTER_TABS)[number]["id"];
 
 export default function LicensesPage() {
   const { toast } = useToast();
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [, setLocation] = useLocation();
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedLicense, setSelectedLicense] = useState<License | null>(null);
@@ -213,18 +212,14 @@ export default function LicensesPage() {
               disabled={isExporting}
               className="flex items-center gap-2 border-[#E4E4E4]"
             >
-              {isExporting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <DownloadIcon className="h-4 w-4" />
-              )}
-              Export 
+              {isExporting ? null : <DownloadIcon className="h-4 w-4" />}
+              {isExporting ? "Exporting..." : "Export"}
             </Button>
             <Button
               className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() => setLocation("/licenses/new")}
             >
-              <Plus className="mr-2 h-4 w-4" /> Add License
+              <Plus className="mr-2 h-4 w-4" />Create License
             </Button>
           </div>
         }
@@ -250,9 +245,7 @@ export default function LicensesPage() {
 
       <ManagementTableCard>
             {isLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="h-8 w-8 animate-spin text-[#2563EB]" />
-              </div>
+              <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
             ) : licenses.length > 0 && filteredLicenses.length === 0 ? (
               <ManagementEmptyState
                 title={
@@ -277,7 +270,7 @@ export default function LicensesPage() {
                 action={
                   <Button
                     className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
-                    onClick={() => setIsCreateModalOpen(true)}
+                    onClick={() => setLocation("/licenses/new")}
                   >
                     <Plus className="mr-2 h-4 w-4" /> Add Your First License
                   </Button>
@@ -357,10 +350,7 @@ export default function LicensesPage() {
                           <button
                             type="button"
                             title="Edit license"
-                            onClick={() => {
-                              setSelectedLicense(license);
-                              setIsEditModalOpen(true);
-                            }}
+                            onClick={() => setLocation(`/licenses/${license.id}/edit`)}
                             className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-[#2563EB] transition-colors hover:bg-blue-100 active:scale-95"
                           >
                             <Edit2 className="h-4 w-4" />
@@ -385,23 +375,6 @@ export default function LicensesPage() {
               </ManagementTableContainer>
             )}
         </ManagementTableCard>
-
-      {/* Create License Modal */}
-      {isCreateModalOpen && (
-        <LicenseForm
-          isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-        />
-      )}
-
-      {/* Edit License Modal */}
-      {isEditModalOpen && selectedLicense && (
-        <LicenseForm
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          license={selectedLicense}
-        />
-      )}
 
       <LicenseViewDialog
         open={isViewModalOpen}

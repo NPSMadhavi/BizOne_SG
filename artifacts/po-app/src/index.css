@@ -79,7 +79,7 @@
   
   --border: 214 32% 91%;
   --input: 214 32% 91%;
-  --ring: 221 83% 53%;
+  --ring: 217 89% 51%;
 
   --card: 0 0% 100%;
   --card-foreground: 222 47% 11%;
@@ -89,9 +89,9 @@
   --popover-foreground: 222 47% 11%;
   --popover-border: 214 32% 91%;
 
-  /* Navy primary */
-  --primary: 222 47% 11%;
-  --primary-foreground: 210 40% 98%;
+  /* India_BizOne blue (#1a73e8) — primary buttons & accents */
+  --primary: 217 89% 51%;
+  --primary-foreground: 0 0% 100%;
 
   /* Clean Blue Secondary */
   --secondary: 210 40% 96.1%;
@@ -100,27 +100,27 @@
   --muted: 210 40% 96.1%;
   --muted-foreground: 215.4 16.3% 46.9%;
 
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
+  --accent: 214 100% 97%;
+  --accent-foreground: 217 89% 40%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
 
-  --chart-1: 222 47% 11%;
+  --chart-1: 217 89% 51%;
   --chart-2: 217 91% 60%;
   --chart-3: 199 89% 48%;
   --chart-4: 186 80% 45%;
   --chart-5: 175 70% 41%;
 
-  /* Sidebar styling */
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 214 32% 16%;
-  --sidebar-primary: 210 40% 98%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 214 32% 16%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 214 32% 16%;
+  /* Light sidebar — only active module uses blue, not a dark panel */
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 222 47% 20%;
+  --sidebar-border: 214 32% 91%;
+  --sidebar-primary: 217 89% 51%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 214 100% 97%;
+  --sidebar-accent-foreground: 217 89% 40%;
+  --sidebar-ring: 217 89% 51%;
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
@@ -166,7 +166,7 @@
   
   --border: 217.2 32.6% 17.5%;
   --input: 217.2 32.6% 17.5%;
-  --ring: 224.3 76.3% 48%;
+  --ring: 217 89% 51%;
 
   --card: 222 47% 11%;
   --card-foreground: 210 40% 98%;
@@ -176,8 +176,8 @@
   --popover-foreground: 210 40% 98%;
   --popover-border: 217.2 32.6% 17.5%;
 
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
+  --primary: 217 89% 55%;
+  --primary-foreground: 0 0% 100%;
 
   --secondary: 217.2 32.6% 17.5%;
   --secondary-foreground: 210 40% 98%;
@@ -185,13 +185,13 @@
   --muted: 217.2 32.6% 17.5%;
   --muted-foreground: 215 20.2% 65.1%;
 
-  --accent: 217.2 32.6% 17.5%;
+  --accent: 217 40% 18%;
   --accent-foreground: 210 40% 98%;
 
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 210 40% 98%;
 
-  --chart-1: 222 47% 11%;
+  --chart-1: 217 89% 55%;
   --chart-2: 217 91% 60%;
   --chart-3: 199 89% 48%;
   --chart-4: 186 80% 45%;
@@ -200,11 +200,11 @@
   --sidebar: 222 47% 11%;
   --sidebar-foreground: 210 40% 98%;
   --sidebar-border: 217.2 32.6% 17.5%;
-  --sidebar-primary: 210 40% 98%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 217.2 32.6% 17.5%;
+  --sidebar-primary: 217 89% 55%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 217 40% 18%;
   --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 217.2 32.6% 17.5%;
+  --sidebar-ring: 217 89% 55%;
 }
 
 @layer base {

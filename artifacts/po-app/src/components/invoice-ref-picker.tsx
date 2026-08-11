@@ -143,7 +143,7 @@ export function InvoiceRefPicker({
           value={value}
           disabled={disabled || loading}
           placeholder={placeholder}
-          className="h-9 pr-9 font-mono text-sm"
+          className="h-9 pr-9 text-sm"
           autoComplete="off"
           onFocus={() => setOpen(true)}
           onChange={(e) => {

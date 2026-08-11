@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db, stockItemsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { nextDocNumber } from "../lib/running-numbers.js";
+import { db, stockItemsTable, warehouseStockTable } from "@workspace/db";
+import { and, eq, sql } from "drizzle-orm";
+import { adjustItemStockInWarehouse, deleteStockItem, resolveWarehouseId } from "../lib/inventory-service.js";
 
 const router: IRouter = Router();
 
@@ -30,7 +30,25 @@ router.get("/stock-items", async (req, res): Promise<void> => {
     items = items.filter(i => i.type === typeFilter);
   }
 
-  res.json(items);
+  // Avail. Qty must mirror warehouse on-hand (never a stale stock_items.stock_qty).
+  const totals = await db
+    .select({
+      stockItemId: warehouseStockTable.stockItemId,
+      total: sql<string>`coalesce(sum(${warehouseStockTable.quantity}::numeric), 0)`,
+    })
+    .from(warehouseStockTable)
+    .where(eq(warehouseStockTable.companyId, companyId))
+    .groupBy(warehouseStockTable.stockItemId);
+  const totalByItem = new Map(totals.map((row) => [row.stockItemId, String(row.total)]));
+
+  res.json(items.map((item) => {
+    if (item.type === "service") return item;
+    if (!totalByItem.has(item.id)) {
+      // No warehouse row yet — keep legacy stockQty for first-time pickers.
+      return item;
+    }
+    return { ...item, stockQty: totalByItem.get(item.id)! };
+  }));
 });
 
 router.post("/stock-items", async (req, res): Promise<void> => {
@@ -38,26 +56,52 @@ router.post("/stock-items", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
-  const { code, name, description, uom, type, unitPrice, stockQty } = req.body;
+  const { code, name, description, uom, type, unitPrice, stockQty, warehouseId, batchNo } = req.body;
   if (!name) { res.status(400).json({ error: "name is required" }); return; }
 
-  const resolvedCode = (typeof code === "string" && code.trim())
-    ? code.trim()
-    : await nextDocNumber("si", companyId);
+  const resolvedCode = typeof code === "string" ? code.trim() : "";
+  if (!resolvedCode) { res.status(400).json({ error: "code is required" }); return; }
+
+  const isProduct = type !== "service";
+  const openingQty = isProduct ? Math.max(0, Number(stockQty) || 0) : 0;
 
   const [item] = await db.insert(stockItemsTable).values({
     companyId,
     code: resolvedCode,
     name,
     description: description || null,
-    uom: uom || "pcs",
-    type: type === "service" ? "service" : "product",
+    uom: uom || "Pcs",
+    type: isProduct ? "product" : "service",
     unitPrice: unitPrice != null ? String(unitPrice) : "0",
-    stockQty: stockQty != null ? String(stockQty) : "0",
+    stockQty: "0",
+    batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
     isActive: true,
   }).returning();
 
-  res.status(201).json(item);
+  // Opening stock is booked as a warehouse movement so warehouse_stock, the item
+  // total and the stock reports all start out in agreement.
+  if (openingQty > 0) {
+    const targetWarehouseId = Number(warehouseId) || await resolveWarehouseId(companyId);
+    if (targetWarehouseId) {
+      try {
+        await adjustItemStockInWarehouse({
+          companyId,
+          stockItemId: item.id,
+          warehouseId: targetWarehouseId,
+          newTotalQty: openingQty,
+          userId: req.session.userId,
+          reference: "Opening stock",
+        });
+      } catch (err) {
+        await db.delete(stockItemsTable).where(eq(stockItemsTable.id, item.id));
+        res.status(400).json({ error: err instanceof Error ? err.message : "Failed to set opening stock" });
+        return;
+      }
+    }
+  }
+
+  const [created] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, item.id));
+  res.status(201).json(created ?? item);
 });
 
 router.get("/stock-items/:id", async (req, res): Promise<void> => {
@@ -74,7 +118,7 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const { code, name, description, uom, type, unitPrice, stockQty, isActive } = req.body;
+  const { code, name, description, uom, type, unitPrice, stockQty, isActive, warehouseId, batchNo } = req.body;
   const update: Record<string, any> = {};
   if (code !== undefined) update.code = code;
   if (name !== undefined) update.name = name;
@@ -82,20 +126,69 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   if (uom !== undefined) update.uom = uom;
   if (type !== undefined) update.type = type === "service" ? "service" : "product";
   if (unitPrice !== undefined) update.unitPrice = String(unitPrice);
-  if (stockQty !== undefined) update.stockQty = String(stockQty);
   if (isActive !== undefined) update.isActive = Boolean(isActive);
+  if (batchNo !== undefined) update.batchNo = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null;
 
-  const [updated] = await db.update(stockItemsTable).set(update).where(eq(stockItemsTable.id, id)).returning();
+  const [updated] = Object.keys(update).length > 0
+    ? await db.update(stockItemsTable).set(update).where(eq(stockItemsTable.id, id)).returning()
+    : await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, id));
   if (!updated) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(updated);
+
+  // A quantity edit is a stock adjustment: book the difference in a warehouse instead of
+  // overwriting stock_qty, which would drift away from warehouse_stock.
+  if (stockQty !== undefined && updated.type !== "service") {
+    const targetWarehouseId = Number(warehouseId) || await resolveWarehouseId(updated.companyId);
+    if (targetWarehouseId) {
+      try {
+        await adjustItemStockInWarehouse({
+          companyId: updated.companyId,
+          stockItemId: updated.id,
+          warehouseId: targetWarehouseId,
+          newTotalQty: Number(stockQty) || 0,
+          userId: req.session.userId,
+          reference: "Stock quantity updated",
+        });
+      } catch (err) {
+        res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update stock quantity" });
+        return;
+      }
+    } else {
+      await db.update(stockItemsTable)
+        .set({ stockQty: String(Number(stockQty) || 0) })
+        .where(eq(stockItemsTable.id, id));
+    }
+  }
+
+  const [refreshed] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, id));
+  res.json(refreshed ?? updated);
 });
 
 router.delete("/stock-items/:id", async (req, res): Promise<void> => {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const companyId = req.session.companyId;
+  if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
+
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-  await db.delete(stockItemsTable).where(eq(stockItemsTable.id, id));
-  res.json({ success: true });
+
+  const [existing] = await db.select({ id: stockItemsTable.id })
+    .from(stockItemsTable)
+    .where(and(eq(stockItemsTable.id, id), eq(stockItemsTable.companyId, companyId)));
+  if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+  try {
+    // Clears warehouse balances, movements, serials and related inventory lines
+    // before removing the item — a bare DELETE hits FK constraints (HTTP 500).
+    await deleteStockItem(companyId, id);
+    res.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete stock item";
+    if (message === "Stock item not found") {
+      res.status(404).json({ error: message });
+      return;
+    }
+    res.status(400).json({ error: message });
+  }
 });
 
 export default router;

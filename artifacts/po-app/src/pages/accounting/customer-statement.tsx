@@ -105,7 +105,7 @@ export default function CustomerStatementPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Receivable</p>
-          <h1 className="text-2xl font-bold text-gray-900">Customer Statement</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Customer Statement</h1>
         </div>
         {customer && data && data.entries.length > 0 && (
           <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">

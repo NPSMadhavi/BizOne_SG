@@ -23,7 +23,9 @@ export type MovementType =
   | "transfer_in"
   | "transfer_out"
   | "adjustment_in"
-  | "adjustment_out";
+  | "adjustment_out"
+  | "tax_invoice"
+  | "purchase_order";
 
 export interface ApplyMovementInput {
   companyId: number;
@@ -110,45 +112,26 @@ export async function applyMovement(
   if (qtyIn < 0 || qtyOut < 0) throw new Error("Quantity cannot be negative");
   if (qtyIn === 0 && qtyOut === 0) throw new Error("Movement quantity required");
 
-  const [wh] = await tx
-    .select({ id: warehousesTable.id })
-    .from(warehousesTable)
-    .where(and(eq(warehousesTable.id, input.warehouseId), eq(warehousesTable.companyId, input.companyId)));
-  if (!wh) throw new Error("Warehouse not found");
+  const next = await adjustWarehouseQuantity(tx, {
+    companyId: input.companyId,
+    warehouseId: input.warehouseId,
+    stockItemId: input.stockItemId,
+    quantityIn: qtyIn,
+    quantityOut: qtyOut,
+  });
 
-  const [item] = await tx
-    .select({ id: stockItemsTable.id })
-    .from(stockItemsTable)
-    .where(and(eq(stockItemsTable.id, input.stockItemId), eq(stockItemsTable.companyId, input.companyId)));
-  if (!item) throw new Error("Stock item not found");
-
-  const [existing] = await tx
-    .select()
-    .from(warehouseStockTable)
-    .where(and(
-      eq(warehouseStockTable.warehouseId, input.warehouseId),
-      eq(warehouseStockTable.stockItemId, input.stockItemId),
-    ));
-
-  const current = toQty(existing?.quantity);
-  const next = current + qtyIn - qtyOut;
-  if (next < 0) {
-    throw new Error(`Insufficient stock in warehouse. Available: ${current}, required out: ${qtyOut}`);
-  }
-
-  if (existing) {
-    await tx
-      .update(warehouseStockTable)
-      .set({ quantity: String(next), updatedAt: new Date() })
-      .where(eq(warehouseStockTable.id, existing.id));
-  } else {
-    await tx.insert(warehouseStockTable).values({
-      companyId: input.companyId,
-      warehouseId: input.warehouseId,
-      stockItemId: input.stockItemId,
-      quantity: String(next),
-    });
-  }
+  console.log("[TAX_INVOICE_TRACE]", JSON.stringify({
+    invoiceId: input.referenceId,
+    documentNumber: input.documentNumber,
+    referenceType: input.referenceType,
+    transactionType: input.transactionType,
+    stockItemId: input.stockItemId,
+    warehouseId: input.warehouseId,
+    quantityIn: qtyIn,
+    quantityOut: qtyOut,
+    newStockQuantity: next,
+    movementType: qtyIn > 0 ? "IN" : "OUT",
+  }));
 
   await tx.insert(stockMovementsTable).values({
     companyId: input.companyId,
@@ -169,6 +152,73 @@ export async function applyMovement(
 
   const totalStock = await syncItemTotalStock(tx, input.companyId, input.stockItemId);
   return { balance: next, totalStock };
+}
+
+/**
+ * Change warehouse_stock only (no stock_movements row).
+ * Used by Tax Invoice upsert so edits update one movement instead of appending deltas.
+ */
+export async function adjustWarehouseQuantity(
+  tx: Tx,
+  input: {
+    companyId: number;
+    warehouseId: number;
+    stockItemId: number;
+    quantityIn?: number;
+    quantityOut?: number;
+  },
+): Promise<number> {
+  const qtyIn = Number(input.quantityIn ?? 0);
+  const qtyOut = Number(input.quantityOut ?? 0);
+  if (qtyIn < 0 || qtyOut < 0) throw new Error("Quantity cannot be negative");
+  if (qtyIn === 0 && qtyOut === 0) throw new Error("Movement quantity required");
+
+  const [wh] = await tx
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(and(eq(warehousesTable.id, input.warehouseId), eq(warehousesTable.companyId, input.companyId)));
+  if (!wh) throw new Error("Warehouse not found");
+
+  const [item] = await tx
+    .select({ id: stockItemsTable.id })
+    .from(stockItemsTable)
+    .where(and(eq(stockItemsTable.id, input.stockItemId), eq(stockItemsTable.companyId, input.companyId)));
+  if (!item) throw new Error("Stock item not found");
+
+  await tx
+    .insert(warehouseStockTable)
+    .values({
+      companyId: input.companyId,
+      warehouseId: input.warehouseId,
+      stockItemId: input.stockItemId,
+      quantity: "0",
+    })
+    .onConflictDoNothing({
+      target: [warehouseStockTable.warehouseId, warehouseStockTable.stockItemId],
+    });
+
+  const [updatedBalance] = await tx
+    .update(warehouseStockTable)
+    .set({
+      quantity: sql`${warehouseStockTable.quantity} + ${qtyIn} - ${qtyOut}`,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(warehouseStockTable.companyId, input.companyId),
+      eq(warehouseStockTable.warehouseId, input.warehouseId),
+      eq(warehouseStockTable.stockItemId, input.stockItemId),
+      sql`${warehouseStockTable.quantity} + ${qtyIn} - ${qtyOut} >= 0`,
+    ))
+    .returning({ quantity: warehouseStockTable.quantity });
+
+  if (!updatedBalance) {
+    const available = await getWarehouseBalance(tx, input.warehouseId, input.stockItemId);
+    throw new Error(`Insufficient stock in warehouse. Available: ${available}, required out: ${qtyOut}`);
+  }
+
+  const next = toQty(updatedBalance.quantity);
+  await syncItemTotalStock(tx, input.companyId, input.stockItemId);
+  return next;
 }
 
 export async function warehouseHasStock(
@@ -355,6 +405,46 @@ export async function setItemStockQuantity(params: {
   return getItemTotalStock(db, params.companyId, params.stockItemId);
 }
 
+/**
+ * Bring an item's total stock to `newTotalQty`, booking the difference as a movement
+ * in one warehouse. Used for opening stock and for quantity edits on the item itself.
+ */
+export async function adjustItemStockInWarehouse(params: {
+  companyId: number;
+  stockItemId: number;
+  warehouseId: number;
+  newTotalQty: number;
+  userId?: number;
+  username?: string;
+  reference?: string;
+}): Promise<number> {
+  const newQty = Math.max(0, Number(params.newTotalQty) || 0);
+  const currentTotal = await getItemTotalStock(db, params.companyId, params.stockItemId);
+  const delta = newQty - currentTotal;
+  if (delta === 0) return currentTotal;
+
+  const documentNumber = `SQ-${params.stockItemId}-${Date.now()}`;
+  const reference = params.reference ?? "Stock quantity updated";
+
+  await db.transaction(async (tx) => {
+    await applyMovement(tx, {
+      companyId: params.companyId,
+      warehouseId: params.warehouseId,
+      stockItemId: params.stockItemId,
+      transactionType: delta > 0 ? "adjustment_in" : "adjustment_out",
+      documentNumber,
+      referenceType: "stock_item_qty",
+      referenceId: params.stockItemId,
+      ...(delta > 0 ? { quantityIn: delta } : { quantityOut: Math.abs(delta) }),
+      reference,
+      userId: params.userId,
+      username: params.username,
+    });
+  });
+
+  return getItemTotalStock(db, params.companyId, params.stockItemId);
+}
+
 async function itemHasDocumentReferences(tx: Tx | typeof db, stockItemId: number): Promise<boolean> {
   const checks = await Promise.all([
     tx.select({ id: goodsReceiptItemsTable.id }).from(goodsReceiptItemsTable)
@@ -377,26 +467,39 @@ export async function deleteStockItem(companyId: number, stockItemId: number): P
   if (!item) throw new Error("Stock item not found");
 
   await db.transaction(async (tx) => {
-    await tx.delete(goodsReceiptItemsTable).where(eq(goodsReceiptItemsTable.stockItemId, stockItemId));
-    await tx.delete(goodsIssueItemsTable).where(eq(goodsIssueItemsTable.stockItemId, stockItemId));
-    await tx.delete(stockTransferItemsTable).where(eq(stockTransferItemsTable.stockItemId, stockItemId));
-    await tx.delete(stockAdjustmentsTable).where(and(
-      eq(stockAdjustmentsTable.stockItemId, stockItemId),
-      eq(stockAdjustmentsTable.companyId, companyId),
-    ));
-    await tx.delete(stockMovementsTable).where(and(
-      eq(stockMovementsTable.stockItemId, stockItemId),
-      eq(stockMovementsTable.companyId, companyId),
-    ));
-    await tx.delete(openingStockTable).where(and(
-      eq(openingStockTable.stockItemId, stockItemId),
-      eq(openingStockTable.companyId, companyId),
-    ));
-    await tx.delete(warehouseStockTable).where(and(
-      eq(warehouseStockTable.stockItemId, stockItemId),
-      eq(warehouseStockTable.companyId, companyId),
-    ));
-    await tx.delete(stockSerialsTable).where(eq(stockSerialsTable.stockItemId, stockItemId));
+    // Use raw SQL deletes so a missing optional WMS table cannot break the whole delete.
+    await tx.execute(sql`
+      DELETE FROM goods_receipt_items
+      WHERE stock_item_id = ${stockItemId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM goods_issue_items
+      WHERE stock_item_id = ${stockItemId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM stock_transfer_items
+      WHERE stock_item_id = ${stockItemId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM stock_adjustments
+      WHERE stock_item_id = ${stockItemId} AND company_id = ${companyId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM stock_movements
+      WHERE stock_item_id = ${stockItemId} AND company_id = ${companyId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM opening_stock
+      WHERE stock_item_id = ${stockItemId} AND company_id = ${companyId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM warehouse_stock
+      WHERE stock_item_id = ${stockItemId} AND company_id = ${companyId}
+    `);
+    await tx.execute(sql`
+      DELETE FROM stock_serials
+      WHERE stock_item_id = ${stockItemId}
+    `);
     await tx.delete(stockItemsTable).where(and(
       eq(stockItemsTable.id, stockItemId),
       eq(stockItemsTable.companyId, companyId),
@@ -408,9 +511,10 @@ export async function getWarehouseStockSummary(companyId: number, warehouseId?: 
   const conditions = [eq(warehouseStockTable.companyId, companyId)];
   if (warehouseId) conditions.push(eq(warehouseStockTable.warehouseId, warehouseId));
 
-  return db
+  const rows = await db
     .select({
       warehouseId: warehouseStockTable.warehouseId,
+      warehouseName: warehousesTable.name,
       stockItemId: warehouseStockTable.stockItemId,
       quantity: warehouseStockTable.quantity,
       itemCode: stockItemsTable.code,
@@ -423,9 +527,71 @@ export async function getWarehouseStockSummary(companyId: number, warehouseId?: 
     })
     .from(warehouseStockTable)
     .innerJoin(stockItemsTable, eq(warehouseStockTable.stockItemId, stockItemsTable.id))
+    .innerJoin(warehousesTable, eq(warehouseStockTable.warehouseId, warehousesTable.id))
     .where(and(...conditions));
+
+  // Always return live numeric qty from warehouse_stock (same source Tax Invoice updates).
+  // Never use stock_items.stock_qty here — that is only a company rollup.
+  return rows.map((r) => ({
+    ...r,
+    warehouseId: Number(r.warehouseId),
+    stockItemId: Number(r.stockItemId),
+    quantity: toQty(r.quantity),
+    unitPrice: toQty(r.unitPrice),
+    warehouseName: r.warehouseName,
+  }));
 }
 
+/** Classify a movement into stock-summary buckets (period activity). */
+function classifyMovementQty(
+  transactionType: string | null | undefined,
+  qtyIn: number,
+  qtyOut: number,
+): {
+  opening: number;
+  received: number;
+  issued: number;
+  transferredIn: number;
+  transferredOut: number;
+  adjustedIn: number;
+  adjustedOut: number;
+} {
+  const z = { opening: 0, received: 0, issued: 0, transferredIn: 0, transferredOut: 0, adjustedIn: 0, adjustedOut: 0 };
+  const t = String(transactionType || "").toLowerCase();
+
+  // Purchases / inbound receipts
+  if (t === "goods_receipt" || t === "purchase_order" || t === "grn") {
+    return { ...z, received: qtyIn };
+  }
+  // Sales / outbound issues
+  if (t === "goods_issue" || t === "tax_invoice") {
+    return { ...z, issued: qtyOut };
+  }
+  // Invoice void / credit put-back → treat as negative sales (stock returns in)
+  if (t === "invoice_void" || t === "invoice_reversal") {
+    if (qtyIn > 0) return { ...z, issued: -qtyIn };
+    if (qtyOut > 0) return { ...z, issued: qtyOut };
+  }
+  if (t === "transfer_in") return { ...z, transferredIn: qtyIn };
+  if (t === "transfer_out") return { ...z, transferredOut: qtyOut };
+  if (t === "opening_stock") return { ...z, opening: qtyIn };
+  if (t === "adjustment_in") return { ...z, adjustedIn: qtyIn };
+  if (t === "adjustment_out") return { ...z, adjustedOut: qtyOut };
+
+  // Unknown types: keep equation balanced via adjust
+  if (qtyIn > 0) return { ...z, adjustedIn: qtyIn };
+  if (qtyOut > 0) return { ...z, adjustedOut: qtyOut };
+  return z;
+}
+
+/**
+ * Stock summary for a date range:
+ * - Opening = net qty of all movements before `from` (calendar date)
+ * - Period buckets = movements whose movement_date::date is in [from, to]
+ * - Closing = opening + period net
+ *
+ * Uses ::date (not timestamptz midnight) so same-day movements are not dropped.
+ */
 export async function getLedgerSummary(
   companyId: number,
   filters: { warehouseId?: number; stockItemId?: number; from?: string; to?: string },
@@ -433,14 +599,24 @@ export async function getLedgerSummary(
   const conditions = [eq(stockMovementsTable.companyId, companyId)];
   if (filters.warehouseId) conditions.push(eq(stockMovementsTable.warehouseId, filters.warehouseId));
   if (filters.stockItemId) conditions.push(eq(stockMovementsTable.stockItemId, filters.stockItemId));
-  if (filters.from) conditions.push(sql`${stockMovementsTable.movementDate} >= ${filters.from}::timestamptz`);
-  if (filters.to) conditions.push(sql`${stockMovementsTable.movementDate} <= ${filters.to}::timestamptz`);
+  // Inclusive end date: compare calendar dates so evening movements on `to` are included.
+  if (filters.to) {
+    conditions.push(sql`${stockMovementsTable.movementDate}::date <= ${filters.to}::date`);
+  }
 
   const movements = await db
-    .select()
+    .select({
+      stockItemId: stockMovementsTable.stockItemId,
+      transactionType: stockMovementsTable.transactionType,
+      quantityIn: stockMovementsTable.quantityIn,
+      quantityOut: stockMovementsTable.quantityOut,
+      moveDay: sql<string>`to_char(${stockMovementsTable.movementDate}::date, 'YYYY-MM-DD')`,
+    })
     .from(stockMovementsTable)
     .where(and(...conditions))
     .orderBy(stockMovementsTable.movementDate, stockMovementsTable.id);
+
+  const fromDate = filters.from ? String(filters.from).slice(0, 10) : null;
 
   const summary: Record<number, {
     stockItemId: number;
@@ -454,8 +630,7 @@ export async function getLedgerSummary(
     closing: number;
   }> = {};
 
-  for (const m of movements) {
-    const itemId = m.stockItemId;
+  const ensure = (itemId: number) => {
     if (!summary[itemId]) {
       summary[itemId] = {
         stockItemId: itemId,
@@ -469,33 +644,41 @@ export async function getLedgerSummary(
         closing: 0,
       };
     }
-    const s = summary[itemId];
+    return summary[itemId];
+  };
+
+  for (const m of movements) {
+    const s = ensure(m.stockItemId);
     const qtyIn = toQty(m.quantityIn);
     const qtyOut = toQty(m.quantityOut);
-    switch (m.transactionType) {
-      case "opening_stock":
-        s.opening += qtyIn;
-        break;
-      case "goods_receipt":
-        s.received += qtyIn;
-        break;
-      case "goods_issue":
-        s.issued += qtyOut;
-        break;
-      case "transfer_in":
-        s.transferredIn += qtyIn;
-        break;
-      case "transfer_out":
-        s.transferredOut += qtyOut;
-        break;
-      case "adjustment_in":
-        s.adjustedIn += qtyIn;
-        break;
-      case "adjustment_out":
-        s.adjustedOut += qtyOut;
-        break;
+    const net = qtyIn - qtyOut;
+    const moveDay = String(m.moveDay || "").slice(0, 10);
+
+    const beforePeriod = fromDate != null && moveDay !== "" && moveDay < fromDate;
+    if (beforePeriod) {
+      s.opening += net;
+      continue;
     }
-    s.closing = toQty(m.balance);
+
+    const bucket = classifyMovementQty(m.transactionType, qtyIn, qtyOut);
+    s.opening += bucket.opening;
+    s.received += bucket.received;
+    s.issued += bucket.issued;
+    s.transferredIn += bucket.transferredIn;
+    s.transferredOut += bucket.transferredOut;
+    s.adjustedIn += bucket.adjustedIn;
+    s.adjustedOut += bucket.adjustedOut;
+  }
+
+  for (const s of Object.values(summary)) {
+    s.closing =
+      s.opening +
+      s.received -
+      s.issued +
+      s.transferredIn -
+      s.transferredOut +
+      s.adjustedIn -
+      s.adjustedOut;
   }
 
   return Object.values(summary);

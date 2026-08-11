@@ -8,6 +8,7 @@ import {
   formatViewDate,
   formatViewStatus,
 } from "@/operations-8june/components/ui/entity-view-dialog";
+import { formatFileSize, loadAssetAttachments } from "@/operations-8june/lib/asset-attachments";
 
 interface AssetViewDialogProps {
   open: boolean;
@@ -40,6 +41,8 @@ function statusVariant(status?: string | null): "valid" | "warning" | "danger" |
 
 export default function AssetViewDialog({ open, onClose, asset }: AssetViewDialogProps) {
   if (!asset) return null;
+
+  const attachments = loadAssetAttachments(asset.id);
 
   return (
     <EntityViewDialog
@@ -90,6 +93,32 @@ export default function AssetViewDialog({ open, onClose, asset }: AssetViewDialo
         />
         {asset.description ? (
           <EntityViewField label="Description" value={asset.description} fullWidth />
+        ) : null}
+        {attachments.length > 0 ? (
+          <EntityViewField
+            label="Attachments"
+            fullWidth
+            value={
+              <ul className="space-y-1">
+                {attachments.map((attachment) => (
+                  <li key={attachment.id} className="flex items-center gap-2">
+                    <a
+                      href={attachment.dataUrl}
+                      download={attachment.name}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="truncate font-medium text-[#2563EB] hover:underline"
+                    >
+                      {attachment.name}
+                    </a>
+                    <span className="shrink-0 text-xs text-[#6B7280]">
+                      {formatFileSize(attachment.size)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            }
+          />
         ) : null}
       </EntityViewFieldGrid>
     </EntityViewDialog>

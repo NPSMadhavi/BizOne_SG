@@ -3,6 +3,7 @@ import { db, incomeRecordsTable, incomeAttachmentsTable, companiesTable, account
 import { eq, and, desc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { postIncomeJE, reverseIncomeJE } from "../lib/income-auto-post.js";
+import { isSingaporeCountry } from "../lib/singapore.js";
 
 const router: IRouter = Router();
 
@@ -18,7 +19,7 @@ async function requireSingapore(req: any, res: any): Promise<boolean> {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return false; }
   const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
-  if (!company || company.country?.toLowerCase() !== "singapore") {
+  if (!company || !isSingaporeCountry(company.country)) {
     res.status(403).json({ error: "Income module is only available for Singapore companies." });
     return false;
   }

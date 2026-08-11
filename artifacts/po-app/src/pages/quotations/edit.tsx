@@ -6,6 +6,7 @@ import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { useGetQuotation, useUpdateQuotation, getGetQuotationQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -14,6 +15,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ItemImageField } from "@/components/item-image-field";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
+import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +85,7 @@ export default function QuotationEdit() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importQtOpen, setImportQtOpen] = useState(false);
+  const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
@@ -235,6 +238,7 @@ export default function QuotationEdit() {
     updateMutation.mutate({ id, data: { ...values, status: newStatus, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetQuotationQueryKey(id) });
+        await invalidateDocumentList(queryClient, "quotations");
         setIsSubmitting(false);
         if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Draft saved." }); }
@@ -246,16 +250,59 @@ export default function QuotationEdit() {
     });
   }
 
+  function handlePoExtracted(data: ExtractedPoData) {
+    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+    const mappedItems = data.items
+      .filter((it) => it.description?.trim())
+      .map((it) => ({
+        ...blankItem,
+        partNumber: it.partNumber || "",
+        description: it.description,
+        qty: Number(it.qty) || 1,
+        uom: it.uom || "",
+        unitPrice: Number(it.unitPrice) || 0,
+      }));
+    const current = form.getValues();
+    const poRef = data.poRefNo?.trim();
+    const notesFromPo = data.notes?.trim() || "";
+    const notes =
+      poRef && !notesFromPo.toLowerCase().includes(poRef.toLowerCase())
+        ? [notesFromPo, `Customer PO Ref: ${poRef}`].filter(Boolean).join("\n")
+        : notesFromPo || current.notes || "";
+    form.reset({
+      ...current,
+      customerName: data.customerName?.trim() || current.customerName || "",
+      customerAddress: data.customerAddress?.trim() || current.customerAddress || "",
+      customerContact: data.customerContact?.trim() || current.customerContact || "",
+      customerContactEmail: data.customerContactEmail?.trim() || current.customerContactEmail || "",
+      currency: data.currency?.trim() || current.currency || "SGD",
+      paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "",
+      notes: notes || current.notes || "",
+      items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
+    });
+  }
+
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(`/quotations/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Quotation</h1>
-          <p className="text-muted-foreground mt-1">{doc.qtNumber}</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setLocation(`/quotations/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Quotation</h1>
+            <p className="text-muted-foreground mt-1">{doc.qtNumber}</p>
+          </div>
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 shrink-0"
+          onClick={() => setPoUploadOpen(true)}
+        >
+          <Upload className="h-4 w-4" />
+          Import Customer PO
+        </Button>
       </div>
 
       <Form {...form}>
@@ -653,6 +700,11 @@ export default function QuotationEdit() {
           }
         }}
       />
+      <CustomerPoUploadDialog
+        open={poUploadOpen}
+        onOpenChange={setPoUploadOpen}
+        onApply={handlePoExtracted}
+      />
 
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
@@ -697,7 +749,10 @@ export default function QuotationEdit() {
       />
       <PdfPreviewModal
         open={previewOpen}
-        onOpenChange={setPreviewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) setLocation(`/quotations`);
+        }}
         title={doc ? `Quotation ${doc.qtNumber}` : "Quotation Preview"}
         generatePdf={(opts) => generateQuotation_PDF(doc!, selectedCompany, docSettings as any, opts)}
         pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}

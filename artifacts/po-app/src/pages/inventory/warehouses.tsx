@@ -32,6 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { InventoryPageHeader, InventorySectionCard, InventoryStatusBadge } from "./inventory-page-ui";
+import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 
 const EMPTY = {
   code: "",
@@ -284,18 +285,12 @@ export default function WarehousesPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Country *</Label>
-              <Select value={form.country} onValueChange={(v) => updateField("country", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {["Singapore", "India", "Malaysia", "United States", "United Kingdom"].map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CountrySelect
+                value={form.country}
+                onChange={(v) => updateField("country", v)}
+                singleChevron
+                className="h-9 shadow-sm"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Contact Person</Label>

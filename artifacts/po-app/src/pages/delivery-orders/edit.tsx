@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
-import { useGetDeliveryOrder, useUpdateDeliveryOrder, getGetDeliveryOrderQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useGetDeliveryOrder, useUpdateDeliveryOrder, getGetDeliveryOrderQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -20,8 +20,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, FileInput, Package } from "lucide-react";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
-import { ImportFromPODialog } from "@/components/import-from-po-dialog";
-import type { DOImportItem } from "@/components/import-from-po-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
@@ -109,20 +107,7 @@ export default function DeliveryOrderEdit() {
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const updateMutation = useUpdateDeliveryOrder();
 
-  const [importPOOpen, setImportPOOpen] = useState(false);
   const [importExcelOpen, setImportExcelOpen] = useState(false);
-  function handleImportFromPO(imported: DOImportItem[]) {
-    if (!imported.length) return;
-    const current = form.getValues("items");
-    const allBlank = current.every(i => !i.description?.trim());
-    if (allBlank) {
-      form.setValue("items", imported as any);
-    } else {
-      const last = current[current.length - 1];
-      const trailingBlank = last && !last.description?.trim();
-      form.setValue("items", [...(trailingBlank ? current.slice(0, -1) : current), ...(imported as any)]);
-    }
-  }
 
   const appendLock = useRef(false);
   useEffect(() => {
@@ -176,7 +161,7 @@ export default function DeliveryOrderEdit() {
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/delivery-orders/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Delivery Order</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Delivery Order</h1>
           <p className="text-muted-foreground mt-1">{doc.doNumber}</p>
         </div>
       </div>
@@ -274,9 +259,6 @@ export default function DeliveryOrderEdit() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">Items to Deliver</CardTitle>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportPOOpen(true)}>
-                    <FileInput className="h-3 w-3" /> Import from PO
-                  </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
                     <FileInput className="h-3 w-3" /> Import from Excel / PDF
                   </Button>
@@ -379,16 +361,10 @@ export default function DeliveryOrderEdit() {
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom);
-          form.setValue(`items.${stockPickerIndex}.qty`, selectedSerials.length > 0 ? selectedSerials.length : (qty ?? 1));
+          form.setValue(`items.${stockPickerIndex}.qty`, Number(qty) > 0 ? Number(qty) : 1);
           form.setValue(`items.${stockPickerIndex}.serialNumbers`, selectedSerials.join("\n"));
           setStockPickerIndex(null);
         }}
-      />
-      <ImportFromPODialog
-        open={importPOOpen}
-        onOpenChange={setImportPOOpen}
-        mode="do"
-        onImport={imported => handleImportFromPO(imported as DOImportItem[])}
       />
       <ImportItemsDialog
         open={importExcelOpen}
@@ -400,7 +376,10 @@ export default function DeliveryOrderEdit() {
       />
       <PdfPreviewModal
         open={previewOpen}
-        onOpenChange={setPreviewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) setLocation(`/delivery-orders`);
+        }}
         title={doc ? `Delivery Order ${doc.doNumber}` : "Delivery Order Preview"}
         generatePdf={(opts) => generateDO_PDF(doc!, selectedCompany, opts)}
         pdfFilename={doc ? `${doc.doNumber}.pdf` : "delivery-order.pdf"}

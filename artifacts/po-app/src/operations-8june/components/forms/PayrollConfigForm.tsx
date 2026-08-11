@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
+import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
 import {
@@ -53,7 +54,7 @@ const optionalAmount = z.preprocess((val) => {
 const payrollConfigSchema = insertEmployeePayrollSchema
   .omit({ tenantId: true, tenantSlug: true, createdBy: true })
   .extend({
-  baseSalary: z.coerce.number().min(1, "Base salary is required"),
+  baseSalary: z.coerce.number().min(1, "Basic salary is required"),
   hourlyRate: optionalAmount,
   overtimeRate: optionalAmount,
   citizenshipStatus: z.enum(["citizen", "pr", "foreigner"]),
@@ -163,14 +164,15 @@ function OptionalAmountInput({
 }) {
   return (
     <Input
-      type="number"
-      step="0.01"
-      min="0"
+      type="text"
+      inputMode="decimal"
       placeholder={placeholder}
       value={field.value === undefined || field.value === null ? "" : field.value}
-      onChange={(e) =>
-        field.onChange(e.target.value === "" ? undefined : e.target.valueAsNumber)
-      }
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
+        field.onChange(v === "" ? undefined : Number(v));
+      }}
       onBlur={field.onBlur}
       name={field.name}
       ref={field.ref}
@@ -516,29 +518,15 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                           />
                         </FormControl>
                       ) : (
-                        <Select
-                          key={`employee-select-${employeeOptions.length}-${field.value ?? "none"}`}
-                          value={field.value != null ? String(field.value) : undefined}
-                          onValueChange={(value) => field.onChange(Number(value))}
-                          disabled={employeesLoading}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue
-                                placeholder={
-                                  employeesLoading ? "Loading employees..." : "Select employee"
-                                }
-                              />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {employeeOptions.map((employee: any) => (
-                              <SelectItem key={employee.id} value={String(employee.id)}>
-                                {employee.name} ({employee.employeeId}) — {employee.designation}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <EmployeeCombobox
+                            employees={employeeOptions}
+                            value={field.value}
+                            onChange={(id) => field.onChange(id)}
+                            disabled={employeesLoading}
+                            loading={employeesLoading}
+                          />
+                        </FormControl>
                       )}
                       <FormMessage />
                     </FormItem>
@@ -553,7 +541,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       <InfoItem label="Department" value={selectedEmployee.department || "—"} />
                       <InfoItem label="Designation" value={selectedEmployee.designation || "—"} />
                       <InfoItem
-                        label="Salary (Monthly)"
+                        label="Basic Salary"
                         value={formatCurrency(parseFloat(selectedEmployee.salary || "0"))}
                       />
                       <InfoItem
@@ -591,18 +579,18 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                   name="baseSalary"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Base Salary / Monthly Salary (SGD) *</FormLabel>
+                      <FormLabel className={formLabelClass}>Basic Salary (SGD) *</FormLabel>
                       <FormControl>
                         <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="50000"
+                          type="text"
+                          inputMode="decimal"
+                          placeholder=""
                           value={field.value ?? ""}
-                          onChange={(e) =>
-                            field.onChange(
-                              e.target.value === "" ? undefined : e.target.valueAsNumber
-                            )
-                          }
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
+                            field.onChange(v === "" ? undefined : Number(v));
+                          }}
                           onBlur={field.onBlur}
                           name={field.name}
                           ref={field.ref}
@@ -613,16 +601,16 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                   )}
                 />
                 <FormItem>
-                  <FormLabel className={formLabelClass}>Annual Salary (Auto)</FormLabel>
+                  <FormLabel className={formLabelClass}>Annual Salary</FormLabel>
                   <FormControl>
                     <Input
                       readOnly
-                      placeholder="Calculated from monthly salary"
+                      placeholder="Calculated from basic salary"
                       value={baseSalary ? formatCurrency(annualSalaryAuto) : ""}
                       className={readOnlyInputClass}
                     />
                   </FormControl>
-                  <FormDescription className="text-xs text-[#6B7280]">Salary × 12</FormDescription>
+                  <FormDescription className="text-xs text-[#6B7280]">Basic Salary × 12</FormDescription>
                 </FormItem>
                 <FormField
                   control={form.control}
@@ -654,13 +642,17 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       <FormLabel className={formLabelClass}>No of Working Days *</FormLabel>
                       <FormControl>
                         <Input
-                          type="number"
-                          min="1"
-                          placeholder="e.g. 26"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder=""
                           value={field.value ?? ""}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseInt(e.target.value) : undefined)
-                          }
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, "");
+                            field.onChange(v === "" ? undefined : parseInt(v, 10));
+                          }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                         />
                       </FormControl>
                       <FormMessage />
@@ -728,13 +720,14 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       <FormLabel className={formLabelClass}>Age</FormLabel>
                       <FormControl>
                         <Input
-                          type="number"
-                          min="16"
+                          type="text"
+                          inputMode="numeric"
                           placeholder="Auto-calculated from DOB"
                           value={field.value ?? ""}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseInt(e.target.value) : undefined)
-                          }
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, "");
+                            field.onChange(v === "" ? undefined : parseInt(v, 10));
+                          }}
                           onBlur={field.onBlur}
                           name={field.name}
                           ref={field.ref}
@@ -991,7 +984,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
           </h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-[#6B7280]">Monthly Salary</span>
+              <span className="text-[#6B7280]">Basic Salary</span>
               <span className="font-medium text-[#111827]">{formatCurrency(baseSalary)}</span>
             </div>
             <div className="flex justify-between">

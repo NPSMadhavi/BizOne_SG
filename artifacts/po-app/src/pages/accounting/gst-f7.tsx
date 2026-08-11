@@ -173,7 +173,7 @@ export default function GstF7Page() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-border">
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1">IRAS Singapore</p>
-          <h1 className="text-2xl font-bold text-foreground">GST F7 — Amended Return</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">GST F7 — Amended Return</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Use this to correct a previously submitted F5 return</p>
         </div>
         {data && (
@@ -263,9 +263,9 @@ export default function GstF7Page() {
                         <td colSpan={5} className="px-4 py-2.5 bg-[#1a365d] text-white text-xs font-bold uppercase tracking-wider">{section}</td>
                       </tr>
                       {sboxes.map(n => {
-                        const orig  = data.original[`box${n}`] ?? 0;
-                        const amd   = data.amended[`box${n}`]  ?? 0;
-                        const diff  = data.delta[`box${n}`]    ?? 0;
+                        const orig  = data.original?.[`box${n}`] ?? 0;
+                        const amd   = data.amended?.[`box${n}`]  ?? 0;
+                        const diff  = data.delta?.[`box${n}`]    ?? 0;
                         const isB8  = n === 8;
                         const hasDiff = Math.abs(diff) > 0.005;
                         return (

@@ -10,10 +10,10 @@ import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Globe, Info, ChevronsUpDown, Check } from "lucide-react";
+import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
-import { COUNTRIES } from "@/lib/countries";
 import { CURRENCIES } from "@/lib/currencies";
 
 interface Customer {
@@ -67,7 +67,6 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
   const taxLabel = (settings as any)?.taxLabel ?? "GST";
 
   const [form, setForm] = useState(() => ({ ...blank(), name: initialName }));
-  const [countryOpen, setCountryOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
 
   const handleOpenChange = (v: boolean) => {
@@ -108,34 +107,15 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Country</Label>
-              <Popover open={countryOpen} onOpenChange={setCountryOpen} modal>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="outline" role="combobox" className="w-full justify-between font-normal">
-                    <span className={form.country ? "text-foreground" : "text-muted-foreground"}>{form.country || "Select country"}</span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Search country…" />
-                    <CommandList>
-                      <CommandEmpty>No country found.</CommandEmpty>
-                      <CommandGroup>
-                        {COUNTRIES.map(c => (
-                          <CommandItem key={c} value={c} onSelect={v => {
-                            const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
-                            setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
-                            setCountryOpen(false);
-                          }}>
-                            <Check className={`mr-2 h-4 w-4 ${form.country === c ? "opacity-100" : "opacity-0"}`} />
-                            {c}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              <CountrySelect
+                value={form.country}
+                onChange={v => {
+                  const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                  setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
+                }}
+                singleChevron
+                className="h-9 shadow-sm"
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Phone</Label>

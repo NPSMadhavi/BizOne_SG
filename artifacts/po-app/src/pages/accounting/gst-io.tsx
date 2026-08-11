@@ -180,7 +180,7 @@ export default function GstIoListing() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">GST Input/Output Tax Listing</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">GST Input/Output Tax Listing</h1>
           <p className="text-muted-foreground text-sm mt-1">
             Detailed GST transaction listing — output tax (sales) · input tax (purchases)
           </p>

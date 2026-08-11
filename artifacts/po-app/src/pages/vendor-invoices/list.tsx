@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FileInput, Search, Plus, ArrowUpRight, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import NewVendorInvoiceDialog from "./new-dialog";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -36,7 +35,6 @@ export default function VendorInvoiceList() {
   const [, setLocation] = useLocation();
   const { selectedCompany } = useAuth();
   const [search, setSearch] = useState("");
-  const [newOpen, setNewOpen] = useState(false);
 
   // Filter state
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
@@ -44,7 +42,7 @@ export default function VendorInvoiceList() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const { data: pis = [], isLoading, refetch } = useQuery<any[]>({
+  const { data: pis = [], isLoading } = useQuery<any[]>({
     queryKey: ["vendor-invoices", selectedCompany?.id],
     queryFn: async () => {
       const res = await fetch("/api/vendor-invoices", { credentials: "include" });
@@ -109,12 +107,12 @@ export default function VendorInvoiceList() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Vendor Invoices</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Vendor Invoices</h1>
           <p className="text-muted-foreground mt-1">Track vendor purchase invoices and payments</p>
         </div>
-        <Button onClick={() => setNewOpen(true)} className="gap-2">
+        <Button onClick={() => setLocation("/vendor-invoices/new")} className="gap-2">
           <Plus className="h-4 w-4" />
-          Record Vendor PI
+          Create Vendor Invoice 
         </Button>
       </div>
 
@@ -310,7 +308,7 @@ export default function VendorInvoiceList() {
                     <td className="px-4 py-3 font-medium font-mono">{pi.piNumber}</td>
                     <td className="px-4 py-3">{pi.vendorName}</td>
                     <td className="px-4 py-3 text-muted-foreground">{pi.poNumbers || "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{pi.piDate ? fmtDate(pi.piDate) : "—"}</td>
+                    <td className="px-4 py-3 font-medium">{pi.piDate ? fmtDate(pi.piDate) : "—"}</td>
                     <td className="px-4 py-3 text-right font-medium">{fmt(pi.totalAmount, pi.currency)}</td>
                     <td className="px-4 py-3 text-right text-emerald-600">{fmt(pi.paidAmount, pi.currency)}</td>
                     <td className="px-4 py-3 text-right font-medium text-orange-600">{fmt(pi.balance, pi.currency)}</td>
@@ -330,12 +328,6 @@ export default function VendorInvoiceList() {
           </div>
         )}
       </Card>
-
-      <NewVendorInvoiceDialog
-        open={newOpen}
-        onOpenChange={setNewOpen}
-        onCreated={() => { refetch(); }}
-      />
     </div>
   );
 }

@@ -14,7 +14,7 @@ export function InventoryPageHeader({
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h1 className="text-2xl font-bold text-[#111827]">{title}</h1>
+        <h1 className="text-2xl font-bold text-[#2563EB]">{title}</h1>
         {subtitle ? <p className="mt-1 text-sm text-[#6B7280]">{subtitle}</p> : null}
       </div>
       {action ? <div className="flex flex-wrap gap-2">{action}</div> : null}
@@ -58,11 +58,13 @@ export function InventoryKpiCard({
 
 export function InventorySectionCard({
   title,
+  subtitle,
   action,
   children,
   className,
 }: {
   title?: string;
+  subtitle?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -71,7 +73,10 @@ export function InventorySectionCard({
     <div className={cn("rounded-xl border border-[#E5E7EB] bg-white shadow-sm", className)}>
       {title ? (
         <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-base font-semibold text-[#111827]">{title}</h2>
+          <div>
+            <h2 className="text-base font-semibold text-[#111827]">{title}</h2>
+            {subtitle ? <p className="mt-0.5 text-xs text-[#6B7280]">{subtitle}</p> : null}
+          </div>
           {action}
         </div>
       ) : null}

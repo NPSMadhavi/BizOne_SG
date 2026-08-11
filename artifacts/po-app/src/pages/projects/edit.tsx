@@ -93,7 +93,7 @@ export default function ProjectEdit() {
         </Button>
         <div className="flex items-center gap-2">
           <FolderKanban className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-bold">Edit Project</h1>
+          <h1 className="text-xl font-bold text-[#2563EB]">Edit Project</h1>
         </div>
       </div>
 

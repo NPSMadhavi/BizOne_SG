@@ -105,7 +105,7 @@ export default function VendorStatementPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-border">
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1">Accounts Payable</p>
-          <h1 className="text-2xl font-bold text-foreground">Vendor Statement</h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Vendor Statement</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Outstanding vendor invoice summary by period</p>
         </div>
         {vendor && data && data.entries.length > 0 && (

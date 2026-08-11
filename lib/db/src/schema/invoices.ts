@@ -23,6 +23,8 @@ export const invoicesTable = pgTable("invoices", {
   // Exchange rate to SGD at invoice date (1.000000 for SGD invoices)
   exchangeRate: decimal("exchange_rate", { precision: 10, scale: 6 }).notNull().default("1.000000"),
   poRefNo: text("po_ref_no"),
+  soId: integer("so_id"),
+  soNumber: text("so_number"),
   status: text("status").notNull().default("draft"),
   emailSentTo: text("email_sent_to"),
   voidReason: text("void_reason"),
