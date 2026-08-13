@@ -50,6 +50,7 @@ pgPool.query(`
 
 app.use(
   session({
+    name: "bizone.sid", // new name invalidates old long-lived connect.sid cookies
     store: new PgSession({
       pool: pgPool,
       tableName: "session",
@@ -60,7 +61,8 @@ app.use(
     cookie: {
       secure: false,
       httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: "lax",
+      // No maxAge → browser session cookie (not kept for days)
     },
   }),
 );

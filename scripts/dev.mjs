@@ -155,7 +155,15 @@ children.push(
   ),
 );
 
-const viteJs = path.join(webDir, "node_modules", "vite", "bin", "vite.js");
+const viteCandidates = [
+  path.join(webDir, "node_modules", "vite", "bin", "vite.js"),
+  path.join(root, "node_modules", "vite", "bin", "vite.js"),
+];
+const viteJs = viteCandidates.find((p) => fs.existsSync(p));
+if (!viteJs) {
+  console.error("Cannot find vite. Run `npm install` from the repo root first.");
+  process.exit(1);
+}
 console.log(`Starting frontend on http://localhost:${WEB_PORT} ...`);
 children.push(
   run(

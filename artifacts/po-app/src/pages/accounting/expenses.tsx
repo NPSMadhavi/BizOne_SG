@@ -80,6 +80,7 @@ export default function ExpensesList() {
   const { data: expenses = [], isLoading, error } = useQuery({
     queryKey: ["expenses"],
     queryFn: fetchExpenses,
+    refetchOnMount: "always",
   });
 
   const deleteMutation = useMutation({
@@ -233,11 +234,6 @@ export default function ExpensesList() {
                         {canManage && (
                           <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
                             <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                        {canManage && (
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteId(exp.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
                       </div>

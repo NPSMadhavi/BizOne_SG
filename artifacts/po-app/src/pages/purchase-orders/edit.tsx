@@ -85,7 +85,9 @@ const poSchema = z.object({
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
   isPrivate: z.boolean().default(false),
-  customerId: z.number().nullable().optional(),
+  customerId: z.number({ required_error: "Customer is required" }).nullable().refine((val) => val !== null, {
+    message: "Customer is required",
+  }),
   customerPoRef: z.string().optional(),
   status: z.enum(["draft", "confirmed", "cancelled"]),
   tax: z.coerce.number().min(0).max(100).default(0),
@@ -510,10 +512,13 @@ export default function PurchaseOrderEdit() {
                   name="customerId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-muted-foreground" />Customer (for reference)</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                        Customer (for reference) <span className="text-destructive">*</span>
+                      </FormLabel>
                       <Select
-                        value={field.value != null ? String(field.value) : "none"}
-                        onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
+                        value={field.value != null ? String(field.value) : ""}
+                        onValueChange={(v) => field.onChange(v === "" ? null : Number(v))}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -521,7 +526,6 @@ export default function PurchaseOrderEdit() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="none">— None —</SelectItem>
                           {customers.map((c: any) => (
                             <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                           ))}

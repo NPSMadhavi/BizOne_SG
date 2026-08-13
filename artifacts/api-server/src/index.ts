@@ -2,7 +2,7 @@ import "./load-env";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
-import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, reconcileStockQuantitiesOnStartup, runStartupMigrations } from "./lib/startup-backfill.js";
+import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, reconcileStockQuantitiesOnStartup, runStartupMigrations, scrubAccidentalModuleDefaultsOnStartup } from "./lib/startup-backfill.js";
 
 const rawPort = process.env["PORT"];
 
@@ -18,8 +18,9 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-seedIfEmpty()
-  .then(() => runStartupMigrations())
+runStartupMigrations()
+  .then(() => seedIfEmpty())
+  .then(() => scrubAccidentalModuleDefaultsOnStartup())
   .then(() => backfillExpenseJEsOnStartup())
   .then(() => backfillInvoiceJEsOnStartup())
   .then(() => backfillExchangeRatesOnStartup())
@@ -35,6 +36,6 @@ seedIfEmpty()
     });
   })
   .catch((err) => {
-    logger.error({ err }, "Failed to seed database");
+    logger.error({ err }, "Failed to initialize database");
     process.exit(1);
   });

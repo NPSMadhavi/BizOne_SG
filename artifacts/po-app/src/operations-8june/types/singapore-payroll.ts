@@ -188,7 +188,7 @@ export function calculateSingaporePayrollSnapshot(
 
   const annualSalary = round2(monthlySalary * 12);
   const grossSalary = round2(
-    Math.max(0, monthlySalary + allowances + overtimePay - deductions)
+    Math.max(0, monthlySalary + allowances + overtimePay)
   );
   const cpfApplicableSalary = round2(Math.min(grossSalary, CPF_WAGE_CEILING));
 
@@ -211,7 +211,7 @@ export function calculateSingaporePayrollSnapshot(
   const taxBreakdown: TaxSlabBreakdownRow[] = [];
   const effectiveTaxRate = 0;
 
-  const netSalary = round2(grossSalary - monthlyEmployeeCpf);
+  const netSalary = round2(grossSalary - deductions - monthlyEmployeeCpf);
 
   return {
     monthlySalary,
@@ -251,7 +251,7 @@ export function calculateProcessPayroll(params: CalculatePayrollParams & {
     monthlyDeductions: deductions,
   });
   const grossSalary = round2(
-    Math.max(0, snapshot.monthlySalary + allowances + overtimePay - deductions)
+    Math.max(0, snapshot.monthlySalary + allowances + overtimePay)
   );
 
   return {

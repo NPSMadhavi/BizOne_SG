@@ -2,39 +2,50 @@
 // Fast Refresh can hot-update auth-context.tsx without invalidating the whole
 // module graph (mixing React components and plain exports breaks Fast Refresh).
 
+/** Keep in sync with sidebar (`shell.tsx`) and `lib/db/src/modules.ts`. */
 export const ALL_MODULES = [
   "dashboard",
-  "purchase_orders", "quotations", "sales_orders", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "point_of_sale", "bill_of_materials", "grn",
-  "stock_items", "warehouses", "stock_transfer", "inventory_reports", "batch_expiry",
-  "vendors", "customers",
-  "projects",
   "assets", "licenses", "employees", "payroll",
+  "purchase_orders", "vendor_invoices", "quotations", "sales_orders", "invoices",
+  "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders",
+  "point_of_sale", "bill_of_materials", "grn",
+  "stock_items", "warehouses", "stock_transfer", "inventory_reports", "batch_expiry",
+  "vendors", "customers", "address_book",
+  "projects",
   "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs",
-  "accounting_pl", "accounting_cf",
+  "accounting_pl", "accounting_cf", "accounting_bank_recon",
   "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io",
   "accounting_wht", "accounting_eci", "accounting_formcs", "accounting_iaf",
   "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt",
   "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
   "accounting_expenses",
   "accounting_income",
+  "user_management", "audit_log", "settings",
 ] as const;
 
-export const DEFAULT_MODULES = ["purchase_orders", "quotations", "sales_orders", "invoices", "proforma_invoices", "delivery_orders", "point_of_sale"] as const;
+/** No modules are pre-selected. Admins must tick every module explicitly. */
+export const DEFAULT_MODULES = [] as const;
+
 export type AppModule = typeof ALL_MODULES[number];
 
 export const MODULE_LABELS: Record<AppModule, string> = {
   dashboard: "Dashboard",
+  assets: "Assets",
+  licenses: "Licenses",
+  employees: "Employees",
+  payroll: "Payroll",
   purchase_orders: "Purchase Orders",
+  vendor_invoices: "Vendor Invoices",
   quotations: "Quotations",
   sales_orders: "Sales Orders",
-  invoices: "Invoices",
+  invoices: "Tax Invoices",
   proforma_invoices: "Proforma Invoices",
   credit_notes: "Credit Notes",
   debit_notes: "Debit Notes",
   delivery_orders: "Delivery Orders",
   point_of_sale: "Point of Sale",
   bill_of_materials: "Bill of Materials",
-  grn: "Goods Receipt",
+  grn: "Goods Receipt Note",
   stock_items: "Stock Items",
   warehouses: "Warehouses",
   stock_transfer: "Stock Transfer",
@@ -42,11 +53,8 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   batch_expiry: "Batch & Expiry",
   vendors: "Vendors",
   customers: "Customers",
+  address_book: "Address Book",
   projects: "Projects",
-  assets: "Assets",
-  licenses: "Licenses",
-  employees: "Employees",
-  payroll: "Payroll",
   accounting_coa: "Chart of Accounts",
   accounting_je: "Journal Entries",
   accounting_gl: "General Ledger",
@@ -54,6 +62,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   accounting_bs: "Balance Sheet",
   accounting_pl: "Profit & Loss",
   accounting_cf: "Cash Flow",
+  accounting_bank_recon: "Bank Reconciliation",
   accounting_gst_f5: "GST F5 Return",
   accounting_gst_f7: "GST F7 (Amended)",
   accounting_gst_io: "GST IO Listing",
@@ -69,6 +78,9 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   accounting_vendor_stmt: "Vendor Statement",
   accounting_expenses: "Expenses",
   accounting_income: "Income",
+  user_management: "User Management",
+  audit_log: "Audit Log",
+  settings: "Settings",
 };
 
 export interface ModuleGroup {
@@ -78,11 +90,27 @@ export interface ModuleGroup {
   modules: AppModule[];
 }
 
+/** Same groups/order as sidebar navigation. */
 export const MODULE_GROUPS: ModuleGroup[] = [
+  {
+    id: "general",
+    label: "General",
+    modules: ["dashboard"],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    modules: ["assets", "licenses", "employees", "payroll"],
+  },
   {
     id: "documents",
     label: "Documents",
-    modules: ["purchase_orders", "quotations", "sales_orders", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders", "point_of_sale", "bill_of_materials", "grn"],
+    modules: [
+      "purchase_orders", "vendor_invoices", "grn",
+      "quotations", "sales_orders", "proforma_invoices", "invoices",
+      "credit_notes", "debit_notes", "delivery_orders",
+      "point_of_sale", "bill_of_materials",
+    ],
   },
   {
     id: "inventory",
@@ -92,17 +120,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "directory",
     label: "Directory",
-    modules: ["vendors", "customers"],
-  },
-  {
-    id: "projects",
-    label: "Projects",
-    modules: ["projects"],
-  },
-  {
-    id: "operations",
-    label: "Operations",
-    modules: ["assets", "licenses", "employees", "payroll"],
+    modules: ["vendors", "customers", "address_book"],
   },
   {
     id: "accounting",
@@ -110,13 +128,17 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     sgOnly: true,
     modules: [
       "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs",
-      "accounting_pl", "accounting_cf",
+      "accounting_pl", "accounting_cf", "accounting_bank_recon",
+      "accounting_income", "accounting_expenses",
       "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io",
       "accounting_wht", "accounting_eci", "accounting_formcs", "accounting_iaf",
       "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt",
       "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
-      "accounting_expenses",
-      "accounting_income",
     ],
+  },
+  {
+    id: "system",
+    label: "System",
+    modules: ["user_management", "audit_log", "settings"],
   },
 ];

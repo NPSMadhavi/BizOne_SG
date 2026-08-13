@@ -35,7 +35,7 @@ async function throwIfResNotOk(res: Response) {
     
     // Express default 404 pages come back as HTML — show a clear message instead
     if (res.status === 404 && (text.includes("<!DOCTYPE") || text.includes("<html"))) {
-      throw new Error(`API route not found (${res.url}). Restart the backend with: pnpm dev:stop && pnpm dev`);
+      throw new Error(`API route not found (${res.url}). Restart the backend with: npm run dev`);
     }
 
     throw new Error(errorData.message || errorData.error || `HTTP ${res.status}: ${res.statusText}`);

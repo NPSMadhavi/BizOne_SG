@@ -158,7 +158,7 @@ export default function SelectCompany() {
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Company</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Country</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Reg. No.</th>
-                  <th className="w-10" />
+                  <th className="w-20" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -194,14 +194,16 @@ export default function SelectCompany() {
                           <span className="text-slate-300 text-xs">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-right">
-                        {isLoading ? (
-                          <div className="inline-flex items-center justify-center h-7 w-7">
-                            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        ) : (
-                          <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-primary transition-colors ml-auto" />
-                        )}
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center justify-end">
+                          {isLoading ? (
+                            <div className="inline-flex items-center justify-center h-7 w-7">
+                              <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          ) : (
+                            <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-primary transition-colors" />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

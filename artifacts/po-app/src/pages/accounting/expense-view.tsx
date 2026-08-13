@@ -85,6 +85,8 @@ export default function ExpenseView() {
       return res.json();
     },
     enabled: !isNaN(id),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const confirmMutation = useMutation({

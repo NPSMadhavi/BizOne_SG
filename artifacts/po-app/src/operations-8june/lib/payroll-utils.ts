@@ -124,7 +124,7 @@ export function calculateSyncBridgePayrollPreview(params: {
   });
 
   const grossBeforeDeductions = monthlySalary + allowancesTotal + overtimePay;
-  const grossPay = grossBeforeDeductions - deductionsTotal;
+  const grossPay = grossBeforeDeductions;
 
   return {
     monthlySalary: snapshot.monthlySalary,

@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
-import { useGetDeliveryOrder, useUpdateDeliveryOrder, getGetDeliveryOrderQueryKey } from "@workspace/api-client-react";
+import { useGetDeliveryOrder, useUpdateDeliveryOrder, getGetDeliveryOrderQueryKey, getListDeliveryOrdersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -143,6 +143,7 @@ export default function DeliveryOrderEdit() {
     updateMutation.mutate({ id, data: { ...values, status: openPreview ? "confirmed" : "draft", items: filledItems as any } }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
+        await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
         setIsSubmitting(false);
         if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Draft saved." }); }
@@ -396,6 +397,8 @@ export default function DeliveryOrderEdit() {
         } : undefined}
         onEmailSent={async (recipients) => {
           await fetch(`/api/delivery-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await queryClient.invalidateQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });
+          await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
         }}
         onEdit={() => { setPreviewOpen(false); }}
       />

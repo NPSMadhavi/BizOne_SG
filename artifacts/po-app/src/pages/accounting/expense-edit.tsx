@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation, useParams } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useGetSettings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Info, AlertTriangle, Check } from "lucide-react";
+import { ArrowLeft, Upload, Info, AlertTriangle, Check, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ExpenseForm {
@@ -154,6 +158,20 @@ export default function ExpenseEdit() {
   const [saving, setSaving] = useState(false);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/expenses/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      toast({ title: "Expense deleted." });
+      setLocation("/accounting/expenses");
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
 
   const { data: settings } = useGetSettings({});
   const gstRate = settings?.gstRate ?? 9;
@@ -166,6 +184,8 @@ export default function ExpenseEdit() {
       return res.json();
     },
     enabled: !isNaN(id),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const form = useForm<ExpenseForm>({
@@ -305,11 +325,25 @@ export default function ExpenseEdit() {
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(`/accounting/expenses/${id}`)}>
-          <ArrowLeft className="h-4 w-4" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" type="button" onClick={() => setLocation(`/accounting/expenses/${id}`)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Edit Expense</h1>
+        </div>
+
+        <Button
+          type="button"
+          variant="destructive"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => setDeleteOpen(true)}
+          disabled={saving || deleteMutation.isPending}
+          title="Delete"
+        >
+          <Trash2 className="h-4 w-4" />
         </Button>
-        <h1 className="text-2xl font-bold text-[#2563EB]">Edit Expense</h1>
       </div>
 
       <form onSubmit={handleSubmit(d => onSubmit(d))} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -503,6 +537,25 @@ export default function ExpenseEdit() {
           </div>
         </div>
       </form>
+      {/* Delete dialog */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete expense record?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

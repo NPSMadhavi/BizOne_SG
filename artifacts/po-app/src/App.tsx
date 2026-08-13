@@ -14,7 +14,7 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import SelectCompany from "@/pages/select-company/index";
-import WebsiteLanding from "@/Website";
+// import WebsiteLanding from "@/Website";
 
 // ── Route-level lazy bundles ───────────────────────────────────────────────
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -116,6 +116,7 @@ const GstIoListing       = lazy(() => import("@/pages/accounting/gst-io"));
 const WhtRegister        = lazy(() => import("@/pages/accounting/wht"));
 const EciPage            = lazy(() => import("@/pages/accounting/eci"));
 const FormCsPage         = lazy(() => import("@/pages/accounting/form-cs"));
+const BankReconciliation = lazy(() => import("@/pages/accounting/bank-reconciliation"));
 const ExpensesList       = lazy(() => import("@/pages/accounting/expenses"));
 const ExpenseNew         = lazy(() => import("@/pages/accounting/expense-new"));
 const ExpenseEdit        = lazy(() => import("@/pages/accounting/expense-edit"));
@@ -178,6 +179,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/payroll/config/new": "Add Payroll Configuration",
   "/payroll/process": "Process Payroll",
   "/accounting/chart-of-accounts": "Chart of Accounts",
+  "/accounting/bank-reconciliation": "Bank Reconciliation",
   "/accounting/journal-entries": "Journal Entries",
   "/accounting/profit-loss": "Profit & Loss",
   "/accounting/cash-flow": "Cash Flow Statement",
@@ -283,7 +285,7 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
 function SmartHomeRedirect() {
   const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
   if (isLoading) return <LoadingSpinner />;
-  if (!user) return <WebsiteLanding />;
+  if (!user) return <Redirect to="/login" />;
   const hasMultiple = (user.companies?.length ?? 0) > 1;
   if (!selectedCompany && hasMultiple) return <Redirect to="/select-company" />;
   return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
@@ -375,8 +377,8 @@ function Router() {
           <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
           {/* Point of Sale */}
-          <Route path="/point-of-sale">{() => <ProtectedRoute component={PointOfSalePage} anyOf={["point_of_sale", "delivery_orders"]} />}</Route>
-          <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} anyOf={["bill_of_materials", "point_of_sale", "stock_items"]} />}</Route>
+          <Route path="/point-of-sale">{() => <ProtectedRoute component={PointOfSalePage} module="point_of_sale" />}</Route>
+          <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} module="bill_of_materials" />}</Route>
 
           {/* Goods Receipt Notes */}
           <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
@@ -388,23 +390,24 @@ function Router() {
           <Route path="/stock/:id/edit">{() => <ProtectedRoute component={StockItemForm} module="stock_items" />}</Route>
           <Route path="/stock">{() => <ProtectedRoute component={StockList} module="stock_items" />}</Route>
           <Route path="/inventory/warehouses">{() => <ProtectedRoute component={WarehousesPage} module="warehouses" />}</Route>
-          <Route path="/inventory/stock-transfer">{() => <ProtectedRoute component={StockTransferPage} anyOf={["stock_transfer", "warehouses"]} />}</Route>
+          <Route path="/inventory/stock-transfer">{() => <ProtectedRoute component={StockTransferPage} module="stock_transfer" />}</Route>
           <Route path="/inventory/reports">{() => <ProtectedRoute component={InventoryReportsPage} module="inventory_reports" />}</Route>
-          <Route path="/inventory/batch-expiry">{() => <ProtectedRoute component={BatchExpiryPage} anyOf={["batch_expiry", "inventory_reports", "stock_items"]} />}</Route>
+          <Route path="/inventory/batch-expiry">{() => <ProtectedRoute component={BatchExpiryPage} module="batch_expiry" />}</Route>
 
           {/* Vendor Invoices */}
-          <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="purchase_orders" />}</Route>
-          <Route path="/vendor-invoices/new">{() => <ProtectedRoute component={VendorInvoiceNew} module="purchase_orders" />}</Route>
-          <Route path="/vendor-invoices/:id/edit">{() => <ProtectedRoute component={VendorInvoiceEdit} module="purchase_orders" />}</Route>
-          <Route path="/vendor-invoices/:id">{() => <ProtectedRoute component={VendorInvoiceView} module="purchase_orders" />}</Route>
+          <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="vendor_invoices" />}</Route>
+          <Route path="/vendor-invoices/new">{() => <ProtectedRoute component={VendorInvoiceNew} module="vendor_invoices" />}</Route>
+          <Route path="/vendor-invoices/:id/edit">{() => <ProtectedRoute component={VendorInvoiceEdit} module="vendor_invoices" />}</Route>
+          <Route path="/vendor-invoices/:id">{() => <ProtectedRoute component={VendorInvoiceView} module="vendor_invoices" />}</Route>
 
           {/* Directory */}
-          <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="purchase_orders" />}</Route>
-          <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} anyOf={["invoices", "quotations"]} />}</Route>
-          <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} anyOf={["purchase_orders", "invoices", "quotations", "delivery_orders"]} />}</Route>
+          <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="vendors" />}</Route>
+          <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} module="customers" />}</Route>
+          <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} module="address_book" />}</Route>
 
           {/* Accounting */}
           <Route path="/accounting/chart-of-accounts">{() => <ProtectedRoute component={ChartOfAccounts} />}</Route>
+          <Route path="/accounting/bank-reconciliation">{() => <ProtectedRoute component={BankReconciliation} module="accounting_bank_recon" />}</Route>
           <Route path="/accounting/journal-entries/new">{() => <ProtectedRoute component={JournalEntryNew} />}</Route>
           <Route path="/accounting/journal-entries/:id">{() => <ProtectedRoute component={JournalEntryView} />}</Route>
           <Route path="/accounting/journal-entries">{() => <ProtectedRoute component={JournalEntriesList} />}</Route>

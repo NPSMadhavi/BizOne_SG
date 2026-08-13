@@ -88,6 +88,7 @@ export default function IncomeList() {
   const { data: records = [], isLoading, error } = useQuery({
     queryKey: ["income"],
     queryFn: fetchIncome,
+    refetchOnMount: "always",
   });
 
   const deleteMutation = useMutation({
@@ -183,8 +184,8 @@ export default function IncomeList() {
       {error && <div className="text-center py-12 text-destructive">Failed to load income records.</div>}
 
       {!isLoading && !error && (
-        <div className="rounded-lg border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-lg border overflow-x-auto">
+          <table className="w-full text-sm min-w-[960px]">
             <thead className="bg-muted/50">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Date</th>
@@ -195,7 +196,7 @@ export default function IncomeList() {
                 <th className="text-right px-4 py-3 font-medium">Amount (Net)</th>
                 <th className="text-right px-4 py-3 font-medium">GST</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3" />
+                <th className="text-right px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -217,18 +218,13 @@ export default function IncomeList() {
                   <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">{fmtMoney(r.currency, r.gstAmount)}</td>
                   <td className="px-4 py-3">{statusBadge(r.status)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
-                        <Eye className="h-4 w-4" />
+                    <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" title="View" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
+                        <Eye className="h-3.5 w-3.5" />
                       </Button>
-                      {canManage && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => setLocation(`/accounting/income/${r.id}`)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {canManage && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteId(r.id)}>
-                          <Trash2 className="h-4 w-4" />
+                      {(r.status === "draft" || canManage) && r.status !== "void" && (
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => setLocation(`/accounting/income/${r.id}/edit`)}>
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       )}
                     </div>

@@ -233,7 +233,7 @@ export default function GrnNew() {
       setIsDirty(false);
       setConfirmOpen(false);
       toast({ title: "Goods Received", description: "GRN confirmed and stock updated successfully." });
-      setLocation(`/grn/${updated.id}`);
+      setLocation("/grn");
     },
     onError: (err: any) => {
       setConfirmOpen(false);
@@ -369,7 +369,7 @@ export default function GrnNew() {
       queryClient.invalidateQueries({ queryKey: ["stock-items"] });
       setConfirmOpen(false);
       toast({ title: "Goods Received", description: "GRN confirmed and stock updated successfully." });
-      setLocation(`/grn/${updated.id}`);
+      setLocation("/grn");
     } catch (err: any) {
       setConfirmOpen(false);
       toast({ title: "Error", description: err.message, variant: "destructive" });

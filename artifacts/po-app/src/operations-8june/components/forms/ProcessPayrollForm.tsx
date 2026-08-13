@@ -510,7 +510,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#6B7280]">Allowance</span>
+                  <span className="text-[#6B7280]">Allowances</span>
                   <span className="font-medium text-[#111827]">
                     {formatCurrency(calculationPreview.allowancesTotal)}
                   </span>

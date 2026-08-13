@@ -10,6 +10,10 @@ out-tsc
 
 # dependencies
 node_modules
+node_modules_old_*
+node_modules_broken_*
+pnpm-lock.yaml
+.pnpm-store
 
 # IDEs and editors
 /.idea

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A full-stack document management application for three companies: RSV Infotech Pte. Ltd. (Singapore), Netopsys Pte. Ltd. (Singapore), and Netopsys AI Pvt. Ltd. (India). Built on a pnpm workspace monorepo with TypeScript. Supports Purchase Orders, Quotations, Invoices, and Delivery Orders with professional PDF generation, GST management, and multi-company access control.
+A full-stack document management application for three companies: RSV Infotech Pte. Ltd. (Singapore), Netopsys Pte. Ltd. (Singapore), and Netopsys AI Pvt. Ltd. (India). Built on an npm workspace monorepo with TypeScript. Supports Purchase Orders, Quotations, Invoices, and Delivery Orders with professional PDF generation, GST management, and multi-company access control.
 
 ## Features
 
@@ -65,9 +65,9 @@ Admin users have access to all companies automatically.
 
 ## Stack
 
-- **Monorepo tool**: pnpm workspaces
+- **Monorepo tool**: npm workspaces
 - **Node.js version**: 24
-- **Package manager**: pnpm
+- **Package manager**: npm
 - **TypeScript version**: 5.9
 - **Frontend**: React + Vite + Tailwind CSS
 - **API framework**: Express 5
@@ -85,11 +85,11 @@ Admin users have access to all companies automatically.
 
 ## Key Commands
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `npm run typecheck` — full typecheck across all packages
+- `npm run build` — build all packages
+- `npm run codegen -w @workspace/api-spec` — regenerate API hooks and Zod schemas from OpenAPI spec
+- `npm run push -w @workspace/db` — push DB schema changes (dev only)
+- `npm run dev -w @workspace/api-server` — run API server locally
 
 ## Architecture
 

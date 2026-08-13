@@ -1172,11 +1172,11 @@ export default function PayrollPage() {
               value={formatCurrency(selectedConfig.allowances?.transport || 0)}
             />
             <EntityViewField
-              label="Meal Allowance"
+              label="Food Allowance"
               value={formatCurrency(selectedConfig.allowances?.meal || 0)}
             />
             <EntityViewField
-              label="Medical Deduction"
+              label="Medical Insurance"
               value={formatCurrency(selectedConfig.deductions?.medical || 0)}
             />
             <EntityViewField

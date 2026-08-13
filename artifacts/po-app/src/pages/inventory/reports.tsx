@@ -571,22 +571,23 @@ ${styles}
 
       {/* Filters */}
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
-          <FilterField label="Date Range">
-            <div className="grid grid-cols-2 gap-2">
-              <SyncBridgeDatePicker
-                value={filters.dateFrom}
-                onChange={(v) => setFilters((f) => ({ ...f, dateFrom: v }))}
-                placeholder="From"
-                max={filters.dateTo || undefined}
-              />
-              <SyncBridgeDatePicker
-                value={filters.dateTo}
-                onChange={(v) => setFilters((f) => ({ ...f, dateTo: v }))}
-                placeholder="To"
-                min={filters.dateFrom || undefined}
-              />
-            </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <FilterField label="From Date">
+            <SyncBridgeDatePicker
+              value={filters.dateFrom}
+              onChange={(v) => setFilters((f) => ({ ...f, dateFrom: v }))}
+              placeholder="From"
+              max={filters.dateTo || undefined}
+            />
+          </FilterField>
+
+          <FilterField label="To Date">
+            <SyncBridgeDatePicker
+              value={filters.dateTo}
+              onChange={(v) => setFilters((f) => ({ ...f, dateTo: v }))}
+              placeholder="To"
+              min={filters.dateFrom || undefined}
+            />
           </FilterField>
 
           <FilterField label="Warehouse">
@@ -605,7 +606,7 @@ ${styles}
 
           <FilterField label="Category">
             <Select value={filters.category} onValueChange={(v) => setFilters((f) => ({ ...f, category: v }))}>
-              <SelectTrigger><SelectValue placeholder="All Categories" /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full bg-white"><SelectValue placeholder="All Categories" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 {categories.map((c) => (
@@ -617,7 +618,7 @@ ${styles}
 
           <FilterField label="Item">
             <Select value={filters.itemId} onValueChange={(v) => setFilters((f) => ({ ...f, itemId: v }))}>
-              <SelectTrigger><SelectValue placeholder="All Items" /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full bg-white"><SelectValue placeholder="All Items" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Items</SelectItem>
                 {activeItems.map((i) => (
@@ -643,7 +644,7 @@ ${styles}
 
           <FilterField label="Expiry Status">
             <Select value={filters.expiryStatus} onValueChange={(v) => setFilters((f) => ({ ...f, expiryStatus: v }))}>
-              <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full bg-white"><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="fresh">Fresh</SelectItem>
@@ -655,7 +656,7 @@ ${styles}
 
           <FilterField label="Stock Status">
             <Select value={filters.stockStatus} onValueChange={(v) => setFilters((f) => ({ ...f, stockStatus: v }))}>
-              <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectTrigger className="h-10 w-full bg-white"><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="in_stock">In Stock</SelectItem>
@@ -831,9 +832,17 @@ ${styles}
   );
 }
 
-function FilterField({ label, children }: { label: string; children: ReactNode }) {
+function FilterField({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="space-y-1.5">
+    <div className={cn("min-w-0 space-y-1.5", className)}>
       <Label className="text-xs font-medium text-[#6B7280]">{label}</Label>
       {children}
     </div>

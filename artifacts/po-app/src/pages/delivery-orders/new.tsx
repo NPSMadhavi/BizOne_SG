@@ -116,7 +116,7 @@ export default function DeliveryOrderNew() {
       setIsSubmitting(false);
       return;
     }
-    createMutation.mutate({ data: { ...values, status: "draft", items: filledItems as any } }, {
+    createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", items: filledItems as any } }, {
       onSuccess: async (data) => {
         await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
         setIsSubmitting(false);
@@ -392,6 +392,7 @@ export default function DeliveryOrderNew() {
           }}
           onEmailSent={async (recipients) => {
             await fetch(`/api/delivery-orders/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+            await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
           }}
           onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${savedDoc.id}/edit`); }}
         />

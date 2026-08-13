@@ -26,6 +26,9 @@ interface IncomeRecord {
   amount: string;
   gstAmount: string;
   gstTreatment: string;
+  gstClaimable: boolean;
+  isDeductible: boolean;
+  deductiblePct: number;
   currency: string;
   paymentMethod: string | null;
   accountId: number | null;
@@ -121,6 +124,8 @@ export default function IncomeView() {
       return res.json();
     },
     enabled: !isNaN(id),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: attachments = [] } = useQuery<AttachmentMeta[]>({
@@ -209,12 +214,14 @@ export default function IncomeView() {
     }
   };
 
+  if (isNaN(id)) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-destructive">Invalid income record.</div>;
   if (isLoading) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-muted-foreground">Loading…</div>;
   if (error || !record) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-destructive">Income record not found.</div>;
 
   const netAmount  = parseFloat(record.amount);
   const gstAmount  = parseFloat(record.gstAmount);
   const grossAmount = netAmount + gstAmount;
+  const deductibleAmount = record.isDeductible ? netAmount * (record.deductiblePct ?? 100) / 100 : 0;
 
   const statusBadge = () => {
     if (record.status === "confirmed") return <Badge className="bg-green-100 text-green-700 border-0 text-sm px-3 py-1">Confirmed</Badge>;
@@ -381,25 +388,40 @@ export default function IncomeView() {
           </Card>
         </div>
 
-        {/* Amount summary */}
+        {/* IRAS Summary */}
         <div className="space-y-6">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Amount Summary</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Net Amount</span>
-                  <span className="font-mono font-medium">{fmtMoney(record.currency, record.amount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">GST ({record.gstTreatment === "standard_rated" ? "9%" : record.gstTreatment})</span>
-                  <span className="font-mono text-muted-foreground">{fmtMoney(record.currency, record.gstAmount)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-semibold text-base">
-                  <span>Total Received</span>
-                  <span className="font-mono">{fmtMoney(record.currency, grossAmount.toFixed(2))}</span>
-                </div>
+          <Card className={!record.isDeductible ? "border-red-200 bg-red-50/30" : record.deductiblePct === 50 ? "border-amber-200 bg-amber-50/30" : "border-green-200 bg-green-50/30"}>
+            <CardHeader><CardTitle className="text-sm">IRAS Summary</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Net Amount</span>
+                <span className="font-mono font-medium">{fmtMoney(record.currency, record.amount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">GST ({record.gstTreatment === "standard_rated" ? "9%" : record.gstTreatment})</span>
+                <span className="font-mono text-blue-600">{fmtMoney(record.currency, record.gstAmount)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 font-medium">
+                <span>Total (incl. GST)</span>
+                <span className="font-mono">{fmtMoney(record.currency, grossAmount.toFixed(2))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">GST Input Tax</span>
+                <Badge variant="outline" className={record.gstClaimable ? "text-blue-700 border-blue-300" : "text-muted-foreground"}>
+                  {record.gstClaimable ? "Claimable" : "Not claimable"}
+                </Badge>
+              </div>
+              <div className="flex justify-between items-center border-t pt-2">
+                <span className="text-muted-foreground">Tax Deductible</span>
+                {record.isDeductible ? (
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">{record.deductiblePct ?? 100}%</Badge>
+                ) : (
+                  <Badge variant="outline" className="text-red-600 border-red-300">Non-deductible</Badge>
+                )}
+              </div>
+              <div className="flex justify-between border-t pt-2">
+                <span className="font-medium">Allowable Deduction</span>
+                <span className="font-mono font-bold text-green-700">{record.currency} {deductibleAmount.toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
               </div>
             </CardContent>
           </Card>

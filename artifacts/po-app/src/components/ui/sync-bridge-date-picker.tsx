@@ -419,50 +419,52 @@ export function SyncBridgeDatePicker({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          className={cn(
-            "flex h-10 w-full items-center rounded-md border bg-white px-3 text-left text-sm",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-            className
-          )}
-          style={{ borderColor: TEAL, color: TEAL }}
-        >
-          <span
-            className={cn("flex-1", !value && "font-normal")}
-            style={!value ? { color: TEAL_MUTED } : undefined}
+    <div className="w-full min-w-0 max-w-full">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={disabled}
+            className={cn(
+              "box-border flex h-10 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border bg-white px-2.5 text-left text-sm sm:px-3",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              className
+            )}
+            style={{ borderColor: TEAL, color: TEAL }}
           >
-            {value ? formatDisplay(value, mode) : displayPlaceholder}
-          </span>
-          <CalendarIcon className="h-4 w-4 shrink-0 opacity-80" style={{ color: TEAL }} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-auto border bg-white p-0 shadow-lg"
-        align="start"
-        sideOffset={6}
-        style={{ borderColor: "hsl(0 0% 85%)" }}
-      >
-        <DatePickerPanel
-          viewYear={viewYear}
-          viewMonth={viewMonth}
-          selected={selected}
-          mode={mode}
-          panelView={panelView}
-          onPanelViewChange={setPanelView}
-          onViewYearChange={setViewYear}
-          onViewMonthChange={setViewMonth}
-          onSelect={handleSelect}
-          onClear={handleClear}
-          min={min}
-          max={max}
-          disabledDate={disabledDate}
-        />
-      </PopoverContent>
-    </Popover>
+            <span
+              className={cn("min-w-0 flex-1 truncate", !value && "font-normal")}
+              style={!value ? { color: TEAL_MUTED } : undefined}
+            >
+              {value ? formatDisplay(value, mode) : displayPlaceholder}
+            </span>
+            <CalendarIcon className="h-4 w-4 shrink-0 opacity-80" style={{ color: TEAL }} />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-auto border bg-white p-0 shadow-lg"
+          align="start"
+          sideOffset={6}
+          style={{ borderColor: "hsl(0 0% 85%)" }}
+        >
+          <DatePickerPanel
+            viewYear={viewYear}
+            viewMonth={viewMonth}
+            selected={selected}
+            mode={mode}
+            panelView={panelView}
+            onPanelViewChange={setPanelView}
+            onViewYearChange={setViewYear}
+            onViewMonthChange={setViewMonth}
+            onSelect={handleSelect}
+            onClear={handleClear}
+            min={min}
+            max={max}
+            disabledDate={disabledDate}
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 

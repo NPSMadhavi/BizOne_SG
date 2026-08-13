@@ -1,17 +1,20 @@
-/** Canonical module keys used for sidebar access and user_companies.modules. */
+/** Canonical module keys used for sidebar access and user_companies.modules.
+ * Keep in sync with `artifacts/po-app/src/contexts/auth-modules.ts`.
+ */
 export const APP_ALL_MODULES = [
   "dashboard",
   "assets",
   "licenses",
   "employees",
   "payroll",
-  "service_reports",
   "purchase_orders",
+  "vendor_invoices",
   "quotations",
   "sales_orders",
   "invoices",
   "proforma_invoices",
   "credit_notes",
+  "debit_notes",
   "delivery_orders",
   "point_of_sale",
   "bill_of_materials",
@@ -23,6 +26,7 @@ export const APP_ALL_MODULES = [
   "batch_expiry",
   "vendors",
   "customers",
+  "address_book",
   "projects",
   "accounting_coa",
   "accounting_je",
@@ -31,6 +35,7 @@ export const APP_ALL_MODULES = [
   "accounting_bs",
   "accounting_pl",
   "accounting_cf",
+  "accounting_bank_recon",
   "accounting_gst_f5",
   "accounting_gst_f7",
   "accounting_gst_io",
@@ -44,6 +49,8 @@ export const APP_ALL_MODULES = [
   "accounting_ap",
   "accounting_ap_aging",
   "accounting_vendor_stmt",
+  "accounting_expenses",
+  "accounting_income",
   "user_management",
   "audit_log",
   "settings",

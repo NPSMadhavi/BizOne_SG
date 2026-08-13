@@ -1,35 +1,90 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, companiesTable, userCompaniesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import {
+  db,
+  usersTable,
+  companiesTable,
+  userCompaniesTable,
+  rolesTable,
+  APP_ALL_MODULES,
+} from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
 import { CreateUserBody, UpdateUserBody, UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
 import { logAudit } from "../lib/audit.js";
-
-declare module "express-session" {
-  interface SessionData {
-    userId?: number;
-    companyId?: number;
-  }
-}
-
-const ALL_MODULES = ["purchase_orders", "quotations", "invoices", "delivery_orders", "grn", "stock_items"];
+import { requirePermission } from "../lib/auth-middleware.js";
 
 const router: IRouter = Router();
 
-async function requireAdmin(req: any, res: any): Promise<boolean> {
-  if (!req.session.userId) {
-    res.status(401).json({ error: "Not authenticated" });
-    return false;
-  }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
-  if (!user || user.role !== "admin") {
-    res.status(403).json({ error: "Admin access required" });
-    return false;
-  }
-  return true;
+type AppRole = "admin" | "user" | "external" | "accountant";
+
+/** Map roles-table display names (and legacy values) to API enum. */
+function toAppRole(value: string | null | undefined): AppRole {
+  const v = (value || "user").trim().toLowerCase();
+  if (v === "admin" || v === "administrator") return "admin";
+  if (v === "accountant") return "accountant";
+  if (v === "external") return "external";
+  if (v === "user" || v === "employee") return "user";
+  return "user";
 }
 
-async function getUserWithCompanies(userId: number) {
+/** Map API role enum to seeded roles.name (null = no roles-table row). */
+function roleEnumToDbName(role: AppRole): string | null {
+  if (role === "admin") return "Administrator";
+  if (role === "user") return "Employee";
+  if (role === "accountant") return "Accountant";
+  return null;
+}
+
+async function resolveUserRole(
+  companyId: number,
+  role: AppRole,
+  roleId?: number | null,
+) {
+  if (roleId != null) {
+    const [dbRole] = await db
+      .select()
+      .from(rolesTable)
+      .where(and(eq(rolesTable.id, roleId), eq(rolesTable.companyId, companyId)))
+      .limit(1);
+    if (!dbRole) return null;
+    return { roleId: dbRole.id as number, usersRole: toAppRole(dbRole.name), roleName: dbRole.name };
+  }
+  const resolved = await resolveCompanyRole(companyId, role);
+  if (!resolved) return null;
+  return { ...resolved, roleName: roleEnumToDbName(role) ?? role };
+}
+
+async function resolveCompanyRole(companyId: number, role: AppRole) {
+  const roleName = roleEnumToDbName(role);
+  if (!roleName) {
+    return { roleId: null as number | null, usersRole: role };
+  }
+  const [dbRole] = await db
+    .select()
+    .from(rolesTable)
+    .where(
+      sql`lower(${rolesTable.name}) = ${roleName.toLowerCase()} AND ${rolesTable.companyId} = ${companyId}`,
+    )
+    .limit(1);
+  if (!dbRole) {
+    return null;
+  }
+  return { roleId: dbRole.id as number, usersRole: role };
+}
+
+function modulesForRole(
+  role: AppRole,
+  companyAccess: { companyId: number; modules: string[] }[] | undefined,
+  companyId: number,
+): string[] {
+  if (role === "admin") return [...APP_ALL_MODULES];
+  const entry = companyAccess?.find((c) => c.companyId === companyId);
+  const allowed = new Set<string>(APP_ALL_MODULES as unknown as string[]);
+  // Exact checkbox selection only — never invent Inventory / Directory / defaults
+  return (Array.isArray(entry?.modules) ? entry!.modules : []).filter((m) => allowed.has(m));
+}
+
+async function getUserWithCompaniesAndRole(userId: number, currentCompanyId: number) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user) return null;
 
@@ -37,31 +92,52 @@ async function getUserWithCompanies(userId: number) {
     .select({ company: companiesTable, uc: userCompaniesTable })
     .from(userCompaniesTable)
     .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
-    .where(eq(userCompaniesTable.userId, userId));
+    .where(and(eq(userCompaniesTable.userId, userId), eq(userCompaniesTable.companyId, currentCompanyId)));
+
+  const [userRole] = user.roleId
+    ? await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId))
+    : [];
 
   return {
     id: user.id,
     username: user.username,
-    role: user.role,
+    // Always return API enum — never "Employee" / "Administrator"
+    role: toAppRole(userRole?.name || user.role),
+    roleId: user.roleId,
+    roleName: userRole?.name ?? null,
+    companyId: user.companyId,
     createdAt: user.createdAt.toISOString(),
-    companies: ucRows.map(r => ({
+    companies: ucRows.map((r) => ({
       ...r.company,
-      modules: (r.uc.modules as string[]) ?? ALL_MODULES,
+      modules: Array.isArray(r.uc.modules) ? (r.uc.modules as string[]) : [],
     })),
     selectedCompanyId: null,
   };
 }
 
-router.get("/users", async (req, res): Promise<void> => {
-  if (!(await requireAdmin(req, res))) return;
+router.get("/users", requirePermission("user_management:view"), async (req, res): Promise<void> => {
+  const companyId = req.session.companyId;
+  if (!companyId) {
+    res.status(403).json({ error: "Active company context required" });
+    return;
+  }
 
-  const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
-  const result = await Promise.all(users.map(u => getUserWithCompanies(u.id)));
+  const users = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.companyId, companyId))
+    .orderBy(usersTable.createdAt);
+
+  const result = await Promise.all(users.map((u) => getUserWithCompaniesAndRole(u.id, companyId)));
   res.json(result.filter(Boolean));
 });
 
-router.post("/users", async (req, res): Promise<void> => {
-  if (!(await requireAdmin(req, res))) return;
+router.post("/users", requirePermission("user_management:create"), async (req, res): Promise<void> => {
+  const companyId = req.session.companyId;
+  if (!companyId) {
+    res.status(403).json({ error: "Active company context required" });
+    return;
+  }
 
   const parsed = CreateUserBody.safeParse(req.body);
   if (!parsed.success) {
@@ -69,7 +145,12 @@ router.post("/users", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password, role, companyAccess } = parsed.data;
+  const { username, password, role: rawRole, companyAccess } = parsed.data;
+  const role = toAppRole(rawRole);
+  const roleId =
+    typeof req.body?.roleId === "number" && Number.isFinite(req.body.roleId)
+      ? Number(req.body.roleId)
+      : undefined;
 
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.username, username));
   if (existing) {
@@ -77,24 +158,61 @@ router.post("/users", async (req, res): Promise<void> => {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
-  const [user] = await db.insert(usersTable).values({ username, passwordHash, role }).returning();
+  const resolved = await resolveUserRole(companyId, role, roleId);
+  if (!resolved) {
+    const expected = roleEnumToDbName(role) ?? role;
+    res.status(400).json({ error: `Selected role '${expected}' does not exist for this company.` });
+    return;
+  }
 
-  if (companyAccess && companyAccess.length > 0) {
-    for (const { companyId, modules } of companyAccess) {
-      await db.insert(userCompaniesTable)
-        .values({ userId: user.id, companyId, modules: modules ?? ALL_MODULES })
+  const passwordHash = await bcrypt.hash(password, 12);
+  const [user] = await db
+    .insert(usersTable)
+    .values({
+      username,
+      passwordHash,
+      role: resolved.usersRole,
+      companyId,
+      roleId: resolved.roleId,
+    })
+    .returning();
+
+  const modules = modulesForRole(role, companyAccess, companyId);
+  await db
+    .insert(userCompaniesTable)
+    .values({
+      userId: user.id,
+      companyId,
+      modules,
+    })
+    .onConflictDoNothing();
+
+  // Optional: assign extra companies from payload (other than active)
+  if (companyAccess?.length) {
+    for (const ca of companyAccess) {
+      if (ca.companyId === companyId) continue;
+      await db
+        .insert(userCompaniesTable)
+        .values({
+          userId: user.id,
+          companyId: ca.companyId,
+          modules: Array.isArray(ca.modules) ? ca.modules : [],
+        })
         .onConflictDoNothing();
     }
   }
 
-  const result = await getUserWithCompanies(user.id);
+  const result = await getUserWithCompaniesAndRole(user.id, companyId);
   logAudit({ req, action: "create", entityType: "user", entityId: user.id, entityLabel: user.username });
   res.status(201).json(result);
 });
 
-router.put("/users/:id", async (req, res): Promise<void> => {
-  if (!(await requireAdmin(req, res))) return;
+router.put("/users/:id", requirePermission("user_management:edit"), async (req, res): Promise<void> => {
+  const companyId = req.session.companyId;
+  if (!companyId) {
+    res.status(403).json({ error: "Active company context required" });
+    return;
+  }
 
   const params = UpdateUserParams.safeParse(req.params);
   if (!params.success) {
@@ -108,40 +226,105 @@ router.put("/users/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password, role, companyAccess } = parsed.data;
-  const updates: Record<string, any> = {};
+  const [targetUser] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, params.data.id));
+
+  if (!targetUser) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  if (targetUser.companyId !== companyId) {
+    res.status(403).json({ error: "Access denied: User belongs to another company" });
+    return;
+  }
+
+  const { username, password, role: rawRole, companyAccess } = parsed.data;
+  const role = rawRole != null ? toAppRole(rawRole) : toAppRole(targetUser.role);
+  const roleId =
+    typeof req.body?.roleId === "number" && Number.isFinite(req.body.roleId)
+      ? Number(req.body.roleId)
+      : req.body?.roleId === null
+        ? null
+        : undefined;
+
+  const updates: Record<string, unknown> = {};
   if (username) updates.username = username;
-  if (role) updates.role = role;
   if (password) updates.passwordHash = await bcrypt.hash(password, 12);
 
-  if (Object.keys(updates).length > 0) {
-    const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, params.data.id)).returning();
-    if (!user) {
-      res.status(404).json({ error: "User not found" });
+  if (rawRole != null || roleId !== undefined) {
+    const resolved = await resolveUserRole(companyId, role, roleId ?? null);
+    if (!resolved) {
+      const expected = roleEnumToDbName(role) ?? role;
+      res.status(400).json({ error: `Selected role '${expected}' does not exist for this company.` });
       return;
     }
+    updates.role = resolved.usersRole;
+    updates.roleId = resolved.roleId;
   }
 
-  if (companyAccess !== undefined) {
-    await db.delete(userCompaniesTable).where(eq(userCompaniesTable.userId, params.data.id));
-    for (const { companyId, modules } of companyAccess) {
-      await db.insert(userCompaniesTable)
-        .values({ userId: params.data.id, companyId, modules: modules ?? ALL_MODULES })
-        .onConflictDoNothing();
+  if (Object.keys(updates).length > 0) {
+    await db.update(usersTable).set(updates).where(eq(usersTable.id, targetUser.id));
+  }
+
+  // Update active-company mapping; preserve other companies unless payload replaces them
+  const modules = modulesForRole(role, companyAccess, companyId);
+  await db
+    .delete(userCompaniesTable)
+    .where(and(eq(userCompaniesTable.userId, targetUser.id), eq(userCompaniesTable.companyId, companyId)));
+
+  await db
+    .insert(userCompaniesTable)
+    .values({
+      userId: targetUser.id,
+      companyId,
+      modules,
+    })
+    .onConflictDoNothing();
+
+  if (companyAccess?.length) {
+    for (const ca of companyAccess) {
+      if (ca.companyId === companyId) continue;
+      await db
+        .delete(userCompaniesTable)
+        .where(
+          and(
+            eq(userCompaniesTable.userId, targetUser.id),
+            eq(userCompaniesTable.companyId, ca.companyId),
+          ),
+        );
+      await db.insert(userCompaniesTable).values({
+        userId: targetUser.id,
+        companyId: ca.companyId,
+        modules: Array.isArray(ca.modules) ? ca.modules : [],
+      });
     }
   }
 
-  const result = await getUserWithCompanies(params.data.id);
+  const result = await getUserWithCompaniesAndRole(targetUser.id, companyId);
   if (!result) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  logAudit({ req, action: "update", entityType: "user", entityId: params.data.id, entityLabel: result.username });
+
+  logAudit({
+    req,
+    action: "update",
+    entityType: "user",
+    entityId: targetUser.id,
+    entityLabel: result.username,
+  });
   res.json(result);
 });
 
-router.delete("/users/:id", async (req, res): Promise<void> => {
-  if (!(await requireAdmin(req, res))) return;
+router.delete("/users/:id", requirePermission("user_management:delete"), async (req, res): Promise<void> => {
+  const companyId = req.session.companyId;
+  if (!companyId) {
+    res.status(403).json({ error: "Active company context required" });
+    return;
+  }
 
   const params = DeleteUserParams.safeParse(req.params);
   if (!params.success) {
@@ -149,18 +332,35 @@ router.delete("/users/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  if (params.data.id === req.session.userId) {
-    res.status(400).json({ error: "Cannot delete your own account" });
-    return;
-  }
+  const [targetUser] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, params.data.id));
 
-  const [user] = await db.delete(usersTable).where(eq(usersTable.id, params.data.id)).returning();
-  if (!user) {
+  if (!targetUser) {
     res.status(404).json({ error: "User not found" });
     return;
   }
 
-  logAudit({ req, action: "delete", entityType: "user", entityId: params.data.id, entityLabel: user.username });
+  if (targetUser.companyId !== companyId) {
+    res.status(403).json({ error: "Access denied: User belongs to another company" });
+    return;
+  }
+
+  if (targetUser.id === req.session.userId) {
+    res.status(400).json({ error: "Cannot delete your own account" });
+    return;
+  }
+
+  await db.delete(usersTable).where(eq(usersTable.id, targetUser.id));
+
+  logAudit({
+    req,
+    action: "delete",
+    entityType: "user",
+    entityId: targetUser.id,
+    entityLabel: targetUser.username,
+  });
   res.json({ success: true });
 });
 

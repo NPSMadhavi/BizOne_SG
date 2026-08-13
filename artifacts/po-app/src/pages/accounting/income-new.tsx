@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { useGetSettings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -7,9 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Info, RefreshCw, Paperclip, X, FileText, FileImage, Upload } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface IncomeForm {
   incomeDate: string;
@@ -19,6 +23,9 @@ interface IncomeForm {
   amount: string;
   gstTreatment: string;
   gstAmount: string;
+  gstClaimable: boolean;
+  isDeductible: boolean;
+  deductiblePct: number;
   currency: string;
   paymentMethod: string;
   accountId: string;
@@ -36,17 +43,17 @@ interface AttachFile {
   sizeKB: number;
 }
 
-const CATEGORY_CONFIG: Record<string, { label: string; defaultGst: string; note: string }> = {
-  rental_income:     { label: "Rental Income",                  defaultGst: "standard_rated", note: "Standard-rated if you charge GST on rent. Residential rent is exempt." },
-  interest_income:   { label: "Interest Income",                defaultGst: "exempt",          note: "Bank interest and loan interest received are GST-exempt." },
-  dividend_income:   { label: "Dividend Income",                defaultGst: "exempt",          note: "Singapore one-tier dividends are exempt from GST." },
-  grant_subsidy:     { label: "Government Grant / Subsidy",     defaultGst: "out_of_scope",    note: "Government grants (EDG, SkillsFuture, etc.) are out of scope of GST." },
-  commission_income: { label: "Commission Income",              defaultGst: "standard_rated", note: "Commission for services rendered — standard-rated." },
-  service_fee:       { label: "Service Fee (Non-trade)",        defaultGst: "standard_rated", note: "Non-recurring service fees — standard-rated." },
-  royalty_income:    { label: "Royalty Income",                 defaultGst: "standard_rated", note: "Royalties for use of IP in Singapore — standard-rated." },
-  gain_on_disposal:  { label: "Gain on Disposal of Asset",      defaultGst: "out_of_scope",    note: "Capital gains from asset sales are generally out of scope of GST." },
-  forex_gain:        { label: "Foreign Exchange Gain",          defaultGst: "out_of_scope",    note: "Realised FX gains are out of scope of GST." },
-  other_income:      { label: "Other Income",                   defaultGst: "standard_rated", note: "Review GST treatment before confirming." },
+const CATEGORY_CONFIG: Record<string, { label: string; defaultGst: string; note: string; deductible: boolean; pct: number; gstClaimable: boolean }> = {
+  rental_income:     { label: "Rental Income",                  defaultGst: "standard_rated", note: "Standard-rated if you charge GST on rent. Residential rent is exempt.", deductible: true,  pct: 100, gstClaimable: true },
+  interest_income:   { label: "Interest Income",                defaultGst: "exempt",          note: "Bank interest and loan interest received are GST-exempt.", deductible: true,  pct: 100, gstClaimable: false },
+  dividend_income:   { label: "Dividend Income",                defaultGst: "exempt",          note: "Singapore one-tier dividends are exempt from GST.", deductible: true,  pct: 100, gstClaimable: false },
+  grant_subsidy:     { label: "Government Grant / Subsidy",     defaultGst: "out_of_scope",    note: "Government grants (EDG, SkillsFuture, etc.) are out of scope of GST.", deductible: false, pct: 0,   gstClaimable: false },
+  commission_income: { label: "Commission Income",              defaultGst: "standard_rated", note: "Commission for services rendered — standard-rated.", deductible: true,  pct: 100, gstClaimable: true },
+  service_fee:       { label: "Service Fee (Non-trade)",        defaultGst: "standard_rated", note: "Non-recurring service fees — standard-rated.", deductible: true,  pct: 100, gstClaimable: true },
+  royalty_income:    { label: "Royalty Income",                 defaultGst: "standard_rated", note: "Royalties for use of IP in Singapore — standard-rated.", deductible: true,  pct: 100, gstClaimable: true },
+  gain_on_disposal:  { label: "Gain on Disposal of Asset",      defaultGst: "out_of_scope",    note: "Capital gains from asset sales are generally out of scope of GST.", deductible: false, pct: 0,   gstClaimable: false },
+  forex_gain:        { label: "Foreign Exchange Gain",          defaultGst: "out_of_scope",    note: "Realised FX gains are out of scope of GST.", deductible: true,  pct: 100, gstClaimable: false },
+  other_income:      { label: "Other Income",                   defaultGst: "standard_rated", note: "Review GST treatment before confirming.", deductible: true,  pct: 100, gstClaimable: true },
 };
 
 const GST_OPTIONS = [
@@ -85,6 +92,7 @@ function AttachmentIcon({ mimeType, className }: { mimeType: string; className?:
 
 export default function IncomeNew() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [revenueAccounts, setRevenueAccounts] = useState<Account[]>([]);
@@ -105,6 +113,9 @@ export default function IncomeNew() {
       amount:        "",
       gstTreatment:  "standard_rated",
       gstAmount:     "",
+      gstClaimable:  false,
+      isDeductible:  true,
+      deductiblePct: 100,
       currency:      "SGD",
       paymentMethod: "bank_transfer",
       accountId:     "",
@@ -118,8 +129,13 @@ export default function IncomeNew() {
   const watchedCategory    = watch("category");
   const watchedGstTreatment = watch("gstTreatment");
   const watchedAmount      = watch("amount");
+  const watchedGstAmount   = watch("gstAmount");
+  const gstClaimable       = watch("gstClaimable");
+  const isDeductible       = watch("isDeductible");
+  const deductiblePct      = watch("deductiblePct");
   const watchedCurrency    = watch("currency");
   const watchedDate        = watch("incomeDate");
+  const cfg = watchedCategory ? CATEGORY_CONFIG[watchedCategory] : null;
 
   const fetchExchangeRateIncome = async (curr: string, date: string) => {
     if (curr === "SGD") { setExchangeRate("1.000000"); return; }
@@ -144,22 +160,59 @@ export default function IncomeNew() {
       .catch(() => {});
   }, []);
 
-  // Auto-set GST treatment when category changes
-  useEffect(() => {
-    if (watchedCategory && CATEGORY_CONFIG[watchedCategory]) {
-      setValue("gstTreatment", CATEGORY_CONFIG[watchedCategory].defaultGst);
+  function autoCalcGst(netAmount: string, claimable: boolean, treatment: string) {
+    const net = parseFloat(netAmount);
+    if (!claimable || treatment !== "standard_rated" || isNaN(net) || net <= 0) {
+      setValue("gstAmount", "");
+      return;
     }
-  }, [watchedCategory, setValue]);
+    setValue("gstAmount", (net * gstRate / 100).toFixed(2));
+  }
 
-  // Auto-calc GST amount when amount or treatment changes
-  useEffect(() => {
-    const amt = parseFloat(watchedAmount || "0");
-    if (watchedGstTreatment === "standard_rated" && amt > 0) {
-      setValue("gstAmount", (amt * gstRate / 100).toFixed(2));
-    } else {
-      setValue("gstAmount", "0.00");
+  function onCategoryChange(key: string) {
+    setValue("category", key);
+    const c = CATEGORY_CONFIG[key];
+    if (c) {
+      setValue("gstTreatment", c.defaultGst);
+      setValue("isDeductible", c.deductible);
+      setValue("deductiblePct", c.pct);
+      setValue("gstClaimable", c.gstClaimable);
+      autoCalcGst(watchedAmount, c.gstClaimable, c.defaultGst);
     }
-  }, [watchedAmount, watchedGstTreatment, gstRate, setValue]);
+  }
+
+  function onAmountChange(raw: string) {
+    const cleaned = numericOnly(raw);
+    setValue("amount", cleaned);
+    autoCalcGst(cleaned, gstClaimable, watchedGstTreatment);
+  }
+
+  function onGstClaimableChange(checked: boolean) {
+    setValue("gstClaimable", checked);
+    const treatment = checked && watchedGstTreatment !== "standard_rated" ? "standard_rated" : watchedGstTreatment;
+    if (checked && watchedGstTreatment !== "standard_rated") setValue("gstTreatment", "standard_rated");
+    if (!checked) { setValue("gstAmount", ""); return; }
+    autoCalcGst(watchedAmount, checked, treatment);
+  }
+
+  function onGstTreatmentChange(v: string) {
+    setValue("gstTreatment", v);
+    if (v !== "standard_rated") {
+      setValue("gstClaimable", false);
+      setValue("gstAmount", "");
+      return;
+    }
+    autoCalcGst(watchedAmount, gstClaimable, v);
+  }
+
+  function calcTotal() {
+    return (parseFloat(watchedAmount) || 0) + (parseFloat(watchedGstAmount) || 0);
+  }
+
+  function calcDeductibleAmount() {
+    if (!isDeductible) return 0;
+    return (parseFloat(watchedAmount) || 0) * deductiblePct / 100;
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -189,9 +242,14 @@ export default function IncomeNew() {
   const removeAttachment = (i: number) => setAttachments(prev => prev.filter((_, idx) => idx !== i));
 
   const onSubmit = async (data: IncomeForm, status: "draft" | "confirmed") => {
+    if (!data.amount || isNaN(parseFloat(data.amount))) {
+      toast({ title: "Net amount is required", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
-      const body = { ...data, status, exchangeRate: watchedCurrency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1 };
+      // Always create as draft first so that confirmation can be processed cleanly and auto-post the journal entry
+      const body = { ...data, status: "draft", exchangeRate: watchedCurrency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1 };
       const res = await fetch("/api/income", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -217,7 +275,8 @@ export default function IncomeNew() {
       }
 
       toast({ title: status === "confirmed" ? "Income confirmed and posted." : "Income saved as draft." });
-      setLocation(`/accounting/income/${created.id}`);
+      await queryClient.invalidateQueries({ queryKey: ["income"] });
+      setLocation("/accounting/income");
     } catch (e: any) {
       toast({ title: e.message, variant: "destructive" });
     } finally {
@@ -302,7 +361,7 @@ export default function IncomeNew() {
                 <div className="space-y-1.5">
                   <Label>Category <span className="text-destructive">*</span></Label>
                   <Controller name="category" control={form.control} rules={{ required: true }} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={onCategoryChange}>
                       <SelectTrigger><SelectValue placeholder="Select income category…" /></SelectTrigger>
                       <SelectContent>
                         {Object.entries(CATEGORY_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
@@ -330,6 +389,83 @@ export default function IncomeNew() {
                   )} />
                   <p className="text-xs text-muted-foreground">Account to credit when income is confirmed. Defaults to 4200 Other Operating Revenue.</p>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle className="text-base">Amounts & GST</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="amount">Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="amount"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={watchedAmount}
+                      onChange={e => onAmountChange(e.target.value)}
+                      className="[appearance:textfield]"
+                    />
+                    {errors.amount && <p className="text-xs text-destructive">Amount is required</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="gstAmount">
+                      GST Amount
+                      {gstClaimable && watchedGstTreatment === "standard_rated" && (
+                        <span className="ml-1 text-xs text-muted-foreground font-normal">(auto @ {gstRate}%)</span>
+                      )}
+                    </Label>
+                    <Input
+                      id="gstAmount"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={watchedGstAmount}
+                      onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
+                      className={cn("[appearance:textfield]", gstClaimable && watchedGstTreatment === "standard_rated" && "bg-muted/50 text-muted-foreground")}
+                      readOnly={gstClaimable && watchedGstTreatment === "standard_rated"}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>GST Treatment</Label>
+                  <Controller name="gstTreatment" control={form.control} render={({ field }) => (
+                    <Select value={field.value} onValueChange={onGstTreatmentChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{GST_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  )} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">GST Input Tax Claimable</p>
+                    <p className="text-xs text-muted-foreground">Claim GST back from IRAS if vendor is GST-registered</p>
+                  </div>
+                  <Switch checked={gstClaimable} onCheckedChange={onGstClaimableChange} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Tax Deductible</p>
+                    <p className="text-xs text-muted-foreground">Allowable business deduction under IRAS rules</p>
+                  </div>
+                  <Switch checked={isDeductible} onCheckedChange={v => setValue("isDeductible", v)} />
+                </div>
+
+                {isDeductible && (
+                  <div className="space-y-1.5">
+                    <Label>Deductible Percentage</Label>
+                    <Select value={String(deductiblePct)} onValueChange={v => setValue("deductiblePct", parseInt(v))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100">100% — Fully deductible</SelectItem>
+                        <SelectItem value="50">50% — Entertainment (S14C)</SelectItem>
+                        <SelectItem value="0">0% — Non-deductible</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -427,61 +563,38 @@ export default function IncomeNew() {
 
           {/* Right column */}
           <div className="space-y-6">
-            <Card>
-              <CardHeader><CardTitle className="text-base">Amount & GST</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="amount">Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
-                  <Input
-                    id="amount"
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    {...register("amount", { required: true })}
-                    onChange={e => setValue("amount", numericOnly(e.target.value))}
-                  />
-                  {errors.amount && <p className="text-xs text-destructive">Amount is required</p>}
+            <Card className={cfg && !cfg.deductible ? "border-red-200 bg-red-50/30" : cfg?.pct === 50 ? "border-amber-200 bg-amber-50/30" : "border-green-200 bg-green-50/30"}>
+              <CardHeader><CardTitle className="text-sm">IRAS Summary</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Net Amount</span>
+                  <span className="font-mono font-medium">{watchedCurrency} {(parseFloat(watchedAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
                 </div>
-
-                <div className="space-y-1.5">
-                  <Label>GST Treatment</Label>
-                  <Controller name="gstTreatment" control={form.control} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{GST_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  )} />
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">GST ({gstRate}%)</span>
+                  <span className="font-mono text-blue-600">{watchedCurrency} {(parseFloat(watchedGstAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
                 </div>
-
-                {watchedGstTreatment === "standard_rated" && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="gstAmount">GST Amount ({gstRate}%)</Label>
-                    <Input
-                      id="gstAmount"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      {...register("gstAmount")}
-                      onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
-                    />
-                    <p className="text-xs text-muted-foreground">Auto-calculated; adjust if needed.</p>
-                  </div>
-                )}
-
-                {/* Summary */}
-                <div className="pt-2 border-t space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Net Amount</span>
-                    <span className="font-mono">SGD {parseFloat(watchedAmount || "0").toFixed(2)}</span>
-                  </div>
-                  {watchedGstTreatment === "standard_rated" && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">GST ({gstRate}%)</span>
-                      <span className="font-mono">SGD {parseFloat(watch("gstAmount") || "0").toFixed(2)}</span>
-                    </div>
+                <div className="flex justify-between border-t pt-2 font-medium">
+                  <span>Total (incl. GST)</span>
+                  <span className="font-mono">{watchedCurrency} {calcTotal().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">GST Input Tax</span>
+                  <Badge variant="outline" className={gstClaimable ? "text-blue-700 border-blue-300" : "text-muted-foreground"}>
+                    {gstClaimable ? "Claimable" : "Not claimable"}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center border-t pt-2">
+                  <span className="text-muted-foreground">Tax Deductible</span>
+                  {isDeductible ? (
+                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">{deductiblePct}%</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-red-600 border-red-300">Non-deductible</Badge>
                   )}
-                  <div className="flex justify-between font-semibold border-t pt-1">
-                    <span>Total Received</span>
-                    <span className="font-mono">SGD {(parseFloat(watchedAmount || "0") + parseFloat(watchedGstTreatment === "standard_rated" ? watch("gstAmount") || "0" : "0")).toFixed(2)}</span>
-                  </div>
+                </div>
+                <div className="flex justify-between border-t pt-2">
+                  <span className="font-medium">Allowable Deduction</span>
+                  <span className="font-mono font-bold text-green-700">{watchedCurrency} {calcDeductibleAmount().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
                 </div>
               </CardContent>
             </Card>

@@ -49,20 +49,6 @@ export async function seedCompanies() {
       await db.insert(companiesTable).values(company);
     }
   }
-
-  const adminUsers = await db.select().from(usersTable).where(eq(usersTable.role, "admin"));
-  for (const admin of adminUsers) {
-    for (const company of COMPANIES_SEED) {
-      const existing = await db
-        .select()
-        .from(userCompaniesTable)
-        .where(eq(userCompaniesTable.userId, admin.id));
-      const hasCompany = existing.some(uc => uc.companyId === company.id);
-      if (!hasCompany) {
-        await db.insert(userCompaniesTable).values({ userId: admin.id, companyId: company.id });
-      }
-    }
-  }
 }
 
 router.post("/companies", async (req, res): Promise<void> => {
@@ -88,11 +74,8 @@ router.post("/companies", async (req, res): Promise<void> => {
       registrationNo: registrationNo?.trim() || null,
     }).returning();
 
-    // Auto-assign all admin users to the new company
-    const admins = await db.select().from(usersTable).where(eq(usersTable.role, "admin"));
-    for (const admin of admins) {
-      await db.insert(userCompaniesTable).values({ userId: admin.id, companyId: created.id });
-    }
+    // Auto-assign the creating user to the new company
+    await db.insert(userCompaniesTable).values({ userId: user.id, companyId: created.id }).onConflictDoNothing();
 
     // Initialise default settings for the new company
     const defaultGst = country.trim() === "IN" ? "18" : "9";
@@ -121,9 +104,21 @@ router.delete("/companies/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
+  const [existing] = await db.select().from(companiesTable).where(eq(companiesTable.id, id)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Company not found" }); return; }
+
+  // Clean related rows that may not cascade (settings has no FK)
+  await db.delete(settingsTable).where(eq(settingsTable.companyId, id));
+  await db.delete(userCompaniesTable).where(eq(userCompaniesTable.companyId, id));
+
   const [deleted] = await db.delete(companiesTable).where(eq(companiesTable.id, id)).returning();
   if (!deleted) { res.status(404).json({ error: "Company not found" }); return; }
-  res.json({ success: true });
+
+  if (req.session.companyId === id) {
+    req.session.companyId = undefined;
+  }
+
+  res.json({ success: true, name: deleted.name });
 });
 
 router.put("/companies/:id", async (req, res): Promise<void> => {

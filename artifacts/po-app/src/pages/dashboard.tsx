@@ -626,10 +626,10 @@ export default function Dashboard() {
   const quickActions = [
     { label: "New Invoice", icon: FileText, bg: "bg-[#dbeafe]", color: "text-[#1a73e8]", href: "/invoices/new" },
     { label: "New Receipt", icon: Receipt, bg: "bg-[#dcfce7]", color: "text-[#16a34a]", href: "/accounting/income/new" },
-    { label: "New Purchase", icon: ShoppingCart, bg: "bg-[#fee2e2]", color: "text-[#dc2626]", href: "/purchase-orders/new" },
+    { label: "New Purchase Order", icon: ShoppingCart, bg: "bg-[#fee2e2]", color: "text-[#dc2626]", href: "/purchase-orders/new" },
     { label: "New Payment", icon: CreditCard, bg: "bg-[#f3e8ff]", color: "text-[#9333ea]", href: "/accounting/expenses/new" },
     { label: "New Product", icon: Package, bg: "bg-[#fef9c3]", color: "text-[#ca8a04]", href: "/stock" },
-    { label: "New Return", icon: RotateCcw, bg: "bg-[#ffedd5]", color: "text-[#ea580c]", href: "/credit-notes/new" },
+    { label: "New credit Note", icon: RotateCcw, bg: "bg-[#ffedd5]", color: "text-[#ea580c]", href: "/credit-notes/new" },
   ];
 
   const reminders = [

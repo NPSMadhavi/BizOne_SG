@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useGetSettings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -150,6 +151,7 @@ function CategoryCombobox({ value, onChange }: CategoryComboboxProps) {
 
 export default function ExpenseNew() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
@@ -247,7 +249,8 @@ export default function ExpenseNew() {
     if (!data.category) { toast({ title: "Please select a category", variant: "destructive" }); return; }
     setSaving(true);
     try {
-      const payload = { ...data, status: statusOverride ?? data.status };
+      // Always create as draft first so that confirmation can be processed cleanly and auto-post the journal entry
+      const payload = { ...data, status: "draft" };
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,8 +259,15 @@ export default function ExpenseNew() {
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to save"); }
       const created = await res.json();
-      toast({ title: "Expense saved." });
-      setLocation(`/accounting/expenses/${created.id}`);
+
+      if (statusOverride === "confirmed") {
+        const confirmRes = await fetch(`/api/expenses/${created.id}/confirm`, { method: "POST", credentials: "include" });
+        if (!confirmRes.ok) { const e = await confirmRes.json(); throw new Error(e.error || "Failed to confirm"); }
+      }
+
+      toast({ title: statusOverride === "confirmed" ? "Expense confirmed and posted." : "Expense saved as draft." });
+      await queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      setLocation("/accounting/expenses");
     } catch (e: any) {
       toast({ title: e.message, variant: "destructive" });
     } finally {

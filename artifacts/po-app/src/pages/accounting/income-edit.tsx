@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { useGetSettings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Info, RefreshCw, Paperclip, X, FileText, FileImage, Upload, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface IncomeForm {
   incomeDate: string;
@@ -20,6 +27,9 @@ interface IncomeForm {
   amount: string;
   gstTreatment: string;
   gstAmount: string;
+  gstClaimable: boolean;
+  isDeductible: boolean;
+  deductiblePct: number;
   currency: string;
   paymentMethod: string;
   accountId: string;
@@ -43,17 +53,17 @@ interface SavedAttachment {
   createdAt: string;
 }
 
-const CATEGORY_CONFIG: Record<string, { label: string; defaultGst: string; note: string }> = {
-  rental_income:     { label: "Rental Income",             defaultGst: "standard_rated", note: "Standard-rated if you charge GST on rent. Residential rent is exempt." },
-  interest_income:   { label: "Interest Income",           defaultGst: "exempt",          note: "Bank interest and loan interest received are GST-exempt." },
-  dividend_income:   { label: "Dividend Income",           defaultGst: "exempt",          note: "Singapore one-tier dividends are exempt from GST." },
-  grant_subsidy:     { label: "Government Grant / Subsidy",defaultGst: "out_of_scope",    note: "Government grants are out of scope of GST." },
-  commission_income: { label: "Commission Income",         defaultGst: "standard_rated", note: "Commission for services rendered — standard-rated." },
-  service_fee:       { label: "Service Fee (Non-trade)",   defaultGst: "standard_rated", note: "Non-recurring service fees — standard-rated." },
-  royalty_income:    { label: "Royalty Income",            defaultGst: "standard_rated", note: "Royalties for use of IP in Singapore — standard-rated." },
-  gain_on_disposal:  { label: "Gain on Disposal of Asset", defaultGst: "out_of_scope",    note: "Capital gains from asset sales are generally out of scope." },
-  forex_gain:        { label: "Foreign Exchange Gain",     defaultGst: "out_of_scope",    note: "Realised FX gains are out of scope of GST." },
-  other_income:      { label: "Other Income",              defaultGst: "standard_rated", note: "Review GST treatment before confirming." },
+const CATEGORY_CONFIG: Record<string, { label: string; defaultGst: string; note: string; deductible: boolean; pct: number; gstClaimable: boolean }> = {
+  rental_income:     { label: "Rental Income",             defaultGst: "standard_rated", note: "Standard-rated if you charge GST on rent. Residential rent is exempt.", deductible: true,  pct: 100, gstClaimable: true },
+  interest_income:   { label: "Interest Income",           defaultGst: "exempt",          note: "Bank interest and loan interest received are GST-exempt.", deductible: true,  pct: 100, gstClaimable: false },
+  dividend_income:   { label: "Dividend Income",           defaultGst: "exempt",          note: "Singapore one-tier dividends are exempt from GST.", deductible: true,  pct: 100, gstClaimable: false },
+  grant_subsidy:     { label: "Government Grant / Subsidy",defaultGst: "out_of_scope",    note: "Government grants are out of scope of GST.", deductible: false, pct: 0,   gstClaimable: false },
+  commission_income: { label: "Commission Income",         defaultGst: "standard_rated", note: "Commission for services rendered — standard-rated.", deductible: true,  pct: 100, gstClaimable: true },
+  service_fee:       { label: "Service Fee (Non-trade)",   defaultGst: "standard_rated", note: "Non-recurring service fees — standard-rated.", deductible: true,  pct: 100, gstClaimable: true },
+  royalty_income:    { label: "Royalty Income",            defaultGst: "standard_rated", note: "Royalties for use of IP in Singapore — standard-rated.", deductible: true,  pct: 100, gstClaimable: true },
+  gain_on_disposal:  { label: "Gain on Disposal of Asset", defaultGst: "out_of_scope",    note: "Capital gains from asset sales are generally out of scope.", deductible: false, pct: 0,   gstClaimable: false },
+  forex_gain:        { label: "Foreign Exchange Gain",     defaultGst: "out_of_scope",    note: "Realised FX gains are out of scope of GST.", deductible: true,  pct: 100, gstClaimable: false },
+  other_income:      { label: "Other Income",              defaultGst: "standard_rated", note: "Review GST treatment before confirming.", deductible: true,  pct: 100, gstClaimable: true },
 };
 
 const GST_OPTIONS = [
@@ -100,12 +110,27 @@ export default function IncomeEdit() {
   const [fetchingRate, setFetchingRate] = useState(false);
   const [newAttachments, setNewAttachments] = useState<AttachFile[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/income/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["income"] });
+      toast({ title: "Income record deleted." });
+      setLocation("/accounting/income");
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
 
   const { data: settings } = useGetSettings({});
   const gstRate = settings?.gstRate ?? 9;
 
-  const { data: existing, isLoading } = useQuery({
+  const { data: existing, isLoading, error: loadError } = useQuery({
     queryKey: ["income", id],
     queryFn: async () => {
       const res = await fetch(`/api/income/${id}`, { credentials: "include" });
@@ -113,6 +138,8 @@ export default function IncomeEdit() {
       return res.json();
     },
     enabled: !isNaN(id),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: savedAttachments = [], refetch: refetchAttachments } = useQuery<SavedAttachment[]>({
@@ -128,6 +155,7 @@ export default function IncomeEdit() {
   const form = useForm<IncomeForm>({ defaultValues: {
     incomeDate: "", payerName: "", description: "", category: "",
     amount: "", gstTreatment: "standard_rated", gstAmount: "",
+    gstClaimable: false, isDeductible: true, deductiblePct: 100,
     currency: "SGD", paymentMethod: "bank_transfer", accountId: "", reference: "", notes: "",
   }});
 
@@ -135,20 +163,28 @@ export default function IncomeEdit() {
   const watchedCategory     = watch("category");
   const watchedGstTreatment = watch("gstTreatment");
   const watchedAmount       = watch("amount");
+  const watchedGstAmount    = watch("gstAmount");
+  const gstClaimable        = watch("gstClaimable");
+  const isDeductible        = watch("isDeductible");
+  const deductiblePct       = watch("deductiblePct");
   const watchedCurrency     = watch("currency");
   const watchedDate         = watch("incomeDate");
+  const cfg = watchedCategory ? CATEGORY_CONFIG[watchedCategory] : null;
 
   // Populate form when data loads
   useEffect(() => {
-    if (existing) {
+    if (existing && !loaded) {
       reset({
         incomeDate:    existing.incomeDate ?? "",
         payerName:     existing.payerName ?? "",
         description:   existing.description ?? "",
         category:      existing.category ?? "",
-        amount:        existing.amount ?? "",
+        amount:        String(existing.amount ?? ""),
         gstTreatment:  existing.gstTreatment ?? "standard_rated",
-        gstAmount:     existing.gstAmount ?? "0.00",
+        gstAmount:     String(existing.gstAmount ?? "0.00"),
+        gstClaimable:  !!existing.gstClaimable,
+        isDeductible:  existing.isDeductible !== false,
+        deductiblePct: existing.deductiblePct ?? 100,
         currency:      existing.currency ?? "SGD",
         paymentMethod: existing.paymentMethod ?? "bank_transfer",
         accountId:     existing.accountId ? String(existing.accountId) : "",
@@ -156,8 +192,9 @@ export default function IncomeEdit() {
         notes:         existing.notes ?? "",
       });
       if (existing.exchangeRate) setExchangeRate(parseFloat(existing.exchangeRate).toFixed(6));
+      setLoaded(true);
     }
-  }, [existing, reset]);
+  }, [existing, loaded, reset]);
 
   const fetchExchangeRateIncome = async (curr: string, date: string) => {
     if (curr === "SGD") { setExchangeRate("1.000000"); return; }
@@ -177,6 +214,60 @@ export default function IncomeEdit() {
   }, []);
 
   const categoryNote = watchedCategory ? CATEGORY_CONFIG[watchedCategory]?.note : null;
+
+  function autoCalcGst(netAmount: string, claimable: boolean, treatment: string) {
+    const net = parseFloat(netAmount);
+    if (!claimable || treatment !== "standard_rated" || isNaN(net) || net <= 0) {
+      setValue("gstAmount", "");
+      return;
+    }
+    setValue("gstAmount", (net * gstRate / 100).toFixed(2));
+  }
+
+  function onCategoryChange(key: string) {
+    setValue("category", key);
+    const c = CATEGORY_CONFIG[key];
+    if (c) {
+      setValue("gstTreatment", c.defaultGst);
+      setValue("isDeductible", c.deductible);
+      setValue("deductiblePct", c.pct);
+      setValue("gstClaimable", c.gstClaimable);
+      autoCalcGst(watchedAmount, c.gstClaimable, c.defaultGst);
+    }
+  }
+
+  function onAmountChange(raw: string) {
+    const cleaned = numericOnly(raw);
+    setValue("amount", cleaned);
+    autoCalcGst(cleaned, gstClaimable, watchedGstTreatment);
+  }
+
+  function onGstClaimableChange(checked: boolean) {
+    setValue("gstClaimable", checked);
+    const treatment = checked && watchedGstTreatment !== "standard_rated" ? "standard_rated" : watchedGstTreatment;
+    if (checked && watchedGstTreatment !== "standard_rated") setValue("gstTreatment", "standard_rated");
+    if (!checked) { setValue("gstAmount", ""); return; }
+    autoCalcGst(watchedAmount, checked, treatment);
+  }
+
+  function onGstTreatmentChange(v: string) {
+    setValue("gstTreatment", v);
+    if (v !== "standard_rated") {
+      setValue("gstClaimable", false);
+      setValue("gstAmount", "");
+      return;
+    }
+    autoCalcGst(watchedAmount, gstClaimable, v);
+  }
+
+  function calcTotal() {
+    return (parseFloat(watchedAmount) || 0) + (parseFloat(watchedGstAmount) || 0);
+  }
+
+  function calcDeductibleAmount() {
+    if (!isDeductible) return 0;
+    return (parseFloat(watchedAmount) || 0) * deductiblePct / 100;
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -218,6 +309,10 @@ export default function IncomeEdit() {
   };
 
   const onSubmit = async (data: IncomeForm) => {
+    if (!data.amount || isNaN(parseFloat(data.amount))) {
+      toast({ title: "Net amount is required", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/income/${id}`, {
@@ -239,6 +334,8 @@ export default function IncomeEdit() {
       }
 
       toast({ title: "Income record updated." });
+      await qc.invalidateQueries({ queryKey: ["income"] });
+      await qc.invalidateQueries({ queryKey: ["income", id] });
       setLocation(`/accounting/income/${id}`);
     } catch (e: any) {
       toast({ title: e.message, variant: "destructive" });
@@ -249,18 +346,34 @@ export default function IncomeEdit() {
 
   const totalAttachments = savedAttachments.length + newAttachments.length;
 
-  if (isLoading) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-muted-foreground">Loading…</div>;
+  if (isNaN(id)) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-destructive">Invalid income record.</div>;
+  if (isLoading || !loaded) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-muted-foreground">Loading…</div>;
+  if (loadError || !existing) return <div className="max-w-7xl mx-auto px-4 py-12 text-center text-destructive">Income record not found.</div>;
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(`/accounting/income/${id}`)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-[#2563EB]">Edit Income Entry</h1>
-          <p className="text-sm text-muted-foreground">Record #{id}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" type="button" onClick={() => setLocation(`/accounting/income/${id}`)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-[#2563EB]">Edit Income Entry</h1>
+            <p className="text-sm text-muted-foreground">Record #{id}</p>
+          </div>
         </div>
+
+        <Button
+          type="button"
+          variant="destructive"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => setDeleteOpen(true)}
+          disabled={saving || deleteMutation.isPending}
+          title="Delete"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -322,7 +435,7 @@ export default function IncomeEdit() {
                 <div className="space-y-1.5">
                   <Label>Category <span className="text-destructive">*</span></Label>
                   <Controller name="category" control={form.control} rules={{ required: true }} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select value={field.value} onValueChange={v => { field.onChange(v); onCategoryChange(v); }}>
                       <SelectTrigger><SelectValue placeholder="Select income category…" /></SelectTrigger>
                       <SelectContent>
                         {Object.entries(CATEGORY_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
@@ -348,6 +461,81 @@ export default function IncomeEdit() {
                     </Select>
                   )} />
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle className="text-base">Amounts & GST</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={watchedAmount}
+                      onChange={e => onAmountChange(e.target.value)}
+                      className="[appearance:textfield]"
+                    />
+                    {errors.amount && <p className="text-xs text-destructive">Amount is required</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      GST Amount
+                      {gstClaimable && watchedGstTreatment === "standard_rated" && (
+                        <span className="ml-1 text-xs text-muted-foreground font-normal">(auto @ {gstRate}%)</span>
+                      )}
+                    </Label>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={watchedGstAmount}
+                      onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
+                      className={cn("[appearance:textfield]", gstClaimable && watchedGstTreatment === "standard_rated" && "bg-muted/50 text-muted-foreground")}
+                      readOnly={gstClaimable && watchedGstTreatment === "standard_rated"}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>GST Treatment</Label>
+                  <Controller name="gstTreatment" control={form.control} render={({ field }) => (
+                    <Select value={field.value} onValueChange={onGstTreatmentChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{GST_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  )} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">GST Input Tax Claimable</p>
+                    <p className="text-xs text-muted-foreground">Claim GST back from IRAS if vendor is GST-registered</p>
+                  </div>
+                  <Switch checked={gstClaimable} onCheckedChange={onGstClaimableChange} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Tax Deductible</p>
+                    <p className="text-xs text-muted-foreground">Allowable business deduction under IRAS rules</p>
+                  </div>
+                  <Switch checked={isDeductible} onCheckedChange={v => setValue("isDeductible", v)} />
+                </div>
+
+                {isDeductible && (
+                  <div className="space-y-1.5">
+                    <Label>Deductible Percentage</Label>
+                    <Select value={String(deductiblePct)} onValueChange={v => setValue("deductiblePct", parseInt(v))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100">100% — Fully deductible</SelectItem>
+                        <SelectItem value="50">50% — Entertainment (S14C)</SelectItem>
+                        <SelectItem value="0">0% — Non-deductible</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -462,33 +650,38 @@ export default function IncomeEdit() {
           </div>
 
           <div className="space-y-6">
-            <Card>
-              <CardHeader><CardTitle className="text-base">Amount & GST</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label>Net Amount <span className="text-destructive">*</span></Label>
-                  <Input inputMode="decimal" {...register("amount", { required: true })} onChange={e => setValue("amount", numericOnly(e.target.value))} />
+            <Card className={cfg && !cfg.deductible ? "border-red-200 bg-red-50/30" : cfg?.pct === 50 ? "border-amber-200 bg-amber-50/30" : "border-green-200 bg-green-50/30"}>
+              <CardHeader><CardTitle className="text-sm">IRAS Summary</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Net Amount</span>
+                  <span className="font-mono font-medium">{watchedCurrency} {(parseFloat(watchedAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>GST Treatment</Label>
-                  <Controller name="gstTreatment" control={form.control} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{GST_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  )} />
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">GST ({gstRate}%)</span>
+                  <span className="font-mono text-blue-600">{watchedCurrency} {(parseFloat(watchedGstAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
                 </div>
-                {watchedGstTreatment === "standard_rated" && (
-                  <div className="space-y-1.5">
-                    <Label>GST Amount ({gstRate}%)</Label>
-                    <Input inputMode="decimal" {...register("gstAmount")} onChange={e => setValue("gstAmount", numericOnly(e.target.value))} />
-                  </div>
-                )}
-                <div className="pt-2 border-t space-y-1.5 text-sm">
-                  <div className="flex justify-between font-semibold">
-                    <span>Total Received</span>
-                    <span className="font-mono">SGD {(parseFloat(watchedAmount || "0") + parseFloat(watchedGstTreatment === "standard_rated" ? watch("gstAmount") || "0" : "0")).toFixed(2)}</span>
-                  </div>
+                <div className="flex justify-between border-t pt-2 font-medium">
+                  <span>Total (incl. GST)</span>
+                  <span className="font-mono">{watchedCurrency} {calcTotal().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">GST Input Tax</span>
+                  <Badge variant="outline" className={gstClaimable ? "text-blue-700 border-blue-300" : "text-muted-foreground"}>
+                    {gstClaimable ? "Claimable" : "Not claimable"}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center border-t pt-2">
+                  <span className="text-muted-foreground">Tax Deductible</span>
+                  {isDeductible ? (
+                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">{deductiblePct}%</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-red-600 border-red-300">Non-deductible</Badge>
+                  )}
+                </div>
+                <div className="flex justify-between border-t pt-2">
+                  <span className="font-medium">Allowable Deduction</span>
+                  <span className="font-mono font-bold text-green-700">{watchedCurrency} {calcDeductibleAmount().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
                 </div>
               </CardContent>
             </Card>
@@ -500,6 +693,25 @@ export default function IncomeEdit() {
           </div>
         </div>
       </form>
+      {/* Delete dialog */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete income record?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

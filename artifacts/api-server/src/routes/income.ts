@@ -85,7 +85,8 @@ router.post("/income", async (req, res): Promise<void> => {
   const companyId = req.session.companyId!;
   const {
     incomeDate, payerName, description, category,
-    amount, gstAmount, gstTreatment, currency, exchangeRate,
+    amount, gstAmount, gstTreatment, gstClaimable, isDeductible, deductiblePct,
+    currency, exchangeRate,
     paymentMethod, accountId, reference, notes, status,
   } = req.body;
 
@@ -102,8 +103,11 @@ router.post("/income", async (req, res): Promise<void> => {
     description:  description.trim(),
     category,
     amount:       parseFloat(amount).toFixed(2),
-    gstAmount:    parseFloat(gstAmount ?? 0).toFixed(2),
+    gstAmount:    (parseFloat(gstAmount) || 0).toFixed(2),
     gstTreatment: gstTreatment || "standard_rated",
+    gstClaimable: !!gstClaimable,
+    isDeductible: isDeductible !== false,
+    deductiblePct: deductiblePct ?? 100,
     currency:     currency || "SGD",
     exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
     paymentMethod: paymentMethod || "bank_transfer",
@@ -140,7 +144,8 @@ router.put("/income/:id", async (req, res): Promise<void> => {
 
   const {
     incomeDate, payerName, description, category,
-    amount, gstAmount, gstTreatment, currency, exchangeRate,
+    amount, gstAmount, gstTreatment, gstClaimable, isDeductible, deductiblePct,
+    currency, exchangeRate,
     paymentMethod, accountId, reference, notes, status,
   } = req.body;
 
@@ -150,8 +155,11 @@ router.put("/income/:id", async (req, res): Promise<void> => {
   if (description !== undefined)    updateData.description   = description.trim();
   if (category !== undefined)       updateData.category      = category;
   if (amount !== undefined)         updateData.amount        = parseFloat(amount).toFixed(2);
-  if (gstAmount !== undefined)      updateData.gstAmount     = parseFloat(gstAmount ?? 0).toFixed(2);
+  if (gstAmount !== undefined)      updateData.gstAmount     = (parseFloat(gstAmount) || 0).toFixed(2);
   if (gstTreatment !== undefined)   updateData.gstTreatment  = gstTreatment;
+  if (gstClaimable !== undefined)   updateData.gstClaimable  = !!gstClaimable;
+  if (isDeductible !== undefined)   updateData.isDeductible  = !!isDeductible;
+  if (deductiblePct !== undefined)  updateData.deductiblePct = deductiblePct;
   if (currency !== undefined)       updateData.currency      = currency;
   if (exchangeRate !== undefined)   updateData.exchangeRate  = parseFloat(exchangeRate).toFixed(6);
   if (paymentMethod !== undefined)  updateData.paymentMethod = paymentMethod;

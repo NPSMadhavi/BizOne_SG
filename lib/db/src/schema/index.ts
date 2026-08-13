@@ -33,3 +33,4 @@ export * from "./vouchers";
 export * from "./expenses";
 export * from "./income-records";
 export * from "./operations";
+export * from "./roles-permissions";

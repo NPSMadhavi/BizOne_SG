@@ -283,7 +283,6 @@ export default function LicensesPage() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Key</TableHead>
                     <TableHead>Purchase Date</TableHead>
                     <TableHead>Expiry Date</TableHead>
                     <TableHead>Status</TableHead>
@@ -311,11 +310,6 @@ export default function LicensesPage() {
                         <Badge variant="outline" className="capitalize">
                           {license.type}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-[#444651]">
-                        {license.licenseKey && license.licenseKey.length > 12
-                          ? `${license.licenseKey.substring(0, 12)}...`
-                          : license.licenseKey || "-"}
                       </TableCell>
                       <TableCell className="text-[#444651]">
                         {license.purchaseDate

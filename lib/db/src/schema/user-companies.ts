@@ -10,7 +10,7 @@ export const userCompaniesTable = pgTable("user_companies", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   companyId: integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
-  modules: jsonb("modules").$type<string[]>().notNull().default([...APP_ALL_MODULES]),
+  modules: jsonb("modules").$type<string[]>().notNull().default([]),
 }, (table) => [
   unique().on(table.userId, table.companyId),
 ]);

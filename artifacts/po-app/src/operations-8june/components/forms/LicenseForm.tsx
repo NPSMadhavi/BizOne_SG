@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { format, isAfter, isBefore } from "date-fns";
-import { CalendarIcon, Shield, DollarSign, Users, Building, RotateCcw, CheckCircle, Search, Plus } from "lucide-react";
+import { CalendarIcon, Shield, DollarSign, Users, Building, RotateCcw, CheckCircle, Search, Plus, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   TooltipProvider,
@@ -137,6 +137,7 @@ export default function LicenseForm({
     !!(license?.licenseKey)
   );
   const [isVendorFormOpen, setIsVendorFormOpen] = useState(false);
+  const [showLicenseKey, setShowLicenseKey] = useState(false);
 
   // Fetch all assets for the asset selection
   const { data: assets = [] } = useQuery<Asset[]>({
@@ -357,20 +358,34 @@ export default function LicenseForm({
                                 <FormItem>
                                   <FormLabel>License Key*</FormLabel>
                                   <FormControl>
-                                    <Input
-                                      placeholder="e.g., ABCD-1234-EFGH-5678"
-                                      {...field}
-                                      value={field.value || ""}
-                                      className="font-mono text-sm"
-                                      onChange={(e) => {
-                                        // Auto-format license key to uppercase and add hyphens
-                                        let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                                        if (value.length > 4) {
-                                          value = value.match(/.{1,4}/g)?.join('-') || value;
-                                        }
-                                        field.onChange(value);
-                                      }}
-                                    />
+                                    <div className="relative flex items-center w-full">
+                                      <Input
+                                        type={showLicenseKey ? "text" : "password"}
+                                        placeholder="e.g., ABCD-1234-EFGH-5678"
+                                        {...field}
+                                        value={field.value || ""}
+                                        className="font-mono text-sm pr-10 w-full"
+                                        onChange={(e) => {
+                                          // Auto-format license key to uppercase and add hyphens
+                                          let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                          if (value.length > 4) {
+                                            value = value.match(/.{1,4}/g)?.join('-') || value;
+                                          }
+                                          field.onChange(value);
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none p-1 rounded-md hover:bg-muted transition-colors"
+                                        onClick={() => setShowLicenseKey(!showLicenseKey)}
+                                      >
+                                        {showLicenseKey ? (
+                                          <EyeOff className="h-4 w-4" />
+                                        ) : (
+                                          <Eye className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                    </div>
                                   </FormControl>
                                   <FormDescription className="text-xs">
                                     Enter the license key as provided by the manufacturer

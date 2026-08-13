@@ -1,6 +1,6 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
-import { Underline } from "@tiptap/extension-underline";
+// import { Underline } from "@tiptap/extension-underline";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import TextAlign from "@tiptap/extension-text-align";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
@@ -94,9 +94,13 @@ function EditorCore({
     : "min-h-[60px] max-h-[200px] overflow-y-auto";
 
   const editor = useEditor({
+    // React 19 / Strict Mode: avoid creating the editor during SSR/hydration
+    // (prevents "Cannot read properties of null (reading 'cached')")
+    immediatelyRender: false,
+    shouldRerenderOnTransaction: true,
     extensions: [
       StarterKit.configure({ heading: false }),
-      Underline,
+      // Underline,
       TextStyle,
       FontSize,
       TextAlign.configure({ types: ["paragraph", "listItem"] }),
@@ -108,11 +112,15 @@ function EditorCore({
     ],
     editable: !disabled,
     content: value || "",
-    onUpdate({ editor }) {
+    onUpdate({ editor: ed }) {
+      if (ed.isDestroyed) return;
       isUpdatingRef.current = true;
-      const html = editor.getHTML();
-      onChange(html === "<p></p>" ? "" : html);
-      isUpdatingRef.current = false;
+      try {
+        const html = ed.getHTML();
+        onChange(html === "<p></p>" ? "" : html);
+      } finally {
+        isUpdatingRef.current = false;
+      }
     },
     editorProps: {
       attributes: {
@@ -201,15 +209,26 @@ function EditorCore({
   }, [editor]);
 
   useEffect(() => {
-    if (!editor || isUpdatingRef.current) return;
-    const currentHTML = editor.getHTML();
-    const normalizedCurrent = currentHTML === "<p></p>" ? "" : currentHTML;
-    if (normalizedCurrent !== value) {
-      editor.commands.setContent(value || "");
+    if (!editor || editor.isDestroyed || isUpdatingRef.current) return;
+    // View can be briefly null while TipTap tears down / remounts (React Strict Mode)
+    if (!editor.view) return;
+    try {
+      const currentHTML = editor.getHTML();
+      const normalizedCurrent = currentHTML === "<p></p>" ? "" : currentHTML;
+      if (normalizedCurrent !== value) {
+        editor.commands.setContent(value || "", { emitUpdate: false });
+      }
+    } catch {
+      // Editor mid-destroy — ignore sync until next mount
     }
   }, [value, editor]);
 
-  if (!editor) return null;
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.setEditable(!disabled);
+  }, [disabled, editor]);
+
+  if (!editor || editor.isDestroyed) return null;
 
   const currentFontSize = editor.getAttributes("textStyle").fontSize ?? "13px";
   const isEmpty = !editor.getText().trim();

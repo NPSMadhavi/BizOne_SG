@@ -2,7 +2,7 @@
  * Startup migrations + exchange-rate backfill.
  * Safe to call on every boot — all DDL uses IF NOT EXISTS / idempotent checks.
  */
-import { db, companiesTable } from "@workspace/db";
+import { db, companiesTable, userCompaniesTable, usersTable } from "@workspace/db";
 import { sql, eq } from "drizzle-orm";
 import { getExchangeRateToSGD } from "./exchange-rate.js";
 import { backfillExpenseJEs } from "./expense-auto-post.js";
@@ -250,6 +250,9 @@ export async function runStartupMigrations(): Promise<void> {
         amount          numeric(15,2) NOT NULL,
         gst_amount      numeric(15,2) NOT NULL DEFAULT 0,
         gst_treatment   text NOT NULL DEFAULT 'standard_rated',
+        gst_claimable   boolean NOT NULL DEFAULT false,
+        is_deductible   boolean NOT NULL DEFAULT true,
+        deductible_pct  integer NOT NULL DEFAULT 100,
         currency        text NOT NULL DEFAULT 'SGD',
         exchange_rate   numeric(10,6) NOT NULL DEFAULT 1.000000,
         payment_method  text DEFAULT 'bank_transfer',
@@ -267,6 +270,31 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "income_records.exchange_rate",
       sql: sql`ALTER TABLE income_records ADD COLUMN IF NOT EXISTS exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000`,
+    },
+    {
+      name: "income_records.gst_claimable",
+      sql: sql`ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_claimable boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: "income_records.is_deductible",
+      sql: sql`ALTER TABLE income_records ADD COLUMN IF NOT EXISTS is_deductible boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: "income_records.deductible_pct",
+      sql: sql`ALTER TABLE income_records ADD COLUMN IF NOT EXISTS deductible_pct integer NOT NULL DEFAULT 100`,
+    },
+    {
+      name: "income_attachments table",
+      sql: sql`
+      CREATE TABLE IF NOT EXISTS income_attachments (
+        id          serial PRIMARY KEY,
+        income_id   integer NOT NULL REFERENCES income_records(id) ON DELETE CASCADE,
+        file_name   text NOT NULL DEFAULT 'attachment',
+        mime_type   text NOT NULL DEFAULT 'application/octet-stream',
+        file_data   text NOT NULL,
+        created_at  timestamptz NOT NULL DEFAULT now()
+      )
+    `,
     },
     {
       name: "ops_employees table",
@@ -506,6 +534,48 @@ export async function runStartupMigrations(): Promise<void> {
       name: "expenses.updated_at",
       sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
     },
+    {
+      name: "roles table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS roles (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL,
+          company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+          created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+        )
+      `,
+    },
+    {
+      name: "permissions table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS permissions (
+          id SERIAL PRIMARY KEY,
+          module TEXT NOT NULL,
+          action TEXT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+          CONSTRAINT permissions_module_action_unique UNIQUE (module, action)
+        )
+      `,
+    },
+    {
+      name: "role_permissions table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS role_permissions (
+          role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+          permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+          CONSTRAINT role_permissions_role_id_permission_id_unique UNIQUE (role_id, permission_id)
+        )
+      `,
+    },
+    {
+      name: "users company_id and role_id columns",
+      sql: sql`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL;
+      `,
+    },
   ];
 
   for (const step of steps) {
@@ -628,6 +698,62 @@ export async function reconcileStockQuantitiesOnStartup(): Promise<void> {
     }
   } catch (e: any) {
     logger.warn({ err: e.message }, "[startup-backfill] stock reconciliation failed (non-fatal)");
+  }
+}
+
+export async function scrubAccidentalModuleDefaultsOnStartup(): Promise<void> {
+  /**
+   * Older user create/update always wrote a hardcoded module list that included
+   * `stock_items`, which opened the Inventory sidebar without an intentional grant.
+   * Strip orphan inventory keys when no other inventory modules were assigned.
+   */
+  const INTENTIONAL = new Set([
+    "warehouses",
+    "stock_transfer",
+    "inventory_reports",
+    "batch_expiry",
+  ]);
+
+  try {
+    const rows = await db
+      .select({
+        id: userCompaniesTable.id,
+        userId: userCompaniesTable.userId,
+        modules: userCompaniesTable.modules,
+        role: usersTable.role,
+      })
+      .from(userCompaniesTable)
+      .innerJoin(usersTable, eq(userCompaniesTable.userId, usersTable.id));
+
+    let updated = 0;
+    for (const row of rows) {
+      const role = String(row.role || "").toLowerCase();
+      if (role === "admin" || role === "administrator") continue;
+
+      const mods = Array.isArray(row.modules) ? (row.modules as string[]) : [];
+      if (mods.length === 0) continue;
+
+      const hasIntentionalInventory = mods.some((m) => INTENTIONAL.has(m));
+      if (hasIntentionalInventory) continue;
+
+      const next = mods.filter((m) => m !== "stock_items");
+      if (next.length === mods.length) continue;
+
+      await db
+        .update(userCompaniesTable)
+        .set({ modules: next })
+        .where(eq(userCompaniesTable.id, row.id));
+      updated += 1;
+    }
+
+    if (updated > 0) {
+      logger.info(
+        { updated, scrubbed: "stock_items" },
+        "[startup-backfill] removed accidental Inventory (stock_items) grants",
+      );
+    }
+  } catch (e: any) {
+    logger.warn({ err: e.message }, "[startup-backfill] module scrub failed (non-fatal)");
   }
 }
 

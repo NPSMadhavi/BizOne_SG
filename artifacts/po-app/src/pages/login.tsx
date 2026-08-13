@@ -5,6 +5,7 @@ import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { markBrowserSessionLive } from "@/lib/browser-session";
 import logo from "@assets/bizone_logo_optimized.webp";
 import Advanced from "@assets/Advanced.png";
 import SecureBusiness from "@assets/SecureBusiness.png";
@@ -83,6 +84,7 @@ export default function Login() {
       },
       {
         onSuccess: async (data) => {
+          markBrowserSessionLive();
           queryClient.setQueryData(getGetMeQueryKey(), data.user);
           const companyId =
             data.user.selectedCompanyId ??

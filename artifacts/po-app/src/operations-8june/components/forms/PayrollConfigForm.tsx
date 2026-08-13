@@ -22,20 +22,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/operations-8june/lib/queryClient";
 import { insertEmployeePayrollSchema } from "@shared/schema";
 import {
   Calculator,
-  Calendar,
   DollarSign,
   MinusCircle,
   User,
   Wallet,
   IdCard,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -148,6 +145,22 @@ function formatCurrency(amount: number) {
   }).format(amount || 0);
 }
 
+/** Monthly CPF ordinary wage: Basic × (working days / 30). Full basic if days not set. */
+const CPF_STANDARD_MONTH_DAYS = 30;
+
+function calcBasicSalaryForCpf(
+  baseSalary: number,
+  workingDays?: number | null
+): number {
+  const base = Number(baseSalary) || 0;
+  if (base <= 0) return 0;
+  const days = Number(workingDays);
+  if (!Number.isFinite(days) || days <= 0) return Math.round(base * 100) / 100;
+  const prorated =
+    (base * Math.min(days, CPF_STANDARD_MONTH_DAYS)) / CPF_STANDARD_MONTH_DAYS;
+  return Math.round(prorated * 100) / 100;
+}
+
 function formatRatePercent(rate: number): string {
   return `${rate}%`;
 }
@@ -253,7 +266,10 @@ function buildPayrollConfigPayload(
   };
 
   const calculation = calculateSyncBridgePayrollPreview({
-    monthlySalary: Number(payrollData.baseSalary) || 0,
+    monthlySalary: calcBasicSalaryForCpf(
+      Number(payrollData.baseSalary) || 0,
+      workingDays != null ? Number(workingDays) : undefined
+    ),
     age,
     citizenshipStatus: citizenshipStatus as "citizen" | "pr" | "foreigner",
     prStatus: selectedEmployee?.prStatus,
@@ -345,6 +361,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   );
 
   const baseSalary = Number(form.watch("baseSalary") || 0);
+  const workingDaysRaw = form.watch("workingDays");
+  const basicSalaryForCpf = calcBasicSalaryForCpf(baseSalary, workingDaysRaw);
   const annualSalaryAuto = baseSalary * 12;
   const age = Number(form.watch("age") || 0);
   const citizenshipStatus = form.watch("citizenshipStatus");
@@ -360,7 +378,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     if (!baseSalary || !age) return null;
 
     return calculateSyncBridgePayrollPreview({
-      monthlySalary: baseSalary,
+      monthlySalary: basicSalaryForCpf,
       age,
       citizenshipStatus,
       prStatus: selectedEmployee?.prStatus,
@@ -378,6 +396,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     });
   }, [
     baseSalary,
+    basicSalaryForCpf,
     age,
     citizenshipStatus,
     selectedEmployee?.prStatus,
@@ -479,7 +498,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   const deductionsTotal = calculationPreview?.deductionsTotal ?? 0;
   const grossSalary =
     calculationPreview?.grossPay ??
-    (hasPayrollPreview ? baseSalary + allowancesTotal - deductionsTotal : 0);
+    (hasPayrollPreview ? baseSalary + allowancesTotal : 0);
   const employeeCpf = calculationPreview?.employeeCpf ?? 0;
   const employerCpf = calculationPreview?.employerCpf ?? 0;
   const totalCpf = calculationPreview?.totalCpf ?? 0;
@@ -572,7 +591,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             </section>
 
             <section className="space-y-4">
-              <ModalSectionHeader icon={DollarSign} title="Payroll Setup" />
+              <ModalSectionHeader icon={DollarSign} title="Payheads" />
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField
                   control={form.control}
@@ -610,7 +629,6 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       className={readOnlyInputClass}
                     />
                   </FormControl>
-                  <FormDescription className="text-xs text-[#6B7280]">Basic Salary × 12</FormDescription>
                 </FormItem>
                 <FormField
                   control={form.control}
@@ -659,6 +677,20 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     </FormItem>
                   )}
                 />
+                <FormItem>
+                  <FormLabel className={formLabelClass}>Basic salary for CPF</FormLabel>
+                  <FormControl>
+                    <Input
+                      readOnly
+                      placeholder="Calculated from basic salary & working days"
+                      value={baseSalary ? formatCurrency(basicSalaryForCpf) : ""}
+                      className={readOnlyInputClass}
+                    />
+                  </FormControl>
+                  <FormDescription className="text-xs text-[#6B7280]">
+                    CPF employee/employer amounts are calculated from this amount
+                  </FormDescription>
+                </FormItem>
               </div>
             </section>
 
@@ -741,7 +773,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             </section>
 
             <section className="space-y-4">
-              <ModalSectionHeader icon={Wallet} title="Monthly Allowances" />
+              <ModalSectionHeader icon={Wallet} title="Allowances" />
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField
                   control={form.control}
@@ -761,7 +793,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                   name="allowanceMeal"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Meal Allowance</FormLabel>
+                      <FormLabel className={formLabelClass}>Food Allowance</FormLabel>
                       <FormControl>
                         <OptionalAmountInput field={field} />
                       </FormControl>
@@ -774,7 +806,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                   name="allowancePhone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Phone Allowance</FormLabel>
+                      <FormLabel className={formLabelClass}>Mobile Allowance</FormLabel>
                       <FormControl>
                         <OptionalAmountInput field={field} />
                       </FormControl>
@@ -799,14 +831,14 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             </section>
 
             <section className="space-y-4">
-              <ModalSectionHeader icon={MinusCircle} title="Monthly Deductions" />
+              <ModalSectionHeader icon={MinusCircle} title="Employee Deductions" />
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField
                   control={form.control}
                   name="deductionMedical"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Medical Deduction</FormLabel>
+                      <FormLabel className={formLabelClass}>Medical Insurance</FormLabel>
                       <FormControl>
                         <OptionalAmountInput field={field} />
                       </FormControl>
@@ -819,7 +851,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                   name="deductionAdvance"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Advance Deduction</FormLabel>
+                      <FormLabel className={formLabelClass}>Advanced / Loan Recovery</FormLabel>
                       <FormControl>
                         <OptionalAmountInput field={field} />
                       </FormControl>
@@ -844,9 +876,9 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             </section>
 
             <section className="space-y-4">
-              <ModalSectionHeader icon={Calculator} title="Auto-Calculated Payroll Values" />
+              <ModalSectionHeader icon={Calculator} title="CPF Calculation" />
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
-                <FormItem>
+                <FormItem className="lg:col-span-2">
                   <FormLabel className={formLabelClass}>Gross Salary</FormLabel>
                   <Input
                     readOnly
@@ -891,7 +923,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     className={readOnlyInputClass}
                   />
                 </FormItem>
-                <FormItem>
+                <FormItem className="lg:col-span-2">
                   <FormLabel className={formLabelClass}>Net Salary (Monthly)</FormLabel>
                   <Input
                     readOnly
@@ -900,52 +932,6 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     className={readOnlyInputClass}
                   />
                 </FormItem>
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <ModalSectionHeader icon={Calendar} title="Effective Dates" />
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="effectiveFrom"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={formLabelClass}>Effective From *</FormLabel>
-                        <FormControl>
-                          <StringDatePicker value={field.value ?? ""} onChange={(v) => field.onChange(v)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="effectiveTo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={formLabelClass}>Effective To</FormLabel>
-                        <FormControl>
-                          <StringDatePicker value={field.value ?? ""} onChange={(v) => field.onChange(v)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="isActive"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-4 py-3">
-                      <FormLabel className={cn(formLabelClass, "cursor-pointer")}>Active Configuration</FormLabel>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
               </div>
             </section>
 
@@ -988,16 +974,20 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
               <span className="font-medium text-[#111827]">{formatCurrency(baseSalary)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#6B7280]">Allowances</span>
-              <span className="font-medium text-[#111827]">{formatCurrency(allowancesTotal)}</span>
+              <span className="text-[#6B7280]">Basic salary for CPF</span>
+              <span className="font-medium text-[#111827]">{formatCurrency(basicSalaryForCpf)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#6B7280]">Deductions</span>
-              <span className="font-medium text-[#DC2626]">-{formatCurrency(deductionsTotal)}</span>
+              <span className="text-[#6B7280]">Allowances</span>
+              <span className="font-medium text-[#111827]">{formatCurrency(allowancesTotal)}</span>
             </div>
             <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
               <span className="font-semibold text-[#111827]">Gross Salary</span>
               <span className="font-semibold text-[#111827]">{formatCurrency(grossSalary)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[#6B7280]">Deductions</span>
+              <span className="font-medium text-[#DC2626]">-{formatCurrency(deductionsTotal)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#6B7280]">CPF Rate (Employee)</span>
@@ -1018,10 +1008,6 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             <div className="flex justify-between">
               <span className="text-[#6B7280]">Total CPF</span>
               <span className="text-[#111827]">{formatCurrency(totalCpf)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">Annual Salary</span>
-              <span className="text-[#111827]">{formatCurrency(annualSalaryAuto)}</span>
             </div>
             <div className="flex justify-between border-t border-[#E5E7EB] pt-3">
               <span className="text-base font-semibold text-[#111827]">Net Salary</span>

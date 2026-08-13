@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, companiesTable, userCompaniesTable, settingsTable, APP_ALL_MODULES } from "@workspace/db";
+import { db, usersTable, companiesTable, userCompaniesTable, settingsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable } from "@workspace/db";
 import { eq, or, sql } from "drizzle-orm";
 import { LoginBody, RegisterBody, SelectCompanyBody } from "@workspace/api-zod";
+import { seedRolesForCompany } from "../seed";
 
 declare module "express-session" {
   interface SessionData {
@@ -11,7 +12,22 @@ declare module "express-session" {
     isAdmin?: boolean;
     userRole?: string;
     username?: string;
+    roleId?: number;
+    permissions?: string[];
   }
+}
+
+async function getUserPermissions(roleId: number): Promise<string[]> {
+  const rows = await db
+    .select({
+      module: permissionsTable.module,
+      action: permissionsTable.action,
+    })
+    .from(rolePermissionsTable)
+    .innerJoin(permissionsTable, eq(rolePermissionsTable.permissionId, permissionsTable.id))
+    .where(eq(rolePermissionsTable.roleId, roleId));
+
+  return rows.map(r => `${r.module}:${r.action}`);
 }
 
 const ALL_MODULES = [...APP_ALL_MODULES];
@@ -25,7 +41,8 @@ async function assignDefaultCompanyAccess(userId: number): Promise<number | null
     .values({
       userId,
       companyId: company.id,
-      modules: ALL_MODULES,
+      // No modules until an admin assigns them — never auto-grant Directory / ALL
+      modules: [],
     })
     .onConflictDoNothing();
 
@@ -60,19 +77,32 @@ async function getUserCompanies(userId: number) {
 
   return rows.map(r => ({
     ...r.company,
-    modules: (r.uc.modules as string[]) ?? ALL_MODULES,
+    // Strict: never invent modules (esp. Directory) when DB value is missing
+    modules: Array.isArray(r.uc.modules) ? (r.uc.modules as string[]) : [],
   }));
 }
 
-function formatUser(user: any, companies: any[], selectedCompanyId?: number | null) {
+function formatUser(user: any, companies: any[], selectedCompanyId?: number | null, permissions: string[] = []) {
+  const roleRaw = String(user.role || "user").toLowerCase();
+  const role =
+    roleRaw === "administrator" || roleRaw === "admin" ? "admin"
+    : roleRaw === "accountant" ? "accountant"
+    : roleRaw === "external" ? "external"
+    : roleRaw === "employee" ? "user"
+    : roleRaw === "user" ? "user"
+    : "user";
+
   return {
     id: user.id,
     username: user.username,
-    role: user.role,
+    role,
     email: user.email ?? null,
     fullName: user.fullName ?? null,
     phoneNumber: user.phoneNumber ?? null,
     isActive: user.isActive ?? true,
+    companyId: user.companyId ?? null,
+    roleId: user.roleId ?? null,
+    permissions,
     createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
     companies,
     selectedCompanyId: selectedCompanyId ?? null,
@@ -123,19 +153,6 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await db.transaction(async (tx) => {
-      const [user] = await tx
-        .insert(usersTable)
-        .values({
-          username,
-          passwordHash,
-          role: "admin",
-          email: normalizedEmail,
-          fullName: fullName.trim(),
-          phoneNumber: phoneNumber.trim(),
-          isActive: true,
-        })
-        .returning();
-
       const [company] = await tx
         .insert(companiesTable)
         .values({
@@ -146,6 +163,33 @@ router.post("/auth/register", async (req, res): Promise<void> => {
           phone: phoneNumber.trim(),
           domain: normalizedDomain,
           registrationNo: gstRegistrationNo?.trim() || null,
+        })
+        .returning();
+
+      await seedRolesForCompany(company.id, tx);
+
+      const [adminRole] = await tx
+        .select()
+        .from(rolesTable)
+        .where(sql`lower(${rolesTable.name}) = 'administrator' AND ${rolesTable.companyId} = ${company.id}`)
+        .limit(1);
+
+      if (!adminRole) {
+        throw new Error("Administrator role not created during company registration");
+      }
+
+      const [user] = await tx
+        .insert(usersTable)
+        .values({
+          username,
+          passwordHash,
+          role: "admin",
+          email: normalizedEmail,
+          fullName: fullName.trim(),
+          phoneNumber: phoneNumber.trim(),
+          isActive: true,
+          companyId: company.id,
+          roleId: adminRole.id,
         })
         .returning();
 
@@ -175,24 +219,26 @@ router.post("/auth/register", async (req, res): Promise<void> => {
         grnSuffix: "",
       });
 
-      return { user, company };
+      return { user, company, adminRole };
     });
 
-    const { user, company } = result;
+    const { user, company, adminRole } = result;
 
     req.session.userId = user.id;
     req.session.username = user.username;
-    req.session.isAdmin = false;
+    req.session.isAdmin = true;
     req.session.userRole = user.role;
     req.session.companyId = company.id;
+    req.session.roleId = adminRole.id;
+    req.session.permissions = await getUserPermissions(adminRole.id);
 
     const companies = await getUserCompanies(user.id);
-    res.status(201).json({ message: "Registration Successful", user: formatUser(user, companies, company.id) });
+    res.status(201).json({ message: "Registration Successful", user: formatUser(user, companies, company.id, req.session.permissions) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Registration failed";
     if (message.includes("column") || message.includes("Failed query")) {
       res.status(500).json({
-        error: "Database setup incomplete. Restart the backend (pnpm dev) and try again.",
+        error: "Database setup incomplete. Restart the backend (npm run dev) and try again.",
       });
       return;
     }
@@ -239,19 +285,21 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   req.session.username = user.username;
   req.session.isAdmin = user.role === "admin";
   req.session.userRole = user.role;
-  req.session.companyId = undefined;
+  req.session.companyId = user.companyId || undefined;
+  req.session.roleId = user.roleId || undefined;
+  req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
 
   const defaultCompanyId = await ensureUserCompanyAccess(user.id, user.role);
   const companies = await getUserCompanies(user.id);
 
   const sessionCompanyId =
-    defaultCompanyId ?? (companies.length === 1 ? companies[0].id : undefined);
+    user.companyId ?? defaultCompanyId ?? (companies.length === 1 ? companies[0].id : undefined);
 
   if (sessionCompanyId) {
     req.session.companyId = sessionCompanyId;
   }
 
-  res.json({ user: formatUser(user, companies, req.session.companyId) });
+  res.json({ user: formatUser(user, companies, req.session.companyId, req.session.permissions) });
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
@@ -272,6 +320,10 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
 
+  req.session.companyId = user.companyId ?? req.session.companyId;
+  req.session.roleId = user.roleId ?? req.session.roleId;
+  req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
+
   if (!req.session.companyId) {
     const defaultCompanyId = await ensureUserCompanyAccess(user.id, user.role);
     if (defaultCompanyId) {
@@ -280,7 +332,7 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   }
 
   const companies = await getUserCompanies(user.id);
-  res.json(formatUser(user, companies, req.session.companyId));
+  res.json(formatUser(user, companies, req.session.companyId, req.session.permissions));
 });
 
 router.post("/auth/select-company", async (req, res): Promise<void> => {
@@ -304,7 +356,13 @@ router.post("/auth/select-company", async (req, res): Promise<void> => {
     return;
   }
 
-  req.session.companyId = companyId;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  if (user) {
+    req.session.companyId = companyId;
+    req.session.roleId = user.roleId ?? undefined;
+    req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
+  }
+
   res.json({ success: true });
 });
 

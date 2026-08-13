@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useListSalesOrders, getListSalesOrdersQueryKey, useListQuotations, getListQuotationsQueryKey } from "@workspace/api-client-react";
+import { useListSalesOrders, getListSalesOrdersQueryKey } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,20 +23,11 @@ export default function SalesOrderList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: quotations, isLoading: qtLoading } = useListQuotations({
-    query: { queryKey: getListQuotationsQueryKey() },
-  });
-
   const { data: salesOrders, isLoading: soLoading } = useListSalesOrders({
     query: { queryKey: getListSalesOrdersQueryKey() },
   });
 
   const deleteMutation = useDeleteSalesOrder();
-
-  const convertedQuotations = useMemo(
-    () => (quotations ?? []).filter((q) => q.status === "converted_to_so"),
-    [quotations],
-  );
 
   const filteredOrders = useMemo(() => {
     const t = searchTerm.toLowerCase().trim();
@@ -106,69 +97,6 @@ export default function SalesOrderList() {
         </div>
       </div>
 
-      {/* Converted Quotations */}
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold">Quotations</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Quotations marked as &quot;Converted to SO&quot; appear here.
-          </p>
-        </div>
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
-                <tr>
-                  <th className="px-6 py-4 font-medium">Quotation No.</th>
-                  <th className="px-6 py-4 font-medium">Customer</th>
-                  <th className="px-6 py-4 font-medium">Date</th>
-                  <th className="px-6 py-4 font-medium">Valid Till</th>
-                  <th className="px-6 py-4 font-medium text-right">Amount</th>
-                  <th className="px-6 py-4 font-medium text-center">Status</th>
-                  <th className="px-6 py-4 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {qtLoading ? (
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 7 }).map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>)}</tr>
-                  ))
-                ) : convertedQuotations.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
-                      No converted quotations found. Convert a quotation to &quot;Converted to SO&quot; to see it here.
-                    </td>
-                  </tr>
-                ) : (
-                  convertedQuotations.map((qt) => (
-                    <tr key={qt.id} className="hover:bg-muted/50 transition-colors">
-                      <td className="px-6 py-4 font-medium font-mono">{qt.qtNumber}</td>
-                      <td className="px-6 py-4">{qt.customerName}</td>
-                      <td className="px-6 py-4">{fmtDate((qt as any).issueDate || qt.createdAt)}</td>
-                      <td className="px-6 py-4">{fmtDate((qt as any).validTill)}</td>
-                      <td className="px-6 py-4 text-right font-medium">{fmt(qt.totalAmount, (qt as any).currency || "SGD")}</td>
-                      <td className="px-6 py-4 text-center">
-                        <Badge className="bg-sky-600 hover:bg-sky-700">Converted to SO</Badge>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title="View Quotation" onClick={() => setLocation(`/quotations/${qt.id}`)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit Quotation" onClick={() => setLocation(`/quotations/${qt.id}/edit`)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
       {/* Sales Orders */}
       <div className="space-y-3">
         <div>
@@ -216,9 +144,6 @@ export default function SalesOrderList() {
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={() => setLocation(`/sales-orders/${doc.id}/edit`)}>
                             <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Delete" onClick={() => setDeleteTarget({ id: Number(doc.id), soNumber: doc.soNumber })}>
-                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </td>
