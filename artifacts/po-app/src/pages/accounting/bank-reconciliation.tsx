@@ -38,12 +38,20 @@ import {
   Search,
   Check,
   ArrowRight,
+  Landmark,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import * as XLSX from "xlsx";
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 // Types
 interface BankTransaction {
@@ -166,106 +174,388 @@ export default function BankReconciliation() {
     }
   });
 
-  // CSV file parser
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  function autoMatchFromDescription(description: string) {
+    let status: "matched" | "need_review" = "need_review";
+    let matchedType: string | undefined;
+    let matchedRef: string | undefined;
+    let matchedDetails: string | undefined;
+    const lower = description.toLowerCase();
+
+    if (lower.includes("abc pte ltd")) {
+      status = "matched";
+      matchedType = "Receipt";
+      matchedRef = "INV-1004";
+      matchedDetails = "ABC Pte Ltd";
+    } else if (lower.includes("uob bank charge")) {
+      status = "matched";
+      matchedType = "Bank Charges";
+      matchedRef = "BC-9921";
+      matchedDetails = "Bank Charges";
+    }
+
+    return { status, matchedType, matchedRef, matchedDetails };
+  }
+
+  function rowsToTransactions(rows: Array<{ date: string; description: string; amount: number; type: "credit" | "debit" }>) {
+    return rows.map((row, idx) => {
+      const match = autoMatchFromDescription(row.description);
+      return {
+        id: idx + 1,
+        date: row.date,
+        description: row.description,
+        amount: row.amount,
+        type: row.type,
+        ...match,
+      } satisfies BankTransaction;
+    });
+  }
+
+  function normalizeType(raw: string, signedAmount: number): "credit" | "debit" {
+    const t = raw.trim().toLowerCase();
+    if (/(credit|cr\b|deposit|inflow|receipt|received)/.test(t)) return "credit";
+    if (/(debit|dr\b|withdrawal|outflow|payment|paid)/.test(t)) return "debit";
+    return signedAmount < 0 ? "debit" : "credit";
+  }
+
+  function parseAmountValue(raw: unknown): number | null {
+    if (raw == null || raw === "") return null;
+    if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+    const s = String(raw).trim();
+    if (!s || /^[-–—]$/.test(s)) return null;
+    // (1,234.56) accounting negative
+    const neg = /^\(.*\)$/.test(s);
+    const cleaned = s.replace(/[^\d.\-]/g, "");
+    const n = parseFloat(cleaned);
+    if (isNaN(n)) return null;
+    return neg ? -Math.abs(n) : n;
+  }
+
+  function formatCellDate(raw: unknown): string {
+    if (raw instanceof Date && !isNaN(raw.getTime())) {
+      return `${raw.getFullYear()}-${String(raw.getMonth() + 1).padStart(2, "0")}-${String(raw.getDate()).padStart(2, "0")}`;
+    }
+    if (typeof raw === "number" && raw > 20000 && XLSX.SSF?.parse_date_code) {
+      const parsed = XLSX.SSF.parse_date_code(raw);
+      if (parsed) {
+        return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+      }
+    }
+    const s = String(raw ?? "").trim();
+    if (!s) return "";
+    // already yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    // dd/mm/yyyy or dd-mm-yyyy
+    const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (dmy) {
+      const dd = dmy[1].padStart(2, "0");
+      const mm = dmy[2].padStart(2, "0");
+      let yyyy = dmy[3];
+      if (yyyy.length === 2) yyyy = Number(yyyy) > 50 ? `19${yyyy}` : `20${yyyy}`;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    const asDate = new Date(s);
+    if (!isNaN(asDate.getTime())) {
+      return `${asDate.getFullYear()}-${String(asDate.getMonth() + 1).padStart(2, "0")}-${String(asDate.getDate()).padStart(2, "0")}`;
+    }
+    return s;
+  }
+
+  function headerMatches(header: string, patterns: RegExp[]) {
+    const h = header.trim().toLowerCase().replace(/\s+/g, " ");
+    return patterns.some((p) => p.test(h));
+  }
+
+  function pickColumn(headers: string[], patterns: RegExp[]) {
+    const idx = headers.findIndex((h) => headerMatches(h, patterns));
+    return idx >= 0 ? idx : -1;
+  }
+
+  function parseExcelStatement(buffer: ArrayBuffer) {
+    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) throw new Error("Excel file has no sheets.");
+
+    // Raw rows — find the header row (bank exports often have title rows above)
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: "",
+      raw: true,
+      blankrows: false,
+    }) as unknown[][];
+
+    if (!aoa.length) throw new Error("Excel sheet is empty.");
+
+    const datePats = [/^(txn\s*)?date$/, /transaction\s*date/, /value\s*date/, /posting\s*date/, /^trans\.?\s*date$/, /^dt$/];
+    const descPats = [/description/, /narration/, /particulars/, /details/, /memo/, /remarks?/, /transaction\s*details/, /^payee$/, /^text$/];
+    const amountPats = [/^amount$/, /^amt\.?$/, /^value$/, /txn\s*amount/, /transaction\s*amount/];
+    const typePats = [/^type$/, /dr\s*\/\s*cr/, /credit\s*\/\s*debit/, /txn\s*type/, /transaction\s*type/, /^cd$/];
+    const debitPats = [/^debit$/, /^dr$/, /withdrawal/, /money\s*out/, /paid\s*out/, /^withdrawals?$/];
+    const creditPats = [/^credit$/, /^cr$/, /deposit/, /money\s*in/, /paid\s*in/, /^deposits?$/];
+
+    let headerRowIdx = -1;
+    let headers: string[] = [];
+
+    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+      const cells = (aoa[i] || []).map((c) => String(c ?? "").trim());
+      if (cells.filter(Boolean).length < 2) continue;
+      const hasDate = cells.some((c) => headerMatches(c, datePats));
+      const hasDesc = cells.some((c) => headerMatches(c, descPats));
+      const hasAmt =
+        cells.some((c) => headerMatches(c, amountPats)) ||
+        cells.some((c) => headerMatches(c, debitPats)) ||
+        cells.some((c) => headerMatches(c, creditPats));
+      if (hasDate && (hasDesc || hasAmt)) {
+        headerRowIdx = i;
+        headers = cells;
+        break;
+      }
+    }
+
+    // Fallback: first non-empty row as headers
+    if (headerRowIdx < 0) {
+      headerRowIdx = aoa.findIndex((r) => (r || []).some((c) => String(c ?? "").trim()));
+      if (headerRowIdx < 0) throw new Error("Excel sheet is empty.");
+      headers = (aoa[headerRowIdx] || []).map((c) => String(c ?? "").trim());
+    }
+
+    const dateIdx = pickColumn(headers, datePats);
+    const descIdx = pickColumn(headers, descPats);
+    const amountIdx = pickColumn(headers, amountPats);
+    const typeIdx = pickColumn(headers, typePats);
+    const debitIdx = pickColumn(headers, debitPats);
+    const creditIdx = pickColumn(headers, creditPats);
+
+    const rows: Array<{ date: string; description: string; amount: number; type: "credit" | "debit" }> = [];
+
+    for (let i = headerRowIdx + 1; i < aoa.length; i++) {
+      const row = aoa[i] || [];
+      if (!row.some((c) => c !== "" && c != null)) continue;
+
+      const date = dateIdx >= 0 ? formatCellDate(row[dateIdx]) : "";
+      let description = descIdx >= 0 ? String(row[descIdx] ?? "").trim() : "";
+
+      // If no description column, join non-numeric text cells
+      if (!description) {
+        description = row
+          .map((c, idx) => ({ c, idx }))
+          .filter(({ idx }) => idx !== dateIdx && idx !== amountIdx && idx !== debitIdx && idx !== creditIdx && idx !== typeIdx)
+          .map(({ c }) => String(c ?? "").trim())
+          .filter((t) => t && !/^[\d.,\-]+$/.test(t))
+          .join(" ")
+          .trim();
+      }
+
+      let signedAmount: number | null = null;
+      let typeRaw = typeIdx >= 0 ? String(row[typeIdx] ?? "") : "";
+
+      if (debitIdx >= 0 || creditIdx >= 0) {
+        const debit = debitIdx >= 0 ? parseAmountValue(row[debitIdx]) : null;
+        const credit = creditIdx >= 0 ? parseAmountValue(row[creditIdx]) : null;
+        if (debit != null && Math.abs(debit) > 0) {
+          signedAmount = -Math.abs(debit);
+          typeRaw = typeRaw || "debit";
+        } else if (credit != null && Math.abs(credit) > 0) {
+          signedAmount = Math.abs(credit);
+          typeRaw = typeRaw || "credit";
+        }
+      }
+
+      if (signedAmount == null && amountIdx >= 0) {
+        signedAmount = parseAmountValue(row[amountIdx]);
+      }
+
+      // Last-resort: scan row for a numeric amount-like cell
+      if (signedAmount == null) {
+        for (let c = 0; c < row.length; c++) {
+          if (c === dateIdx) continue;
+          const n = parseAmountValue(row[c]);
+          if (n != null && Math.abs(n) > 0) {
+            signedAmount = n;
+            break;
+          }
+        }
+      }
+
+      if (signedAmount == null || isNaN(signedAmount)) continue;
+      if (!description && !date) continue;
+      if (Math.abs(signedAmount) === 0 && !description) continue;
+
+      // Skip total/balance summary rows
+      const descLower = description.toLowerCase();
+      if (/^(total|balance|opening|closing|brought\s*forward|carried\s*forward)/i.test(descLower)) continue;
+
+      rows.push({
+        date: date || "—",
+        description: description || "Bank transaction",
+        amount: Math.abs(signedAmount),
+        type: normalizeType(typeRaw, signedAmount),
+      });
+    }
+
+    if (rows.length === 0) {
+      throw new Error(
+        "No valid transactions found. Excel needs a header row with Date + Description, and Amount (or Debit/Credit) columns.",
+      );
+    }
+    return rowsToTransactions(rows);
+  }
+
+  async function parsePdfStatement(buffer: ArrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const lines: string[] = [];
+
+    for (let pn = 1; pn <= pdf.numPages; pn++) {
+      const page = await pdf.getPage(pn);
+      const tc = await page.getTextContent();
+      let currentY: number | null = null;
+      let currentLine = "";
+
+      for (const raw of tc.items) {
+        if (!("str" in raw)) continue;
+        const item = raw as { str: string; transform: number[] };
+        const text = (item.str || "").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        const y = Math.round(item.transform[5]);
+        if (currentY === null || Math.abs(y - currentY) > 3) {
+          if (currentLine.trim()) lines.push(currentLine.trim());
+          currentLine = text;
+          currentY = y;
+        } else {
+          currentLine += ` ${text}`;
+        }
+      }
+      if (currentLine.trim()) lines.push(currentLine.trim());
+    }
+
+    const fullText = lines.join("\n");
+    const rows: Array<{ date: string; description: string; amount: number; type: "credit" | "debit" }> = [];
+    const dateRe = /(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2})/;
+    const amountTokenRe = /([+-]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\)?|[+-]?\d+(?:\.\d{1,2})?)(?:\s*(CR|DR|CREDIT|DEBIT))?/gi;
+
+    const candidateLines = lines.length > 0 ? lines : fullText.split(/\n+/);
+
+    for (const line of candidateLines) {
+      const cleaned = line.replace(/\s+/g, " ").trim();
+      if (!cleaned || cleaned.length < 6) continue;
+      if (/^(date|description|amount|balance|particulars|debit|credit)/i.test(cleaned)) continue;
+
+      const dateMatch = cleaned.match(dateRe);
+      if (!dateMatch) continue;
+
+      const amounts: Array<{ raw: string; value: number; hint: string; index: number }> = [];
+      let m: RegExpExecArray | null;
+      amountTokenRe.lastIndex = 0;
+      while ((m = amountTokenRe.exec(cleaned)) !== null) {
+        // skip the date numbers
+        if (m.index < (dateMatch.index ?? 0) + dateMatch[0].length) continue;
+        const rawNum = m[1];
+        const hint = (m[2] || "").toLowerCase();
+        const neg = /^\(.*\)$/.test(rawNum) || rawNum.trim().startsWith("-");
+        const value = parseFloat(rawNum.replace(/[(),]/g, ""));
+        if (isNaN(value) || Math.abs(value) < 0.001) continue;
+        // ignore years like 2026 sitting alone
+        if (!rawNum.includes(".") && Math.abs(value) >= 1900 && Math.abs(value) <= 2100) continue;
+        amounts.push({ raw: m[0], value: neg ? -Math.abs(value) : value, hint, index: m.index });
+      }
+
+      if (amounts.length === 0) continue;
+
+      // Prefer last money-like amount on the line (common in statements)
+      const pick = amounts[amounts.length - 1];
+      let description = cleaned;
+      description = description.replace(dateMatch[0], " ");
+      description = description.replace(pick.raw, " ");
+      description = description.replace(/\s+/g, " ").trim();
+      if (!description || /^(total|balance|opening|closing)/i.test(description)) continue;
+
+      const type = normalizeType(pick.hint || (pick.value < 0 ? "debit" : "credit"), pick.value);
+      rows.push({
+        date: formatCellDate(dateMatch[1]),
+        description,
+        amount: Math.abs(pick.value),
+        type,
+      });
+    }
+
+    if (rows.length === 0) {
+      throw new Error(
+        "Could not read transactions from this PDF. Try a text-based PDF, or upload Excel with Date / Description / Amount (or Debit & Credit) columns.",
+      );
+    }
+    return rowsToTransactions(rows);
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
+    const name = file.name.toLowerCase();
+    const isExcel =
+      name.endsWith(".xlsx") ||
+      name.endsWith(".xls") ||
+      file.type.includes("sheet") ||
+      file.type.includes("excel");
+    const isPdf = name.endsWith(".pdf") || file.type === "application/pdf";
 
-      try {
-        const lines = text.split("\n");
-        const parsed: BankTransaction[] = [];
-        let id = 1;
+    if (name.endsWith(".csv") || file.type === "text/csv") {
+      toast({
+        title: "CSV not supported",
+        description: "Please upload an Excel (.xlsx / .xls) or PDF file.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
+    try {
+      const buffer = await file.arrayBuffer();
+      let parsed: BankTransaction[];
 
-          const parts = line.split(",");
-          if (parts.length < 4) continue;
-
-          const date = parts[0].replace(/"/g, "").trim();
-          const description = parts[1].replace(/"/g, "").trim();
-          const amount = parseFloat(parts[2].replace(/"/g, "").trim());
-          const type = parts[3].replace(/"/g, "").trim().toLowerCase() as "credit" | "debit";
-
-          if (isNaN(amount)) continue;
-
-          // Auto match logic: if description contains certain keywords, auto-match it
-          let status: "matched" | "need_review" = "need_review";
-          let matchedType = undefined;
-          let matchedRef = undefined;
-          let matchedDetails = undefined;
-
-          if (description.toLowerCase().includes("abc pte ltd")) {
-            status = "matched";
-            matchedType = "Receipt";
-            matchedRef = "INV-1004";
-            matchedDetails = "ABC Pte Ltd";
-          } else if (description.toLowerCase().includes("uob bank charge")) {
-            status = "matched";
-            matchedType = "Bank Charges";
-            matchedRef = "BC-9921";
-            matchedDetails = "Bank Charges";
-          }
-
-          parsed.push({
-            id: id++,
-            date,
-            description,
-            amount,
-            type,
-            status,
-            matchedType,
-            matchedRef,
-            matchedDetails
-          });
-        }
-
-        if (parsed.length === 0) {
-          throw new Error("No valid transactions found in CSV. Ensure format is: Date,Description,Amount,Type");
-        }
-
-        setTransactions(parsed);
+      if (isExcel) {
+        parsed = parseExcelStatement(buffer);
+      } else if (isPdf) {
+        parsed = await parsePdfStatement(buffer);
+      } else {
         toast({
-          title: "Statement Uploaded Successfully",
-          description: `Parsed ${parsed.length} transactions from the CSV file.`
+          title: "Unsupported file",
+          description: "Upload Excel (.xlsx / .xls) or PDF only.",
+          variant: "destructive",
         });
-      } catch (err: any) {
-        toast({
-          title: "Failed to parse CSV",
-          description: err.message || "Please check the CSV format.",
-          variant: "destructive"
-        });
+        return;
       }
-    };
-    reader.readAsText(file);
+
+      setTransactions(parsed);
+      toast({
+        title: "Statement Uploaded Successfully",
+        description: `Parsed ${parsed.length} transactions from ${file.name}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Failed to parse statement",
+        description: err?.message || "Please check the file format.",
+        variant: "destructive",
+      });
+    }
   };
 
-  // Download Sample CSV template
-  const handleDownloadSampleCSV = () => {
-    const headers = "Date,Description,Amount,Type\n";
+  // Download sample Excel template
+  const handleDownloadSampleExcel = () => {
     const rows = [
-      "2026-08-10,PAYMENT ABC PTE LTD Ref: 12345,1250.00,credit",
-      "2026-08-11,UOB BANK CHARGE,25.00,debit",
-      "2026-08-12,PAYNOW XYZ PTE LTD Ref: PAY123,2500.00,credit",
-      "2026-08-13,ACME PTE LTD Ref: 67890,3000.00,credit",
-      "2026-08-14,GIRO CREDIT Ref: GIRO567,1000.00,credit",
-      "2026-08-09,DBS BANK CHARGES,35.00,debit",
-      "2026-08-12,PAYNOW RECEIPT - ABC PTE LTD,250.00,credit",
-      "2026-08-15,SUPPLIER PAYMENT - XYZ PTE LTD,120.00,debit"
-    ].join("\n");
-
-    const blob = new Blob([headers + rows], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.setAttribute("href", url);
-    a.setAttribute("download", "sample_bank_statement.csv");
-    a.click();
+      ["Date", "Description", "Amount", "Type"],
+      ["2026-08-10", "PAYMENT ABC PTE LTD Ref: 12345", 1250.0, "credit"],
+      ["2026-08-11", "UOB BANK CHARGE", 25.0, "debit"],
+      ["2026-08-12", "PAYNOW XYZ PTE LTD Ref: PAY123", 2500.0, "credit"],
+      ["2026-08-13", "ACME PTE LTD Ref: 67890", 3000.0, "credit"],
+      ["2026-08-14", "GIRO CREDIT Ref: GIRO567", 1000.0, "credit"],
+      ["2026-08-09", "DBS BANK CHARGES", 35.0, "debit"],
+      ["2026-08-12", "PAYNOW RECEIPT - ABC PTE LTD", 250.0, "credit"],
+      ["2026-08-15", "SUPPLIER PAYMENT - XYZ PTE LTD", 120.0, "debit"],
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Statement");
+    XLSX.writeFile(workbook, "sample_bank_statement.xlsx");
   };
 
   // Report meta + rows (ID, Date, Description, credit, debit)
@@ -713,63 +1003,72 @@ export default function BankReconciliation() {
             {/* Active Reconciliation Dashboard */}
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
               {/* Main Content Area */}
-              <div className="xl:col-span-3 space-y-6">
-                {/* Filters Bar — account, dates, upload grouped tightly on one line */}
-                <div className="flex items-center gap-3 bg-card p-4 rounded-xl border shadow-sm">
-                  <select
-                    value={selectedAccount}
-                    onChange={(e) => setSelectedAccount(e.target.value)}
-                    className="h-9 w-[220px] shrink-0 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm focus:outline-none"
-                  >
-                    {bankAccounts.length > 0 ? (
-                      bankAccounts.map(a => (
-                        <option key={a.id} value={a.id}>{a.code} {a.name}</option>
-                      ))
-                    ) : (
-                      <option value="">No Bank Accounts Found</option>
-                    )}
-                  </select>
+              <div className="xl:col-span-3 space-y-6 min-w-0">
+                {/* Filters Bar — 1 line when wide (100%), 2 lines when tight (e.g. 150% zoom) */}
+                <div className="@container min-w-0">
+                  <div className="flex flex-col gap-3 bg-card p-3 sm:p-4 rounded-xl border shadow-sm @[700px]:flex-row @[700px]:items-center @[700px]:justify-between @[700px]:gap-4">
+                    <div className="flex items-center gap-3 min-w-0 flex-wrap @[700px]:flex-nowrap">
+                      <select
+                        value={selectedAccount}
+                        onChange={(e) => setSelectedAccount(e.target.value)}
+                        className="h-9 min-w-[160px] w-[200px] max-w-full rounded-md border border-input bg-background px-2 text-sm font-medium shadow-sm focus:outline-none"
+                      >
+                        {bankAccounts.length > 0 ? (
+                          bankAccounts.map(a => (
+                            <option key={a.id} value={String(a.id)}>{a.code} {a.name}</option>
+                          ))
+                        ) : (
+                          <option value="">No Bank Accounts Found</option>
+                        )}
+                      </select>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="w-[140px]">
-                      <SyncBridgeDatePicker
-                        value={dateFrom}
-                        onChange={setDateFrom}
-                        placeholder="From"
-                        max={dateTo || undefined}
-                      />
+                      <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                        <div className="w-[132px]">
+                          <SyncBridgeDatePicker
+                            value={dateFrom}
+                            onChange={setDateFrom}
+                            placeholder="From"
+                            max={dateTo || undefined}
+                            className="h-9"
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">to</span>
+                        <div className="w-[132px]">
+                          <SyncBridgeDatePicker
+                            value={dateTo}
+                            onChange={setDateTo}
+                            placeholder="To"
+                            min={dateFrom || undefined}
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-xs text-muted-foreground shrink-0">to</span>
-                    <div className="w-[140px]">
-                      <SyncBridgeDatePicker
-                        value={dateTo}
-                        onChange={setDateTo}
-                        placeholder="To"
-                        min={dateFrom || undefined}
-                      />
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        onClick={() => setTransactions([])}
+                        className="h-9 shrink-0 whitespace-nowrap px-3 text-sm text-rose-600 border-rose-200 hover:bg-rose-50"
+                      >
+                        Clear Statement
+                      </Button>
+                      <Button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="bg-[#2563EB] hover:bg-[#1D4ED8] gap-1.5 h-9 shrink-0 whitespace-nowrap px-3 text-sm"
+                      >
+                        <Upload className="h-4 w-4 shrink-0" />
+                        Upload Statement
+                      </Button>
                     </div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      accept=".xlsx,.xls,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf"
+                      className="hidden"
+                    />
                   </div>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => setTransactions([])}
-                    className="h-9 shrink-0 gap-1.5 text-rose-600 border-rose-200 hover:bg-rose-50"
-                  >
-                    Clear Statement
-                  </Button>
-                  <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="bg-[#2563EB] hover:bg-[#1D4ED8] gap-2 h-9 shrink-0"
-                  >
-                    <Upload className="h-4 w-4" /> Upload Statement
-                  </Button>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    accept=".csv"
-                    className="hidden"
-                  />
                 </div>
 
                 {/* KPI Cards */}
@@ -948,29 +1247,35 @@ export default function BankReconciliation() {
               </div>
 
               {/* Right Sidebar */}
-              <div className="space-y-6">
+              <div className="space-y-6 min-w-0">
                 {/* Reconciliation Summary Card */}
-                <Card className="shadow-sm">
+                <Card className="shadow-sm overflow-hidden min-w-0">
                   <CardHeader className="pb-3 border-b">
                     <CardTitle className="text-sm font-bold text-slate-800">Reconciliation Summary</CardTitle>
                     <p className="text-[11px] text-muted-foreground">as on 31 Jul 2026</p>
                   </CardHeader>
-                  <CardContent className="p-4 space-y-4 text-xs">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Bank Statement Closing Balance</span>
-                      <span className="font-bold text-slate-800">{formatCurrency(reconSummary.adjustedBankBalance)}</span>
+                  <CardContent className="p-4 space-y-4 text-xs min-w-0">
+                    <div className="flex justify-between items-start gap-3 min-w-0">
+                      <span className="text-muted-foreground min-w-0 flex-1 leading-snug">Bank Statement Closing Balance</span>
+                      <span className="font-bold text-slate-800 shrink-0 tabular-nums text-right">
+                        {formatCurrency(reconSummary.adjustedBankBalance)}
+                      </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Book Balance (As per Books)</span>
-                      <span className="font-bold text-slate-800">{formatCurrency(reconSummary.booksBalance)}</span>
+                    <div className="flex justify-between items-start gap-3 min-w-0">
+                      <span className="text-muted-foreground min-w-0 flex-1 leading-snug">Book Balance (As per Books)</span>
+                      <span className="font-bold text-slate-800 shrink-0 tabular-nums text-right">
+                        {formatCurrency(reconSummary.booksBalance)}
+                      </span>
                     </div>
-                    <div className="border-t pt-3 flex justify-between items-center">
-                      <span className="font-semibold text-slate-800">Difference</span>
-                      <div className="text-right">
-                        <p className={`font-bold ${reconSummary.isBalanced ? "text-emerald-600" : "text-rose-600"}`}>
+                    <div className="border-t pt-3 space-y-2 min-w-0">
+                      <div className="flex justify-between items-center gap-3 min-w-0">
+                        <span className="font-semibold text-slate-800 shrink-0">Difference</span>
+                        <p className={`font-bold shrink-0 tabular-nums text-right ${reconSummary.isBalanced ? "text-emerald-600" : "text-rose-600"}`}>
                           {formatCurrency(reconSummary.difference)}
                         </p>
-                        <Badge className={`mt-1 shadow-none ${reconSummary.isBalanced ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                      </div>
+                      <div className="flex justify-end min-w-0">
+                        <Badge className={`max-w-full shadow-none whitespace-nowrap ${reconSummary.isBalanced ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
                           {transactions.length === 0 ? "No statement" : reconSummary.isBalanced ? "Perfectly Matched" : "Needs Attention"}
                         </Badge>
                       </div>
@@ -1374,28 +1679,46 @@ export default function BankReconciliation() {
                   <p className="text-sm text-muted-foreground max-w-md">Great job! Your bank and book balances are now matched.</p>
                 </div>
 
-                {/* Balances Match Box */}
-                <div className="flex items-center justify-center gap-6 bg-slate-50 border p-4 rounded-xl w-full max-w-lg shadow-sm">
-                  <div className="text-center flex-1">
-                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Bank Balance</p>
-                    <p className="text-lg font-black text-slate-800 mt-1">{formatCurrency(reconSummary.adjustedBankBalance)}</p>
+                {/* Balances Match Box — icons like reference */}
+                <div className="flex items-center justify-center gap-3 w-full max-w-xl">
+                  <div className="flex items-center gap-3 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm text-left">
+                    <div className="h-11 w-11 rounded-full bg-[#1B7543] text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <Landmark className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700">Bank Balance</p>
+                      <p className="text-base font-bold text-[#1B7543] truncate">
+                        {formatCurrency(reconSummary.adjustedBankBalance)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-xl font-bold text-muted-foreground">=</div>
-                  <div className="text-center flex-1">
-                    <p className="text-[10px] text-muted-foreground uppercase font-bold">Book Balance</p>
-                    <p className="text-lg font-black text-slate-800 mt-1">{formatCurrency(reconSummary.booksBalance)}</p>
+
+                  <div className="h-8 w-8 rounded-full bg-emerald-50 border border-emerald-100 text-slate-700 flex items-center justify-center shrink-0 text-sm font-bold">
+                    =
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm text-left">
+                    <div className="h-11 w-11 rounded-full bg-[#1B7543] text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <BookOpen className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700">Book Balance</p>
+                      <p className="text-base font-bold text-[#1B7543] truncate">
+                        {formatCurrency(reconSummary.booksBalance)}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-lg">
-                  <Button variant="outline" onClick={handlePrintReport} className="h-9 text-xs gap-1.5 flex-1 min-w-[100px]">
-                    <FileText className="h-4 w-4 text-blue-500" /> Print
+                  <Button variant="outline" onClick={handlePrintReport} className="h-9 text-xs flex-1 min-w-[100px]">
+                    Print
                   </Button>
-                  <Button variant="outline" onClick={handleExportExcel} className="h-9 text-xs gap-1.5 flex-1 min-w-[100px]">
-                    <FileSpreadsheet className="h-4 w-4 text-emerald-500" /> Excel
+                  <Button variant="outline" onClick={handleExportExcel} className="h-9 text-xs flex-1 min-w-[100px]">
+                    Excel
                   </Button>
-                  <Button variant="outline" onClick={handleDownloadPdf} className="h-9 text-xs gap-1.5 flex-1 min-w-[100px]">
-                    <Download className="h-4 w-4 text-red-500" /> PDF
+                  <Button variant="outline" onClick={handleDownloadPdf} className="h-9 text-xs flex-1 min-w-[100px]">
+                    PDF
                   </Button>
                 </div>
               </CardContent>
