@@ -622,8 +622,8 @@ export default function BillOfMaterialsPage() {
               <h2 className="text-base font-semibold text-[#111827]">Product Details (Finished Product)</h2>
             </div>
             <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1.5">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="space-y-1.5 min-w-0">
                   <Label>Product</Label>
                   <Input
                     value={productName}
@@ -631,30 +631,26 @@ export default function BillOfMaterialsPage() {
                     placeholder="Enter product"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <div className="grid grid-cols-[1fr_auto] gap-2">
-                    <div className="space-y-1.5 min-w-0">
-                      <Label>Quantity</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={outputQty || ""}
-                        onChange={(e) => setOutputQty(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
-                        className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                      />
-                    </div>
-                    <div className="space-y-1.5 w-24">
-                      <Label>UOM</Label>
-                      <Input
-                        value={outputUom}
-                        onChange={(e) => setOutputUom(e.target.value)}
-                        placeholder="PCS"
-                      />
-                    </div>
-                  </div>
+                <div className="space-y-1.5 min-w-0">
+                  <Label>Qty</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={outputQty || ""}
+                    onChange={(e) => setOutputQty(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+                    className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
+                  <Label>UOM</Label>
+                  <Input
+                    value={outputUom}
+                    onChange={(e) => setOutputUom(e.target.value)}
+                    placeholder="PCS"
+                  />
+                </div>
+                <div className="space-y-1.5 min-w-0">
                   <Label>Status</Label>
                   <Select value={status} onValueChange={(v) => setStatus(v as any)}>
                     <SelectTrigger>
@@ -667,7 +663,7 @@ export default function BillOfMaterialsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0 sm:col-span-2 lg:col-span-1">
                   <Label>Category</Label>
                   <Input
                     value={category}

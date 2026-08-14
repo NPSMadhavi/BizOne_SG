@@ -867,7 +867,7 @@ export default function PayrollPage() {
         title="Payroll Management"
         description="Manage employee payroll configurations and process monthly payroll"
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-nowrap items-center gap-2">
             <Button className={payrollPrimaryButtonClass} onClick={() => openConfigForm()}>
               <Plus className="mr-2 h-4 w-4" /> Create Payroll Config
             </Button>

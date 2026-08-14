@@ -15,11 +15,11 @@ export function ManagementPageHeader({
 }) {
   return (
     <div className="mb-5 flex flex-col gap-4 py-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
+      <div className="min-w-0">
         <h2 className="text-[36px] font-bold leading-tight text-[#2563EB]">{title}</h2>
         {description ? <p className="mt-1 text-sm text-[#6B7280]">{description}</p> : null}
       </div>
-      {action ? <div className="flex flex-wrap sm:justify-end">{action}</div> : null}
+      {action ? <div className="flex shrink-0 flex-nowrap items-center sm:justify-end">{action}</div> : null}
     </div>
   );
 }
