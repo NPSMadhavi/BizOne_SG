@@ -55,7 +55,6 @@ import {
   hasProcessedPayrollForEmployee,
   getAvailablePayslipMonthsForEmployee,
   isPayrollProcessedForPeriod,
-  downloadPayrollFileResponse,
   formatPayrollMonthLabel,
   isPayPeriodEligibleForProcessing,
   PAYROLL_CURRENT_MONTH_ERROR,
@@ -186,6 +185,64 @@ function formatPeriod(period: string) {
     weekly: "Weekly",
   };
   return map[period] || period;
+}
+
+async function resolvePayslipPdfForMonth(args: {
+  config: PayrollConfig;
+  month: number;
+  year: number;
+  employees: any[];
+  payrollRecords: any[];
+  company: { name?: string | null; address?: string | null } | null;
+}): Promise<{ data: PayslipPdfData; title: string; filename: string } | null> {
+  const { config, month, year, employees, payrollRecords, company } = args;
+  const { payPeriodStart, payPeriodEnd } = getPayPeriodForMonth(year, month);
+  const employee = employees.find((item) => Number(item.id) === Number(config.employeeId));
+  const record = findPayrollRecordForPeriod(config.employeeId, payrollRecords, payPeriodStart, payPeriodEnd);
+  const localData = record
+    ? buildPayslipPdfData({
+        config,
+        employee,
+        record,
+        company,
+        month,
+        year,
+        payPeriodStart,
+        payPeriodEnd,
+      })
+    : null;
+
+  try {
+    const res = await fetch("/api/payroll/payslips/preview", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payrollConfigId: config.id,
+        year,
+        month,
+      }),
+    });
+    if (res.ok) {
+      const payload = await res.json().catch(() => null);
+      const data = isPayslipPdfData(payload?.data) ? payload.data : localData;
+      if (!data) return null;
+      return {
+        data,
+        title: payload?.title || `${config.employeeName} - ${formatPayrollMonthLabel(year, month)}`,
+        filename: payload?.downloadFilename || payslipPdfFilename(config.employeeName, month, year),
+      };
+    }
+  } catch {
+    // Fall back to processed payroll already loaded in the browser.
+  }
+
+  if (!localData) return null;
+  return {
+    data: localData,
+    title: `${config.employeeName} - ${formatPayrollMonthLabel(year, month)}`,
+    filename: payslipPdfFilename(config.employeeName, month, year),
+  };
 }
 
 export default function PayrollPage() {
@@ -547,46 +604,49 @@ export default function PayrollPage() {
     setIsPayslipDownloading(true);
 
     try {
-      const res = await fetch("/api/payroll/payslips/download", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payrollConfigId: payslipConfig.id,
+      const downloaded: string[] = [];
+      const missing: string[] = [];
+
+      for (let i = 0; i < selectedPayslipMonths.length; i++) {
+        const month = selectedPayslipMonths[i];
+        const resolved = await resolvePayslipPdfForMonth({
+          config: payslipConfig,
+          month,
           year: payslipYear,
-          months: selectedPayslipMonths,
-        }),
-      });
-
-      const employeeFirstName =
-        payslipConfig.employeeName?.trim().split(/\s+/)[0]?.replace(/[^a-zA-Z0-9]/g, "") ||
-        "Employee";
-      const isMultiMonth = selectedPayslipMonths.length > 1;
-      const fallbackFilename = isMultiMonth
-        ? `${employeeFirstName}_${payslipConfig.employeeId}_Payslips.zip`
-        : buildPayslipDownloadFilename(
-            payslipConfig.employeeName,
-            selectedPayslipMonths[0],
-            payslipYear
-          );
-
-      const result = await downloadPayrollFileResponse(res, fallbackFilename);
-
-      if (result.ok) {
-        const missingHeader = res.headers.get("X-Payslip-Missing-Months");
-        toast({
-          title: isMultiMonth ? "Payslips downloaded" : "Payslip downloaded",
-          description: isMultiMonth
-            ? `Downloaded ${selectedPayslipMonths.length} payslip(s) as a ZIP file for ${payslipConfig.employeeName}.${missingHeader ? ` Missing: ${missingHeader}.` : ""}`
-            : `Downloaded payslip for ${payslipConfig.employeeName}.${missingHeader ? ` Missing: ${missingHeader}.` : ""}`,
+          employees,
+          payrollRecords,
+          company: selectedCompany,
         });
-      } else {
+
+        if (!resolved) {
+          missing.push(formatPayrollMonthLabel(payslipYear, month));
+          continue;
+        }
+
+        await generatePayslip_PDF(resolved.data, { filename: resolved.filename });
+        downloaded.push(formatPayrollMonthLabel(payslipYear, month));
+        if (i < selectedPayslipMonths.length - 1) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+      }
+
+      if (downloaded.length === 0) {
         toast({
           title: "Download failed",
-          description: result.message,
+          description: missing.length
+            ? `No processed payroll found for ${missing.join(", ")}. Process payroll first, then download.`
+            : "Failed to download payslips.",
           variant: "destructive",
         });
+        return;
       }
+
+      toast({
+        title: downloaded.length > 1 ? "Payslips downloaded" : "Payslip downloaded",
+        description: missing.length
+          ? `Downloaded ${downloaded.join(", ")}. Missing: ${missing.join(", ")}.`
+          : `Downloaded payslip for ${payslipConfig.employeeName} (${downloaded.join(", ")}).`,
+      });
     } catch (error) {
       toast({
         title: "Download failed",
@@ -611,55 +671,18 @@ export default function PayrollPage() {
 
     setIsPayslipViewing(true);
     const month = selectedPayslipMonths[0];
-    const { payPeriodStart, payPeriodEnd } = getPayPeriodForMonth(payslipYear, month);
-    const employee = employees.find((item) => Number(item.id) === Number(payslipConfig.employeeId));
-    const record = findPayrollRecordForPeriod(
-      payslipConfig.employeeId,
-      payrollRecords,
-      payPeriodStart,
-      payPeriodEnd,
-    );
-
-    const localData = record
-      ? buildPayslipPdfData({
-          config: payslipConfig,
-          employee,
-          record,
-          company: selectedCompany,
-          month,
-          year: payslipYear,
-          payPeriodStart,
-          payPeriodEnd,
-        })
-      : null;
 
     try {
-      const res = await fetch("/api/payroll/payslips/preview", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payrollConfigId: payslipConfig.id,
-          year: payslipYear,
-          month,
-        }),
+      const resolved = await resolvePayslipPdfForMonth({
+        config: payslipConfig,
+        month,
+        year: payslipYear,
+        employees,
+        payrollRecords,
+        company: selectedCompany,
       });
 
-      let payload: any = null;
-      if (res.ok) {
-        payload = await res.json().catch(() => null);
-      } else if (!localData) {
-        const error = await res.json().catch(() => ({}));
-        toast({
-          title: "View failed",
-          description: parseApiErrorMessage(error, "Failed to load payslip preview."),
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const data = isPayslipPdfData(payload?.data) ? payload.data : localData;
-      if (!data) {
+      if (!resolved) {
         toast({
           title: "View failed",
           description: "No processed payroll found for this month. Process payroll first, then view the payslip.",
@@ -668,24 +691,12 @@ export default function PayrollPage() {
         return;
       }
 
-      setPayslipViewerData(data);
-      setPayslipViewerTitle(
-        payload?.title || `${payslipConfig.employeeName} - ${formatPayrollMonthLabel(payslipYear, month)}`
-      );
-      setPayslipViewerFilename(
-        payload?.downloadFilename || payslipPdfFilename(payslipConfig.employeeName, month, payslipYear)
-      );
+      setPayslipViewerData(resolved.data);
+      setPayslipViewerTitle(resolved.title);
+      setPayslipViewerFilename(resolved.filename);
       setPayslipViewerOpen(true);
       setPayslipModalOpen(false);
     } catch (error) {
-      if (localData) {
-        setPayslipViewerData(localData);
-        setPayslipViewerTitle(`${payslipConfig.employeeName} - ${formatPayrollMonthLabel(payslipYear, month)}`);
-        setPayslipViewerFilename(payslipPdfFilename(payslipConfig.employeeName, month, payslipYear));
-        setPayslipViewerOpen(true);
-        setPayslipModalOpen(false);
-        return;
-      }
       toast({
         title: "View failed",
         description: error instanceof Error ? error.message : "Failed to load payslip preview.",
