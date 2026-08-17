@@ -13,4 +13,5 @@ export const CreateUserBodyRole = {
   admin: 'admin',
   user: 'user',
   external: 'external',
+  accountant: 'accountant',
 } as const;

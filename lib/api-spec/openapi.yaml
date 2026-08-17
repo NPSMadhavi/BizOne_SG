@@ -1181,7 +1181,7 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, user, external]
+          enum: [admin, user, external, accountant]
         createdAt:
           type: string
         companies:
@@ -1201,7 +1201,7 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, user, external]
+          enum: [admin, user, external, accountant]
         companyAccess:
           type: array
           items:
@@ -1217,7 +1217,7 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, user, external]
+          enum: [admin, user, external, accountant]
         companyAccess:
           type: array
           items:

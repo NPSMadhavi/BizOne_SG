@@ -9,11 +9,34 @@ import {
   APP_ALL_MODULES,
 } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
-import { CreateUserBody, UpdateUserBody, UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
+import { z } from "zod";
+import { UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
 import { logAudit } from "../lib/audit.js";
 import { requirePermission } from "../lib/auth-middleware.js";
 
 const router: IRouter = Router();
+
+const UserRoleSchema = z.enum(["admin", "user", "external", "accountant"]);
+const CompanyAccessSchema = z
+  .array(z.object({
+    companyId: z.number().int(),
+    modules: z.array(z.string()),
+  }))
+  .optional();
+
+const CreateUserPayload = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+  role: UserRoleSchema,
+  companyAccess: CompanyAccessSchema,
+});
+
+const UpdateUserPayload = z.object({
+  username: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+  role: UserRoleSchema.optional(),
+  companyAccess: CompanyAccessSchema,
+});
 
 type AppRole = "admin" | "user" | "external" | "accountant";
 
@@ -139,7 +162,7 @@ router.post("/users", requirePermission("user_management:create"), async (req, r
     return;
   }
 
-  const parsed = CreateUserBody.safeParse(req.body);
+  const parsed = CreateUserPayload.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -220,7 +243,7 @@ router.put("/users/:id", requirePermission("user_management:edit"), async (req, 
     return;
   }
 
-  const parsed = UpdateUserBody.safeParse(req.body);
+  const parsed = UpdateUserPayload.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
