@@ -886,7 +886,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-[100dvh] flex flex-col md:flex-row bg-muted/20">
+    <div
+      className="min-h-[100dvh] flex flex-col md:flex-row bg-muted/20"
+      style={{ ["--app-sidebar-width" as string]: collapsed ? "3.5rem" : "16rem" }}
+    >
       {/* ── Mobile header ────────────────────────────────────── */}
       <header className="md:hidden flex items-center justify-between px-4 h-14 border-b bg-card">
         <div className="flex items-center gap-2">

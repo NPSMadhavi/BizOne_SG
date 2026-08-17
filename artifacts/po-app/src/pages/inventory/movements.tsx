@@ -5,11 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Download } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 export default function MovementsPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   useEffect(() => { inventoryApi.getMovements(search ? { search } : undefined).then(setRows).catch(() => setRows([])); }, [search]);
+  const { page, setPage, totalPages, paginatedItems } = usePagination(rows);
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -23,7 +26,7 @@ export default function MovementsPage() {
             <th className="py-2">Date</th><th className="py-2">Type</th><th className="py-2">Document</th>
             <th className="py-2">Warehouse</th><th className="py-2">Item</th><th className="py-2 text-right">In</th><th className="py-2 text-right">Out</th><th className="py-2 text-right">Balance</th><th className="py-2">User</th>
           </tr></thead>
-          <tbody>{rows.map(r => (
+          <tbody>{paginatedItems.map(r => (
             <tr key={r.id} className="border-b border-border/50">
               <td className="py-2">{new Date(r.movementDate).toLocaleDateString()}</td>
               <td className="py-2"><Badge variant="outline">{r.transactionType}</Badge></td>
@@ -37,6 +40,7 @@ export default function MovementsPage() {
             </tr>
           ))}</tbody>
         </table>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </CardContent></Card>
     </div>
   );

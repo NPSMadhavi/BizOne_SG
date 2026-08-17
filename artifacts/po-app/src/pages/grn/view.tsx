@@ -14,7 +14,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { ArrowLeft, PackageCheck, ClipboardList, PackagePlus, Trash2 } from "lucide-react";
+import { ArrowLeft, PackageCheck, ClipboardList, PackagePlus, Trash2, Package } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { fmtDate } from "@/lib/utils";
 
 function stripHtml(html: string): string {
@@ -33,6 +35,14 @@ interface GrnItem {
   warehouseName?: string;
   warehouseId?: number;
   stockItemId?: number;
+}
+
+interface WarehouseOption {
+  id: number;
+  name: string;
+  code: string;
+  isDefault?: boolean;
+  isActive?: boolean;
 }
 
 interface Grn {
@@ -99,6 +109,24 @@ export default function GrnView() {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+
+  const { data: warehouses = [] } = useQuery<WarehouseOption[]>({
+    queryKey: ["warehouses"],
+    queryFn: async () => {
+      const res = await fetch("/api/warehouses", { credentials: "include" });
+      if (!res.ok) return [];
+      const rows: WarehouseOption[] = await res.json();
+      return rows
+        .filter((warehouse) => warehouse.isActive !== false)
+        .sort((a, b) => {
+          if (!!a.isDefault !== !!b.isDefault) return a.isDefault ? -1 : 1;
+          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+        });
+    },
+  });
+
+  const defaultWarehouse = warehouses.find((warehouse) => warehouse.isDefault) ?? warehouses[0];
 
   useEffect(() => {
     if (grn) {
@@ -106,6 +134,24 @@ export default function GrnView() {
       setIsDirty(false);
     }
   }, [grn]);
+
+  useEffect(() => {
+    if (!defaultWarehouse) return;
+    setItems((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (!item.isStockItem || Number(item.warehouseId) > 0) return item;
+        changed = true;
+        return {
+          ...item,
+          warehouseId: defaultWarehouse.id,
+          warehouseName: defaultWarehouse.name,
+        };
+      });
+      if (changed) setIsDirty(true);
+      return changed ? next : prev;
+    });
+  }, [defaultWarehouse?.id]);
 
   const mutation = useMutation({
     mutationFn: (updatedItems: GrnItem[]) => receiveGrn(grn!.id, updatedItems),
@@ -150,9 +196,49 @@ export default function GrnView() {
   const handleToggleIsStockItem = (index: number, checked: boolean) => {
     setItems((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], isStockItem: checked };
+      const updated: GrnItem = { ...next[index], isStockItem: checked };
+      if (checked && !(Number(updated.warehouseId) > 0) && defaultWarehouse) {
+        updated.warehouseId = defaultWarehouse.id;
+        updated.warehouseName = defaultWarehouse.name;
+      }
+      next[index] = updated;
       return next;
     });
+    setIsDirty(true);
+  };
+
+  const handleWarehouseChange = (index: number, warehouseId: string) => {
+    const warehouse = warehouses.find((row) => row.id === Number(warehouseId));
+    if (!warehouse) return;
+    setItems((prev) => {
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        warehouseId: warehouse.id,
+        warehouseName: warehouse.name,
+      };
+      return next;
+    });
+    setIsDirty(true);
+  };
+
+  const handleStockPickerSelect = ({ item, warehouseId, warehouseName, qty }: StockItemSelection) => {
+    if (stockPickerIndex === null || !warehouseId) return;
+    setItems((prev) => {
+      const next = [...prev];
+      next[stockPickerIndex] = {
+        ...next[stockPickerIndex],
+        partNumber: item.code,
+        description: next[stockPickerIndex].description || item.name,
+        isStockItem: true,
+        stockItemId: item.id,
+        warehouseId,
+        warehouseName: warehouseName ?? "",
+        qty: qty > 0 ? qty : next[stockPickerIndex].qty,
+      };
+      return next;
+    });
+    setStockPickerIndex(null);
     setIsDirty(true);
   };
 
@@ -169,6 +255,17 @@ export default function GrnView() {
     const receivedItems = items.filter((i) => i.received);
     if (receivedItems.length === 0) {
       toast({ title: "No items selected", description: "Please check at least one item as received.", variant: "destructive" });
+      return;
+    }
+    const missingWarehouse = receivedItems.filter(
+      (item) => item.isStockItem && !(Number(item.warehouseId) > 0),
+    );
+    if (missingWarehouse.length > 0) {
+      toast({
+        title: "Warehouse required",
+        description: `Select a warehouse for ${missingWarehouse.map((item) => item.partNumber || "stock item").join(", ")} using the cube icon.`,
+        variant: "destructive",
+      });
       return;
     }
     setConfirmOpen(true);
@@ -311,7 +408,7 @@ export default function GrnView() {
             <table className="w-full text-sm border-collapse table-fixed">
               <colgroup>
                 <col className="w-[88px]" />
-                <col className="w-[140px]" />
+                <col className="w-[180px]" />
                 <col />
                 <col className="w-[72px]" />
                 <col className="w-[88px]" />
@@ -370,11 +467,51 @@ export default function GrnView() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-left align-middle">
-                      <div className="min-w-0 flex flex-col justify-center">
-                        <p className="truncate font-mono text-xs text-foreground leading-tight">
-                          {item.partNumber || "—"}
-                        </p>
-                        {item.warehouseName ? (
+                      <div className="min-w-0 flex flex-col justify-center gap-1">
+                        <div className="flex items-center gap-1">
+                          <p className="truncate font-mono text-xs text-foreground leading-tight">
+                            {item.partNumber || "—"}
+                          </p>
+                          {item.isStockItem ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+                              title="Select warehouse"
+                              onClick={() => setStockPickerIndex(index)}
+                            >
+                              <Package className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
+                        </div>
+                        {item.isStockItem ? (
+                          warehouses.length > 0 ? (
+                            <Select
+                              value={item.warehouseId ? String(item.warehouseId) : undefined}
+                              onValueChange={(value) => handleWarehouseChange(index, value)}
+                            >
+                              <SelectTrigger className="h-7 border-gray-200 bg-white text-[10px]">
+                                <SelectValue placeholder="Select warehouse" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {warehouses.map((warehouse) => (
+                                  <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                                    {warehouse.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : item.warehouseName ? (
+                            <p className="truncate text-[10px] text-muted-foreground leading-tight">
+                              → {item.warehouseName}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] font-medium text-amber-600 leading-tight">
+                              Select warehouse
+                            </p>
+                          )
+                        ) : item.warehouseName ? (
                           <p className="truncate text-[10px] text-muted-foreground leading-tight">
                             → {item.warehouseName}
                           </p>
@@ -479,6 +616,13 @@ export default function GrnView() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StockItemPickerDialog
+        open={stockPickerIndex !== null}
+        onOpenChange={(open) => !open && setStockPickerIndex(null)}
+        mode="receive"
+        onSelect={handleStockPickerSelect}
+      />
     </div>
   );
 }

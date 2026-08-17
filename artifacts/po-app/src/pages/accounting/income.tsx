@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Plus, Search, Eye, Trash2, Pencil, TrendingUp } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface IncomeRecord {
   id: number;
@@ -101,7 +103,7 @@ export default function IncomeList() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
-  const filtered = records.filter(r => {
+  const filtered = useMemo(() => records.filter(r => {
     if (statusFilter !== "all" && r.status !== statusFilter) return false;
     if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
     if (search) {
@@ -109,7 +111,9 @@ export default function IncomeList() {
       return r.payerName.toLowerCase().includes(q) || r.description.toLowerCase().includes(q);
     }
     return true;
-  });
+  }), [records, statusFilter, categoryFilter, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const totalAmount = filtered.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const totalGst    = filtered.reduce((s, r) => s + (parseFloat(r.gstAmount) || 0), 0);
@@ -203,7 +207,7 @@ export default function IncomeList() {
               {filtered.length === 0 && (
                 <tr><td colSpan={9} className="text-center py-12 text-muted-foreground">No income records found.</td></tr>
               )}
-              {filtered.map(r => (
+              {paginatedItems.map(r => (
                 <tr key={r.id} className="border-t hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 whitespace-nowrap">{fmtDate(r.incomeDate)}</td>
                   <td className="px-4 py-3 font-medium">{r.payerName}</td>
@@ -233,6 +237,7 @@ export default function IncomeList() {
               ))}
             </tbody>
           </table>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
 

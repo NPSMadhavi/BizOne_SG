@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Plus, Search, Eye, Trash2, Pencil, ReceiptText, CheckCircle2 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface Expense {
   id: number;
@@ -93,7 +95,7 @@ export default function ExpensesList() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
-  const filtered = expenses.filter(e => {
+  const filtered = useMemo(() => expenses.filter(e => {
     if (statusFilter !== "all" && e.status !== statusFilter) return false;
     if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
     if (search) {
@@ -101,7 +103,9 @@ export default function ExpensesList() {
       return e.vendorName.toLowerCase().includes(q) || e.description.toLowerCase().includes(q);
     }
     return true;
-  });
+  }), [expenses, statusFilter, categoryFilter, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const totalAmount = filtered.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const totalGst = filtered.reduce((s, e) => s + (parseFloat(e.gstAmount) || 0), 0);
@@ -196,7 +200,7 @@ export default function ExpensesList() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(exp => (
+                {paginatedItems.map(exp => (
                   <tr key={exp.id} className="border-b hover:bg-muted/20 cursor-pointer" onClick={() => setLocation(`/accounting/expenses/${exp.id}`)}>
                     <td className="px-4 py-3 text-muted-foreground">{fmtDate(exp.expenseDate)}</td>
                     <td className="px-4 py-3">
@@ -243,6 +247,7 @@ export default function ExpensesList() {
               </tbody>
             </table>
           )}
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
 

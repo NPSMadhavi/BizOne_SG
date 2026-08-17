@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 type Line = { stockItemId: string; quantity: string; unitCost: string };
 
@@ -35,6 +37,8 @@ function TransactionPage({
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
   useEffect(() => { load(); }, []);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(rows);
 
   async function save() {
     try {
@@ -81,7 +85,7 @@ function TransactionPage({
             {showSupplier && <th className="py-2">Supplier</th>}
             {showReason && <th className="py-2">Reason</th>}
           </tr></thead>
-          <tbody>{rows.map(r => (
+          <tbody>{paginatedItems.map(r => (
             <tr key={r.id} className="border-b border-border/50">
               <td className="py-2 font-mono">{r[numCol] || r.grnNumber || r.ginNumber || r.adjustmentNumber}</td>
               <td className="py-2">{r.receiptDate || r.issueDate || r.adjustmentDate}</td>
@@ -91,6 +95,7 @@ function TransactionPage({
             </tr>
           ))}</tbody>
         </table>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </CardContent></Card>
 
       <Dialog open={open} onOpenChange={setOpen}>

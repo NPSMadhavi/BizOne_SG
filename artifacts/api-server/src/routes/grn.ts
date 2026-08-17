@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, and, ilike, or, sql } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
-import { adjustWarehouseQuantity, applyMovement, getWarehouseBalance } from "../lib/inventory-service.js";
+import { adjustWarehouseQuantity, applyMovement, getWarehouseBalance, getDefaultWarehouseId, ensureDefaultWarehouse } from "../lib/inventory-service.js";
 import { requireWarehouseId } from "../lib/document-stock-sync.js";
 
 declare module "express-session" {
@@ -69,6 +69,48 @@ function toStockQty(value: string | number | null | undefined): number {
 
 function isStockHoldingPoStatus(status: unknown): boolean {
   return status === "confirmed" || status === "sent";
+}
+
+async function lookupWarehouseIdByName(
+  tx: any,
+  companyId: number,
+  warehouseName: unknown,
+): Promise<number | undefined> {
+  const cleanWhName = String(warehouseName || "").trim();
+  if (!cleanWhName) return undefined;
+  const [whRow] = await tx
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(and(eq(warehousesTable.companyId, companyId), ilike(warehousesTable.name, cleanWhName)))
+    .limit(1);
+  return whRow?.id;
+}
+
+async function resolveGrnLineWarehouseId(
+  tx: any,
+  companyId: number,
+  item: any,
+  poLine: any | undefined,
+  itemLabel: string,
+): Promise<number> {
+  let warehouseId = Number(item.warehouseId) > 0 ? Number(item.warehouseId) : undefined;
+
+  if (!warehouseId) {
+    warehouseId = await lookupWarehouseIdByName(tx, companyId, item.warehouseName);
+  }
+
+  if (!warehouseId && poLine) {
+    warehouseId = Number(poLine.warehouseId) > 0 ? Number(poLine.warehouseId) : undefined;
+    if (!warehouseId) {
+      warehouseId = await lookupWarehouseIdByName(tx, companyId, poLine.warehouseName);
+    }
+  }
+
+  if (!warehouseId) {
+    warehouseId = (await getDefaultWarehouseId(companyId)) ?? (await ensureDefaultWarehouse(companyId));
+  }
+
+  return requireWarehouseId(warehouseId, itemLabel);
 }
 
 /**
@@ -683,6 +725,16 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
 
   try {
     const updated = await db.transaction(async (tx) => {
+      let poItems: any[] = [];
+      if (existing.poId) {
+        const [poRow] = await tx
+          .select({ items: purchaseOrdersTable.items })
+          .from(purchaseOrdersTable)
+          .where(eq(purchaseOrdersTable.id, existing.poId))
+          .limit(1);
+        poItems = (poRow?.items as any[]) || [];
+      }
+
       // Only post stock for lines newly marked received (avoid double-counting)
       for (let idx = 0; idx < items.length; idx++) {
         const item = items[idx];
@@ -732,8 +784,11 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
         const addQty = serialLines.length > 0 ? serialLines.length : (Number(item.qty) || 0);
         if (addQty <= 0) continue;
 
-        const warehouseId = requireWarehouseId(
-          item.warehouseId,
+        const warehouseId = await resolveGrnLineWarehouseId(
+          tx,
+          companyId,
+          item,
+          poItems[idx],
           partNumber || stockItem.name || `item #${stockItemId}`,
         );
 

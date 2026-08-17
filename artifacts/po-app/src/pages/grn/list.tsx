@@ -8,6 +8,8 @@ import { useLocation } from "wouter";
 import { Search, ArrowRight, ClipboardList, Calendar, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -72,10 +74,12 @@ export default function GrnList() {
     });
   }, [grns, filterMode, filterYear, customFrom, customTo]);
 
-  const filtered = filteredByDate.filter((g) => {
+  const filtered = useMemo(() => filteredByDate.filter((g) => {
     const term = searchTerm.toLowerCase();
     return g.grnNumber.toLowerCase().includes(term) || String(g.poNumber || "").toLowerCase().includes(term) || g.vendorName.toLowerCase().includes(term);
-  });
+  }), [filteredByDate, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -169,7 +173,7 @@ export default function GrnList() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((grn) => {
+                paginatedItems.map((grn) => {
                   const receivedCount = grn.items.filter((i) => i.received).length;
                   return (
                     <tr key={grn.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/grn/${grn.id}`)}>
@@ -189,6 +193,7 @@ export default function GrnList() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
     </div>
   );

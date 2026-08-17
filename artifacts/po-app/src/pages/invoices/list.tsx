@@ -8,6 +8,8 @@ import { Link, useLocation } from "wouter";
 import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
@@ -82,6 +84,8 @@ export default function InvoiceList() {
       const t = searchTerm.toLowerCase();
       return d.invNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
     }), [filteredByDate, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   // Multi-currency stats from date-filtered set
   const stats = useMemo(() => {
@@ -288,11 +292,11 @@ export default function InvoiceList() {
                 <th className="px-6 py-4 font-medium">Sales Order</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
-                <th className="px-6 py-4 font-medium text-right">Amount</th>
-                <th className="px-6 py-4 font-medium text-right">Outstanding</th>
-                <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium">Amount</th>
+                <th className="px-6 py-4 font-medium">Outstanding</th>
+                <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium">Sent To</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                <th className="px-6 py-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -315,7 +319,7 @@ export default function InvoiceList() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((doc) => {
+                paginatedItems.map((doc) => {
                   const balance = Number((doc as any).balance ?? 0);
                   const isSettled = ["cancelled", "void", "paid"].includes(doc.status);
                   return (
@@ -342,16 +346,16 @@ export default function InvoiceList() {
                       </td>
                       <td className="px-6 py-4 font-medium">{fmtDate((doc as any).issueDate || doc.createdAt)}</td>
                       <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                      <td className="px-6 py-4 text-right font-medium">{fmt(Number(doc.totalAmount), (doc as any).currency || "SGD")}</td>
-                      <td className="px-6 py-4 text-right font-medium">
+                      <td className="px-6 py-4 font-medium">{fmt(Number(doc.totalAmount), (doc as any).currency || "SGD")}</td>
+                      <td className="px-6 py-4 font-medium">
                         {isSettled
                           ? <span className="text-muted-foreground">—</span>
                           : <span className={balance > 0 ? "text-orange-600" : "text-emerald-600"}>{fmt(balance, (doc as any).currency || "SGD")}</span>
                         }
                       </td>
-                      <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
+                      <td className="px-6 py-4">{getStatusBadge(doc.status)}</td>
                       <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo} /></td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                           <ArrowRight className="h-4 w-4" />
                         </Button>
@@ -363,6 +367,7 @@ export default function InvoiceList() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
     </div>
   );

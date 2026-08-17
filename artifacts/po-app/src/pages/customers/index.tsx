@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,8 @@ import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect
 import { useGetSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { CURRENCIES } from "@/lib/currencies";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface Customer {
   id: number;
@@ -129,12 +131,14 @@ export default function CustomersPage() {
   const openEdit = (c: Customer) => { setEditing(c); setForm({ ...c }); setDialogOpen(true); };
   const setField = (k: keyof Customer, val: any) => setForm(p => ({ ...p, [k]: val }));
 
-  const filtered = customers.filter(c =>
+  const filtered = useMemo(() => customers.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.country || "").toLowerCase().includes(search.toLowerCase()) ||
     (c.contactEmail || "").toLowerCase().includes(search.toLowerCase()) ||
     (c.postalCode || "").includes(search)
-  );
+  ), [customers, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const effectiveGst = (c: Customer) => {
     if (!c.gstRegistered) return "0%";
@@ -195,7 +199,7 @@ export default function CustomersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filtered.map(c => (
+                  {paginatedItems.map(c => (
                     <tr key={c.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <div className="font-medium">{c.name}</div>
@@ -245,6 +249,7 @@ export default function CustomersPage() {
               </table>
             </div>
           )}
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
 

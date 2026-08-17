@@ -13,6 +13,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import {
   Form,
   FormControl,
@@ -870,7 +871,7 @@ export default function PurchaseOrderEdit() {
             </div>
           </Card>
 
-          <div className="flex justify-end gap-3 fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:left-64 md:px-8 z-10">
+          <FormStickyActions>
             <Button
               type="button"
               variant="outline"
@@ -903,7 +904,7 @@ export default function PurchaseOrderEdit() {
               <Eye className="h-4 w-4" />
               Save & Preview
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

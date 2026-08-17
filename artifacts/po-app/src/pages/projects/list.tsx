@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ import {
   Trash2, AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface Project {
   id: number;
@@ -115,6 +117,8 @@ export default function ProjectList() {
       return r.json();
     },
   });
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(projects);
 
   const { data: unassignedVouchers = [], isLoading: unassignedLoading } = useQuery<any[]>({
     queryKey: ["unassigned-vouchers"],
@@ -219,7 +223,7 @@ export default function ProjectList() {
         </div>
       ) : (
         <div className="grid gap-4">
-          {projects.map((p) => {
+          {paginatedItems.map((p) => {
             const pct = p.budget && p.budget > 0 ? Math.min((p.spent / p.budget) * 100, 100) : null;
             const over = p.budget && p.spent > p.budget;
             return (
@@ -282,6 +286,7 @@ export default function ProjectList() {
               </div>
             );
           })}
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
 

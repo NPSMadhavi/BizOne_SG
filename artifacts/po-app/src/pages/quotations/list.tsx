@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { Search, Plus, MailCheck, CheckCircle2, MoreHorizontal, Eye, Pencil, FileText, Receipt, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -85,10 +87,12 @@ export default function QuotationList() {
     });
   }, [docs, filterMode, filterYear, customFrom, customTo]);
 
-  const filtered = filteredByDate.filter((d) => {
+  const filtered = useMemo(() => filteredByDate.filter((d) => {
     const t = searchTerm.toLowerCase();
     return d.qtNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-  });
+  }), [filteredByDate, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -162,10 +166,10 @@ export default function QuotationList() {
                 <th className="px-6 py-4 font-medium">QT Number</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
-                <th className="px-6 py-4 font-medium text-right">Amount</th>
-                <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium">Amount</th>
+                <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium">Sent To</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                <th className="px-6 py-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -184,15 +188,15 @@ export default function QuotationList() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((doc) => (
+                paginatedItems.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/quotations/${doc.id}`)}>
                     <td className="px-6 py-4 font-medium">{doc.qtNumber}</td>
                     <td className="px-6 py-4 font-medium">{fmtDate(doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.customerName}</td>
-                    <td className="px-6 py-4 text-right font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:"SGD"}).format(Number(doc.totalAmount))}</td>
-                    <td className="px-6 py-4 text-center">{getStatusBadge(doc.status)}</td>
+                    <td className="px-6 py-4 font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:"SGD"}).format(Number(doc.totalAmount))}</td>
+                    <td className="px-6 py-4">{getStatusBadge(doc.status)}</td>
                     <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo}/></td>
-                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
@@ -230,6 +234,7 @@ export default function QuotationList() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
     </div>
   );

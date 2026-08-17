@@ -54,7 +54,7 @@ function actionBadge(action: string) {
   );
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 12;
 
 async function fetchAuditLogs(params: Record<string, string>): Promise<{ total: number; rows: AuditLog[] }> {
   const qs = new URLSearchParams(params).toString();

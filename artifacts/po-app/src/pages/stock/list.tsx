@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Search, Package, Wrench } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 export default function StockList() {
   const { canManage } = useAuth();
@@ -57,7 +59,7 @@ export default function StockList() {
     );
   }
 
-  const filtered = (items as any[]).filter((item: any) => {
+  const filtered = useMemo(() => (items as any[]).filter((item: any) => {
     const matchesSearch =
       !search ||
       item.code.toLowerCase().includes(search.toLowerCase()) ||
@@ -67,7 +69,9 @@ export default function StockList() {
         .includes(search.toLowerCase());
     const matchesType = !typeFilter || item.type === typeFilter;
     return matchesSearch && matchesType;
-  });
+  }), [items, search, typeFilter]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -139,7 +143,7 @@ export default function StockList() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((item: any) => (
+                paginatedItems.map((item: any) => (
                   <tr key={item.id} className="bg-card transition-colors hover:bg-muted/20">
                     <td className="px-4 py-3 font-mono text-sm font-medium">{item.code}</td>
                     <td className="px-4 py-3">
@@ -220,6 +224,7 @@ export default function StockList() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
 
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>

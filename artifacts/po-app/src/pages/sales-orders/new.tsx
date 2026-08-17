@@ -8,6 +8,7 @@ import { useCreateSalesOrder, useGetSettings, getGetSettingsQueryKey, getListSal
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -781,7 +782,7 @@ export default function SalesOrderNew() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
+          <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/sales-orders")}>Cancel</Button>
             <Button
               type="button"
@@ -802,7 +803,7 @@ export default function SalesOrderNew() {
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

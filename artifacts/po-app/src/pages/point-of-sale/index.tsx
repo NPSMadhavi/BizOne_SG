@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useListStockItems, getListStockItemsQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -80,7 +82,7 @@ type PosSaleRecord = {
   status: "paid";
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 12;
 const GST_FALLBACK = 9;
 const POS_SALES_KEY = "pos-sales-v1";
 
@@ -472,6 +474,8 @@ export default function PointOfSalePage() {
     );
   }, [salesList, listSearch]);
 
+  const { page: salesPage, setPage: setSalesPage, totalPages: salesTotalPages, paginatedItems: paginatedSales } = usePagination(filteredSales);
+
   if (mode === "list") {
     return (
       <div className="space-y-6">
@@ -552,7 +556,7 @@ export default function PointOfSalePage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredSales.map((sale) => (
+                  paginatedSales.map((sale) => (
                     <tr key={sale.id} className="border-b hover:bg-[#F8FAFC]">
                       <td className="px-4 py-3 font-mono font-medium">{sale.posNumber}</td>
                       <td className="px-4 py-3 text-[#4B5563]">{formatStamp(sale.createdAt)}</td>
@@ -578,6 +582,7 @@ export default function PointOfSalePage() {
                 )}
               </tbody>
             </table>
+            <ListPagination page={salesPage} totalPages={salesTotalPages} onPageChange={setSalesPage} />
           </div>
         </div>
       </div>

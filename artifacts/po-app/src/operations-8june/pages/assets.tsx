@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import {
   ManagementPageHeader,
@@ -25,10 +25,6 @@ import AssetViewDialog from "@/operations-8june/components/forms/AssetViewDialog
 import {
   Plus,
   Trash2,
-  Laptop,
-  Monitor,
-  Smartphone,
-  HardDrive,
   Edit2,
   Eye,
   UserPlus,
@@ -53,6 +49,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import AssignAssetModal from "@/operations-8june/components/modals/AssignAssetModal";
+import { usePagination } from "@/hooks/use-pagination";
 
 function formatAssetDate(value?: string | Date | null): string {
   if (!value) return "—";
@@ -248,8 +245,8 @@ export default function AssetsPage() {
 
     const companyName = selectedCompany?.name || "BizOne Singapore";
     const reportTitle = location === "all" 
-      ? "Asset Location Report - All Locations" 
-      : `Asset Location Report - ${location}`;
+      ? "Asset Location Wise Report - All Locations" 
+      : `Asset Location Wise Report - ${location}`;
     const currentDate = new Date().toLocaleDateString("en-SG", {
       year: "numeric",
       month: "long",
@@ -405,7 +402,7 @@ export default function AssetsPage() {
     }, 500);
   };
 
-  const filteredAssets = assetList.filter((asset) => {
+  const filteredAssets = useMemo(() => assetList.filter((asset) => {
     // 1. Filter by selected location
     if (selectedLocation !== "all") {
       const assetLoc = (asset.location || "").trim().toLowerCase();
@@ -425,15 +422,9 @@ export default function AssetsPage() {
       asset.assignedTo,
       asset.location,
     ].some((value) => String(value ?? "").toLowerCase().includes(q));
-  });
-  
-  const getAssetIcon = (type: string) => {
-    const typeStr = type.toLowerCase();
-    if (typeStr.includes("laptop")) return <Laptop className="h-4 w-4" />;
-    if (typeStr.includes("monitor")) return <Monitor className="h-4 w-4" />;
-    if (typeStr.includes("phone") || typeStr.includes("mobile")) return <Smartphone className="h-4 w-4" />;
-    return <HardDrive className="h-4 w-4" />;
-  };
+  }), [assetList, selectedLocation, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredAssets);
 
   const getStatusPillStyle = (status: string) => {
     switch (status) {
@@ -469,7 +460,7 @@ export default function AssetsPage() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="h-9 min-w-[180px] justify-between gap-2 px-3 border-[#E4E4E4]">
                   <span className="truncate">
-                    {selectedLocation === "all" ? "Location Report" : `Location: ${selectedLocation}`}
+                    {selectedLocation === "all" ? "Location Wise Report" : `Location: ${selectedLocation}`}
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -539,7 +530,7 @@ export default function AssetsPage() {
         )}
       </div>
 
-      <ManagementTableCard>
+      <ManagementTableCard pagination={{ page, totalPages, onPageChange: setPage }}>
           {isLoading || authLoading ? (
             <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
           ) : isError ? (
@@ -563,18 +554,13 @@ export default function AssetsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAssets.map((asset) => (
+                  {paginatedItems.map((asset) => (
                     <TableRow key={asset.id}>
                       <TableCell className="font-medium text-[#111827]">{asset.tag}</TableCell>
                       <TableCell>
-                        <div className="flex items-center">
-                          <span className="mr-2 rounded bg-[#EFF6FF] p-1 text-[#2563EB]">
-                            {getAssetIcon(asset.type)}
-                          </span>
-                          <div>
-                            <div className="text-[#111827]">{asset.type}</div>
-                            <div className="text-sm text-[#6B7280]">{asset.category}</div>
-                          </div>
+                        <div>
+                          <div className="text-[#111827]">{asset.type}</div>
+                          <div className="text-sm text-[#6B7280]">{asset.category}</div>
                         </div>
                       </TableCell>
                       <TableCell className="text-[#444651]">{asset.serial}</TableCell>

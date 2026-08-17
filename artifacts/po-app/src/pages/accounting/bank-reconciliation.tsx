@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import {
   ArrowLeft,
   Upload,
@@ -96,6 +98,115 @@ function formatPeriodDate(value: string) {
   const [y, m, d] = value.split("-");
   if (!y || !m || !d) return value;
   return `${Number(d)} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m) - 1]} ${y}`;
+}
+
+function isValidIsoDate(value?: string): value is string {
+  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function compareIsoDates(a: string, b: string): number {
+  const aa = isValidIsoDate(a) ? a : "";
+  const bb = isValidIsoDate(b) ? b : "";
+  if (aa && bb) return aa.localeCompare(bb);
+  if (aa) return -1;
+  if (bb) return 1;
+  return 0;
+}
+
+function getTransactionSortDate(tx: BankTransaction): string {
+  if (isValidIsoDate(tx.date)) return tx.date;
+  if (isValidIsoDate(tx.valueDate)) return tx.valueDate;
+  return "";
+}
+
+function sortBankTransactions(rows: BankTransaction[], reassignIds = false): BankTransaction[] {
+  const sorted = [...rows].sort((a, b) => {
+    const byTxnDate = compareIsoDates(a.date, b.date);
+    if (byTxnDate !== 0) return byTxnDate;
+    const byValueDate = compareIsoDates(a.valueDate || "", b.valueDate || "");
+    if (byValueDate !== 0) return byValueDate;
+    return a.id - b.id;
+  });
+  if (!reassignIds) return sorted;
+  return sorted.map((row, index) => ({ ...row, id: index + 1 }));
+}
+
+function normalizeFilterDate(value: string): string {
+  if (!value) return "";
+  const raw = value.includes("T") ? value.split("T")[0] : value.trim();
+  if (isValidIsoDate(raw)) return raw;
+  return "";
+}
+
+function validateAndFilterStatementByPeriod(
+  rows: BankTransaction[],
+  dateFrom: string,
+  dateTo: string,
+): { filtered: BankTransaction[]; error: string | null; excluded: number } {
+  const from = normalizeFilterDate(dateFrom);
+  const to = normalizeFilterDate(dateTo);
+  if (!from || !to) {
+    return {
+      filtered: [],
+      error: "Please select a date range before uploading the statement.",
+      excluded: 0,
+    };
+  }
+  if (from > to) {
+    return {
+      filtered: [],
+      error: "Start date must be before end date.",
+      excluded: 0,
+    };
+  }
+
+  const periodLabel = `${formatPeriodDate(from)} – ${formatPeriodDate(to)}`;
+  const datedRows = rows
+    .map((row) => ({ row, date: getTransactionSortDate(row) }))
+    .filter((entry): entry is { row: BankTransaction; date: string } => isValidIsoDate(entry.date));
+
+  if (datedRows.length === 0) {
+    return {
+      filtered: [],
+      error: "Could not read transaction dates from this statement. Please check the file format.",
+      excluded: 0,
+    };
+  }
+
+  const stmtDates = datedRows.map((entry) => entry.date);
+  const stmtMin = stmtDates.reduce((a, b) => (a < b ? a : b));
+  const stmtMax = stmtDates.reduce((a, b) => (a > b ? a : b));
+  const stmtLabel = `${formatPeriodDate(stmtMin)} – ${formatPeriodDate(stmtMax)}`;
+
+  // Reject only when the statement period has zero overlap with the selected filter.
+  if (stmtMax < from || stmtMin > to) {
+    return {
+      filtered: [],
+      error: `This statement (${stmtLabel}) does not match the selected period (${periodLabel}). Please upload the statement for ${formatPeriodDate(from)} to ${formatPeriodDate(to)}.`,
+      excluded: 0,
+    };
+  }
+
+  const filtered = rows.filter((row) => {
+    const date = getTransactionSortDate(row);
+    if (!isValidIsoDate(date)) return false;
+    return date >= from && date <= to;
+  });
+
+  const excluded = rows.length - filtered.length;
+  if (filtered.length === 0) {
+    return {
+      filtered: [],
+      error: `No transactions found within the selected period (${periodLabel}). Please upload the ${formatPeriodDate(from)} to ${formatPeriodDate(to)} statement.`,
+      excluded,
+    };
+  }
+
+  return {
+    filtered: sortBankTransactions(filtered, true),
+    error: null,
+    excluded,
+  };
 }
 
 /** Indian numbering: 100000 → 1,00,000.00 */
@@ -222,7 +333,7 @@ export default function BankReconciliation() {
   }
 
   function rowsToTransactions(rows: ParsedStatementRow[]) {
-    return rows.map((row, idx) => {
+    const mapped = rows.map((row, idx) => {
       const match = autoMatchFromDescription(row.description);
       return {
         id: idx + 1,
@@ -239,6 +350,7 @@ export default function BankReconciliation() {
         ...match,
       } satisfies BankTransaction;
     });
+    return sortBankTransactions(mapped, true);
   }
 
   function normalizeType(raw: string, signedAmount: number): "credit" | "debit" {
@@ -1124,10 +1236,27 @@ export default function BankReconciliation() {
         return;
       }
 
-      setTransactions(parsed);
+      const { filtered, error: periodError, excluded } = validateAndFilterStatementByPeriod(
+        parsed,
+        dateFrom,
+        dateTo,
+      );
+      if (periodError) {
+        toast({
+          title: "Wrong statement period",
+          description: periodError,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setTransactions(filtered);
       toast({
         title: "Statement Uploaded Successfully",
-        description: `Parsed ${parsed.length} transactions from ${file.name}.`,
+        description:
+          excluded > 0
+            ? `Loaded ${filtered.length} transactions within ${formatPeriodDate(normalizeFilterDate(dateFrom))} – ${formatPeriodDate(normalizeFilterDate(dateTo))}. ${excluded} row(s) outside this period were skipped.`
+            : `Parsed ${filtered.length} transactions from ${file.name}.`,
       });
     } catch (err: any) {
       toast({
@@ -1446,7 +1575,7 @@ export default function BankReconciliation() {
 
   // Filtered transactions for Step 1
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    const filtered = transactions.filter(t => {
       const matchesTab = 
         activeTab === "all" ||
         (activeTab === "matched" && t.status === "matched") ||
@@ -1462,7 +1591,10 @@ export default function BankReconciliation() {
 
       return matchesTab && matchesSearch;
     });
+    return sortBankTransactions(filtered);
   }, [transactions, activeTab, searchQuery]);
+
+  const { page: txPage, setPage: setTxPage, totalPages: txTotalPages, paginatedItems: paginatedTransactions } = usePagination(filteredTransactions);
 
   const handleCreateVoucherClick = (tx: BankTransaction) => {
     setSelectedTxForVoucher(tx);
@@ -1781,7 +1913,7 @@ export default function BankReconciliation() {
                           </tr>
                         </thead>
                         <tbody className="divide-y text-xs">
-                          {filteredTransactions.map((tx) => (
+                          {paginatedTransactions.map((tx) => (
                             <tr key={tx.id} className="hover:bg-muted/10 transition-colors">
                               <td className="px-3 py-3 font-medium text-muted-foreground whitespace-pre-line leading-snug">
                                 {tx.dateDisplay || formatPeriodDate(tx.date) || tx.date}
@@ -1848,6 +1980,7 @@ export default function BankReconciliation() {
                           ))}
                         </tbody>
                       </table>
+                      <ListPagination page={txPage} totalPages={txTotalPages} onPageChange={setTxPage} />
                     </div>
                   </CardContent>
                 </Card>

@@ -9,6 +9,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FileInput, Search, Plus, ArrowUpRight, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -80,6 +82,8 @@ export default function VendorInvoiceList() {
       pi.vendorName.toLowerCase().includes(search.toLowerCase()) ||
       (pi.poNumbers || "").toLowerCase().includes(search.toLowerCase())
     ), [filteredByDate, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   // Multi-currency stats from date-filtered set
   const stats = useMemo(() => {
@@ -299,7 +303,7 @@ export default function VendorInvoiceList() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filtered.map((pi: any) => (
+                {paginatedItems.map((pi: any) => (
                   <tr
                     key={pi.id}
                     className="bg-card hover:bg-muted/30 transition-colors cursor-pointer"
@@ -327,6 +331,7 @@ export default function VendorInvoiceList() {
             </table>
           </div>
         )}
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Plus, Search, Eye, Trash2, BookOpen } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface JournalEntry {
   id: number;
@@ -62,7 +64,7 @@ export default function JournalEntriesList() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const filtered = entries.filter(e => {
+  const filtered = useMemo(() => entries.filter(e => {
     if (fromDate && e.entryDate < fromDate) return false;
     if (toDate && e.entryDate > toDate) return false;
     if (search) {
@@ -70,7 +72,9 @@ export default function JournalEntriesList() {
       return e.description.toLowerCase().includes(q) || String(e.id).includes(q);
     }
     return true;
-  });
+  }), [entries, fromDate, toDate, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   if (error) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-center">
@@ -151,7 +155,7 @@ export default function JournalEntriesList() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filtered.map(entry => (
+                {paginatedItems.map(entry => (
                   <tr key={entry.id} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                       JE-{String(entry.id).padStart(4, "0")}
@@ -199,6 +203,7 @@ export default function JournalEntriesList() {
             </table>
           </div>
         )}
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
 
       <AlertDialog open={deleteId !== null} onOpenChange={open => { if (!open) setDeleteId(null); }}>

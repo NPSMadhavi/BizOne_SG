@@ -8,6 +8,8 @@ import { Link, useLocation } from "wouter";
 import { Search, Plus, Eye, Pencil, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -62,10 +64,12 @@ export default function DeliveryOrderList() {
     });
   }, [docs, filterMode, filterYear, customFrom, customTo]);
 
-  const filtered = filteredByDate.filter((d) => {
+  const filtered = useMemo(() => filteredByDate.filter((d) => {
     const t = searchTerm.toLowerCase();
     return d.doNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-  });
+  }), [filteredByDate, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -161,7 +165,7 @@ export default function DeliveryOrderList() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((doc) => (
+                paginatedItems.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors">
                     <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{doc.doNumber}</td>
                     <td className="px-6 py-4 font-mono">
@@ -219,6 +223,7 @@ export default function DeliveryOrderList() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
     </div>
   );

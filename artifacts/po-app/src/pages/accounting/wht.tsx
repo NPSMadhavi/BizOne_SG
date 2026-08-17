@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Plus, CheckCircle, Clock, AlertTriangle, Trash2, Undo2, Info } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -331,6 +333,7 @@ export default function WhtRegister() {
 
   const s = data?.summary;
   const records = data?.records ?? [];
+  const { page, setPage, totalPages, paginatedItems } = usePagination(records);
   const vendors = data?.vendors ?? [];
 
   return (
@@ -429,7 +432,7 @@ export default function WhtRegister() {
                       No WHT records yet — click "New WHT Entry" to add one
                     </td>
                   </tr>
-                ) : records.map(r => {
+                ) : paginatedItems.map(r => {
                   const isOverdue = r.status === "pending" && r.filingDeadline && r.filingDeadline < today;
                   return (
                     <tr key={r.id} className={`hover:bg-muted/30 ${isOverdue ? "bg-red-50/40 dark:bg-red-950/10" : ""}`}>
@@ -497,6 +500,7 @@ export default function WhtRegister() {
               </tbody>
             </table>
           </div>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </Card>
       )}
 

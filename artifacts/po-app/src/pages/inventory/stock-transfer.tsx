@@ -23,6 +23,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { inventoryApi } from "@/lib/inventory-api";
 import { invalidateInventoryQueries, inventoryQueryKeys } from "@/lib/invalidate-inventory";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import {
   InventoryPageHeader,
   InventoryKpiCard,
@@ -125,6 +127,9 @@ export default function StockTransferPage() {
         );
       });
   }, [stockRows, search, warehouseFilter]);
+
+  const { page: stockPage, setPage: setStockPage, totalPages: stockTotalPages, paginatedItems: paginatedStock } = usePagination(filteredStock);
+  const { page: activityPage, setPage: setActivityPage, totalPages: activityTotalPages, paginatedItems: paginatedActivity } = usePagination(activity);
 
   const sourceItems = useMemo(() => {
     const fromId = Number(form.fromWarehouseId);
@@ -303,7 +308,7 @@ export default function StockTransferPage() {
                       <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">No warehouse stock found.</td>
                     </tr>
                   ) : (
-                    filteredStock.map((row) => (
+                    paginatedStock.map((row) => (
                       <tr
                         key={`${row.warehouseId}-${row.stockItemId}`}
                         className="border-b border-[#F3F4F6] last:border-0"
@@ -323,6 +328,7 @@ export default function StockTransferPage() {
                   )}
                 </tbody>
               </table>
+              <ListPagination page={stockPage} totalPages={stockTotalPages} onPageChange={setStockPage} />
             </div>
           </InventorySectionCard>
 
@@ -352,7 +358,7 @@ export default function StockTransferPage() {
                       <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">No stock movements yet.</td>
                     </tr>
                   ) : (
-                    activity.map((row) => (
+                    paginatedActivity.map((row) => (
                       <tr key={row.id} className="border-b border-[#F3F4F6] last:border-0">
                         <td className="px-5 py-3 font-medium text-[#111827]">{row.documentNumber}</td>
                         <td className="px-5 py-3">
@@ -385,6 +391,7 @@ export default function StockTransferPage() {
                   )}
                 </tbody>
               </table>
+              <ListPagination page={activityPage} totalPages={activityTotalPages} onPageChange={setActivityPage} />
             </div>
           </InventorySectionCard>
         </div>

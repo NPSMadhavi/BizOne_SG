@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Plus, Search, Edit2, Trash2, BookOpen, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface Account {
   id: number;
@@ -160,7 +162,7 @@ export default function ChartOfAccounts() {
     saveMutation.mutate({ data: form, id: editingId ?? undefined });
   }
 
-  const filtered = accounts.filter(a => {
+  const filtered = useMemo(() => accounts.filter(a => {
     if (!showInactive && !a.isActive) return false;
     if (filterType !== "all" && a.type !== filterType) return false;
     if (search) {
@@ -168,11 +170,13 @@ export default function ChartOfAccounts() {
       return a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
     }
     return true;
-  });
+  }), [accounts, showInactive, filterType, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const byType = ACCOUNT_TYPES.map(type => ({
     type,
-    accounts: filtered.filter(a => a.type === type),
+    accounts: paginatedItems.filter(a => a.type === type),
   })).filter(g => g.accounts.length > 0);
 
   const totalActive = accounts.filter(a => a.isActive).length;
@@ -364,6 +368,7 @@ export default function ChartOfAccounts() {
               </Card>
             );
           })}
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
 

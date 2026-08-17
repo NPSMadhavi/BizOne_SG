@@ -7,6 +7,7 @@ import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -887,7 +888,7 @@ export default function InvoiceEdit() {
             </CardContent>
           </Card>
 
-          <div className="space-y-3">
+          <FormStickyActions className="flex-col items-end">
             <div className="flex justify-end">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
                 <Checkbox
@@ -920,7 +921,7 @@ export default function InvoiceEdit() {
                 Save & Preview
               </Button>
             </div>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
       {pickerIndex !== null && (

@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [localCompanyId, setLocalCompanyId] = useState<number | null>(null);
+  const prevUserIdRef = React.useRef<number | null>(null);
 
   const { data: user, isLoading } = useGetMe({
     query: {
@@ -34,12 +35,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  useEffect(() => {
-    if (user?.selectedCompanyId && !localCompanyId) {
-      setLocalCompanyId(user.selectedCompanyId);
-    }
-  }, [user?.selectedCompanyId]);
-
   const logoutMutation = useLogout();
   const forcingLogin = React.useRef(false);
 
@@ -47,8 +42,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearBrowserSessionLive();
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
-        queryClient.setQueryData(getGetMeQueryKey(), null);
+        queryClient.clear();
         setLocalCompanyId(null);
+        prevUserIdRef.current = null;
         setLocation("/");
       },
     });
@@ -62,8 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearBrowserSessionLive();
     logoutMutation.mutate(undefined, {
       onSettled: () => {
-        queryClient.setQueryData(getGetMeQueryKey(), null);
+        queryClient.clear();
         setLocalCompanyId(null);
+        prevUserIdRef.current = null;
         setLocation("/login");
         forcingLogin.current = false;
       },
@@ -74,8 +71,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resolvedUser = sessionOk ? (user || null) : null;
   const resolvedLoading = isLoading || (!!user && !sessionOk);
 
+  // Keep selected company in sync with the logged-in user; drop stale IDs from prior sessions.
+  useEffect(() => {
+    if (!resolvedUser) {
+      setLocalCompanyId(null);
+      prevUserIdRef.current = null;
+      return;
+    }
+
+    const userId = resolvedUser.id;
+    const userChanged = prevUserIdRef.current !== userId;
+    prevUserIdRef.current = userId;
+
+    const userCompanyIds = new Set(resolvedUser.companies?.map(c => c.id) ?? []);
+    const serverSelected = resolvedUser.selectedCompanyId ?? null;
+
+    setLocalCompanyId(prev => {
+      if (userChanged) {
+        if (serverSelected !== null) return serverSelected;
+        if (userCompanyIds.size === 1) return [...userCompanyIds][0]!;
+        return null;
+      }
+      if (prev !== null && !userCompanyIds.has(prev)) {
+        return serverSelected;
+      }
+      if (prev === null && serverSelected !== null) {
+        return serverSelected;
+      }
+      return prev;
+    });
+  }, [resolvedUser?.id, resolvedUser?.selectedCompanyId, resolvedUser?.companies]);
+
   const setSelectedCompanyId = (id: number) => {
     setLocalCompanyId(id);
+    queryClient.clear();
     queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
   };
 

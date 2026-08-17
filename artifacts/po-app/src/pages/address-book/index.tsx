@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Edit2, Trash2, Mail, Clock, Plus } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 interface EmailContact {
   id: number;
@@ -92,10 +94,12 @@ export default function AddressBookPage() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const filtered = contacts.filter(c =>
+  const filtered = useMemo(() => contacts.filter(c =>
     c.email.toLowerCase().includes(search.toLowerCase()) ||
     (c.name || "").toLowerCase().includes(search.toLowerCase())
-  );
+  ), [contacts, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const fmtDate = (s: string) => {
     try { return new Date(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); } catch { return s; }
@@ -135,7 +139,7 @@ export default function AddressBookPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {filtered.map(contact => (
+          {paginatedItems.map(contact => (
             <Card key={contact.id}>
               <CardContent className="py-3 px-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 min-w-0">
@@ -166,6 +170,7 @@ export default function AddressBookPage() {
               </CardContent>
             </Card>
           ))}
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
 

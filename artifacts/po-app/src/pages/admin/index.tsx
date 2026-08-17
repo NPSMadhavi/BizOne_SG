@@ -10,11 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemo, useState } from "react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2, UserPlus, ShieldAlert, Edit, Building2, ArrowLeft, Plus } from "lucide-react";
@@ -72,11 +74,13 @@ const BUILTIN_ROLES: { value: FormState["role"]; label: string }[] = [
   { value: "external", label: "External User" },
 ];
 
+const CREATE_ROLE_VALUE = "__create_role__";
+
 const BUILTIN_ROLE_DB_NAMES = new Set(["administrator", "employee", "accountant"]);
 
 function roleSelectValue(form: FormState): string {
-  if (form.roleId != null) return `custom:${form.roleId}`;
-  return `builtin:${form.role}`;
+  if (form.roleId != null) return `custom-${form.roleId}`;
+  return form.role;
 }
 
 function isBuiltinRoleName(name: string) {
@@ -212,7 +216,6 @@ export default function Admin() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [roleSelectOpen, setRoleSelectOpen] = useState(false);
   const [creatingRole, setCreatingRole] = useState(false);
 
   const canView = isAdmin || hasPermission("user_management:view");
@@ -226,6 +229,9 @@ export default function Admin() {
   const { data: users, isLoading } = useListUsers({
     query: { queryKey: getListUsersQueryKey(), enabled: canView },
   });
+
+  const userList = users ?? [];
+  const { page, setPage, totalPages, paginatedItems: paginatedUsers } = usePagination(userList);
 
   const { data: companyRoles = [] } = useQuery<CompanyRole[]>({
     queryKey: ["/api/roles", activeCompanyId],
@@ -326,7 +332,6 @@ export default function Admin() {
     setEditingUser(null);
     setForm(EMPTY_FORM);
     setFormError("");
-    setRoleSelectOpen(false);
   }
 
   function validate(): string | null {
@@ -552,11 +557,13 @@ export default function Admin() {
             <div className="space-y-1.5">
               <Label>Role</Label>
               <Select
-                open={roleSelectOpen}
-                onOpenChange={setRoleSelectOpen}
                 value={roleSelectValue(form)}
                 onValueChange={(v) => {
-                  if (v.startsWith("custom:")) {
+                  if (v === CREATE_ROLE_VALUE) {
+                    setForm((f) => ({ ...f, showCreateRole: true, newRoleName: "" }));
+                    return;
+                  }
+                  if (v.startsWith("custom-")) {
                     setForm((f) => ({
                       ...f,
                       roleId: Number(v.slice(7)),
@@ -568,46 +575,38 @@ export default function Admin() {
                   }
                   setForm((f) => ({
                     ...f,
-                    role: v.slice(7) as FormState["role"],
+                    role: v as FormState["role"],
                     roleId: null,
                     showCreateRole: false,
                     newRoleName: "",
                   }));
                 }}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
                 <SelectContent className="max-h-[14rem]">
-                  <div
-                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                    onPointerDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setRoleSelectOpen(false);
-                      window.setTimeout(() => {
-                        setForm((f) => ({ ...f, showCreateRole: true, newRoleName: "" }));
-                      }, 50);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Create New Role
-                  </div>
-                  <div className="my-1 border-t" />
+                  <SelectItem value={CREATE_ROLE_VALUE} className="font-medium text-primary">
+                    <span className="flex items-center gap-2">
+                      <Plus className="h-4 w-4" />
+                      Create New Role
+                    </span>
+                  </SelectItem>
+                  <SelectSeparator />
                   {BUILTIN_ROLES.map((r) => (
-                    <SelectItem key={r.value} value={`builtin:${r.value}`}>
+                    <SelectItem key={r.value} value={r.value}>
                       {r.label}
                     </SelectItem>
                   ))}
                   {customRoles.length > 0 && (
-                    <>
-                      <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        Custom roles
-                      </div>
+                    <SelectGroup>
+                      <SelectLabel>Custom roles</SelectLabel>
                       {customRoles.map((r) => (
-                        <SelectItem key={r.id} value={`custom:${r.id}`}>
+                        <SelectItem key={r.id} value={`custom-${r.id}`}>
                           {r.name}
                         </SelectItem>
                       ))}
-                    </>
+                    </SelectGroup>
                   )}
                 </SelectContent>
               </Select>
@@ -740,7 +739,7 @@ export default function Admin() {
                   <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">No users found.</td>
                 </tr>
               ) : (
-                users.map((u: User) => (
+                paginatedUsers.map((u: User) => (
                   <tr key={u.id} className="hover:bg-muted/50 transition-colors">
                     <td className="px-6 py-4 font-medium">
                       <div className="flex items-center gap-2">
@@ -832,6 +831,7 @@ export default function Admin() {
               )}
             </tbody>
           </table>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       </Card>
 

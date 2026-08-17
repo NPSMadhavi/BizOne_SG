@@ -320,13 +320,14 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
 
-  req.session.companyId = user.companyId ?? req.session.companyId;
+  // Keep the company chosen in the UI (/auth/select-company). Never reset it to users.companyId.
   req.session.roleId = user.roleId ?? req.session.roleId;
   req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
 
   if (!req.session.companyId) {
+    req.session.companyId = user.companyId ?? undefined;
     const defaultCompanyId = await ensureUserCompanyAccess(user.id, user.role);
-    if (defaultCompanyId) {
+    if (!req.session.companyId && defaultCompanyId) {
       req.session.companyId = defaultCompanyId;
     }
   }

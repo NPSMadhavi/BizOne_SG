@@ -991,6 +991,7 @@ export async function previewPayslipCompany(
 
     res.json({
       html,
+      data: payslipData,
       title,
       downloadFilename,
       month: monthNum,

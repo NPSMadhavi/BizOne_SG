@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useState, Fragment, useMemo } from "react";
 import { useLocation } from "wouter";
 import {
   ManagementPageHeader,
@@ -27,6 +27,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Employee } from "@shared/schema";
 import { queryClient, apiRequest } from "@/operations-8june/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePagination } from "@/hooks/use-pagination";
 import { format } from "date-fns";
 import {
   exportEmployeesToExcel,
@@ -126,7 +127,7 @@ export default function EmployeesPage() {
     }
   };
 
-  const filteredEmployees = employees.filter((employee) => {
+  const filteredEmployees = useMemo(() => employees.filter((employee) => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return true;
     return [
@@ -138,7 +139,9 @@ export default function EmployeesPage() {
       employee.visaNumber,
       employee.status,
     ].some((value) => String(value ?? "").toLowerCase().includes(q));
-  });
+  }), [employees, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredEmployees);
 
   const handleExport = (formatType: "excel" | "pdf") => {
     if (filteredEmployees.length === 0) {
@@ -216,7 +219,7 @@ export default function EmployeesPage() {
         placeholder="Search..."
       />
 
-      <ManagementTableCard>
+      <ManagementTableCard pagination={{ page, totalPages, onPageChange: setPage }}>
           {isLoading ? (
             <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
           ) : employees.length > 0 && filteredEmployees.length > 0 ? (
@@ -234,7 +237,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredEmployees.map((employee) => (
+                  {paginatedItems.map((employee) => (
                     <TableRow key={employee.id}>
                       <TableCell className="font-medium text-[#111827]">
                         <button

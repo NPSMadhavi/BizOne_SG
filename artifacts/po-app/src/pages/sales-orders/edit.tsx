@@ -8,6 +8,7 @@ import { useGetSalesOrder, useUpdateSalesOrder, getGetSalesOrderQueryKey, useGet
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -669,7 +670,7 @@ export default function SalesOrderEdit() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
+          <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation(`/sales-orders/${id}`)}>Cancel</Button>
             <Button
               type="button"
@@ -691,7 +692,7 @@ export default function SalesOrderEdit() {
               <Eye className="h-4 w-4" />
               Save & Preview
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
       <ImportItemsDialog

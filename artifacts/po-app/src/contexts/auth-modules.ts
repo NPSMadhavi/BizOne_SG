@@ -143,3 +143,64 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     modules: ["user_management", "audit_log", "settings"],
   },
 ];
+
+/** Longest prefix first — keep in sync with api-server agent-rbac PATH_PREFIXES. */
+const PATH_MODULE_PREFIXES: { prefix: string; module: AppModule }[] = [
+  { prefix: "/admin", module: "user_management" },
+  { prefix: "/settings", module: "settings" },
+  { prefix: "/audit-log", module: "audit_log" },
+  { prefix: "/customers", module: "customers" },
+  { prefix: "/vendors", module: "vendors" },
+  { prefix: "/address-book", module: "address_book" },
+  { prefix: "/stock", module: "stock_items" },
+  { prefix: "/warehouses", module: "warehouses" },
+  { prefix: "/inventory/stock-transfer", module: "stock_transfer" },
+  { prefix: "/inventory/batch-expiry", module: "batch_expiry" },
+  { prefix: "/inventory/reports", module: "inventory_reports" },
+  { prefix: "/inventory/warehouses", module: "warehouses" },
+  { prefix: "/inventory", module: "stock_items" },
+  { prefix: "/purchase-quotations", module: "purchase_quotations" },
+  { prefix: "/purchase-orders", module: "purchase_orders" },
+  { prefix: "/vendor-invoices", module: "vendor_invoices" },
+  { prefix: "/quotations", module: "quotations" },
+  { prefix: "/sales-orders", module: "sales_orders" },
+  { prefix: "/proforma-invoices", module: "proforma_invoices" },
+  { prefix: "/credit-notes", module: "credit_notes" },
+  { prefix: "/debit-notes", module: "debit_notes" },
+  { prefix: "/delivery-orders", module: "delivery_orders" },
+  { prefix: "/invoices", module: "invoices" },
+  { prefix: "/grn", module: "grn" },
+  { prefix: "/point-of-sale", module: "point_of_sale" },
+  { prefix: "/bill-of-materials", module: "bill_of_materials" },
+  { prefix: "/projects", module: "projects" },
+  { prefix: "/assets", module: "assets" },
+  { prefix: "/licenses", module: "licenses" },
+  { prefix: "/employees", module: "employees" },
+  { prefix: "/payroll", module: "payroll" },
+  { prefix: "/accounting/expenses", module: "accounting_expenses" },
+  { prefix: "/expenses", module: "accounting_expenses" },
+  { prefix: "/accounting/income", module: "accounting_income" },
+  { prefix: "/accounting/gst-f5", module: "accounting_gst_f5" },
+  { prefix: "/accounting/gst-f7", module: "accounting_gst_f7" },
+  { prefix: "/accounting/gst-io", module: "accounting_gst_io" },
+  { prefix: "/accounting/wht", module: "accounting_wht" },
+  { prefix: "/accounting/bank-reconciliation", module: "accounting_bank_recon" },
+  { prefix: "/accounting/journal", module: "accounting_je" },
+  { prefix: "/accounting/chart-of-accounts", module: "accounting_coa" },
+  { prefix: "/accounting/trial-balance", module: "accounting_tb" },
+  { prefix: "/accounting/balance-sheet", module: "accounting_bs" },
+  { prefix: "/accounting/profit-loss", module: "accounting_pl" },
+  { prefix: "/accounting/ar-aging", module: "accounting_ar_aging" },
+  { prefix: "/accounting/ap-aging", module: "accounting_ap_aging" },
+  { prefix: "/accounting/ar", module: "accounting_ar" },
+  { prefix: "/accounting/ap", module: "accounting_ap" },
+  { prefix: "/accounting", module: "accounting_coa" },
+  { prefix: "/dashboard", module: "dashboard" },
+];
+
+export function pathToAppModule(path: string): AppModule | null {
+  const raw = String(path || "").split("?")[0];
+  if (!raw || raw === "/") return "dashboard";
+  const match = PATH_MODULE_PREFIXES.find((r) => raw === r.prefix || raw.startsWith(`${r.prefix}/`));
+  return match?.module ?? null;
+}

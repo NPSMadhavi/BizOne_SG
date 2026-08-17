@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ManagementTableCard, ManagementTableContainer, ManagementEmptyState, ManagementPageHeader, ManagementToolbarRow } from "@/operations-8june/components/layout/ManagementPageUI";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -34,7 +36,14 @@ import {
   EntityViewFieldGrid,
   EntityViewStatusBadge,
 } from "@/operations-8june/components/ui/entity-view-dialog";
-import PayslipPreviewModal from "@/operations-8june/components/payroll/PayslipPreviewModal";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import {
+  generatePayslip_PDF,
+  payslipPdfFilename,
+  isPayslipPdfData,
+  buildPayslipPdfData,
+  type PayslipPdfData,
+} from "@/operations-8june/lib/payslip-pdf";
 import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
 import {
   getLastCompletedPayPeriod,
@@ -51,6 +60,8 @@ import {
   isPayPeriodEligibleForProcessing,
   PAYROLL_CURRENT_MONTH_ERROR,
   isPayPeriodDateDisabled,
+  getPayPeriodForMonth,
+  findPayrollRecordForPeriod,
   type BatchPayrollScenario,
 } from "@/operations-8june/lib/payroll-batch-utils";
 import {
@@ -59,6 +70,7 @@ import {
 } from "@/operations-8june/lib/payroll-ui";
 import { exportPayrollTableToExcel } from "@/operations-8june/lib/excel-utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
 import {
   Plus,
   Users,
@@ -178,6 +190,7 @@ function formatPeriod(period: string) {
 
 export default function PayrollPage() {
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [detailOpen, setDetailOpen] = useState(false);
@@ -197,15 +210,9 @@ export default function PayrollPage() {
   const [isPayslipDownloading, setIsPayslipDownloading] = useState(false);
   const [isPayslipViewing, setIsPayslipViewing] = useState(false);
   const [payslipViewerOpen, setPayslipViewerOpen] = useState(false);
-  const [payslipViewerHtml, setPayslipViewerHtml] = useState<string | null>(null);
-  const [payslipViewerPdfUrl, setPayslipViewerPdfUrl] = useState<string | null>(null);
+  const [payslipViewerData, setPayslipViewerData] = useState<PayslipPdfData | null>(null);
   const [payslipViewerTitle, setPayslipViewerTitle] = useState("");
-  const [payslipViewerContext, setPayslipViewerContext] = useState<{
-    payrollConfigId: number;
-    employeeName: string;
-    year: number;
-    month: number;
-  } | null>(null);
+  const [payslipViewerFilename, setPayslipViewerFilename] = useState("payslip.pdf");
   const [forceDeleteId, setForceDeleteId] = useState<number | null>(null);
   const [showForceDeleteDialog, setShowForceDeleteDialog] = useState(false);
 
@@ -213,25 +220,15 @@ export default function PayrollPage() {
 
   const closePayslipViewer = () => {
     setPayslipViewerOpen(false);
-    setPayslipViewerHtml(null);
-    if (payslipViewerPdfUrl) {
-      window.URL.revokeObjectURL(payslipViewerPdfUrl);
-    }
-    setPayslipViewerPdfUrl(null);
-    setPayslipViewerContext(null);
+    setPayslipViewerData(null);
     setPayslipViewerTitle("");
+    setPayslipViewerFilename("payslip.pdf");
   };
 
   function parseApiErrorMessage(error: unknown, fallback: string): string {
     if (!error || typeof error !== "object") return fallback;
     const record = error as { message?: string; error?: string };
     return record.message || record.error || fallback;
-  }
-
-  function isPdfResponse(buffer: ArrayBuffer): boolean {
-    if (buffer.byteLength < 4) return false;
-    const bytes = new Uint8Array(buffer, 0, 4);
-    return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
   }
 
   async function deletePayrollConfigRequest(id: number, force = false) {
@@ -325,6 +322,9 @@ export default function PayrollPage() {
     () => getUniquePayrollRecords(payrollRecords),
     [payrollRecords]
   );
+
+  const { page: configPage, setPage: setConfigPage, totalPages: configTotalPages, paginatedItems: paginatedConfigs } = usePagination(configs);
+  const { page: recordPage, setPage: setRecordPage, totalPages: recordTotalPages, paginatedItems: paginatedRecords } = usePagination(uniquePayrollRecords);
 
   const recordCount = uniquePayrollRecords.length;
 
@@ -611,9 +611,30 @@ export default function PayrollPage() {
 
     setIsPayslipViewing(true);
     const month = selectedPayslipMonths[0];
+    const { payPeriodStart, payPeriodEnd } = getPayPeriodForMonth(payslipYear, month);
+    const employee = employees.find((item) => Number(item.id) === Number(payslipConfig.employeeId));
+    const record = findPayrollRecordForPeriod(
+      payslipConfig.employeeId,
+      payrollRecords,
+      payPeriodStart,
+      payPeriodEnd,
+    );
+
+    const localData = record
+      ? buildPayslipPdfData({
+          config: payslipConfig,
+          employee,
+          record,
+          company: selectedCompany,
+          month,
+          year: payslipYear,
+          payPeriodStart,
+          payPeriodEnd,
+        })
+      : null;
 
     try {
-      let res = await fetch("/api/payroll/payslips/preview", {
+      const res = await fetch("/api/payroll/payslips/preview", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -624,25 +645,10 @@ export default function PayrollPage() {
         }),
       });
 
-      const initialContentType = res.headers.get("content-type") || "";
-      if (
-        !res.ok &&
-        res.status === 404 &&
-        !initialContentType.includes("application/json")
-      ) {
-        res = await fetch("/api/payroll/payslips/view", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payrollConfigId: payslipConfig.id,
-            year: payslipYear,
-            month,
-          }),
-        });
-      }
-
-      if (!res.ok) {
+      let payload: any = null;
+      if (res.ok) {
+        payload = await res.json().catch(() => null);
+      } else if (!localData) {
         const error = await res.json().catch(() => ({}));
         toast({
           title: "View failed",
@@ -652,55 +658,34 @@ export default function PayrollPage() {
         return;
       }
 
-      const contentType = res.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        const data = await res.json();
-        if (payslipViewerPdfUrl) {
-          window.URL.revokeObjectURL(payslipViewerPdfUrl);
-          setPayslipViewerPdfUrl(null);
-        }
-        setPayslipViewerTitle(data.title || `${payslipConfig.employeeName} — ${payslipYear}`);
-        setPayslipViewerHtml(data.html || null);
-        setPayslipViewerContext({
-          payrollConfigId: payslipConfig.id,
-          employeeName: payslipConfig.employeeName,
-          year: payslipYear,
-          month,
-        });
-        setPayslipViewerOpen(true);
-        setPayslipModalOpen(false);
-        return;
-      }
-
-      const arrayBuffer = await res.arrayBuffer();
-      if (!isPdfResponse(arrayBuffer)) {
+      const data = isPayslipPdfData(payload?.data) ? payload.data : localData;
+      if (!data) {
         toast({
           title: "View failed",
-          description: "Server did not return a valid payslip preview.",
+          description: "No processed payroll found for this month. Process payroll first, then view the payslip.",
           variant: "destructive",
         });
         return;
       }
 
-      if (payslipViewerPdfUrl) {
-        window.URL.revokeObjectURL(payslipViewerPdfUrl);
-      }
-      const blob = new Blob([arrayBuffer], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      setPayslipViewerPdfUrl(url);
-      setPayslipViewerHtml(null);
+      setPayslipViewerData(data);
       setPayslipViewerTitle(
-        `${payslipConfig.employeeName} - ${formatPayrollMonthLabel(payslipYear, month)}`
+        payload?.title || `${payslipConfig.employeeName} - ${formatPayrollMonthLabel(payslipYear, month)}`
       );
-      setPayslipViewerContext({
-        payrollConfigId: payslipConfig.id,
-        employeeName: payslipConfig.employeeName,
-        year: payslipYear,
-        month,
-      });
+      setPayslipViewerFilename(
+        payload?.downloadFilename || payslipPdfFilename(payslipConfig.employeeName, month, payslipYear)
+      );
       setPayslipViewerOpen(true);
       setPayslipModalOpen(false);
     } catch (error) {
+      if (localData) {
+        setPayslipViewerData(localData);
+        setPayslipViewerTitle(`${payslipConfig.employeeName} - ${formatPayrollMonthLabel(payslipYear, month)}`);
+        setPayslipViewerFilename(payslipPdfFilename(payslipConfig.employeeName, month, payslipYear));
+        setPayslipViewerOpen(true);
+        setPayslipModalOpen(false);
+        return;
+      }
       toast({
         title: "View failed",
         description: error instanceof Error ? error.message : "Failed to load payslip preview.",
@@ -708,63 +693,6 @@ export default function PayrollPage() {
       });
     } finally {
       setIsPayslipViewing(false);
-    }
-  };
-
-  const handlePayslipViewerDownload = async () => {
-    if (!payslipViewerContext) return;
-
-    setIsPayslipDownloading(true);
-
-    try {
-      const res = await fetch("/api/payroll/payslips/download", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payrollConfigId: payslipViewerContext.payrollConfigId,
-          year: payslipViewerContext.year,
-          months: [payslipViewerContext.month],
-        }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({ message: "Failed to download payslip" }));
-        toast({
-          title: "Download failed",
-          description: error.message || "Failed to download payslip.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const fallbackFilename = buildPayslipDownloadFilename(
-        payslipViewerContext.employeeName,
-        payslipViewerContext.month,
-        payslipViewerContext.year
-      );
-      const result = await downloadPayrollFileResponse(res, fallbackFilename);
-
-      if (result.ok) {
-        toast({
-          title: "Payslip downloaded",
-          description: `Downloaded payslip for ${payslipViewerContext.employeeName}.`,
-        });
-      } else {
-        toast({
-          title: "Download failed",
-          description: result.message,
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Download failed",
-        description: error instanceof Error ? error.message : "Failed to download payslip.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsPayslipDownloading(false);
     }
   };
 
@@ -957,7 +885,7 @@ export default function PayrollPage() {
         </div>
       </ManagementToolbarRow>
 
-      <ManagementTableCard>
+      <ManagementTableCard pagination={{ page: configPage, totalPages: configTotalPages, onPageChange: setConfigPage }}>
         {configsLoading ? (
           <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
         ) : configs.length === 0 ? (
@@ -996,7 +924,7 @@ export default function PayrollPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {configs.map((config) => {
+                {paginatedConfigs.map((config) => {
                   const preview = configPreviews.get(config.id);
                   const employee = employees.find((e) => Number(e.id) === Number(config.employeeId));
                   const annualSalary = (parseFloat(config.baseSalary) || 0) * 12;
@@ -1352,6 +1280,7 @@ export default function PayrollPage() {
               (recordsLoading ? (
                 <p className="py-8 text-center text-sm text-[#6B7280]">Loading payroll records...</p>
               ) : uniquePayrollRecords.length ? (
+                <>
                 <table className="min-w-full overflow-hidden rounded-lg border text-sm">
                   <thead>
                     <tr className="bg-gray-100">
@@ -1361,7 +1290,7 @@ export default function PayrollPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {uniquePayrollRecords.map((rec: any) => (
+                    {paginatedRecords.map((rec: any) => (
                       <tr
                         key={`${rec.employeeId}-${rec.payPeriodStart}-${rec.payPeriodEnd}`}
                         className="border-b hover:bg-gray-50"
@@ -1375,6 +1304,8 @@ export default function PayrollPage() {
                     ))}
                   </tbody>
                 </table>
+                <ListPagination page={recordPage} totalPages={recordTotalPages} onPageChange={setRecordPage} />
+                </>
               ) : (
                 <div className="py-8 text-center text-[#6B7280]">No payroll records found.</div>
               ))}
@@ -1383,6 +1314,7 @@ export default function PayrollPage() {
               (recordsLoading ? (
                 <p className="py-8 text-center text-sm text-[#6B7280]">Loading payroll records...</p>
               ) : uniquePayrollRecords.length ? (
+                <>
                 <table className="min-w-full overflow-hidden rounded-lg border text-sm">
                   <thead>
                     <tr className="bg-gray-100">
@@ -1392,7 +1324,7 @@ export default function PayrollPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {uniquePayrollRecords.map((rec: any) => (
+                    {paginatedRecords.map((rec: any) => (
                       <tr
                         key={`${rec.employeeId}-${rec.payPeriodStart}-${rec.payPeriodEnd}`}
                         className="border-b hover:bg-gray-50"
@@ -1406,6 +1338,8 @@ export default function PayrollPage() {
                     ))}
                   </tbody>
                 </table>
+                <ListPagination page={recordPage} totalPages={recordTotalPages} onPageChange={setRecordPage} />
+                </>
               ) : (
                 <div className="py-8 text-center text-[#6B7280]">No payroll records found.</div>
               ))}
@@ -1414,6 +1348,7 @@ export default function PayrollPage() {
               (recordsLoading ? (
                 <p className="py-8 text-center text-sm text-[#6B7280]">Loading payroll records...</p>
               ) : uniquePayrollRecords.length ? (
+                <>
                 <table className="min-w-full overflow-hidden rounded-lg border text-sm">
                   <thead>
                     <tr className="bg-gray-100">
@@ -1425,7 +1360,7 @@ export default function PayrollPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {uniquePayrollRecords.map((rec: any) => (
+                    {paginatedRecords.map((rec: any) => (
                       <tr
                         key={`${rec.employeeId}-${rec.payPeriodStart}-${rec.payPeriodEnd}`}
                         className="border-b hover:bg-gray-50"
@@ -1441,6 +1376,8 @@ export default function PayrollPage() {
                     ))}
                   </tbody>
                 </table>
+                <ListPagination page={recordPage} totalPages={recordTotalPages} onPageChange={setRecordPage} />
+                </>
               ) : (
                 <div className="py-8 text-center text-[#6B7280]">No payroll records found.</div>
               ))}
@@ -1611,22 +1548,22 @@ export default function PayrollPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Payslip Preview */}
-      <PayslipPreviewModal
-        open={payslipViewerOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closePayslipViewer();
-          } else {
-            setPayslipViewerOpen(true);
-          }
-        }}
-        title={payslipViewerTitle || "Payslip Preview"}
-        html={payslipViewerHtml}
-        pdfUrl={payslipViewerPdfUrl}
-        isDownloading={isPayslipDownloading}
-        onDownload={() => void handlePayslipViewerDownload()}
-      />
+      {/* Payslip Preview — same jsPDF preview/download as Purchase Order */}
+      {payslipViewerData && (
+        <PdfPreviewModal
+          open={payslipViewerOpen}
+          onOpenChange={(open) => {
+            if (!open) closePayslipViewer();
+          }}
+          title={payslipViewerTitle || "Payslip Preview"}
+          generatePdf={(opts) => generatePayslip_PDF(payslipViewerData, {
+            returnBase64: opts?.returnBase64,
+            filename: payslipViewerFilename,
+          })}
+          pdfFilename={payslipViewerFilename}
+          showEmail={false}
+        />
+      )}
 
       {/* Force Delete Dialog */}
       <Dialog open={showForceDeleteDialog} onOpenChange={setShowForceDeleteDialog}>

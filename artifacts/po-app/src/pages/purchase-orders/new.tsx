@@ -9,6 +9,7 @@ import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import {
   Form,
   FormControl,
@@ -854,7 +855,7 @@ export default function PurchaseOrderNew() {
             </div>
           </Card>
 
-          <div className="flex justify-end gap-3 fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t md:left-64 md:px-8 z-10">
+          <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/purchase-orders")}>
               Cancel
             </Button>
@@ -883,7 +884,7 @@ export default function PurchaseOrderNew() {
                 </>
               )}
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

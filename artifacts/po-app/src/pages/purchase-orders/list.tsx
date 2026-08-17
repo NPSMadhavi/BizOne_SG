@@ -10,6 +10,8 @@ import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRigh
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -93,10 +95,12 @@ export default function PurchaseOrderList() {
     });
   }, [pos, filterMode, filterYear, customFrom, customTo]);
 
-  const filteredPOs = filteredByDate.filter(po => {
+  const filteredPOs = useMemo(() => filteredByDate.filter(po => {
     const term = searchTerm.toLowerCase();
     return po.poNumber.toLowerCase().includes(term) || po.vendorName.toLowerCase().includes(term);
-  });
+  }), [filteredByDate, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredPOs);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -170,11 +174,11 @@ export default function PurchaseOrderList() {
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Vendor</th>
                 <th className="px-6 py-4 font-medium">Customer</th>
-                <th className="px-6 py-4 font-medium text-right">Amount</th>
-                <th className="px-6 py-4 font-medium text-center">Status</th>
+                <th className="px-6 py-4 font-medium">Amount</th>
+                <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium">Sent To</th>
                 <th className="px-6 py-4 font-medium">Vendor PI</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                <th className="px-6 py-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -193,7 +197,7 @@ export default function PurchaseOrderList() {
                   </td>
                 </tr>
               ) : (
-                filteredPOs.map((po) => {
+                paginatedItems.map((po) => {
                   const pis: any[] = pisByPoId[po.id] || [];
                   const overallStatus = pis.length === 0 ? null
                     : pis.every(p => p.status === "paid") ? "paid"
@@ -207,8 +211,8 @@ export default function PurchaseOrderList() {
                       <td className="px-6 py-4 text-muted-foreground">
                         {(po as any).customerName ? <span className="text-foreground font-medium">{(po as any).customerName}</span> : <span>—</span>}
                       </td>
-                      <td className="px-6 py-4 text-right font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:(po as any).currency||"SGD"}).format(po.totalAmount)}</td>
-                      <td className="px-6 py-4 text-center">{getStatusBadge(po.status)}</td>
+                      <td className="px-6 py-4 font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:(po as any).currency||"SGD"}).format(po.totalAmount)}</td>
+                      <td className="px-6 py-4">{getStatusBadge(po.status)}</td>
                       <td className="px-6 py-4"><SentToCell emailSentTo={(po as any).emailSentTo}/></td>
                       <td className="px-6 py-4">
                         {pis.length === 0 ? <span className="text-muted-foreground">—</span>
@@ -224,7 +228,7 @@ export default function PurchaseOrderList() {
                             </div>
                           )}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground"><ArrowRight className="h-4 w-4"/></Button>
                       </td>
                     </tr>
@@ -234,6 +238,7 @@ export default function PurchaseOrderList() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
     </div>
   );

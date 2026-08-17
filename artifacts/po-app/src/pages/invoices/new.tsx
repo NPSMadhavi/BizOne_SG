@@ -10,6 +10,7 @@ import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { previewRunningNumber } from "@/lib/running-number";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -990,7 +991,7 @@ export default function InvoiceNew() {
             </CardContent>
           </Card>
 
-          <div className="space-y-3">
+          <FormStickyActions className="flex-col items-end">
             <div className="flex justify-end">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
                 <Checkbox
@@ -1022,7 +1023,7 @@ export default function InvoiceNew() {
                 {isSubmitting ? "Saving..." : "Save & Preview"}
               </Button>
             </div>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

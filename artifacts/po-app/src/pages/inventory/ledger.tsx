@@ -3,10 +3,13 @@ import { inventoryApi, exportCsv } from "@/lib/inventory-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Download } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 export default function LedgerPage() {
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => { inventoryApi.getLedger().then(setRows).catch(() => setRows([])); }, []);
+  const { page, setPage, totalPages, paginatedItems } = usePagination(rows);
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -20,7 +23,7 @@ export default function LedgerPage() {
             <th className="py-2 text-right">Issued</th><th className="py-2 text-right">Trans In</th><th className="py-2 text-right">Trans Out</th>
             <th className="py-2 text-right">Adj In</th><th className="py-2 text-right">Adj Out</th><th className="py-2 text-right">Closing</th>
           </tr></thead>
-          <tbody>{rows.map(r => (
+          <tbody>{paginatedItems.map(r => (
             <tr key={r.stockItemId} className="border-b border-border/50">
               <td className="py-2 font-mono">#{r.stockItemId}</td>
               <td className="py-2 text-right">{r.opening.toFixed(3)}</td>
@@ -34,6 +37,7 @@ export default function LedgerPage() {
             </tr>
           ))}</tbody>
         </table>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </CardContent></Card>
     </div>
   );

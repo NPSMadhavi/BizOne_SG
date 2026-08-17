@@ -195,7 +195,7 @@ export function findPayrollRecordForPeriod(
   const { year, month } = derivePayrollMonthYear(start);
 
   return records
-    .filter((record) => record.employeeId === employeeDbId)
+    .filter((record) => Number(record.employeeId) === Number(employeeDbId))
     .filter(
       (record) =>
         (record.payrollYear === year && record.payrollMonth === month) ||

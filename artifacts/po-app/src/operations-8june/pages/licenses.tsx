@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/operations-8june/lib/queryClient";
@@ -35,6 +35,7 @@ import { License } from "@shared/schema";
 import { format, isAfter, isBefore, addDays } from "date-fns";
 import LicenseViewDialog from "@/operations-8june/components/forms/LicenseViewDialog";
 import { useToast } from "@/hooks/use-toast";
+import { usePagination } from "@/hooks/use-pagination";
 import { cn } from "@/lib/utils";
 
 const FILTER_TABS = [
@@ -74,7 +75,9 @@ export default function LicensesPage() {
     return true;
   };
 
-  const filteredLicenses = licenses.filter(matchesTab);
+  const filteredLicenses = useMemo(() => licenses.filter(matchesTab), [licenses, activeTab]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredLicenses);
 
   // Delete license mutation
   const deleteMutation = useMutation({
@@ -243,7 +246,7 @@ export default function LicensesPage() {
         ))}
       </ManagementToolbarRow>
 
-      <ManagementTableCard>
+      <ManagementTableCard pagination={{ page, totalPages, onPageChange: setPage }}>
             {isLoading ? (
               <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
             ) : licenses.length > 0 && filteredLicenses.length === 0 ? (
@@ -292,7 +295,7 @@ export default function LicensesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredLicenses.map((license) => (
+                  {paginatedItems.map((license) => (
                     <TableRow key={license.id}>
                       <TableCell className="font-medium text-[#111827]">
                         <button
@@ -306,10 +309,8 @@ export default function LicensesPage() {
                           {license.name}
                         </button>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {license.type}
-                        </Badge>
+                      <TableCell className="text-[#444651] capitalize">
+                        {license.type}
                       </TableCell>
                       <TableCell className="text-[#444651]">
                         {license.purchaseDate

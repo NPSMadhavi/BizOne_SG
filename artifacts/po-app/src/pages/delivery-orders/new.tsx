@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey, getListDeliveryOrdersQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -321,7 +322,7 @@ export default function DeliveryOrderNew() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
+          <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/delivery-orders")}>Cancel</Button>
             <Button
               type="button"
@@ -342,7 +343,7 @@ export default function DeliveryOrderNew() {
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save"}
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

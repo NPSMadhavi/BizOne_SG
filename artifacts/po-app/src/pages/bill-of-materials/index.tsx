@@ -24,6 +24,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import {
   Upload,
   HelpCircle,
@@ -216,6 +218,7 @@ export default function BillOfMaterialsPage() {
   const [mode, setMode] = useState<"form" | "list">("list");
   const [helpOpen, setHelpOpen] = useState(false);
   const [bomList, setBomList] = useState<BomRecord[]>(() => loadList());
+  const { page, setPage, totalPages, paginatedItems } = usePagination(bomList);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [productName, setProductName] = useState("");
@@ -614,7 +617,7 @@ export default function BillOfMaterialsPage() {
                   </td>
                 </tr>
               ) : (
-                bomList.map((b) => {
+                paginatedItems.map((b) => {
                   const mat = b.components.reduce((s, c) => s + lineTotal(c, b.outputQty), 0);
                   const total = computeBomTotal(mat, b.labourCost, b.machineCost, b.overhead, b.wastagePct);
                   return (
@@ -644,6 +647,7 @@ export default function BillOfMaterialsPage() {
               )}
             </tbody>
           </table>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       </div>
     );

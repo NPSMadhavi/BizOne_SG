@@ -180,7 +180,7 @@ export default function PurchaseOrderView() {
               )}
             >
               <FileInput className="h-4 w-4" />
-              Record Vendor PI
+              Vendor Invoice
             </Button>
           )}
           <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>

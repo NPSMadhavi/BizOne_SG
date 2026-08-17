@@ -7,6 +7,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useGetSettings, getGetSettingsQueryKey, useGetQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -679,7 +680,7 @@ export default function ProformaInvoiceNew() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
+          <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/proforma-invoices")}>Cancel</Button>
             <Button
               type="button"
@@ -700,7 +701,7 @@ export default function ProformaInvoiceNew() {
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

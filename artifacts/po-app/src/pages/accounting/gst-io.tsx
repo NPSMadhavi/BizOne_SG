@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Download, Info, ListFilter } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -175,6 +177,9 @@ export default function GstIoListing() {
 
   const summary = data?.summary;
 
+  const { page: outputPage, setPage: setOutputPage, totalPages: outputTotalPages, paginatedItems: paginatedOutputLines } = usePagination(data?.outputLines ?? []);
+  const { page: inputPage, setPage: setInputPage, totalPages: inputTotalPages, paginatedItems: paginatedInputLines } = usePagination(data?.inputLines ?? []);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -315,7 +320,7 @@ export default function GstIoListing() {
                 <tbody className="divide-y">
                   {data.outputLines.length === 0 ? (
                     <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No output tax transactions in this period</td></tr>
-                  ) : data.outputLines.map((l, i) => (
+                  ) : paginatedOutputLines.map((l, i) => (
                     <tr key={i} className="hover:bg-muted/30">
                       <td className="px-4 py-2.5 text-muted-foreground">{l.date}</td>
                       <td className="px-4 py-2.5 font-medium">{l.docNo}</td>
@@ -342,6 +347,7 @@ export default function GstIoListing() {
                   </tfoot>
                 )}
               </table>
+              <ListPagination page={outputPage} totalPages={outputTotalPages} onPageChange={setOutputPage} />
             </div>
           )}
 
@@ -364,7 +370,7 @@ export default function GstIoListing() {
                 <tbody className="divide-y">
                   {data.inputLines.length === 0 ? (
                     <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No input tax transactions in this period</td></tr>
-                  ) : data.inputLines.map((l, i) => (
+                  ) : paginatedInputLines.map((l, i) => (
                     <tr key={i} className="hover:bg-muted/30">
                       <td className="px-4 py-2.5 text-muted-foreground">{l.date}</td>
                       <td className="px-4 py-2.5 font-medium">{l.docNo}</td>
@@ -391,6 +397,7 @@ export default function GstIoListing() {
                   </tfoot>
                 )}
               </table>
+              <ListPagination page={inputPage} totalPages={inputTotalPages} onPageChange={setInputPage} />
             </div>
           )}
         </Card>

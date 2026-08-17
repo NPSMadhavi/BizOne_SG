@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { useAuth } from "@/contexts/auth-context";
+import { pathToAppModule } from "@/contexts/auth-modules";
 
 interface Message {
   id: string;
@@ -233,10 +235,12 @@ async function streamChat(
   signal: AbortSignal,
   onFill?: (fields: Record<string, any>) => void,
   onEmail?: (docType: string, id: number, recipients: string[], docNumber?: string) => void,
+  currentPath?: string,
+  selectedCompanyId?: number | null,
 ) {
   const r = await fetch(`${BASE}/api/agent/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    credentials: "include", body: JSON.stringify({ messages, memory }), signal,
+    credentials: "include", body: JSON.stringify({ messages, memory, currentPath, selectedCompanyId }), signal,
   });
   if (!r.ok) { const e = await r.json().catch(() => ({ error: "Failed" })); throw new Error(e.error); }
   const reader = r.body!.getReader();
@@ -559,8 +563,16 @@ export function AgentPanel() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const { recording, start, stop } = useVoice();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const [memory] = useState(() => loadMemory());
+  const { selectedCompany, hasModuleAccess, isAdmin } = useAuth();
+
+  const canOpenPath = useCallback((path: string) => {
+    if (isAdmin) return true;
+    const module = pathToAppModule(path);
+    if (!module) return true;
+    return hasModuleAccess(module);
+  }, [isAdmin, hasModuleAccess]);
 
   const hasMessages = messages.length > 0;
 
@@ -643,10 +655,16 @@ export function AgentPanel() {
             memory,
             chunk => { response += chunk; setConvText(response.slice(-150)); },
             () => {},
-            (path, prefill) => { if (prefill) (window as any).__vedaPrefill = prefill; navigate(path); },
+            (path, prefill) => {
+              if (!canOpenPath(path)) return;
+              if (prefill) (window as any).__vedaPrefill = prefill;
+              navigate(path);
+            },
             ctrl.signal,
             (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
             (_dt, _id, recipients) => { window.dispatchEvent(new CustomEvent("veda:open-email", { detail: { recipients } })); },
+            location,
+            selectedCompany?.id,
           );
           if (response) {
             ambientHistoryRef.current = [
@@ -678,7 +696,7 @@ export function AgentPanel() {
       setConvState("idle");
       setConvText("");
     }
-  }, [navigate, memory]);
+  }, [navigate, memory, location, canOpenPath, selectedCompany?.id]);
 
   const handleWakeWord = useCallback(() => {
     runAmbientConversation("Yes Boss"); // short acknowledgment on wake word
@@ -757,6 +775,7 @@ export function AgentPanel() {
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
   const handleNavigate = useCallback((path: string, prefill: any, reason: string) => {
+    if (!canOpenPath(path)) return;
     if (prefill) (window as any).__vedaPrefill = prefill;
     const label = PATH_LABELS[path] || reason || path.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
@@ -765,7 +784,7 @@ export function AgentPanel() {
         : m
     ));
     navigate(path);
-  }, [navigate]);
+  }, [navigate, canOpenPath]);
 
   const send = useCallback(async (text: string, fromVoice = false) => {
     if (!text.trim() || thinking) return;
@@ -788,17 +807,19 @@ export function AgentPanel() {
         abortRef.current.signal,
         (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
         (_dt, _id, recipients) => { window.dispatchEvent(new CustomEvent("veda:open-email", { detail: { recipients } })); },
+        location,
+        selectedCompany?.id,
       );
       const inv = full.match(/\b(INV-\d+)\b/);
       const qt = full.match(/\b(QT-\d+)\b/);
-      if (inv) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
-      else if (qt) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
+      if (inv && hasModuleAccess("invoices")) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
+      else if (qt && hasModuleAccess("quotations")) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
       else { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true } : m)); }
       if (fromVoice && full) await speak(full.slice(0, 600));
     } catch (e: any) {
       if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
     } finally { setThinking(false); abortRef.current = null; }
-  }, [thinking, history, memory, handleNavigate]);
+  }, [thinking, history, memory, handleNavigate, location, selectedCompany?.id, hasModuleAccess]);
 
   const submit = () => send(input);
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1176,7 +1197,7 @@ export function AgentPanel() {
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
                               </div>
                             )}
-                            {msg.docRef && (
+                            {msg.docRef && canOpenPath(msg.docRef.path) && (
                               <button
                                 onClick={() => { navigate(msg.docRef!.path); close(); }}
                                 className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2"

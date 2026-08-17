@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -534,7 +535,7 @@ export default function CreditNoteNew() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-3">
+          <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/credit-notes")}>Cancel</Button>
             <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
               <Save className="h-4 w-4" />
@@ -544,7 +545,7 @@ export default function CreditNoteNew() {
               <Eye className="h-4 w-4" />
               {submitting ? "Saving..." : "Save & Preview"}
             </Button>
-          </div>
+          </FormStickyActions>
         </form>
       </Form>
 

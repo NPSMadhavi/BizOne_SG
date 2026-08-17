@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import {
   Package,
   Layers,
@@ -186,8 +188,6 @@ export default function BatchExpiryPage() {
   const [category, setCategory] = useState("all");
   const [warehouse, setWarehouse] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [viewBatchId, setViewBatchId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -275,9 +275,7 @@ export default function BatchExpiryPage() {
     return { stockValue, active, expiringSoon, expired };
   }, [enriched]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
   const viewBatch = enriched.find((r) => r.id === viewBatchId) ?? null;
 
   function persist(next: BatchRow[]) {
@@ -398,7 +396,7 @@ export default function BatchExpiryPage() {
           <p className="mt-1 text-muted-foreground">Track product batches, manufacturing and expiry dates across warehouses.</p>
         </div>
         <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={openAdd}>
-          <Plus className="h-4 w-4" /> Add Batch
+          <Plus className="h-4 w-4" /> Create Batch
         </Button>
       </div>
 
@@ -491,14 +489,14 @@ export default function BatchExpiryPage() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.length === 0 ? (
+                {paginatedItems.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-[#6B7280]">
-                      No batches found. Click Add Batch to create one.
+                      No batches found. Click Create Batch to create one.
                     </td>
                   </tr>
                 ) : (
-                  pageRows.map((row) => {
+                  paginatedItems.map((row) => {
                     const meta = statusMeta(row.status, row.expiryDate);
                     const expiryClass =
                       row.status === "expired"
@@ -555,66 +553,7 @@ export default function BatchExpiryPage() {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-[#E5E7EB] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-[#6B7280]">
-              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
-              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} entries
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={currentPage <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded-md border border-[#E5E7EB] px-2 py-1 text-xs disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              {Array.from({ length: Math.min(totalPages, 3) }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setPage(n)}
-                  className={cn(
-                    "min-w-8 rounded-md px-2 py-1 text-xs font-medium",
-                    n === currentPage ? "bg-[#2563EB] text-white" : "border border-[#E5E7EB] text-[#4B5563]",
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-              {totalPages > 4 && <span className="text-xs text-[#9CA3AF]">…</span>}
-              {totalPages > 3 && (
-                <button
-                  type="button"
-                  onClick={() => setPage(totalPages)}
-                  className={cn(
-                    "min-w-8 rounded-md px-2 py-1 text-xs font-medium",
-                    currentPage === totalPages ? "bg-[#2563EB] text-white" : "border border-[#E5E7EB] text-[#4B5563]",
-                  )}
-                >
-                  {totalPages}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={currentPage >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="rounded-md border border-[#E5E7EB] px-2 py-1 text-xs disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
-                <SelectTrigger className="h-8 w-[100px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10 / page</SelectItem>
-                  <SelectItem value="20">20 / page</SelectItem>
-                  <SelectItem value="50">50 / page</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
 
       <Dialog
@@ -626,7 +565,7 @@ export default function BatchExpiryPage() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit Batch" : "Add Batch"}</DialogTitle>
+            <DialogTitle>{editingId ? "Edit Batch" : "Create Batch"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">

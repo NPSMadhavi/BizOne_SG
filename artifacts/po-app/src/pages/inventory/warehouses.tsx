@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { inventoryApi } from "@/lib/inventory-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { InventoryPageHeader, InventorySectionCard, InventoryStatusBadge } from "./inventory-page-ui";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 
 const EMPTY = {
@@ -145,7 +147,7 @@ export default function WarehousesPage() {
     }
   }
 
-  const filtered = rows.filter((r) => {
+  const filtered = useMemo(() => rows.filter((r) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -153,7 +155,9 @@ export default function WarehousesPage() {
       r.name.toLowerCase().includes(q) ||
       (r.city || "").toLowerCase().includes(q)
     );
-  });
+  }), [rows, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   return (
     <div className="space-y-6 pb-8">
@@ -200,7 +204,7 @@ export default function WarehousesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {paginatedItems.map((r) => (
                   <tr key={r.id} className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB]">
                     <td className="py-3 pr-4 font-mono text-[#111827]">
                       {r.code}
@@ -231,6 +235,7 @@ export default function WarehousesPage() {
                 ))}
               </tbody>
             </table>
+            <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         )}
       </InventorySectionCard>

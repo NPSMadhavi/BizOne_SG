@@ -8,6 +8,8 @@ import { Link, useLocation } from "wouter";
 import { Search, Plus, Eye, Pencil, Trash2, X } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -40,6 +42,8 @@ export default function SalesOrderList() {
         ((d as any).qtNumber || "").toLowerCase().includes(t),
     );
   }, [salesOrders, searchTerm]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredOrders);
 
   const getSoStatusBadge = (status: string) => {
     switch (status) {
@@ -112,9 +116,9 @@ export default function SalesOrderList() {
                   <th className="px-6 py-4 font-medium">Date</th>
                   <th className="px-6 py-4 font-medium">Quotation</th>
                   <th className="px-6 py-4 font-medium">Customer</th>
-                  <th className="px-6 py-4 font-medium text-right">Amount</th>
-                  <th className="px-6 py-4 font-medium text-center">Status</th>
-                  <th className="px-6 py-4 font-medium text-right">Actions</th>
+                  <th className="px-6 py-4 font-medium">Amount</th>
+                  <th className="px-6 py-4 font-medium">Status</th>
+                  <th className="px-6 py-4 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -129,16 +133,16 @@ export default function SalesOrderList() {
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((doc) => (
+                  paginatedItems.map((doc) => (
                     <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/sales-orders/${doc.id}`)}>
                       <td className="px-6 py-4 font-medium font-mono">{doc.soNumber}</td>
                       <td className="px-6 py-4">{fmtDate((doc as any).issueDate || doc.createdAt)}</td>
                       <td className="px-6 py-4 font-mono text-muted-foreground">{(doc as any).qtNumber || "—"}</td>
                       <td className="px-6 py-4">{doc.customerName}</td>
-                      <td className="px-6 py-4 text-right font-medium">{fmt(doc.totalAmount, (doc as any).currency || "SGD")}</td>
-                      <td className="px-6 py-4 text-center">{getSoStatusBadge(doc.status)}</td>
-                      <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
+                      <td className="px-6 py-4 font-medium">{fmt(doc.totalAmount, (doc as any).currency || "SGD")}</td>
+                      <td className="px-6 py-4">{getSoStatusBadge(doc.status)}</td>
+                      <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-start gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setLocation(`/sales-orders/${doc.id}`)}>
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -153,6 +157,7 @@ export default function SalesOrderList() {
               </tbody>
             </table>
           </div>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </Card>
       </div>
 

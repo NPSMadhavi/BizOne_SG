@@ -130,6 +130,7 @@ interface PdfPreviewModalProps {
   onEmailSent?: (recipients: string[]) => void;
   poId?: number;
   docInfo?: EmailDocInfo;
+  showEmail?: boolean;
 }
 
 export function PdfPreviewModal({
@@ -145,6 +146,7 @@ export function PdfPreviewModal({
   onEmailSent,
   poId,
   docInfo,
+  showEmail = true,
 }: PdfPreviewModalProps) {
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -223,17 +225,19 @@ export function PdfPreviewModal({
               <Printer className="h-4 w-4" />
               Print
             </Button>
-            <EmailSendDialog
-              defaultTo={defaultEmailTo}
-              defaultSubject={defaultEmailSubject}
-              defaultBody={defaultEmailBody}
-              pdfFilename={pdfFilename}
-              generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
-              triggerSize="sm"
-              onSuccess={(recipients) => onEmailSent?.(recipients)}
-              poId={poId}
-              docInfo={docInfo}
-            />
+            {showEmail && (
+              <EmailSendDialog
+                defaultTo={defaultEmailTo}
+                defaultSubject={defaultEmailSubject}
+                defaultBody={defaultEmailBody}
+                pdfFilename={pdfFilename}
+                generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
+                triggerSize="sm"
+                onSuccess={(recipients) => onEmailSent?.(recipients)}
+                poId={poId}
+                docInfo={docInfo}
+              />
+            )}
           </div>
         </DialogHeader>
         <div className="flex-1 overflow-hidden">

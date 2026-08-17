@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 export default function OpeningStockPage() {
   const { toast } = useToast();
@@ -25,6 +27,8 @@ export default function OpeningStockPage() {
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   }
   useEffect(() => { load(); }, []);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(rows);
 
   async function save() {
     try {
@@ -50,7 +54,7 @@ export default function OpeningStockPage() {
       <Card><CardHeader><CardTitle>Opening Stock Entries</CardTitle></CardHeader><CardContent>
         <table className="w-full text-sm">
           <thead><tr className="border-b text-muted-foreground text-left"><th className="py-2">Date</th><th className="py-2">Warehouse</th><th className="py-2">Item</th><th className="py-2 text-right">Qty</th><th className="py-2 text-right">Unit Cost</th><th className="py-2"></th></tr></thead>
-          <tbody>{rows.map(r => (
+          <tbody>{paginatedItems.map(r => (
             <tr key={r.id} className="border-b border-border/50">
               <td className="py-2">{r.entryDate}</td><td className="py-2">{r.warehouseName}</td>
               <td className="py-2">{r.itemCode} — {r.itemName}</td>
@@ -60,6 +64,7 @@ export default function OpeningStockPage() {
             </tr>
           ))}</tbody>
         </table>
+        <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </CardContent></Card>
 
       <Dialog open={open} onOpenChange={setOpen}>

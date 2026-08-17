@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
@@ -50,6 +50,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { usePagination } from "@/hooks/use-pagination";
 import {
   ManagementPageHeader,
   ManagementTableCard,
@@ -324,11 +325,16 @@ export default function ServiceReportsPage() {
 
   const formatDate = (date: string | Date) => new Date(date).toLocaleDateString("en-SG");
 
-  const filteredReports = serviceReports.filter(
-    (report) =>
-      report.csrNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.customerName?.toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredReports = useMemo(
+    () => serviceReports.filter(
+      (report) =>
+        report.csrNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        report.customerName?.toLowerCase().includes(searchTerm.toLowerCase()),
+    ),
+    [serviceReports, searchTerm],
   );
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredReports);
 
   const pendingCount = serviceReports.filter((r) => r.status === "pending").length;
   const resolvedCount = serviceReports.filter((r) => r.status === "resolved").length;
@@ -389,7 +395,7 @@ export default function ServiceReportsPage() {
         placeholder="Search service reports..."
       />
 
-      <ManagementTableCard>
+      <ManagementTableCard pagination={{ page, totalPages, onPageChange: setPage }}>
         {filteredReports.length > 0 ? (
           <ManagementTableContainer>
             <Table>
@@ -406,7 +412,7 @@ export default function ServiceReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredReports.map((report) => (
+                {paginatedItems.map((report) => (
                   <TableRow key={report.id}>
                     <TableCell className="font-medium text-[#111827]">
                       <button

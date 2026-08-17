@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Plus, Search, Eye, Pencil, FileMinus, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -73,12 +75,14 @@ export default function CreditNoteList() {
     });
   }, [data, filterMode, filterYear, customFrom, customTo]);
 
-  const filtered = filteredByDate.filter(note =>
+  const filtered = useMemo(() => filteredByDate.filter(note =>
     !search.trim() ||
     note.cnNumber.toLowerCase().includes(search.toLowerCase()) ||
     note.customerName.toLowerCase().includes(search.toLowerCase()) ||
     (note.refInvNumber ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  ), [filteredByDate, search]);
+
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
@@ -158,7 +162,7 @@ export default function CreditNoteList() {
                   </td>
                 </tr>
               )}
-              {filtered.map(note => (
+              {paginatedItems.map(note => (
                 <tr key={note.id} className={cn("border-b border-gray-100 hover:bg-gray-50/50 transition-colors", note.status === "void" ? "opacity-60" : "")}>
                   <td className="px-4 py-3 font-mono font-semibold text-gray-800">{note.cnNumber}</td>
                   <td className="px-4 py-3 text-gray-700">{note.customerName}</td>
@@ -186,6 +190,7 @@ export default function CreditNoteList() {
               ))}
             </tbody>
           </table>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
     </div>

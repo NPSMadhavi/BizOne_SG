@@ -223,6 +223,13 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* Keep header and cell text on the same left edge (Tailwind v4 th reverts to center). */
+  table th,
+  table td {
+    text-align: left;
+    vertical-align: middle;
+  }
 }
 
 @keyframes floatY {

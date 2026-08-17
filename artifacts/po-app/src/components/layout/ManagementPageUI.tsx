@@ -3,6 +3,7 @@ import { Loader2, Search, ChevronLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { ListPagination } from "@/components/list-pagination";
 
 export function ManagementPageHeader({
   title,
@@ -102,10 +103,29 @@ export function ManagementSearchBar({
   );
 }
 
-export function ManagementTableCard({ children }: { children: ReactNode }) {
+export function ManagementTableCard({
+  children,
+  pagination,
+}: {
+  children: ReactNode;
+  pagination?: {
+    page: number;
+    totalPages: number;
+    onPageChange: (page: number) => void;
+  };
+}) {
   return (
     <Card className="overflow-hidden rounded-xl border border-[#E4E4E4] shadow-sm">
-      <CardContent className="p-0">{children}</CardContent>
+      <CardContent className="p-0">
+        {children}
+        {pagination ? (
+          <ListPagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.onPageChange}
+          />
+        ) : null}
+      </CardContent>
     </Card>
   );
 }

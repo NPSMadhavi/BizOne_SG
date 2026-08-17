@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
 import { ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { generateARAgingReport_PDF } from "@/lib/pdf";
 
 interface InvLine { id: number; invNumber: string; issueDate: string | null; amount: number; daysPastDue: number }
@@ -73,6 +75,7 @@ export default function ArAgingPage() {
   }
 
   const t = data?.totals;
+  const { page, setPage, totalPages, paginatedItems } = usePagination(data?.customers ?? []);
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
@@ -145,7 +148,7 @@ export default function ArAgingPage() {
                 {data.customers.length === 0 && (
                   <tr><td colSpan={8} className="text-center py-16 text-sm text-gray-400">No outstanding receivables as of {fmtDate(asOf)}.</td></tr>
                 )}
-                {data.customers.map(c => (
+                {paginatedItems.map(c => (
                   <>
                     <tr
                       key={c.customerName}
@@ -199,6 +202,7 @@ export default function ArAgingPage() {
                 </tfoot>
               )}
             </table>
+            <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         </div>
       )}

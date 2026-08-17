@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
 import { ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/hooks/use-pagination";
+import { ListPagination } from "@/components/list-pagination";
 import { generateAPAgingReport_PDF } from "@/lib/pdf";
 
 interface PiLine { id: number; piNumber: string; piDate: string | null; balance: number; daysPastDue: number; status: string }
@@ -73,6 +75,7 @@ export default function ApAgingPage() {
   }
 
   const t = data?.totals;
+  const { page, setPage, totalPages, paginatedItems } = usePagination(data?.vendors ?? []);
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
@@ -144,7 +147,7 @@ export default function ApAgingPage() {
                 {data.vendors.length === 0 && (
                   <tr><td colSpan={8} className="text-center py-16 text-sm text-gray-400">No outstanding payables as of {fmtDate(asOf)}.</td></tr>
                 )}
-                {data.vendors.map(v => (
+                {paginatedItems.map(v => (
                   <>
                     <tr
                       key={v.vendorName}
@@ -197,6 +200,7 @@ export default function ApAgingPage() {
                 </tfoot>
               )}
             </table>
+            <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         </div>
       )}
