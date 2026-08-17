@@ -7,6 +7,7 @@ export const APP_ALL_MODULES = [
   "licenses",
   "employees",
   "payroll",
+  "purchase_quotations",
   "purchase_orders",
   "vendor_invoices",
   "quotations",

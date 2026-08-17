@@ -57,9 +57,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 interface BankTransaction {
   id: number;
   date: string;
+  dateDisplay?: string;
+  valueDate?: string;
+  valueDateDisplay?: string;
   description: string;
+  refNo?: string;
   amount: number;
   type: "credit" | "debit";
+  balance?: number;
+  balanceDisplay?: string;
   matchedType?: string;
   matchedRef?: string;
   matchedDetails?: string;
@@ -89,8 +95,27 @@ function formatPeriodDate(value: string) {
   if (!value) return "—";
   const [y, m, d] = value.split("-");
   if (!y || !m || !d) return value;
-  return `${d.padStart(2, "0")} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m) - 1]} ${y}`;
+  return `${Number(d)} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m) - 1]} ${y}`;
 }
+
+/** Indian numbering: 100000 → 1,00,000.00 */
+function formatIndianAmount(value: number): string {
+  const [intPart, dec = "00"] = Math.abs(value).toFixed(2).split(".");
+  if (intPart.length <= 3) return `${intPart}.${dec}`;
+  const last3 = intPart.slice(-3);
+  let rest = intPart.slice(0, -3);
+  const groups: string[] = [last3];
+  while (rest.length > 0) {
+    groups.unshift(rest.slice(-2));
+    rest = rest.slice(0, -2);
+  }
+  return `${groups.join(",")}.${dec}`;
+}
+
+const MONTH_NAME_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
 
 export default function BankReconciliation() {
   const [, setLocation] = useLocation();
@@ -196,15 +221,21 @@ export default function BankReconciliation() {
     return { status, matchedType, matchedRef, matchedDetails };
   }
 
-  function rowsToTransactions(rows: Array<{ date: string; description: string; amount: number; type: "credit" | "debit" }>) {
+  function rowsToTransactions(rows: ParsedStatementRow[]) {
     return rows.map((row, idx) => {
       const match = autoMatchFromDescription(row.description);
       return {
         id: idx + 1,
         date: row.date,
+        dateDisplay: row.dateDisplay,
+        valueDate: row.valueDate,
+        valueDateDisplay: row.valueDateDisplay,
         description: row.description,
+        refNo: row.refNo,
         amount: row.amount,
         type: row.type,
+        balance: row.balance,
+        balanceDisplay: row.balanceDisplay,
         ...match,
       } satisfies BankTransaction;
     });
@@ -222,12 +253,37 @@ export default function BankReconciliation() {
     if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
     const s = String(raw).trim();
     if (!s || /^[-–—]$/.test(s)) return null;
-    // (1,234.56) accounting negative
-    const neg = /^\(.*\)$/.test(s);
-    const cleaned = s.replace(/[^\d.\-]/g, "");
+    // Reject date/time strings — they become nonsense amounts
+    if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d/.test(s)) return null;
+    if (/^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/.test(s)) return null;
+    if (/\d{1,2}:\d{2}(:\d{2})?/.test(s) && !/[\d,]+\.\d{1,2}/.test(s)) return null;
+    const neg = /^\(.*\)$/.test(s) || /^[-−]/.test(s);
+    // Indian (1,00,000.00) and Western (1,000,000.00) grouping — strip commas
+    const cleaned = s.replace(/[₹$+\s()]/g, "").replace(/,/g, "").replace(/[^\d.\-]/g, "");
     const n = parseFloat(cleaned);
     if (isNaN(n)) return null;
     return neg ? -Math.abs(n) : n;
+  }
+
+  function parseSignedAmount(raw: unknown): { amount: number; type: "credit" | "debit" } | null {
+    const s = String(raw ?? "").trim();
+    if (!s) return null;
+    const val = parseAmountValue(s);
+    if (val == null || Math.abs(val) < 0.001) return null;
+    let type: "credit" | "debit" = "credit";
+    if (/^[-−]/.test(s)) type = "debit";
+    else if (/^\+/.test(s)) type = "credit";
+    else if (val < 0) type = "debit";
+    return { amount: Math.abs(val), type };
+  }
+
+  function parseDateTimeCell(raw: unknown): { iso: string; display: string } {
+    const s = String(raw ?? "").trim();
+    const iso = formatCellDate(raw);
+    const displayDate = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? formatPeriodDate(iso) : (s || "—");
+    const timeMatch = s.match(/\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\b/i);
+    const display = timeMatch ? `${displayDate}\n${timeMatch[1].trim()}` : displayDate;
+    return { iso: /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : "", display };
   }
 
   function formatCellDate(raw: unknown): string {
@@ -244,6 +300,23 @@ export default function BankReconciliation() {
     if (!s) return "";
     // already yyyy-mm-dd
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    // 10 Sep 2025 or 10 Sep 2025 01:19 PM
+    const textDate = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/);
+    if (textDate) {
+      const mm = MONTH_NAME_MAP[textDate[2].slice(0, 3).toLowerCase()];
+      if (mm) {
+        return `${textDate[3]}-${mm}-${textDate[1].padStart(2, "0")}`;
+      }
+    }
+    // dd/mm/yyyy with optional time suffix (e.g. 31/03/2025 06:48:06 PM)
+    const dmyWithTime = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/);
+    if (dmyWithTime) {
+      const dd = dmyWithTime[1].padStart(2, "0");
+      const mm = dmyWithTime[2].padStart(2, "0");
+      let yyyy = dmyWithTime[3];
+      if (yyyy.length === 2) yyyy = Number(yyyy) > 50 ? `19${yyyy}` : `20${yyyy}`;
+      return `${yyyy}-${mm}-${dd}`;
+    }
     // dd/mm/yyyy or dd-mm-yyyy
     const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
     if (dmy) {
@@ -260,9 +333,598 @@ export default function BankReconciliation() {
     return s;
   }
 
+  function looksLikeDateOrTime(text: string): boolean {
+    const t = text.trim();
+    if (!t) return false;
+    if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d/.test(t)) return true;
+    if (/^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/.test(t)) return true;
+    if (/^\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?$/i.test(t)) return true;
+    if (/^:\d{2}(:\d{2})?(\s*(AM|PM))?$/i.test(t)) return true;
+    if (/^-\s*\d{1,2}[\/\-.]\d/.test(t)) return true;
+    return false;
+  }
+
+  /** Pick the transaction amount when a line has deposit, withdrawal, and running balance. */
+  function pickStatementAmount(
+    amounts: Array<{ value: number; raw: string; index?: number }>,
+  ): { value: number; raw: string; type?: "credit" | "debit" } | null {
+    if (amounts.length === 0) return null;
+
+    // Prefer amounts with explicit +/- (Debit/Credit column)
+    const signedTokens = amounts.filter((a) => /^[+-]/.test(a.raw.trim()));
+    for (const tok of signedTokens) {
+      const s = parseSignedAmount(tok.raw);
+      if (s) return { ...tok, value: s.amount, type: s.type };
+    }
+
+    const ordered = [...amounts].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+    // Singapore bank export order: Deposit | Withdrawal | Ledger Balance
+    if (ordered.length >= 3) {
+      const deposit = ordered[0];
+      const withdrawal = ordered[1];
+      if (Math.abs(withdrawal.value) > 0.001) {
+        return { ...withdrawal, type: "debit" };
+      }
+      if (Math.abs(deposit.value) > 0.001) {
+        return { ...deposit, type: "credit" };
+      }
+      return null;
+    }
+
+    // Indian bank: Debit/Credit | Balance (two columns)
+    if (ordered.length === 2) {
+      const [first, second] = ordered;
+      const firstSigned = parseSignedAmount(first.raw);
+      if (firstSigned) return { ...first, type: firstSigned.type };
+      if (Math.abs(second.value) > 0 && Math.abs(first.value) > 0) {
+        if (Math.abs(second.value) / Math.abs(first.value) >= 3) {
+          return { ...first, type: first.value < 0 ? "debit" : "credit" };
+        }
+        if (Math.abs(first.value) / Math.abs(second.value) >= 3) {
+          return { ...second, type: second.value < 0 ? "debit" : "credit" };
+        }
+      }
+    }
+
+    const nonZero = amounts.filter((a) => Math.abs(a.value) > 0.001);
+    if (nonZero.length === 0) return null;
+    if (nonZero.length === 1) return nonZero[0];
+
+    const absValues = nonZero.map((a) => Math.abs(a.value)).sort((a, b) => b - a);
+    const largest = absValues[0];
+    const second = absValues[1] ?? 0;
+    if (second > 0 && largest / second >= 5) {
+      const txn = nonZero.find((a) => Math.abs(a.value) < largest * 0.9);
+      if (txn) return txn;
+    }
+    return nonZero[nonZero.length - 2] ?? nonZero[nonZero.length - 1];
+  }
+
+  function isTimeAmountToken(line: string, index: number, rawNum: string): boolean {
+    const before = line.slice(Math.max(0, index - 2), index);
+    const after = line.slice(index + rawNum.length, index + rawNum.length + 2);
+    if (/:\d*$/.test(before) || /^\d:/.test(after) || /^:\d/.test(after)) return true;
+    // Bare integers 0–59 without decimals are usually time fragments (HH:MM:SS)
+    if (!rawNum.includes(".") && !rawNum.includes(",") && Math.abs(parseFloat(rawNum)) <= 59) {
+      const context = line.slice(Math.max(0, index - 8), index + rawNum.length + 8);
+      if (/\d{1,2}:\d{2}/.test(context)) return true;
+    }
+    return false;
+  }
+
+  interface PdfTextItem {
+    text: string;
+    x: number;
+    y: number;
+  }
+
+  interface PdfColumn {
+    label: string;
+    xMid: number;
+    xStart: number;
+    xEnd: number;
+  }
+
+  type ParsedStatementRow = {
+    date: string;
+    dateDisplay?: string;
+    valueDate?: string;
+    valueDateDisplay?: string;
+    description: string;
+    refNo?: string;
+    amount: number;
+    type: "credit" | "debit";
+    balance?: number;
+    balanceDisplay?: string;
+  };
+
+  function parseTxnDateCell(raw: unknown): { iso: string; display: string } {
+    const s = String(raw ?? "").trim();
+    if (!s) return { iso: "", display: "—" };
+    const cleaned = s
+      .replace(/account\s*statement/gi, "")
+      .replace(/\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s*[-–—]\s*\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}/gi, "")
+      .replace(/private\s*limited/gi, "")
+      .replace(/netopsys/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const dateMatches = [...cleaned.matchAll(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/gi)];
+    if (dateMatches.length > 0) {
+      const match =
+        dateMatches.find((m) => {
+          const y = parseInt(m[3], 10);
+          return y >= 2020 && y <= 2035;
+        }) ?? dateMatches[0];
+      const iso = formatCellDate(`${match[1]} ${match[2]} ${match[3]}`);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+        const displayDate = formatPeriodDate(iso);
+        const times = [...cleaned.matchAll(/\b(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\b/gi)];
+        const time = times.length ? times[times.length - 1][1].trim() : "";
+        return { iso, display: time ? `${displayDate}\n${time}` : displayDate };
+      }
+    }
+    return parseDateTimeCell(cleaned);
+  }
+
+  function parseValueDateCell(raw: unknown): { iso: string; display: string } {
+    const s = String(raw ?? "").trim();
+    if (!s) return { iso: "", display: "—" };
+    const m = s.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/i);
+    if (m) {
+      const iso = formatCellDate(`${m[1]} ${m[2]} ${m[3]}`);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return { iso, display: formatPeriodDate(iso) };
+    }
+    const iso = formatCellDate(s);
+    return { iso: /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : "", display: /^\d{4}-\d{2}-\d{2}$/.test(iso) ? formatPeriodDate(iso) : "—" };
+  }
+
+  function parseBalanceValue(raw: unknown): number | null {
+    const s = String(raw ?? "").trim();
+    if (!s) return null;
+    const val = parseAmountValue(s.replace(/^[+−]/, ""));
+    return val != null && val > 0 ? Math.abs(val) : null;
+  }
+
+  function isStatementMetadata(text: string, serial: string, hasSignedAmount: boolean): boolean {
+    const t = text.toLowerCase();
+    if (/account\s*statement|private\s*limited|customer\s*id|account\s*number|ifsc|branch\s*name|netopsys/.test(t)) return true;
+    if (/^page\s+\d+|continued\s+on|end\s+of\s+statement/.test(t)) return true;
+    if (!hasSignedAmount && !/^\d+$/.test(serial.trim())) return true;
+    return false;
+  }
+
+  function buildStatementRow(input: {
+    txnDateRaw: unknown;
+    valueDateRaw?: unknown;
+    description: string;
+    refNo?: string;
+    extracted: { amount: number; type: "credit" | "debit" } | null;
+    balanceRaw?: unknown;
+  }): ParsedStatementRow | null {
+    if (!input.extracted) return null;
+    const txn = parseTxnDateCell(input.txnDateRaw);
+    const value = input.valueDateRaw ? parseValueDateCell(input.valueDateRaw) : { iso: "", display: "—" };
+    const balance = input.balanceRaw != null ? parseBalanceValue(input.balanceRaw) : null;
+    const desc = input.description.trim();
+    if (!desc && !txn.iso) return null;
+    return {
+      date: txn.iso || "—",
+      dateDisplay: txn.display,
+      valueDate: value.iso || undefined,
+      valueDateDisplay: value.display !== "—" ? value.display : undefined,
+      description: desc || "Bank transaction",
+      refNo: input.refNo?.trim() || undefined,
+      amount: input.extracted.amount,
+      type: input.extracted.type,
+      balance: balance ?? undefined,
+      balanceDisplay: balance != null ? formatIndianAmount(balance) : undefined,
+    };
+  }
+
+  async function extractPdfTextRows(buffer: ArrayBuffer): Promise<PdfTextItem[][]> {
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const items: PdfTextItem[] = [];
+
+    for (let pn = 1; pn <= pdf.numPages; pn++) {
+      const page = await pdf.getPage(pn);
+      const tc = await page.getTextContent();
+      for (const raw of tc.items) {
+        if (!("str" in raw)) continue;
+        const item = raw as { str: string; transform: number[] };
+        const text = (item.str || "").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        items.push({ text, x: item.transform[4], y: Math.round(item.transform[5]) });
+      }
+    }
+
+    if (items.length === 0) return [];
+
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+
+    const rows: PdfTextItem[][] = [];
+    let currentRow: PdfTextItem[] = [];
+    let currentY: number | null = null;
+
+    for (const item of items) {
+      if (currentY === null || Math.abs(item.y - currentY) <= 5) {
+        currentRow.push(item);
+        currentY = currentY ?? item.y;
+      } else {
+        if (currentRow.length) {
+          currentRow.sort((a, b) => a.x - b.x);
+          rows.push(currentRow);
+        }
+        currentRow = [item];
+        currentY = item.y;
+      }
+    }
+    if (currentRow.length) {
+      currentRow.sort((a, b) => a.x - b.x);
+      rows.push(currentRow);
+    }
+    return rows;
+  }
+
+  function normalizePdfLabel(label: string): string {
+    return label.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function buildPdfColumnsFromCells(cells: PdfTextItem[]): PdfColumn[] {
+    const sorted = [...cells].sort((a, b) => a.x - b.x);
+    const groups: PdfTextItem[][] = [];
+    for (const cell of sorted) {
+      const last = groups[groups.length - 1];
+      if (!last || cell.x - last[last.length - 1].x > 35) groups.push([cell]);
+      else last.push(cell);
+    }
+    return groups.map((group, idx) => {
+      const label = group.map((g) => g.text).join(" ");
+      const xMid = group.reduce((s, g) => s + g.x, 0) / group.length;
+      const prevMid = idx > 0
+        ? groups[idx - 1].reduce((s, g) => s + g.x, 0) / groups[idx - 1].length
+        : null;
+      const nextMid = idx < groups.length - 1
+        ? groups[idx + 1].reduce((s, g) => s + g.x, 0) / groups[idx + 1].length
+        : null;
+      return {
+        label: normalizePdfLabel(label),
+        xMid,
+        xStart: prevMid != null ? (prevMid + xMid) / 2 : xMid - 40,
+        xEnd: nextMid != null ? (xMid + nextMid) / 2 : xMid + 500,
+      };
+    });
+  }
+
+  function rowTextLooksLikeHeader(cells: PdfTextItem[]): boolean {
+    const joined = cells.map((c) => normalizePdfLabel(c.text)).join(" ");
+    const hasDate =
+      /transaction\s*date/.test(joined) ||
+      /statement\s*date/.test(joined) ||
+      /value\s*date/.test(joined) ||
+      /\bdate\b/.test(joined);
+    const hasDesc =
+      /description/.test(joined) ||
+      /transaction\s*details/.test(joined) ||
+      /particulars/.test(joined) ||
+      /narration/.test(joined);
+    const hasMoney =
+      /deposit/.test(joined) ||
+      /withdrawal/.test(joined) ||
+      /debit\s*\/\s*credit/.test(joined) ||
+      /dr\s*\/\s*cr/.test(joined) ||
+      /\bamount\b/.test(joined) ||
+      /\bdebit\b/.test(joined) ||
+      /\bcredit\b/.test(joined);
+    return hasDate && hasDesc && hasMoney;
+  }
+
+  function findPdfTableHeader(rows: PdfTextItem[][]): { headerIdx: number; columns: PdfColumn[] } | null {
+    for (let i = 0; i < Math.min(rows.length, 100); i++) {
+      for (const span of [1, 2, 3]) {
+        if (i + span > rows.length) break;
+        const cells = rows.slice(i, i + span).flat();
+        if (!rowTextLooksLikeHeader(cells)) continue;
+        const columns = buildPdfColumnsFromCells(cells);
+        if (columns.length < 3) continue;
+        return { headerIdx: i + span - 1, columns };
+      }
+    }
+    return null;
+  }
+
+  function assignPdfRowToColumns(row: PdfTextItem[], columns: PdfColumn[]): string[] {
+    const cells = columns.map(() => "");
+    for (const item of row) {
+      let colIdx = columns.findIndex((col) => item.x >= col.xStart && item.x < col.xEnd);
+      if (colIdx < 0) {
+        let bestDist = Infinity;
+        for (let i = 0; i < columns.length; i++) {
+          const dist = Math.abs(item.x - columns[i].xMid);
+          if (dist < bestDist) {
+            bestDist = dist;
+            colIdx = i;
+          }
+        }
+      }
+      if (colIdx >= 0) {
+        cells[colIdx] += (cells[colIdx] ? " " : "") + item.text;
+      }
+    }
+    return cells.map((c) => c.trim());
+  }
+
+  function findPdfColumn(columns: PdfColumn[], patterns: RegExp[]): number {
+    return columns.findIndex((c) => patterns.some((p) => p.test(c.label)));
+  }
+
+  function parsePdfTableStatement(rows: PdfTextItem[][]): ParsedStatementRow[] {
+    const header = findPdfTableHeader(rows);
+    if (!header) return [];
+
+    const { headerIdx, columns } = header;
+    const serialCol = findPdfColumn(columns, [/^(#|s\.?\s*no|sr)/]);
+    const txnDateCol = findPdfColumn(columns, [/transaction\s*date/, /posting\s*date/]);
+    const valueDateCol = findPdfColumn(columns, [/value\s*date/]);
+    const stmtDateCol = findPdfColumn(columns, [/statement\s*date/]);
+    const descCol = findPdfColumn(columns, [/transaction\s*details/, /description/, /narration/, /particulars/]);
+    const refCol = findPdfColumn(columns, [/chq/, /ref\s*no/, /reference/, /cheque/]);
+    const depositCol = findPdfColumn(columns, [/^deposit$/, /^credit$/]);
+    const withdrawalCol = findPdfColumn(columns, [/^withdrawal$/, /^debit$/]);
+    const signedAmountCol = findPdfColumn(columns, [/debit\s*\/\s*credit/, /dr\s*\/\s*cr/]);
+    const amountCol = findPdfColumn(columns, [/^amount$/, /txn\s*amount/]);
+    const balanceCol = findPdfColumn(columns, [/balance/, /ledger/]);
+
+    // Merge multi-line rows (time/amount continuation only)
+    const mergedRows: PdfTextItem[][] = [];
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const row = rows[i];
+      const cells = assignPdfRowToColumns(row, columns);
+      const rowText = row.map((c) => c.text).join(" ");
+      const serial = serialCol >= 0 ? cells[serialCol].trim() : "";
+      const hasNewSerial = /^\d+$/.test(serial);
+      const extracted = extractSignedAmountFromCells(cells, signedAmountCol, depositCol, withdrawalCol, amountCol);
+
+      if (isStatementMetadata(rowText, serial, !!extracted)) continue;
+
+      if (mergedRows.length === 0 || hasNewSerial) {
+        mergedRows.push([...row]);
+        continue;
+      }
+
+      const prevCells = assignPdfRowToColumns(mergedRows[mergedRows.length - 1], columns);
+      const prevExtracted = extractSignedAmountFromCells(prevCells, signedAmountCol, depositCol, withdrawalCol, amountCol);
+
+      if (extracted && prevExtracted) {
+        mergedRows.push([...row]);
+        continue;
+      }
+
+      const prev = mergedRows[mergedRows.length - 1];
+      for (const item of row) {
+        const match = prev.find((p) => Math.abs(p.x - item.x) < 25);
+        if (match) match.text = `${match.text} ${item.text}`.replace(/\s+/g, " ").trim();
+        else prev.push(item);
+      }
+      prev.sort((a, b) => a.x - b.x);
+    }
+
+    const out: ParsedStatementRow[] = [];
+
+    for (const row of mergedRows) {
+      const rowText = row.map((c) => c.text).join(" ");
+      if (/^(total|opening|closing|brought forward|carried forward)/i.test(rowText)) continue;
+
+      const cells = assignPdfRowToColumns(row, columns);
+      const serial = serialCol >= 0 ? cells[serialCol].trim() : "";
+      const extracted = extractSignedAmountFromCells(cells, signedAmountCol, depositCol, withdrawalCol, amountCol);
+      if (isStatementMetadata(rowText, serial, !!extracted)) continue;
+
+      const built = buildStatementRow({
+        txnDateRaw: txnDateCol >= 0 ? cells[txnDateCol] : "",
+        valueDateRaw: valueDateCol >= 0 ? cells[valueDateCol] : undefined,
+        description: descCol >= 0 ? cells[descCol].trim() : "",
+        refNo: refCol >= 0 ? cells[refCol].trim() : undefined,
+        extracted,
+        balanceRaw: balanceCol >= 0 ? cells[balanceCol] : undefined,
+      });
+
+      if (!built) {
+        if (descCol >= 0 && cells[descCol] && out.length > 0) {
+          out[out.length - 1].description += ` ${cells[descCol].trim()}`;
+        }
+        continue;
+      }
+      out.push(built);
+    }
+
+    return out;
+  }
+
+  function extractAmountsFromLine(cleaned: string, afterIndex = 0): Array<{ raw: string; value: number; hint: string; index: number }> {
+    const amountTokenRe = /([+-]\s*\d[\d,]*\.\d{2}|[+-]\d[\d,]*\.\d{2}|\d[\d,]*\.\d{2})/g;
+    const amounts: Array<{ raw: string; value: number; hint: string; index: number }> = [];
+    let m: RegExpExecArray | null;
+    amountTokenRe.lastIndex = 0;
+    while ((m = amountTokenRe.exec(cleaned)) !== null) {
+      if (m.index < afterIndex) continue;
+      const rawNum = m[1].replace(/\s+/g, "");
+      if (isTimeAmountToken(cleaned, m.index, rawNum)) continue;
+      const signed = parseSignedAmount(rawNum);
+      if (!signed) continue;
+      const value = signed.type === "debit" ? -signed.amount : signed.amount;
+      amounts.push({
+        raw: m[0],
+        value,
+        hint: signed.type === "debit" ? "debit" : "credit",
+        index: m.index,
+      });
+    }
+    return amounts;
+  }
+
+  function parsePdfLineStatement(lines: string[]): ParsedStatementRow[] {
+    const dateRe = /(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2})/g;
+    const rows: ParsedStatementRow[] = [];
+    let pendingDate = "";
+    let pendingDateDisplay = "";
+    let pendingDesc: string[] = [];
+
+    function flushPendingAmounts(line: string) {
+      const amounts = extractAmountsFromLine(line, 0);
+      const pick = pickStatementAmount(amounts);
+      if (!pick) return false;
+
+      let description = pendingDesc.join(" ").trim();
+      if (!description) {
+        description = line;
+        for (const dm of line.matchAll(dateRe)) description = description.replace(dm[0], " ");
+        description = description.replace(pick.raw, " ");
+        description = description.replace(/\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?/gi, " ");
+        description = description.replace(/\d{1,3}(?:,\d{3})*(?:\.\d{2})/g, " ");
+        description = description.replace(/\s+/g, " ").trim();
+      }
+
+      if (!description || looksLikeDateOrTime(description)) description = "Bank transaction";
+      if (/^(total|balance|opening|closing)/i.test(description)) return false;
+
+      rows.push({
+        date: pendingDate || "—",
+        dateDisplay: pendingDateDisplay || undefined,
+        description,
+        amount: Math.abs(pick.value),
+        type: pick.type ?? normalizeType(pick.value < 0 ? "debit" : "credit", pick.value),
+      });
+      pendingDesc = [];
+      return true;
+    }
+
+    for (const line of lines) {
+      const cleaned = line.replace(/\s+/g, " ").trim();
+      if (!cleaned || cleaned.length < 4) continue;
+      if (/^(date|description|amount|balance|particulars|debit|credit|statement|deposit|withdrawal|ledger)/i.test(cleaned)) continue;
+
+      const dateMatches = [...cleaned.matchAll(dateRe)];
+      const amounts = extractAmountsFromLine(cleaned, 0);
+
+      if (dateMatches.length > 0) {
+        const dateMatch = dateMatches.length > 1 ? dateMatches[1] : dateMatches[0];
+        const parsedDt = parseTxnDateCell(dateMatch[0]);
+        pendingDate = parsedDt.iso || formatCellDate(dateMatch[1]);
+        pendingDateDisplay = parsedDt.display;
+        const dateEndIndex = (dateMatch.index ?? 0) + dateMatch[0].length;
+
+        if (amounts.some((a) => a.index >= dateEndIndex)) {
+          let descPart = cleaned;
+          for (const dm of dateMatches) descPart = descPart.replace(dm[0], " ");
+          descPart = descPart.replace(/\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?/gi, " ");
+          for (const a of amounts) descPart = descPart.replace(a.raw, " ");
+          descPart = descPart.replace(/\s+/g, " ").trim();
+          pendingDesc = descPart && !looksLikeDateOrTime(descPart) ? [descPart] : [];
+          flushPendingAmounts(cleaned);
+          continue;
+        }
+
+        let descPart = cleaned;
+        for (const dm of dateMatches) descPart = descPart.replace(dm[0], " ");
+        descPart = descPart.replace(/\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?/gi, " ");
+        descPart = descPart.replace(/\s+/g, " ").trim();
+        if (descPart && !looksLikeDateOrTime(descPart)) pendingDesc.push(descPart);
+        continue;
+      }
+
+      if (amounts.length > 0 && flushPendingAmounts(cleaned)) continue;
+
+      if (!looksLikeDateOrTime(cleaned) && !/^\d+\.\d{2}/.test(cleaned)) {
+        pendingDesc.push(cleaned);
+      }
+    }
+
+    return rows;
+  }
+
+  function parsePdfLineStatementSingleLine(lines: string[]): ParsedStatementRow[] {
+    const dateRe = /(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2})/g;
+    const rows: ParsedStatementRow[] = [];
+
+    for (const line of lines) {
+      const cleaned = line.replace(/\s+/g, " ").trim();
+      if (!cleaned || cleaned.length < 6) continue;
+      if (/^(date|description|amount|balance|particulars|debit|credit|statement|deposit|withdrawal|ledger)/i.test(cleaned)) continue;
+
+      const dateMatches = [...cleaned.matchAll(dateRe)];
+      if (dateMatches.length === 0) continue;
+
+      const dateMatch = dateMatches.length > 1 ? dateMatches[1] : dateMatches[0];
+      const dateEndIndex = (dateMatch.index ?? 0) + dateMatch[0].length;
+      const amounts = extractAmountsFromLine(cleaned, dateEndIndex);
+      const pick = pickStatementAmount(amounts);
+      if (!pick) continue;
+
+      let description = cleaned;
+      for (const dm of dateMatches) description = description.replace(dm[0], " ");
+      description = description.replace(pick.raw, " ");
+      description = description.replace(/\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?/gi, " ");
+      description = description.replace(/\d{1,3}(?:,\d{3})*(?:\.\d{2})/g, " ");
+      description = description.replace(/\s+/g, " ").trim();
+      if (!description || /^(total|balance|opening|closing)/i.test(description)) continue;
+      if (looksLikeDateOrTime(description)) continue;
+
+      const parsedDt = parseTxnDateCell(dateMatch[0]);
+      rows.push({
+        date: parsedDt.iso || formatCellDate(dateMatch[1]),
+        dateDisplay: parsedDt.display,
+        description,
+        amount: Math.abs(pick.value),
+        type: pick.type ?? normalizeType(pick.value < 0 ? "debit" : "credit", pick.value),
+      });
+    }
+    return rows;
+  }
+
   function headerMatches(header: string, patterns: RegExp[]) {
-    const h = header.trim().toLowerCase().replace(/\s+/g, " ");
+    const h = header.trim().toLowerCase().replace(/\([^)]*\)/g, "").replace(/[₹$]/g, "").replace(/\s+/g, " ");
     return patterns.some((p) => p.test(h));
+  }
+
+  /** Read amount ONLY from Debit/Credit column — never from Balance. */
+  function extractSignedAmountFromCells(
+    cells: string[],
+    signedCol: number,
+    depositCol: number,
+    withdrawalCol: number,
+    amountCol: number,
+  ): { amount: number; type: "credit" | "debit" } | null {
+    if (signedCol >= 0) {
+      const signed = parseSignedAmount(cells[signedCol]);
+      if (signed) return signed;
+    }
+    if (amountCol >= 0 && amountCol !== signedCol) {
+      const signed = parseSignedAmount(cells[amountCol]);
+      if (signed) return signed;
+    }
+    if (withdrawalCol >= 0) {
+      const val = parseAmountValue(cells[withdrawalCol]);
+      if (val != null && Math.abs(val) > 0) return { amount: Math.abs(val), type: "debit" };
+    }
+    if (depositCol >= 0) {
+      const val = parseAmountValue(cells[depositCol]);
+      if (val != null && Math.abs(val) > 0) return { amount: Math.abs(val), type: "credit" };
+    }
+    // Scan cells for explicit +/- amounts only (skip balance-like bare numbers)
+    for (const cell of cells) {
+      const t = String(cell ?? "").trim();
+      if (!/^[+-]/.test(t)) continue;
+      const signed = parseSignedAmount(t);
+      if (signed) return signed;
+    }
+    return null;
+  }
+
+  function appendRefToDescription(description: string, ref: string): string {
+    const r = ref.trim();
+    if (!r || description.includes(r)) return description;
+    return description ? `${description} | Ref: ${r}` : r;
   }
 
   function pickColumn(headers: string[], patterns: RegExp[]) {
@@ -270,8 +932,10 @@ export default function BankReconciliation() {
     return idx >= 0 ? idx : -1;
   }
 
-  function parseExcelStatement(buffer: ArrayBuffer) {
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  function parseExcelStatement(buffer: ArrayBuffer, isCsv = false) {
+    const workbook = isCsv
+      ? XLSX.read(new TextDecoder("utf-8").decode(buffer), { type: "string", cellDates: true })
+      : XLSX.read(buffer, { type: "array", cellDates: true });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) throw new Error("Excel file has no sheets.");
@@ -286,12 +950,16 @@ export default function BankReconciliation() {
 
     if (!aoa.length) throw new Error("Excel sheet is empty.");
 
-    const datePats = [/^(txn\s*)?date$/, /transaction\s*date/, /value\s*date/, /posting\s*date/, /^trans\.?\s*date$/, /^dt$/];
+    const datePats = [/transaction\s*date/, /value\s*date/, /posting\s*date/, /^(txn\s*)?date$/, /^trans\.?\s*date$/, /^dt$/];
+    const statementDatePats = [/statement\s*date/];
     const descPats = [/description/, /narration/, /particulars/, /details/, /memo/, /remarks?/, /transaction\s*details/, /^payee$/, /^text$/];
-    const amountPats = [/^amount$/, /^amt\.?$/, /^value$/, /txn\s*amount/, /transaction\s*amount/];
+    const amountPats = [/^amount$/, /^amt\.?$/, /^value$/, /txn\s*amount/, /transaction\s*amount/, /debit\s*\/\s*credit/, /dr\s*\/\s*cr/];
     const typePats = [/^type$/, /dr\s*\/\s*cr/, /credit\s*\/\s*debit/, /txn\s*type/, /transaction\s*type/, /^cd$/];
     const debitPats = [/^debit$/, /^dr$/, /withdrawal/, /money\s*out/, /paid\s*out/, /^withdrawals?$/];
     const creditPats = [/^credit$/, /^cr$/, /deposit/, /money\s*in/, /paid\s*in/, /^deposits?$/];
+    const balancePats = [/ledger\s*balance/, /running\s*balance/, /closing\s*balance/, /available\s*balance/, /balance/];
+    const refPats = [/chq/, /ref\s*no/, /reference/, /cheque/];
+    const serialPats = [/^(#|s\.?\s*no|sr\.?\s*no|serial)$/];
 
     let headerRowIdx = -1;
     let headers: string[] = [];
@@ -319,78 +987,70 @@ export default function BankReconciliation() {
       headers = (aoa[headerRowIdx] || []).map((c) => String(c ?? "").trim());
     }
 
-    const dateIdx = pickColumn(headers, datePats);
+    const signedAmountIdx = pickColumn(headers, [/debit\s*\/\s*credit/, /dr\s*\/\s*cr/]);
+    const dateIdx = pickColumn(headers, [/transaction\s*date/, /posting\s*date/, /^(txn\s*)?date$/, /^trans\.?\s*date$/, /^dt$/]);
+    const valueDateIdx = pickColumn(headers, [/value\s*date/]);
+    const statementDateIdx = pickColumn(headers, statementDatePats);
     const descIdx = pickColumn(headers, descPats);
     const amountIdx = pickColumn(headers, amountPats);
     const typeIdx = pickColumn(headers, typePats);
     const debitIdx = pickColumn(headers, debitPats);
     const creditIdx = pickColumn(headers, creditPats);
+    const balanceIdx = pickColumn(headers, balancePats);
+    const refIdx = pickColumn(headers, refPats);
+    const serialIdx = pickColumn(headers, serialPats);
 
-    const rows: Array<{ date: string; description: string; amount: number; type: "credit" | "debit" }> = [];
+    const effectiveAmountIdx = signedAmountIdx >= 0 ? signedAmountIdx : amountIdx;
+
+    const excludedFromScan = new Set(
+      [dateIdx, valueDateIdx, statementDateIdx, descIdx, effectiveAmountIdx, typeIdx, balanceIdx, refIdx, serialIdx, debitIdx, creditIdx].filter((idx) => idx >= 0),
+    );
+
+    const rows: ParsedStatementRow[] = [];
 
     for (let i = headerRowIdx + 1; i < aoa.length; i++) {
       const row = aoa[i] || [];
       if (!row.some((c) => c !== "" && c != null)) continue;
 
-      const date = dateIdx >= 0 ? formatCellDate(row[dateIdx]) : "";
-      let description = descIdx >= 0 ? String(row[descIdx] ?? "").trim() : "";
+      const cells = row.map((c) => String(c ?? "").trim());
+      const serial = serialIdx >= 0 ? cells[serialIdx] : "";
+      const rowText = cells.join(" ");
 
-      // If no description column, join non-numeric text cells
+      const extracted = extractSignedAmountFromCells(
+        cells,
+        signedAmountIdx,
+        creditIdx,
+        debitIdx,
+        effectiveAmountIdx,
+      );
+      if (isStatementMetadata(rowText, serial, !!extracted)) continue;
+
+      let description = descIdx >= 0 ? cells[descIdx] : "";
       if (!description) {
         description = row
           .map((c, idx) => ({ c, idx }))
-          .filter(({ idx }) => idx !== dateIdx && idx !== amountIdx && idx !== debitIdx && idx !== creditIdx && idx !== typeIdx)
+          .filter(({ idx }) => !excludedFromScan.has(idx))
           .map(({ c }) => String(c ?? "").trim())
-          .filter((t) => t && !/^[\d.,\-]+$/.test(t))
+          .filter((t) => t && !/^[\d.,+\-]+$/.test(t) && !looksLikeDateOrTime(t))
           .join(" ")
           .trim();
       }
 
-      let signedAmount: number | null = null;
-      let typeRaw = typeIdx >= 0 ? String(row[typeIdx] ?? "") : "";
+      const built = buildStatementRow({
+        txnDateRaw: dateIdx >= 0 ? row[dateIdx] : (valueDateIdx >= 0 ? row[valueDateIdx] : ""),
+        valueDateRaw: valueDateIdx >= 0 ? row[valueDateIdx] : undefined,
+        description,
+        refNo: refIdx >= 0 ? cells[refIdx] : undefined,
+        extracted,
+        balanceRaw: balanceIdx >= 0 ? row[balanceIdx] : undefined,
+      });
 
-      if (debitIdx >= 0 || creditIdx >= 0) {
-        const debit = debitIdx >= 0 ? parseAmountValue(row[debitIdx]) : null;
-        const credit = creditIdx >= 0 ? parseAmountValue(row[creditIdx]) : null;
-        if (debit != null && Math.abs(debit) > 0) {
-          signedAmount = -Math.abs(debit);
-          typeRaw = typeRaw || "debit";
-        } else if (credit != null && Math.abs(credit) > 0) {
-          signedAmount = Math.abs(credit);
-          typeRaw = typeRaw || "credit";
-        }
-      }
-
-      if (signedAmount == null && amountIdx >= 0) {
-        signedAmount = parseAmountValue(row[amountIdx]);
-      }
-
-      // Last-resort: scan row for a numeric amount-like cell
-      if (signedAmount == null) {
-        for (let c = 0; c < row.length; c++) {
-          if (c === dateIdx) continue;
-          const n = parseAmountValue(row[c]);
-          if (n != null && Math.abs(n) > 0) {
-            signedAmount = n;
-            break;
-          }
-        }
-      }
-
-      if (signedAmount == null || isNaN(signedAmount)) continue;
-      if (!description && !date) continue;
-      if (Math.abs(signedAmount) === 0 && !description) continue;
-
-      // Skip total/balance summary rows
-      const descLower = description.toLowerCase();
+      if (!built) continue;
+      if (looksLikeDateOrTime(built.description)) continue;
+      const descLower = built.description.toLowerCase();
       if (/^(total|balance|opening|closing|brought\s*forward|carried\s*forward)/i.test(descLower)) continue;
 
-      rows.push({
-        date: date || "—",
-        description: description || "Bank transaction",
-        amount: Math.abs(signedAmount),
-        type: normalizeType(typeRaw, signedAmount),
-      });
+      rows.push(built);
     }
 
     if (rows.length === 0) {
@@ -402,88 +1062,30 @@ export default function BankReconciliation() {
   }
 
   async function parsePdfStatement(buffer: ArrayBuffer) {
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    const lines: string[] = [];
-
-    for (let pn = 1; pn <= pdf.numPages; pn++) {
-      const page = await pdf.getPage(pn);
-      const tc = await page.getTextContent();
-      let currentY: number | null = null;
-      let currentLine = "";
-
-      for (const raw of tc.items) {
-        if (!("str" in raw)) continue;
-        const item = raw as { str: string; transform: number[] };
-        const text = (item.str || "").replace(/\s+/g, " ").trim();
-        if (!text) continue;
-        const y = Math.round(item.transform[5]);
-        if (currentY === null || Math.abs(y - currentY) > 3) {
-          if (currentLine.trim()) lines.push(currentLine.trim());
-          currentLine = text;
-          currentY = y;
-        } else {
-          currentLine += ` ${text}`;
-        }
-      }
-      if (currentLine.trim()) lines.push(currentLine.trim());
-    }
-
-    const fullText = lines.join("\n");
-    const rows: Array<{ date: string; description: string; amount: number; type: "credit" | "debit" }> = [];
-    const dateRe = /(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2})/;
-    const amountTokenRe = /([+-]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\)?|[+-]?\d+(?:\.\d{1,2})?)(?:\s*(CR|DR|CREDIT|DEBIT))?/gi;
-
-    const candidateLines = lines.length > 0 ? lines : fullText.split(/\n+/);
-
-    for (const line of candidateLines) {
-      const cleaned = line.replace(/\s+/g, " ").trim();
-      if (!cleaned || cleaned.length < 6) continue;
-      if (/^(date|description|amount|balance|particulars|debit|credit)/i.test(cleaned)) continue;
-
-      const dateMatch = cleaned.match(dateRe);
-      if (!dateMatch) continue;
-
-      const amounts: Array<{ raw: string; value: number; hint: string; index: number }> = [];
-      let m: RegExpExecArray | null;
-      amountTokenRe.lastIndex = 0;
-      while ((m = amountTokenRe.exec(cleaned)) !== null) {
-        // skip the date numbers
-        if (m.index < (dateMatch.index ?? 0) + dateMatch[0].length) continue;
-        const rawNum = m[1];
-        const hint = (m[2] || "").toLowerCase();
-        const neg = /^\(.*\)$/.test(rawNum) || rawNum.trim().startsWith("-");
-        const value = parseFloat(rawNum.replace(/[(),]/g, ""));
-        if (isNaN(value) || Math.abs(value) < 0.001) continue;
-        // ignore years like 2026 sitting alone
-        if (!rawNum.includes(".") && Math.abs(value) >= 1900 && Math.abs(value) <= 2100) continue;
-        amounts.push({ raw: m[0], value: neg ? -Math.abs(value) : value, hint, index: m.index });
-      }
-
-      if (amounts.length === 0) continue;
-
-      // Prefer last money-like amount on the line (common in statements)
-      const pick = amounts[amounts.length - 1];
-      let description = cleaned;
-      description = description.replace(dateMatch[0], " ");
-      description = description.replace(pick.raw, " ");
-      description = description.replace(/\s+/g, " ").trim();
-      if (!description || /^(total|balance|opening|closing)/i.test(description)) continue;
-
-      const type = normalizeType(pick.hint || (pick.value < 0 ? "debit" : "credit"), pick.value);
-      rows.push({
-        date: formatCellDate(dateMatch[1]),
-        description,
-        amount: Math.abs(pick.value),
-        type,
-      });
-    }
-
-    if (rows.length === 0) {
+    const textRows = await extractPdfTextRows(buffer);
+    if (textRows.length === 0) {
       throw new Error(
-        "Could not read transactions from this PDF. Try a text-based PDF, or upload Excel with Date / Description / Amount (or Debit & Credit) columns.",
+        "This PDF has no readable text (it may be a scanned image). Please download your statement as Excel (.xlsx) from your bank and upload that instead.",
       );
     }
-    return rowsToTransactions(rows);
+
+    const lines = textRows.map((row) => row.map((c) => c.text).join(" "));
+
+    // 1) Table layout (Statement Date | Transaction Date | Description | Deposit | Withdrawal | Balance)
+    let parsed = parsePdfTableStatement(textRows);
+
+    // 2) Multi-line PDF where date, description, and amounts are on separate lines
+    if (parsed.length === 0) parsed = parsePdfLineStatement(lines);
+
+    // 3) Single-line fallback
+    if (parsed.length === 0) parsed = parsePdfLineStatementSingleLine(lines);
+
+    if (parsed.length === 0) {
+      throw new Error(
+        "Could not read transactions from this PDF. Please download your bank statement as Excel (.xlsx) — it gives the most accurate results.",
+      );
+    }
+    return rowsToTransactions(parsed);
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -492,17 +1094,19 @@ export default function BankReconciliation() {
     if (!file) return;
 
     const name = file.name.toLowerCase();
+    const isCsv = name.endsWith(".csv") || file.type === "text/csv";
     const isExcel =
+      isCsv ||
       name.endsWith(".xlsx") ||
       name.endsWith(".xls") ||
       file.type.includes("sheet") ||
       file.type.includes("excel");
     const isPdf = name.endsWith(".pdf") || file.type === "application/pdf";
 
-    if (name.endsWith(".csv") || file.type === "text/csv") {
+    if (!isExcel && !isPdf) {
       toast({
-        title: "CSV not supported",
-        description: "Please upload an Excel (.xlsx / .xls) or PDF file.",
+        title: "Unsupported file",
+        description: "Upload Excel (.xlsx / .xls), CSV, or PDF.",
         variant: "destructive",
       });
       return;
@@ -513,15 +1117,10 @@ export default function BankReconciliation() {
       let parsed: BankTransaction[];
 
       if (isExcel) {
-        parsed = parseExcelStatement(buffer);
+        parsed = parseExcelStatement(buffer, isCsv);
       } else if (isPdf) {
         parsed = await parsePdfStatement(buffer);
       } else {
-        toast({
-          title: "Unsupported file",
-          description: "Upload Excel (.xlsx / .xls) or PDF only.",
-          variant: "destructive",
-        });
         return;
       }
 
@@ -855,8 +1454,9 @@ export default function BankReconciliation() {
         (activeTab === "unmatched" && t.status === "unmatched") ||
         (activeTab === "ignored" && t.status === "ignored");
 
-      const matchesSearch = 
+      const matchesSearch =
         t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.refNo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (t.matchedRef || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (t.matchedDetails || "").toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -1065,7 +1665,7 @@ export default function BankReconciliation() {
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileUpload}
-                      accept=".xlsx,.xls,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/pdf"
+                      accept=".xlsx,.xls,.csv,.pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/pdf"
                       className="hidden"
                     />
                   </div>
@@ -1168,25 +1768,40 @@ export default function BankReconciliation() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm border-collapse">
                         <thead>
-                          <tr className="border-b bg-muted/20 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            <th className="px-4 py-3 text-left">Date</th>
-                            <th className="px-4 py-3 text-left">Bank Statement Description</th>
-                            <th className="px-4 py-3 text-right">Amount (SGD)</th>
-                            <th className="px-4 py-3 text-left">Matched with (Books)</th>
-                            <th className="px-4 py-3 text-left">Details</th>
-                            <th className="px-4 py-3 text-center">Status</th>
-                            <th className="px-4 py-3 text-right">Actions</th>
+                          <tr className="border-b bg-muted/20 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            <th className="px-3 py-3 text-left whitespace-nowrap">Transaction Date</th>
+                            <th className="px-3 py-3 text-left whitespace-nowrap">Value Date</th>
+                            <th className="px-3 py-3 text-left min-w-[200px]">Transaction Details</th>
+                            <th className="px-3 py-3 text-left whitespace-nowrap">Chq / Ref No.</th>
+                            <th className="px-3 py-3 text-right whitespace-nowrap">Debit/Credit(₹)</th>
+                            <th className="px-3 py-3 text-right whitespace-nowrap">Balance(₹)</th>
+                            <th className="px-3 py-3 text-left">Matched with (Books)</th>
+                            <th className="px-3 py-3 text-center">Status</th>
+                            <th className="px-3 py-3 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y text-xs">
                           {filteredTransactions.map((tx) => (
                             <tr key={tx.id} className="hover:bg-muted/10 transition-colors">
-                              <td className="px-4 py-3.5 font-medium text-muted-foreground whitespace-nowrap">{tx.date}</td>
-                              <td className="px-4 py-3.5 font-medium max-w-[200px] truncate" title={tx.description}>{tx.description}</td>
-                              <td className={`px-4 py-3.5 text-right font-bold tabular-nums whitespace-nowrap ${tx.type === "debit" ? "text-rose-600" : "text-emerald-600"}`}>
-                                {tx.type === "debit" ? "-" : ""}{formatCurrency(tx.amount)}
+                              <td className="px-3 py-3 font-medium text-muted-foreground whitespace-pre-line leading-snug">
+                                {tx.dateDisplay || formatPeriodDate(tx.date) || tx.date}
                               </td>
-                              <td className="px-4 py-3.5 font-semibold text-slate-700">
+                              <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
+                                {tx.valueDateDisplay || (tx.valueDate ? formatPeriodDate(tx.valueDate) : "—")}
+                              </td>
+                              <td className="px-3 py-3 font-medium max-w-[240px]" title={tx.description}>
+                                <span className="line-clamp-2">{tx.description}</span>
+                              </td>
+                              <td className="px-3 py-3 font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                                {tx.refNo || "—"}
+                              </td>
+                              <td className={`px-3 py-3 text-right font-bold tabular-nums whitespace-nowrap ${tx.type === "debit" ? "text-rose-600" : "text-emerald-600"}`}>
+                                {tx.type === "credit" ? "+" : "−"}{formatIndianAmount(tx.amount)}
+                              </td>
+                              <td className="px-3 py-3 text-right font-bold tabular-nums whitespace-nowrap text-slate-800">
+                                {tx.balanceDisplay ?? (tx.balance != null ? formatIndianAmount(tx.balance) : "—")}
+                              </td>
+                              <td className="px-3 py-3 font-semibold text-slate-700">
                                 {tx.matchedType ? (
                                   <span className="flex items-center gap-1">
                                     <FileText className="h-3 w-3 text-blue-500" />
@@ -1196,8 +1811,7 @@ export default function BankReconciliation() {
                                   <span className="text-muted-foreground italic">No Match Found</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{tx.matchedDetails || "—"}</td>
-                              <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                              <td className="px-3 py-3 text-center whitespace-nowrap">
                                 {tx.status === "matched" ? (
                                   <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-50 shadow-none">Matched</Badge>
                                 ) : tx.status === "need_review" ? (
@@ -1394,7 +2008,9 @@ export default function BankReconciliation() {
                     ) : (
                       transactions.filter(t => t.status === "need_review").map((tx) => (
                         <tr key={tx.id} className="hover:bg-muted/10 transition-colors">
-                          <td className="px-4 py-3.5 font-medium text-muted-foreground whitespace-nowrap">{tx.date}</td>
+                          <td className="px-4 py-3.5 font-medium text-muted-foreground whitespace-pre-line leading-snug">
+                            {tx.dateDisplay || formatPeriodDate(tx.date) || tx.date}
+                          </td>
                           <td className="px-4 py-3.5 font-semibold text-slate-800">{tx.description}</td>
                           <td className="px-4 py-3.5 text-center">
                             {tx.type === "debit" ? (
@@ -1403,7 +2019,9 @@ export default function BankReconciliation() {
                               <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-none">Credit</Badge>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 text-right font-bold tabular-nums whitespace-nowrap">{formatCurrency(tx.amount)}</td>
+                          <td className={`px-4 py-3.5 text-right font-bold tabular-nums whitespace-nowrap ${tx.type === "debit" ? "text-rose-600" : "text-emerald-600"}`}>
+                            {tx.type === "credit" ? "+" : "-"}{formatIndianAmount(tx.amount)}
+                          </td>
                           <td className="px-4 py-3.5 text-center whitespace-nowrap">
                             <Badge className="bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-100 shadow-none">
                               Create Voucher

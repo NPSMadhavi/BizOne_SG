@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
-import type { PurchaseOrder, Quotation, Invoice, DeliveryOrder, Company } from "@workspace/api-client-react";
+import type { PurchaseOrder, PurchaseQuotation, Quotation, Invoice, DeliveryOrder, Company } from "@workspace/api-client-react";
 import logoRsvUrl from "@assets/logo_1776054030755.png";
 import logoNetopsysUrl from "@assets/Netopsys_logo_Dark_1776066608427.png";
 import { fmtDate } from "./utils";
@@ -1476,7 +1476,27 @@ export async function generateSalesOrder_PDF(
   return generateQuotation_PDF(qt as Quotation, company, settings, options);
 }
 
-export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string; quotationTerms?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+export async function generatePurchaseQuotation_PDF(
+  purchaseQuotation: PurchaseQuotation,
+  company?: Company | null,
+  settings?: { bankDetails?: string; termsAndConditions?: string; quotationTerms?: string } | null,
+  options?: { returnBase64?: boolean },
+): Promise<string | void> {
+  const quotationShape = {
+    ...purchaseQuotation,
+    qtNumber: purchaseQuotation.pqNumber,
+    customerName: purchaseQuotation.vendorName,
+    customerAddress: purchaseQuotation.vendorAddress,
+    customerContact: purchaseQuotation.vendorContact,
+    customerContactEmail: purchaseQuotation.vendorContactEmail,
+  } as unknown as Quotation;
+  return generateQuotation_PDF(quotationShape, company, settings, {
+    ...options,
+    titleOverride: "Purchase Quotation",
+  });
+}
+
+export async function generateQuotation_PDF(qt: Quotation, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string; quotationTerms?: string } | null, options?: { returnBase64?: boolean; titleOverride?: string }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   attachPdfFonts(doc);
@@ -1487,7 +1507,8 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const info = companyToInfo(company);
 
   const logo = await getLogoData(getLogoUrl(company));
-  buildDocHeader(doc, logo, "QUOTATION", qt.qtNumber, fmtDate((qt as any).issueDate || qt.createdAt), qt.status, info);
+  const quotationTitle = options?.titleOverride || "Quotation";
+  buildDocHeader(doc, logo, quotationTitle.toUpperCase(), qt.qtNumber, fmtDate((qt as any).issueDate || qt.createdAt), qt.status, info);
 
   // Payment Terms + Delivery Date — top-right, below Date (y=36), same grey/normal style as Invoice
   doc.setFontSize(9.5);
@@ -1499,7 +1520,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   }
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text("Quote To:", marginLeft, 67);
+  doc.text(options?.titleOverride ? "Vendor:" : "Quote To:", marginLeft, 67);
 
   const qtEntityBottom = renderEntityBlock(
     doc,
@@ -1705,7 +1726,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   // Left: bank details + quotation T&C inline (same Y, left of totals)
   renderInlineDocInfo(doc, qtSettings, marginLeft, totalsY, 125, FOOTER_RESERVE);
 
-  buildDocFooter(doc, "Quotation");
+  buildDocFooter(doc, quotationTitle);
 
   // CANCELLED watermark — draw on every page
   if ((qt as any).status === "cancelled") {

@@ -29,6 +29,7 @@ async function ensureSettings(companyId: number) {
     companyId,
     gstRate: defaultGst,
     poPrefix: "PO",  poCounter: 0,  poSuffix: "",
+    pqPrefix: "PQ",  pqCounter: 0,  pqSuffix: "",
     invPrefix: "INV", invCounter: 0, invSuffix: "",
     qtPrefix: "QT",  qtCounter: 0,  qtSuffix: "",
     doPrefix: "DO",  doCounter: 0,  doSuffix: "",
@@ -60,6 +61,9 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     poPrefix: s.poPrefix ?? "PO",
     poCounter: s.poCounter ?? 0,
     poSuffix: s.poSuffix ?? "",
+    pqPrefix: s.pqPrefix ?? "PQ",
+    pqCounter: s.pqCounter ?? 0,
+    pqSuffix: s.pqSuffix ?? "",
     invPrefix: s.invPrefix ?? "INV",
     invCounter: s.invCounter ?? 0,
     invSuffix: s.invSuffix ?? "",
@@ -133,6 +137,7 @@ router.put("/", async (req, res) => {
   const {
     gstRate, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom,
     poPrefix, poCounter, poSuffix,
+    pqPrefix, pqCounter, pqSuffix,
     invPrefix, invCounter, invSuffix,
     qtPrefix, qtCounter, qtSuffix,
     doPrefix, doCounter, doSuffix,
@@ -165,6 +170,9 @@ router.put("/", async (req, res) => {
   if (poPrefix !== undefined) updateData.poPrefix = poPrefix;
   if (poCounter !== undefined) updateData.poCounter = Number(poCounter);
   if (poSuffix !== undefined) updateData.poSuffix = poSuffix;
+  if (pqPrefix !== undefined) updateData.pqPrefix = pqPrefix;
+  if (pqCounter !== undefined) updateData.pqCounter = Number(pqCounter);
+  if (pqSuffix !== undefined) updateData.pqSuffix = pqSuffix;
   if (invPrefix !== undefined) updateData.invPrefix = invPrefix;
   if (invCounter !== undefined) updateData.invCounter = Number(invCounter);
   if (invSuffix !== undefined) updateData.invSuffix = invSuffix;

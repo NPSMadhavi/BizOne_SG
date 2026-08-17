@@ -94,6 +94,7 @@ const SidebarCtx = React.createContext(false);
 function getGroupForRoute(loc: string): string | null {
   if (loc.startsWith("/accounting/bank-reconciliation")) return null;
   if (
+    loc.startsWith("/purchase-quotations") ||
     loc.startsWith("/purchase-orders") ||
     loc.startsWith("/vendor-invoices") ||
     loc.startsWith("/quotations") ||
@@ -433,6 +434,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const accountingGroupModules = MODULE_GROUPS.find(g => g.id === "accounting")?.modules ?? [];
   const hasAnyAccounting = isAdmin || accountingGroupModules.some(m => hasModuleAccess(m as AppModule));
   const hasDocuments =
+    hasModuleAccess("purchase_quotations") ||
     hasModuleAccess("purchase_orders") ||
     hasModuleAccess("vendor_invoices") ||
     hasModuleAccess("quotations") ||
@@ -528,7 +530,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         onToggle={toggleGroup}
         visible={hasDocuments}
         hasActive={
-          location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") ||
+          location.startsWith("/purchase-quotations") || location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") ||
           location.startsWith("/quotations") || location.startsWith("/sales-orders") ||
           location.startsWith("/invoices") ||
           location.startsWith("/proforma-invoices") || location.startsWith("/credit-notes") ||
@@ -537,10 +539,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
         }
       >
         {/* ── Purchases ── */}
-        {(hasModuleAccess("purchase_orders") || hasModuleAccess("vendor_invoices") || hasModuleAccess("grn")) && (
+        {(hasModuleAccess("purchase_quotations") || hasModuleAccess("purchase_orders") || hasModuleAccess("vendor_invoices") || hasModuleAccess("grn")) && (
           <div className="px-3 pt-2 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Purchases</span>
           </div>
+        )}
+        {hasModuleAccess("purchase_quotations") && (
+          <NavItem href="/purchase-quotations" icon={FileSpreadsheet} active={location.startsWith("/purchase-quotations")} inGroup>
+            Purchase Quotations
+          </NavItem>
         )}
         {hasModuleAccess("purchase_orders") && (
           <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")} inGroup>

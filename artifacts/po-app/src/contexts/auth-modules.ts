@@ -6,7 +6,7 @@
 export const ALL_MODULES = [
   "dashboard",
   "assets", "licenses", "employees", "payroll",
-  "purchase_orders", "vendor_invoices", "quotations", "sales_orders", "invoices",
+  "purchase_quotations", "purchase_orders", "vendor_invoices", "quotations", "sales_orders", "invoices",
   "proforma_invoices", "credit_notes", "debit_notes", "delivery_orders",
   "point_of_sale", "bill_of_materials", "grn",
   "stock_items", "warehouses", "stock_transfer", "inventory_reports", "batch_expiry",
@@ -34,6 +34,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   licenses: "Licenses",
   employees: "Employees",
   payroll: "Payroll",
+  purchase_quotations: "Purchase Quotations",
   purchase_orders: "Purchase Orders",
   vendor_invoices: "Vendor Invoices",
   quotations: "Quotations",
@@ -106,7 +107,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     id: "documents",
     label: "Documents",
     modules: [
-      "purchase_orders", "vendor_invoices", "grn",
+      "purchase_quotations", "purchase_orders", "vendor_invoices", "grn",
       "quotations", "sales_orders", "proforma_invoices", "invoices",
       "credit_notes", "debit_notes", "delivery_orders",
       "point_of_sale", "bill_of_materials",

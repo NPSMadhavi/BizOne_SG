@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListStockItems, getListStockItemsQueryKey } from "@workspace/api-client-react";
 import { inventoryApi } from "@/lib/inventory-api";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -139,9 +140,76 @@ type StockItemOption = {
   type: string;
 };
 
+function parseLinkedStockId(productId: string): number | null {
+  if (!productId || productId.startsWith("manual-") || productId.startsWith("bom-")) return null;
+  const n = Number(productId);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function generateStockCode(label: string, taken: Set<string>) {
+  const base = label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "BOM-PRODUCT";
+  let code = base;
+  let i = 1;
+  while (taken.has(code.toLowerCase())) {
+    code = `${base}-${i++}`;
+  }
+  return code;
+}
+
+async function syncFinishedProductStock(record: BomRecord, stockOptions: StockItemOption[]): Promise<string> {
+  const mat = record.components.reduce((s, c) => s + lineTotal(c, record.outputQty), 0);
+  const total = computeBomTotal(mat, record.labourCost, record.machineCost, record.overhead, record.wastagePct);
+  const unitPrice = record.outputQty > 0 ? round2(total / record.outputQty) : round2(total);
+  const label = record.productLabel.trim();
+  const taken = new Set(stockOptions.map((o) => o.code.toLowerCase()));
+
+  const linkedId = parseLinkedStockId(record.productId);
+  const byName = stockOptions.find((o) => o.name.trim().toLowerCase() === label.toLowerCase());
+  const byId = linkedId ? stockOptions.find((o) => o.id === String(linkedId)) : undefined;
+  const existing = byId || byName;
+
+  const body = {
+    name: label,
+    description: record.description?.trim() || `BOM ${record.version}`,
+    uom: record.outputUom?.trim() || "Pcs",
+    type: "product",
+    unitPrice,
+    isActive: record.status === "active",
+  };
+
+  if (existing) {
+    const res = await fetch(`/api/stock-items/${existing.id}`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, code: existing.code }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error || "Failed to update stock item");
+    }
+    return existing.id;
+  }
+
+  const code = generateStockCode(label, taken);
+  const res = await fetch("/api/stock-items", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, code, stockQty: 0 }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error || "Failed to create stock item");
+  }
+  const created = await res.json();
+  return String(created.id);
+}
+
 export default function BillOfMaterialsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const userName = (user as any)?.fullName || user?.username || "User";
 
@@ -173,6 +241,7 @@ export default function BillOfMaterialsPage() {
   const [createdAt, setCreatedAt] = useState(() => new Date().toISOString());
   const [updatedBy, setUpdatedBy] = useState(userName);
   const [updatedAt, setUpdatedAt] = useState(() => new Date().toISOString());
+  const [saving, setSaving] = useState(false);
 
   const [compDialogOpen, setCompDialogOpen] = useState(false);
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
@@ -360,7 +429,7 @@ export default function BillOfMaterialsPage() {
     };
   }
 
-  function saveBom(asDraft = false) {
+  async function saveBom(asDraft = false) {
     if (!productName.trim()) {
       toast({ title: "Product required", description: "Enter a finished product name." });
       return;
@@ -371,19 +440,47 @@ export default function BillOfMaterialsPage() {
     }
     const record = buildRecord(asDraft ? "draft" : status === "draft" && !asDraft ? "active" : status);
     if (asDraft) record.status = "draft";
-    const next = editingId
-      ? bomList.map((b) => (b.id === editingId ? record : b))
-      : [record, ...bomList];
-    setBomList(next);
-    saveList(next);
-    setEditingId(record.id);
-    setStatus(record.status);
-    setUpdatedBy(record.updatedBy);
-    setUpdatedAt(record.updatedAt);
-    toast({
-      title: asDraft ? "Draft saved" : "BOM saved",
-      description: record.productLabel,
-    });
+
+    setSaving(true);
+    try {
+      if (!asDraft && record.status !== "draft") {
+        record.productId = await syncFinishedProductStock(record, allStockOptions);
+      }
+
+      const next = editingId
+        ? bomList.map((b) => (b.id === editingId ? record : b))
+        : [record, ...bomList];
+      setBomList(next);
+      saveList(next);
+      setEditingId(record.id);
+      setStatus(record.status);
+      setUpdatedBy(record.updatedBy);
+      setUpdatedAt(record.updatedAt);
+
+      if (!asDraft && record.status !== "draft") {
+        await queryClient.invalidateQueries({ queryKey: getListStockItemsQueryKey({} as any) });
+        await invalidateInventoryQueries(queryClient);
+      }
+
+      toast({
+        title: asDraft ? "Draft saved" : "BOM saved",
+        description: !asDraft && record.status !== "draft"
+          ? `${record.productLabel} synced to Stock Items`
+          : record.productLabel,
+      });
+      if (!asDraft) {
+        resetForm();
+        setMode("list");
+      }
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.message || "Failed to save BOM",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openAddComponent() {
@@ -906,11 +1003,11 @@ export default function BillOfMaterialsPage() {
         >
           Cancel
         </Button>
-        <Button type="button" variant="outline" className="gap-2" onClick={() => saveBom(true)}>
+        <Button type="button" variant="outline" className="gap-2" onClick={() => saveBom(true)} disabled={saving}>
           <Save className="h-4 w-4" /> Save & Draft
         </Button>
-        <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={() => saveBom(false)}>
-          <Check className="h-4 w-4" /> Save BOM
+        <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={() => saveBom(false)} disabled={saving}>
+          <Check className="h-4 w-4" /> {saving ? "Saving..." : "Save BOM"}
         </Button>
       </div>
 

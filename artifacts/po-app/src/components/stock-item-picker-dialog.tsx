@@ -54,9 +54,22 @@ interface StockItemPickerDialogProps {
   currentInvoiceId?: number;
   /** Present on some callers; stock deduction always uses entered qty. */
   mode?: string;
+  /** Skip available-stock cap (quotations, orders, etc. that do not issue stock). */
+  ignoreStockLimit?: boolean;
+  /** Require warehouse before import (invoices, delivery orders, PO receive). */
+  requireWarehouse?: boolean;
 }
 
-export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockItemPickerDialogProps) {
+export function StockItemPickerDialog({
+  open,
+  onOpenChange,
+  onSelect,
+  mode,
+  ignoreStockLimit: ignoreStockLimitProp,
+  requireWarehouse: requireWarehouseProp,
+}: StockItemPickerDialogProps) {
+  const ignoreStockLimit = ignoreStockLimitProp ?? mode === "receive";
+  const requireWarehouse = requireWarehouseProp ?? (!ignoreStockLimit || mode === "receive");
   const [step, setStep] = useState<"items" | "qty" | "serials">("items");
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
@@ -204,16 +217,17 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
 
   function emitSelection(selectedSerials: string[], selectedSerialIds: number[], qty: number) {
     if (!selectedItem) return;
-    if (!selectedWarehouseId) return;
-    const warehouse = warehouseOptions.find((item) => item.id === selectedWarehouseId);
-    if (!warehouse?.id) return;
+    if (requireWarehouse && !selectedWarehouseId) return;
+    const warehouse = selectedWarehouseId
+      ? warehouseOptions.find((item) => item.id === selectedWarehouseId)
+      : undefined;
     onSelect({
       item: selectedItem,
       selectedSerials,
       selectedSerialIds,
       qty,
-      warehouseId: warehouse.id,
-      warehouseName: warehouse.name,
+      warehouseId: warehouse?.id,
+      warehouseName: warehouse?.name,
     });
     onOpenChange(false);
   }
@@ -224,7 +238,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
     if (!Number.isFinite(qty) || qty <= 0) return;
     const warehouse = warehouseOptions.find((item) => item.id === selectedWarehouseId);
     const maxQty = Number(warehouse?.quantity) || 0;
-    if (qty > maxQty) return;
+    if (!ignoreStockLimit && qty > maxQty) return;
 
     const availableSerials = serials.filter((s) => s.status === "available");
     // Optional serial tracking: only prompt when serials exist. Qty stays authoritative.
@@ -266,8 +280,9 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
   const stockLoading = warehousesFetching || warehouseStockFetching;
   const maxQty = selectedItem ? Number(selectedWarehouse?.quantity) || 0 : 0;
   const parsedQty = Number(qtyInput);
-  const qtyIsValid = !stockLoading && Number.isFinite(parsedQty) && parsedQty > 0 && parsedQty <= maxQty;
-  const qtyOverMax = !stockLoading && !isNaN(parsedQty) && parsedQty > maxQty;
+  const qtyWithinStock = ignoreStockLimit || parsedQty <= maxQty;
+  const qtyIsValid = !stockLoading && Number.isFinite(parsedQty) && parsedQty > 0 && qtyWithinStock;
+  const warehouseOk = !requireWarehouse || !!selectedWarehouseId;
   const serialSelectionOk = chosen.size === 0 || (confirmedQty != null && chosen.size === confirmedQty);
 
   return (
@@ -407,24 +422,16 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
                   ref={qtyInputRef}
                   type="text" inputMode="decimal"
                   min={1}
-                  max={maxQty}
+                  max={ignoreStockLimit ? undefined : maxQty}
                   value={qtyInput}
                   onChange={(e) => setQtyInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && qtyIsValid) handleConfirmQty();
+                    if (e.key === "Enter" && qtyIsValid && warehouseOk) handleConfirmQty();
                   }}
-                  className={`text-lg font-semibold w-36 ${qtyOverMax ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
+                  className="text-lg font-semibold w-36"
                   placeholder="Enter qty"
                   autoFocus
                 />
-                {qtyOverMax && (
-                  <p className="text-xs text-red-600">
-                    Qty cannot exceed available stock ({maxQty} {selectedItem.uom})
-                  </p>
-                )}
-                {!isNaN(parsedQty) && parsedQty < 1 && qtyInput !== "" && (
-                  <p className="text-xs text-red-600">Qty must be at least 1</p>
-                )}
                 {serialsLoading && (
                   <p className="text-xs text-muted-foreground">Checking serial numbers…</p>
                 )}
@@ -433,7 +440,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
 
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={handleConfirmQty} disabled={!qtyIsValid || !selectedWarehouseId || serialsLoading}>
+              <Button onClick={handleConfirmQty} disabled={!qtyIsValid || !warehouseOk || serialsLoading}>
                 {availableCount > 0
                   ? `Next · Pick serials (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`
                   : `Import (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`}
@@ -563,7 +570,7 @@ export function StockItemPickerDialog({ open, onOpenChange, onSelect }: StockIte
               </Button>
               <Button
                 onClick={handleConfirmSerials}
-                disabled={serialsLoading || stockLoading || !selectedWarehouseId || !serialSelectionOk || chosen.size === 0}
+                disabled={serialsLoading || stockLoading || !warehouseOk || !serialSelectionOk || chosen.size === 0}
               >
                 {`Import with serials (${chosen.size}/${confirmedQty})`}
               </Button>

@@ -30,7 +30,7 @@ export default function QuotationView() {
   const { toast } = useToast();
   const { selectedCompany, canManage } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [converting, setConverting] = useState<"proforma" | "tax" | "so" | null>(null);
+  const [converting, setConverting] = useState<"pi" | "tax" | "so" | null>(null);
   const qc = useQueryClient();
 
   const handleConvertToSo = async () => {
@@ -56,31 +56,53 @@ export default function QuotationView() {
     }
   };
 
-  const handleConvert = async (type: "proforma" | "tax") => {
-    setConverting(type);
+  const handleConvertToPi = async () => {
+    setConverting("pi");
     try {
       const res = await fetch(`/api/quotations/${id}/convert`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
+        body: JSON.stringify({ type: "proforma" }),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
       const result = await res.json();
 
-      // Refresh quotation + target document lists so the new invoice appears
-      // immediately without requiring a manual browser refresh.
       await Promise.all([
         qc.invalidateQueries({ queryKey: getGetQuotationQueryKey(id) }),
         qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() }),
-        invalidateDocumentList(qc, type === "proforma" ? "proforma-invoices" : "invoices"),
+        invalidateDocumentList(qc, "proforma-invoices"),
       ]);
 
-      toast({
-        title: type === "proforma" ? "Proforma Invoice Created" : "Tax Invoice Created",
-        description: `${result.number} created successfully`,
+      toast({ title: "Proforma Invoice Created", description: `${result.number} created successfully` });
+      setLocation(`/proforma-invoices/${result.id}`);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setConverting(null);
+    }
+  };
+
+  const handleConvertToInvoice = async () => {
+    setConverting("tax");
+    try {
+      const res = await fetch(`/api/quotations/${id}/convert`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "tax" }),
       });
-      setLocation(type === "proforma" ? `/proforma-invoices/${result.id}` : `/invoices/${result.id}`);
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      const result = await res.json();
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getGetQuotationQueryKey(id) }),
+        qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() }),
+        invalidateDocumentList(qc, "invoices"),
+      ]);
+
+      toast({ title: "Tax Invoice Created", description: `${result.number} created successfully` });
+      setLocation(`/invoices/${result.id}`);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -175,16 +197,16 @@ export default function QuotationView() {
           <Button
             variant="outline"
             className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-            onClick={() => handleConvert("proforma")}
+            onClick={handleConvertToPi}
             disabled={!!converting}
           >
-            {converting === "proforma" ? <span className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <FileText className="h-4 w-4" />}
+            {converting === "pi" ? <span className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <FileText className="h-4 w-4" />}
             Convert to PI
           </Button>
           <Button
             variant="outline"
             className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-            onClick={() => handleConvert("tax")}
+            onClick={handleConvertToInvoice}
             disabled={!!converting}
           >
             {converting === "tax" ? <span className="h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /> : <Receipt className="h-4 w-4" />}

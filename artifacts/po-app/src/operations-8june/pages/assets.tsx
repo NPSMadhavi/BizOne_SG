@@ -33,7 +33,6 @@ import {
   Eye,
   UserPlus,
   ChevronDown,
-  MapPin,
   Printer,
 } from "lucide-react";
 import {
@@ -116,6 +115,7 @@ export default function AssetsPage() {
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string | "all">("all");
+  const [locationReportSelected, setLocationReportSelected] = useState(false);
   
   const { data: assets = [], isLoading, isError, error } = useQuery<Asset[]>({
     queryKey: ["/api/assets"],
@@ -467,53 +467,42 @@ export default function AssetsPage() {
           <div className="flex flex-wrap gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2 border-[#E4E4E4]">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  {selectedLocation === "all" ? "Location Report" : `Location: ${selectedLocation}`}
-                  <ChevronDown className="h-4 w-4 opacity-50" />
+                <Button variant="outline" className="h-9 min-w-[180px] justify-between gap-2 px-3 border-[#E4E4E4]">
+                  <span className="truncate">
+                    {selectedLocation === "all" ? "Location Report" : `Location: ${selectedLocation}`}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 max-h-[210px] overflow-y-auto no-scrollbar">
+              <DropdownMenuContent
+                align="end"
+                sideOffset={4}
+                className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)] max-h-[210px] overflow-y-auto p-1 no-scrollbar"
+              >
                 <DropdownMenuItem
-                  onClick={() => setSelectedLocation("all")}
-                  className={`flex items-center justify-between gap-2 cursor-pointer ${selectedLocation === "all" ? "bg-accent font-medium" : ""}`}
+                  onClick={() => {
+                    setSelectedLocation("all");
+                    setLocationReportSelected(true);
+                  }}
+                  className={`cursor-pointer px-2 py-1.5 ${selectedLocation === "all" && locationReportSelected ? "bg-accent font-medium" : ""}`}
                 >
-                  <span className="capitalize">All Locations</span>
-                  <button
-                    type="button"
-                    className="p-1 rounded hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePrintLocationReport("all");
-                    }}
-                    title="Print report for all locations"
-                  >
-                    <Printer className="h-4 w-4" />
-                  </button>
+                  All Locations
                 </DropdownMenuItem>
                 {locations.length > 0 && <DropdownMenuSeparator />}
                 {locations.map((loc) => (
                   <DropdownMenuItem
                     key={loc}
-                    onClick={() => setSelectedLocation(loc)}
-                    className={`flex items-center justify-between gap-2 cursor-pointer ${selectedLocation.toLowerCase() === loc.toLowerCase() ? "bg-accent font-medium" : ""}`}
+                    onClick={() => {
+                      setSelectedLocation(loc);
+                      setLocationReportSelected(true);
+                    }}
+                    className={`cursor-pointer px-2 py-1.5 ${selectedLocation.toLowerCase() === loc.toLowerCase() && locationReportSelected ? "bg-accent font-medium" : ""}`}
                   >
-                    <span>{loc}</span>
-                    <button
-                      type="button"
-                      className="p-1 rounded hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePrintLocationReport(loc);
-                      }}
-                      title={`Print report for ${loc}`}
-                    >
-                      <Printer className="h-4 w-4" />
-                    </button>
+                    {loc}
                   </DropdownMenuItem>
                 ))}
                 {locations.length === 0 && (
-                  <DropdownMenuItem disabled className="text-muted-foreground">
+                  <DropdownMenuItem disabled className="px-2 py-1.5 text-muted-foreground">
                     No locations found
                   </DropdownMenuItem>
                 )}
@@ -530,11 +519,25 @@ export default function AssetsPage() {
         }
       />
 
-      <ManagementSearchBar
-        value={searchTerm}
-        onChange={setSearchTerm}
-        placeholder="Search..."
-      />
+      <div className="mb-6 flex items-center justify-between gap-2">
+        <div className="w-full max-w-md [&>div]:mb-0">
+          <ManagementSearchBar
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="Search..."
+          />
+        </div>
+        {locationReportSelected && (
+          <Button
+            variant="outline"
+            className="h-11 shrink-0 gap-2 border-[#E5E7EB]"
+            onClick={() => handlePrintLocationReport(selectedLocation)}
+          >
+            <Printer className="h-4 w-4" />
+            Print
+          </Button>
+        )}
+      </div>
 
       <ManagementTableCard>
           {isLoading || authLoading ? (

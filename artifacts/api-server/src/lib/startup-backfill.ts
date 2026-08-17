@@ -37,6 +37,41 @@ export async function runStartupMigrations(): Promise<void> {
       `,
     },
     {
+      name: "purchase quotations",
+      sql: sql`
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_prefix text DEFAULT 'PQ';
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_counter integer NOT NULL DEFAULT 0;
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_suffix text DEFAULT '';
+        CREATE TABLE IF NOT EXISTS purchase_quotations (
+          id serial PRIMARY KEY,
+          pq_number text NOT NULL UNIQUE,
+          company_id integer NOT NULL DEFAULT 1,
+          vendor_name text NOT NULL,
+          vendor_address text,
+          vendor_contact text,
+          vendor_contact_email text,
+          delivery_address text,
+          issue_date text,
+          delivery_date text,
+          payment_terms text,
+          notes text,
+          is_private boolean NOT NULL DEFAULT false,
+          items jsonb NOT NULL DEFAULT '[]',
+          subtotal numeric(15,2) NOT NULL DEFAULT 0,
+          discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+          tax numeric(15,2) NOT NULL DEFAULT 0,
+          total_amount numeric(15,2) NOT NULL DEFAULT 0,
+          currency text NOT NULL DEFAULT 'SGD',
+          status text NOT NULL DEFAULT 'draft',
+          email_sent_to text,
+          converted_po_id integer,
+          converted_po_number text,
+          created_by integer NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+      `,
+    },
+    {
       name: "sales_orders table",
       sql: sql`
       CREATE TABLE IF NOT EXISTS sales_orders (

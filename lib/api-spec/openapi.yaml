@@ -355,6 +355,183 @@ paths:
               schema:
                 $ref: "#/components/schemas/Settings"
 
+  /purchase-quotations:
+    get:
+      operationId: listPurchaseQuotations
+      tags: [purchase-quotations]
+      summary: List purchase quotations
+      responses:
+        "200":
+          description: List of purchase quotations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PurchaseQuotation"
+    post:
+      operationId: createPurchaseQuotation
+      tags: [purchase-quotations]
+      summary: Create a purchase quotation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseQuotationBody"
+      responses:
+        "201":
+          description: Purchase quotation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseQuotation"
+
+  /purchase-quotations/stats:
+    get:
+      operationId: getPurchaseQuotationStats
+      tags: [purchase-quotations]
+      summary: Get purchase quotation stats
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocStats"
+
+  /purchase-quotations/{id}/mark-confirmed:
+    post:
+      operationId: confirmPurchaseQuotation
+      tags: [purchase-quotations]
+      summary: Confirm a purchase quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase quotation confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseQuotation"
+
+  /purchase-quotations/{id}/mark-sent:
+    post:
+      operationId: markPurchaseQuotationSent
+      tags: [purchase-quotations]
+      summary: Mark a purchase quotation as sent
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sentTo:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Purchase quotation marked sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseQuotation"
+
+  /purchase-quotations/{id}/convert-to-po:
+    post:
+      operationId: convertPurchaseQuotationToPurchaseOrder
+      tags: [purchase-quotations]
+      summary: Convert a purchase quotation to a draft purchase order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Draft purchase order created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  number:
+                    type: string
+                required: [id, number]
+
+  /purchase-quotations/{id}:
+    get:
+      operationId: getPurchaseQuotation
+      tags: [purchase-quotations]
+      summary: Get a purchase quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase quotation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseQuotation"
+    put:
+      operationId: updatePurchaseQuotation
+      tags: [purchase-quotations]
+      summary: Update a purchase quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePurchaseQuotationBody"
+      responses:
+        "200":
+          description: Purchase quotation updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseQuotation"
+    delete:
+      operationId: deletePurchaseQuotation
+      tags: [purchase-quotations]
+      summary: Delete a purchase quotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
   /quotations:
     get:
       operationId: listQuotations
@@ -1253,6 +1430,12 @@ components:
           type: integer
         poSuffix:
           type: string
+        pqPrefix:
+          type: string
+        pqCounter:
+          type: integer
+        pqSuffix:
+          type: string
         invPrefix:
           type: string
         invCounter:
@@ -1311,6 +1494,12 @@ components:
         poCounter:
           type: integer
         poSuffix:
+          type: string
+        pqPrefix:
+          type: string
+        pqCounter:
+          type: integer
+        pqSuffix:
           type: string
         invPrefix:
           type: string
@@ -1374,6 +1563,106 @@ components:
         amount:
           type: string
       required: [description, qty]
+
+    PurchaseQuotation:
+      type: object
+      properties:
+        id:
+          type: integer
+        pqNumber:
+          type: string
+        vendorName:
+          type: string
+        vendorAddress:
+          type: string
+        vendorContact:
+          type: string
+        vendorContactEmail:
+          type: string
+        deliveryAddress:
+          type: string
+        issueDate:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        subtotal:
+          type: number
+        tax:
+          type: number
+        totalAmount:
+          type: number
+        status:
+          type: string
+          enum: [draft, confirmed, sent, cancelled, converted_to_po]
+        emailSentTo:
+          type: string
+        convertedPoId:
+          type: integer
+        convertedPoNumber:
+          type: string
+        createdBy:
+          type: integer
+        createdByUsername:
+          type: string
+        createdAt:
+          type: string
+      required: [id, pqNumber, vendorName, items, subtotal, tax, totalAmount, status, createdBy, createdAt]
+
+    CreatePurchaseQuotationBody:
+      type: object
+      properties:
+        vendorName:
+          type: string
+        vendorAddress:
+          type: string
+        vendorContact:
+          type: string
+        vendorContactEmail:
+          type: string
+        deliveryAddress:
+          type: string
+        issueDate:
+          type: string
+        deliveryDate:
+          type: string
+        paymentTerms:
+          type: string
+        notes:
+          type: string
+        currency:
+          type: string
+        isPrivate:
+          type: boolean
+        discountAmount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocItem"
+        tax:
+          type: number
+        status:
+          type: string
+          enum: [draft, confirmed, cancelled]
+      required: [vendorName, items]
+
+    UpdatePurchaseQuotationBody:
+      allOf:
+        - $ref: "#/components/schemas/CreatePurchaseQuotationBody"
 
     Quotation:
       type: object

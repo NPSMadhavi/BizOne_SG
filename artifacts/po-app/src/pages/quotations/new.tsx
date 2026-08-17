@@ -726,6 +726,7 @@ export default function QuotationNew() {
       <StockItemPickerDialog
         open={stockPickerIndex !== null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        ignoreStockLimit
         onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);

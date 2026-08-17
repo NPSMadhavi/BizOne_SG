@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db, quotationsTable, invoicesTable, proformaInvoicesTable, usersTable, customersTable } from "@workspace/db";
+import { db, quotationsTable, invoicesTable, proformaInvoicesTable, vendorInvoicesTable, usersTable, customersTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
+import { postVendorInvoiceJE } from "../lib/vendor-invoice-auto-post.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -257,6 +258,86 @@ router.post("/quotations/:id/mark-converted-to-so", async (req, res): Promise<vo
   const [updated] = await db.update(quotationsTable).set({ status: "converted_to_so" }).where(eq(quotationsTable.id, id)).returning();
   logAudit({ req, action: "status:converted_to_so", entityType: "quotation", entityId: id, entityLabel: updated.qtNumber });
   res.json(parseDoc(updated));
+});
+
+router.post("/quotations/:id/convert-to-vendor-invoice", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  if (!requireCompany(req, res)) return;
+
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
+
+  const [qt] = await db.select().from(quotationsTable)
+    .where(and(eq(quotationsTable.id, id), eq(quotationsTable.companyId, companyId)));
+  if (!qt) { res.status(404).json({ error: "Quotation not found" }); return; }
+
+  const subtotal = parseFloat(String(qt.subtotal ?? 0));
+  const discountAmount = parseFloat(String(qt.discountAmount ?? 0));
+  const tax = parseFloat(String(qt.tax ?? 0));
+  const totalAmount = parseFloat(String(qt.totalAmount ?? 0));
+  const netAmount = Math.max(0, subtotal - discountAmount);
+  const gstRate = netAmount > 0 ? (tax / netAmount) * 100 : 9;
+  const today = new Date().toISOString().split("T")[0];
+  const piNumber = await nextDocNumber("pi", companyId);
+
+  try {
+    const [doc] = await db.insert(vendorInvoicesTable).values({
+      companyId,
+      piNumber,
+      piDate: today,
+      vendorName: qt.customerName,
+      poIds: [],
+      poNumbers: qt.qtNumber,
+      currency: qt.currency || "SGD",
+      totalAmount: totalAmount.toFixed(2),
+      paidAmount: "0",
+      status: "pending",
+      notes: qt.notes
+        ? `${qt.notes}\n\nFrom ${qt.qtNumber}`
+        : `From ${qt.qtNumber}`,
+      items: (qt.items ?? []) as any,
+      subtotal: netAmount.toFixed(2),
+      tax: tax.toFixed(2),
+      gstTreatment: "standard_rated",
+      gstRate: gstRate.toFixed(2),
+      gstAmount: tax.toFixed(2),
+      gstInclusive: false,
+      exchangeRate: "1.000000",
+      createdBy: userId,
+    }).returning();
+
+    logAudit({
+      req,
+      action: "convert-to-vendor-invoice",
+      entityType: "quotation",
+      entityId: id,
+      entityLabel: qt.qtNumber,
+    });
+
+    await postVendorInvoiceJE(
+      {
+        id: doc.id,
+        companyId: doc.companyId,
+        piNumber: doc.piNumber,
+        vendorName: doc.vendorName,
+        piDate: doc.piDate,
+        totalAmount,
+        gstAmount: tax,
+        gstTreatment: "standard_rated",
+        expenseAccountId: doc.expenseAccountId,
+      },
+      userId,
+      req.log,
+    );
+
+    res.status(201).json({ id: doc.id, number: doc.piNumber });
+  } catch (err: any) {
+    const message = err?.cause?.message || err?.message || "Failed to create vendor invoice";
+    res.status(500).json({ error: message });
+  }
 });
 
 // ── Convert quotation → Proforma Invoice or Tax Invoice ───────────────────────

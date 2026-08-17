@@ -24,6 +24,11 @@ const PurchaseOrderNew  = lazy(() => import("@/pages/purchase-orders/new"));
 const PurchaseOrderView = lazy(() => import("@/pages/purchase-orders/view"));
 const PurchaseOrderEdit = lazy(() => import("@/pages/purchase-orders/edit"));
 
+const PurchaseQuotationList = lazy(() => import("@/pages/purchase-quotations/list"));
+const PurchaseQuotationNew  = lazy(() => import("@/pages/purchase-quotations/new"));
+const PurchaseQuotationView = lazy(() => import("@/pages/purchase-quotations/view"));
+const PurchaseQuotationEdit = lazy(() => import("@/pages/purchase-quotations/edit"));
+
 const QuotationList = lazy(() => import("@/pages/quotations/list"));
 const QuotationNew  = lazy(() => import("@/pages/quotations/new"));
 const QuotationView = lazy(() => import("@/pages/quotations/view"));
@@ -143,6 +148,7 @@ const PayrollProcessPage = lazy(() => import("@/operations-8june/pages/payroll-p
 // ── Route title map ────────────────────────────────────────────────────────
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/purchase-quotations": "Purchase Quotations",
   "/purchase-orders": "Purchase Orders",
   "/quotations": "Quotations",
   "/sales-orders": "Sales Orders",
@@ -257,6 +263,7 @@ interface ProtectedRouteProps {
 
 function getFirstAccessiblePath(isAdmin: boolean, hasModuleAccess: (m: any) => boolean): string {
   if (isAdmin || hasModuleAccess("dashboard")) return "/dashboard";
+  if (hasModuleAccess("purchase_quotations")) return "/purchase-quotations";
   if (hasModuleAccess("purchase_orders")) return "/purchase-orders";
   if (hasModuleAccess("invoices")) return "/invoices";
   if (hasModuleAccess("quotations")) return "/quotations";
@@ -327,6 +334,12 @@ function Router() {
           <Route path="/projects/:id/vouchers/:vid/edit">{() => <ProtectedRoute component={VoucherEdit} module="projects" />}</Route>
           <Route path="/projects/:id/vouchers/:vid">{() => <ProtectedRoute component={VoucherView} module="projects" />}</Route>
           <Route path="/projects/:id">{() => <ProtectedRoute component={ProjectDetail} module="projects" />}</Route>
+
+          {/* Purchase Quotations */}
+          <Route path="/purchase-quotations">{() => <ProtectedRoute component={PurchaseQuotationList} module="purchase_quotations" />}</Route>
+          <Route path="/purchase-quotations/new">{() => <ProtectedRoute component={PurchaseQuotationNew} module="purchase_quotations" />}</Route>
+          <Route path="/purchase-quotations/:id/edit">{() => <ProtectedRoute component={PurchaseQuotationEdit} module="purchase_quotations" />}</Route>
+          <Route path="/purchase-quotations/:id">{() => <ProtectedRoute component={PurchaseQuotationView} module="purchase_quotations" />}</Route>
 
           {/* Purchase Orders */}
           <Route path="/purchase-orders">{() => <ProtectedRoute component={PurchaseOrderList} module="purchase_orders" />}</Route>

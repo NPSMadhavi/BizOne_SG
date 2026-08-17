@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
   getListInvoicesQueryKey,
+  getListPurchaseQuotationsQueryKey,
   getListPurchaseOrdersQueryKey,
   getListQuotationsQueryKey,
   getListDeliveryOrdersQueryKey,
@@ -9,6 +10,7 @@ import {
 
 export type DocumentListKind =
   | "invoices"
+  | "purchase-quotations"
   | "purchase-orders"
   | "quotations"
   | "sales-orders"
@@ -20,6 +22,7 @@ export type DocumentListKind =
 
 const QUERY_KEYS: Record<DocumentListKind, readonly unknown[]> = {
   invoices: getListInvoicesQueryKey(),
+  "purchase-quotations": getListPurchaseQuotationsQueryKey(),
   "purchase-orders": getListPurchaseOrdersQueryKey(),
   quotations: getListQuotationsQueryKey(),
   "sales-orders": getListSalesOrdersQueryKey(),

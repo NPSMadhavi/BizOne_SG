@@ -36,7 +36,7 @@ import {
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
+import { calculateSyncBridgePayrollPreview, CPF_WAGE_CEILING } from "@/operations-8june/lib/payroll-utils";
 import {
   payrollCancelButtonClass,
   payrollPrimaryButtonClass,
@@ -878,12 +878,21 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             <section className="space-y-4">
               <ModalSectionHeader icon={Calculator} title="CPF Calculation" />
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
-                <FormItem className="lg:col-span-2">
+                <FormItem>
                   <FormLabel className={formLabelClass}>Gross Salary</FormLabel>
                   <Input
                     readOnly
                     placeholder="—"
                     value={hasPayrollPreview ? formatCurrency(grossSalary) : ""}
+                    className={readOnlyInputClass}
+                  />
+                </FormItem>
+                <FormItem>
+                  <FormLabel className={formLabelClass}>CPF Capped Limit</FormLabel>
+                  <Input
+                    readOnly
+                    placeholder="—"
+                    value={formatCurrency(CPF_WAGE_CEILING)}
                     className={readOnlyInputClass}
                   />
                 </FormItem>
@@ -920,15 +929,6 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     readOnly
                     placeholder="—"
                     value={hasPayrollPreview ? formatCurrency(employerCpf) : ""}
-                    className={readOnlyInputClass}
-                  />
-                </FormItem>
-                <FormItem className="lg:col-span-2">
-                  <FormLabel className={formLabelClass}>Net Salary (Monthly)</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder="—"
-                    value={hasPayrollPreview ? formatCurrency(netSalary) : ""}
                     className={readOnlyInputClass}
                   />
                 </FormItem>

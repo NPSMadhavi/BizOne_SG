@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useCreatePurchaseOrder, useGetSettings, getGetSettingsQueryKey, getListPurchaseOrdersQueryKey, useGetQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
@@ -89,6 +89,10 @@ const poSchema = z.object({
 
 export default function PurchaseOrderNew() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const urlParams = new URLSearchParams(search);
+  const urlQuotationId = urlParams.get("quotationId");
+  const urlQtIdNum = urlQuotationId ? Number(urlQuotationId) : null;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { selectedCompany } = useAuth();
@@ -102,6 +106,11 @@ export default function PurchaseOrderNew() {
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
+  const [qtPrefilled, setQtPrefilled] = useState(false);
+
+  const { data: urlSourceQt } = useGetQuotation(urlQtIdNum ?? 0, {
+    query: { queryKey: getGetQuotationQueryKey(urlQtIdNum ?? 0), enabled: !!urlQtIdNum },
+  });
 
   const { data: customers = [] } = useQuery<any[]>({
     queryKey: ["customers-for-po"],
@@ -142,6 +151,55 @@ export default function PurchaseOrderNew() {
 
   const createMutation = useCreatePurchaseOrder();
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  useEffect(() => {
+    if (!urlSourceQt || qtPrefilled) return;
+    const qtItems = (urlSourceQt.items as any[]) ?? [];
+    const sub = Number(urlSourceQt.subtotal) || 0;
+    const disc = Number((urlSourceQt as any).discountAmount) || 0;
+    const taxAmt = Number(urlSourceQt.tax) || 0;
+    const taxable = sub - disc;
+    const taxPct = taxable > 0 && taxAmt > 0
+      ? Math.round((taxAmt / taxable) * 1000) / 10
+      : (settings?.gstRate ?? 9);
+    const matchedCustomer = customers.find((c) =>
+      String(c.name || "").trim().toLowerCase() === String(urlSourceQt.customerName || "").trim().toLowerCase(),
+    );
+
+    form.reset({
+      vendorName: "",
+      vendorAddress: "",
+      vendorContact: "",
+      vendorContactEmail: "",
+      issueDate: getToday(),
+      quoteRefNo: urlSourceQt.qtNumber || "",
+      deliveryAddress: form.getValues("deliveryAddress"),
+      deliveryDate: urlSourceQt.deliveryDate || "",
+      paymentTerms: urlSourceQt.paymentTerms || "30 Days Net",
+      notes: urlSourceQt.notes || "",
+      currency: (urlSourceQt as any).currency || "SGD",
+      isPrivate: false,
+      customerId: matchedCustomer?.id ?? null,
+      customerPoRef: urlSourceQt.qtNumber || "",
+      tax: taxPct,
+      items: qtItems.length > 0
+        ? qtItems.map((it: any) => ({
+            type: it.type || "item",
+            sectionLabel: it.sectionLabel || "",
+            sectionAlign: it.sectionAlign || "left",
+            partNumber: it.partNumber || "",
+            uom: it.uom || "",
+            description: it.description || "",
+            qty: Number(it.qty) || 1,
+            unitPrice: Number(it.unitPrice) || 0,
+            isStockItem: false,
+            itemImage: it.itemImage || "",
+          }))
+        : [{ partNumber: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" }],
+    });
+    setQtPrefilled(true);
+    toast({ title: "Quotation data loaded", description: urlSourceQt.qtNumber });
+  }, [urlSourceQt, qtPrefilled, customers, settings, form, toast]);
 
   const nextPoNumber = (() => {
     if (!settings) return null;

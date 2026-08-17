@@ -142,6 +142,7 @@ export default function Settings() {
   const [docsEditing, setDocsEditing] = useState(false);
 
   const [rnPO, setRnPO] = useState<RunningNumberConfig>({ prefix: "PO", counter: "0", suffix: "" });
+  const [rnPQ, setRnPQ] = useState<RunningNumberConfig>({ prefix: "PQ", counter: "0", suffix: "" });
   const [rnQT, setRnQT] = useState<RunningNumberConfig>({ prefix: "QT", counter: "0", suffix: "" });
   const [rnINV, setRnINV] = useState<RunningNumberConfig>({ prefix: "INV", counter: "0", suffix: "" });
   const [rnDO, setRnDO] = useState<RunningNumberConfig>({ prefix: "DO", counter: "0", suffix: "" });
@@ -227,6 +228,7 @@ export default function Settings() {
     }
     if (settings && !rnEditing) {
       setRnPO({ prefix: (settings as any).poPrefix ?? "PO", counter: String((settings as any).poCounter ?? 0), suffix: (settings as any).poSuffix ?? "" });
+      setRnPQ({ prefix: (settings as any).pqPrefix ?? "PQ", counter: String((settings as any).pqCounter ?? 0), suffix: (settings as any).pqSuffix ?? "" });
       setRnQT({ prefix: (settings as any).qtPrefix ?? "QT", counter: String((settings as any).qtCounter ?? 0), suffix: (settings as any).qtSuffix ?? "" });
       setRnINV({ prefix: (settings as any).invPrefix ?? "INV", counter: String((settings as any).invCounter ?? 0), suffix: (settings as any).invSuffix ?? "" });
       setRnDO({ prefix: (settings as any).doPrefix ?? "DO", counter: String((settings as any).doCounter ?? 0), suffix: (settings as any).doSuffix ?? "" });
@@ -312,6 +314,7 @@ export default function Settings() {
       {
         data: {
           poPrefix: rnPO.prefix, poCounter: parseInt(rnPO.counter) || 0, poSuffix: rnPO.suffix,
+          pqPrefix: rnPQ.prefix, pqCounter: parseInt(rnPQ.counter) || 0, pqSuffix: rnPQ.suffix,
           qtPrefix: rnQT.prefix, qtCounter: parseInt(rnQT.counter) || 0, qtSuffix: rnQT.suffix,
           invPrefix: rnINV.prefix, invCounter: parseInt(rnINV.counter) || 0, invSuffix: rnINV.suffix,
           doPrefix: rnDO.prefix, doCounter: parseInt(rnDO.counter) || 0, doSuffix: rnDO.suffix,
@@ -574,6 +577,7 @@ export default function Settings() {
               ) : (
                 <>
                   {([
+                    { label: "Purchase Quotation", state: rnPQ, setter: setRnPQ },
                     { label: "Purchase Order", state: rnPO, setter: setRnPO },
                     { label: "Quotation", state: rnQT, setter: setRnQT },
                     { label: "Invoice (Tax Invoice)", state: rnINV, setter: setRnINV },
