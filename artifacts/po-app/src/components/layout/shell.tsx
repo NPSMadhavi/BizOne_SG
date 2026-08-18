@@ -55,6 +55,7 @@ import {
   ShoppingBag,
   ArrowLeftRight,
   Landmark,
+  LayoutTemplate,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -127,7 +128,8 @@ function getGroupForRoute(loc: string): string | null {
   if (
     loc.startsWith("/admin") ||
     loc.startsWith("/audit-log") ||
-    loc.startsWith("/settings")
+    loc.startsWith("/settings") ||
+    loc.startsWith("/report-templates")
   ) return "system";
   return null;
 }
@@ -823,7 +825,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "system"}
         onToggle={toggleGroup}
         visible={hasSystem}
-        hasActive={location.startsWith("/admin") || location.startsWith("/audit-log") || location.startsWith("/settings")}
+        hasActive={location.startsWith("/admin") || location.startsWith("/audit-log") || location.startsWith("/settings") || location.startsWith("/report-templates")}
       >
         {(isAdmin || hasModuleAccess("user_management")) && (
           <NavItem href="/admin" icon={Users} active={location === "/admin"} inGroup>
@@ -838,6 +840,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {(isAdmin || hasModuleAccess("settings")) && (
           <NavItem href="/settings" icon={Settings} active={location === "/settings"} inGroup>
             Settings
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("report_templates")) && (
+          <NavItem href="/report-templates" icon={LayoutTemplate} active={location.startsWith("/report-templates")} inGroup>
+            Report Design
           </NavItem>
         )}
       </NavGroup>

@@ -12,11 +12,12 @@ import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
+import { generateInvoicePdfSmart, listInvoiceReportTemplates } from "@/lib/report-designer/api";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -54,6 +55,7 @@ export default function InvoiceView() {
   const qc = useQueryClient();
 
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("active");
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [voidSubmitting, setVoidSubmitting] = useState(false);
@@ -77,6 +79,12 @@ export default function InvoiceView() {
 
   const { data: doc, isLoading, refetch } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
+  });
+
+  const { data: reportTemplates = [] } = useQuery({
+    queryKey: ["invoice-report-templates", selectedCompany?.id],
+    queryFn: listInvoiceReportTemplates,
+    enabled: !!selectedCompany?.id,
   });
 
   const { data: docSettings } = useGetSettings({
@@ -257,6 +265,21 @@ export default function InvoiceView() {
             <span className="flex items-center gap-1 text-xs text-muted-foreground border rounded-md px-2 py-1">
               <Lock className="h-3 w-3" />Private
             </span>
+          )}
+          {reportTemplates.length > 0 && (
+            <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+              <SelectTrigger className="w-[220px] h-9">
+                <SelectValue placeholder="Use Active Template" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Use Active Template</SelectItem>
+                {reportTemplates.map((tpl) => (
+                  <SelectItem key={tpl.id} value={String(tpl.id)}>
+                    {tpl.name}{tpl.isActive ? " (Active)" : tpl.isSystemTemplate ? " (System)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-4 w-4" />Preview
@@ -557,7 +580,15 @@ export default function InvoiceView() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         title={`Invoice ${doc.invNumber}`}
-        generatePdf={(opts) => generateInvoice_PDF(doc, selectedCompany, docSettings as any, opts)}
+        generatePdf={(opts) => generateInvoicePdfSmart(
+          id,
+          () => generateInvoice_PDF(doc, selectedCompany, docSettings as any, opts),
+          {
+            ...opts,
+            filename: `${doc.invNumber}.pdf`,
+            templateId: selectedTemplateId === "active" ? null : Number(selectedTemplateId),
+          },
+        )}
         pdfFilename={`${doc.invNumber}.pdf`}
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Invoice ${doc.invNumber}`}

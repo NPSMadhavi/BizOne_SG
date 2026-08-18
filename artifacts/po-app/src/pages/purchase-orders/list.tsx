@@ -1,17 +1,21 @@
 import { useState, useMemo } from "react";
-import { useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
-import { useQuery } from "@tanstack/react-query";
+import { useListPurchaseOrders, getListPurchaseOrdersQueryKey, type PurchaseOrder } from "@workspace/api-client-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight, Mail } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { EmailSendDialog } from "@/components/email-send-dialog";
+import { generatePO_PDF } from "@/lib/pdf";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -40,14 +44,22 @@ function piStatusBadge(status: string) {
   }
 }
 
+function isSendable(po: PurchaseOrder) {
+  return po.status !== "cancelled";
+}
+
 export default function PurchaseOrderList() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [emailOpen, setEmailOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const { selectedCompany } = useAuth();
+  const queryClient = useQueryClient();
   const currentYear = new Date().getFullYear();
 
   const { data: pos, isLoading } = useListPurchaseOrders({
@@ -74,6 +86,11 @@ export default function PurchaseOrderList() {
     return acc;
   }, {});
 
+  const vendorNames = useMemo(() => {
+    const names = new Set((pos ?? []).map(p => (p.vendorName || "").trim()).filter(Boolean));
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [pos]);
+
   const filteredByDate = useMemo(() => {
     const all = pos ?? [];
     if (filterMode === "all") return all;
@@ -96,11 +113,62 @@ export default function PurchaseOrderList() {
   }, [pos, filterMode, filterYear, customFrom, customTo]);
 
   const filteredPOs = useMemo(() => filteredByDate.filter(po => {
+    if (vendorFilter !== "all" && po.vendorName !== vendorFilter) return false;
     const term = searchTerm.toLowerCase();
+    if (!term) return true;
     return po.poNumber.toLowerCase().includes(term) || po.vendorName.toLowerCase().includes(term);
-  }), [filteredByDate, searchTerm]);
+  }), [filteredByDate, searchTerm, vendorFilter]);
+
+  const sendableFiltered = useMemo(
+    () => filteredPOs.filter(isSendable),
+    [filteredPOs],
+  );
+
+  const onVendorChange = (value: string) => {
+    setVendorFilter(value);
+    if (value === "all") {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(
+      filteredByDate.filter(p => p.vendorName === value && isSendable(p)).map(p => p.id)
+    ));
+  };
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filteredPOs);
+
+  const selectedPOs = useMemo(
+    () => (pos ?? []).filter(p => selectedIds.has(p.id) && isSendable(p)),
+    [pos, selectedIds],
+  );
+
+  const allFilteredSelected = sendableFiltered.length > 0 && sendableFiltered.every(p => selectedIds.has(p.id));
+  const someFilteredSelected = sendableFiltered.some(p => selectedIds.has(p.id));
+
+  const toggleSelectAll = (checked: boolean | "indeterminate") => {
+    if (checked) {
+      setSelectedIds(new Set(sendableFiltered.map(p => p.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const toggleRow = (id: number, checked: boolean | "indeterminate") => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
+  const vendorLabel = vendorFilter !== "all" ? vendorFilter : (selectedPOs[0]?.vendorName || "vendor");
+  const vendorEmail = selectedPOs.find(p => (p as any).vendorContactEmail)?.vendorContactEmail || "";
+  const vendorContact = selectedPOs.find(p => p.vendorContact)?.vendorContact || "Sir/Madam";
+  const poNumbers = selectedPOs.map(p => p.poNumber);
+  const emailSubject = `Purchase Orders for ${vendorLabel} (${selectedPOs.length}) | ${companyName}`;
+  const emailBody = `Dear ${vendorContact},\n\nPlease find attached ${selectedPOs.length} Purchase Order${selectedPOs.length === 1 ? "" : "s"} for ${vendorLabel}:\n${poNumbers.map(n => `• ${n}`).join("\n")}\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -158,11 +226,32 @@ export default function PurchaseOrderList() {
         )}
       </div>
 
-      <Card className="p-4 flex flex-col sm:flex-row gap-4">
+      <Card className="p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search by PO Number or Vendor..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
+        <Select value={vendorFilter} onValueChange={onVendorChange}>
+          <SelectTrigger className="w-full sm:w-[220px]">
+            <SelectValue placeholder="Vendor filter" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All vendors</SelectItem>
+            {vendorNames.map(name => (
+              <SelectItem key={name} value={name}>{name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          className="gap-2"
+          disabled={selectedPOs.length === 0}
+          onClick={() => setEmailOpen(true)}
+        >
+          <Mail className="h-4 w-4" />
+          {selectedPOs.length > 0
+            ? `Send Email (${selectedPOs.length})`
+            : "Send Email"}
+        </Button>
       </Card>
 
       <Card>
@@ -170,6 +259,14 @@ export default function PurchaseOrderList() {
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
               <tr>
+                <th className="px-4 py-4 w-10">
+                  <Checkbox
+                    checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all purchase orders"
+                    disabled={sendableFiltered.length === 0}
+                  />
+                </th>
                 <th className="px-6 py-4 font-medium">PO Number</th>
                 <th className="px-6 py-4 font-medium">Date</th>
                 <th className="px-6 py-4 font-medium">Vendor</th>
@@ -184,15 +281,17 @@ export default function PurchaseOrderList() {
             <tbody className="divide-y">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>{[...Array(9)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
+                  <tr key={i}>{[...Array(10)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
                 ))
               ) : filteredPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50"/>
                       <p>No purchase orders found.</p>
-                      {searchTerm && <Button variant="link" onClick={() => setSearchTerm("")}>Clear search</Button>}
+                      {(searchTerm || vendorFilter !== "all") && (
+                        <Button variant="link" onClick={() => { setSearchTerm(""); setVendorFilter("all"); }}>Clear filters</Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -205,6 +304,14 @@ export default function PurchaseOrderList() {
                     : "pending";
                   return (
                     <tr key={po.id} className="hover:bg-muted/50 transition-colors group cursor-pointer" onClick={() => setLocation(`/purchase-orders/${po.id}`)}>
+                      <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(po.id)}
+                          disabled={!isSendable(po)}
+                          onCheckedChange={(checked) => toggleRow(po.id, checked)}
+                          aria-label={`Select ${po.poNumber}`}
+                        />
+                      </td>
                       <td className="px-6 py-4 font-medium">{po.poNumber}</td>
                       <td className="px-6 py-4 font-medium">{fmtDate(po.createdAt)}</td>
                       <td className="px-6 py-4 font-medium">{po.vendorName}</td>
@@ -240,6 +347,41 @@ export default function PurchaseOrderList() {
         </div>
         <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
+
+      {emailOpen && (
+      <EmailSendDialog
+        hideTrigger
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        defaultTo={vendorEmail}
+        defaultSubject={emailSubject}
+        defaultBody={emailBody}
+        pdfFilenames={poNumbers.map(n => `${n}.pdf`)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const po of selectedPOs) {
+            const content = await generatePO_PDF(po, selectedCompany, { returnBase64: true });
+            if (typeof content !== "string" || !content) {
+              throw new Error(`Could not generate PDF for ${po.poNumber}.`);
+            }
+            attachments.push({ filename: `${po.poNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async (recipients) => {
+          await Promise.all(selectedPOs.map(po =>
+            fetch(`/api/purchase-orders/${po.id}/mark-sent`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sentTo: recipients }),
+            })
+          ));
+          await queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+          setSelectedIds(new Set());
+        }}
+      />
+      )}
     </div>
   );
 }

@@ -1,19 +1,6 @@
-import nodemailer from "nodemailer";
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { resolveSmtpSettings } from "./smtp.js";
-
-function createTransporter(s: { smtpHost: string; smtpPort: string; smtpUser: string; smtpPass: string }) {
-  return nodemailer.createTransport({
-    host: s.smtpHost,
-    port: parseInt(s.smtpPort || "587"),
-    secure: parseInt(s.smtpPort || "587") === 465,
-    auth: { user: s.smtpUser, pass: s.smtpPass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-}
+import { resolveSmtpSettings, createMailTransporter } from "./smtp.js";
 
 function wrapHtml(body: string, companyName: string): string {
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:sans-serif;">
@@ -46,7 +33,7 @@ export async function sendVoucherEmail(params: VoucherEmailParams): Promise<void
     const settings = resolveSmtpSettings(row);
     if (!settings) return; // SMTP not configured
 
-    const transporter = createTransporter(settings);
+    const transporter = createMailTransporter(settings);
     await transporter.sendMail({
       from: settings.smtpFrom || settings.smtpUser,
       to: params.toEmail,

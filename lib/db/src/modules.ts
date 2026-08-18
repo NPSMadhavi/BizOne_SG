@@ -55,6 +55,7 @@ export const APP_ALL_MODULES = [
   "user_management",
   "audit_log",
   "settings",
+  "report_templates",
 ] as const;
 
 export type AppModuleKey = (typeof APP_ALL_MODULES)[number];

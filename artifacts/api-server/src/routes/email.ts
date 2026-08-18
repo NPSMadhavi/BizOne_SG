@@ -1,26 +1,22 @@
-import { Router } from "express";
-import nodemailer from "nodemailer";
+import { Router, type Request } from "express";
+import multer from "multer";
 import { db, settingsTable, companiesTable, purchaseOrdersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { resolveSmtpSettings } from "../lib/smtp.js";
+import { resolveSmtpSettings, createMailTransporter } from "../lib/smtp.js";
+
+const emailUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 30 },
+});
+
+function uploadedFiles(req: Request): Express.Multer.File[] {
+  if (!req.files) return [];
+  if (Array.isArray(req.files)) return req.files;
+  return Object.values(req.files).flat();
+}
 
 const router = Router();
-
-function createTransporter(settings: { smtpHost: string; smtpPort: string; smtpUser: string; smtpPass: string }) {
-  return nodemailer.createTransport({
-    host: settings.smtpHost,
-    port: parseInt(settings.smtpPort || "587"),
-    secure: parseInt(settings.smtpPort || "587") === 465,
-    auth: {
-      user: settings.smtpUser,
-      pass: settings.smtpPass,
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-}
 
 // Convert plain-text body to email-safe HTML paragraphs
 function textToEmailHtml(text: string): string {
@@ -110,24 +106,33 @@ function buildEmailHtml(body: string, _isSingapore: boolean, companyName: string
 </html>`;
 }
 
-router.post("/send-email", async (req, res): Promise<void> => {
+router.post("/send-email", emailUpload.any(), async (req, res): Promise<void> => {
   if (!req.session.userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
-  const { to, subject, body, pdfBase64, filename, poId, extraAttachments } = req.body as {
-    to: string;
-    subject: string;
-    body: string;
-    pdfBase64: string;
-    filename: string;
-    poId?: number;
-    extraAttachments?: { filename: string; content: string; contentType: string }[];
-  };
+  const to = String(req.body?.to || "").trim();
+  const subject = String(req.body?.subject || "").trim();
+  const body = String(req.body?.body || "");
+  const poIdRaw = req.body?.poId;
+  const poId = poIdRaw !== undefined && poIdRaw !== "" && poIdRaw !== null
+    ? parseInt(String(poIdRaw), 10)
+    : undefined;
 
-  if (!to || !subject || !pdfBase64 || !filename) {
-    res.status(400).json({ error: "Missing required fields: to, subject, pdfBase64, filename" });
+  const files = uploadedFiles(req);
+  const pdfFile = files.find(f => f.fieldname === "pdf") || files[0];
+  const extraFiles = files.filter(f => f !== pdfFile);
+
+  const jsonPdfBase64 = typeof req.body?.pdfBase64 === "string" ? req.body.pdfBase64 : "";
+  const jsonFilename = typeof req.body?.filename === "string" ? req.body.filename : "";
+  const extraAttachments = Array.isArray(req.body?.extraAttachments) ? req.body.extraAttachments : [];
+
+  const filename = pdfFile?.originalname || jsonFilename;
+  const hasPdf = Boolean(pdfFile?.buffer?.length) || Boolean(jsonPdfBase64);
+
+  if (!to || !subject || !hasPdf || !filename) {
+    res.status(400).json({ error: "Missing required fields: to, subject, pdf, filename" });
     return;
   }
 
@@ -160,7 +165,7 @@ router.post("/send-email", async (req, res): Promise<void> => {
   }
 
   try {
-    const transporter = createTransporter(settings);
+    const transporter = createMailTransporter(settings);
 
     // If this is a PO email, generate/reuse an ACK token and build the ACK URL
     let ackUrl: string | undefined;
@@ -184,14 +189,28 @@ router.post("/send-email", async (req, res): Promise<void> => {
     }
     const plainFooter = `\n\n--\n${companyName}`;
 
-    const attachments: any[] = [
-      {
+    const attachments: any[] = [];
+    if (pdfFile?.buffer?.length) {
+      attachments.push({
         filename,
-        content: pdfBase64,
+        content: pdfFile.buffer,
+        contentType: pdfFile.mimetype || "application/pdf",
+      });
+    } else {
+      attachments.push({
+        filename,
+        content: jsonPdfBase64,
         encoding: "base64",
         contentType: "application/pdf",
-      },
-    ];
+      });
+    }
+    for (const file of extraFiles) {
+      attachments.push({
+        filename: file.originalname,
+        content: file.buffer,
+        contentType: file.mimetype || "application/octet-stream",
+      });
+    }
     if (extraAttachments?.length) {
       for (const att of extraAttachments) {
         attachments.push({ filename: att.filename, content: att.content, encoding: "base64", contentType: att.contentType });
@@ -210,6 +229,18 @@ router.post("/send-email", async (req, res): Promise<void> => {
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to send email" });
   }
+});
+
+router.use((err: any, _req: any, res: any, next: any) => {
+  if (err instanceof multer.MulterError) {
+    res.status(413).json({
+      error: err.code === "LIMIT_FILE_SIZE"
+        ? "An attachment is too large (max 20MB per file)."
+        : err.message,
+    });
+    return;
+  }
+  next(err);
 });
 
 router.post("/test-email", async (req, res): Promise<void> => {
@@ -233,7 +264,7 @@ router.post("/test-email", async (req, res): Promise<void> => {
   }
 
   try {
-    const transporter = createTransporter(settings);
+    const transporter = createMailTransporter(settings);
     await transporter.verify();
     res.json({ success: true, message: "SMTP connection verified successfully!" });
   } catch (err: any) {

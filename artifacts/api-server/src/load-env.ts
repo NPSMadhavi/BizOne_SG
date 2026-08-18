@@ -47,6 +47,12 @@ export function loadLocalEnv(): void {
     "AI_INTEGRATIONS_OPENAI_API_KEY",
     "AI_INTEGRATIONS_OPENAI_BASE_URL",
     "OPENAI_API_KEY",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_PASS",
+    "SMTP_FROM",
+    "SMTP_SECURE",
   ]);
 
   function looksLikePlaceholder(v: string | undefined): boolean {

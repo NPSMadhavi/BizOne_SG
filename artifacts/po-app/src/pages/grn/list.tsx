@@ -10,6 +10,10 @@ import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { useAuth } from "@/contexts/auth-context";
+import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
+import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, fetchDocJson } from "@/components/bulk-email-bar";
+import { generateGRN_PDF } from "@/lib/pdf";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -50,6 +54,7 @@ export default function GrnList() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const currentYear = new Date().getFullYear();
+  const { selectedCompany } = useAuth();
 
   const { data: grns, isLoading } = useQuery({ queryKey: ["grns"], queryFn: fetchGrns });
 
@@ -74,12 +79,18 @@ export default function GrnList() {
     });
   }, [grns, filterMode, filterYear, customFrom, customTo]);
 
+  const getPartyName = (d: Grn) => d.vendorName || "";
+  const bulk = useBulkPartyEmail<Grn>({ allDocs: grns ?? [], dateFiltered: filteredByDate, getPartyName });
+
   const filtered = useMemo(() => filteredByDate.filter((g) => {
+    if (!bulk.matchesParty(g)) return false;
     const term = searchTerm.toLowerCase();
     return g.grnNumber.toLowerCase().includes(term) || String(g.poNumber || "").toLowerCase().includes(term) || g.vendorName.toLowerCase().includes(term);
-  }), [filteredByDate, searchTerm]);
+  }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
+  const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -131,18 +142,24 @@ export default function GrnList() {
         )}
       </div>
 
-      <Card className="p-4 flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by GRN No, PO No, or Vendor..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-        </div>
-      </Card>
+      <BulkEmailBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search by GRN No, PO No, or Vendor..."
+        partyLabel="Vendor"
+        partyFilter={bulk.partyFilter}
+        partyNames={bulk.partyNames}
+        onPartyChange={bulk.onPartyChange}
+        selectedCount={bulk.selectedDocs.length}
+        onSend={() => bulk.setEmailOpen(true)}
+      />
 
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
               <tr>
+                <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filtered, checked)} label="Select all GRNs" />
                 <th className="px-6 py-4 font-medium">GRN Number</th>
                 <th className="px-6 py-4 font-medium">PO Reference</th>
                 <th className="px-6 py-4 font-medium">Vendor</th>
@@ -155,11 +172,11 @@ export default function GrnList() {
             <tbody className="divide-y">
               {isLoading ? (
                 Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i}>{[...Array(7)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
+                  <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-6 py-16 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <ClipboardList className="h-10 w-10 text-muted-foreground/40"/>
                       <p className="font-medium">No GRNs found.</p>
@@ -177,6 +194,7 @@ export default function GrnList() {
                   const receivedCount = grn.items.filter((i) => i.received).length;
                   return (
                     <tr key={grn.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/grn/${grn.id}`)}>
+                      <BulkSelectCell checked={bulk.selectedIds.has(grn.id)} disabled={!bulk.isSendable(grn)} onToggle={(checked) => bulk.toggleRow(grn.id, checked)} label={`Select ${grn.grnNumber}`} />
                       <td className="px-6 py-4 font-medium">{grn.grnNumber}</td>
                       <td className="px-6 py-4 font-medium">{grn.poNumber || "—"}</td>
                       <td className="px-6 py-4">{grn.vendorName}</td>
@@ -195,6 +213,30 @@ export default function GrnList() {
         </div>
         <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
+
+      <ListBulkEmailDialog
+        open={bulk.emailOpen}
+        onOpenChange={bulk.setEmailOpen}
+        companyName={companyName}
+        partyName={bulk.partyFilter !== "all" ? bulk.partyFilter : (bulk.selectedDocs[0]?.vendorName || "vendor")}
+        contactName="Sir/Madam"
+        email=""
+        docLabel="Goods Receipt Notes"
+        numbers={bulk.selectedDocs.map(d => d.grnNumber)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const doc of bulk.selectedDocs) {
+            const full = await fetchDocJson("grn", doc.id).catch(() => doc);
+            const content = await generateGRN_PDF(full, selectedCompany, { returnBase64: true });
+            if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.grnNumber}.`);
+            attachments.push({ filename: `${doc.grnNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async () => {
+          bulk.setSelectedIds(new Set());
+        }}
+      />
     </div>
   );
 }

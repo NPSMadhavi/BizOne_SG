@@ -10,6 +10,13 @@ import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { useAuth } from "@/contexts/auth-context";
+import { useQueryClient } from "@tanstack/react-query";
+import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
+import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent, fetchDocJson } from "@/components/bulk-email-bar";
+import { generateInvoice_PDF } from "@/lib/pdf";
+import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
 
 function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
@@ -48,6 +55,9 @@ export default function InvoiceList() {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const { selectedCompany } = useAuth();
+  const queryClient = useQueryClient();
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
   const { data: docs = [], isLoading } = useListInvoices({
     query: { queryKey: getListInvoicesQueryKey() },
@@ -79,13 +89,19 @@ export default function InvoiceList() {
   }, [docs, filterMode, filterYear, customFrom, customTo]);
 
   // Search on top of date filter
+  const getPartyName = (d: (typeof docs)[number]) => d.customerName || "";
+  const bulk = useBulkPartyEmail<(typeof docs)[number]>({ allDocs: docs, dateFiltered: filteredByDate, getPartyName });
+
   const filtered = useMemo(() =>
     filteredByDate.filter(d => {
+      if (!bulk.matchesParty(d)) return false;
       const t = searchTerm.toLowerCase();
       return d.invNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-    }), [filteredByDate, searchTerm]);
+    }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
+  const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
   // Multi-currency stats from date-filtered set
   const stats = useMemo(() => {
@@ -270,24 +286,24 @@ export default function InvoiceList() {
         </Card>
       </div>
 
-      {/* Table */}
-      <Card>
-        <div className="p-4 border-b">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by INV Number or Customer..."
-              className="pl-9"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
+      <BulkEmailBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search by INV Number or Customer..."
+        partyLabel="Customer"
+        partyFilter={bulk.partyFilter}
+        partyNames={bulk.partyNames}
+        onPartyChange={bulk.onPartyChange}
+        selectedCount={bulk.selectedDocs.length}
+        onSend={() => bulk.setEmailOpen(true)}
+      />
 
+      <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
               <tr>
+                <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filtered, checked)} label="Select all invoices" />
                 <th className="px-6 py-4 font-medium">INV Number</th>
                 <th className="px-6 py-4 font-medium">Sales Order</th>
                 <th className="px-6 py-4 font-medium">Date</th>
@@ -303,14 +319,14 @@ export default function InvoiceList() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {[...Array(9)].map((_, j) => (
+                    {[...Array(10)].map((_, j) => (
                       <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50" />
                       <p>{docs.length === 0 ? "No invoices yet." : "No invoices match your filters."}</p>
@@ -328,6 +344,7 @@ export default function InvoiceList() {
                       className="hover:bg-muted/50 transition-colors cursor-pointer"
                       onClick={() => setLocation(`/invoices/${doc.id}`)}
                     >
+                      <BulkSelectCell checked={bulk.selectedIds.has(doc.id)} disabled={!bulk.isSendable(doc)} onToggle={(checked) => bulk.toggleRow(doc.id, checked)} label={`Select ${doc.invNumber}`} />
                       <td className="px-6 py-4 font-medium">{doc.invNumber}</td>
                       <td className="px-6 py-4 font-mono" onClick={(e) => e.stopPropagation()}>
                         {(doc as any).soNumber ? (
@@ -369,6 +386,36 @@ export default function InvoiceList() {
         </div>
         <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
+
+      <ListBulkEmailDialog
+        open={bulk.emailOpen}
+        onOpenChange={bulk.setEmailOpen}
+        companyName={companyName}
+        partyName={bulk.partyFilter !== "all" ? bulk.partyFilter : (bulk.selectedDocs[0]?.customerName || "customer")}
+        contactName={bulk.selectedDocs.find(d => d.customerContact)?.customerContact || "Sir/Madam"}
+        email={bulk.selectedDocs.find(d => (d as any).customerContactEmail)?.customerContactEmail || ""}
+        docLabel="Tax Invoices"
+        numbers={bulk.selectedDocs.map(d => d.invNumber)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const doc of bulk.selectedDocs) {
+            const full = await fetchDocJson("invoices", doc.id).catch(() => doc);
+            const content = await generateInvoicePdfSmart(
+              doc.id,
+              () => generateInvoice_PDF(full, selectedCompany, settings as any, { returnBase64: true }),
+              { returnBase64: true, filename: `${doc.invNumber}.pdf` },
+            );
+            if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.invNumber}.`);
+            attachments.push({ filename: `${doc.invNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async (recipients) => {
+          await markDocsSent("invoices", bulk.selectedDocs.map(d => d.id), recipients);
+          await queryClient.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
+          bulk.setSelectedIds(new Set());
+        }}
+      />
     </div>
   );
 }

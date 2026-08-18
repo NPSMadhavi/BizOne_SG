@@ -6,11 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileInput, Search, Plus, ArrowUpRight, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileInput, Plus, ArrowUpRight, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
+import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, fetchDocJson } from "@/components/bulk-email-bar";
+import { generateVendorInvoice_PDF } from "@/lib/pdf";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -75,15 +78,21 @@ export default function VendorInvoiceList() {
     });
   }, [pis, filterMode, filterYear, customFrom, customTo]);
 
-  // Apply search on top of date filter
+  const getPartyName = (d: any) => d.vendorName || "";
+  const bulk = useBulkPartyEmail<any>({ allDocs: pis, dateFiltered: filteredByDate, getPartyName });
+
   const filtered = useMemo(() =>
-    filteredByDate.filter(pi =>
-      pi.piNumber.toLowerCase().includes(search.toLowerCase()) ||
-      pi.vendorName.toLowerCase().includes(search.toLowerCase()) ||
-      (pi.poNumbers || "").toLowerCase().includes(search.toLowerCase())
-    ), [filteredByDate, search]);
+    filteredByDate.filter(pi => {
+      if (!bulk.matchesParty(pi)) return false;
+      const t = search.toLowerCase();
+      return pi.piNumber.toLowerCase().includes(t) ||
+        pi.vendorName.toLowerCase().includes(t) ||
+        (pi.poNumbers || "").toLowerCase().includes(t);
+    }), [filteredByDate, search, bulk.partyFilter, bulk.matchesParty]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
+  const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
   // Multi-currency stats from date-filtered set
   const stats = useMemo(() => {
@@ -258,20 +267,19 @@ export default function VendorInvoiceList() {
         </Card>
       </div>
 
-      {/* Table */}
-      <Card>
-        <div className="p-4 border-b">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by PI number, vendor or PO..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-        </div>
+      <BulkEmailBar
+        searchTerm={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by PI number, vendor or PO..."
+        partyLabel="Vendor"
+        partyFilter={bulk.partyFilter}
+        partyNames={bulk.partyNames}
+        onPartyChange={bulk.onPartyChange}
+        selectedCount={bulk.selectedDocs.length}
+        onSend={() => bulk.setEmailOpen(true)}
+      />
 
+      <Card>
         {isLoading ? (
           <div className="p-6 space-y-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
@@ -291,6 +299,7 @@ export default function VendorInvoiceList() {
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
                 <tr>
+                  <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filtered, checked)} label="Select all vendor invoices" />
                   <th className="px-4 py-3 font-medium">Vendor PI #</th>
                   <th className="px-4 py-3 font-medium">Vendor</th>
                   <th className="px-4 py-3 font-medium">Linked PO(s)</th>
@@ -309,6 +318,7 @@ export default function VendorInvoiceList() {
                     className="bg-card hover:bg-muted/30 transition-colors cursor-pointer"
                     onClick={() => setLocation(`/vendor-invoices/${pi.id}`)}
                   >
+                    <BulkSelectCell checked={bulk.selectedIds.has(pi.id)} disabled={!bulk.isSendable(pi)} onToggle={(checked) => bulk.toggleRow(pi.id, checked)} label={`Select ${pi.piNumber}`} />
                     <td className="px-4 py-3 font-medium font-mono">{pi.piNumber}</td>
                     <td className="px-4 py-3">{pi.vendorName}</td>
                     <td className="px-4 py-3 text-muted-foreground">{pi.poNumbers || "—"}</td>
@@ -333,6 +343,30 @@ export default function VendorInvoiceList() {
         )}
         <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
+
+      <ListBulkEmailDialog
+        open={bulk.emailOpen}
+        onOpenChange={bulk.setEmailOpen}
+        companyName={companyName}
+        partyName={bulk.partyFilter !== "all" ? bulk.partyFilter : (bulk.selectedDocs[0]?.vendorName || "vendor")}
+        contactName={bulk.selectedDocs.find(d => d.vendorContact)?.vendorContact || "Sir/Madam"}
+        email={bulk.selectedDocs.map(d => d.vendorEmail || d.vendorContactEmail).find(Boolean) || ""}
+        docLabel="Vendor Invoices"
+        numbers={bulk.selectedDocs.map(d => d.piNumber)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const doc of bulk.selectedDocs) {
+            const full = await fetchDocJson("vendor-invoices", doc.id).catch(() => doc);
+            const content = await generateVendorInvoice_PDF(full, selectedCompany, { returnBase64: true });
+            if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.piNumber}.`);
+            attachments.push({ filename: `${doc.piNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async () => {
+          bulk.setSelectedIds(new Set());
+        }}
+      />
     </div>
   );
 }

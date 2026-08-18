@@ -20,7 +20,7 @@ export const ALL_MODULES = [
   "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt",
   "accounting_expenses",
   "accounting_income",
-  "user_management", "audit_log", "settings",
+  "user_management", "audit_log", "settings", "report_templates",
 ] as const;
 
 /** No modules are pre-selected. Admins must tick every module explicitly. */
@@ -82,6 +82,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   user_management: "User Management",
   audit_log: "Audit Log",
   settings: "Settings",
+  report_templates: "Report Templates",
 };
 
 export interface ModuleGroup {
@@ -140,7 +141,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "system",
     label: "System",
-    modules: ["user_management", "audit_log", "settings"],
+    modules: ["user_management", "audit_log", "settings", "report_templates"],
   },
 ];
 
@@ -148,6 +149,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 const PATH_MODULE_PREFIXES: { prefix: string; module: AppModule }[] = [
   { prefix: "/admin", module: "user_management" },
   { prefix: "/settings", module: "settings" },
+  { prefix: "/report-templates", module: "report_templates" },
   { prefix: "/audit-log", module: "audit_log" },
   { prefix: "/customers", module: "customers" },
   { prefix: "/vendors", module: "vendors" },

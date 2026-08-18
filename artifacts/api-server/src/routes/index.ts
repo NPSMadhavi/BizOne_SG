@@ -40,6 +40,7 @@ import expensesRouter from "./expenses";
 import incomeRouter from "./income";
 import operationsRouter from "./operations";
 import inventoryRouter from "./inventory";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -84,5 +85,6 @@ router.use(expensesRouter);
 router.use(incomeRouter);
 router.use(operationsRouter);
 router.use(inventoryRouter);
+router.use(reportsRouter);
 
 export default router;

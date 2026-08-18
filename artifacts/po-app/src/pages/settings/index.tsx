@@ -84,6 +84,7 @@ export default function Settings() {
       });
       if (!res.ok) throw new Error("Failed to save");
       queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["report-company-data"] });
       toast({ title: "Saved", description: "Company info updated successfully." });
     } catch {
       toast({ title: "Error", description: "Failed to update company info.", variant: "destructive" });
@@ -275,6 +276,7 @@ export default function Settings() {
     updateSettings.mutate({ data: { gstRate: rate } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["report-company-data"] });
         setGstEditing(false);
         toast({ title: "Saved", description: "GST rate updated successfully." });
       },

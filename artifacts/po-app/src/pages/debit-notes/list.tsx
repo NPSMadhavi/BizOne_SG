@@ -4,12 +4,14 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, Pencil, FilePlus, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Eye, Pencil, FilePlus, Calendar, ChevronLeft, ChevronRight, MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
+import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent, fetchDocJson } from "@/components/bulk-email-bar";
+import { generateDebitNote_PDF } from "@/lib/pdf";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -21,6 +23,21 @@ interface DebitNote {
   id: number; dnNumber: string; customerName: string; refInvNumber: string | null;
   issueDate: string | null; currency: string; totalAmount: number; status: string;
   createdByUsername: string | null; isPrivate: boolean; reason: string | null;
+  contactPerson?: string | null; contactEmail?: string | null; emailSentTo?: string | null;
+  items?: any[];
+}
+
+function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
+  if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
+  const emails = emailSentTo.split(",").map(e => e.trim()).filter(Boolean);
+  if (emails.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex items-center gap-1.5" title={emails.join(", ")}>
+      <MailCheck className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+      <span className="truncate max-w-[140px] text-xs text-muted-foreground">{emails[0]}</span>
+      {emails.length > 1 && <Badge variant="secondary" className="text-xs py-0 px-1 shrink-0">+{emails.length - 1}</Badge>}
+    </div>
+  );
 }
 
 function statusBadge(status: string) {
@@ -41,8 +58,7 @@ export default function DebitNoteList() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const qc = useQueryClient();
-  const { toast } = useToast();
-  const { canManage } = useAuth();
+  const { selectedCompany } = useAuth();
   const currentYear = new Date().getFullYear();
 
   const { data = [], isLoading } = useQuery<DebitNote[]>({
@@ -75,14 +91,20 @@ export default function DebitNoteList() {
     });
   }, [data, filterMode, filterYear, customFrom, customTo]);
 
-  const filtered = useMemo(() => filteredByDate.filter(note =>
-    !search.trim() ||
-    note.dnNumber.toLowerCase().includes(search.toLowerCase()) ||
-    note.customerName.toLowerCase().includes(search.toLowerCase()) ||
-    (note.refInvNumber ?? "").toLowerCase().includes(search.toLowerCase())
-  ), [filteredByDate, search]);
+  const getPartyName = (d: DebitNote) => d.customerName || "";
+  const bulk = useBulkPartyEmail<DebitNote>({ allDocs: data, dateFiltered: filteredByDate, getPartyName });
+
+  const filtered = useMemo(() => filteredByDate.filter(note => {
+    if (!bulk.matchesParty(note)) return false;
+    return !search.trim() ||
+      note.dnNumber.toLowerCase().includes(search.toLowerCase()) ||
+      note.customerName.toLowerCase().includes(search.toLowerCase()) ||
+      (note.refInvNumber ?? "").toLowerCase().includes(search.toLowerCase());
+  }), [filteredByDate, search, bulk.partyFilter, bulk.matchesParty]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
+  const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
@@ -133,10 +155,17 @@ export default function DebitNoteList() {
         )}
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input placeholder="Search DN number, customer…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-      </div>
+      <BulkEmailBar
+        searchTerm={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search DN number, customer…"
+        partyLabel="Customer"
+        partyFilter={bulk.partyFilter}
+        partyNames={bulk.partyNames}
+        onPartyChange={bulk.onPartyChange}
+        selectedCount={bulk.selectedDocs.length}
+        onSend={() => bulk.setEmailOpen(true)}
+      />
 
       {isLoading && <div className="text-center py-16 text-gray-400 text-sm">Loading…</div>}
 
@@ -145,25 +174,33 @@ export default function DebitNoteList() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-gray-200 bg-gray-50">
+                <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filtered, checked)} label="Select all debit notes" />
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">DN Number</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Customer</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Ref Invoice</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Date</th>
                 <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Amount</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Sent To</th>
                 <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-16 text-gray-400">
-                    {search || filterMode !== "all" ? "No debit notes match your filters." : "No debit notes yet. Create your first one."}
+                  <td colSpan={9} className="text-center py-16 text-gray-400">
+                    {search || filterMode !== "all" || bulk.partyFilter !== "all" ? "No debit notes match your filters." : "No debit notes yet. Create your first one."}
+                    {search && (
+                      <div className="mt-2">
+                        <Button variant="link" onClick={() => setSearch("")}><Search className="h-4 w-4 mr-1 inline" />Clear search</Button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
               {paginatedItems.map(note => (
                 <tr key={note.id} className={cn("border-b border-gray-100 hover:bg-gray-50/50 transition-colors", note.status === "void" ? "opacity-60" : "")}>
+                  <BulkSelectCell checked={bulk.selectedIds.has(note.id)} disabled={!bulk.isSendable(note)} onToggle={(checked) => bulk.toggleRow(note.id, checked)} label={`Select ${note.dnNumber}`} />
                   <td className="px-4 py-3 font-mono font-semibold text-gray-800">{note.dnNumber}</td>
                   <td className="px-4 py-3 text-gray-700">{note.customerName}</td>
                   <td className="px-4 py-3 font-mono text-gray-500">{note.refInvNumber || "—"}</td>
@@ -172,6 +209,7 @@ export default function DebitNoteList() {
                     {note.currency} {new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2 }).format(note.totalAmount)}
                   </td>
                   <td className="px-4 py-3">{statusBadge(note.status)}</td>
+                  <td className="px-4 py-3"><SentToCell emailSentTo={note.emailSentTo} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/debit-notes/${note.id}`}>
@@ -193,6 +231,32 @@ export default function DebitNoteList() {
           <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
+
+      <ListBulkEmailDialog
+        open={bulk.emailOpen}
+        onOpenChange={bulk.setEmailOpen}
+        companyName={companyName}
+        partyName={bulk.partyFilter !== "all" ? bulk.partyFilter : (bulk.selectedDocs[0]?.customerName || "customer")}
+        contactName={bulk.selectedDocs.find(d => d.contactPerson)?.contactPerson || "Sir/Madam"}
+        email={bulk.selectedDocs.find(d => d.contactEmail)?.contactEmail || ""}
+        docLabel="Debit Notes"
+        numbers={bulk.selectedDocs.map(d => d.dnNumber)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const doc of bulk.selectedDocs) {
+            const full = await fetchDocJson("debit-notes", doc.id).catch(() => doc);
+            const content = await generateDebitNote_PDF({ ...full, items: full.items || [] }, selectedCompany, { returnBase64: true });
+            if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.dnNumber}.`);
+            attachments.push({ filename: `${doc.dnNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async (recipients) => {
+          await markDocsSent("debit-notes", bulk.selectedDocs.map(d => d.id), recipients);
+          await qc.invalidateQueries({ queryKey: ["debit-notes"] });
+          bulk.setSelectedIds(new Set());
+        }}
+      />
     </div>
   );
 }

@@ -80,6 +80,7 @@ const DOC_TYPE_MODULE: Record<string, string> = {
 const PATH_PREFIXES: { prefix: string; module: string }[] = [
   { prefix: "/admin", module: "user_management" },
   { prefix: "/settings", module: "settings" },
+  { prefix: "/report-templates", module: "report_templates" },
   { prefix: "/audit-log", module: "audit_log" },
   { prefix: "/customers", module: "customers" },
   { prefix: "/vendors", module: "vendors" },

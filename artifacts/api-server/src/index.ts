@@ -2,6 +2,7 @@ import "./load-env";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
+import { seedInvoiceReportDefinition } from "./lib/reports/seed.js";
 import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, reconcileStockQuantitiesOnStartup, runStartupMigrations, scrubAccidentalModuleDefaultsOnStartup } from "./lib/startup-backfill.js";
 
 const rawPort = process.env["PORT"];
@@ -20,6 +21,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 runStartupMigrations()
   .then(() => seedIfEmpty())
+  .then(() => seedInvoiceReportDefinition())
   .then(() => scrubAccidentalModuleDefaultsOnStartup())
   .then(() => backfillExpenseJEsOnStartup())
   .then(() => backfillInvoiceJEsOnStartup())

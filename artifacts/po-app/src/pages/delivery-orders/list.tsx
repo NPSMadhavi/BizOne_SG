@@ -10,6 +10,11 @@ import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { useAuth } from "@/contexts/auth-context";
+import { useQueryClient } from "@tanstack/react-query";
+import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
+import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent, fetchDocJson } from "@/components/bulk-email-bar";
+import { generateDO_PDF } from "@/lib/pdf";
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -38,6 +43,8 @@ export default function DeliveryOrderList() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const currentYear = new Date().getFullYear();
+  const { selectedCompany } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: docs, isLoading } = useListDeliveryOrders({
     query: { queryKey: getListDeliveryOrdersQueryKey() },
@@ -64,12 +71,18 @@ export default function DeliveryOrderList() {
     });
   }, [docs, filterMode, filterYear, customFrom, customTo]);
 
+  const getPartyName = (d: (typeof filteredByDate)[number]) => d.customerName || "";
+  const bulk = useBulkPartyEmail<(typeof filteredByDate)[number]>({ allDocs: docs ?? [], dateFiltered: filteredByDate, getPartyName });
+
   const filtered = useMemo(() => filteredByDate.filter((d) => {
+    if (!bulk.matchesParty(d)) return false;
     const t = searchTerm.toLowerCase();
     return d.doNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-  }), [filteredByDate, searchTerm]);
+  }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
+  const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -127,18 +140,24 @@ export default function DeliveryOrderList() {
         )}
       </div>
 
-      <Card className="p-4">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by DO Number or Customer..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-        </div>
-      </Card>
+      <BulkEmailBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search by DO Number or Customer..."
+        partyLabel="Customer"
+        partyFilter={bulk.partyFilter}
+        partyNames={bulk.partyNames}
+        onPartyChange={bulk.onPartyChange}
+        selectedCount={bulk.selectedDocs.length}
+        onSend={() => bulk.setEmailOpen(true)}
+      />
 
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
               <tr>
+                <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filtered, checked)} label="Select all delivery orders" />
                 <th className="px-6 py-4 font-medium">DO Number</th>
                 <th className="px-6 py-4 font-medium">Sales Order</th>
                 <th className="px-6 py-4 font-medium">Date</th>
@@ -152,11 +171,11 @@ export default function DeliveryOrderList() {
             <tbody className="divide-y">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
+                  <tr key={i}>{[...Array(9)].map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full"/></td>)}</tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50"/>
                       <p>No delivery orders found.</p>
@@ -167,6 +186,7 @@ export default function DeliveryOrderList() {
               ) : (
                 paginatedItems.map((doc) => (
                   <tr key={doc.id} className="hover:bg-muted/50 transition-colors">
+                    <BulkSelectCell checked={bulk.selectedIds.has(doc.id)} disabled={!bulk.isSendable(doc)} onToggle={(checked) => bulk.toggleRow(doc.id, checked)} label={`Select ${doc.doNumber}`} />
                     <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setLocation(`/delivery-orders/${doc.id}`)}>{doc.doNumber}</td>
                     <td className="px-6 py-4 font-mono">
                       {(doc as any).soNumber ? (
@@ -225,6 +245,32 @@ export default function DeliveryOrderList() {
         </div>
         <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </Card>
+
+      <ListBulkEmailDialog
+        open={bulk.emailOpen}
+        onOpenChange={bulk.setEmailOpen}
+        companyName={companyName}
+        partyName={bulk.partyFilter !== "all" ? bulk.partyFilter : (bulk.selectedDocs[0]?.customerName || "customer")}
+        contactName={bulk.selectedDocs.find(d => d.customerContact)?.customerContact || "Sir/Madam"}
+        email={bulk.selectedDocs.find(d => (d as any).customerContactEmail)?.customerContactEmail || ""}
+        docLabel="Delivery Orders"
+        numbers={bulk.selectedDocs.map(d => d.doNumber)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const doc of bulk.selectedDocs) {
+            const full = await fetchDocJson("delivery-orders", doc.id).catch(() => doc);
+            const content = await generateDO_PDF(full, selectedCompany, { returnBase64: true });
+            if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.doNumber}.`);
+            attachments.push({ filename: `${doc.doNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async (recipients) => {
+          await markDocsSent("delivery-orders", bulk.selectedDocs.map(d => d.id), recipients);
+          await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
+          bulk.setSelectedIds(new Set());
+        }}
+      />
     </div>
   );
 }

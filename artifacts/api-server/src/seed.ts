@@ -7,8 +7,8 @@ export async function seedRolesForCompany(companyId: number, tx: any = db) {
     { name: "Administrator", actions: ["view", "create", "edit", "delete"], modules: [...APP_ALL_MODULES] },
     { name: "Manager", actions: ["view", "create", "edit"], modules: [...APP_ALL_MODULES] },
     { name: "Employee", actions: ["view"], modules: ["dashboard", "assets", "licenses", "employees", "service_reports"] },
-    { name: "Accountant", actions: ["view", "create", "edit", "delete"], modules: ["dashboard", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs", "accounting_pl", "accounting_cf", "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io", "accounting_wht", "accounting_eci", "accounting_formcs", "accounting_iaf", "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt", "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt", "payroll"] },
-    { name: "Sales User", actions: ["view", "create", "edit"], modules: ["dashboard", "quotations", "sales_orders", "invoices", "customers"] },
+    { name: "Accountant", actions: ["view", "create", "edit", "delete"], modules: ["dashboard", "invoices", "proforma_invoices", "credit_notes", "debit_notes", "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs", "accounting_pl", "accounting_cf", "accounting_gst_f5", "accounting_gst_f7", "accounting_gst_io", "accounting_wht", "accounting_eci", "accounting_formcs", "accounting_iaf", "accounting_ar", "accounting_ar_aging", "accounting_cust_stmt", "accounting_ap", "accounting_ap_aging", "accounting_vendor_stmt", "payroll", "report_templates"] },
+    { name: "Sales User", actions: ["view", "create", "edit"], modules: ["dashboard", "quotations", "sales_orders", "invoices", "customers", "report_templates"] },
   ];
 
   const allPermissions = await tx.select().from(permissionsTable);

@@ -98,6 +98,8 @@ const VendorInvoiceView = lazy(() => import("@/pages/vendor-invoices/view"));
 const Admin    = lazy(() => import("@/pages/admin/index"));
 const Settings = lazy(() => import("@/pages/settings/index"));
 const AuditLog = lazy(() => import("@/pages/admin/audit-log"));
+const ReportTemplateList = lazy(() => import("@/pages/report-templates/list"));
+const ReportDesignerPage = lazy(() => import("@/pages/report-templates/designer"));
 
 const ChartOfAccounts    = lazy(() => import("@/pages/accounting/chart-of-accounts"));
 const JournalEntriesList = lazy(() => import("@/pages/accounting/journal-entries"));
@@ -207,6 +209,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/income/new": "New Income Entry",
   "/admin": "User Management",
   "/settings": "Settings",
+  "/report-templates": "Report Templates",
   "/select-company": "Select Company",
   "/login": "Sign In",
   "/register": "Sign Up",
@@ -455,6 +458,8 @@ function Router() {
           <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
           <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
           <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
+          <Route path="/report-templates/:id/edit">{() => <ProtectedRoute component={ReportDesignerPage} module="report_templates" />}</Route>
+          <Route path="/report-templates">{() => <ProtectedRoute component={ReportTemplateList} module="report_templates" />}</Route>
 
           <Route component={NotFound} />
         </Switch>

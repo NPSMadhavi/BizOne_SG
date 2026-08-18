@@ -1,4 +1,4 @@
-import { useState, useRef, KeyboardEvent, useCallback } from "react";
+import { useState, useRef, KeyboardEvent, useCallback, useEffect } from "react";
 import { Mail, Send, Loader2, Paperclip, X, Sparkles, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,17 +21,30 @@ export interface EmailDocInfo {
   totalAmount: number;
 }
 
+export interface EmailPdfAttachment {
+  filename: string;
+  content: string;
+}
+
 interface EmailSendDialogProps {
   defaultTo?: string;
   defaultSubject: string;
   defaultBody: string;
-  pdfFilename: string;
-  generatePdf: () => Promise<string>;
+  pdfFilename?: string;
+  generatePdf?: () => Promise<string>;
+  /** When set, all generated PDFs are attached (first is the required PDF, rest are extras). */
+  generateAttachments?: () => Promise<EmailPdfAttachment[]>;
+  /** Labels shown in the attachments list. Falls back to pdfFilename. */
+  pdfFilenames?: string[];
   triggerSize?: "default" | "sm" | "lg" | "icon";
   triggerLabel?: string;
   onSuccess?: (recipients: string[]) => void;
   poId?: number;
   docInfo?: EmailDocInfo;
+  /** Controlled dialog (no trigger button). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
 interface EmailContact {
@@ -47,6 +60,14 @@ function isValidEmail(email: string) {
 
 function parseEmails(raw: string): string[] {
   return raw.split(/[,;\s]+/).map(e => e.trim()).filter(e => e.length > 0);
+}
+
+function base64ToBlob(base64: string, contentType: string) {
+  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: contentType || "application/octet-stream" });
 }
 
 async function fetchSuggestions(q: string): Promise<EmailContact[]> {
@@ -74,19 +95,32 @@ export function EmailSendDialog({
   defaultBody,
   pdfFilename,
   generatePdf,
+  generateAttachments,
+  pdfFilenames,
   triggerSize = "default",
   triggerLabel,
   onSuccess,
   poId,
   docInfo,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: EmailSendDialogProps) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
+  const autoFilenames = pdfFilenames?.length ? pdfFilenames : (pdfFilename ? [pdfFilename] : []);
   const [recipients, setRecipients] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState(defaultBody);
   const [sending, setSending] = useState(false);
+  const [sendingLabel, setSendingLabel] = useState("Sending…");
   const [generating, setGenerating] = useState(false);
   const [suggestions, setSuggestions] = useState<EmailContact[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -97,6 +131,7 @@ export function EmailSendDialog({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleOpen = (isOpen: boolean) => {
+    if (sending && !isOpen) return;
     if (isOpen) {
       const initial = parseEmails(defaultTo).filter(isValidEmail);
       setRecipients(initial);
@@ -110,6 +145,22 @@ export function EmailSendDialog({
     }
     setOpen(isOpen);
   };
+
+  // Controlled open (no trigger) does not fire onOpenChange — apply the latest To/subject/body when it opens.
+  useEffect(() => {
+    if (!open) return;
+    const initial = parseEmails(defaultTo).filter(isValidEmail);
+    setRecipients(initial);
+    setInputValue(defaultTo && !initial.length ? defaultTo : "");
+    setSubject(defaultSubject);
+    setBody(defaultBody);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setActiveSuggestion(-1);
+    setExtraFiles([]);
+    // Intentionally only when `open` becomes true, so typing is not overwritten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleFilesPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files || []);
@@ -222,35 +273,53 @@ export function EmailSendDialog({
     }
 
     setSending(true);
+    setSendingLabel(generateAttachments ? "Generating PDFs…" : "Sending…");
     try {
-      const pdfBase64 = await generatePdf();
+      let pdfBase64 = "";
+      let filename = pdfFilename || "document.pdf";
+      const generatedExtras: { filename: string; content: string; contentType: string }[] = [];
 
-      // Convert extra files to base64
-      const extraAttachments = await Promise.all(
-        extraFiles.map(file => new Promise<{ filename: string; content: string; contentType: string }>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            const base64 = dataUrl.split(",")[1];
-            resolve({ filename: file.name, content: base64, contentType: file.type || "application/octet-stream" });
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        }))
-      );
+      if (generateAttachments) {
+        const atts = await generateAttachments();
+        if (!atts.length) throw new Error("No PDFs could be generated.");
+        pdfBase64 = atts[0].content;
+        filename = atts[0].filename;
+        for (const att of atts.slice(1)) {
+          generatedExtras.push({ filename: att.filename, content: att.content, contentType: "application/pdf" });
+        }
+      } else if (generatePdf) {
+        pdfBase64 = await generatePdf();
+      } else {
+        throw new Error("No PDF generator provided.");
+      }
+
+      setSendingLabel("Sending email…");
+
+      const form = new FormData();
+      form.append("to", finalRecipients.join(", "));
+      form.append("subject", subject);
+      form.append("body", body);
+      form.append("filename", filename);
+      if (poId) form.append("poId", String(poId));
+      form.append("pdf", base64ToBlob(pdfBase64, "application/pdf"), filename);
+      for (const att of generatedExtras) {
+        form.append("attachments", base64ToBlob(att.content, att.contentType || "application/pdf"), att.filename);
+      }
+      for (const file of extraFiles) {
+        form.append("attachments", file, file.name);
+      }
 
       const res = await fetch("/api/send-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ to: finalRecipients.join(", "), subject, body, pdfBase64, filename: pdfFilename, extraAttachments, ...(poId ? { poId } : {}) }),
+        body: form,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send email");
+      const data = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) throw new Error(data.error || `Failed to send email (${res.status})`);
       await trackEmails(finalRecipients);
       toast({ title: "Email sent", description: `Email sent to ${finalRecipients.join(", ")}.` });
+      await onSuccess?.(finalRecipients);
       setOpen(false);
-      onSuccess?.(finalRecipients);
     } catch (err: any) {
       toast({ title: "Failed to send", description: err.message || "Email could not be sent.", variant: "destructive" });
     } finally {
@@ -260,18 +329,28 @@ export function EmailSendDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size={triggerSize as any} className="gap-2">
-          <Mail className="h-4 w-4" />
-          {triggerLabel ?? (triggerSize === "sm" ? "Email" : "Send Email")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[560px]">
-        <DialogHeader>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size={triggerSize as any} className="gap-2">
+            <Mail className="h-4 w-4" />
+            {triggerLabel ?? (triggerSize === "sm" ? "Email" : "Send Email")}
+          </Button>
+        </DialogTrigger>
+      )}
+      <DialogContent
+        className="w-[calc(100vw-2rem)] max-w-3xl sm:max-w-3xl max-h-[min(90vh,820px)] flex flex-col gap-3 overflow-hidden p-5 sm:p-6"
+        onPointerDownOutside={e => { if (sending) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (sending) e.preventDefault(); }}
+      >
+        <DialogHeader className="shrink-0 pr-6">
           <DialogTitle>Send Document via Email</DialogTitle>
-          <DialogDescription>The generated PDF will be automatically attached to this email.</DialogDescription>
+          <DialogDescription>
+            {autoFilenames.length > 1
+              ? `${autoFilenames.length} generated PDFs will be attached to this email.`
+              : "The generated PDF will be automatically attached to this email."}
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <div className="min-h-0 flex-1 overflow-y-auto space-y-4 py-1 pr-1">
           <div className="space-y-1.5">
             <Label>To</Label>
             <div className="relative">
@@ -347,7 +426,7 @@ export function EmailSendDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="email-body">Message</Label>
-            <Textarea id="email-body" rows={7} value={body} onChange={e => setBody(e.target.value)} className="resize-none font-mono text-sm" />
+            <Textarea id="email-body" rows={6} value={body} onChange={e => setBody(e.target.value)} className="resize-y min-h-[120px] max-h-[220px] font-mono text-sm" />
             <p className="text-xs text-muted-foreground">Plain text email — sent without HTML formatting.</p>
           </div>
 
@@ -371,13 +450,15 @@ export function EmailSendDialog({
                 onChange={handleFilesPick}
               />
             </div>
-            <div className="space-y-1">
-              {/* Auto-attached PDF */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
-                <Paperclip className="h-4 w-4 shrink-0" />
-                <span className="truncate flex-1">{pdfFilename}</span>
-                <span className="text-xs shrink-0">auto</span>
-              </div>
+            <div className="space-y-1 max-h-44 overflow-y-auto">
+              {/* Auto-attached PDFs */}
+              {autoFilenames.map((name) => (
+                <div key={name} className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
+                  <Paperclip className="h-4 w-4 shrink-0" />
+                  <span className="truncate flex-1">{name}</span>
+                  <span className="text-xs shrink-0">auto</span>
+                </div>
+              ))}
               {/* Extra attachments */}
               {extraFiles.map((file, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 bg-background">
@@ -400,11 +481,20 @@ export function EmailSendDialog({
             </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={sending}>Cancel</Button>
-          <Button onClick={handleSend} disabled={sending || generating} className="gap-2">
-            {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending...</> : <><Send className="h-4 w-4" />Send Email</>}
-          </Button>
+        <DialogFooter className="shrink-0 flex-col sm:flex-col items-stretch gap-2 pt-2 border-t">
+          {sending && (
+            <p className="text-xs text-muted-foreground text-center">
+              {autoFilenames.length > 1
+                ? `Sending ${autoFilenames.length} PDFs via Gmail. Please wait — this can take about a minute.`
+                : "Please wait while the email is sent."}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={sending}>Cancel</Button>
+            <Button onClick={handleSend} disabled={sending || generating} className="gap-2">
+              {sending ? <><Loader2 className="h-4 w-4 animate-spin" />{sendingLabel}</> : <><Send className="h-4 w-4" />Send Email</>}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

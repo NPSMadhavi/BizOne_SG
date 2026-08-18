@@ -27,6 +27,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { generateInvoice_PDF } from "@/lib/pdf";
+import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
@@ -1135,7 +1136,11 @@ export default function InvoiceNew() {
             if (!open) setLocation(`/invoices`);
           }}
           title={`Invoice ${savedDoc.invNumber}`}
-          generatePdf={(opts) => generateInvoice_PDF(savedDoc, selectedCompany, undefined, opts)}
+          generatePdf={(opts) => generateInvoicePdfSmart(
+            savedDoc.id,
+            () => generateInvoice_PDF(savedDoc, selectedCompany, undefined, opts),
+            { ...opts, filename: `${savedDoc.invNumber}.pdf` },
+          )}
           pdfFilename={`${savedDoc.invNumber}.pdf`}
           defaultEmailTo={savedDoc.customerContactEmail || ""}
           defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}

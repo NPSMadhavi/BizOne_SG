@@ -233,6 +233,13 @@ export async function runStartupMigrations(): Promise<void> {
       sql: sql`ALTER TABLE companies ADD COLUMN IF NOT EXISTS gst_reg_no text`,
     },
     {
+      name: "companies.logo_url and domain",
+      sql: sql`
+        ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text;
+        ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain text;
+      `,
+    },
+    {
       name: "vendor_invoices.exchange_rate",
       sql: sql`ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000`,
     },
@@ -609,6 +616,63 @@ export async function runStartupMigrations(): Promise<void> {
       sql: sql`
         ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL;
+      `,
+    },
+    {
+      name: "report designer tables",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS report_definitions (
+          id SERIAL PRIMARY KEY,
+          module TEXT NOT NULL,
+          report_type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          is_system BOOLEAN NOT NULL DEFAULT TRUE,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS report_definitions_report_type_idx
+          ON report_definitions (report_type);
+
+        CREATE TABLE IF NOT EXISTS report_fields (
+          id SERIAL PRIMARY KEY,
+          report_definition_id INTEGER NOT NULL REFERENCES report_definitions(id) ON DELETE CASCADE,
+          field_key TEXT NOT NULL,
+          field_label TEXT NOT NULL,
+          field_group TEXT NOT NULL,
+          data_type TEXT NOT NULL DEFAULT 'string',
+          is_repeatable BOOLEAN NOT NULL DEFAULT FALSE,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS report_fields_definition_key_idx
+          ON report_fields (report_definition_id, field_key);
+
+        CREATE TABLE IF NOT EXISTS report_templates (
+          id SERIAL PRIMARY KEY,
+          company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+          report_definition_id INTEGER NOT NULL REFERENCES report_definitions(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          description TEXT,
+          template_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          is_system_template BOOLEAN NOT NULL DEFAULT FALSE,
+          is_active BOOLEAN NOT NULL DEFAULT FALSE,
+          created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS report_templates_company_def_name_idx
+          ON report_templates (company_id, report_definition_id, lower(name))
+          WHERE company_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS report_templates_one_active_idx
+          ON report_templates (company_id, report_definition_id)
+          WHERE is_active = TRUE AND company_id IS NOT NULL AND is_system_template = FALSE;
+        CREATE UNIQUE INDEX IF NOT EXISTS report_templates_one_system_default_idx
+          ON report_templates (report_definition_id)
+          WHERE is_system_template = TRUE AND company_id IS NULL;
       `,
     },
   ];

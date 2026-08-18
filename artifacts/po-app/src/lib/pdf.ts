@@ -755,9 +755,30 @@ function autoTableRich(
   });
 }
 
-interface LogoData { dataUrl: string; natW: number; natH: number; }
+interface LogoData { dataUrl: string; natW: number; natH: number; format: "PNG" | "JPEG"; }
+
+const _logoCache = new Map<string, LogoData>();
+
+function downscaleLogo(img: HTMLImageElement, maxEdge = 480): LogoData {
+  const natW = img.naturalWidth || 260;
+  const natH = img.naturalHeight || 56;
+  const scale = Math.min(1, maxEdge / Math.max(natW, natH));
+  const w = Math.max(1, Math.round(natW * scale));
+  const h = Math.max(1, Math.round(natH * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { dataUrl: img.src, natW, natH, format: "PNG" };
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  return { dataUrl: canvas.toDataURL("image/jpeg", 0.72), natW: w, natH: h, format: "JPEG" };
+}
 
 async function getLogoData(imageUrl: string): Promise<LogoData> {
+  const cached = _logoCache.get(imageUrl);
+  if (cached) return cached;
   const res = await fetch(imageUrl);
   const blob = await res.blob();
   const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -766,13 +787,14 @@ async function getLogoData(imageUrl: string): Promise<LogoData> {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
-  const { natW, natH } = await new Promise<{ natW: number; natH: number }>((resolve) => {
+  const logo = await new Promise<LogoData>((resolve) => {
     const img = new Image();
-    img.onload = () => resolve({ natW: img.naturalWidth, natH: img.naturalHeight });
-    img.onerror = () => resolve({ natW: 260, natH: 56 });
+    img.onload = () => resolve(downscaleLogo(img));
+    img.onerror = () => resolve({ dataUrl, natW: 260, natH: 56, format: "PNG" });
     img.src = dataUrl;
   });
-  return { dataUrl, natW, natH };
+  _logoCache.set(imageUrl, logo);
+  return logo;
 }
 
 function fitInBox(natW: number, natH: number, maxW: number, maxH: number): { w: number; h: number } {
@@ -884,7 +906,7 @@ function buildDocHeader(
   const marginRight = pageWidth - 14;
 
   const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
-  doc.addImage(logo.dataUrl, "PNG", marginLeft, 12, lw, lh);
+  doc.addImage(logo.dataUrl, logo.format, marginLeft, 12, lw, lh, undefined, "FAST");
 
   doc.setFontSize(26);
   doc.setFont(PDF_FONT, "bold");
@@ -1000,7 +1022,7 @@ function buildDoFooter(doc: jsPDF) {
 
 export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   await ensurePdfFonts();
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   attachPdfFonts(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginLeft = 14;
@@ -1010,7 +1032,7 @@ export async function generatePO_PDF(po: PurchaseOrder, company?: Company | null
 
   const logo = await getLogoData(getLogoUrl(company));
   const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
-  doc.addImage(logo.dataUrl, "PNG", marginLeft, 12, lw, lh);
+  doc.addImage(logo.dataUrl, logo.format, marginLeft, 12, lw, lh, undefined, "FAST");
 
   doc.setFontSize(26);
   doc.setFont(PDF_FONT, "bold");
@@ -1998,7 +2020,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
 // ── DELIVERY ORDER PDF ────────────────────────────────────────────────────────
 
-export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | null, options?: { returnBase64?: boolean; titleOverride?: string }): Promise<string | void> {
   await ensurePdfFonts();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   attachPdfFonts(doc);
@@ -2006,12 +2028,14 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
   const marginLeft = 14;
   const marginRight = pageWidth - 14;
   const info = companyToInfo(company);
+  const title = options?.titleOverride || "DELIVERY ORDER";
+  const isGrn = /receipt|grn/i.test(title);
 
   const logo = await getLogoData(getLogoUrl(company));
-  buildDocHeader(doc, logo, "DELIVERY ORDER", doDoc.doNumber, fmtDate((doDoc as any).issueDate || doDoc.createdAt), doDoc.status, info);
+  buildDocHeader(doc, logo, title, doDoc.doNumber, fmtDate((doDoc as any).issueDate || doDoc.createdAt), doDoc.status, info);
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text("Deliver To:", marginLeft, 67);
+  doc.text(isGrn ? "Vendor:" : "Deliver To:", marginLeft, 67);
 
   renderEntityBlock(doc, doDoc.customerName, [doDoc.customerAddress, doDoc.customerContact ? `Attn: ${doDoc.customerContact}` : null], marginLeft, 74, 85);
 
@@ -2125,7 +2149,7 @@ function drawAccountingHeader(
   const pageWidth = doc.internal.pageSize.getWidth();
   const mL = 14; const mR = pageWidth - 14;
   const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
-  doc.addImage(logo.dataUrl, "PNG", mL, 12, lw, lh);
+  doc.addImage(logo.dataUrl, logo.format, mL, 12, lw, lh, undefined, "FAST");
   doc.setFontSize(22); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(24, 33, 47);
   doc.text(title, mR, 20, { align: "right" });
   doc.setFontSize(9); doc.setFont(PDF_FONT, "normal"); doc.setTextColor(80, 80, 80);
@@ -3513,4 +3537,44 @@ export async function generatePI_PDF(pi: any, company?: Company | null, settings
     poRefNo: pi.qtRefNo || null,
   } as unknown as Invoice;
   return generateInvoice_PDF(invShape, company, settings, { returnBase64: options?.returnBase64, titleOverride: "PROFORMA INVOICE" });
+}
+
+export async function generateVendorInvoice_PDF(pi: any, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  const invShape: Invoice = {
+    ...pi,
+    invNumber: pi.piNumber,
+    customerName: pi.vendorName,
+    customerAddress: pi.vendorAddress || "",
+    customerContact: pi.vendorContact || "",
+    customerContactEmail: pi.vendorEmail || pi.vendorContactEmail || "",
+    issueDate: pi.piDate || pi.createdAt,
+    poRefNo: pi.poNumbers || "",
+    items: pi.items || [],
+    subtotal: Number(pi.subtotal || pi.totalAmount || 0),
+    tax: Number(pi.tax || pi.gstAmount || 0),
+    totalAmount: Number(pi.totalAmount || 0),
+    status: pi.status || "confirmed",
+  } as unknown as Invoice;
+  return generateInvoice_PDF(invShape, company, null, { returnBase64: options?.returnBase64, titleOverride: "VENDOR INVOICE" });
+}
+
+export async function generateGRN_PDF(grn: any, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  const doShape = {
+    doNumber: grn.grnNumber,
+    customerName: grn.vendorName,
+    customerAddress: grn.poNumber ? `PO: ${grn.poNumber}` : "",
+    customerContact: "",
+    deliveryDate: grn.createdAt,
+    createdAt: grn.createdAt,
+    status: grn.status,
+    notes: grn.notes || "",
+    items: (grn.items || []).map((item: any) => ({
+      partNumber: item.partNumber || "",
+      description: item.description || "",
+      qty: item.qty ?? 0,
+      uom: item.uom || "",
+      serialNumbers: item.serialNumbers || "",
+    })),
+  } as unknown as DeliveryOrder;
+  return generateDO_PDF(doShape, company, { returnBase64: options?.returnBase64, titleOverride: "GOODS RECEIPT NOTE" });
 }

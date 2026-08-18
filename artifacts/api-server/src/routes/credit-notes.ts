@@ -268,6 +268,19 @@ router.delete("/credit-notes/:id", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// ── POST /credit-notes/:id/mark-sent ────────────────────────────────────────
+router.post("/credit-notes/:id/mark-sent", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const { sentTo } = req.body;
+  const emailStr = Array.isArray(sentTo) ? sentTo.join(", ") : (sentTo || null);
+  const [doc] = await db.update(creditNotesTable).set({ emailSentTo: emailStr }).where(eq(creditNotesTable.id, id)).returning();
+  if (!doc) { res.status(404).json({ error: "Not found" }); return; }
+  logAudit({ req, action: "update", entityType: "credit_note", entityId: id, entityLabel: `${doc.cnNumber} marked sent` });
+  res.json(parseDoc(doc));
+});
+
 // ── GET /credit-notes/:id/settings ──────────────────────────────────────────
 router.get("/credit-notes/:id/settings", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;

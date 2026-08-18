@@ -12,6 +12,11 @@ import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
+import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
+import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent } from "@/components/bulk-email-bar";
+import { generateSalesOrder_PDF } from "@/lib/pdf";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -24,6 +29,8 @@ export default function SalesOrderList() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; soNumber: string } | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { selectedCompany } = useAuth();
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
   const { data: salesOrders, isLoading: soLoading } = useListSalesOrders({
     query: { queryKey: getListSalesOrdersQueryKey() },
@@ -31,9 +38,12 @@ export default function SalesOrderList() {
 
   const deleteMutation = useDeleteSalesOrder();
 
+  const getPartyName = (d: { customerName?: string }) => d.customerName || "";
+  const bulk = useBulkPartyEmail({ allDocs: salesOrders ?? [], dateFiltered: salesOrders ?? [], getPartyName });
+
   const filteredOrders = useMemo(() => {
     const t = searchTerm.toLowerCase().trim();
-    const all = salesOrders ?? [];
+    const all = (salesOrders ?? []).filter(d => bulk.matchesParty(d));
     if (!t) return all;
     return all.filter(
       (d) =>
@@ -41,9 +51,11 @@ export default function SalesOrderList() {
         d.customerName.toLowerCase().includes(t) ||
         ((d as any).qtNumber || "").toLowerCase().includes(t),
     );
-  }, [salesOrders, searchTerm]);
+  }, [salesOrders, searchTerm, bulk.partyFilter, bulk.matchesParty]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filteredOrders);
+  const { sendable, allSelected, someSelected } = bulk.selectionState(filteredOrders);
+  const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
   const getSoStatusBadge = (status: string) => {
     switch (status) {
@@ -81,20 +93,6 @@ export default function SalesOrderList() {
           <p className="text-muted-foreground mt-1">Manage quotations converted to sales orders and saved orders.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search sales orders..."
-              className="pl-9 pr-9"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            {searchTerm && (
-              <button type="button" onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
           <Link href="/sales-orders/new">
             <Button className="gap-2 w-full sm:w-auto"><Plus className="h-4 w-4" />Create Sales Order</Button>
           </Link>
@@ -107,11 +105,23 @@ export default function SalesOrderList() {
           <h2 className="text-xl font-semibold">Sales Order</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Saved sales orders from the Generate Sales Order form.</p>
         </div>
+        <BulkEmailBar
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          searchPlaceholder="Search sales orders..."
+          partyLabel="Customer"
+          partyFilter={bulk.partyFilter}
+          partyNames={bulk.partyNames}
+          onPartyChange={bulk.onPartyChange}
+          selectedCount={bulk.selectedDocs.length}
+          onSend={() => bulk.setEmailOpen(true)}
+        />
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
                 <tr>
+                  <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filteredOrders, checked)} label="Select all sales orders" />
                   <th className="px-6 py-4 font-medium">Sales Order No.</th>
                   <th className="px-6 py-4 font-medium">Date</th>
                   <th className="px-6 py-4 font-medium">Quotation</th>
@@ -124,17 +134,18 @@ export default function SalesOrderList() {
               <tbody className="divide-y">
                 {soLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 7 }).map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>)}</tr>
+                    <tr key={i}>{Array.from({ length: 8 }).map((_, j) => <td key={j} className="px-6 py-4"><Skeleton className="h-4 w-full" /></td>)}</tr>
                   ))
                 ) : filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
                       {searchTerm ? "No sales orders match your search." : 'No sales orders found. Click "Generate Sales Order" to create one.'}
                     </td>
                   </tr>
                 ) : (
                   paginatedItems.map((doc) => (
                     <tr key={doc.id} className="hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => setLocation(`/sales-orders/${doc.id}`)}>
+                      <BulkSelectCell checked={bulk.selectedIds.has(doc.id)} disabled={!bulk.isSendable(doc)} onToggle={(checked) => bulk.toggleRow(doc.id, checked)} label={`Select ${doc.soNumber}`} />
                       <td className="px-6 py-4 font-medium font-mono">{doc.soNumber}</td>
                       <td className="px-6 py-4">{fmtDate((doc as any).issueDate || doc.createdAt)}</td>
                       <td className="px-6 py-4 font-mono text-muted-foreground">{(doc as any).qtNumber || "—"}</td>
@@ -160,6 +171,31 @@ export default function SalesOrderList() {
           <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </Card>
       </div>
+
+      <ListBulkEmailDialog
+        open={bulk.emailOpen}
+        onOpenChange={bulk.setEmailOpen}
+        companyName={companyName}
+        partyName={bulk.partyFilter !== "all" ? bulk.partyFilter : (bulk.selectedDocs[0]?.customerName || "customer")}
+        contactName={bulk.selectedDocs.find(d => d.customerContact)?.customerContact || "Sir/Madam"}
+        email={bulk.selectedDocs.find(d => (d as any).customerContactEmail)?.customerContactEmail || ""}
+        docLabel="Sales Orders"
+        numbers={bulk.selectedDocs.map(d => d.soNumber)}
+        generateAttachments={async () => {
+          const attachments: { filename: string; content: string }[] = [];
+          for (const doc of bulk.selectedDocs) {
+            const content = await generateSalesOrder_PDF(doc as any, selectedCompany, settings as any, { returnBase64: true });
+            if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.soNumber}.`);
+            attachments.push({ filename: `${doc.soNumber}.pdf`, content });
+          }
+          return attachments;
+        }}
+        onSuccess={async (recipients) => {
+          await markDocsSent("sales-orders", bulk.selectedDocs.map(d => d.id), recipients);
+          await queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
+          bulk.setSelectedIds(new Set());
+        }}
+      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>

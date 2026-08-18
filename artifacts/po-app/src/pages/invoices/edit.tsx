@@ -31,6 +31,7 @@ import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { generateInvoice_PDF } from "@/lib/pdf";
+import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
 import { useAuth } from "@/contexts/auth-context";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
@@ -1019,7 +1020,11 @@ export default function InvoiceEdit() {
           if (!open) setLocation(`/invoices`);
         }}
         title={doc ? `Invoice ${doc.invNumber}` : "Invoice Preview"}
-        generatePdf={(opts) => generateInvoice_PDF(doc!, selectedCompany, docSettings as any, opts)}
+        generatePdf={(opts) => generateInvoicePdfSmart(
+          doc?.id,
+          () => generateInvoice_PDF(doc!, selectedCompany, docSettings as any, opts),
+          { ...opts, filename: doc ? `${doc.invNumber}.pdf` : "invoice.pdf" },
+        )}
         pdfFilename={doc ? `${doc.invNumber}.pdf` : "invoice.pdf"}
         defaultEmailTo={(doc as any)?.customerContactEmail || ""}
         defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
