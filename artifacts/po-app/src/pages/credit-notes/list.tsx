@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, Pencil, FileMinus, Calendar, ChevronLeft, ChevronRight, MailCheck } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Calendar, ChevronLeft, ChevronRight, MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
@@ -108,12 +108,9 @@ export default function CreditNoteList() {
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
-      <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
+      <div className="flex items-end justify-between flex-wrap gap-4 pb-4">
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
-          <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2">
-            <FileMinus className="h-6 w-6 text-gray-700" /> Credit Notes
-          </h1>
+          <h1 className="text-2xl font-bold text-[#2563EB]">Credit Notes</h1>
           <p className="text-sm text-gray-500 mt-0.5">Manual credit notes issued to customers</p>
         </div>
         <Link href="/credit-notes/new">

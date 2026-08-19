@@ -357,6 +357,15 @@ export default function PurchaseOrderList() {
         defaultSubject={emailSubject}
         defaultBody={emailBody}
         pdfFilenames={poNumbers.map(n => `${n}.pdf`)}
+        docInfo={{
+          docType: "Purchase Order",
+          docNumber: poNumbers.join(", "),
+          customerName: vendorLabel,
+          companyName,
+          items: poNumbers.map(n => ({ description: n })),
+          currency: (selectedPOs[0] as any)?.currency || "SGD",
+          totalAmount: selectedPOs.reduce((s, p) => s + Number(p.totalAmount || 0), 0),
+        }}
         generateAttachments={async () => {
           const attachments: { filename: string; content: string }[] = [];
           for (const po of selectedPOs) {

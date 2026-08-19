@@ -11,6 +11,10 @@ export const authMobilePasswordInputClass =
 
 export const authMobileLabelClass = "text-[0.9rem] font-semibold text-[#101828]";
 
+export function RequiredMark() {
+  return <span className="text-red-500"> *</span>;
+}
+
 interface AuthMobileShellProps {
   title: string;
   subtitle: string;

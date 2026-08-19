@@ -256,7 +256,7 @@ export default function CreditNoteNew() {
 
   return (
     <div className="max-w-[1600px] mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
-      <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+      <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-4">
           <Button
             type="button"
@@ -268,7 +268,6 @@ export default function CreditNoteNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
             <h1 className="text-2xl font-bold text-[#2563EB]">New Credit Note</h1>
           </div>
         </div>
@@ -364,7 +363,7 @@ export default function CreditNoteNew() {
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reason for Credit</FormLabel>
+                    <FormLabel>Reason for Return</FormLabel>
                     <FormControl><Textarea {...field} rows={2} placeholder="e.g. Returned goods, billing error, price adjustment…" /></FormControl>
                   </FormItem>
                 )} />

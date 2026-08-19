@@ -3275,7 +3275,7 @@ export async function generateCreditNote_PDF(
   let tableStartY = entityBottom + 10;
   if (cn.reason) {
     doc.setFontSize(9); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text("Reason for Credit:", marginLeft, tableStartY);
+    doc.text("Reason for Return:", marginLeft, tableStartY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
     const reasonLines = doc.splitTextToSize(cn.reason, marginRight - marginLeft);
     doc.text(reasonLines, marginLeft, tableStartY + 5);
@@ -3424,7 +3424,7 @@ export async function generateDebitNote_PDF(
   let tableStartY = entityBottom + 10;
   if (dn.reason) {
     doc.setFontSize(9); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text("Reason for Debit:", marginLeft, tableStartY);
+    doc.text("Reason for Return:", marginLeft, tableStartY);
     doc.setFont(PDF_FONT, "normal"); doc.setTextColor(60, 60, 60);
     const reasonLines = doc.splitTextToSize(dn.reason, marginRight - marginLeft);
     doc.text(reasonLines, marginLeft, tableStartY + 5);

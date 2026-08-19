@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { FilePlus, Edit, ArrowLeft, Printer, Ban, Lock } from "lucide-react";
+import { Edit, ArrowLeft, Printer, Ban, Lock } from "lucide-react";
 import { useState } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
@@ -94,7 +94,6 @@ export default function DebitNoteView() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <FilePlus className="h-6 w-6 text-gray-700" />
           <h1 className="text-2xl font-bold text-[#2563EB]">{doc.dnNumber}</h1>
           {doc.isPrivate && <Lock className="h-4 w-4 text-gray-400" />}
           {statusBadge(doc.status)}
@@ -132,7 +131,7 @@ export default function DebitNoteView() {
       {/* Info cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-sm text-gray-600">Customer</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm text-gray-600">Vendor</CardTitle></CardHeader>
           <CardContent className="space-y-1.5">
             <p className="font-semibold text-gray-900">{doc.customerName}</p>
             {doc.customerAddress && <p className="text-sm text-gray-600 whitespace-pre-wrap">{doc.customerAddress}</p>}
@@ -153,7 +152,7 @@ export default function DebitNoteView() {
             </dl>
             {doc.reason && (
               <div className="mt-3 pt-3 border-t border-gray-100">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Reason for Credit</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Reason for Return</p>
                 <p className="text-sm text-gray-700">{doc.reason}</p>
               </div>
             )}

@@ -10,6 +10,7 @@ import {
   User,
 } from "lucide-react";
 import logo from "@assets/bizone_logo_optimized.webp";
+import { RequiredMark } from "@/components/auth/AuthMobileShell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -80,7 +81,7 @@ export function AuthFormPanel({
           <form onSubmit={signInForm.handleSubmit(onSignIn)} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="signin-email" className="text-sm font-semibold text-[#111827]">
-                Email Address
+                Email Address<RequiredMark />
               </Label>
               <div className="relative">
                 <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -100,7 +101,7 @@ export function AuthFormPanel({
 
             <div className="space-y-2">
               <Label htmlFor="signin-password" className="text-sm font-semibold text-[#111827]">
-                Password
+                Password<RequiredMark />
               </Label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -174,7 +175,7 @@ export function AuthFormPanel({
           <form onSubmit={signUpForm.handleSubmit(onSignUp)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="signup-full-name" className="text-sm font-semibold text-[#111827]">
-                Full Name
+                Full Name<RequiredMark />
               </Label>
               <div className="relative">
                 <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -193,7 +194,7 @@ export function AuthFormPanel({
 
             <div className="space-y-2">
               <Label htmlFor="signup-email" className="text-sm font-semibold text-[#111827]">
-                Email Address
+                Email Address<RequiredMark />
               </Label>
               <div className="relative">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -213,7 +214,7 @@ export function AuthFormPanel({
 
             <div className="space-y-2">
               <Label htmlFor="signup-phone" className="text-sm font-semibold text-[#111827]">
-                Phone Number
+                Phone Number<RequiredMark />
               </Label>
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -233,7 +234,7 @@ export function AuthFormPanel({
 
             <div className="space-y-2">
               <Label htmlFor="signup-password" className="text-sm font-semibold text-[#111827]">
-                Password
+                Password<RequiredMark />
               </Label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -261,7 +262,7 @@ export function AuthFormPanel({
 
             <div className="space-y-2">
               <Label htmlFor="signup-confirm-password" className="text-sm font-semibold text-[#111827]">
-                Confirm Password
+                Confirm Password<RequiredMark />
               </Label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />

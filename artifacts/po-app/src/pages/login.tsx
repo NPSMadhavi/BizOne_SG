@@ -9,6 +9,7 @@ import { markBrowserSessionLive } from "@/lib/browser-session";
 import {
   AuthMobileShell,
   AuthSlideDots,
+  RequiredMark,
   authMobileInputClass,
   authMobileLabelClass,
   authMobilePasswordInputClass,
@@ -149,7 +150,7 @@ export default function Login() {
   const loginForm = (
     <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Email Address*</span>
+        <span className={authMobileLabelClass}>Email Address<RequiredMark /></span>
         <input
           type="email"
           name="email"
@@ -163,7 +164,7 @@ export default function Login() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Password*</span>
+        <span className={authMobileLabelClass}>Password<RequiredMark /></span>
         <div className="relative flex items-center">
           <input
             type={showPassword ? "text" : "password"}

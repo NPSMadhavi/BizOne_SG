@@ -150,6 +150,15 @@ export function ListBulkEmailDialog({
       pdfFilenames={numbers.map(n => `${n}.pdf`)}
       generateAttachments={generateAttachments}
       onSuccess={onSuccess}
+      docInfo={{
+        docType: plural,
+        docNumber: numbers.join(", "),
+        customerName: partyName,
+        companyName,
+        items: numbers.map(n => ({ description: n })),
+        currency: "SGD",
+        totalAmount: 0,
+      }}
     />
   );
 }

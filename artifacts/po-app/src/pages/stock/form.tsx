@@ -336,15 +336,44 @@ export default function StockItemFormPage() {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>
-              Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              placeholder="Item name"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className={`space-y-1.5 ${form.type !== "product" ? "sm:col-span-2" : ""}`}>
+              <Label>
+                Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                placeholder="Item name"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            {form.type === "product" && (
+              <div className="space-y-1.5">
+                <Label>Warehouse</Label>
+                <Select
+                  value={selectedWarehouseId || undefined}
+                  onValueChange={(v) => setForm((f) => ({ ...f, warehouseId: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={warehouseOptions.length ? "Select warehouse" : "No warehouse found"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouseOptions.map((w) => (
+                      <SelectItem key={w.id} value={String(w.id)}>
+                        {w.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  {isEdit
+                    ? "Quantity changes are booked in this warehouse."
+                    : "Opening stock quantity is added to this warehouse."}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -411,34 +440,6 @@ export default function StockItemFormPage() {
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
           </div>
-
-          {form.type === "product" && (
-            <div className="space-y-1.5">
-              <Label>Warehouse</Label>
-              <Select
-                value={selectedWarehouseId || undefined}
-                onValueChange={(v) => setForm((f) => ({ ...f, warehouseId: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={warehouseOptions.length ? "Select warehouse" : "No warehouse found"}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {warehouseOptions.map((w) => (
-                    <SelectItem key={w.id} value={String(w.id)}>
-                      {w.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">
-                {isEdit
-                  ? "Quantity changes are booked in this warehouse."
-                  : "Opening stock quantity is added to this warehouse."}
-              </p>
-            </div>
-          )}
 
           <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
             <div className="flex-1">

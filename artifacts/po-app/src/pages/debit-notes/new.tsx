@@ -42,7 +42,7 @@ const itemSchema = z.object({
 });
 
 const schema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, "Vendor name is required"),
   customerAddress: z.string().default(""),
   contactPerson: z.string().default(""),
   contactEmail: z.string().default(""),
@@ -257,7 +257,7 @@ export default function DebitNoteNew() {
 
   return (
     <div className="max-w-[1600px] mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
-      <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+      <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-4">
           <Button
             type="button"
@@ -269,7 +269,6 @@ export default function DebitNoteNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
             <h1 className="text-2xl font-bold text-[#2563EB]">New Debit Note</h1>
           </div>
         </div>
@@ -288,28 +287,29 @@ export default function DebitNoteNew() {
           {/* Header */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Customer</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">Vendor</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex gap-2 items-end">
                   <FormField control={form.control} name="customerName" render={({ field }) => (
                     <FormItem className="flex-1">
-                      <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input {...field} placeholder="Customer name" /></FormControl>
+                      <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} placeholder="Vendor name" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <DirectoryPickerButton type="customer" onSelect={v => {
+                  <DirectoryPickerButton type="vendor" onSelect={v => {
                     form.setValue("customerName", v.name);
-                    form.setValue("customerAddress", v.address || "");
+                    form.setValue("customerAddress", v.fullAddress || v.address || "");
                     form.setValue("contactPerson", v.contactPerson || "");
                     form.setValue("contactEmail", v.contactEmail || "");
                     if (v.effectiveGstRate !== undefined) form.setValue("taxRate", v.effectiveGstRate);
+                    if (v.currency) form.setValue("currency", v.currency);
                   }} />
                 </div>
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>
-                    <FormControl><Textarea {...field} rows={3} placeholder="Customer address" /></FormControl>
+                    <FormControl><Textarea {...field} rows={3} placeholder="Vendor address" /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
@@ -365,7 +365,7 @@ export default function DebitNoteNew() {
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reason for Credit</FormLabel>
+                    <FormLabel>Reason for Return</FormLabel>
                     <FormControl><Textarea {...field} rows={2} placeholder="e.g. Returned goods, billing error, price adjustment…" /></FormControl>
                   </FormItem>
                 )} />

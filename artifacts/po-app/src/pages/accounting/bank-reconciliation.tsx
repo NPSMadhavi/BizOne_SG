@@ -1736,14 +1736,14 @@ export default function BankReconciliation() {
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
               {/* Main Content Area */}
               <div className="xl:col-span-3 space-y-6 min-w-0">
-                {/* Filters Bar — 1 line when wide (100%), 2 lines when tight (e.g. 150% zoom) */}
-                <div className="@container min-w-0">
-                  <div className="flex flex-col gap-3 bg-card p-3 sm:p-4 rounded-xl border shadow-sm @[700px]:flex-row @[700px]:items-center @[700px]:justify-between @[700px]:gap-4">
-                    <div className="flex items-center gap-3 min-w-0 flex-wrap @[700px]:flex-nowrap">
+                {/* Filters Bar */}
+                <div className="min-w-0">
+                  <div className="grid grid-cols-2 gap-3 items-start bg-card p-3 sm:p-4 rounded-xl border shadow-sm">
+                    <div className="flex flex-col gap-2 min-w-0">
                       <select
                         value={selectedAccount}
                         onChange={(e) => setSelectedAccount(e.target.value)}
-                        className="h-9 min-w-[160px] w-[200px] max-w-full rounded-md border border-input bg-background px-2 text-sm font-medium shadow-sm focus:outline-none"
+                        className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm focus:outline-none"
                       >
                         {bankAccounts.length > 0 ? (
                           bankAccounts.map(a => (
@@ -1753,45 +1753,44 @@ export default function BankReconciliation() {
                           <option value="">No Bank Accounts Found</option>
                         )}
                       </select>
-
-                      <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                        <div className="w-[132px]">
-                          <SyncBridgeDatePicker
-                            value={dateFrom}
-                            onChange={setDateFrom}
-                            placeholder="From"
-                            max={dateTo || undefined}
-                            className="h-9"
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0">to</span>
-                        <div className="w-[132px]">
-                          <SyncBridgeDatePicker
-                            value={dateTo}
-                            onChange={setDateTo}
-                            placeholder="To"
-                            min={dateFrom || undefined}
-                            className="h-9"
-                          />
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => setTransactions([])}
+                          className="h-9 shrink-0 px-3 text-sm text-rose-600 border-rose-200 hover:bg-rose-50"
+                        >
+                          Clear Statement
+                        </Button>
+                        <Button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="bg-[#2563EB] hover:bg-[#1D4ED8] gap-1.5 h-9 shrink-0 overflow-hidden px-3 text-sm inline-flex items-center justify-center"
+                        >
+                          <Upload className="h-4 w-4 shrink-0" />
+                          <span>Upload Statement</span>
+                        </Button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        variant="outline"
-                        onClick={() => setTransactions([])}
-                        className="h-9 shrink-0 whitespace-nowrap px-3 text-sm text-rose-600 border-rose-200 hover:bg-rose-50"
-                      >
-                        Clear Statement
-                      </Button>
-                      <Button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="bg-[#2563EB] hover:bg-[#1D4ED8] gap-1.5 h-9 shrink-0 whitespace-nowrap px-3 text-sm"
-                      >
-                        <Upload className="h-4 w-4 shrink-0" />
-                        Upload Statement
-                      </Button>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <SyncBridgeDatePicker
+                          value={dateFrom}
+                          onChange={setDateFrom}
+                          placeholder="From"
+                          max={dateTo || undefined}
+                          className="h-9"
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">to</span>
+                      <div className="flex-1 min-w-0">
+                        <SyncBridgeDatePicker
+                          value={dateTo}
+                          onChange={setDateTo}
+                          placeholder="To"
+                          min={dateFrom || undefined}
+                          className="h-9"
+                        />
+                      </div>
                     </div>
                     <input
                       type="file"

@@ -27,6 +27,7 @@ async function seedOneDocumentType(cfg: (typeof DOCUMENT_REPORT_TYPES)[number]):
     .limit(1);
 
   let definition = existing[0];
+  let createdDefinition = false;
   if (!definition) {
     const [created] = await db
       .insert(reportDefinitionsTable)
@@ -40,6 +41,7 @@ async function seedOneDocumentType(cfg: (typeof DOCUMENT_REPORT_TYPES)[number]):
       })
       .returning();
     definition = created;
+    createdDefinition = true;
   } else {
     await db
       .update(reportDefinitionsTable)
@@ -108,6 +110,7 @@ async function seedOneDocumentType(cfg: (typeof DOCUMENT_REPORT_TYPES)[number]):
   const templateDescription = `System default ${cfg.name.toLowerCase()} layout matching the BizOne document. Company data is bound at print time.`;
 
   if (!systemTemplate) {
+    if (!createdDefinition) return;
     await db.insert(reportTemplatesTable).values({
       companyId: null,
       reportDefinitionId: definition.id,

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, debitNotesTable, usersTable, customersTable, settingsTable } from "@workspace/db";
+import { db, debitNotesTable, usersTable, vendorsTable, settingsTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
@@ -54,13 +54,13 @@ async function withUsernames(docs: any[]): Promise<any[]> {
   return docs.map(d => ({ ...d, createdByUsername: usernameMap[d.createdBy] || null }));
 }
 
-async function upsertCustomer(companyId: number, name: string, address?: string | null, contactPerson?: string | null, contactEmail?: string | null) {
+async function upsertVendor(companyId: number, name: string, address?: string | null, contactPerson?: string | null, contactEmail?: string | null) {
   if (!name?.trim()) return;
-  const existing = await db.select({ id: customersTable.id }).from(customersTable)
-    .where(and(eq(customersTable.companyId, companyId), ilike(customersTable.name, name.trim())))
+  const existing = await db.select({ id: vendorsTable.id }).from(vendorsTable)
+    .where(and(eq(vendorsTable.companyId, companyId), ilike(vendorsTable.name, name.trim())))
     .limit(1);
   if (existing.length === 0) {
-    await db.insert(customersTable).values({ companyId, name: name.trim(), address: address || null, contactPerson: contactPerson || null, contactEmail: contactEmail || null });
+    await db.insert(vendorsTable).values({ companyId, name: name.trim(), address: address || null, contactPerson: contactPerson || null, contactEmail: contactEmail || null });
   }
 }
 
@@ -113,7 +113,7 @@ router.post("/debit-notes", async (req, res): Promise<void> => {
     status,
   } = req.body;
 
-  if (!customerName?.trim()) { res.status(400).json({ error: "Customer name is required" }); return; }
+  if (!customerName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
 
   const dnNumber = await nextDocNumber("dn", companyId);
 
@@ -143,7 +143,7 @@ router.post("/debit-notes", async (req, res): Promise<void> => {
     createdBy: userId,
   }).returning();
 
-  await upsertCustomer(companyId, customerName, customerAddress, contactPerson, contactEmail);
+  await upsertVendor(companyId, customerName, customerAddress, contactPerson, contactEmail);
   logAudit({ req, action: "create", entityType: "debit_note", entityId: doc.id, entityLabel: doc.dnNumber });
   res.status(201).json(parseDoc(doc));
 });
@@ -193,7 +193,7 @@ router.put("/debit-notes/:id", async (req, res): Promise<void> => {
     status,
   } = req.body;
 
-  if (!customerName?.trim()) { res.status(400).json({ error: "Customer name is required" }); return; }
+  if (!customerName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
 
   const [doc] = await db.update(debitNotesTable).set({
     customerName: customerName.trim(),
@@ -216,7 +216,7 @@ router.put("/debit-notes/:id", async (req, res): Promise<void> => {
     status: status === "confirmed" ? "confirmed" : (status === "void" ? "void" : "draft"),
   }).where(eq(debitNotesTable.id, id)).returning();
 
-  await upsertCustomer(existing.companyId, customerName, customerAddress, contactPerson, contactEmail);
+  await upsertVendor(existing.companyId, customerName, customerAddress, contactPerson, contactEmail);
   logAudit({ req, action: "update", entityType: "debit_note", entityId: doc.id, entityLabel: doc.dnNumber });
   res.json(parseDoc(doc));
 });

@@ -51,6 +51,9 @@ export default function ReportTemplateList() {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [creating, setCreating] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [setAsFor, setSetAsFor] = useState<ReportTemplate | null>(null);
+  const [setAsTemplateId, setSetAsTemplateId] = useState("");
+  const [settingAs, setSettingAs] = useState(false);
 
   const { data: definitions = [] } = useQuery({
     queryKey: ["report-definitions"],
@@ -98,13 +101,50 @@ export default function ReportTemplateList() {
     }
   };
 
-  const handleActivate = async (tpl: ReportTemplate) => {
+  const setAsChoices = useMemo(() => {
+    if (!setAsFor) return [];
+    return rows.filter((t) => t.reportDefinitionId === setAsFor.reportDefinitionId);
+  }, [rows, setAsFor]);
+
+  const openSetAs = (tpl: ReportTemplate) => {
+    const sameType = rows.filter((t) => t.reportDefinitionId === tpl.reportDefinitionId);
+    const inUse = sameType.find((t) => t.isActive && !t.isSystemTemplate)
+      || sameType.find((t) => t.isSystemTemplate)
+      || tpl;
+    setSetAsFor(tpl);
+    setSetAsTemplateId(String(inUse.id));
+  };
+
+  const handleSetAs = async () => {
+    const chosen = rows.find((t) => String(t.id) === setAsTemplateId);
+    if (!chosen) return;
+    setSettingAs(true);
     try {
-      await setActiveReportTemplate(tpl.id);
-      toast({ title: "Active template updated", description: `${tpl.name} will be used for future ${tpl.reportTypeName || "documents"}.` });
+      if (chosen.isSystemTemplate) {
+        const actives = rows.filter(
+          (t) => t.reportDefinitionId === chosen.reportDefinitionId && t.isActive && !t.isSystemTemplate,
+        );
+        for (const active of actives) {
+          await updateReportTemplate(active.id, { isActive: false });
+        }
+        try {
+          await setActiveReportTemplate(chosen.id);
+        } catch {
+          // Deactivating custom templates already falls back to the system default.
+        }
+      } else {
+        await setActiveReportTemplate(chosen.id);
+      }
+      toast({
+        title: "Template set",
+        description: `${chosen.name} will be used when generating ${chosen.reportTypeName || "this document"}.`,
+      });
+      setSetAsFor(null);
       refresh();
     } catch (err: any) {
-      toast({ title: "Could not set active", description: err.message, variant: "destructive" });
+      toast({ title: "Could not set template", description: err.message, variant: "destructive" });
+    } finally {
+      setSettingAs(false);
     }
   };
 
@@ -112,7 +152,7 @@ export default function ReportTemplateList() {
     if (!deleteId) return;
     try {
       const tpl = rows.find((t) => t.id === deleteId);
-      if (tpl?.isActive) {
+      if (tpl?.isActive && !tpl.isSystemTemplate) {
         await updateReportTemplate(deleteId, { isActive: false });
       }
       await deleteReportTemplate(deleteId);
@@ -181,12 +221,12 @@ export default function ReportTemplateList() {
                                 <Copy className="h-4 w-4 mr-2" />Duplicate
                               </DropdownMenuItem>
                             )}
-                            {canEdit && !tpl.isSystemTemplate && !tpl.isActive && (
-                              <DropdownMenuItem onClick={() => handleActivate(tpl)}>
-                                <Star className="h-4 w-4 mr-2" />Set Active
+                            {canEdit && (
+                              <DropdownMenuItem onClick={() => openSetAs(tpl)}>
+                                <Star className="h-4 w-4 mr-2" />Set As
                               </DropdownMenuItem>
                             )}
-                            {canDelete && !tpl.isSystemTemplate && (
+                            {canDelete && (
                               <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(tpl.id)}>
                                 <Trash2 className="h-4 w-4 mr-2" />Delete
                               </DropdownMenuItem>
@@ -273,13 +313,55 @@ export default function ReportTemplateList() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={setAsFor != null} onOpenChange={(open) => { if (!open) setSetAsFor(null); }}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Set As</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Choose which {setAsFor?.reportTypeName || "document"} template to use when generating PDFs.
+          </p>
+          <div className="space-y-2">
+            <Label>Template</Label>
+            <Select value={setAsTemplateId} onValueChange={setSetAsTemplateId}>
+              <SelectTrigger><SelectValue placeholder="Select a template" /></SelectTrigger>
+              <SelectContent className="max-h-[11rem]">
+                <SelectGroup>
+                  <SelectLabel>System default</SelectLabel>
+                  {setAsChoices.filter((t) => t.isSystemTemplate).map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Custom</SelectLabel>
+                  {setAsChoices.filter((t) => !t.isSystemTemplate).length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">No custom templates yet</div>
+                  ) : (
+                    setAsChoices.filter((t) => !t.isSystemTemplate).map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.name}{t.isActive ? " (Active)" : ""}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSetAsFor(null)}>Cancel</Button>
+            <Button disabled={!setAsTemplateId || settingAs} onClick={handleSetAs}>
+              {settingAs ? "Saving…" : "Apply"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={deleteId != null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this template?</AlertDialogTitle>
             <AlertDialogDescription>
-              This cannot be undone. System default templates cannot be deleted.
-              If this template is Active, printing will fall back to the system default.
+              This cannot be undone. Printing will use another template of this type, or a new one you create.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

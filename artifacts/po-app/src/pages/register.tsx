@@ -11,6 +11,7 @@ import { clearBrowserSessionLive } from "@/lib/browser-session";
 import {
   AuthMobileShell,
   AuthProgressDots,
+  RequiredMark,
   authMobileLabelClass,
 } from "@/components/auth/AuthMobileShell";
 import logo from "@assets/bizone_logo_optimized.webp";
@@ -252,7 +253,7 @@ export default function Register() {
   const personalFormMobile = (
     <form className="flex flex-col gap-4" onSubmit={handleNext}>
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Email*</span>
+        <span className={authMobileLabelClass}>Email<RequiredMark /></span>
         <input
           type="email"
           name="email"
@@ -266,7 +267,7 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Full Name*</span>
+        <span className={authMobileLabelClass}>Full Name<RequiredMark /></span>
         <input
           type="text"
           name="full_name"
@@ -280,7 +281,7 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Phone Number*</span>
+        <span className={authMobileLabelClass}>Phone Number<RequiredMark /></span>
         <input
           type="tel"
           name="phone_number"
@@ -294,7 +295,7 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Password*</span>
+        <span className={authMobileLabelClass}>Password<RequiredMark /></span>
         <div className="relative flex items-center">
           <input
             type={showPassword ? "text" : "password"}
@@ -318,7 +319,7 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Confirm Password*</span>
+        <span className={authMobileLabelClass}>Confirm Password<RequiredMark /></span>
         <div className="relative flex items-center">
           <input
             type={showConfirm ? "text" : "password"}
@@ -365,7 +366,7 @@ export default function Register() {
     <form className="flex flex-col gap-4" onSubmit={handleSignUp}>
       <div className="grid grid-cols-2 gap-3">
         <label className="flex min-w-0 flex-col gap-2">
-          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Name*</span>
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Name<RequiredMark /></span>
           <input
             type="text"
             name="company_name"
@@ -378,7 +379,7 @@ export default function Register() {
         </label>
 
         <label className="flex min-w-0 flex-col gap-2">
-          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Domain*</span>
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Domain<RequiredMark /></span>
           <input
             type="text"
             name="company_domain"
@@ -392,7 +393,7 @@ export default function Register() {
       </div>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Email*</span>
+        <span className={authMobileLabelClass}>Email<RequiredMark /></span>
         <input
           type="email"
           name="company_email"
@@ -418,7 +419,7 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Address*</span>
+        <span className={authMobileLabelClass}>Address<RequiredMark /></span>
         <textarea
           name="company_address"
           placeholder="Enter company address"
@@ -456,7 +457,7 @@ export default function Register() {
   const personalFormDesktop = (
     <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleNext}>
       <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">Email</span>
+        <span className="text-[0.82rem] font-semibold text-[#101828]">Email<RequiredMark /></span>
         <input
           type="email"
           name="email"
@@ -471,7 +472,7 @@ export default function Register() {
 
       <div className="grid grid-cols-2 gap-3.5">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Full Name</span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Full Name<RequiredMark /></span>
           <input
             type="text"
             name="full_name"
@@ -485,7 +486,7 @@ export default function Register() {
         </label>
 
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Phone Number</span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Phone Number<RequiredMark /></span>
           <input
             type="tel"
             name="phone_number"
@@ -501,7 +502,7 @@ export default function Register() {
 
       <div className="grid grid-cols-2 gap-3.5">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Password</span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Password<RequiredMark /></span>
           <div className="relative flex items-center">
             <input
               type={showPassword ? "text" : "password"}
@@ -525,7 +526,7 @@ export default function Register() {
         </label>
 
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Confirm Password</span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Confirm Password<RequiredMark /></span>
           <div className="relative flex items-center">
             <input
               type={showConfirm ? "text" : "password"}
@@ -563,7 +564,7 @@ export default function Register() {
     <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleSignUp}>
       <div className="grid grid-cols-2 gap-3.5">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Name</span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Name<RequiredMark /></span>
           <input
             type="text"
             name="company_name"
@@ -576,7 +577,7 @@ export default function Register() {
         </label>
 
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Domain</span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Domain<RequiredMark /></span>
           <input
             type="text"
             name="company_domain"
@@ -590,7 +591,7 @@ export default function Register() {
       </div>
 
       <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">Email</span>
+        <span className="text-[0.82rem] font-semibold text-[#101828]">Email<RequiredMark /></span>
         <input
           type="email"
           name="company_email"
@@ -616,7 +617,7 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">Address</span>
+        <span className="text-[0.82rem] font-semibold text-[#101828]">Address<RequiredMark /></span>
         <textarea
           name="company_address"
           placeholder="Enter company address"

@@ -291,15 +291,61 @@ export default function VendorsPage() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Postal Code</Label>
-              <Input
-                value={form.postalCode || ""}
-                onChange={e => setField("postalCode", e.target.value)}
-                placeholder="e.g. 408564 (SG) or 530007 (IN)"
-                className="max-w-[200px]"
-              />
-              <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Postal Code</Label>
+                <Input
+                  value={form.postalCode || ""}
+                  onChange={e => setField("postalCode", e.target.value)}
+                  placeholder="e.g. 408564 (SG) or 530007 (IN)"
+                />
+                <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Default Currency</Label>
+                <Popover open={currencyOpen} onOpenChange={setCurrencyOpen} modal={false}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={currencyOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      <span className={form.currency ? "text-foreground" : "text-muted-foreground"}>
+                        {form.currency
+                          ? CURRENCIES.find(c => c.code === form.currency)?.label ?? form.currency
+                          : "Select currency (optional)"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search currency…" />
+                      <CommandList>
+                        <CommandEmpty>No currency found.</CommandEmpty>
+                        <CommandGroup>
+                          {CURRENCIES.map(c => (
+                            <CommandItem
+                              key={c.code}
+                              value={c.label}
+                              onSelect={() => {
+                                setField("currency", c.code);
+                                setCurrencyOpen(false);
+                              }}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${form.currency === c.code ? "opacity-100" : "opacity-0"}`} />
+                              {c.label}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this vendor.</p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -311,52 +357,6 @@ export default function VendorsPage() {
                 <Label>Contact Email</Label>
                 <Input type="email" value={form.contactEmail || ""} onChange={e => setField("contactEmail", e.target.value)} placeholder="email@vendor.com" />
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Default Currency</Label>
-              <Popover open={currencyOpen} onOpenChange={setCurrencyOpen} modal={false}>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={currencyOpen}
-                    className="w-full justify-between font-normal"
-                  >
-                    <span className={form.currency ? "text-foreground" : "text-muted-foreground"}>
-                      {form.currency
-                        ? CURRENCIES.find(c => c.code === form.currency)?.label ?? form.currency
-                        : "Select currency (optional)"}
-                    </span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Search currency…" />
-                    <CommandList>
-                      <CommandEmpty>No currency found.</CommandEmpty>
-                      <CommandGroup>
-                        {CURRENCIES.map(c => (
-                          <CommandItem
-                            key={c.code}
-                            value={c.label}
-                            onSelect={() => {
-                              setField("currency", c.code);
-                              setCurrencyOpen(false);
-                            }}
-                          >
-                            <Check className={`mr-2 h-4 w-4 ${form.currency === c.code ? "opacity-100" : "opacity-0"}`} />
-                            {c.label}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this vendor.</p>
             </div>
 
             {isInternational ? (

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
-import { Plus, Search, Eye, Pencil, FilePlus, Calendar, ChevronLeft, ChevronRight, MailCheck } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Calendar, ChevronLeft, ChevronRight, MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
@@ -108,13 +108,12 @@ export default function DebitNoteList() {
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
-      <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
+      <div className="flex items-end justify-between flex-wrap gap-4 pb-4">
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Documents</p>
           <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2">
-            <FilePlus className="h-6 w-6 text-gray-700" /> Debit Notes
+            Debit Notes
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manual debit notes issued to customers</p>
+          <p className="text-sm text-gray-500 mt-0.5">Manual debit notes issued to vendors</p>
         </div>
         <Link href="/debit-notes/new">
           <Button className="gap-2"><Plus className="h-4 w-4" />Create Debit Note</Button>
@@ -158,8 +157,8 @@ export default function DebitNoteList() {
       <BulkEmailBar
         searchTerm={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search DN number, customer…"
-        partyLabel="Customer"
+        searchPlaceholder="Search DN number, vendor…"
+        partyLabel="Vendor"
         partyFilter={bulk.partyFilter}
         partyNames={bulk.partyNames}
         onPartyChange={bulk.onPartyChange}
@@ -176,7 +175,7 @@ export default function DebitNoteList() {
               <tr className="border-b-2 border-gray-200 bg-gray-50">
                 <BulkSelectHeader allSelected={allSelected} someSelected={someSelected} disabled={sendable.length === 0} onToggle={(checked) => bulk.toggleSelectAll(filtered, checked)} label="Select all debit notes" />
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">DN Number</th>
-                <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Customer</th>
+                <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Vendor</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Ref Invoice</th>
                 <th className="text-left px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Date</th>
                 <th className="text-right px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider">Amount</th>

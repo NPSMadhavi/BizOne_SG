@@ -390,8 +390,8 @@ router.post("/report-templates/:id/set-active", requireReportPerm("report_templa
   if (!id) { res.status(400).json({ error: "Invalid ID" }); return; }
 
   const [existing] = await db.select().from(reportTemplatesTable).where(eq(reportTemplatesTable.id, id)).limit(1);
-  if (!existing || existing.companyId !== companyId || existing.isSystemTemplate) {
-    res.status(404).json({ error: "Company template not found" });
+  if (!existing || !canAccessTemplate(existing, companyId)) {
+    res.status(404).json({ error: "Template not found" });
     return;
   }
 
@@ -404,6 +404,9 @@ router.post("/report-templates/:id/set-active", requireReportPerm("report_templa
         eq(reportTemplatesTable.reportDefinitionId, existing.reportDefinitionId),
         eq(reportTemplatesTable.isActive, true),
       ));
+    if (existing.isSystemTemplate) {
+      return existing;
+    }
     const [row] = await tx
       .update(reportTemplatesTable)
       .set({ isActive: true, updatedBy: req.session.userId ?? null, updatedAt: new Date() })
@@ -423,19 +426,16 @@ router.delete("/report-templates/:id", requireReportPerm("report_templates:delet
   if (!id) { res.status(400).json({ error: "Invalid ID" }); return; }
 
   const [existing] = await db.select().from(reportTemplatesTable).where(eq(reportTemplatesTable.id, id)).limit(1);
-  if (!existing || existing.companyId !== companyId) {
+  if (!existing || !canAccessTemplate(existing, companyId)) {
     res.status(404).json({ error: "Template not found" });
     return;
   }
-  if (existing.isSystemTemplate) {
-    res.status(403).json({ error: "System default templates cannot be deleted" });
+  if (!existing.isSystemTemplate && existing.companyId !== companyId) {
+    res.status(404).json({ error: "Template not found" });
     return;
   }
 
-  await db.delete(reportTemplatesTable).where(and(
-    eq(reportTemplatesTable.id, id),
-    eq(reportTemplatesTable.companyId, companyId),
-  ));
+  await db.delete(reportTemplatesTable).where(eq(reportTemplatesTable.id, id));
   logAudit({ req, action: "delete", entityType: "report_template", entityId: id, entityLabel: existing.name });
   res.json({ success: true });
 });

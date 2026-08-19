@@ -380,7 +380,7 @@ export default function CreditNoteEdit() {
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reason for Credit</FormLabel>
+                    <FormLabel>Reason for Return</FormLabel>
                     <FormControl><Textarea {...field} rows={2} placeholder="Returned goods, billing error…" /></FormControl>
                   </FormItem>
                 )} />

@@ -89,6 +89,23 @@ async function trackEmails(emails: string[]) {
   } catch { }
 }
 
+function fallbackDocInfo(defaultSubject: string, filenames: string[]): EmailDocInfo {
+  const [left = "Document", company = "Company"] = defaultSubject.split("|").map(s => s.trim());
+  const forMatch = left.match(/^(.*?)\s+for\s+(.+)$/i);
+  const docType = (forMatch?.[1] || left.split(/\s+/)[0] || "Document").trim();
+  const customerName = (forMatch?.[2] || "Customer").replace(/\s*\(\d+\)\s*$/, "").trim() || "Customer";
+  const numbers = filenames.map(n => n.replace(/\.pdf$/i, "")).filter(Boolean);
+  return {
+    docType,
+    docNumber: numbers.join(", ") || left,
+    customerName,
+    companyName: company || "Company",
+    items: numbers.map(n => ({ description: n })),
+    currency: "SGD",
+    totalAmount: 0,
+  };
+}
+
 export function EmailSendDialog({
   defaultTo = "",
   defaultSubject,
@@ -236,14 +253,14 @@ export function EmailSendDialog({
   const removeRecipient = (email: string) => setRecipients(prev => prev.filter(e => e !== email));
 
   const handleGenerateAI = async () => {
-    if (!docInfo) return;
+    const payload = docInfo ?? fallbackDocInfo(defaultSubject, autoFilenames);
     setGenerating(true);
     try {
       const res = await fetch("/api/ai/generate-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(docInfo),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -404,22 +421,20 @@ export function EmailSendDialog({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="email-subject">Subject</Label>
-              {docInfo && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs text-primary hover:text-primary/80"
-                  onClick={handleGenerateAI}
-                  disabled={generating || sending}
-                >
-                  {generating ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating…</>
-                  ) : (
-                    <><Sparkles className="h-3.5 w-3.5" />Generate with AI</>
-                  )}
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs text-primary hover:text-primary/80"
+                onClick={handleGenerateAI}
+                disabled={generating || sending}
+              >
+                {generating ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" />Generating…</>
+                ) : (
+                  <><Sparkles className="h-3.5 w-3.5" />Generate with AI</>
+                )}
+              </Button>
             </div>
             <Input id="email-subject" value={subject} onChange={e => setSubject(e.target.value)} />
           </div>

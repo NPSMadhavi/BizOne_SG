@@ -153,7 +153,7 @@ export default function CreditNoteView() {
             </dl>
             {doc.reason && (
               <div className="mt-3 pt-3 border-t border-gray-100">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Reason for Credit</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Reason for Return</p>
                 <p className="text-sm text-gray-700">{doc.reason}</p>
               </div>
             )}

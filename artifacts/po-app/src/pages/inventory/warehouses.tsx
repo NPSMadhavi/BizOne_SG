@@ -313,15 +313,6 @@ export default function WarehousesPage() {
                 onChange={(e) => updateField("contactNumber", e.target.value)}
               />
             </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                placeholder="Enter email address"
-                value={form.email}
-                onChange={(e) => updateField("email", e.target.value)}
-              />
-            </div>
             <div className="space-y-1.5">
               <Label>Status *</Label>
               <Select
@@ -336,6 +327,15 @@ export default function WarehousesPage() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                placeholder="Enter email address"
+                value={form.email}
+                onChange={(e) => updateField("email", e.target.value)}
+              />
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label>Description</Label>

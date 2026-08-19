@@ -42,7 +42,7 @@ const itemSchema = z.object({
 });
 
 const schema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
+  customerName: z.string().min(1, "Vendor name is required"),
   customerAddress: z.string().default(""),
   contactPerson: z.string().default(""),
   contactEmail: z.string().default(""),
@@ -309,22 +309,23 @@ export default function DebitNoteEdit() {
         <form className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Customer</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">Vendor</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex gap-2 items-end">
                   <FormField control={form.control} name="customerName" render={({ field }) => (
                     <FormItem className="flex-1">
-                      <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
+                      <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
                       <FormControl><Input {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <DirectoryPickerButton type="customer" onSelect={v => {
+                  <DirectoryPickerButton type="vendor" onSelect={v => {
                     form.setValue("customerName", v.name);
-                    form.setValue("customerAddress", v.address || "");
+                    form.setValue("customerAddress", v.fullAddress || v.address || "");
                     form.setValue("contactPerson", v.contactPerson || "");
                     form.setValue("contactEmail", v.contactEmail || "");
                     if (v.effectiveGstRate !== undefined) form.setValue("taxRate", v.effectiveGstRate);
+                    if (v.currency) form.setValue("currency", v.currency);
                   }} />
                 </div>
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
@@ -380,7 +381,7 @@ export default function DebitNoteEdit() {
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reason for Credit</FormLabel>
+                    <FormLabel>Reason for Return</FormLabel>
                     <FormControl><Textarea {...field} rows={2} placeholder="Returned goods, billing error…" /></FormControl>
                   </FormItem>
                 )} />

@@ -589,7 +589,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </NavItem>
         )}
         {hasModuleAccess("invoices") && (
-          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices") && !location.startsWith("/invoices/")} inGroup>
+          <NavItem href="/invoices" icon={Receipt} active={location.startsWith("/invoices")} inGroup>
             Tax Invoices
           </NavItem>
         )}
@@ -874,20 +874,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {navItems}
         </div>
 
-        {/* Bottom: company + user + logo */}
+        {/* Bottom: company + user */}
         <div className="border-t border-border/50 bg-muted/10 pt-2 shrink-0">
           <CompanyBadge />
           <UserMenu />
         </div>
-        {!collapsed && (selectedCompany as any)?.logoUrl && (
-          <div className="px-5 py-4 border-t border-border/30 flex items-center justify-start bg-muted/20">
-            <img
-              src={(selectedCompany as any).logoUrl}
-              alt={selectedCompany?.name ?? "Company"}
-              className="h-10 w-auto object-contain max-w-[150px]"
-            />
-          </div>
-        )}
       </TooltipProvider>
     </SidebarCtx.Provider>
   );

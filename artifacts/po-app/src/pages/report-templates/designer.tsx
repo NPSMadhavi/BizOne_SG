@@ -37,6 +37,53 @@ function cloneTemplate(json: ReportTemplateJson): ReportTemplateJson {
   return JSON.parse(JSON.stringify(json));
 }
 
+function printHtmlInFrame(html: string): boolean {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;";
+  document.body.appendChild(iframe);
+  const frameWindow = iframe.contentWindow;
+  const doc = frameWindow?.document;
+  if (!frameWindow || !doc) {
+    iframe.remove();
+    return false;
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  let printed = false;
+  const runPrint = () => {
+    if (printed) return;
+    printed = true;
+    frameWindow.focus();
+    frameWindow.print();
+    window.setTimeout(() => iframe.remove(), 60_000);
+  };
+
+  const images = Array.from(doc.images || []);
+  if (images.length === 0 || images.every((img) => img.complete)) {
+    window.setTimeout(runPrint, 50);
+    return true;
+  }
+
+  let pending = images.length;
+  const done = () => {
+    pending -= 1;
+    if (pending <= 0) runPrint();
+  };
+  images.forEach((img) => {
+    if (img.complete) done();
+    else {
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", done, { once: true });
+    }
+  });
+  window.setTimeout(runPrint, 2500);
+  return true;
+}
+
 export default function ReportDesignerPage() {
   const params = useParams();
   const search = useSearch();
@@ -256,17 +303,20 @@ export default function ReportDesignerPage() {
   };
 
   const handlePrint = async () => {
-    const result = previewHtml ? { html: previewHtml } : await handlePreview();
-    if (!result?.html) return;
-    const win = window.open("", "_blank", "noopener,noreferrer");
-    if (!win) {
-      toast({ title: "Print blocked", description: "Allow pop-ups to print the preview.", variant: "destructive" });
-      return;
+    if (!template) return;
+    try {
+      const html = previewHtml
+        || (await previewReport({ reportType, templateJson: template, designMode: false })).html;
+      if (!html) {
+        toast({ title: "Print failed", description: "Could not build the document preview." });
+        return;
+      }
+      if (!printHtmlInFrame(html)) {
+        toast({ title: "Print failed", description: "Could not open the print dialog." });
+      }
+    } catch (err: any) {
+      toast({ title: "Print failed", description: err.message, variant: "destructive" });
     }
-    win.document.write(result.html);
-    win.document.close();
-    win.focus();
-    win.print();
   };
 
   const handlePdf = async () => {
