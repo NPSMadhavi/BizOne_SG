@@ -84,6 +84,7 @@ import {
 import bizoneLogo from "@assets/bizone_logo_optimized.webp";
 import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
 import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
+import singaporeFlag from "../../assets/flag-for-singapore.png";
 import { AgentPanel } from "@/components/agent-panel";
 
 // ── Sidebar collapse context ──────────────────────────────────────────────────
@@ -276,6 +277,8 @@ function CompanyBadge() {
   const { selectedCompany } = useAuth();
   const collapsed = React.useContext(SidebarCtx);
   if (!selectedCompany) return null;
+  const isSingapore = selectedCompany.country?.toLowerCase() === "singapore" || selectedCompany.country?.toUpperCase() === "SG";
+  const country = isSingapore ? "Singapore" : selectedCompany.country;
 
   if (collapsed) {
     return (
@@ -285,7 +288,7 @@ function CompanyBadge() {
             <Building2 className="h-3.5 w-3.5 text-primary/70" />
           </div>
         </TooltipTrigger>
-        <TooltipContent side="right">{selectedCompany.country}</TooltipContent>
+        <TooltipContent side="right">{country}</TooltipContent>
       </Tooltip>
     );
   }
@@ -293,8 +296,12 @@ function CompanyBadge() {
   return (
     <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/15">
       <div className="flex items-center gap-2">
-        <Building2 className="h-3 w-3 text-primary shrink-0" />
-        <p className="text-xs text-muted-foreground">{selectedCompany.country}</p>
+        {isSingapore ? (
+          <img src={singaporeFlag} alt="" className="h-3.5 w-5 rounded-sm object-cover shrink-0" />
+        ) : (
+          <Building2 className="h-3 w-3 text-primary shrink-0" />
+        )}
+        <p className="text-xs text-muted-foreground">{country}</p>
       </div>
     </div>
   );
