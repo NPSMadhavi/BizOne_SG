@@ -5,6 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Strip HTML tags and trim — for rich-text fields and line-item validation. */
+export function plainText(value: unknown): string {
+  return String(value ?? "").replace(/<[^>]*>/g, "").trim();
+}
+
 export function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return "TBA";
   const date = typeof d === "string" ? new Date(d.includes("T") ? d : d + "T00:00:00") : d;

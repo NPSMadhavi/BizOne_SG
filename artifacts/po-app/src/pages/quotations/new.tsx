@@ -9,6 +9,7 @@ import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -18,8 +19,9 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, ArrowLeft } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, ArrowLeft, X } from "lucide-react";
+import { cn, plainText } from "@/lib/utils";
+import type { FieldErrors } from "react-hook-form";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
@@ -38,8 +40,8 @@ const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
   sectionLabel: z.string().default(""),
   sectionAlign: z.enum(["left", "center"]).default("left"),
-  partNumber: z.string(),
-  description: z.string(),
+  partNumber: z.coerce.string(),
+  description: z.coerce.string(),
   qty: z.coerce.number().min(0).default(1),
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
@@ -64,9 +66,14 @@ const schema = z.object({
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   issueDate: z.string().optional(),
+  validUntil: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
@@ -91,6 +98,7 @@ export default function QuotationNew() {
   const [importQtOpen, setImportQtOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+  const [discountPct, setDiscountPct] = useState(0);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -98,7 +106,8 @@ export default function QuotationNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      issueDate: getToday(), validUntil: "", deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
@@ -112,29 +121,87 @@ export default function QuotationNew() {
     if (settings) form.setValue("tax", settings.gstRate);
   }, [settings]);
 
-  // Aria prefill — populated by the AI agent via navigateTo
+  // Prefill from AI agent or "Copy to New Quotation"
   useEffect(() => {
     const prefill = (window as any).__vedaPrefill;
     if (!prefill) return;
     (window as any).__vedaPrefill = null;
-    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+
+    const blankItem = {
+      type: "item" as const,
+      sectionLabel: "",
+      sectionAlign: "left" as const,
+      partNumber: "",
+      description: "",
+      qty: 1,
+      uom: "",
+      unitPrice: 0,
+      discount: 0,
+      isFoc: false,
+      itemImage: "",
+    };
+
+    const mappedItems = prefill.items?.length
+      ? prefill.items.map((it: any) => (
+          it.type === "section"
+            ? {
+                type: "section" as const,
+                sectionLabel: it.sectionLabel || "",
+                sectionAlign: (it.sectionAlign || "left") as "left" | "center",
+                partNumber: "",
+                description: "",
+                qty: 1,
+                uom: "",
+                unitPrice: 0,
+                discount: 0,
+                isFoc: false,
+                itemImage: "",
+              }
+            : {
+                ...blankItem,
+                partNumber: it.partNumber || "",
+                description: it.description || "",
+                qty: Number(it.qty) || 1,
+                uom: it.uom || "",
+                unitPrice: Number(it.unitPrice) || 0,
+                discount: Number(it.discount) || 0,
+                isFoc: !!it.isFoc,
+                itemImage: it.itemImage || "",
+              }
+        ))
+      : [blankItem];
+
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
       customerContact: prefill.customerContact || "",
       customerContactEmail: prefill.customerContactEmail || "",
+      deliveryAddress: prefill.deliveryAddress || "",
       currency: prefill.currency || "SGD",
       paymentTerms: prefill.paymentTerms || "30 Days Net",
       notes: prefill.notes || "",
+      termsAndConditions: prefill.termsAndConditions || "",
+      deliveryInstructions: prefill.deliveryInstructions || "",
+      customerNote: prefill.customerNote || "",
+      authorisedSignature: prefill.authorisedSignature || "",
       issueDate: getToday(),
-      deliveryDate: "",
-      tax: settings?.gstRate ?? 9,
+      validUntil: prefill.validUntil || "",
+      deliveryDate: prefill.deliveryDate || "",
+      tax: prefill.tax ?? settings?.gstRate ?? 9,
       discountAmount: prefill.discountAmount ?? 0,
       isPrivate: false,
-      items: prefill.items?.length
-        ? prefill.items.map((it: any) => ({ ...blankItem, partNumber: it.partNumber || "", description: it.description || "", qty: Number(it.qty) || 1, unitPrice: Number(it.unitPrice) || 0 }))
-        : [blankItem],
+      items: mappedItems,
     });
+
+    if (prefill.discountPct > 0) setDiscountPct(prefill.discountPct);
+    if (prefill.tax === 0) setIsOverseas(true);
+
+    if (prefill.sourceQtNumber) {
+      toast({
+        title: "Quotation copied",
+        description: `Data from ${prefill.sourceQtNumber} loaded — save to create a new quotation number.`,
+      });
+    }
   }, []);
 
   const { fields, append, remove, insert } = useFieldArray({ control: form.control, name: "items" });
@@ -164,8 +231,8 @@ export default function QuotationNew() {
       if (!last) return;
       if ((last as any).type === "section") return;
       const isEmpty =
-        (!last.partNumber || String(last.partNumber).trim() === "") &&
-        (!last.description || String(last.description).trim() === "") &&
+        plainText(last.partNumber) === "" &&
+        plainText(last.description) === "" &&
         (Number(last.unitPrice) === 0) && (Number(last.qty) <= 1);
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
@@ -182,7 +249,6 @@ export default function QuotationNew() {
   const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
-  const [discountPct, setDiscountPct] = useState(0);
   useEffect(() => {
     if (discountPct > 0) form.setValue("discountAmount", parseFloat((subtotal * discountPct / 100).toFixed(2)));
   }, [subtotal]);
@@ -191,6 +257,24 @@ export default function QuotationNew() {
 
   const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
   const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
+
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
 
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
@@ -234,10 +318,15 @@ export default function QuotationNew() {
   }
 
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (isSubmitting) return;
+    if (!selectedCompany) {
+      toast({ title: "Error", description: "Please select a company first.", variant: "destructive" });
+      return;
+    }
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => {
-      if ((i as any).type === "section") return ((i as any).sectionLabel || "").trim() !== "";
-      return i.partNumber.trim() !== "" || i.description.trim() !== "";
+      if ((i as any).type === "section") return plainText((i as any).sectionLabel) !== "";
+      return plainText(i.partNumber) !== "" || plainText(i.description) !== "";
     });
     const realItems = filledItems.filter((i: any) => i.type !== "section");
     if (realItems.length === 0) {
@@ -248,7 +337,8 @@ export default function QuotationNew() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left" };
       const disc = Number(i.discount) || 0;
-      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      const partNumber = plainText(i.partNumber);
+      return { ...i, partNumber, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     createMutation.mutate({ data: { ...values, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: async (data) => {
@@ -395,13 +485,32 @@ export default function QuotationNew() {
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Quotation Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="issueDate" render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Quotation Date" />
-                    </FormControl><FormMessage />
-                  </FormItem>
-                )} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField control={form.control} name="issueDate" render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <IssueDateField value={field.value || ""} onChange={field.onChange} label="Quotation Date" />
+                      </FormControl><FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="validUntil" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quotation Valid Upto</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          value={field.value || ""}
+                          min={form.watch("issueDate") || undefined}
+                          onChange={field.onChange}
+                        />
+                      </FormControl>
+                      <p className="text-[11px] text-muted-foreground">
+                        From the next day after this date, quotation becomes Cancelled.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
                     <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
@@ -671,11 +780,16 @@ export default function QuotationNew() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Notes</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              <DocumentAdditionalInfoFields control={form.control} />
             </CardContent>
           </Card>
 
@@ -686,7 +800,7 @@ export default function QuotationNew() {
               variant="outline"
               disabled={isSubmitting}
               className="gap-2"
-              onClick={form.handleSubmit(v => doSubmit(v, false))}
+              onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
@@ -695,7 +809,7 @@ export default function QuotationNew() {
               type="button"
               disabled={isSubmitting}
               className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true))}
+              onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
             >
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save & Preview"}

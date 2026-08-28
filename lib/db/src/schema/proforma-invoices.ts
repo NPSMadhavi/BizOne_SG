@@ -23,6 +23,10 @@ export const proformaInvoicesTable = pgTable("proforma_invoices", {
   qtRefNo: text("qt_ref_no"),
   status: text("status").notNull().default("draft"),
   emailSentTo: text("email_sent_to"),
+  termsAndConditions: text("terms_and_conditions"),
+  deliveryInstructions: text("delivery_instructions"),
+  customerNote: text("customer_note"),
+  authorisedSignature: text("authorised_signature"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

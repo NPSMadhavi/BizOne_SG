@@ -17,7 +17,11 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) {
+    throw new Error("Empty response from server — template may not have been saved");
+  }
+  return JSON.parse(text) as T;
 }
 
 export function listReportDefinitions() {

@@ -17,16 +17,28 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { CURRENCIES } from "@/lib/currencies";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+
+function dueDateFromTerms(date: string, terms: string) {
+  const match = terms.match(/(\d+)\s+Days?\s+Net/i);
+  if (!date || !match) return "";
+  const due = new Date(`${date}T00:00:00`);
+  due.setDate(due.getDate() + Number(match[1]));
+  return due.toISOString().split("T")[0];
+}
 
 export default function VendorInvoiceEdit() {
   const params = useParams();
   const id = Number(params.id);
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
 
   const [saving, setSaving] = useState(false);
+  const [salesPerson, setSalesPerson] = useState("");
   const [newVendorOpen, setNewVendorOpen] = useState(false);
   const initialized = useRef(false);
   const skipNextRateFetch = useRef(false);
@@ -39,6 +51,13 @@ export default function VendorInvoiceEdit() {
 
   const [piNumber, setPiNumber] = useState("");
   const [piDate, setPiDate] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("30 Days Net");
+  const [dueDate, setDueDate] = useState("");
+  const [plannedPaymentDate, setPlannedPaymentDate] = useState("");
+  const [remindersEnabled, setRemindersEnabled] = useState(false);
+  const [reminderStartAfterDay, setReminderStartAfterDay] = useState(15);
+  const [reminderEmail, setReminderEmail] = useState("");
+  const [reminderEmails, setReminderEmails] = useState<string[]>([]);
   const [vendorSearch, setVendorSearch] = useState("");
   const [selectedVendor, setSelectedVendor] = useState<any>(null);
   const [vendorFromPo, setVendorFromPo] = useState(false);
@@ -83,7 +102,7 @@ export default function VendorInvoiceEdit() {
       const res = await fetch("/api/purchase-orders?status=confirmed", { credentials: "include" });
       if (!res.ok) return [];
       const all = await res.json();
-      return all.filter((p: any) => p.status === "confirmed");
+      return all.filter((p: any) => p.status === "confirmed" || p.status === "sent");
     },
   });
 
@@ -93,17 +112,25 @@ export default function VendorInvoiceEdit() {
     const piTotalAmount = parseFloat(String(pi.totalAmount ?? "0"));
     const piGstAmount = parseFloat(String(pi.gstAmount ?? "0"));
     const netAmount = +(piTotalAmount - piGstAmount).toFixed(2);
+    const isGstInclusive = !!pi.gstInclusive;
 
     setPiNumber(pi.piNumber || "");
     setPiDate(pi.piDate ? String(pi.piDate).split("T")[0] : new Date().toISOString().split("T")[0]);
+    setPaymentTerms(pi.paymentTerms || "30 Days Net");
+    setDueDate(pi.dueDate ? String(pi.dueDate).split("T")[0] : dueDateFromTerms(pi.piDate, pi.paymentTerms || "30 Days Net"));
+    setPlannedPaymentDate(pi.plannedPaymentDate ? String(pi.plannedPaymentDate).split("T")[0] : "");
+    setRemindersEnabled(!!pi.remindersEnabled);
+    setReminderStartAfterDay(pi.reminderStartAfterDay ?? 15);
+    setReminderEmails(Array.isArray(pi.reminderEmails) ? pi.reminderEmails : []);
     setVendorSearch(pi.vendorName || "");
     setSelectedVendor(null);
     setSelectedPoIds(Array.isArray(pi.poIds) ? pi.poIds.map(Number) : []);
     setCurrency(pi.currency || (selectedCompany as any)?.currency || "SGD");
-    setAmount(String(netAmount));
+    setAmount(String(isGstInclusive ? piTotalAmount : netAmount));
     setNotes(pi.notes || "");
     setGstTreatment(pi.gstTreatment || "standard_rated");
-    setGstInclusive(!!pi.gstInclusive);
+    setGstInclusive(isGstInclusive);
+    setSalesPerson(pi.salesPerson || "");
     setExchangeRate(
       pi.exchangeRate != null && pi.exchangeRate !== ""
         ? Number(pi.exchangeRate).toFixed(6)
@@ -112,6 +139,12 @@ export default function VendorInvoiceEdit() {
     skipNextRateFetch.current = true;
     initialized.current = true;
   }, [pi, selectedCompany]);
+
+  useEffect(() => {
+    if (!initialized.current) return;
+    const calculated = dueDateFromTerms(piDate, paymentTerms);
+    if (calculated && !pi?.dueDate) setDueDate(calculated);
+  }, [piDate, paymentTerms, pi?.dueDate]);
 
   const filteredVendors = useMemo(() => {
     if (!vendorSearch.trim()) return vendors.slice(0, 50);
@@ -253,8 +286,15 @@ export default function VendorInvoiceEdit() {
           gstRate: gstRateNum,
           gstAmount: computedGstAmount,
           gstInclusive,
+          paymentTerms,
+          dueDate: dueDate || null,
+          plannedPaymentDate: plannedPaymentDate || null,
+          remindersEnabled,
+          reminderStartAfterDay: remindersEnabled ? reminderStartAfterDay : null,
+          reminderEmails,
           exchangeRate: currency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1,
           notes: notes || null,
+          salesPerson: salesPerson || null,
         }),
       });
       if (!res.ok) {
@@ -314,6 +354,18 @@ export default function VendorInvoiceEdit() {
             <div className="space-y-1.5">
               <Label>PI Date</Label>
               <Input type="date" value={piDate} onChange={e => setPiDate(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="rounded-md border bg-muted/20 p-3 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5"><Label>Payment Terms</Label><PaymentTermsSelect value={paymentTerms} onChange={setPaymentTerms} /></div>
+              <div className="space-y-1.5"><Label>Due Date</Label><Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="bg-muted/40" /></div>
+              <div className="space-y-1.5"><Label>Planned Payment Date</Label><Input type="date" value={plannedPaymentDate} onChange={e => setPlannedPaymentDate(e.target.value)} /><p className="text-[11px] text-muted-foreground">Internal expected payment date.</p></div>
+            </div>
+            <div className="rounded-md border bg-background p-3 space-y-3">
+              <div className="flex items-center justify-between"><div><Label>Payment reminders</Label><p className="text-xs text-muted-foreground">Daily reminders begin after the selected day.</p></div><Switch checked={remindersEnabled} onCheckedChange={setRemindersEnabled} /></div>
+              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Start after day</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(Number(e.target.value) || 0)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="name@example.com" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
             </div>
           </div>
 
@@ -623,6 +675,22 @@ export default function VendorInvoiceEdit() {
               </div>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <Label>Sales Person</Label>
+            <Select value={salesPerson || undefined} onValueChange={setSalesPerson}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select Sales Person" />
+              </SelectTrigger>
+              <SelectContent>
+                {salesPersons.map((sp) => (
+                  <SelectItem key={sp.id} value={sp.name}>
+                    {sp.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="space-y-1.5">
             <Label>Notes (internal)</Label>

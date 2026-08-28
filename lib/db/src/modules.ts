@@ -19,6 +19,7 @@ export const APP_ALL_MODULES = [
   "delivery_orders",
   "point_of_sale",
   "bill_of_materials",
+  "multi_price_level",
   "grn",
   "stock_items",
   "warehouses",

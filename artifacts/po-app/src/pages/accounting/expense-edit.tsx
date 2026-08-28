@@ -18,6 +18,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Upload, Info, AlertTriangle, Check, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BankAccountField } from "@/components/bank-account-field";
 
 interface ExpenseForm {
   expenseDate: string;
@@ -157,6 +158,7 @@ export default function ExpenseEdit() {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
+  const [selectedBank, setSelectedBank] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -385,13 +387,13 @@ export default function ExpenseEdit() {
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Payment Method</Label>
-                <Select value={watch("paymentMethod")} onValueChange={v => setValue("paymentMethod", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
+              <BankAccountField
+                paymentMethod={watch("paymentMethod")}
+                onPaymentMethodChange={(v) => setValue("paymentMethod", v)}
+                selectedBankAccount={selectedBank}
+                onBankAccountChange={setSelectedBank}
+                paymentMethods={PAYMENT_METHODS}
+              />
             </CardContent>
           </Card>
 

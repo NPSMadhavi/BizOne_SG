@@ -102,9 +102,18 @@ async function assertWarehouse(
 async function collectDesiredLines(
   tx: Tx,
   companyId: number,
+  invoiceId: number,
   items: InvoiceLineItem[],
 ): Promise<StockLine[]> {
   const lines = new Map<string, StockLine>();
+  const netMap = await loadInvoiceNetDeducted(tx, companyId, invoiceId);
+  const netQtyByStockItem = new Map<number, number>();
+  for (const line of netMap.values()) {
+    netQtyByStockItem.set(
+      line.stockItemId,
+      (netQtyByStockItem.get(line.stockItemId) ?? 0) + line.qty,
+    );
+  }
 
   for (const item of items) {
     if (item?.type === "section") continue;
@@ -129,7 +138,20 @@ async function collectDesiredLines(
       );
     }
 
-    await assertStockItem(tx, companyId, stockItemId);
+    const previouslyIssuedQty = netQtyByStockItem.get(stockItemId) ?? 0;
+    try {
+      await assertStockItem(tx, companyId, stockItemId);
+    } catch (err) {
+      // Stale/deleted catalog link with no stock issued — skip instead of blocking save.
+      if (previouslyIssuedQty <= 0.0005) {
+        inventoryLog({
+          skippedInvalidStockItem: stockItemId,
+          partNumber: cleanPartNumber(item.partNumber),
+          invoiceId,
+        });
+        continue;
+      }
+    }
     const wh = await assertWarehouse(tx, companyId, warehouseId);
 
     inventoryLog({
@@ -298,7 +320,7 @@ async function syncInvoiceStockInTx(
 ): Promise<InvoiceStockApplyResult> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(${params.companyId}, ${params.invoiceId})`);
 
-  const desiredLines = await collectDesiredLines(tx, params.companyId, params.items);
+  const desiredLines = await collectDesiredLines(tx, params.companyId, params.invoiceId, params.items);
   const netMap = await loadInvoiceNetDeducted(tx, params.companyId, params.invoiceId);
 
   const previouslyApplied: StockLine[] = [];

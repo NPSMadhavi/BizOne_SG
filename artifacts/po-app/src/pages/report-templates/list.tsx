@@ -80,6 +80,7 @@ export default function ReportTemplateList() {
         pageSize,
         orientation,
       });
+      await qc.invalidateQueries({ queryKey: ["report-templates"] });
       toast({ title: "Template created", description: `Default ${selectedType?.name || "document"} layout loaded. Customize and save.` });
       setCreateOpen(false);
       setName("");
@@ -212,10 +213,14 @@ export default function ReportTemplateList() {
                             <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setLocation(`/report-templates/${tpl.id}/edit`)}>
-                              {tpl.isSystemTemplate ? <Eye className="h-4 w-4 mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
-                              {tpl.isSystemTemplate ? "View" : "Edit"}
+                            <DropdownMenuItem onClick={() => setLocation(`/report-templates/${tpl.id}/edit?mode=view`)}>
+                              <Eye className="h-4 w-4 mr-2" />View
                             </DropdownMenuItem>
+                            {canEdit && (
+                              <DropdownMenuItem onClick={() => setLocation(`/report-templates/${tpl.id}/edit`)}>
+                                <Pencil className="h-4 w-4 mr-2" />Edit
+                              </DropdownMenuItem>
+                            )}
                             {canCreate && (
                               <DropdownMenuItem onClick={() => handleDuplicate(tpl)}>
                                 <Copy className="h-4 w-4 mr-2" />Duplicate
@@ -226,7 +231,7 @@ export default function ReportTemplateList() {
                                 <Star className="h-4 w-4 mr-2" />Set As
                               </DropdownMenuItem>
                             )}
-                            {canDelete && (
+                            {canDelete && !tpl.isSystemTemplate && (
                               <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(tpl.id)}>
                                 <Trash2 className="h-4 w-4 mr-2" />Delete
                               </DropdownMenuItem>

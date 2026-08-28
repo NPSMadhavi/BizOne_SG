@@ -74,6 +74,9 @@ const DeliveryOrderEdit = lazy(() => import("@/pages/delivery-orders/edit"));
 
 const PointOfSalePage = lazy(() => import("@/pages/point-of-sale/index"));
 const BillOfMaterialsPage = lazy(() => import("@/pages/bill-of-materials/index"));
+const MultiPriceLevelPage = lazy(() => import("@/pages/multi-price-level/index"));
+const NewMultiPriceLevelPage = lazy(() => import("@/pages/multi-price-level/new"));
+const MultiPriceLevelReportsPage = lazy(() => import("@/pages/multi-price-level/reports"));
 
 const GrnList = lazy(() => import("@/pages/grn/list"));
 const GrnNew = lazy(() => import("@/pages/grn/new"));
@@ -88,6 +91,7 @@ const BatchExpiryPage = lazy(() => import("@/pages/inventory/batch-expiry"));
 
 const VendorsPage    = lazy(() => import("@/pages/vendors/index"));
 const CustomersPage  = lazy(() => import("@/pages/customers/index"));
+const SalesPersonsPage = lazy(() => import("@/pages/sales-persons/index"));
 const AddressBookPage = lazy(() => import("@/pages/address-book/index"));
 
 const VendorInvoiceList = lazy(() => import("@/pages/vendor-invoices/list"));
@@ -161,6 +165,9 @@ const ROUTE_TITLES: Record<string, string> = {
   "/delivery-orders": "Delivery Orders",
   "/point-of-sale": "Point of Sale",
   "/bill-of-materials": "Bill of Materials",
+  "/multi-price-level": "Multi Price Level",
+  "/multi-price-level/new": "New Price Level",
+  "/multi-price-level/reports": "Price Level Reports",
   "/grn": "Goods Receipt Notes",
   "/grn/new": "Create Goods Receipt Note",
   "/stock": "Stock Items",
@@ -176,6 +183,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/projects": "Projects",
   "/vendors": "Vendors",
   "/customers": "Customers",
+  "/sales-persons": "Sales Persons",
   "/address-book": "Address Book",
   "/assets": "Assets",
   "/assets/new": "Create Asset",
@@ -218,23 +226,20 @@ const ROUTE_TITLES: Record<string, string> = {
 
 function useDocumentTitle() {
   const [location] = useLocation();
-  const { selectedCompany } = useAuth();
 
   useEffect(() => {
+    const APP_NAME = "BizOne";
     const matchedKey = Object.keys(ROUTE_TITLES).find(key =>
       location === key || location.startsWith(key + "/")
     );
     const pageTitle = matchedKey ? ROUTE_TITLES[matchedKey] : null;
-    const companyName = selectedCompany?.name ?? "RSV Infotech";
 
-    if (pageTitle && pageTitle !== "Sign In" && pageTitle !== "Select Company") {
-      document.title = `${companyName} - ${pageTitle}`;
-    } else if (pageTitle) {
-      document.title = `RSV Infotech - ${pageTitle}`;
+    if (pageTitle && pageTitle !== APP_NAME) {
+      document.title = `${APP_NAME} - ${pageTitle}`;
     } else {
-      document.title = companyName;
+      document.title = APP_NAME;
     }
-  }, [location, selectedCompany]);
+  }, [location]);
 }
 
 function LoadingSpinner() {
@@ -395,6 +400,9 @@ function Router() {
           {/* Point of Sale */}
           <Route path="/point-of-sale">{() => <ProtectedRoute component={PointOfSalePage} module="point_of_sale" />}</Route>
           <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} module="bill_of_materials" />}</Route>
+          <Route path="/multi-price-level">{() => <ProtectedRoute component={MultiPriceLevelPage} module="multi_price_level" />}</Route>
+          <Route path="/multi-price-level/new">{() => <ProtectedRoute component={NewMultiPriceLevelPage} module="multi_price_level" />}</Route>
+          <Route path="/multi-price-level/reports">{() => <ProtectedRoute component={MultiPriceLevelReportsPage} module="multi_price_level" />}</Route>
 
           {/* Goods Receipt Notes */}
           <Route path="/grn">{() => <ProtectedRoute component={GrnList} module="grn" />}</Route>
@@ -419,6 +427,7 @@ function Router() {
           {/* Directory */}
           <Route path="/vendors">{() => <ProtectedRoute component={VendorsPage} module="vendors" />}</Route>
           <Route path="/customers">{() => <ProtectedRoute component={CustomersPage} module="customers" />}</Route>
+          <Route path="/sales-persons">{() => <ProtectedRoute component={SalesPersonsPage} module="customers" />}</Route>
           <Route path="/address-book">{() => <ProtectedRoute component={AddressBookPage} module="address_book" />}</Route>
 
           {/* Accounting */}

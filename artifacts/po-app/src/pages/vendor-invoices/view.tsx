@@ -22,6 +22,7 @@ import { ArrowLeft, Plus, Trash2, Building, Calendar, CreditCard, FileText, Penc
 import { fmtDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { BankAccountField } from "@/components/bank-account-field";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -35,19 +36,28 @@ function formatCurrency(amount: number, currency = "SGD") {
   return new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(amount);
 }
 
+const PAYMENT_METHODS_LIST = [
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "cheque", label: "Cheque" },
+  { value: "cash", label: "Cash" },
+  { value: "online", label: "Online Payment" },
+  { value: "other", label: "Other" },
+];
+
 export default function VendorInvoiceView() {
-  const params = useParams();
-  const id = Number(params.id);
+  const { id: paramsId } = useParams<{ id: string }>();
+  const id = Number(paramsId);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { isAdmin, canManage } = useAuth();
   const queryClient = useQueryClient();
 
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payAmount, setPayAmount] = useState("");
   const [payRef, setPayRef] = useState("");
   const [payMethod, setPayMethod] = useState("bank_transfer");
+  const [payBank, setPayBank] = useState("");
   const [payNotes, setPayNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -56,6 +66,7 @@ export default function VendorInvoiceView() {
   const [epDate, setEpDate] = useState("");
   const [epAmount, setEpAmount] = useState("");
   const [epMethod, setEpMethod] = useState("bank_transfer");
+  const [epBank, setEpBank] = useState("");
   const [epRef, setEpRef] = useState("");
   const [epNotes, setEpNotes] = useState("");
   const [epSaving, setEpSaving] = useState(false);
@@ -411,19 +422,13 @@ export default function VendorInvoiceView() {
                 <Input type="text" inputMode="decimal" placeholder="0.00" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <Select value={epMethod} onValueChange={setEpMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="online">Online Payment</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <BankAccountField
+              paymentMethod={epMethod}
+              onPaymentMethodChange={setEpMethod}
+              selectedBankAccount={epBank}
+              onBankAccountChange={setEpBank}
+              paymentMethods={PAYMENT_METHODS_LIST}
+            />
             <div className="space-y-1.5">
               <Label>Bank Reference / UTR</Label>
               <Input placeholder="Transaction reference number" value={epRef} onChange={e => setEpRef(e.target.value)} />
@@ -475,21 +480,13 @@ export default function VendorInvoiceView() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="online">Online Payment</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <BankAccountField
+              paymentMethod={payMethod}
+              onPaymentMethodChange={setPayMethod}
+              selectedBankAccount={payBank}
+              onBankAccountChange={setPayBank}
+              paymentMethods={PAYMENT_METHODS_LIST}
+            />
 
             <div className="space-y-1.5">
               <Label>Bank Reference / UTR</Label>

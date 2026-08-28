@@ -45,6 +45,7 @@ export async function mergeInvoiceStockMeta(
   companyId: number,
   incoming: any[] | undefined,
   previous: any[] | undefined,
+  invoiceId?: number,
 ): Promise<any[]> {
   const items = Array.isArray(incoming) ? incoming : [];
   const prev = Array.isArray(previous) ? previous : [];
@@ -55,9 +56,29 @@ export async function mergeInvoiceStockMeta(
     .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.type, "product")));
 
   const stockByCode = new Map<string, number>();
+  const validStockIds = new Set<number>();
   for (const s of allStockItems) {
+    validStockIds.add(s.id);
     if (s.code) stockByCode.set(s.code.toLowerCase().trim(), s.id);
   }
+
+  const netQtyByStockItem = new Map<number, number>();
+  if (invoiceId) {
+    const netMap = await loadInvoiceNetDeducted(db, companyId, invoiceId);
+    for (const line of netMap.values()) {
+      netQtyByStockItem.set(
+        line.stockItemId,
+        (netQtyByStockItem.get(line.stockItemId) ?? 0) + line.qty,
+      );
+    }
+  }
+
+  const pickValidStockId = (...candidates: Array<number | undefined>): number | undefined => {
+    for (const id of candidates) {
+      if (id && validStockIds.has(id)) return id;
+    }
+    return undefined;
+  };
 
   return items.map((item) => {
     if (!item || item.type === "section") return item;
@@ -65,16 +86,15 @@ export async function mergeInvoiceStockMeta(
     const qty = Number(item.qty) || 0;
     const cleanPart = String(item.partNumber || "").replace(/<[^>]*>/g, "").trim().toLowerCase();
 
-    let incomingStockId = Number(item.stockItemId) > 0 ? Number(item.stockItemId) : undefined;
-    if (!incomingStockId && cleanPart) {
-      incomingStockId = stockByCode.get(cleanPart);
-    }
+    const rawIncomingStockId = Number(item.stockItemId) > 0 ? Number(item.stockItemId) : undefined;
+    const incomingStockId = rawIncomingStockId && validStockIds.has(rawIncomingStockId)
+      ? rawIncomingStockId
+      : undefined;
+    const codeStockId = cleanPart ? stockByCode.get(cleanPart) : undefined;
 
-    // Match previous line by stockItemId or part number ONLY — never by row index
-    // (index matching assigned the wrong warehouse across lines).
     const prevLine =
-      (incomingStockId
-        ? prev.find((p) => p && p.type !== "section" && Number(p.stockItemId) === incomingStockId)
+      (rawIncomingStockId
+        ? prev.find((p) => p && p.type !== "section" && Number(p.stockItemId) === rawIncomingStockId)
         : undefined)
       ?? (cleanPart
         ? prev.find((p) =>
@@ -84,7 +104,13 @@ export async function mergeInvoiceStockMeta(
         : undefined);
 
     const prevStockId = Number(prevLine?.stockItemId) > 0 ? Number(prevLine.stockItemId) : undefined;
-    const stockItemId = incomingStockId ?? prevStockId;
+    let stockItemId = pickValidStockId(incomingStockId, codeStockId, prevStockId && validStockIds.has(prevStockId) ? prevStockId : undefined);
+
+    // Keep deleted-catalog ids only when stock was already issued on this invoice.
+    if (!stockItemId && prevStockId && Number(prevLine?.warehouseId) > 0) {
+      const issuedQty = netQtyByStockItem.get(prevStockId) ?? 0;
+      if (issuedQty > 0.0005) stockItemId = prevStockId;
+    }
 
     if (!stockItemId) {
       return {
@@ -284,9 +310,10 @@ router.post("/invoices", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, salesPerson, notes, items, tax,
     currency, discountAmount, isPrivate, status, poRefNo, exchangeRate,
     createDeliveryOrder,
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
@@ -318,7 +345,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     doc = await db.transaction(async (tx) => {
       const [created] = await tx.insert(invoicesTable).values({
         invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-        customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes,
+        customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, salesPerson: salesPerson || null, notes,
         items: stockItems,
         currency: currency || "SGD",
         exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
@@ -326,6 +353,10 @@ router.post("/invoices", async (req, res): Promise<void> => {
         poRefNo: poRefNo || null,
         subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
         totalAmount: totalAmount.toFixed(2), status: createdStatus, createdBy: req.session.userId!,
+        termsAndConditions: termsAndConditions || null,
+        deliveryInstructions: deliveryInstructions || null,
+        customerNote: customerNote || null,
+        authorisedSignature: authorisedSignature || null,
       }).returning();
 
       // Tax Invoice with cube-picked stock always reduces warehouse qty on confirm.
@@ -494,8 +525,9 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, salesPerson, notes, items, tax, status,
     currency, discountAmount, isPrivate, poRefNo, exchangeRate, createDeliveryOrder,
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
@@ -506,15 +538,21 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
 
   const updateData: any = {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, salesPerson: salesPerson !== undefined ? (salesPerson || null) : undefined, notes, items,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
     poRefNo: poRefNo ?? null,
+    // Any edit+save marks the invoice as modified (badge next to Confirmed).
+    isModified: true,
   };
   if (currency !== undefined) updateData.currency = currency;
   if (exchangeRate !== undefined) updateData.exchangeRate = parseFloat(exchangeRate).toFixed(6);
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
+  if (termsAndConditions !== undefined) updateData.termsAndConditions = termsAndConditions || null;
+  if (deliveryInstructions !== undefined) updateData.deliveryInstructions = deliveryInstructions || null;
+  if (customerNote !== undefined) updateData.customerNote = customerNote || null;
+  if (authorisedSignature !== undefined) updateData.authorisedSignature = authorisedSignature || null;
 
   const [existing] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
@@ -541,7 +579,7 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
   try {
     updated = await db.transaction(async (tx) => {
       if (wasStockTracked || stockTrackedStatus) {
-        const stockItems = stockTrackedStatus ? await mergeInvoiceStockMeta(existing.companyId, items as any[], existing.items as any[]) : [];
+        const stockItems = stockTrackedStatus ? await mergeInvoiceStockMeta(existing.companyId, items as any[], existing.items as any[], id) : [];
         console.log("[TAX_INVOICE_TRACE:UPDATE_PAYLOAD]", JSON.stringify({
           invoiceId: id,
           invNumber: existing.invNumber,

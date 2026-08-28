@@ -9,6 +9,13 @@ import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { clearBrowserSessionLive } from "@/lib/browser-session";
 import {
+  formatSingaporePhoneForApi,
+  parseSingaporePhoneDigits,
+  SG_PHONE_DIGITS,
+  SG_PHONE_PREFIX,
+  validateSingaporePhoneDigits,
+} from "@/lib/singapore-phone";
+import {
   AuthMobileShell,
   AuthProgressDots,
   RequiredMark,
@@ -84,8 +91,8 @@ function validatePersonalDetails(form: PersonalForm): string | null {
   if (!form.full_name.trim()) return "Full name is required";
   if (!form.email.trim()) return "Email is required";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return "Enter a valid email address";
-  if (!form.phone_number.trim()) return "Phone number is required";
-  if (form.phone_number.trim().length < 10) return "Phone number must be at least 10 digits";
+  const phoneError = validateSingaporePhoneDigits(form.phone_number.trim());
+  if (phoneError) return phoneError;
   if (!form.password) return "Password is required";
   if (form.password.length < 6) return "Password must be at least 6 characters";
   if (form.password !== form.confirm_password) return "Passwords do not match";
@@ -147,7 +154,12 @@ export default function Register() {
   }, [isLoading, user, setLocation]);
 
   const handlePersonalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPersonalForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    if (name === "phone_number") {
+      setPersonalForm((prev) => ({ ...prev, phone_number: parseSingaporePhoneDigits(value) }));
+      return;
+    }
+    setPersonalForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleCompanyChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -189,7 +201,7 @@ export default function Register() {
         body: JSON.stringify({
           fullName: personalForm.full_name.trim(),
           email: personalForm.email.trim().toLowerCase(),
-          phoneNumber: personalForm.phone_number.trim(),
+          phoneNumber: formatSingaporePhoneForApi(personalForm.phone_number.trim()),
           password: personalForm.password,
           companyName: companyForm.company_name.trim(),
           companyEmail: companyForm.company_email.trim().toLowerCase(),
@@ -282,16 +294,26 @@ export default function Register() {
 
       <label className="flex min-w-0 flex-col gap-2">
         <span className={authMobileLabelClass}>Phone Number<RequiredMark /></span>
-        <input
-          type="tel"
-          name="phone_number"
-          placeholder="Enter phone number"
-          value={personalForm.phone_number}
-          onChange={handlePersonalChange}
-          autoComplete="tel"
-          className={registerMobileInputClass}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
+        <div className="flex">
+          <span
+            className="flex h-11 shrink-0 items-center rounded-l-[10px] border border-r-0 border-gray-200 bg-gray-50 px-3 text-[0.9rem] font-medium text-[#101828]"
+            style={{ fontFamily: "Poppins, sans-serif" }}
+          >
+            {SG_PHONE_PREFIX}
+          </span>
+          <input
+            type="tel"
+            name="phone_number"
+            placeholder="9123 4567"
+            value={personalForm.phone_number}
+            onChange={handlePersonalChange}
+            autoComplete="tel-national"
+            inputMode="numeric"
+            maxLength={SG_PHONE_DIGITS}
+            className={`${registerMobileInputClass} rounded-l-none`}
+            style={{ fontFamily: "Poppins, sans-serif" }}
+          />
+        </div>
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
@@ -487,16 +509,26 @@ export default function Register() {
 
         <label className="flex min-w-0 flex-col gap-1">
           <span className="text-[0.82rem] font-semibold text-[#101828]">Phone Number<RequiredMark /></span>
-          <input
-            type="tel"
-            name="phone_number"
-            placeholder="Enter your phone number"
-            value={personalForm.phone_number}
-            onChange={handlePersonalChange}
-            autoComplete="tel"
-            className={desktopInputClassName}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          />
+          <div className="flex">
+            <span
+              className="flex h-10 shrink-0 items-center rounded-l-[10px] border border-r-0 border-gray-200 bg-gray-50 px-3 text-[0.85rem] font-medium text-[#101828]"
+              style={{ fontFamily: "Poppins, sans-serif" }}
+            >
+              {SG_PHONE_PREFIX}
+            </span>
+            <input
+              type="tel"
+              name="phone_number"
+              placeholder="9123 4567"
+              value={personalForm.phone_number}
+              onChange={handlePersonalChange}
+              autoComplete="tel-national"
+              inputMode="numeric"
+              maxLength={SG_PHONE_DIGITS}
+              className={`${desktopInputClassName} rounded-l-none`}
+              style={{ fontFamily: "Poppins, sans-serif" }}
+            />
+          </div>
         </label>
       </div>
 

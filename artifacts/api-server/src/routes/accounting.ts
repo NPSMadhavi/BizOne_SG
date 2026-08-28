@@ -698,6 +698,7 @@ router.get("/ar-aging", async (req, res): Promise<void> => {
     customerName: invoicesTable.customerName, issueDate: invoicesTable.issueDate,
     totalAmount: invoicesTable.totalAmount, status: invoicesTable.status,
     paymentTerms: invoicesTable.paymentTerms,
+    salesPerson: (invoicesTable as any).salesPerson,
   })
   .from(invoicesTable)
   .where(and(
@@ -714,21 +715,23 @@ router.get("/ar-aging", async (req, res): Promise<void> => {
     return 30;
   }
 
-  const byCustomer: Record<string, { customerName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: any[] }> = {};
+  const byCustomer: Record<string, { customerName: string; salesPerson?: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: any[] }> = {};
 
   for (const inv of rows) {
     const name   = inv.customerName || "Unknown";
     const amount = parseFloat(inv.totalAmount ?? "0");
     const dueMs  = new Date((inv.issueDate || asOf) + "T00:00:00").getTime() + termsDays(inv.paymentTerms) * 86_400_000;
     const days   = Math.floor((asOfMs - dueMs) / 86_400_000);
-    if (!byCustomer[name]) byCustomer[name] = { customerName: name, current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0, invoices: [] };
+    const sp = (inv as any).salesPerson || undefined;
+    if (!byCustomer[name]) byCustomer[name] = { customerName: name, salesPerson: sp, current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0, invoices: [] };
+    if (!byCustomer[name].salesPerson && sp) byCustomer[name].salesPerson = sp;
     if      (days <= 0)  byCustomer[name].current  += amount;
     else if (days <= 30) byCustomer[name].b1_30    += amount;
     else if (days <= 60) byCustomer[name].b31_60   += amount;
     else if (days <= 90) byCustomer[name].b61_90   += amount;
     else                 byCustomer[name].b91plus  += amount;
     byCustomer[name].total += amount;
-    byCustomer[name].invoices.push({ id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate, amount, daysPastDue: days });
+    byCustomer[name].invoices.push({ id: inv.id, invNumber: inv.invNumber, issueDate: inv.issueDate, amount, daysPastDue: days, salesPerson: sp });
   }
 
   const customers = Object.values(byCustomer).sort((a, b) => b.total - a.total)
@@ -752,13 +755,13 @@ router.get("/ap-aging", async (req, res): Promise<void> => {
   const companyId = req.session.companyId!;
   const asOf   = (req.query.asOf as string) || new Date().toISOString().split("T")[0];
   const asOfMs = new Date(asOf + "T00:00:00").getTime();
-  const TERMS  = 30;
-
   const rows = await db.select({
     id: vendorInvoicesTable.id, piNumber: vendorInvoicesTable.piNumber,
     vendorName: vendorInvoicesTable.vendorName, piDate: vendorInvoicesTable.piDate,
+    dueDate: vendorInvoicesTable.dueDate, notes: vendorInvoicesTable.notes,
     totalAmount: vendorInvoicesTable.totalAmount, paidAmount: vendorInvoicesTable.paidAmount,
     status: vendorInvoicesTable.status,
+    salesPerson: vendorInvoicesTable.salesPerson,
   })
   .from(vendorInvoicesTable)
   .where(and(
@@ -767,22 +770,24 @@ router.get("/ap-aging", async (req, res): Promise<void> => {
     sql`COALESCE(${vendorInvoicesTable.piDate}, to_char(${vendorInvoicesTable.createdAt}::date, 'YYYY-MM-DD')) <= ${asOf}`,
   ));
 
-  const byVendor: Record<string, { vendorName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: any[] }> = {};
+  const byVendor: Record<string, { vendorName: string; salesPerson?: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: any[] }> = {};
 
   for (const vi of rows) {
     const name    = vi.vendorName || "Unknown";
     const balance = parseFloat(vi.totalAmount ?? "0") - parseFloat(vi.paidAmount ?? "0");
     if (balance < 0.005) continue;
-    const dueMs = new Date((vi.piDate || asOf) + "T00:00:00").getTime() + TERMS * 86_400_000;
+    const dueMs = new Date((vi.dueDate || vi.piDate || asOf) + "T00:00:00").getTime();
     const days  = Math.floor((asOfMs - dueMs) / 86_400_000);
-    if (!byVendor[name]) byVendor[name] = { vendorName: name, current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0, invoices: [] };
+    const spMatch = (vi as any).salesPerson || vi.notes?.match(/sales\s*person:\s*([^\n;]+)/i)?.[1]?.trim();
+    if (!byVendor[name]) byVendor[name] = { vendorName: name, salesPerson: spMatch || undefined, current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0, invoices: [] };
+    if (!byVendor[name].salesPerson && spMatch) byVendor[name].salesPerson = spMatch;
     if      (days <= 0)  byVendor[name].current  += balance;
     else if (days <= 30) byVendor[name].b1_30    += balance;
     else if (days <= 60) byVendor[name].b31_60   += balance;
     else if (days <= 90) byVendor[name].b61_90   += balance;
     else                 byVendor[name].b91plus  += balance;
     byVendor[name].total += balance;
-    byVendor[name].invoices.push({ id: vi.id, piNumber: vi.piNumber, piDate: vi.piDate, balance: +balance.toFixed(2), daysPastDue: days, status: vi.status });
+    byVendor[name].invoices.push({ id: vi.id, piNumber: vi.piNumber, piDate: vi.piDate, balance: +balance.toFixed(2), daysPastDue: days, status: vi.status, salesPerson: spMatch || undefined });
   }
 
   const vendors = Object.values(byVendor).sort((a, b) => b.total - a.total)

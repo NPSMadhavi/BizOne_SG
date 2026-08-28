@@ -23,6 +23,7 @@ import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateCreditNote_PDF } from "@/lib/pdf";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Link } from "wouter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -132,7 +133,8 @@ export default function CreditNoteEdit() {
       customerName: "", customerAddress: "", contactPerson: "", contactEmail: "",
       refInvNumber: "", reason: "", issueDate: getToday(),
       currency: "SGD", taxRate: 9, discountAmount: 0,
-      paymentTerms: "", notes: "", isPrivate: false,
+      paymentTerms: "", notes: "",
+      isPrivate: false,
       items: [{ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 }],
     },
   });
@@ -523,6 +525,19 @@ export default function CreditNoteEdit() {
                   </div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <FormField control={form.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </CardContent>
           </Card>
 

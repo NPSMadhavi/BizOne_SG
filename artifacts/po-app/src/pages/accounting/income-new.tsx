@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Info, RefreshCw, Paperclip, X, FileText, FileImage, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BankAccountField } from "@/components/bank-account-field";
 
 interface IncomeForm {
   incomeDate: string;
@@ -95,6 +96,7 @@ export default function IncomeNew() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [selectedBank, setSelectedBank] = useState("");
   const [revenueAccounts, setRevenueAccounts] = useState<Account[]>([]);
   const [exchangeRate, setExchangeRate] = useState("1.000000");
   const [fetchingRate, setFetchingRate] = useState(false);
@@ -472,15 +474,13 @@ export default function IncomeNew() {
             <Card>
               <CardHeader><CardTitle className="text-base">Payment Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label>Payment Method</Label>
-                  <Controller name="paymentMethod" control={form.control} render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  )} />
-                </div>
+                <BankAccountField
+                  paymentMethod={watch("paymentMethod")}
+                  onPaymentMethodChange={(v) => setValue("paymentMethod", v)}
+                  selectedBankAccount={selectedBank}
+                  onBankAccountChange={setSelectedBank}
+                  paymentMethods={PAYMENT_METHODS}
+                />
 
                 <div className="space-y-1.5">
                   <Label htmlFor="reference">Reference / Bank Ref</Label>

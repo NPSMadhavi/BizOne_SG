@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 import {
   Package,
   Layers,
@@ -41,6 +42,7 @@ import {
   Barcode,
   Truck,
   Trash2,
+  UserCheck,
 } from "lucide-react";
 
 type BatchStatus = "fresh" | "expiring_30" | "expiring_7" | "expired";
@@ -54,6 +56,8 @@ type BatchRow = {
   barcode: string;
   supplier: string;
   warehouse: string;
+  salesPerson?: string;
+  customer?: string;
   purchaseDate: string;
   mfgDate: string;
   expiryDate: string;
@@ -174,6 +178,8 @@ const EMPTY_FORM = {
   barcode: "",
   supplier: "",
   warehouse: "",
+  salesPerson: "",
+  customer: "",
   purchaseDate: "",
   mfgDate: "",
   expiryDate: "",
@@ -184,9 +190,11 @@ const EMPTY_FORM = {
 
 export default function BatchExpiryPage() {
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [warehouse, setWarehouse] = useState("all");
+  const [salesPersonFilter, setSalesPersonFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewBatchId, setViewBatchId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -257,6 +265,7 @@ export default function BatchExpiryPage() {
     return enriched.filter((r) => {
       if (category !== "all" && r.category !== category) return false;
       if (warehouse !== "all" && r.warehouse !== warehouse) return false;
+      if (salesPersonFilter !== "all" && r.salesPerson !== salesPersonFilter) return false;
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (!q) return true;
       return (
@@ -265,7 +274,7 @@ export default function BatchExpiryPage() {
         r.productCode.toLowerCase().includes(q)
       );
     });
-  }, [enriched, search, category, warehouse, statusFilter]);
+  }, [enriched, search, category, warehouse, salesPersonFilter, statusFilter]);
 
   const totals = useMemo(() => {
     const stockValue = enriched.reduce((s, r) => s + r.qty * r.unitPrice, 0);
@@ -311,6 +320,8 @@ export default function BatchExpiryPage() {
       barcode: row.barcode,
       supplier: row.supplier,
       warehouse: row.warehouse,
+      salesPerson: row.salesPerson || "",
+      customer: row.customer || "",
       purchaseDate: row.purchaseDate,
       mfgDate: row.mfgDate,
       expiryDate: row.expiryDate,
@@ -328,15 +339,27 @@ export default function BatchExpiryPage() {
   function handleDeleteBatch() {
     if (!editingId) return;
     const removed = rows.find((r) => r.id === editingId);
-    persist(rows.filter((r) => r.id !== editingId));
+    const next = rows.filter((r) => r.id !== editingId);
+    persist(next);
     setDialogOpen(false);
     setEditingId(null);
-    toast({ title: "Batch deleted", description: removed ? `${removed.batchNo} removed.` : undefined });
+    toast({
+      title: "Batch deleted",
+      description: removed ? `${removed.batchNo} removed.` : "Batch removed.",
+    });
   }
 
   function handleSaveBatch() {
-    if (!form.stockItemId || !form.productName.trim() || !form.batchNo.trim() || !form.expiryDate) {
-      toast({ title: "Required fields missing", description: "Stock item, batch no. and expiry date are required." });
+    if (!form.productName.trim()) {
+      toast({ title: "Product name required", variant: "destructive" });
+      return;
+    }
+    if (!form.batchNo.trim()) {
+      toast({ title: "Batch number required", variant: "destructive" });
+      return;
+    }
+    if (!form.expiryDate) {
+      toast({ title: "Expiry date required", variant: "destructive" });
       return;
     }
 
@@ -347,13 +370,15 @@ export default function BatchExpiryPage() {
               ...r,
               productName: form.productName.trim(),
               productCode: form.productCode.trim() || r.productCode,
-              category: form.category || "General",
+              category: form.category || r.category,
               batchNo: form.batchNo.trim(),
               barcode: form.barcode.trim() || r.barcode,
-              supplier: form.supplier.trim() || "—",
-              warehouse: form.warehouse || warehouseOptions[0] || "Main Warehouse",
-              purchaseDate: form.purchaseDate || form.mfgDate,
-              mfgDate: form.mfgDate || form.purchaseDate,
+              supplier: form.supplier.trim(),
+              warehouse: form.warehouse || r.warehouse,
+              salesPerson: form.salesPerson || "",
+              customer: form.customer.trim(),
+              purchaseDate: form.purchaseDate,
+              mfgDate: form.mfgDate,
               expiryDate: form.expiryDate,
               qty: Number(form.qty) || 0,
               unitPrice: Number(form.unitPrice) || 0,
@@ -376,6 +401,8 @@ export default function BatchExpiryPage() {
       barcode: form.barcode.trim() || `8901${Date.now().toString().slice(-8)}`,
       supplier: form.supplier.trim() || "—",
       warehouse: form.warehouse || warehouseOptions[0] || "Main Warehouse",
+      salesPerson: form.salesPerson || "",
+      customer: form.customer.trim() || "—",
       purchaseDate: form.purchaseDate || form.mfgDate,
       mfgDate: form.mfgDate || form.purchaseDate,
       expiryDate: form.expiryDate,
@@ -455,6 +482,15 @@ export default function BatchExpiryPage() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={salesPersonFilter} onValueChange={(v) => { setSalesPersonFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="All Sales Persons" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sales Persons</SelectItem>
+            {salesPersons.map((sp) => (
+              <SelectItem key={sp.id} value={sp.name}>{sp.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
           <SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="All Status" /></SelectTrigger>
           <SelectContent>
@@ -475,12 +511,15 @@ export default function BatchExpiryPage() {
 
       <div className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB] text-left text-xs uppercase tracking-wide text-[#6B7280]">
                   <th className="px-4 py-3 font-semibold">Product</th>
                   <th className="px-4 py-3 font-semibold">Batch No.</th>
                   <th className="px-4 py-3 font-semibold">Warehouse</th>
+                  <th className="px-4 py-3 font-semibold">Vendor / Supplier</th>
+                  <th className="px-4 py-3 font-semibold">Customer</th>
+                  <th className="px-4 py-3 font-semibold">Sales Person</th>
                   <th className="px-4 py-3 font-semibold">Mfg. Date</th>
                   <th className="px-4 py-3 font-semibold">Expiry Date</th>
                   <th className="px-4 py-3 font-semibold text-right">Available Qty</th>
@@ -491,7 +530,7 @@ export default function BatchExpiryPage() {
               <tbody>
                 {paginatedItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-[#6B7280]">
+                    <td colSpan={11} className="px-4 py-12 text-center text-[#6B7280]">
                       No batches found. Click Create Batch to create one.
                     </td>
                   </tr>
@@ -517,6 +556,9 @@ export default function BatchExpiryPage() {
                         </td>
                         <td className="px-4 py-3 font-medium text-[#111827]">{row.batchNo}</td>
                         <td className="px-4 py-3 text-[#4B5563]">{row.warehouse}</td>
+                        <td className="px-4 py-3 text-[#4B5563]">{row.supplier || "—"}</td>
+                        <td className="px-4 py-3 text-[#4B5563]">{row.customer || "—"}</td>
+                        <td className="px-4 py-3 text-[#4B5563]">{row.salesPerson || "—"}</td>
                         <td className="px-4 py-3 text-[#4B5563]">{formatDisplayDate(row.mfgDate)}</td>
                         <td className={cn("px-4 py-3", expiryClass)}>{formatDisplayDate(row.expiryDate)}</td>
                         <td className="px-4 py-3 text-right font-medium text-[#111827]">{row.qty.toLocaleString()}</td>
@@ -617,8 +659,23 @@ export default function BatchExpiryPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Supplier</Label>
+              <Label>Sales Person</Label>
+              <Select value={form.salesPerson || ""} onValueChange={(v) => setForm((f) => ({ ...f, salesPerson: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select Sales Person" /></SelectTrigger>
+                <SelectContent>
+                  {salesPersons.map((sp) => (
+                    <SelectItem key={sp.id} value={sp.name}>{sp.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Vendor / Supplier</Label>
               <Input value={form.supplier} onChange={(e) => setForm((f) => ({ ...f, supplier: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Customer</Label>
+              <Input value={form.customer || ""} onChange={(e) => setForm((f) => ({ ...f, customer: e.target.value }))} placeholder="Optional customer name" />
             </div>
             <div className="space-y-1.5">
               <Label>Mfg. Date</Label>
@@ -684,7 +741,8 @@ export default function BatchExpiryPage() {
                   </button>
                 }
               />
-              <DetailRow icon={Truck} label="Supplier" value={viewBatch.supplier} />
+              <DetailRow icon={Truck} label="Vendor / Supplier" value={viewBatch.supplier || "—"} />
+              <DetailRow icon={UserCheck} label="Customer" value={viewBatch.customer || "—"} />
               <DetailRow icon={Warehouse} label="Warehouse" value={viewBatch.warehouse} />
               <DetailRow icon={Calendar} label="Purchase Date" value={formatDisplayDate(viewBatch.purchaseDate)} />
               <DetailRow icon={Calendar} label="Manufacture Date" value={formatDisplayDate(viewBatch.mfgDate)} />

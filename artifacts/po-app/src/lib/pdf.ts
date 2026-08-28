@@ -1351,84 +1351,90 @@ function countHtmlLines(doc: jsPDF, html: string, maxW: number): number {
   return Math.max(1, count);
 }
 
+export interface NoteBlock {
+  title: string;
+  content: string;
+  shaded?: boolean;
+}
+
 function calcBlockHeight(
   doc: jsPDF,
-  settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
+  blocks: NoteBlock[],
   maxW: number
 ): number {
-  const bank = (settings?.bankDetails || "").trim();
-  const tnc = (settings?.termsAndConditions || "").trim();
-  if (!bank && !tnc) return 0;
+  if (blocks.length === 0) return 0;
   const prevSize = doc.getFontSize();
   doc.setFontSize(7.5);
   const lineH = 3.8;
   const boxPad = 2.5;
   let h = 0;
-  if (bank) {
-    const bankLines = countHtmlLines(doc, bank, maxW);
-    h += boxPad;        // top of shaded rect starts at y - boxPad
-    h += 4;             // "Bank Details:" header
-    h += bankLines * lineH;
-    h += boxPad * 2 + 1; // full bottom padding of shaded box
-    if (tnc) h += 4;    // gap before T&C
-  }
-  if (tnc) {
-    h += 4; // "Terms & Conditions:" header
-    h += countHtmlLines(doc, tnc, maxW) * lineH;
+  for (const b of blocks) {
+    const text = (b.content || "").trim();
+    if (!text) continue;
+    if (b.shaded) {
+      const bLines = countHtmlLines(doc, text, maxW);
+      h += boxPad;
+      if (b.title) h += 4;
+      h += bLines * lineH;
+      h += boxPad * 2 + 1;
+    } else {
+      if (b.title) h += 4;
+      h += countHtmlLines(doc, text, maxW) * lineH;
+    }
+    h += 4;
   }
   doc.setFontSize(prevSize);
-  // Add a 12mm safety buffer so estimation errors never cause overflow
   return h + 12;
 }
 
-/**
- * Render Bank Details + T&C block starting at an explicit Y position.
- * Used for the inline (side-by-side with totals) layout.
- */
 function renderInlineDocInfo(
   doc: jsPDF,
-  settings: { bankDetails?: string; termsAndConditions?: string } | null | undefined,
+  blocks: NoteBlock[],
   x: number,
   startY: number,
   maxW: number,
   footerReserve = 0
 ): void {
-  const bank = (settings?.bankDetails || "").trim();
-  const tnc = (settings?.termsAndConditions || "").trim();
-  if (!bank && !tnc) return;
-
+  if (blocks.length === 0) return;
   const lineH = 3.8;
   let y = startY;
-
-  doc.setFontSize(7.5);
-
   const pageH = doc.internal.pageSize.getHeight();
 
-  if (bank) {
-    const bankLines = countHtmlLines(doc, bank, maxW);
-    const bankTextH = bankLines * lineH;
-    const boxPad = 2.5;
-    const boxH = 4 + bankTextH + boxPad * 2 + 1;
+  for (const b of blocks) {
+    const text = (b.content || "").trim();
+    if (!text) continue;
+    
+    if (y + 14 > pageH - footerReserve) {
+      doc.addPage();
+      y = 20;
+    }
 
-    doc.setFillColor(245, 246, 248);
-    doc.roundedRect(x - 2, y - boxPad, maxW + 4, boxH, 1.5, 1.5, "F");
-
-    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
-    doc.text("Bank Details:", x, y); y += 4;
-    doc.setTextColor(110, 110, 110);
-    // Use footerReserve so content never bleeds into the footer area
-    y = drawNotesHtml(doc, bank, x, y, maxW, lineH, pageH, footerReserve, PDF_FONT);
-    y += boxPad + 1;
-    if (tnc) y += 4;
-  }
-
-  if (tnc) {
-    doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
-    // If we've been pushed to a new page mid-bank, reset font size
     doc.setFontSize(7.5);
-    doc.text("Terms & Conditions:", x, y); y += 4;
-    doc.setTextColor(110, 110, 110);
-    drawNotesHtml(doc, tnc, x, y, maxW, lineH, pageH, footerReserve, PDF_FONT);
+    if (b.shaded) {
+      const bLines = countHtmlLines(doc, text, maxW);
+      const bTextH = bLines * lineH;
+      const boxPad = 2.5;
+      const boxH = (b.title ? 4 : 0) + bTextH + boxPad * 2 + 1;
+
+      doc.setFillColor(245, 246, 248);
+      doc.roundedRect(x - 2, y - boxPad, maxW + 4, boxH, 1.5, 1.5, "F");
+
+      if (b.title) {
+        doc.setFont(PDF_FONT, "bold"); doc.setTextColor(80, 80, 80);
+        doc.text(b.title, x, y); y += 4;
+      }
+      doc.setTextColor(110, 110, 110);
+      y = drawNotesHtml(doc, text, x, y, maxW, lineH, pageH, footerReserve, PDF_FONT);
+      y += boxPad + 1 + 4;
+    } else {
+      if (b.title) {
+        doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
+        doc.text(b.title, x, y); y += 4;
+      }
+      doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+      y = drawNotesHtml(doc, text, x, y, maxW, 5, pageH, footerReserve, PDF_FONT);
+      y += 4;
+    }
   }
 }
 
@@ -1642,7 +1648,13 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   const qtExtraRows = qtDocDiscount > 0 ? 1 : 0;
   const qtBoxH = (3 + qtExtraRows) * 7 + 16;
-  const qtBankBlockH = calcBlockHeight(doc, qtSettings, 125);
+    const qtBlocks: NoteBlock[] = [];
+  if (qt.notes) qtBlocks.push({ title: "Internal Notes:", content: qt.notes });
+  if ((qt as any).customerNote?.trim()) qtBlocks.push({ title: "Customer Note:", content: (qt as any).customerNote });
+  if ((qt as any).deliveryInstructions?.trim()) qtBlocks.push({ title: "Delivery Instructions:", content: (qt as any).deliveryInstructions });
+  if (settings?.bankDetails) qtBlocks.push({ title: "Bank Details:", content: settings.bankDetails, shaded: true });
+  if (((qt as any).customerQuotationTerms || (qt as any).termsAndConditions || qtSettings?.quotationTerms)?.trim()) qtBlocks.push({ title: "Terms & Conditions:", content: ((qt as any).customerQuotationTerms || (qt as any).termsAndConditions || qtSettings?.quotationTerms) });
+  const qtBankBlockH = calcBlockHeight(doc, qtBlocks, 125);
 
   const qtUnitPriceIdx = qtHeaders.indexOf(`Unit Price (${currSymbol(qtCurrency)})`);
   const qtAmountIdx = qtHeaders.indexOf(`Amount (${currSymbol(qtCurrency)})`);
@@ -1695,18 +1707,11 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
 
   let qtCurrentY = qtFinalY + 12;
 
-  if (qt.notes) {
-    if (qtCurrentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); qtCurrentY = 20; }
-    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, qtCurrentY);
-    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-    qtCurrentY = drawNotesHtml(doc, qt.notes, marginLeft, qtCurrentY + 6, marginRight - marginLeft, 5, pageHeight, FOOTER_RESERVE, PDF_FONT);
-  }
-
-  // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
+// ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const qtCombinedH = Math.max(qtBoxH, qtBankBlockH);
   let qtTotalsOnNewPage = false;
-  if (qtCurrentY + qtCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; qtTotalsOnNewPage = true; }
+  const qtSigH = (qt as any).authorisedSignature ? 25 : 0;
+  if (qtFinalY + 12 + qtCombinedH + qtSigH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); qtCurrentY = 20; qtTotalsOnNewPage = true; }
 
   const qtTaxableAmount = Number(qt.subtotal) - qtDocDiscount;
   const qtTaxRate = qtTaxableAmount > 0 ? Math.round((Number(qt.tax) / qtTaxableAmount) * 1000) / 10 : 0;
@@ -1715,7 +1720,7 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   const valueX = marginRight - 4;
   const qtPinnedY = pageHeight - FOOTER_RESERVE - qtCombinedH - 4;
   // Only bottom-pin when on same page as items; on a fresh page, draw from top
-  const totalsY = qtTotalsOnNewPage ? qtCurrentY + 4 : Math.max(qtCurrentY + 4, qtPinnedY);
+  const totalsY = qtTotalsOnNewPage ? 20 : Math.max(qtFinalY + 12, qtPinnedY);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -1746,7 +1751,22 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   doc.text(fmtMoneyTotal(qtCurrency, Number(qt.totalAmount)), valueX, ty, { align: "right" });
 
   // Left: bank details + quotation T&C inline (same Y, left of totals)
-  renderInlineDocInfo(doc, qtSettings, marginLeft, totalsY, 125, FOOTER_RESERVE);
+  renderInlineDocInfo(doc, qtBlocks, marginLeft, totalsY, 125, FOOTER_RESERVE);
+
+  // Bottom Right: Authorised Signature
+  const sigImg = (qt as any).authorisedSignature;
+  if (sigImg) {
+    const sigW = 45;
+    const sigH = 15;
+    const sigX = marginRight - sigW;
+    const sigY = ty + 10;
+    doc.addImage(sigImg, "PNG", sigX, sigY, sigW, sigH, "", "FAST");
+    doc.setFont(PDF_FONT, "normal"); doc.setFontSize(8); doc.setTextColor(140, 140, 140);
+    doc.text("Authorised Signature", sigX + sigW / 2, sigY + sigH + 4, { align: "center" });
+    doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2);
+    doc.line(sigX, sigY + sigH, sigX + sigW, sigY + sigH);
+  }
+
 
   buildDocFooter(doc, quotationTitle);
 
@@ -1824,7 +1844,13 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   // the autoTable to decide whether to add a page before drawing totals.
   const invExtraRowsEarly = invDocDiscount > 0 ? 1 : 0;
   const invBoxH = (3 + invExtraRowsEarly) * 7 + 16;
-  const invBankBlockH = calcBlockHeight(doc, settings, 125);
+    const invBlocks: NoteBlock[] = [];
+  if (inv.notes) invBlocks.push({ title: "Internal Notes:", content: inv.notes });
+  if ((inv as any).customerNote?.trim()) invBlocks.push({ title: "Customer Note:", content: (inv as any).customerNote });
+  if ((inv as any).deliveryInstructions?.trim()) invBlocks.push({ title: "Delivery Instructions:", content: (inv as any).deliveryInstructions });
+  if (settings?.bankDetails) invBlocks.push({ title: "Bank Details:", content: settings.bankDetails, shaded: true });
+  if (((inv as any).termsAndConditions || settings?.termsAndConditions)?.trim()) invBlocks.push({ title: "Terms & Conditions:", content: ((inv as any).termsAndConditions || settings?.termsAndConditions) });
+  const invBankBlockH = calcBlockHeight(doc, invBlocks, 125);
 
   // Strip trailing/empty item rows that have no description and no part number
   const allInvItems = (inv.items as any[]).filter((item: any) => {
@@ -1960,18 +1986,11 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   let invCurrentY = invFinalY + 12;
 
-  if (inv.notes) {
-    if (invCurrentY + 14 > pageHeight - FOOTER_RESERVE) { doc.addPage(); invCurrentY = 20; }
-    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, invCurrentY);
-    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-    invCurrentY = drawNotesHtml(doc, inv.notes, marginLeft, invCurrentY + 6, marginRight - marginLeft, 5, pageHeight, FOOTER_RESERVE, PDF_FONT);
-  }
-
-  // ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
+// ── Totals + Bank/T&C side-by-side ───────────────────────────────────────────
   const invCombinedH = Math.max(invBoxH, invBankBlockH);
   let invTotalsOnNewPage = false;
-  if (invCurrentY + invCombinedH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; invTotalsOnNewPage = true; }
+  const invSigH = (inv as any).authorisedSignature ? 25 : 0;
+  if (invFinalY + 12 + invCombinedH + invSigH + FOOTER_RESERVE - 2 > pageHeight) { doc.addPage(); invCurrentY = 20; invTotalsOnNewPage = true; }
 
   const invTaxableAmount = Number(inv.subtotal) - invDocDiscount;
   const invTaxRate = invTaxableAmount > 0 ? Math.round((Number(inv.tax) / invTaxableAmount) * 1000) / 10 : 0;
@@ -1980,7 +1999,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const valueX = marginRight - 4;
   const invPinnedY = pageHeight - FOOTER_RESERVE - invCombinedH - 4;
   // Only bottom-pin when on same page as items; on a fresh page, draw from top
-  const totalsY = invTotalsOnNewPage ? invCurrentY + 4 : Math.max(invCurrentY + 4, invPinnedY);
+  const totalsY = invTotalsOnNewPage ? 20 : Math.max(invFinalY + 12, invPinnedY);
 
   // Right: totals box
   doc.setFillColor(244, 246, 250);
@@ -2011,7 +2030,22 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   doc.text(fmtMoneyTotal(invCurrency, Number(inv.totalAmount)), valueX, ity, { align: "right" });
 
   // Left: bank details + T&C inline (same Y, left of totals)
-  renderInlineDocInfo(doc, settings, marginLeft, totalsY, 125, FOOTER_RESERVE);
+  renderInlineDocInfo(doc, invBlocks, marginLeft, totalsY, 125, FOOTER_RESERVE);
+
+  // Bottom Right: Authorised Signature
+  const sigImg = (inv as any).authorisedSignature;
+  if (sigImg) {
+    const sigW = 45;
+    const sigH = 15;
+    const sigX = marginRight - sigW;
+    const sigY = ty + 10;
+    doc.addImage(sigImg, "PNG", sigX, sigY, sigW, sigH, "", "FAST");
+    doc.setFont(PDF_FONT, "normal"); doc.setFontSize(8); doc.setTextColor(140, 140, 140);
+    doc.text("Authorised Signature", sigX + sigW / 2, sigY + sigH + 4, { align: "center" });
+    doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2);
+    doc.line(sigX, sigY + sigH, sigX + sigW, sigY + sigH);
+  }
+
 
   buildDocFooter(doc, "Invoice");
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
@@ -2120,15 +2154,35 @@ export async function generateDO_PDF(doDoc: DeliveryOrder, company?: Company | n
     }
   }
 
-  if (doDoc.notes) {
-    const doPageH = doc.internal.pageSize.getHeight();
-    const doNotesWidth = doc.internal.pageSize.getWidth() - 28;
-    let doNotesY = doFinalY + 16;
-    if (doNotesY + 14 > doPageH - FOOTER_RESERVE) { doc.addPage(); doNotesY = 20; }
-    doc.setFontSize(9.5); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-    doc.text("Notes:", marginLeft, doNotesY);
-    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-    drawNotesHtml(doc, doDoc.notes, marginLeft, doNotesY + 6, doNotesWidth, 5, doPageH, FOOTER_RESERVE, PDF_FONT);
+
+
+    const doBlocks: NoteBlock[] = [];
+  if (doDoc.notes) doBlocks.push({ title: "Internal Notes:", content: doDoc.notes });
+  if ((doDoc as any).customerNote?.trim()) doBlocks.push({ title: "Customer Note:", content: (doDoc as any).customerNote });
+  if ((doDoc as any).deliveryInstructions?.trim()) doBlocks.push({ title: "Delivery Instructions:", content: (doDoc as any).deliveryInstructions });
+  if ((doDoc as any).termsAndConditions?.trim()) doBlocks.push({ title: "Terms & Conditions:", content: (doDoc as any).termsAndConditions });
+
+  const doBankBlockH = calcBlockHeight(doc, doBlocks, 125);
+  const doSigH = (doDoc as any).authorisedSignature ? 25 : 0;
+  let totalsY = doFinalY + 12;
+  const doPageH = doc.internal.pageSize.getHeight();
+  if (totalsY + doBankBlockH + doSigH + FOOTER_RESERVE - 2 > doPageH) { doc.addPage(); totalsY = 20; }
+
+  renderInlineDocInfo(doc, doBlocks, marginLeft, totalsY, 125, FOOTER_RESERVE);
+  
+
+  // Bottom Right: Authorised Signature
+  const sigImg = (doDoc as any).authorisedSignature;
+  if (sigImg) {
+    const sigW = 45;
+    const sigH = 15;
+    const sigX = marginRight - sigW;
+    const sigY = totalsY;
+    doc.addImage(sigImg, "PNG", sigX, sigY, sigW, sigH, "", "FAST");
+    doc.setFont(PDF_FONT, "normal"); doc.setFontSize(8); doc.setTextColor(140, 140, 140);
+    doc.text("Authorised Signature", sigX + sigW / 2, sigY + sigH + 4, { align: "center" });
+    doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2);
+    doc.line(sigX, sigY + sigH, sigX + sigW, sigY + sigH);
   }
 
   buildDoFooter(doc);

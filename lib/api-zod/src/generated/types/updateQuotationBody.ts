@@ -14,6 +14,8 @@ export interface UpdateQuotationBody {
   customerContact?: string;
   customerContactEmail?: string;
   deliveryAddress?: string;
+  issueDate?: string;
+  validUntil?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;

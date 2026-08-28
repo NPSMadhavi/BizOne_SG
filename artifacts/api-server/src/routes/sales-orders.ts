@@ -110,6 +110,7 @@ router.post("/sales-orders", async (req, res): Promise<void> => {
     qtId, qtNumber, customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
     currency, discountAmount, isPrivate, status,
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
@@ -145,6 +146,10 @@ router.post("/sales-orders", async (req, res): Promise<void> => {
     totalAmount: totalAmount.toFixed(2),
     status: status || "draft",
     createdBy: req.session.userId!,
+    termsAndConditions,
+    deliveryInstructions,
+    customerNote,
+    authorisedSignature,
   }).returning();
   await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
   logAudit({ req, action: "create", entityType: "sales_order", entityId: doc.id, entityLabel: doc.soNumber });
@@ -181,6 +186,7 @@ router.put("/sales-orders/:id", async (req, res): Promise<void> => {
     qtId, qtNumber, customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
     currency, discountAmount, isPrivate,
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
@@ -194,6 +200,7 @@ router.put("/sales-orders/:id", async (req, res): Promise<void> => {
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   };
   if (qtId !== undefined) updateData.qtId = qtId ? Number(qtId) : null;
   if (qtNumber !== undefined) updateData.qtNumber = qtNumber || null;

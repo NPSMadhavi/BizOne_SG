@@ -29,6 +29,20 @@ export async function runStartupMigrations(): Promise<void> {
       sql: sql`ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
     },
     {
+      name: "vendor invoice payment schedule and reminders",
+      sql: sql`
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS payment_terms text NOT NULL DEFAULT '30 Days Net';
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS due_date text;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS planned_payment_date text;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS reminders_enabled boolean NOT NULL DEFAULT false;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS reminder_start_after_day integer;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS reminder_emails jsonb NOT NULL DEFAULT '[]'::jsonb;
+        UPDATE vendor_invoices
+        SET due_date = (to_date(pi_date, 'YYYY-MM-DD') + interval '30 days')::date::text
+        WHERE due_date IS NULL AND pi_date ~ '^\\d{4}-\\d{2}-\\d{2}$';
+      `,
+    },
+    {
       name: "settings.so running numbers",
       sql: sql`
         ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_prefix text DEFAULT 'SO';
@@ -126,6 +140,14 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "invoices.so_number",
       sql: sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS so_number text`,
+    },
+    {
+      name: "invoices.is_modified",
+      sql: sql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_modified boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: "quotations.valid_until",
+      sql: sql`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS valid_until text`,
     },
     {
       name: "delivery_orders.so_id",

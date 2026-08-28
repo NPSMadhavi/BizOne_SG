@@ -65,7 +65,9 @@ import {
   FileText,
   FileSpreadsheet,
   X,
+  UserCheck,
 } from "lucide-react";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 type ReportId =
   | "stock_summary"
@@ -81,7 +83,8 @@ type ReportId =
   | "physical_verification"
   | "purchase_vs_sales"
   | "daily_stock"
-  | "monthly_stock";
+  | "monthly_stock"
+  | "sales_person_stock";
 
 type ReportDef = {
   id: ReportId;
@@ -108,6 +111,7 @@ type Filters = {
   warehouseId: string;
   category: string;
   itemId: string;
+  salesPerson: string;
   batchNo: string;
   expiryStatus: string;
   stockStatus: string;
@@ -230,6 +234,14 @@ const REPORTS: ReportDef[] = [
     iconBg: "bg-[#DCFCE7]",
     iconColor: "text-[#16A34A]",
   },
+  {
+    id: "sales_person_stock",
+    title: "Sales Person Wise Report",
+    description: "Stock movement, sales, and inventory distribution by sales person",
+    icon: UserCheck,
+    iconBg: "bg-[#DBEAFE]",
+    iconColor: "text-[#2563EB]",
+  },
 ];
 
 function todayIso() {
@@ -282,6 +294,7 @@ function defaultFilters(): Filters {
     warehouseId: "all",
     category: "all",
     itemId: "all",
+    salesPerson: "all",
     batchNo: "all",
     expiryStatus: "all",
     stockStatus: "all",
@@ -302,6 +315,7 @@ function loadBatches(): any[] {
 export default function ReportsPage() {
   const { user, selectedCompany } = useAuth();
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const userName = (user as any)?.fullName || user?.username || "User";
   const companyName = selectedCompany?.name || "Company";
 
@@ -318,6 +332,8 @@ export default function ReportsPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewLayout, setPreviewLayout] = useState<ReturnType<typeof resolveLayout>>("generic");
+
+  const [reportProductFilter, setReportProductFilter] = useState("all");
 
   const { data: warehouses = [] } = useQuery<any[]>({
     queryKey: ["stock-reports-warehouses"],
@@ -400,6 +416,7 @@ export default function ReportsPage() {
   }
 
   async function openReport(report: ReportDef) {
+    setReportProductFilter("all");
     setActiveReport(report.id);
     setPreviewTitle(report.title);
     setPreviewLayout(resolveLayout(report.id));
@@ -426,9 +443,14 @@ export default function ReportsPage() {
     }
   }
 
+  const displayedBatchWise = useMemo(() => {
+    if (reportProductFilter === "all") return batchWiseRows;
+    return batchWiseRows.filter((r) => r.itemCode === reportProductFilter);
+  }, [batchWiseRows, reportProductFilter]);
+
   function hasExportData() {
     if (previewLayout === "stock_wise") return stockWiseRows.length > 0;
-    if (previewLayout === "batch_wise") return batchWiseRows.length > 0;
+    if (previewLayout === "batch_wise") return displayedBatchWise.length > 0;
     if (previewLayout === "expiry_wise") return expiryWiseRows.length > 0;
     return previewRows.length > 0;
   }
@@ -440,7 +462,7 @@ export default function ReportsPage() {
     }
     const meta = buildMeta(previewTitle, previewLayout);
     if (previewLayout === "stock_wise") exportStockWiseExcel(meta, stockWiseRows);
-    else if (previewLayout === "batch_wise") exportBatchWiseExcel(meta, batchWiseRows);
+    else if (previewLayout === "batch_wise") exportBatchWiseExcel(meta, displayedBatchWise);
     else if (previewLayout === "expiry_wise") exportExpiryWiseExcel(meta, expiryWiseRows);
     else exportGenericExcel(meta, previewRows);
   }
@@ -452,7 +474,7 @@ export default function ReportsPage() {
     }
     const meta = buildMeta(previewTitle, previewLayout);
     if (previewLayout === "stock_wise") exportStockWisePdf(meta, stockWiseRows);
-    else if (previewLayout === "batch_wise") exportBatchWisePdf(meta, batchWiseRows);
+    else if (previewLayout === "batch_wise") exportBatchWisePdf(meta, displayedBatchWise);
     else if (previewLayout === "expiry_wise") exportExpiryWisePdf(meta, expiryWiseRows);
     else exportGenericPdf(meta, previewRows);
   }
@@ -630,6 +652,18 @@ ${styles}
             </Select>
           </FilterField>
 
+          <FilterField label="Sales Person">
+            <Select value={filters.salesPerson} onValueChange={(v) => setFilters((f) => ({ ...f, salesPerson: v }))}>
+              <SelectTrigger className="h-10 w-full bg-white"><SelectValue placeholder="All Sales Persons" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sales Persons</SelectItem>
+                {salesPersons.map((sp) => (
+                  <SelectItem key={sp.id} value={sp.name}>{sp.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
           <FilterField label="Batch No.">
             <Select value={filters.batchNo} onValueChange={(v) => setFilters((f) => ({ ...f, batchNo: v }))}>
               <SelectTrigger className="h-10 w-full bg-white"><SelectValue placeholder="All Batches" /></SelectTrigger>
@@ -757,7 +791,23 @@ ${styles}
               <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Inventory Reports</p>
               <DialogTitle className="text-base font-bold text-[#111827]">{previewTitle}</DialogTitle>
             </div>
-            <div className="flex flex-wrap gap-2 pr-8">
+            <div className="flex flex-wrap items-center gap-3 pr-8">
+              {activeReport === "batch_report" && (
+                <div className="flex items-center gap-1.5 mr-2">
+                  <span className="text-xs font-medium text-[#6B7280] whitespace-nowrap">Product Wise:</span>
+                  <Select value={reportProductFilter} onValueChange={setReportProductFilter}>
+                    <SelectTrigger className="h-9 w-48 bg-white text-xs">
+                      <SelectValue placeholder="All Products" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Products</SelectItem>
+                      {activeItems.map((i) => (
+                        <SelectItem key={i.id} value={String(i.code)}>{i.code} - {i.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button type="button" variant="outline" className="gap-2" onClick={handlePrint}>
                 <Printer className="h-4 w-4" /> Print
               </Button>
@@ -770,19 +820,15 @@ ${styles}
             </div>
           </div>
 
-          <div className="max-h-[75vh] overflow-auto bg-[#F3F4F6] p-4 print:bg-white print:p-0">
+          <div className="max-h-[75vh] min-h-[500px] overflow-auto bg-[#F3F4F6] p-4 print:bg-white print:p-0">
             {previewLoading ? (
               <p className="rounded-xl bg-white p-10 text-center text-sm text-[#6B7280]">Loading report...</p>
-            ) : !hasExportData() ? (
-              <p className="rounded-xl bg-white p-10 text-center text-sm text-[#6B7280]">
-                No records found for the selected filters.
-              </p>
             ) : (
               <ReportDocument
                 meta={previewMeta}
                 layout={previewLayout}
                 stockWise={stockWiseRows}
-                batchWise={batchWiseRows}
+                batchWise={displayedBatchWise}
                 expiryWise={expiryWiseRows}
                 generic={previewRows}
               />
@@ -1023,11 +1069,50 @@ async function buildReportData(
       const name = ctx.warehouses.find((w) => String(w.id) === filters.warehouseId)?.name;
       if (name) batches = batches.filter((b: any) => String(b.warehouse || "") === name);
     }
+
+    // Dynamic database fetch for fallback customers/vendors
+    let invoicesRes: any[] = [];
+    let vendorInvoicesRes: any[] = [];
+    try {
+      const [invs, vis] = await Promise.all([
+        fetch("/api/invoices").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+        fetch("/api/vendor-invoices").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      ]);
+      invoicesRes = Array.isArray(invs) ? invs : [];
+      vendorInvoicesRes = Array.isArray(vis) ? vis : [];
+    } catch (err) {
+      console.error("[BATCH_REPORT_DB_FETCH_FAILED]", err);
+    }
+
     const batchWise: BatchWiseRow[] = batches.map((b: any, idx: number) => {
       const received = Number(b.qty) || 0;
       const sold = 0;
       const balance = received - sold;
       const unitCost = Number(b.unitPrice) || 0;
+
+      // Match customer from sales invoices
+      let matchedCustomer = b.customer && b.customer !== "—" ? b.customer : "";
+      if (!matchedCustomer) {
+        const match = invoicesRes.find((inv: any) =>
+          (inv.items || []).some((item: any) =>
+            String(item.partNumber || "").toLowerCase() === String(b.productCode || "").toLowerCase()
+          )
+        );
+        matchedCustomer = match ? match.customerName : "—";
+      }
+
+      // Match vendor from purchase invoices / supplier
+      let matchedVendor = b.supplier && b.supplier !== "—" ? b.supplier : "";
+      if (!matchedVendor && b.vendor && b.vendor !== "—") matchedVendor = b.vendor;
+      if (!matchedVendor) {
+        const match = vendorInvoicesRes.find((vi: any) =>
+          (vi.items || []).some((item: any) =>
+            String(item.partNumber || "").toLowerCase() === String(b.productCode || "").toLowerCase()
+          )
+        );
+        matchedVendor = match ? match.vendorName : "—";
+      }
+
       return {
         sno: idx + 1,
         batchNo: String(b.batchNo || ""),
@@ -1041,6 +1126,8 @@ async function buildReportData(
         balanceQty: balance,
         unitCost,
         totalValue: balance * unitCost,
+        vendor: matchedVendor || "—",
+        customer: matchedCustomer || "—",
       };
     });
     return { ...emptyBuilt("batch_wise"), batchWise };
@@ -1337,23 +1424,31 @@ function ReportDocument({
                   </tr>
                 </thead>
                 <tbody>
-                  {stockWise.map((r, i) => (
-                    <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
-                      <td className="px-2 py-1.5">{r.sno}</td>
-                      <td className="px-2 py-1.5">{r.itemCode}</td>
-                      <td className="px-2 py-1.5">{r.itemName}</td>
-                      <td className="px-2 py-1.5">{r.uom}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.openingQty)}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.purchaseQty)}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.salesQty)}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.adjustQty)}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold">{qty(r.closingQty)}</td>
-                      <td className="px-2 py-1.5 text-right">{money(r.unitCost)}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold">{money(r.stockValue)}</td>
-                      <td className="px-2 py-1.5 text-right">{money(r.gst)}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold">{money(r.totalValue)}</td>
+                  {stockWise.length === 0 ? (
+                    <tr>
+                      <td colSpan={13} className="px-4 py-12 text-center text-sm text-[#6B7280]">
+                        No records found for the selected filters.
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    stockWise.map((r, i) => (
+                      <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
+                        <td className="px-2 py-1.5">{r.sno}</td>
+                        <td className="px-2 py-1.5">{r.itemCode}</td>
+                        <td className="px-2 py-1.5">{r.itemName}</td>
+                        <td className="px-2 py-1.5">{r.uom}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.openingQty)}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.purchaseQty)}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.salesQty)}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.adjustQty)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold">{qty(r.closingQty)}</td>
+                        <td className="px-2 py-1.5 text-right">{money(r.unitCost)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold">{money(r.stockValue)}</td>
+                        <td className="px-2 py-1.5 text-right">{money(r.gst)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold">{money(r.totalValue)}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
                 <tfoot>
                   <tr className="bg-[#F3F4F6] font-bold">
@@ -1377,31 +1472,41 @@ function ReportDocument({
         {layout === "batch_wise" && (
           <>
             <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">
-              <table className="w-full min-w-[960px] text-xs">
+              <table className="w-full min-w-[1100px] text-xs">
                 <thead>
                   <tr className={cn("text-left text-white", layoutBarClass(layout))}>
-                    {["S.No.", "Batch No.", "Item Code", "Item Name", "Warehouse", "Mfg. Date", "Expiry Date", "Received Qty", "Sold Qty", "Balance Qty", "Unit Cost (SGD)", "Total Value (SGD)"].map((h) => (
+                    {["S.No.", "Batch No.", "Item Code", "Item Name", "Warehouse", "Vendor", "Customer", "Mfg. Date", "Expiry Date", "Received Qty", "Sold Qty", "Balance Qty", "Unit Cost (SGD)", "Total Value (SGD)"].map((h) => (
                       <th key={h} className="px-2 py-2 font-semibold">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {batchWise.map((r, i) => (
-                    <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
-                      <td className="px-2 py-1.5">{r.sno}</td>
-                      <td className="px-2 py-1.5">{r.batchNo}</td>
-                      <td className="px-2 py-1.5">{r.itemCode}</td>
-                      <td className="px-2 py-1.5">{r.itemName}</td>
-                      <td className="px-2 py-1.5">{r.warehouse}</td>
-                      <td className="px-2 py-1.5">{fmtDate(r.mfgDate)}</td>
-                      <td className="px-2 py-1.5">{fmtDate(r.expiryDate)}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.receivedQty)}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.soldQty)}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold">{qty(r.balanceQty)}</td>
-                      <td className="px-2 py-1.5 text-right">{money(r.unitCost)}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold">{money(r.totalValue)}</td>
+                  {batchWise.length === 0 ? (
+                    <tr>
+                      <td colSpan={14} className="px-4 py-12 text-center text-sm text-[#6B7280]">
+                        No batch wise records found for this product.
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    batchWise.map((r, i) => (
+                      <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
+                        <td className="px-2 py-1.5">{r.sno}</td>
+                        <td className="px-2 py-1.5">{r.batchNo}</td>
+                        <td className="px-2 py-1.5">{r.itemCode}</td>
+                        <td className="px-2 py-1.5">{r.itemName}</td>
+                        <td className="px-2 py-1.5">{r.warehouse}</td>
+                        <td className="px-2 py-1.5">{r.vendor || "—"}</td>
+                        <td className="px-2 py-1.5">{r.customer || "—"}</td>
+                        <td className="px-2 py-1.5">{fmtDate(r.mfgDate)}</td>
+                        <td className="px-2 py-1.5">{fmtDate(r.expiryDate)}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.receivedQty)}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.soldQty)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold">{qty(r.balanceQty)}</td>
+                        <td className="px-2 py-1.5 text-right">{money(r.unitCost)}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold">{money(r.totalValue)}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1420,57 +1525,71 @@ function ReportDocument({
                   </tr>
                 </thead>
                 <tbody>
-                  {expiryWise.map((r, i) => (
-                    <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
-                      <td className="px-2 py-1.5">{r.sno}</td>
-                      <td className="px-2 py-1.5">{r.itemCode}</td>
-                      <td className="px-2 py-1.5">{r.itemName}</td>
-                      <td className="px-2 py-1.5">{r.batchNo}</td>
-                      <td className="px-2 py-1.5">{fmtDate(r.mfgDate)}</td>
-                      <td className="px-2 py-1.5">{fmtDate(r.expiryDate)}</td>
-                      <td className="px-2 py-1.5 text-right">{r.daysRemaining}</td>
-                      <td className="px-2 py-1.5 text-right">{qty(r.availableQty)}</td>
-                      <td className="px-2 py-1.5">{r.warehouse}</td>
-                      <td className="px-2 py-1.5">
-                        <span
-                          className={cn(
-                            "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                            r.status === "Safe" && "bg-[#DCFCE7] text-[#15803D]",
-                            r.status === "Near Expiry" && "bg-[#FFEDD5] text-[#C2410C]",
-                            r.status === "Expired" && "bg-[#FEE2E2] text-[#DC2626]",
-                          )}
-                        >
-                          {r.status}
-                        </span>
+                  {expiryWise.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-12 text-center text-sm text-[#6B7280]">
+                        No records found for the selected filters.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    expiryWise.map((r, i) => (
+                      <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
+                        <td className="px-2 py-1.5">{r.sno}</td>
+                        <td className="px-2 py-1.5">{r.itemCode}</td>
+                        <td className="px-2 py-1.5">{r.itemName}</td>
+                        <td className="px-2 py-1.5">{r.batchNo}</td>
+                        <td className="px-2 py-1.5">{fmtDate(r.mfgDate)}</td>
+                        <td className="px-2 py-1.5">{fmtDate(r.expiryDate)}</td>
+                        <td className="px-2 py-1.5 text-right">{r.daysRemaining}</td>
+                        <td className="px-2 py-1.5 text-right">{qty(r.availableQty)}</td>
+                        <td className="px-2 py-1.5">{r.warehouse}</td>
+                        <td className="px-2 py-1.5">
+                          <span
+                            className={cn(
+                              "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              r.status === "Safe" && "bg-[#DCFCE7] text-[#15803D]",
+                              r.status === "Near Expiry" && "bg-[#FFEDD5] text-[#C2410C]",
+                              r.status === "Expired" && "bg-[#FEE2E2] text-[#DC2626]",
+                            )}
+                          >
+                            {r.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           </>
         )}
 
-        {layout === "generic" && generic.length > 0 && (
+        {layout === "generic" && (
           <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">
-            <table className="w-full min-w-[640px] text-xs">
-              <thead>
-                <tr className={cn("text-left text-white", layoutBarClass(layout))}>
-                  {Object.keys(generic[0]).map((h) => (
-                    <th key={h} className="px-2 py-2 font-semibold">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {generic.map((row, idx) => (
-                  <tr key={idx} className={idx % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
-                    {Object.keys(generic[0]).map((k) => (
-                      <td key={k} className="px-2 py-1.5">{String(row[k] ?? "")}</td>
+            {generic.length === 0 ? (
+              <p className="p-8 text-center text-sm text-[#6B7280]">
+                No records found for the selected filters.
+              </p>
+            ) : (
+              <table className="w-full min-w-[640px] text-xs">
+                <thead>
+                  <tr className={cn("text-left text-white", layoutBarClass(layout))}>
+                    {Object.keys(generic[0]).map((h) => (
+                      <th key={h} className="px-2 py-2 font-semibold">{h}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {generic.map((row, idx) => (
+                    <tr key={idx} className={idx % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
+                      {Object.keys(generic[0]).map((k) => (
+                        <td key={k} className="px-2 py-1.5">{String(row[k] ?? "")}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>

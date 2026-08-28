@@ -12,6 +12,7 @@ export const invoicesTable = pgTable("invoices", {
   issueDate: text("issue_date"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),
+  salesPerson: text("sales_person"),
   notes: text("notes"),
   isPrivate: boolean("is_private").default(false).notNull(),
   items: jsonb("items").notNull().default([]),
@@ -26,8 +27,14 @@ export const invoicesTable = pgTable("invoices", {
   soId: integer("so_id"),
   soNumber: text("so_number"),
   status: text("status").notNull().default("draft"),
+  /** True after the invoice has been edited and saved at least once. */
+  isModified: boolean("is_modified").default(false).notNull(),
   emailSentTo: text("email_sent_to"),
   voidReason: text("void_reason"),
+  termsAndConditions: text("terms_and_conditions"),
+  deliveryInstructions: text("delivery_instructions"),
+  customerNote: text("customer_note"),
+  authorisedSignature: text("authorised_signature"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

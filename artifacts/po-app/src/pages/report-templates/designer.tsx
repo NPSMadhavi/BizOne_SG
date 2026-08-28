@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useParams, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -90,6 +90,7 @@ export default function ReportDesignerPage() {
   const id = params.id === "new" ? null : Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { hasPermission, isAdmin, selectedCompany } = useAuth();
   const canEdit = isAdmin || hasPermission("report_templates:edit") || hasPermission("report_templates:create");
 
@@ -130,11 +131,12 @@ export default function ReportDesignerPage() {
     if (!existing) return;
     setName(existing.name);
     setTemplate(cloneTemplate(existing.templateJson));
-    setReadOnly(existing.isSystemTemplate);
+    const viewMode = new URLSearchParams(search).get("mode") === "view";
+    setReadOnly(viewMode || !canEdit);
     setDefinitionId(existing.reportDefinitionId);
     setReportType(existing.reportType || "invoice");
     setDirty(false);
-  }, [existing]);
+  }, [existing, canEdit, search]);
 
   useEffect(() => {
     if (id) return;
@@ -242,22 +244,29 @@ export default function ReportDesignerPage() {
   };
 
   const persist = async () => {
-    if (!template) return;
-    if (readOnly) {
-      toast({ title: "System template is read-only", description: "Use Save As to create a company copy." });
-      return;
-    }
+    if (!template || !canEdit) return;
     setSaving(true);
     try {
       if (id) {
-        await updateReportTemplate(id, { name, templateJson: template });
-        toast({ title: "Saved" });
+        const saved = await updateReportTemplate(id, { name, templateJson: template });
+        await queryClient.invalidateQueries({ queryKey: ["report-templates"] });
+        await queryClient.invalidateQueries({ queryKey: ["report-template", id] });
+        if (saved.id !== id) {
+          toast({
+            title: "Saved",
+            description: "Your company copy is active for PDF generation.",
+          });
+          setLocation(`/report-templates/${saved.id}/edit`);
+        } else {
+          toast({ title: "Saved" });
+        }
       } else {
         const created = await createReportTemplate({
           name,
           reportType,
           templateJson: template,
         });
+        await queryClient.invalidateQueries({ queryKey: ["report-templates"] });
         toast({ title: "Saved", description: "Company template created." });
         setLocation(`/report-templates/${created.id}/edit`);
       }
@@ -278,6 +287,7 @@ export default function ReportDesignerPage() {
         reportType: existing?.reportType || reportType,
         templateJson: template,
       });
+      await queryClient.invalidateQueries({ queryKey: ["report-templates"] });
       toast({ title: "Saved as new template", description: created.name });
       setSaveAsOpen(false);
       setDirty(false);
@@ -371,7 +381,10 @@ export default function ReportDesignerPage() {
               onChange={(e) => { setName(e.target.value); setDirty(true); }}
             />
           </div>
-          {readOnly && <span className="text-xs border rounded px-2 py-0.5 text-muted-foreground">System default · view only</span>}
+          {existing?.isSystemTemplate && canEdit && (
+            <span className="text-xs border rounded px-2 py-0.5 text-muted-foreground">System default · edits save as your company template</span>
+          )}
+          {readOnly && <span className="text-xs border rounded px-2 py-0.5 text-muted-foreground">View only</span>}
           {saving ? <span className="text-xs text-muted-foreground">Saving…</span> : dirty ? <span className="text-xs text-amber-600">Unsaved</span> : <span className="text-xs text-emerald-600">Saved</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -387,8 +400,8 @@ export default function ReportDesignerPage() {
           <Button variant="outline" className="gap-1" onClick={handlePrint}>
             <Printer className="h-4 w-4" />Print
           </Button>
-          {canEdit && !readOnly && (
-            <Button className="gap-1" onClick={persist} disabled={saving}>
+          {canEdit && (
+            <Button className="gap-1" onClick={persist} disabled={saving || readOnly}>
               <Save className="h-4 w-4" />{saving ? "Saving…" : "Save"}
             </Button>
           )}

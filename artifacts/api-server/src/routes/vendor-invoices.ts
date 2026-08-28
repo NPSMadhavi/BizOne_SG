@@ -89,8 +89,9 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   const companyId = req.session.companyId!;
   const userId = req.session.userId!;
 
-  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId,
-          gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate } = req.body;
+    const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId,
+      gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate, paymentTerms, dueDate,
+      plannedPaymentDate, remindersEnabled, reminderStartAfterDay, reminderEmails, salesPerson } = req.body;
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
   if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
     res.status(400).json({ error: "Valid total amount is required" }); return;
@@ -113,6 +114,12 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       companyId,
       piNumber: resolvedPiNumber,
       piDate: piDate || new Date().toISOString().split("T")[0],
+      paymentTerms: paymentTerms || "30 Days Net",
+      dueDate: dueDate || null,
+      plannedPaymentDate: plannedPaymentDate || null,
+      remindersEnabled: !!remindersEnabled,
+      reminderStartAfterDay: reminderStartAfterDay == null || reminderStartAfterDay === "" ? null : Number(reminderStartAfterDay),
+      reminderEmails: Array.isArray(reminderEmails) ? reminderEmails : [],
       vendorName: vendorName.trim(),
       poIds: Array.isArray(poIds) ? poIds : [],
       poNumbers: poNumbers || null,
@@ -122,6 +129,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       status: "pending",
       notes: notes || null,
       expenseAccountId: parsedExpenseAccountId,
+      salesPerson: salesPerson || null,
       items: [],
       subtotal: netAmount.toFixed(2),
       tax: parseFloat(String(gstAmount ?? "0")).toFixed(2),
@@ -181,11 +189,18 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
 
-  const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes,
-          gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate } = req.body;
+    const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes,
+      gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate, paymentTerms, dueDate,
+      plannedPaymentDate, remindersEnabled, reminderStartAfterDay, reminderEmails, salesPerson } = req.body;
   const updates: any = { updatedAt: new Date() };
   if (piNumber !== undefined) updates.piNumber = piNumber.trim();
   if (piDate !== undefined) updates.piDate = piDate;
+  if (paymentTerms !== undefined) updates.paymentTerms = paymentTerms || "30 Days Net";
+  if (dueDate !== undefined) updates.dueDate = dueDate || null;
+  if (plannedPaymentDate !== undefined) updates.plannedPaymentDate = plannedPaymentDate || null;
+  if (remindersEnabled !== undefined) updates.remindersEnabled = !!remindersEnabled;
+  if (reminderStartAfterDay !== undefined) updates.reminderStartAfterDay = reminderStartAfterDay === "" || reminderStartAfterDay == null ? null : Number(reminderStartAfterDay);
+  if (reminderEmails !== undefined) updates.reminderEmails = Array.isArray(reminderEmails) ? reminderEmails : [];
   if (vendorName !== undefined) updates.vendorName = vendorName.trim();
   if (poIds !== undefined) updates.poIds = poIds;
   if (poNumbers !== undefined) updates.poNumbers = poNumbers;
@@ -197,6 +212,7 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   if (gstAmount !== undefined) updates.gstAmount = parseFloat(gstAmount).toFixed(2);
   if (gstInclusive !== undefined) updates.gstInclusive = !!gstInclusive;
   if (exchangeRate !== undefined) updates.exchangeRate = parseFloat(exchangeRate).toFixed(6);
+  if (salesPerson !== undefined) updates.salesPerson = salesPerson || null;
 
   await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
   await recalcPI(id, existing.companyId);

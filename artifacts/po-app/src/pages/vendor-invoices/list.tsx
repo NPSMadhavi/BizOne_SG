@@ -307,6 +307,7 @@ export default function VendorInvoiceList() {
                   <th className="px-4 py-3 font-medium text-right">PI Amount</th>
                   <th className="px-4 py-3 font-medium text-right">Paid</th>
                   <th className="px-4 py-3 font-medium text-right">Balance</th>
+                  <th className="px-4 py-3 font-medium">Payment Plan</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium"></th>
                 </tr>
@@ -326,6 +327,7 @@ export default function VendorInvoiceList() {
                     <td className="px-4 py-3 text-right font-medium">{fmt(pi.totalAmount, pi.currency)}</td>
                     <td className="px-4 py-3 text-right text-emerald-600">{fmt(pi.paidAmount, pi.currency)}</td>
                     <td className="px-4 py-3 text-right font-medium text-orange-600">{fmt(pi.balance, pi.currency)}</td>
+                    <td className="px-4 py-3 text-xs"><div>{pi.plannedPaymentDate ? `Planned: ${fmtDate(pi.plannedPaymentDate)}` : "Not planned"}</div><div className="text-muted-foreground">Due: {pi.dueDate ? fmtDate(pi.dueDate) : "—"}</div></td>
                     <td className="px-4 py-3">{statusBadge(pi.status)}</td>
                     <td className="px-4 py-3">
                       <Button

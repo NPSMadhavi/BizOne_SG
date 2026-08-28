@@ -35,6 +35,7 @@ import { InventoryPageHeader, InventorySectionCard, InventoryStatusBadge } from 
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const EMPTY = {
   code: "",
@@ -47,6 +48,7 @@ const EMPTY = {
   contactPerson: "",
   contactNumber: "",
   email: "",
+  salesPerson: "",
   isActive: true,
   description: "",
   remarks: "",
@@ -54,6 +56,7 @@ const EMPTY = {
 
 export default function WarehousesPage() {
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const [rows, setRows] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -97,6 +100,7 @@ export default function WarehousesPage() {
       contactPerson: row.contactPerson || "",
       contactNumber: row.contactNumber || "",
       email: row.email || "",
+      salesPerson: row.salesPerson || "",
       isActive: row.isActive ?? true,
       description: row.description || "",
       remarks: row.remarks || "",
@@ -199,6 +203,7 @@ export default function WarehousesPage() {
                   <th className="py-3 pr-4">City</th>
                   <th className="py-3 pr-4">State</th>
                   <th className="py-3 pr-4">Contact</th>
+                  <th className="py-3 pr-4">Sales Person</th>
                   <th className="py-3 pr-4">Status</th>
                   <th className="py-3">Actions</th>
                 </tr>
@@ -218,6 +223,7 @@ export default function WarehousesPage() {
                     <td className="py-3 pr-4 text-[#444651]">{r.city || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.state || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.contactPerson || "-"}</td>
+                    <td className="py-3 pr-4 text-[#444651]">{r.salesPerson || "-"}</td>
                     <td className="py-3 pr-4">
                       <InventoryStatusBadge status={r.isActive ? "active" : "inactive"} />
                     </td>
@@ -328,7 +334,7 @@ export default function WarehousesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 md:col-span-2">
+            <div className="space-y-1.5">
               <Label>Email</Label>
               <Input
                 type="email"
@@ -336,6 +342,24 @@ export default function WarehousesPage() {
                 value={form.email}
                 onChange={(e) => updateField("email", e.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Sales Person</Label>
+              <Select
+                value={form.salesPerson || ""}
+                onValueChange={(v) => updateField("salesPerson", v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Sales Person" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesPersons.map((sp) => (
+                    <SelectItem key={sp.id} value={sp.name}>
+                      {sp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label>Description</Label>

@@ -9,13 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail } from "lucide-react";
+import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail, Copy } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart, listInvoiceReportTemplates } from "@/lib/report-designer/api";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { BankAccountField } from "@/components/bank-account-field";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
@@ -46,6 +47,52 @@ function methodLabel(val: string) {
   return PAYMENT_METHODS.find(m => m.value === val)?.label ?? val;
 }
 
+function buildInvoiceCopyPrefill(doc: any) {
+  const invItems = (doc.items as any[]) ?? [];
+  const sub = Number(doc.subtotal) || 0;
+  const disc = Number(doc.discountAmount) || 0;
+  const taxAmt = Number(doc.tax) || 0;
+  const taxable = sub - disc;
+  const taxPct = taxable > 0 && taxAmt > 0
+    ? Math.round((taxAmt / taxable) * 1000) / 10
+    : 9;
+
+  return {
+    customerName: doc.customerName || "",
+    customerAddress: doc.customerAddress || "",
+    customerContact: doc.customerContact || "",
+    customerContactEmail: doc.customerContactEmail || "",
+    deliveryAddress: doc.deliveryAddress || "",
+    currency: doc.currency || "SGD",
+    paymentTerms: doc.paymentTerms || "30 Days Net",
+    poRefNo: doc.poRefNo || "",
+    salesPerson: doc.salesPerson || "",
+    notes: doc.notes || "",
+    termsAndConditions: doc.termsAndConditions || "",
+    deliveryInstructions: doc.deliveryInstructions || "",
+    customerNote: doc.customerNote || "",
+    authorisedSignature: doc.authorisedSignature || "",
+    deliveryDate: doc.deliveryDate || "",
+    tax: taxPct,
+    discountAmount: disc,
+    discountPct: disc > 0 && sub > 0 ? parseFloat((disc / sub * 100).toFixed(2)) : 0,
+    sourceInvNumber: doc.invNumber,
+    items: invItems.map((it: any) => ({
+      type: it.type || "item",
+      sectionLabel: it.sectionLabel || "",
+      sectionAlign: it.sectionAlign || "left",
+      partNumber: it.partNumber || "",
+      description: it.description || "",
+      qty: Number(it.qty) || 1,
+      uom: it.uom || "",
+      unitPrice: Number(it.unitPrice) || 0,
+      discount: Number(it.discount) || 0,
+      isFoc: !!it.isFoc,
+      itemImage: it.itemImage || "",
+    })),
+  };
+}
+
 export default function InvoiceView() {
   const params = useParams();
   const id = Number(params.id);
@@ -64,6 +111,7 @@ export default function InvoiceView() {
   const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("bank_transfer");
+  const [payBank, setPayBank] = useState("");
   const [payRef, setPayRef] = useState("");
   const [payNotes, setPayNotes] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
@@ -73,6 +121,7 @@ export default function InvoiceView() {
   const [epDate, setEpDate] = useState("");
   const [epAmount, setEpAmount] = useState("");
   const [epMethod, setEpMethod] = useState("bank_transfer");
+  const [epBank, setEpBank] = useState("");
   const [epRef, setEpRef] = useState("");
   const [epNotes, setEpNotes] = useState("");
   const [epSubmitting, setEpSubmitting] = useState(false);
@@ -217,6 +266,11 @@ export default function InvoiceView() {
 
   if (!doc) return <div className="text-center py-20 text-muted-foreground">Invoice not found.</div>;
 
+  const handleCopyToNew = () => {
+    (window as any).__ariaPrefill = buildInvoiceCopyPrefill(doc);
+    setLocation("/invoices/new");
+  };
+
   const items = (doc.items as any[]) || [];
   const subtotal = Number(doc.subtotal) || 0;
   const tax = Number(doc.tax) || 0;
@@ -247,9 +301,12 @@ export default function InvoiceView() {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{doc.invNumber}</h1>
               {getStatusBadge(doc.status)}
+              {(doc as any).isModified && (
+                <Badge className="bg-amber-500 hover:bg-amber-600 text-sm py-1">Modified</Badge>
+              )}
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">Created {fmtDate(doc.createdAt)}</p>
             {(doc as any).emailSentTo && (
@@ -289,6 +346,9 @@ export default function InvoiceView() {
               <Pencil className="h-4 w-4" />Edit
             </Button>
           )}
+          <Button variant="outline" className="gap-2" onClick={handleCopyToNew}>
+            <Copy className="h-4 w-4" />Copy to New Invoice
+          </Button>
           {canRecordPayment && (
             <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={openPaymentDialog}>
               <Plus className="h-4 w-4" />Record Payment
@@ -402,6 +462,32 @@ export default function InvoiceView() {
             </div>
             {doc.deliveryDate && <div className="flex justify-between"><span className="text-muted-foreground">Delivery Date</span><span>{isoToReadable(doc.deliveryDate)}</span></div>}
             {doc.notes && <div><span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notes</span><div className="mt-1 text-sm prose prose-sm max-w-none [&_p]:my-1 [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5" dangerouslySetInnerHTML={{ __html: (doc as any).notes || "" }} /></div>}
+            {(doc as any).customerNote && (
+              <div className="border-t pt-2 mt-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Customer Note</span>
+                <p className="mt-1 text-sm text-foreground whitespace-pre-line">{(doc as any).customerNote}</p>
+              </div>
+            )}
+            {(doc as any).deliveryInstructions && (
+              <div className="border-t pt-2 mt-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Delivery Instructions</span>
+                <p className="mt-1 text-sm text-foreground whitespace-pre-line">{(doc as any).deliveryInstructions}</p>
+              </div>
+            )}
+            {(doc as any).termsAndConditions && (
+              <div className="border-t pt-2 mt-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Terms & Conditions</span>
+                <p className="mt-1 text-sm text-foreground whitespace-pre-line">{(doc as any).termsAndConditions}</p>
+              </div>
+            )}
+            {(doc as any).authorisedSignature && (
+              <div className="border-t pt-2 mt-2">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">Authorised Signature</span>
+                <div className="border rounded bg-white p-2 w-fit max-w-[200px]">
+                  <img src={(doc as any).authorisedSignature} alt="Signature" className="max-h-16 object-contain" />
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -627,15 +713,13 @@ export default function InvoiceView() {
                 <Input type="text" inputMode="decimal" placeholder="0.00" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            <BankAccountField
+              paymentMethod={payMethod}
+              onPaymentMethodChange={setPayMethod}
+              selectedBankAccount={payBank}
+              onBankAccountChange={setPayBank}
+              paymentMethods={PAYMENT_METHODS}
+            />
             <div className="space-y-1.5">
               <Label>Reference / Bank Ref</Label>
               <Input placeholder="e.g. CHQ0012345, UTR12345678" value={payRef} onChange={e => setPayRef(e.target.value)} />
@@ -679,15 +763,13 @@ export default function InvoiceView() {
                 <Input type="text" inputMode="decimal" placeholder="0.00" value={epAmount} onChange={e => setEpAmount(e.target.value)} />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <Select value={epMethod} onValueChange={setEpMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            <BankAccountField
+              paymentMethod={epMethod}
+              onPaymentMethodChange={setEpMethod}
+              selectedBankAccount={epBank}
+              onBankAccountChange={setEpBank}
+              paymentMethods={PAYMENT_METHODS}
+            />
             <div className="space-y-1.5">
               <Label>Reference</Label>
               <Input placeholder="Bank reference / cheque no." value={epRef} onChange={e => setEpRef(e.target.value)} />

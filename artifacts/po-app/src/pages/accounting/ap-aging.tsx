@@ -3,7 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/contexts/auth-context";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 import { ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
@@ -11,7 +19,7 @@ import { ListPagination } from "@/components/list-pagination";
 import { generateAPAgingReport_PDF } from "@/lib/pdf";
 
 interface PiLine { id: number; piNumber: string; piDate: string | null; balance: number; daysPastDue: number; status: string }
-interface AgingRow { vendorName: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: PiLine[] }
+interface AgingRow { vendorName: string; salesPerson?: string; current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number; invoices: PiLine[] }
 interface AgingData { asOf: string; vendors: AgingRow[]; totals: { current: number; b1_30: number; b31_60: number; b61_90: number; b91plus: number; total: number } }
 
 function fmt(n: number) {
@@ -40,8 +48,10 @@ function amountCls(key: string, val: number) {
 
 export default function ApAgingPage() {
   const { selectedCompany } = useAuth();
+  const { salesPersons } = useSalesPersons();
   const today = new Date().toISOString().split("T")[0];
   const [asOf, setAsOf] = useState(today);
+  const [selectedSalesPerson, setSelectedSalesPerson] = useState<string>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pdfLoading, setPdfLoading] = useState(false);
 
@@ -55,6 +65,60 @@ export default function ApAgingPage() {
     staleTime: 30_000,
   });
 
+  const filteredVendors = useMemo(() => {
+    if (!data?.vendors) return [];
+    if (selectedSalesPerson === "all") return data.vendors;
+    const sel = selectedSalesPerson.toLowerCase().trim();
+    return data.vendors
+      .map((v: any) => {
+        const matchedInvoices = (v.invoices || []).filter((inv: any) => {
+          const invSp = String(inv.salesPerson || inv.salesPersonName || inv.sales_person || "").toLowerCase().trim();
+          return invSp === sel;
+        });
+
+        if (matchedInvoices.length === 0) return null;
+
+        let current = 0, b1_30 = 0, b31_60 = 0, b61_90 = 0, b91plus = 0, total = 0;
+        for (const inv of matchedInvoices) {
+          const amt = Number(inv.balance) || 0;
+          const days = Number(inv.daysPastDue) || 0;
+          if (days <= 0) current += amt;
+          else if (days <= 30) b1_30 += amt;
+          else if (days <= 60) b31_60 += amt;
+          else if (days <= 90) b61_90 += amt;
+          else b91plus += amt;
+          total += amt;
+        }
+
+        return {
+          ...v,
+          current: +current.toFixed(2),
+          b1_30: +b1_30.toFixed(2),
+          b31_60: +b31_60.toFixed(2),
+          b61_90: +b61_90.toFixed(2),
+          b91plus: +b91plus.toFixed(2),
+          total: +total.toFixed(2),
+          invoices: matchedInvoices,
+        };
+      })
+      .filter(Boolean) as any[];
+  }, [data?.vendors, selectedSalesPerson]);
+
+  const t = useMemo(() => {
+    if (!filteredVendors) return null;
+    return filteredVendors.reduce(
+      (acc, v) => ({
+        current: acc.current + v.current,
+        b1_30: acc.b1_30 + v.b1_30,
+        b31_60: acc.b31_60 + v.b31_60,
+        b61_90: acc.b61_90 + v.b61_90,
+        b91plus: acc.b91plus + v.b91plus,
+        total: acc.total + v.total,
+      }),
+      { current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b91plus: 0, total: 0 }
+    );
+  }, [filteredVendors]);
+
   function toggle(name: string) {
     setExpanded(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
   }
@@ -66,16 +130,15 @@ export default function ApAgingPage() {
       await generateAPAgingReport_PDF(
         selectedCompany as any,
         asOf,
-        data.vendors.map(v => ({ name: v.vendorName, current: v.current, b1_30: v.b1_30, b31_60: v.b31_60, b61_90: v.b61_90, b91plus: v.b91plus, total: v.total })),
-        data.totals
+        filteredVendors.map(v => ({ name: v.vendorName, current: v.current, b1_30: v.b1_30, b31_60: v.b31_60, b61_90: v.b61_90, b91plus: v.b91plus, total: v.total })),
+        t || data.totals
       );
     } finally {
       setPdfLoading(false);
     }
   }
 
-  const t = data?.totals;
-  const { page, setPage, totalPages, paginatedItems } = usePagination(data?.vendors ?? []);
+  const { page, setPage, totalPages, paginatedItems } = usePagination(filteredVendors);
 
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
@@ -85,13 +148,29 @@ export default function ApAgingPage() {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Accounts Payable</p>
           <h1 className="text-2xl font-bold text-[#2563EB]">Aging Report</h1>
         </div>
-        <div className="flex items-end gap-3">
+        <div className="flex items-end flex-nowrap gap-2 sm:gap-3 shrink-0">
           <div className="space-y-1">
             <Label className="text-xs text-gray-500">As of Date</Label>
-            <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-40 text-sm h-8 border-gray-200" />
+            <Input type="date" value={asOf} max={today} onChange={e => setAsOf(e.target.value)} className="w-36 text-xs sm:text-sm h-8 border-gray-200" />
           </div>
-          {data && data.vendors.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="border-gray-200 text-gray-600 hover:text-gray-900">
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-500">Sales Person</Label>
+            <Select value={selectedSalesPerson} onValueChange={setSelectedSalesPerson}>
+              <SelectTrigger className="w-36 sm:w-44 text-xs sm:text-sm h-8 border-gray-200 bg-white">
+                <SelectValue placeholder="All Sales Persons" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sales Persons</SelectItem>
+                {salesPersons.map((sp) => (
+                  <SelectItem key={sp.id} value={sp.name}>
+                    {sp.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {data && (
+            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading || filteredVendors.length === 0} className="border-gray-200 text-gray-600 hover:text-gray-900 shrink-0">
               {pdfLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
               Download PDF
             </Button>
@@ -144,7 +223,7 @@ export default function ApAgingPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.vendors.length === 0 && (
+                {filteredVendors.length === 0 && (
                   <tr><td colSpan={8} className="text-center py-16 text-sm text-gray-400">No outstanding payables as of {fmtDate(asOf)}.</td></tr>
                 )}
                 {paginatedItems.map(v => (
@@ -181,7 +260,7 @@ export default function ApAgingPage() {
                   </>
                 ))}
               </tbody>
-              {data.vendors.length > 0 && t && (
+              {filteredVendors.length > 0 && t && (
                 <tfoot>
                   <tr className="bg-gray-900 text-white">
                     <td></td>

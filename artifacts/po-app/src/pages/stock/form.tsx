@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Package, Plus, Wrench } from "lucide-react";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const UOM_OPTIONS = [
   { value: "Nos", label: "Nos (Numbers)" },
@@ -72,6 +73,7 @@ const EMPTY_FORM = {
   code: "",
   name: "",
   description: "",
+  salesPerson: "",
   uom: "Pcs",
   type: "product" as "product" | "service",
   unitPrice: "" as string | number,
@@ -87,6 +89,7 @@ export default function StockItemFormPage() {
   const isEdit = Number.isFinite(editId) && editId > 0;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -135,6 +138,7 @@ export default function StockItemFormPage() {
       code: item.code || "",
       name: item.name || "",
       description: item.description || "",
+      salesPerson: (item as any).salesPerson || "",
       uom: normalizeUom(item.uom),
       type: item.type === "service" ? "service" : "product",
       unitPrice: item.unitPrice != null && item.unitPrice !== "" ? String(item.unitPrice) : "",
@@ -430,15 +434,35 @@ export default function StockItemFormPage() {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
-              placeholder="Optional description..."
-              className="resize-none"
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                placeholder="Optional description..."
+                className="resize-none"
+                rows={3}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Sales Person</Label>
+              <Select
+                value={form.salesPerson || ""}
+                onValueChange={(v) => setForm((f) => ({ ...f, salesPerson: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Sales Person" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesPersons.map((sp) => (
+                    <SelectItem key={sp.id} value={sp.name}>
+                      {sp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 rounded-lg border px-4 py-3">

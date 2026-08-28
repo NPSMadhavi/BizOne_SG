@@ -9,6 +9,7 @@ import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, ArrowLeft } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, ArrowLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateSalesOrder_PDF } from "@/lib/pdf";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -67,6 +68,10 @@ const schema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
@@ -99,6 +104,7 @@ export default function SalesOrderNew() {
   const [selectedQtId, setSelectedQtId] = useState<number | null>(urlQuotationId ? Number(urlQuotationId) : null);
   const [selectedQtNumber, setSelectedQtNumber] = useState<string>("");
   const [qtPrefilled, setQtPrefilled] = useState(false);
+  const [discountPct, setDiscountPct] = useState(0);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const { data: quotations } = useListQuotations({ query: { queryKey: getListQuotationsQueryKey() } });
@@ -114,6 +120,7 @@ export default function SalesOrderNew() {
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
       issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
@@ -144,6 +151,10 @@ export default function SalesOrderNew() {
       deliveryDate: qt.deliveryDate || "",
       paymentTerms: qt.paymentTerms || "30 Days Net",
       notes: qt.notes || "",
+      termsAndConditions: qt.termsAndConditions || "",
+      deliveryInstructions: qt.deliveryInstructions || "",
+      customerNote: qt.customerNote || "",
+      authorisedSignature: qt.authorisedSignature || "",
       currency: qt.currency || "SGD",
       tax: taxPct,
       discountAmount: disc,
@@ -193,29 +204,88 @@ export default function SalesOrderNew() {
     }
   };
 
-  // Aria prefill — populated by the AI agent via navigateTo
+  // Prefill from AI agent or "Copy to New Sales Order"
   useEffect(() => {
     const prefill = (window as any).__vedaPrefill;
     if (!prefill) return;
     (window as any).__vedaPrefill = null;
-    const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+
+    const blankItem = {
+      type: "item" as const,
+      sectionLabel: "",
+      sectionAlign: "left" as const,
+      partNumber: "",
+      description: "",
+      qty: 1,
+      uom: "",
+      unitPrice: 0,
+      discount: 0,
+      isFoc: false,
+      itemImage: "",
+    };
+
+    const mappedItems = prefill.items?.length
+      ? prefill.items.map((it: any) => (
+          it.type === "section"
+            ? {
+                type: "section" as const,
+                sectionLabel: it.sectionLabel || "",
+                sectionAlign: (it.sectionAlign || "left") as "left" | "center",
+                partNumber: "",
+                description: "",
+                qty: 1,
+                uom: "",
+                unitPrice: 0,
+                discount: 0,
+                isFoc: false,
+                itemImage: "",
+              }
+            : {
+                ...blankItem,
+                partNumber: it.partNumber || "",
+                description: it.description || "",
+                qty: Number(it.qty) || 1,
+                uom: it.uom || "",
+                unitPrice: Number(it.unitPrice) || 0,
+                discount: Number(it.discount) || 0,
+                isFoc: !!it.isFoc,
+                itemImage: it.itemImage || "",
+              }
+        ))
+      : [blankItem];
+
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
       customerContact: prefill.customerContact || "",
       customerContactEmail: prefill.customerContactEmail || "",
+      deliveryAddress: prefill.deliveryAddress || "",
       currency: prefill.currency || "SGD",
       paymentTerms: prefill.paymentTerms || "30 Days Net",
       notes: prefill.notes || "",
+      termsAndConditions: prefill.termsAndConditions || "",
+      deliveryInstructions: prefill.deliveryInstructions || "",
+      customerNote: prefill.customerNote || "",
+      authorisedSignature: prefill.authorisedSignature || "",
       issueDate: getToday(),
-      deliveryDate: "",
-      tax: settings?.gstRate ?? 9,
+      deliveryDate: prefill.deliveryDate || "",
+      tax: prefill.tax ?? settings?.gstRate ?? 9,
       discountAmount: prefill.discountAmount ?? 0,
       isPrivate: false,
-      items: prefill.items?.length
-        ? prefill.items.map((it: any) => ({ ...blankItem, partNumber: it.partNumber || "", description: it.description || "", qty: Number(it.qty) || 1, unitPrice: Number(it.unitPrice) || 0 }))
-        : [blankItem],
+      items: mappedItems,
     });
+
+    if (prefill.discountPct > 0) setDiscountPct(prefill.discountPct);
+    if (prefill.tax === 0) setIsOverseas(true);
+
+    if (prefill.sourceSoNumber) {
+      setSelectedQtId(null);
+      setSelectedQtNumber("");
+      toast({
+        title: "Sales order copied",
+        description: `Data from ${prefill.sourceSoNumber} loaded — save to create a new sales order number.`,
+      });
+    }
   }, []);
 
   const { fields, append, remove, insert } = useFieldArray({ control: form.control, name: "items" });
@@ -263,7 +333,6 @@ export default function SalesOrderNew() {
   const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
-  const [discountPct, setDiscountPct] = useState(0);
   useEffect(() => {
     if (discountPct > 0) form.setValue("discountAmount", parseFloat((subtotal * discountPct / 100).toFixed(2)));
   }, [subtotal]);
@@ -310,6 +379,10 @@ export default function SalesOrderNew() {
       currency: data.currency?.trim() || current.currency || "SGD",
       paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "30 Days Net",
       notes: notes || current.notes || "",
+      termsAndConditions: current.termsAndConditions || "",
+      deliveryInstructions: current.deliveryInstructions || "",
+      customerNote: current.customerNote || "",
+      authorisedSignature: current.authorisedSignature || "",
       items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blank],
     });
   }
@@ -774,11 +847,17 @@ export default function SalesOrderNew() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Notes</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              
+              <DocumentAdditionalInfoFields control={form.control} />
             </CardContent>
           </Card>
 

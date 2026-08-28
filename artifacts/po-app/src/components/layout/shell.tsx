@@ -105,6 +105,7 @@ function getGroupForRoute(loc: string): string | null {
     loc.startsWith("/delivery-orders") ||
     loc.startsWith("/point-of-sale") ||
     loc.startsWith("/bill-of-materials") ||
+    loc.startsWith("/multi-price-level") ||
     loc.startsWith("/grn")
   ) return "documents";
   if (
@@ -123,6 +124,7 @@ function getGroupForRoute(loc: string): string | null {
   if (
     loc.startsWith("/vendors") ||
     loc.startsWith("/customers") ||
+    loc.startsWith("/sales-persons") ||
     loc.startsWith("/address-book")
   ) return "directory";
   if (loc.startsWith("/accounting")) return "accounting";
@@ -455,6 +457,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     hasModuleAccess("delivery_orders") ||
     hasModuleAccess("point_of_sale") ||
     hasModuleAccess("bill_of_materials") ||
+    hasModuleAccess("multi_price_level") ||
     hasModuleAccess("grn");
   const directoryModules = ["vendors", "customers", "address_book"] as const;
   // Directory ONLY for these three — never via PO/Invoice/Documents access
@@ -545,6 +548,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           location.startsWith("/proforma-invoices") || location.startsWith("/credit-notes") ||
           location.startsWith("/debit-notes") || location.startsWith("/delivery-orders") ||
           location.startsWith("/grn")
+          || location.startsWith("/multi-price-level")
         }
       >
         {/* ── Purchases ── */}
@@ -575,7 +579,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ── Sales ── */}
-        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("debit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("point_of_sale") || hasModuleAccess("bill_of_materials")) && (
+        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("debit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("point_of_sale") || hasModuleAccess("bill_of_materials") || hasModuleAccess("multi_price_level")) && (
           <div className="px-3 pt-3 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Sales</span>
           </div>
@@ -623,6 +627,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("bill_of_materials") && (
           <NavItem href="/bill-of-materials" icon={Boxes} active={location.startsWith("/bill-of-materials")} inGroup>
             Bill of Materials
+          </NavItem>
+        )}
+        {hasModuleAccess("multi_price_level") && (
+          <NavItem href="/multi-price-level" icon={DollarSign} active={location.startsWith("/multi-price-level")} inGroup>
+            Multi Price Level
           </NavItem>
         )}
       </NavGroup>
@@ -680,7 +689,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         isOpen={openGroup === "directory"}
         onToggle={toggleGroup}
         visible={hasDirectory}
-        hasActive={location.startsWith("/vendors") || location.startsWith("/customers") || location.startsWith("/address-book")}
+        hasActive={location.startsWith("/vendors") || location.startsWith("/customers") || location.startsWith("/sales-persons") || location.startsWith("/address-book")}
       >
         {hasModuleAccess("vendors") && (
           <NavItem href="/vendors" icon={Building2} active={location.startsWith("/vendors")} inGroup>
@@ -690,6 +699,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("customers") && (
           <NavItem href="/customers" icon={Users2} active={location.startsWith("/customers")} inGroup>
             Customers
+          </NavItem>
+        )}
+        {(isAdmin || hasModuleAccess("customers") || hasModuleAccess("sales_persons")) && (
+          <NavItem href="/sales-persons" icon={UserCheck} active={location.startsWith("/sales-persons")} inGroup>
+            Sales Person
           </NavItem>
         )}
         {hasModuleAccess("address_book") && (

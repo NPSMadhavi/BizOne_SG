@@ -40,6 +40,8 @@ import {
   ArrowLeft,
 } from "lucide-react";
 
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+
 type BomComponent = {
   id: string;
   itemCode: string;
@@ -62,7 +64,8 @@ type BomRecord = {
   category: string;
   effectiveDate: string;
   warehouse: string;
-  description: string;
+  salesPerson?: string;
+  description?: string;
   components: BomComponent[];
   labourCost: number;
   machineCost: number;
@@ -211,6 +214,7 @@ async function syncFinishedProductStock(record: BomRecord, stockOptions: StockIt
 export default function BillOfMaterialsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const userName = (user as any)?.fullName || user?.username || "User";
@@ -229,7 +233,7 @@ export default function BillOfMaterialsPage() {
   const [category, setCategory] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [warehouse, setWarehouse] = useState("");
-  const [description, setDescription] = useState("");
+  const [salesPerson, setSalesPerson] = useState("");
   const [components, setComponents] = useState<BomComponent[]>([]);
   const [labourCost, setLabourCost] = useState(0);
   const [machineCost, setMachineCost] = useState(0);
@@ -354,7 +358,7 @@ export default function BillOfMaterialsPage() {
     setCategory("");
     setEffectiveDate(new Date().toISOString().slice(0, 10));
     setWarehouse(warehouseOptions[0]?.name || "");
-    setDescription("");
+    setSalesPerson("");
     setComponents([]);
     setLabourCost(0);
     setMachineCost(0);
@@ -382,7 +386,7 @@ export default function BillOfMaterialsPage() {
     setCategory(bom.category || "");
     setEffectiveDate(bom.effectiveDate);
     setWarehouse(bom.warehouse);
-    setDescription(bom.description);
+    setSalesPerson(bom.salesPerson || bom.description || "");
     setComponents(bom.components);
     setLabourCost(bom.labourCost);
     setMachineCost(bom.machineCost);
@@ -414,7 +418,7 @@ export default function BillOfMaterialsPage() {
       category: category.trim(),
       effectiveDate,
       warehouse,
-      description,
+      salesPerson,
       components,
       labourCost,
       machineCost,
@@ -790,8 +794,19 @@ export default function BillOfMaterialsPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Description (Optional)</Label>
-                  <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description..." />
+                  <Label>Sales Person</Label>
+                  <Select value={salesPerson} onValueChange={setSalesPerson}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select sales person" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {salesPersons.map((sp) => (
+                        <SelectItem key={sp.id} value={sp.name}>
+                          {sp.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>

@@ -8,6 +8,7 @@ import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-re
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -16,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput, Upload, X } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,6 +65,10 @@ const schema = z.object({
   paymentTerms: z.string().optional(),
   qtRefNo: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
   status: z.enum(["draft", "confirmed", "cancelled"]),
   tax: z.coerce.number().min(0).max(100).default(9),
@@ -110,6 +115,7 @@ export default function ProformaInvoiceEdit() {
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
       issueDate: "", deliveryDate: "", paymentTerms: "", qtRefNo: "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0, isPrivate: false,
       items: [blankPiItem],
@@ -136,6 +142,10 @@ export default function ProformaInvoiceEdit() {
         paymentTerms: doc.paymentTerms || "",
         qtRefNo: doc.qtRefNo || "",
         notes: doc.notes || "",
+        termsAndConditions: (doc as any).termsAndConditions || "",
+        deliveryInstructions: (doc as any).deliveryInstructions || "",
+        customerNote: (doc as any).customerNote || "",
+        authorisedSignature: (doc as any).authorisedSignature || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
         tax: derivedTaxPct,
@@ -263,7 +273,13 @@ export default function ProformaInvoiceEdit() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    updateMutation.mutate({ ...values, items: itemsWithAmount } as any, {
+    const cleanAddress = (values.deliveryAddress || "")
+      .split("\n\n")
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
+    updateMutation.mutate({ ...values, deliveryAddress: cleanAddress || null, items: itemsWithAmount } as any, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: ["proforma-invoices", id] });
         setIsSubmitting(false);
@@ -362,13 +378,63 @@ export default function ProformaInvoiceEdit() {
                   <FormItem><FormLabel>Contact Email</FormLabel>
                     <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
-                    <FormControl><Textarea placeholder="Delivery / ship-to address if different from billing…" className="resize-none" rows={2} {...field} /></FormControl>
-                    <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the PI PDF when set.</p>
-                  </FormItem>
-                )} />
+                <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
+                  const addrs = (field.value || "").split("\n\n");
+                  if (addrs.length === 0 || (addrs.length === 1 && addrs[0] === "")) {
+                    addrs[0] = "";
+                  }
+                  return (
+                    <FormItem>
+                      <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
+                      <div className="space-y-2">
+                        {addrs.map((addr, idx) => (
+                          <div key={idx} className="relative group">
+                            <FormControl>
+                              <Textarea
+                                value={addr}
+                                onChange={(e) => {
+                                  const newAddrs = [...addrs];
+                                  newAddrs[idx] = e.target.value;
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+                                placeholder={`Ship-to Address #${idx + 1}`}
+                                className="resize-none pr-8 text-sm"
+                                rows={2}
+                              />
+                            </FormControl>
+                            {addrs.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newAddrs = addrs.filter((_, i) => i !== idx);
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+                                className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Remove Address"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+                          onClick={() => {
+                            const newAddrs = [...addrs, ""];
+                            field.onChange(newAddrs.join("\n\n"));
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add More Ship-To Address
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the PI PDF when set.</p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
               </CardContent>
             </Card>
 
@@ -654,11 +720,17 @@ export default function ProformaInvoiceEdit() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Notes</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              
+              <DocumentAdditionalInfoFields control={form.control} signatureHint="Appears at the bottom of the invoice PDF above the sign-off line." />
             </CardContent>
           </Card>
 

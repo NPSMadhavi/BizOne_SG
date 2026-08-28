@@ -370,7 +370,14 @@ export default function InvoiceList() {
                           : <span className={balance > 0 ? "text-orange-600" : "text-emerald-600"}>{fmt(balance, (doc as any).currency || "SGD")}</span>
                         }
                       </td>
-                      <td className="px-6 py-4">{getStatusBadge(doc.status)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {getStatusBadge(doc.status)}
+                          {(doc as any).isModified && (
+                            <Badge className="bg-amber-500 hover:bg-amber-600">Modified</Badge>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4"><SentToCell emailSentTo={(doc as any).emailSentTo} /></td>
                       <td className="px-6 py-4">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">

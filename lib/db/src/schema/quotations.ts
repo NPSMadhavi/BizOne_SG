@@ -10,6 +10,8 @@ export const quotationsTable = pgTable("quotations", {
   customerContactEmail: text("customer_contact_email"),
   deliveryAddress: text("delivery_address"),
   issueDate: text("issue_date"),
+  /** Quotation is valid through this date (YYYY-MM-DD); from the next day status becomes cancelled. */
+  validUntil: text("valid_until"),
   deliveryDate: text("delivery_date"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
@@ -22,6 +24,10 @@ export const quotationsTable = pgTable("quotations", {
   currency: text("currency").notNull().default("SGD"),
   status: text("status").notNull().default("draft"),
   emailSentTo: text("email_sent_to"),
+  termsAndConditions: text("terms_and_conditions"),
+  deliveryInstructions: text("delivery_instructions"),
+  customerNote: text("customer_note"),
+  authorisedSignature: text("authorised_signature"),
   createdBy: integer("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

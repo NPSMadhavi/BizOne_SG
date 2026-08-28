@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, quotationsTable, invoicesTable, proformaInvoicesTable, vendorInvoicesTable, usersTable, customersTable } from "@workspace/db";
-import { eq, desc, inArray, ilike, and } from "drizzle-orm";
+import { eq, desc, inArray, ilike, and, lt, isNotNull, notInArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { postVendorInvoiceJE } from "../lib/vendor-invoice-auto-post.js";
@@ -52,6 +52,20 @@ function parseDoc(doc: any) {
   };
 }
 
+/** Cancel quotations whose Valid Upto date has passed (from the next calendar day). */
+async function expireOverdueQuotations(companyId?: number | null) {
+  const today = new Date().toISOString().split("T")[0];
+  const conditions = [
+    isNotNull(quotationsTable.validUntil),
+    lt(quotationsTable.validUntil, today),
+    notInArray(quotationsTable.status, ["cancelled", "converted_to_so"]),
+  ];
+  if (companyId) conditions.push(eq(quotationsTable.companyId, companyId));
+  await db.update(quotationsTable)
+    .set({ status: "cancelled" })
+    .where(and(...conditions));
+}
+
 function visibilityFilter(docs: any[], userId: number, isAdmin: boolean, isExternal: boolean) {
   if (isExternal) return docs.filter(d => d.createdBy === userId);
   return docs.filter(d => !d.isPrivate || d.createdBy === userId || isAdmin);
@@ -75,6 +89,8 @@ router.get("/quotations/stats", async (req, res): Promise<void> => {
   const isAdmin = req.session.isAdmin ?? false;
   const isExternal = req.session.userRole === "external";
 
+  await expireOverdueQuotations(companyId);
+
   const all = companyId
     ? await db.select().from(quotationsTable).where(eq(quotationsTable.companyId, companyId))
     : await db.select().from(quotationsTable);
@@ -95,6 +111,8 @@ router.get("/quotations", async (req, res): Promise<void> => {
   const isAdmin = req.session.isAdmin ?? false;
   const isExternal = req.session.userRole === "external";
 
+  await expireOverdueQuotations(companyId);
+
   const docs = companyId
     ? await db.select().from(quotationsTable).where(eq(quotationsTable.companyId, companyId)).orderBy(desc(quotationsTable.createdAt))
     : await db.select().from(quotationsTable).orderBy(desc(quotationsTable.createdAt));
@@ -109,8 +127,9 @@ router.post("/quotations", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax,
+    deliveryAddress, issueDate, validUntil, deliveryDate, paymentTerms, notes, items, tax,
     currency, discountAmount, isPrivate, status,
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
@@ -121,25 +140,45 @@ router.post("/quotations", async (req, res): Promise<void> => {
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
   const totalAmount = taxableAmount + taxAmt;
 
-  const qtNumber = await nextDocNumber("qt", companyId);
+  const today = new Date().toISOString().split("T")[0];
+  let createdStatus = status || "draft";
+  if (validUntil && String(validUntil) < today && createdStatus !== "converted_to_so") {
+    createdStatus = "cancelled";
+  }
 
-  const [doc] = await db.insert(quotationsTable).values({
-    qtNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-    customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, notes, items,
-    currency: currency || "SGD",
-    isPrivate: isPrivate === true,
-    subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
-    totalAmount: totalAmount.toFixed(2), status: status || "draft", createdBy: req.session.userId!,
-  }).returning();
-  await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
-  logAudit({ req, action: "create", entityType: "quotation", entityId: doc.id, entityLabel: doc.qtNumber });
-  res.status(201).json(parseDoc(doc));
+  try {
+    const qtNumber = await nextDocNumber("qt", companyId);
+
+    const [doc] = await db.insert(quotationsTable).values({
+      qtNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
+      customerContactEmail, deliveryAddress,
+      issueDate: issueDate || today,
+      validUntil: validUntil || null,
+      deliveryDate, paymentTerms, notes, items,
+      currency: currency || "SGD",
+      isPrivate: isPrivate === true,
+      subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
+      totalAmount: totalAmount.toFixed(2), status: createdStatus, createdBy: req.session.userId!,
+      termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
+    }).returning();
+    await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
+    logAudit({ req, action: "create", entityType: "quotation", entityId: doc.id, entityLabel: doc.qtNumber });
+    res.status(201).json(parseDoc(doc));
+  } catch (error: any) {
+    console.error("Error creating quotation:", error);
+    res.status(500).json({ error: error.message || "Failed to create quotation" });
+  }
 });
 
 router.get("/quotations/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [existing] = await db.select().from(quotationsTable).where(eq(quotationsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Quotation not found" }); return; }
+
+  await expireOverdueQuotations(existing.companyId);
 
   const [doc] = await db.select().from(quotationsTable).where(eq(quotationsTable.id, id));
   if (!doc) { res.status(404).json({ error: "Quotation not found" }); return; }
@@ -172,10 +211,14 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
+  const [existing] = await db.select().from(quotationsTable).where(eq(quotationsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Quotation not found" }); return; }
+
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, tax, status,
+    deliveryAddress, issueDate, validUntil, deliveryDate, paymentTerms, notes, items, tax, status,
     currency, discountAmount, isPrivate,
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
 
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
@@ -187,12 +230,28 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
   const updateData: any = {
     customerName, customerAddress, customerContact, customerContactEmail,
     deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items,
+    validUntil: validUntil || null,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
+    termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   };
   if (currency !== undefined) updateData.currency = currency;
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
-  if (status) updateData.status = status;
+
+  const today = new Date().toISOString().split("T")[0];
+  const vu = validUntil || null;
+
+  if (existing.status === "converted_to_so") {
+    updateData.status = "converted_to_so";
+  } else if (vu && vu < today) {
+    // Valid Upto passed — cancel from the next calendar day (checked on each list/get too).
+    updateData.status = "cancelled";
+  } else if (vu && vu >= today && existing.status === "cancelled") {
+    // Expired/cancelled quotation extended — restore to Confirmed.
+    updateData.status = "confirmed";
+  } else if (status) {
+    updateData.status = status;
+  }
 
   const [updated] = await db.update(quotationsTable).set(updateData).where(eq(quotationsTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Quotation not found" }); return; }

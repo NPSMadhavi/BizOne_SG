@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -22,8 +23,9 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, X } from "lucide-react";
+import { cn, plainText } from "@/lib/utils";
+import type { FieldErrors } from "react-hook-form";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
@@ -38,8 +40,8 @@ const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
   sectionLabel: z.string().default(""),
   sectionAlign: z.enum(["left", "center"]).default("left"),
-  partNumber: z.string(),
-  description: z.string(),
+  partNumber: z.coerce.string(),
+  description: z.coerce.string(),
   qty: z.coerce.number().min(0).default(1),
   uom: z.string().default(""),
   unitPrice: z.coerce.number().min(0),
@@ -64,11 +66,16 @@ const schema = z.object({
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   issueDate: z.string().optional(),
+  validUntil: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
-  status: z.enum(["draft", "confirmed", "cancelled"]),
+  status: z.enum(["draft", "confirmed", "cancelled", "sent", "converted_to_so"]),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
   isPrivate: z.boolean().default(false),
@@ -107,7 +114,8 @@ export default function QuotationEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: "", deliveryDate: "", paymentTerms: "", notes: "",
+      issueDate: "", validUntil: "", deliveryDate: "", paymentTerms: "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
@@ -135,9 +143,14 @@ export default function QuotationEdit() {
         customerContact: doc.customerContact || "",
         customerContactEmail: (doc as any).customerContactEmail || "",
         issueDate: (doc as any).issueDate || "",
+        validUntil: (doc as any).validUntil || "",
         deliveryDate: (doc as any).deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
+        termsAndConditions: (doc as any).termsAndConditions || "",
+        deliveryInstructions: (doc as any).deliveryInstructions || "",
+        customerNote: (doc as any).customerNote || "",
+        authorisedSignature: (doc as any).authorisedSignature || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
         tax: derivedTaxPct,
@@ -146,7 +159,7 @@ export default function QuotationEdit() {
         items: items.length > 0 ? items.map((i: any) => (
           i.type === "section"
             ? { type: "section" as const, sectionLabel: i.sectionLabel || "", sectionAlign: i.sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }
-            : { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: i.partNumber || "", description: i.description || "", qty: Number(i.qty) || 1, uom: i.uom || "", unitPrice: Number(i.unitPrice) || 0, discount: Number(i.discount) || 0, isFoc: !!(i as any).isFoc, itemImage: (i as any).itemImage || "" }
+            : { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: String(i.partNumber ?? ""), description: String(i.description ?? ""), qty: Number(i.qty) || 1, uom: i.uom || "", unitPrice: Number(i.unitPrice) || 0, discount: Number(i.discount) || 0, isFoc: !!(i as any).isFoc, itemImage: (i as any).itemImage || "" }
         )) : [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }],
       });
       // Derive discount percentage from saved flat amount so the % input is
@@ -181,8 +194,8 @@ export default function QuotationEdit() {
       if (!last) return;
       if ((last as any).type === "section") return;
       const isEmpty =
-        (!last.partNumber || String(last.partNumber).trim() === "") &&
-        (!last.description || String(last.description).trim() === "") &&
+        plainText(last.partNumber) === "" &&
+        plainText(last.description) === "" &&
         (Number(last.unitPrice) === 0) && (Number(last.qty) <= 1);
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
@@ -208,6 +221,24 @@ export default function QuotationEdit() {
   const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
   const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
 
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
+
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
       setPendingConfirmValues(values);
@@ -218,10 +249,11 @@ export default function QuotationEdit() {
   }
 
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (isSubmitting) return;
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => {
-      if ((i as any).type === "section") return ((i as any).sectionLabel || "").trim() !== "";
-      return i.partNumber.trim() !== "" || i.description.trim() !== "";
+      if ((i as any).type === "section") return plainText((i as any).sectionLabel) !== "";
+      return plainText(i.partNumber) !== "" || plainText(i.description) !== "";
     });
     const realItems = filledItems.filter((i: any) => i.type !== "section");
     if (realItems.length === 0) {
@@ -232,17 +264,37 @@ export default function QuotationEdit() {
     const itemsWithAmount = filledItems.map(i => {
       if ((i as any).type === "section") return { type: "section", sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left" };
       const disc = Number(i.discount) || 0;
-      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+      const partNumber = plainText(i.partNumber);
+      return { ...i, partNumber, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
     const isCancelled = values.status === "cancelled";
-    const newStatus = isCancelled ? "cancelled" : (openPreview ? "confirmed" : "draft");
+    const today = new Date().toISOString().split("T")[0];
+    const validUntil = values.validUntil || "";
+    const reactivateFromExpiry = isCancelled && validUntil && validUntil >= today;
+    const newStatus = reactivateFromExpiry
+      ? "confirmed"
+      : isCancelled
+        ? "cancelled"
+        : openPreview
+          ? "confirmed"
+          : values.status;
     updateMutation.mutate({ id, data: { ...values, status: newStatus, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
-      onSuccess: async () => {
+      onSuccess: async (saved: any) => {
+        if (saved?.status) form.setValue("status", saved.status as any);
         await queryClient.refetchQueries({ queryKey: getGetQuotationQueryKey(id) });
         await invalidateDocumentList(queryClient, "quotations");
         setIsSubmitting(false);
         if (openPreview) { setPreviewOpen(true); }
-        else { toast({ title: "Draft saved." }); }
+        else {
+          toast({
+            title: reactivateFromExpiry || saved?.status === "confirmed" && values.status === "cancelled"
+              ? "Quotation reactivated"
+              : "Changes saved",
+            description: reactivateFromExpiry
+              ? "Valid Upto extended — status is Confirmed again."
+              : undefined,
+          });
+        }
       },
       onError: (err: any) => {
         toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
@@ -279,6 +331,10 @@ export default function QuotationEdit() {
       currency: data.currency?.trim() || current.currency || "SGD",
       paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "",
       notes: notes || current.notes || "",
+      termsAndConditions: current.termsAndConditions || "",
+      deliveryInstructions: current.deliveryInstructions || "",
+      customerNote: current.customerNote || "",
+      authorisedSignature: current.authorisedSignature || "",
       items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
     });
   }
@@ -398,13 +454,32 @@ export default function QuotationEdit() {
                       <option value="cancelled">Cancelled</option>
                     </select></FormItem>
                 )} />
-                <FormField control={form.control} name="issueDate" render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Quotation Date" />
-                    </FormControl><FormMessage />
-                  </FormItem>
-                )} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField control={form.control} name="issueDate" render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <IssueDateField value={field.value || ""} onChange={field.onChange} label="Quotation Date" />
+                      </FormControl><FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="validUntil" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quotation Valid Upto</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          value={field.value || ""}
+                          min={form.watch("issueDate") || undefined}
+                          onChange={field.onChange}
+                        />
+                      </FormControl>
+                      <p className="text-[11px] text-muted-foreground">
+                        After this date passes, quotation auto-cancels. Extend the date on a cancelled quotation to restore Confirmed.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
                     <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
@@ -655,11 +730,17 @@ export default function QuotationEdit() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Notes</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              
+              <DocumentAdditionalInfoFields control={form.control} />
             </CardContent>
           </Card>
 
@@ -670,7 +751,7 @@ export default function QuotationEdit() {
               variant="outline"
               disabled={isSubmitting}
               className="gap-2 min-w-32"
-              onClick={form.handleSubmit(v => doSubmit(v, false))}
+              onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save Changes"}
@@ -678,9 +759,8 @@ export default function QuotationEdit() {
             <Button
               type="button"
               disabled={isSubmitting}
-              variant="secondary"
               className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true))}
+              onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
             >
               <Eye className="h-4 w-4" />
               Save & Preview

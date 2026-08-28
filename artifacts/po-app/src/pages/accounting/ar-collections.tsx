@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Search, Loader2, CheckCircle2, Coins, Wallet, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BankAccountField } from "@/components/bank-account-field";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -108,6 +109,7 @@ function BulkPaymentDialog({ open, onClose, customerName, onSuccess }: BulkPayme
   const [payDate, setPayDate] = useState(today);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("bank_transfer");
+  const [payBank, setPayBank] = useState("");
   const [bankRef, setBankRef] = useState("");
   const [payNotes, setPayNotes] = useState("");
   const [mode, setMode] = useState<"auto" | "manual">("auto");
@@ -217,27 +219,25 @@ function BulkPaymentDialog({ open, onClose, customerName, onSuccess }: BulkPayme
               <Input type="text" inputMode="decimal" placeholder="0.00" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <BankAccountField
+            paymentMethod={payMethod}
+            onPaymentMethodChange={setPayMethod}
+            selectedBankAccount={payBank}
+            onBankAccountChange={setPayBank}
+            paymentMethods={[
+              { value: "bank_transfer", label: "Bank Transfer" },
+              { value: "cheque", label: "Cheque" },
+              { value: "online", label: "Online Payment" },
+              { value: "cash", label: "Cash" },
+              { value: "other", label: "Other" },
+            ]}
+          />
+          {!isCash && (
             <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="cheque">Cheque</SelectItem>
-                  <SelectItem value="online">Online Payment</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Bank Reference / Transaction ID <span className="text-destructive">*</span></Label>
+              <Input placeholder="e.g. OCBC-2026-001234" value={bankRef} onChange={e => setBankRef(e.target.value)} />
             </div>
-            {!isCash && (
-              <div className="space-y-1.5">
-                <Label>Bank Reference / Transaction ID <span className="text-destructive">*</span></Label>
-                <Input placeholder="e.g. OCBC-2026-001234" value={bankRef} onChange={e => setBankRef(e.target.value)} />
-              </div>
-            )}
-          </div>
+          )}
           <div className="space-y-1.5">
             <Label>Notes (optional)</Label>
             <Input placeholder="Internal notes" value={payNotes} onChange={e => setPayNotes(e.target.value)} />

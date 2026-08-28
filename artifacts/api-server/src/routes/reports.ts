@@ -25,6 +25,7 @@ import {
 import { getDocumentReportType, sortReportDefinitions } from "../lib/reports/document-types.js";
 import { buildDefaultDocumentTemplate, buildDefaultInvoiceTemplate } from "../lib/reports/default-invoice-template.js";
 import { seedReportDefinitions } from "../lib/reports/seed.js";
+import type { ReportTemplateJson } from "../lib/reports/types.js";
 
 const router: IRouter = Router();
 
@@ -272,7 +273,17 @@ router.post("/report-templates", requireReportPerm("report_templates:create"), a
   });
 
   logAudit({ req, action: "create", entityType: "report_template", entityId: created.id, entityLabel: created.name });
-  res.status(201).json(created);
+  const [def] = await db
+    .select()
+    .from(reportDefinitionsTable)
+    .where(eq(reportDefinitionsTable.id, created.reportDefinitionId))
+    .limit(1);
+  res.status(201).json({
+    ...created,
+    reportType: def?.reportType ?? null,
+    reportTypeName: def?.name ?? null,
+    status: created.isActive ? "ACTIVE" : "INACTIVE",
+  });
 });
 
 router.put("/report-templates/:id", requireReportPerm("report_templates:edit"), async (req, res): Promise<void> => {
@@ -286,8 +297,90 @@ router.put("/report-templates/:id", requireReportPerm("report_templates:edit"), 
     res.status(404).json({ error: "Template not found" });
     return;
   }
+
+  const name = req.body?.name !== undefined ? String(req.body.name).trim() : existing.name;
+  if (!name) { res.status(400).json({ error: "Template name is required" }); return; }
+
+  let templateJson: ReportTemplateJson | undefined;
+  if (req.body?.templateJson !== undefined) {
+    if (!isValidTemplateJson(req.body.templateJson)) {
+      res.status(400).json({ error: "Invalid template JSON" });
+      return;
+    }
+    templateJson = sanitizeTemplateJson(req.body.templateJson);
+    const copied = assertNoCopiedBusinessValues(templateJson);
+    if (copied) { res.status(400).json({ error: copied }); return; }
+    const invalid = await validateTemplateFields(existing.reportDefinitionId, templateJson);
+    if (invalid) { res.status(400).json({ error: invalid }); return; }
+  }
+
+  const description = req.body?.description !== undefined
+    ? (req.body.description ? String(req.body.description).trim() : null)
+    : undefined;
+
+  // System defaults are global — edits are saved as an active company template.
   if (existing.isSystemTemplate) {
-    res.status(403).json({ error: "System default templates cannot be modified. Use Save As to create a company template." });
+    const [nameClash] = await db
+      .select({ id: reportTemplatesTable.id })
+      .from(reportTemplatesTable)
+      .where(and(
+        eq(reportTemplatesTable.companyId, companyId),
+        eq(reportTemplatesTable.reportDefinitionId, existing.reportDefinitionId),
+        sql`lower(${reportTemplatesTable.name}) = ${name.toLowerCase()}`,
+        eq(reportTemplatesTable.isSystemTemplate, false),
+      ))
+      .limit(1);
+
+    const saved = await db.transaction(async (tx) => {
+      await tx
+        .update(reportTemplatesTable)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(reportTemplatesTable.companyId, companyId),
+          eq(reportTemplatesTable.reportDefinitionId, existing.reportDefinitionId),
+          eq(reportTemplatesTable.isActive, true),
+        ));
+
+      if (nameClash) {
+        const patch: Record<string, unknown> = {
+          name,
+          isActive: true,
+          updatedBy: req.session.userId ?? null,
+          updatedAt: new Date(),
+        };
+        if (description !== undefined) patch.description = description;
+        if (templateJson) patch.templateJson = templateJson;
+        const [row] = await tx
+          .update(reportTemplatesTable)
+          .set(patch)
+          .where(and(eq(reportTemplatesTable.id, nameClash.id), eq(reportTemplatesTable.companyId, companyId)))
+          .returning();
+        return row;
+      }
+
+      const [row] = await tx
+        .insert(reportTemplatesTable)
+        .values({
+          companyId,
+          reportDefinitionId: existing.reportDefinitionId,
+          name,
+          description: description ?? existing.description,
+          templateJson: templateJson ?? cloneJson(existing.templateJson as ReportTemplateJson),
+          isSystemTemplate: false,
+          isActive: true,
+          createdBy: req.session.userId ?? null,
+          updatedBy: req.session.userId ?? null,
+        })
+        .returning();
+      return row;
+    });
+
+    if (!saved) {
+      res.status(500).json({ error: "Could not save company template" });
+      return;
+    }
+    logAudit({ req, action: "update", entityType: "report_template", entityId: saved.id, entityLabel: saved.name });
+    res.json(saved);
     return;
   }
 
@@ -295,36 +388,22 @@ router.put("/report-templates/:id", requireReportPerm("report_templates:edit"), 
     updatedBy: req.session.userId ?? null,
     updatedAt: new Date(),
   };
-  if (req.body?.name !== undefined) {
-    const name = String(req.body.name).trim();
-    if (!name) { res.status(400).json({ error: "Template name is required" }); return; }
-    const [clash] = await db
-      .select({ id: reportTemplatesTable.id })
-      .from(reportTemplatesTable)
-      .where(and(
-        eq(reportTemplatesTable.companyId, companyId),
-        eq(reportTemplatesTable.reportDefinitionId, existing.reportDefinitionId),
-        sql`lower(${reportTemplatesTable.name}) = ${name.toLowerCase()}`,
-        sql`${reportTemplatesTable.id} <> ${id}`,
-      ))
-      .limit(1);
-    if (clash) { res.status(409).json({ error: "A template with this name already exists for this report type" }); return; }
-    updates.name = name;
-  }
-  if (req.body?.description !== undefined) updates.description = req.body.description ? String(req.body.description).trim() : null;
+  updates.name = name;
+  if (description !== undefined) updates.description = description;
   if (req.body?.isActive === false) updates.isActive = false;
-  if (req.body?.templateJson !== undefined) {
-    if (!isValidTemplateJson(req.body.templateJson)) {
-      res.status(400).json({ error: "Invalid template JSON" });
-      return;
-    }
-    const templateJson = sanitizeTemplateJson(req.body.templateJson);
-    const copied = assertNoCopiedBusinessValues(templateJson);
-    if (copied) { res.status(400).json({ error: copied }); return; }
-    const invalid = await validateTemplateFields(existing.reportDefinitionId, templateJson);
-    if (invalid) { res.status(400).json({ error: invalid }); return; }
-    updates.templateJson = templateJson;
-  }
+  if (templateJson) updates.templateJson = templateJson;
+
+  const [clash] = await db
+    .select({ id: reportTemplatesTable.id })
+    .from(reportTemplatesTable)
+    .where(and(
+      eq(reportTemplatesTable.companyId, companyId),
+      eq(reportTemplatesTable.reportDefinitionId, existing.reportDefinitionId),
+      sql`lower(${reportTemplatesTable.name}) = ${name.toLowerCase()}`,
+      sql`${reportTemplatesTable.id} <> ${id}`,
+    ))
+    .limit(1);
+  if (clash) { res.status(409).json({ error: "A template with this name already exists for this report type" }); return; }
 
   const [updated] = await db
     .update(reportTemplatesTable)
@@ -332,7 +411,12 @@ router.put("/report-templates/:id", requireReportPerm("report_templates:edit"), 
     .where(and(eq(reportTemplatesTable.id, id), eq(reportTemplatesTable.companyId, companyId)))
     .returning();
 
-  logAudit({ req, action: "update", entityType: "report_template", entityId: id, entityLabel: updated?.name });
+  if (!updated) {
+    res.status(404).json({ error: "Template not found or could not be updated" });
+    return;
+  }
+
+  logAudit({ req, action: "update", entityType: "report_template", entityId: id, entityLabel: updated.name });
   res.json(updated);
 });
 
@@ -428,6 +512,10 @@ router.delete("/report-templates/:id", requireReportPerm("report_templates:delet
   const [existing] = await db.select().from(reportTemplatesTable).where(eq(reportTemplatesTable.id, id)).limit(1);
   if (!existing || !canAccessTemplate(existing, companyId)) {
     res.status(404).json({ error: "Template not found" });
+    return;
+  }
+  if (existing.isSystemTemplate) {
+    res.status(403).json({ error: "System default templates cannot be deleted" });
     return;
   }
   if (!existing.isSystemTemplate && existing.companyId !== companyId) {

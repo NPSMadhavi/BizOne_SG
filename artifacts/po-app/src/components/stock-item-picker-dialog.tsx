@@ -58,6 +58,7 @@ interface StockItemPickerDialogProps {
   ignoreStockLimit?: boolean;
   /** Require warehouse before import (invoices, delivery orders, PO receive). */
   requireWarehouse?: boolean;
+  skipSerialSelection?: boolean;
 }
 
 export function StockItemPickerDialog({
@@ -67,6 +68,7 @@ export function StockItemPickerDialog({
   mode,
   ignoreStockLimit: ignoreStockLimitProp,
   requireWarehouse: requireWarehouseProp,
+  skipSerialSelection = false,
 }: StockItemPickerDialogProps) {
   const ignoreStockLimit = ignoreStockLimitProp ?? mode === "receive";
   const requireWarehouse = requireWarehouseProp ?? (!ignoreStockLimit || mode === "receive");
@@ -84,6 +86,7 @@ export function StockItemPickerDialog({
   /** Confirmed invoice qty from the qty step — serial picking must not replace this. */
   const [confirmedQty, setConfirmedQty] = useState<number | null>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
+  const warehouseTriggerRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -109,7 +112,7 @@ export function StockItemPickerDialog({
 
   useEffect(() => {
     if (step === "qty") {
-      setTimeout(() => qtyInputRef.current?.select(), 50);
+      setTimeout(() => warehouseTriggerRef.current?.focus(), 50);
     }
   }, [step]);
 
@@ -242,7 +245,7 @@ export function StockItemPickerDialog({
 
     const availableSerials = serials.filter((s) => s.status === "available");
     // Optional serial tracking: only prompt when serials exist. Qty stays authoritative.
-    if (availableSerials.length > 0) {
+    if (availableSerials.length > 0 && !skipSerialSelection) {
       setConfirmedQty(qty);
       setChosen(new Set());
       setSerialSearch("");
@@ -394,9 +397,13 @@ export function StockItemPickerDialog({
                     setSelectedWarehouseId(Number(value));
                     setWarehouseLockedByUser(true);
                     setQtyInput("1");
+                    setTimeout(() => {
+                      qtyInputRef.current?.focus();
+                      qtyInputRef.current?.select();
+                    }, 0);
                   }}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger ref={warehouseTriggerRef} className="w-full">
                     <SelectValue placeholder="Select warehouse" />
                   </SelectTrigger>
                   <SelectContent>
@@ -430,7 +437,6 @@ export function StockItemPickerDialog({
                   }}
                   className="text-lg font-semibold w-36"
                   placeholder="Enter qty"
-                  autoFocus
                 />
                 {serialsLoading && (
                   <p className="text-xs text-muted-foreground">Checking serial numbers…</p>

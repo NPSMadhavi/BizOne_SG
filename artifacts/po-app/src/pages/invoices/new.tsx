@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft, X } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
 import { cn } from "@/lib/utils";
@@ -68,6 +68,9 @@ const CURRENCIES = [
   { code: "INR", label: "INR – ₹" },
 ];
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+
 const schema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   customerAddress: z.string().optional(),
@@ -78,7 +81,12 @@ const schema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   poRefNo: z.string().optional(),
+  salesPerson: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
@@ -92,6 +100,7 @@ export default function InvoiceNew() {
   const qtParams = new URLSearchParams(search);
   const qtId = qtParams.get("qtId");
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
   const { selectedCompany, user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,6 +116,7 @@ export default function InvoiceNew() {
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [createDeliveryOrder, setCreateDeliveryOrder] = useState(false);
+  const [discountPct, setDiscountPct] = useState(0);
 
   const allReservedIds = useRef<Set<number>>(new Set());
 
@@ -166,6 +176,7 @@ export default function InvoiceNew() {
     defaultValues: {
       customerName: qtParams.get("customer") || "", customerAddress: "", customerContact: "", customerContactEmail: "",
       issueDate: getToday(), deliveryDate: "", paymentTerms: "30 Days Net", poRefNo: qtParams.get("qtNumber") || "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD",
       tax: 9,
       discountAmount: 0,
@@ -191,6 +202,10 @@ export default function InvoiceNew() {
       paymentTerms: (sourceQt as any).paymentTerms || "30 Days Net",
       poRefNo: sourceQt.qtNumber || "",
       notes: (sourceQt as any).notes || "",
+      termsAndConditions: (sourceQt as any).termsAndConditions || "",
+      deliveryInstructions: (sourceQt as any).deliveryInstructions || "",
+      customerNote: (sourceQt as any).customerNote || "",
+      authorisedSignature: (sourceQt as any).authorisedSignature || "",
       currency: (sourceQt as any).currency || "SGD",
       tax: (() => {
         const sub = Number((sourceQt as any).subtotal) || 0;
@@ -269,30 +284,94 @@ export default function InvoiceNew() {
     });
   }
 
-  // Aria prefill — populated by the AI agent via navigateTo
+  // Prefill from AI agent or "Copy to New Invoice"
   useEffect(() => {
     const prefill = (window as any).__ariaPrefill;
     if (!prefill) return;
     (window as any).__ariaPrefill = null;
-    const blankItem = { type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
+
+    const blankItem = {
+      type: "item" as const,
+      sectionLabel: "",
+      sectionAlign: "left" as const,
+      partNumber: "",
+      description: "",
+      qty: 1,
+      uom: "",
+      unitPrice: 0,
+      discount: 0,
+      isFoc: false,
+      isStockItem: false,
+      selectedSerials: [],
+      selectedSerialIds: [],
+      itemImage: "",
+    };
+
+    const mappedItems = prefill.items?.length
+      ? prefill.items.map((it: any) => (
+          it.type === "section"
+            ? {
+                type: "section" as const,
+                sectionLabel: it.sectionLabel || "",
+                sectionAlign: (it.sectionAlign || "left") as "left" | "center",
+                partNumber: "",
+                description: "",
+                qty: 1,
+                uom: "",
+                unitPrice: 0,
+                discount: 0,
+                isFoc: false,
+                isStockItem: false,
+                selectedSerials: [],
+                selectedSerialIds: [],
+                itemImage: "",
+              }
+            : {
+                ...blankItem,
+                partNumber: it.partNumber || "",
+                description: it.description || "",
+                qty: Number(it.qty) || 1,
+                uom: it.uom || "",
+                unitPrice: Number(it.unitPrice) || 0,
+                discount: Number(it.discount) || 0,
+                isFoc: !!it.isFoc,
+                itemImage: it.itemImage || "",
+              }
+        ))
+      : [blankItem];
+
     form.reset({
       customerName: prefill.customerName || "",
       customerAddress: prefill.customerAddress || "",
       customerContact: prefill.customerContact || "",
       customerContactEmail: prefill.customerContactEmail || "",
+      deliveryAddress: prefill.deliveryAddress || "",
       currency: prefill.currency || "SGD",
       paymentTerms: prefill.paymentTerms || "30 Days Net",
-      poRefNo: "",
+      poRefNo: prefill.poRefNo || "",
+      salesPerson: prefill.salesPerson || "",
       notes: prefill.notes || "",
+      termsAndConditions: prefill.termsAndConditions || "",
+      deliveryInstructions: prefill.deliveryInstructions || "",
+      customerNote: prefill.customerNote || "",
+      authorisedSignature: prefill.authorisedSignature || "",
       issueDate: getToday(),
-      deliveryDate: "",
-      tax: settings?.gstRate ?? 9,
+      deliveryDate: prefill.deliveryDate || "",
+      tax: prefill.tax ?? settings?.gstRate ?? 9,
       discountAmount: prefill.discountAmount ?? 0,
       isPrivate: false,
-      items: prefill.items?.length
-        ? prefill.items.map((it: any) => ({ ...blankItem, partNumber: it.partNumber || "", description: it.description || "", qty: Number(it.qty) || 1, unitPrice: Number(it.unitPrice) || 0 }))
-        : [blankItem],
+      items: mappedItems,
     });
+
+    if (prefill.discountPct > 0) setDiscountPct(prefill.discountPct);
+    if (prefill.tax === 0) setIsOverseas(true);
+
+    if (prefill.sourceInvNumber) {
+      toast({
+        title: "Invoice copied",
+        description: `Data from ${prefill.sourceInvNumber} loaded — save to create a new invoice number.`,
+      });
+    }
   }, []);
 
   const { fields, append, remove, insert } = useFieldArray({ control: form.control, name: "items" });
@@ -351,7 +430,6 @@ export default function InvoiceNew() {
   const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
   const taxableAmount = subtotal - discountAmt;
-  const [discountPct, setDiscountPct] = useState(0);
   useEffect(() => {
     if (discountPct > 0) form.setValue("discountAmount", parseFloat((subtotal * discountPct / 100).toFixed(2)));
   }, [subtotal]);
@@ -437,9 +515,16 @@ export default function InvoiceNew() {
           partNumber: i.partNumber,
         })),
     });
+    const cleanAddress = (values.deliveryAddress || "")
+      .split("\n\n")
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
     const payload = {
       ...values,
       discountAmount: values.discountAmount,
+      deliveryAddress: cleanAddress || null,
       poRefNo: values.poRefNo || null,
       items: itemsWithAmount,
       createDeliveryOrder,
@@ -615,13 +700,63 @@ export default function InvoiceNew() {
                   <FormItem><FormLabel>Contact Email</FormLabel>
                     <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
-                    <FormControl><Textarea placeholder="Delivery / ship-to address if different from billing…" className="resize-none" rows={2} {...field} /></FormControl>
-                    <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the invoice PDF when set.</p>
-                  </FormItem>
-                )} />
+                <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
+                  const addrs = (field.value || "").split("\n\n");
+                  if (addrs.length === 0 || (addrs.length === 1 && addrs[0] === "")) {
+                    addrs[0] = "";
+                  }
+                  return (
+                    <FormItem>
+                      <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
+                      <div className="space-y-2">
+                        {addrs.map((addr, idx) => (
+                          <div key={idx} className="relative group">
+                            <FormControl>
+                              <Textarea
+                                value={addr}
+                                onChange={(e) => {
+                                  const newAddrs = [...addrs];
+                                  newAddrs[idx] = e.target.value;
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+                                placeholder={`Ship-to Address #${idx + 1}`}
+                                className="resize-none pr-8 text-sm"
+                                rows={2}
+                              />
+                            </FormControl>
+                            {addrs.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newAddrs = addrs.filter((_, i) => i !== idx);
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+                                className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Remove Address"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+                          onClick={() => {
+                            const newAddrs = [...addrs, ""];
+                            field.onChange(newAddrs.join("\n\n"));
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add More Ship-To Address
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the invoice PDF when set.</p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
               </CardContent>
             </Card>
 
@@ -651,6 +786,26 @@ export default function InvoiceNew() {
                   <p className="text-sm font-medium mb-1.5">Sales Order</p>
                   <p className="h-9 flex items-center px-3 rounded-md border bg-muted/40 text-sm font-mono text-muted-foreground">—</p>
                 </div>
+                <FormField control={form.control} name="salesPerson" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sales Person</FormLabel>
+                    <FormControl>
+                      <Select value={field.value || undefined} onValueChange={field.onChange}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select Sales Person" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {salesPersons.map((sp) => (
+                            <SelectItem key={sp.id} value={sp.name}>
+                              {sp.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -984,11 +1139,138 @@ export default function InvoiceNew() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Notes</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+                <FormField control={form.control} name="customerNote" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Customer Note</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="Note for the customer..."
+                        rows={4}
+                        className="min-h-[96px] resize-y"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="deliveryInstructions" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Delivery Instructions</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="Special instructions for delivery..."
+                        rows={4}
+                        className="min-h-[96px] resize-y"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="termsAndConditions" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Terms & Conditions</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="Terms & conditions..."
+                        rows={4}
+                        className="min-h-[96px] resize-y"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="authorisedSignature" render={({ field }) => {
+                  const inputRef = useRef<HTMLInputElement>(null);
+                  const handleFile = (file: File) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                      const src = e.target?.result as string;
+                      if (src) {
+                        const img = document.createElement("img");
+                        img.onload = () => {
+                          const canvas = document.createElement("canvas");
+                          let w = img.width, h = img.height;
+                          const maxW = 300, maxH = 100;
+                          if (w > maxW || h > maxH) {
+                            const r = Math.min(maxW / w, maxH / h);
+                            w = Math.round(w * r); h = Math.round(h * r);
+                          }
+                          canvas.width = w; canvas.height = h;
+                          canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+                          field.onChange(canvas.toDataURL("image/png"));
+                        };
+                        img.src = src;
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  };
+
+                  return (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Authorised Signature</FormLabel>
+                      <FormControl>
+                        <div className="flex flex-col border rounded-lg p-3 bg-muted/10 min-h-[96px]">
+                          <div className="flex items-center gap-4 flex-1">
+                            {field.value ? (
+                              <div className="relative group border rounded overflow-hidden bg-white p-2">
+                                <img src={field.value} alt="Authorised Signature" className="h-16 object-contain" />
+                                <button
+                                  type="button"
+                                  onClick={() => field.onChange("")}
+                                  className="absolute top-1 right-1 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
+                                >
+                                  <X className="h-3 w-3 text-white" />
+                                </button>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => inputRef.current?.click()}
+                                className="gap-2 text-xs"
+                              >
+                                <Upload className="h-4 w-4" /> Upload Signature Image
+                              </Button>
+                            )}
+                            <input
+                              ref={inputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleFile(f);
+                                e.target.value = "";
+                              }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-2">Appears at the bottom of the invoice PDF above the sign-off line.</p>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
+              </div>
             </CardContent>
           </Card>
 

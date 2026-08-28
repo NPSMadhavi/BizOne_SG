@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Globe, Info, ChevronsUpDown, Check } from "lucide-react";
+import { Globe, Info, ChevronsUpDown, Check, Trash2, Plus } from "lucide-react";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -172,9 +172,55 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
             </div>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
-            <Textarea value={form.shipToAddress} onChange={e => setField("shipToAddress", e.target.value)} placeholder="Delivery / ship-to address if different from billing address" className="resize-none" rows={2} />
+            {(() => {
+              const addrs = form.shipToAddress ? form.shipToAddress.split("\n\n") : [""];
+              return (
+                <div className="space-y-2">
+                  {addrs.map((addr, idx) => (
+                    <div key={idx} className="relative group">
+                      <Textarea
+                        value={addr}
+                        onChange={(e) => {
+                          const newAddrs = [...addrs];
+                          newAddrs[idx] = e.target.value;
+                          setField("shipToAddress", newAddrs.join("\n\n"));
+                        }}
+                        placeholder={`Ship-to Address #${idx + 1}`}
+                        className="resize-none pr-8 text-sm"
+                        rows={2}
+                      />
+                      {addrs.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newAddrs = addrs.filter((_, i) => i !== idx);
+                            setField("shipToAddress", newAddrs.join("\n\n"));
+                          }}
+                          className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remove Address"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+                    onClick={() => {
+                      const newAddrs = [...addrs, ""];
+                      setField("shipToAddress", newAddrs.join("\n\n"));
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add More Ship-To Address
+                  </Button>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

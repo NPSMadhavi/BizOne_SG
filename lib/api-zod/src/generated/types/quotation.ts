@@ -16,6 +16,8 @@ export interface Quotation {
   customerContact?: string;
   customerContactEmail?: string;
   deliveryAddress?: string;
+  issueDate?: string;
+  validUntil?: string;
   deliveryDate?: string;
   paymentTerms?: string;
   notes?: string;

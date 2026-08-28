@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, Receipt, Truck } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, Receipt, Truck, Copy } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateSalesOrder_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -21,6 +21,50 @@ import {
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
   return fmtDate(dateStr);
+}
+
+function buildSalesOrderCopyPrefill(doc: any) {
+  const soItems = (doc.items as any[]) ?? [];
+  const sub = Number(doc.subtotal) || 0;
+  const disc = Number(doc.discountAmount) || 0;
+  const taxAmt = Number(doc.tax) || 0;
+  const taxable = sub - disc;
+  const taxPct = taxable > 0 && taxAmt > 0
+    ? Math.round((taxAmt / taxable) * 1000) / 10
+    : 9;
+
+  return {
+    customerName: doc.customerName || "",
+    customerAddress: doc.customerAddress || "",
+    customerContact: doc.customerContact || "",
+    customerContactEmail: doc.customerContactEmail || "",
+    deliveryAddress: doc.deliveryAddress || "",
+    currency: doc.currency || "SGD",
+    paymentTerms: doc.paymentTerms || "30 Days Net",
+    notes: doc.notes || "",
+    termsAndConditions: doc.termsAndConditions || "",
+    deliveryInstructions: doc.deliveryInstructions || "",
+    customerNote: doc.customerNote || "",
+    authorisedSignature: doc.authorisedSignature || "",
+    deliveryDate: doc.deliveryDate || "",
+    tax: taxPct,
+    discountAmount: disc,
+    discountPct: disc > 0 && sub > 0 ? parseFloat((disc / sub * 100).toFixed(2)) : 0,
+    sourceSoNumber: doc.soNumber,
+    items: soItems.map((it: any) => ({
+      type: it.type || "item",
+      sectionLabel: it.sectionLabel || "",
+      sectionAlign: it.sectionAlign || "left",
+      partNumber: it.partNumber || "",
+      description: it.description || "",
+      qty: Number(it.qty) || 1,
+      uom: it.uom || "",
+      unitPrice: Number(it.unitPrice) || 0,
+      discount: Number(it.discount) || 0,
+      isFoc: !!it.isFoc,
+      itemImage: it.itemImage || "",
+    })),
+  };
 }
 
 export default function SalesOrderView() {
@@ -82,6 +126,12 @@ export default function SalesOrderView() {
   const { data: doc, isLoading, refetch } = useGetSalesOrder(id, {
     query: { queryKey: getGetSalesOrderQueryKey(id), enabled: !!id },
   });
+
+  const handleCopyToNew = () => {
+    if (!doc) return;
+    (window as any).__vedaPrefill = buildSalesOrderCopyPrefill(doc);
+    setLocation("/sales-orders/new");
+  };
 
   const { data: docSettings } = useGetSettings({
     query: { queryKey: getGetSettingsQueryKey() },
@@ -180,6 +230,9 @@ export default function SalesOrderView() {
             title={(doc as any).status === "sent" ? "Sales order has been sent — editing is disabled" : undefined}
           >
             <Pencil className="h-4 w-4" />Edit
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={handleCopyToNew}>
+            <Copy className="h-4 w-4" />Copy to New Sales Order
           </Button>
           {canManage && (
             <AlertDialog>

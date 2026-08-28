@@ -635,7 +635,6 @@ export default function PurchaseQuotationEdit() {
             <Button
               type="button"
               disabled={isSubmitting}
-              variant="secondary"
               className="gap-2"
               onClick={form.handleSubmit(v => onSubmit(v, true))}
             >

@@ -27,6 +27,8 @@ export interface Invoice {
   tax: string;
   totalAmount: string;
   status: InvoiceStatus;
+  /** True after the invoice has been edited and saved at least once. */
+  isModified?: boolean;
   poRefNo?: string;
   voidReason?: string;
   createdBy: number;

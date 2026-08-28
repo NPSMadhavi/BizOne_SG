@@ -1683,6 +1683,11 @@ components:
           type: string
         deliveryDate:
           type: string
+        issueDate:
+          type: string
+        validUntil:
+          type: string
+          description: Quotation valid through this date; cancelled from the next day
         paymentTerms:
           type: string
         notes:
@@ -1729,6 +1734,10 @@ components:
           type: string
         deliveryDate:
           type: string
+        issueDate:
+          type: string
+        validUntil:
+          type: string
         paymentTerms:
           type: string
         notes:
@@ -1764,6 +1773,10 @@ components:
         deliveryAddress:
           type: string
         deliveryDate:
+          type: string
+        issueDate:
+          type: string
+        validUntil:
           type: string
         paymentTerms:
           type: string
@@ -1828,6 +1841,9 @@ components:
         status:
           type: string
           enum: [draft, confirmed, sent, cancelled, void, paid]
+        isModified:
+          type: boolean
+          description: True when the invoice has been edited and saved after creation
         poRefNo:
           type: string
         voidReason:

@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DeliveryDateField } from "@/components/delivery-date-field";
@@ -67,6 +68,10 @@ const schema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
   status: z.enum(["draft", "confirmed", "cancelled"]),
   tax: z.coerce.number().min(0).max(100).default(9),
@@ -109,6 +114,7 @@ export default function SalesOrderEdit() {
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
       issueDate: "", deliveryDate: "", paymentTerms: "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
@@ -139,6 +145,10 @@ export default function SalesOrderEdit() {
         deliveryDate: (doc as any).deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
+        termsAndConditions: (doc as any).termsAndConditions || "",
+        deliveryInstructions: (doc as any).deliveryInstructions || "",
+        customerNote: (doc as any).customerNote || "",
+        authorisedSignature: (doc as any).authorisedSignature || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
         tax: derivedTaxPct,
@@ -281,6 +291,10 @@ export default function SalesOrderEdit() {
       currency: data.currency?.trim() || current.currency || "SGD",
       paymentTerms: data.paymentTerms?.trim() || current.paymentTerms || "",
       notes: notes || current.notes || "",
+      termsAndConditions: current.termsAndConditions || "",
+      deliveryInstructions: current.deliveryInstructions || "",
+      customerNote: current.customerNote || "",
+      authorisedSignature: current.authorisedSignature || "",
       items: mappedItems.length > 0 ? mappedItems : current.items?.length ? current.items : [blankItem],
     });
   }
@@ -662,11 +676,17 @@ export default function SalesOrderEdit() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Notes</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              
+              <DocumentAdditionalInfoFields control={form.control} />
             </CardContent>
           </Card>
 
@@ -685,7 +705,6 @@ export default function SalesOrderEdit() {
             <Button
               type="button"
               disabled={isSubmitting}
-              variant="secondary"
               className="gap-2"
               onClick={form.handleSubmit(v => onSubmit(v, true))}
             >

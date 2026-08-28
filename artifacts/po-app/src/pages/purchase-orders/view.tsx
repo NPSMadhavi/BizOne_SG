@@ -4,20 +4,68 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail, CheckCircle2, TrendingUp } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag, Lock, Eye, ClipboardList, FileInput, ArrowUpRight, Users, Mail, CheckCircle2, TrendingUp, Copy } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
   AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+
+function shouldUseCompactPoHeader() {
+  if (typeof window === "undefined") return false;
+  const w = window.innerWidth;
+  const dpr = window.devicePixelRatio || 1;
+  // 150% Windows display scale shrinks CSS viewport; high DPR catches large monitors at 150%
+  return w < 1700 || (dpr >= 1.35 && w < 2100);
+}
+
+function buildPurchaseOrderCopyPrefill(doc: any) {
+  const poItems = (doc.items as any[]) ?? [];
+  const sub = Number(doc.subtotal) || 0;
+  const taxAmt = Number(doc.tax) || 0;
+  const taxable = sub;
+  const taxPct = taxable > 0 && taxAmt > 0
+    ? Math.round((taxAmt / taxable) * 1000) / 10
+    : 9;
+
+  return {
+    vendorName: doc.vendorName || "",
+    vendorAddress: doc.vendorAddress || "",
+    vendorContact: doc.vendorContact || "",
+    vendorContactEmail: doc.vendorContactEmail || "",
+    quoteRefNo: doc.quoteRefNo || "",
+    deliveryAddress: doc.deliveryAddress || "",
+    deliveryDate: doc.deliveryDate || "",
+    paymentTerms: doc.paymentTerms || "30 Days Net",
+    notes: doc.notes || "",
+    currency: doc.currency || "SGD",
+    customerId: doc.customerId ?? null,
+    customerName: doc.customerName || "",
+    customerPoRef: doc.customerPoRef || "",
+    tax: taxPct,
+    sourcePoNumber: doc.poNumber,
+    items: poItems.map((it: any) => ({
+      type: it.type || "item",
+      sectionLabel: it.sectionLabel || "",
+      sectionAlign: it.sectionAlign || "left",
+      partNumber: it.partNumber || "",
+      uom: it.uom || "",
+      description: it.description || "",
+      qty: Number(it.qty) || 1,
+      unitPrice: Number(it.unitPrice) || 0,
+      itemImage: it.itemImage || "",
+    })),
+  };
+}
+
 export default function PurchaseOrderView() {
   const params = useParams();
   const id = Number(params.id);
@@ -25,6 +73,14 @@ export default function PurchaseOrderView() {
   const { toast } = useToast();
   const { selectedCompany, canManage } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [compactHeader, setCompactHeader] = useState(shouldUseCompactPoHeader);
+
+  useEffect(() => {
+    const update = () => setCompactHeader(shouldUseCompactPoHeader());
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   const queryClient = useQueryClient();
 
@@ -82,13 +138,14 @@ export default function PurchaseOrderView() {
 
   const hasPOUom = !!(po && (po.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== ""));
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, compact = false) => {
+    const size = compact ? "text-xs py-0 px-1.5" : "text-sm py-1";
     switch (status) {
-      case 'confirmed': return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Confirmed</Badge>;
-      case 'draft': return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
-      case 'cancelled': return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
-      case 'sent': return <Badge className="bg-violet-600 hover:bg-violet-700 text-sm py-1">Sent</Badge>;
-      default: return <Badge variant="outline" className="text-sm py-1">{status}</Badge>;
+      case 'confirmed': return <Badge variant="default" className={`bg-emerald-600 hover:bg-emerald-700 ${size}`}>Confirmed</Badge>;
+      case 'draft': return <Badge variant="secondary" className={size}>Draft</Badge>;
+      case 'cancelled': return <Badge variant="destructive" className={size}>Cancelled</Badge>;
+      case 'sent': return <Badge className={`bg-violet-600 hover:bg-violet-700 ${size}`}>Sent</Badge>;
+      default: return <Badge variant="outline" className={size}>{status}</Badge>;
     }
   };
 
@@ -104,6 +161,12 @@ export default function PurchaseOrderView() {
     });
   };
 
+  const handleCopyToNew = () => {
+    if (!po) return;
+    (window as any).__vedaPrefill = buildPurchaseOrderCopyPrefill(po);
+    setLocation("/purchase-orders/new");
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -117,105 +180,163 @@ export default function PurchaseOrderView() {
 
   const formatDeliveryDate = (d: string) => fmtDate(d);
 
+  const allActionButtons = (compact = false) => {
+    const btnClass = compact ? "gap-2 px-3 text-sm h-9 shrink-0" : "gap-2 shrink-0";
+    const iconClass = "h-4 w-4";
+
+    return (
+    <>
+      {linkedGrn ? (
+        <Button
+          variant="outline"
+          className={`${btnClass} border-emerald-300 text-emerald-700 hover:bg-emerald-50`}
+          onClick={() => setLocation(`/grn/${linkedGrn.id}`)}
+        >
+          <ClipboardList className={iconClass} />
+          {linkedGrn.grnNumber}
+        </Button>
+      ) : ["confirmed", "sent"].includes(po.status) && (
+        <Button
+          variant="outline"
+          className={`${btnClass} border-amber-300 text-amber-700 hover:bg-amber-50`}
+          onClick={() => createGrnMutation.mutate()}
+          disabled={createGrnMutation.isPending}
+        >
+          <ClipboardList className={iconClass} />
+          {createGrnMutation.isPending ? "Creating..." : "GRN"}
+        </Button>
+      )}
+      {["confirmed", "sent"].includes(po.status) && (
+        <Button
+          variant="outline"
+          className={`${btnClass} border-blue-300 text-blue-700 hover:bg-blue-50`}
+          title="Vendor Invoice"
+          onClick={() => setLocation(
+            `/vendor-invoices/new?poId=${id}&poNumber=${encodeURIComponent(po.poNumber)}&vendorName=${encodeURIComponent(po.vendorName)}&amount=${po.totalAmount}&currency=${encodeURIComponent((po as any).currency || "SGD")}`
+          )}
+        >
+          <FileInput className={iconClass} />
+          Vendor Invoice
+        </Button>
+      )}
+      <Button variant="outline" className={btnClass} onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>
+        <Pencil className={iconClass} />
+        Edit
+      </Button>
+      <Button variant="outline" className={btnClass} title="Copy to New PO" onClick={handleCopyToNew}>
+        <Copy className={iconClass} />
+        Copy to New PO
+      </Button>
+      <Button variant="outline" className={btnClass} onClick={() => setPreviewOpen(true)}>
+        <Eye className={iconClass} />
+        Preview
+      </Button>
+      {canManage && (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="icon" className={compact ? "h-9 w-9 shrink-0" : "shrink-0"}>
+              <Trash2 className={iconClass} />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Purchase Order?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the purchase order {po.poNumber}.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
+    );
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/purchase-orders")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">{po.poNumber}</h1>
-            {getStatusBadge(po.status)}
-            {(po as any).isPrivate && (
-              <Badge variant="outline" className="gap-1 text-muted-foreground">
-                <Lock className="h-3 w-3" />
-                Private
-              </Badge>
-            )}
+      {compactHeader ? (
+        /* 150% scale — two lines */
+        <div className="space-y-2 min-w-0">
+          <div className="flex items-start gap-2 min-w-0">
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 mt-0.5" onClick={() => setLocation("/purchase-orders")}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <h1 className="text-lg font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
+                {getStatusBadge(po.status, true)}
+                {(po as any).isPrivate && (
+                  <Badge variant="outline" className="gap-0.5 text-muted-foreground text-xs py-0 px-1.5 shrink-0">
+                    <Lock className="h-3 w-3" />
+                    Private
+                  </Badge>
+                )}
+                {(po as any).emailSentTo && (
+                  <div className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 shrink-0 max-w-[200px]">
+                    <Mail className="h-3 w-3 shrink-0" />
+                    <span className="truncate">Emailed to: {(po as any).emailSentTo}</span>
+                  </div>
+                )}
+                {(po as any).ackAt && (
+                  <div className="flex items-center gap-1 text-[10px] text-violet-700 bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5 shrink-0 max-w-[120px]">
+                    <CheckCircle2 className="h-3 w-3 shrink-0" />
+                    <span className="truncate">Acknowledged</span>
+                  </div>
+                )}
+              </div>
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                Created on {fmtDate(po.createdAt)}
+              </span>
+            </div>
           </div>
-          <p className="text-muted-foreground mt-1">
-            Created on {fmtDate(po.createdAt)}
-          </p>
-          {(po as any).emailSentTo && (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
-              <Mail className="h-3 w-3 shrink-0" />
-              <span>Emailed to: {(po as any).emailSentTo}</span>
-            </div>
-          )}
-          {(po as any).ackAt && (
-            <div className="flex items-center gap-1.5 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-2.5 py-1 w-fit mt-1">
-              <CheckCircle2 className="h-3 w-3 shrink-0" />
-              <span>Supplier acknowledged: {(po as any).ackNote} — {fmtDate((po as any).ackAt)}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {allActionButtons(true)}
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {linkedGrn ? (
-            <Button
-              variant="outline"
-              className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-              onClick={() => setLocation(`/grn/${linkedGrn.id}`)}
-            >
-              <ClipboardList className="h-4 w-4" />
-              {linkedGrn.grnNumber}
-            </Button>
-          ) : ["confirmed", "sent"].includes(po.status) && (
-            <Button
-              variant="outline"
-              className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
-              onClick={() => createGrnMutation.mutate()}
-              disabled={createGrnMutation.isPending}
-            >
-              <ClipboardList className="h-4 w-4" />
-              {createGrnMutation.isPending ? "Creating..." : "GRN"}
-            </Button>
-          )}
-          {["confirmed", "sent"].includes(po.status) && (
-            <Button
-              variant="outline"
-              className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-              onClick={() => setLocation(
-                `/vendor-invoices/new?poId=${id}&poNumber=${encodeURIComponent(po.poNumber)}&vendorName=${encodeURIComponent(po.vendorName)}&amount=${po.totalAmount}&currency=${encodeURIComponent((po as any).currency || "SGD")}`
+      ) : (
+        /* 100% scale — one line */
+        <div className="flex items-start gap-3 min-w-0 w-full">
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 mt-1" onClick={() => setLocation("/purchase-orders")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex flex-col gap-1 min-w-0 shrink-0">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
+              {getStatusBadge(po.status)}
+              {(po as any).isPrivate && (
+                <Badge variant="outline" className="gap-1 text-muted-foreground shrink-0">
+                  <Lock className="h-3 w-3" />
+                  Private
+                </Badge>
               )}
-            >
-              <FileInput className="h-4 w-4" />
-              Vendor Invoice
-            </Button>
-          )}
-          <Button variant="outline" className="gap-2" onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>
-            <Pencil className="h-4 w-4" />
-            Edit
-          </Button>
-          <Button variant="outline" className="gap-2" onClick={() => setPreviewOpen(true)}>
-            <Eye className="h-4 w-4" />
-            Preview
-          </Button>
-          {canManage && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="icon">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Purchase Order?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. This will permanently delete the purchase order {po.poNumber}.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+              {(po as any).emailSentTo && (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 shrink-0">
+                  <Mail className="h-3 w-3 shrink-0" />
+                  <span>Emailed to: {(po as any).emailSentTo}</span>
+                </div>
+              )}
+              {(po as any).ackAt && (
+                <div className="flex items-center gap-1.5 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-2.5 py-1 shrink-0">
+                  <CheckCircle2 className="h-3 w-3 shrink-0" />
+                  <span>Supplier acknowledged: {(po as any).ackNote} — {fmtDate((po as any).ackAt)}</span>
+                </div>
+              )}
+            </div>
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              Created on {fmtDate(po.createdAt)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap ml-auto shrink-0 self-center">
+            {allActionButtons(false)}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

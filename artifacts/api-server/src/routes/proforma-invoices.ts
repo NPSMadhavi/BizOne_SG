@@ -90,7 +90,7 @@ router.post("/proforma-invoices", async (req, res): Promise<void> => {
 
   const companyId = req.session.companyId!;
   const userId = req.session.userId!;
-  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, subtotal, discountAmount, tax, totalAmount, currency, qtRefNo, status, isPrivate } = req.body;
+  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, subtotal, discountAmount, tax, totalAmount, currency, qtRefNo, status, isPrivate, termsAndConditions, deliveryInstructions, customerNote, authorisedSignature } = req.body;
 
   if (!customerName?.trim()) { res.status(400).json({ error: "Customer name is required" }); return; }
 
@@ -117,6 +117,10 @@ router.post("/proforma-invoices", async (req, res): Promise<void> => {
       status: status || "draft",
       isPrivate: isPrivate ?? false,
       createdBy: userId,
+      termsAndConditions: termsAndConditions || null,
+      deliveryInstructions: deliveryInstructions || null,
+      customerNote: customerNote || null,
+      authorisedSignature: authorisedSignature || null,
     }).returning();
 
     await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
@@ -146,7 +150,7 @@ router.put("/proforma-invoices/:id", async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Proforma invoice not found" }); return; }
   if (existing.companyId !== companyId) { res.status(403).json({ error: "Forbidden" }); return; }
 
-  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, subtotal, discountAmount, tax, totalAmount, currency, qtRefNo, status, isPrivate } = req.body;
+  const { customerName, customerAddress, customerContact, customerContactEmail, deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items, subtotal, discountAmount, tax, totalAmount, currency, qtRefNo, status, isPrivate, termsAndConditions, deliveryInstructions, customerNote, authorisedSignature } = req.body;
 
   const updates: any = {};
   if (customerName !== undefined) updates.customerName = customerName.trim();
@@ -167,6 +171,10 @@ router.put("/proforma-invoices/:id", async (req, res): Promise<void> => {
   if (qtRefNo !== undefined) updates.qtRefNo = qtRefNo || null;
   if (status !== undefined) updates.status = status;
   if (isPrivate !== undefined) updates.isPrivate = isPrivate;
+  if (termsAndConditions !== undefined) updates.termsAndConditions = termsAndConditions || null;
+  if (deliveryInstructions !== undefined) updates.deliveryInstructions = deliveryInstructions || null;
+  if (customerNote !== undefined) updates.customerNote = customerNote || null;
+  if (authorisedSignature !== undefined) updates.authorisedSignature = authorisedSignature || null;
 
   const [updated] = await db.update(proformaInvoicesTable).set(updates).where(eq(proformaInvoicesTable.id, id)).returning();
   logAudit({ req, action: "update", entityType: "proforma_invoice", entityId: id, entityLabel: updated.piNumber });

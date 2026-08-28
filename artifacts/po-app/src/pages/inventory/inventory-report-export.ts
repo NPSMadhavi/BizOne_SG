@@ -46,6 +46,8 @@ export type BatchWiseRow = {
   balanceQty: number;
   unitCost: number;
   totalValue: number;
+  vendor?: string;
+  customer?: string;
 };
 
 export type ExpiryWiseRow = {
@@ -231,7 +233,7 @@ export function exportBatchWisePdf(meta: ReportMeta, rows: BatchWiseRow[]) {
   let startY = drawHeader(doc, { ...meta, layout: "batch_wise" }, pageWidth);
 
   const body = rows.map((r) => [
-    r.sno, r.batchNo, r.itemCode, r.itemName, r.warehouse,
+    r.sno, r.batchNo, r.itemCode, r.itemName, r.warehouse, r.vendor || "—", r.customer || "—",
     fmtDate(r.mfgDate), fmtDate(r.expiryDate),
     qty(r.receivedQty), qty(r.soldQty), qty(r.balanceQty),
     money(r.unitCost), money(r.totalValue),
@@ -240,7 +242,7 @@ export function exportBatchWisePdf(meta: ReportMeta, rows: BatchWiseRow[]) {
   (doc as any).autoTable({
     startY,
     head: [[
-      "S.No.", "Batch No.", "Item Code", "Item Name", "Warehouse",
+      "S.No.", "Batch No.", "Item Code", "Item Name", "Warehouse", "Vendor", "Customer",
       "Mfg. Date", "Expiry Date", "Received Qty", "Sold Qty", "Balance Qty",
       "Unit Cost (SGD)", "Total Value (SGD)",
     ]],
@@ -421,12 +423,12 @@ export function exportBatchWiseExcel(meta: ReportMeta, rows: BatchWiseRow[]) {
   const aoa: (string | number)[][] = [
     ...excelMetaRows(meta),
     [
-      "S.No.", "Batch No.", "Item Code", "Item Name", "Warehouse",
+      "S.No.", "Batch No.", "Item Code", "Item Name", "Warehouse", "Vendor", "Customer",
       "Mfg. Date", "Expiry Date", "Received Qty", "Sold Qty", "Balance Qty",
       "Unit Cost (SGD)", "Total Value (SGD)",
     ],
     ...rows.map((r) => [
-      r.sno, r.batchNo, r.itemCode, r.itemName, r.warehouse,
+      r.sno, r.batchNo, r.itemCode, r.itemName, r.warehouse, r.vendor || "—", r.customer || "—",
       fmtDate(r.mfgDate), fmtDate(r.expiryDate),
       r.receivedQty, r.soldQty, r.balanceQty,
       Number(r.unitCost.toFixed(2)), Number(r.totalValue.toFixed(2)),

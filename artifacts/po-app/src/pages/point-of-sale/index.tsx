@@ -54,6 +54,9 @@ const PAYMENT_METHODS: { label: string; method: PaymentMethod }[] = [
   { label: "Voucher", method: "Voucher" },
 ];
 
+import { useAuth } from "@/contexts/auth-context";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+
 type CartLine = {
   id: number;
   code: string;
@@ -78,6 +81,7 @@ type PosSaleRecord = {
   tax: number;
   total: number;
   payments: PaymentTender[];
+  salesPerson?: string;
   note: string;
   status: "paid";
 };
@@ -164,6 +168,7 @@ function KpiCard({
 
 export default function PointOfSalePage() {
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const [mode, setMode] = useState<"list" | "pos">("list");
   const [salesList, setSalesList] = useState<PosSaleRecord[]>(() => loadPosSales());
   const [listSearch, setListSearch] = useState("");
@@ -172,6 +177,7 @@ export default function PointOfSalePage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [salesPerson, setSalesPerson] = useState("");
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState("manual");
   const [note, setNote] = useState("");
@@ -289,6 +295,7 @@ export default function PointOfSalePage() {
 
   function clearCart() {
     setCart([]);
+    setSalesPerson("");
     setDiscount(0);
     setDiscountType("manual");
     setNote("");
@@ -304,6 +311,7 @@ export default function PointOfSalePage() {
   function loadSaleForEdit(sale: PosSaleRecord) {
     setEditingSale(sale);
     setCart(sale.items.map((i) => ({ ...i })));
+    setSalesPerson(sale.salesPerson || "");
     setDiscount(sale.discount || 0);
     setDiscountType("manual");
     setNote(sale.note || "");
@@ -352,6 +360,7 @@ export default function PointOfSalePage() {
       tax: gstAmt,
       total,
       payments: allTenders,
+      salesPerson: salesPerson || undefined,
       note,
       status: "paid",
     };
@@ -817,20 +826,35 @@ export default function PointOfSalePage() {
               )}
             </div>
 
-            <div className="space-y-2 border-t border-[#E5E7EB] px-4 py-3 text-sm">
+            <div className="space-y-2.5 border-t border-[#E5E7EB] px-4 py-3 text-sm overflow-hidden">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[#4B5563] text-xs font-medium shrink-0">Sales Person</span>
+                <Select value={salesPerson} onValueChange={setSalesPerson}>
+                  <SelectTrigger className="h-8 flex-1 max-w-[180px] text-xs bg-white border-gray-200">
+                    <SelectValue placeholder="Select Sales Person" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {salesPersons.map((sp) => (
+                      <SelectItem key={sp.id} value={sp.name}>
+                        {sp.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex justify-between text-[#4B5563]">
                 <span>Subtotal</span>
                 <span className="font-medium text-[#111827]">{money(subtotal)}</span>
               </div>
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-1.5 min-w-0">
                 <span className="shrink-0 text-[#4B5563]">Discount</span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
                   <Select value={discountType} onValueChange={setDiscountType}>
-                    <SelectTrigger className="h-8 w-[140px] text-xs">
+                    <SelectTrigger className="h-8 w-[105px] text-xs px-2 truncate">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="manual">Manual Discount</SelectItem>
+                      <SelectItem value="manual">Manual</SelectItem>
                       <SelectItem value="percent">Percent %</SelectItem>
                     </SelectContent>
                   </Select>
@@ -840,10 +864,10 @@ export default function PointOfSalePage() {
                     step="0.01"
                     value={discount || ""}
                     onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                    className="h-8 w-20 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    className="h-8 w-16 text-xs px-1 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none shrink-0"
                     placeholder="0.00"
                   />
-                  <span className="w-20 text-right text-xs font-medium text-[#16A34A]">
+                  <span className="shrink-0 text-xs font-medium text-[#16A34A] text-right truncate">
                     – {money(discountAmt)}
                   </span>
                 </div>

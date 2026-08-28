@@ -202,6 +202,89 @@ export default function PurchaseOrderNew() {
     toast({ title: "Quotation data loaded", description: urlSourceQt.qtNumber });
   }, [urlSourceQt, qtPrefilled, customers, settings, form, toast]);
 
+  // Prefill from AI agent or "Copy to New PO"
+  useEffect(() => {
+    const prefill = (window as any).__vedaPrefill;
+    if (!prefill) return;
+
+    const needsCustomerMatch = !prefill.customerId && prefill.customerName && customers.length === 0;
+    if (needsCustomerMatch) return;
+
+    (window as any).__vedaPrefill = null;
+
+    const blankPoItem = {
+      type: "item" as const,
+      sectionLabel: "",
+      sectionAlign: "left" as const,
+      partNumber: "",
+      uom: "",
+      description: "",
+      qty: 1,
+      unitPrice: 0,
+      isStockItem: false,
+      itemImage: "",
+    };
+
+    const matchedCustomer = prefill.customerId
+      ? customers.find((c) => c.id === prefill.customerId)
+      : customers.find((c) =>
+          String(c.name || "").trim().toLowerCase() === String(prefill.customerName || "").trim().toLowerCase(),
+        );
+
+    const mappedItems = prefill.items?.length
+      ? prefill.items.map((it: any) => (
+          it.type === "section"
+            ? {
+                type: "section" as const,
+                sectionLabel: it.sectionLabel || "",
+                sectionAlign: (it.sectionAlign || "left") as "left" | "center",
+                partNumber: "",
+                uom: "",
+                description: "",
+                qty: 1,
+                unitPrice: 0,
+                isStockItem: false,
+                itemImage: "",
+              }
+            : {
+                ...blankPoItem,
+                partNumber: it.partNumber || "",
+                uom: it.uom || "",
+                description: it.description || "",
+                qty: Number(it.qty) || 1,
+                unitPrice: Number(it.unitPrice) || 0,
+                itemImage: it.itemImage || "",
+              }
+        ))
+      : [blankPoItem];
+
+    form.reset({
+      vendorName: prefill.vendorName || "",
+      vendorAddress: prefill.vendorAddress || "",
+      vendorContact: prefill.vendorContact || "",
+      vendorContactEmail: prefill.vendorContactEmail || "",
+      issueDate: getToday(),
+      quoteRefNo: prefill.quoteRefNo || "",
+      deliveryAddress: prefill.deliveryAddress || form.getValues("deliveryAddress"),
+      deliveryDate: prefill.deliveryDate || "",
+      paymentTerms: prefill.paymentTerms || "30 Days Net",
+      notes: prefill.notes || "",
+      currency: prefill.currency || "SGD",
+      isPrivate: false,
+      customerId: matchedCustomer?.id ?? prefill.customerId ?? null,
+      customerPoRef: prefill.customerPoRef || "",
+      tax: prefill.tax ?? settings?.gstRate ?? 9,
+      items: mappedItems,
+    });
+
+    if (prefill.sourcePoNumber) {
+      toast({
+        title: "Purchase order copied",
+        description: `Data from ${prefill.sourcePoNumber} loaded — save to create a new PO number.`,
+      });
+    }
+  }, [customers, settings, form, toast]);
+
   const nextPoNumber = (() => {
     if (!settings) return null;
     const prefix = (settings as any).poPrefix ?? "";

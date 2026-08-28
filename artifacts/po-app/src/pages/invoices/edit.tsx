@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, Fragment } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
-import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
+import { useGetInvoice, useUpdateInvoice, getGetInvoiceQueryKey, getListInvoicesQueryKey, useGetSettings, getGetSettingsQueryKey, useListPurchaseOrders, getListPurchaseOrdersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
@@ -16,10 +16,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft, X } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
-import { cn } from "@/lib/utils";
+import { cn, plainText } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
@@ -40,16 +40,16 @@ const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
   sectionLabel: z.string().default(""),
   sectionAlign: z.enum(["left", "center"]).default("left"),
-  partNumber: z.string(),
-  description: z.string(),
+  partNumber: z.coerce.string(),
+  description: z.coerce.string(),
   qty: z.coerce.number().min(0).default(1),
-  uom: z.string().default(""),
-  unitPrice: z.coerce.number().min(0),
+  uom: z.coerce.string().default(""),
+  unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   discount: z.coerce.number().min(0).max(100).default(0),
   isFoc: z.boolean().default(false),
   isStockItem: z.boolean().default(false),
-  stockItemId: z.number().positive().optional(),
-  warehouseId: z.number().positive().optional(),
+  stockItemId: z.number().nullish(),
+  warehouseId: z.number().nullish(),
   warehouseName: z.string().optional(),
   selectedSerials: z.array(z.string()).default([]),
   selectedSerialIds: z.array(z.number()).default([]),
@@ -65,6 +65,9 @@ const CURRENCIES = [
   { code: "INR", label: "INR – ₹" },
 ];
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+
 const schema = z.object({
   customerName: z.string().min(1, "Required"),
   customerAddress: z.string().optional(),
@@ -75,9 +78,14 @@ const schema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   poRefNo: z.string().optional(),
+  salesPerson: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   currency: z.string().default("SGD"),
-  status: z.enum(["draft", "confirmed", "cancelled"]),
+  status: z.enum(["draft", "confirmed", "cancelled", "sent", "void", "partial", "paid"]),
   tax: z.coerce.number().min(0).max(100).default(9),
   discountAmount: z.coerce.number().min(0).default(0),
   isPrivate: z.boolean().default(false),
@@ -89,6 +97,7 @@ export default function InvoiceEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { salesPersons } = useSalesPersons();
   const { selectedCompany, user } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -162,6 +171,7 @@ export default function InvoiceEdit() {
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
       issueDate: "", deliveryDate: "", paymentTerms: "", poRefNo: "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
       isPrivate: false,
@@ -191,12 +201,17 @@ export default function InvoiceEdit() {
         deliveryDate: (doc as any).deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
+        termsAndConditions: (doc as any).termsAndConditions || "",
+        deliveryInstructions: (doc as any).deliveryInstructions || "",
+        customerNote: (doc as any).customerNote || "",
+        authorisedSignature: (doc as any).authorisedSignature || "",
         currency: doc.currency || "SGD",
         status: doc.status as any,
         tax: derivedTaxPct,
         discountAmount: Number((doc as any).discountAmount) || 0,
         isPrivate: (doc as any).isPrivate ?? false,
         poRefNo: (doc as any).poRefNo || "",
+        salesPerson: (doc as any).salesPerson || "",
         items: items.length > 0 ? items.map((i: any) => ({
           type: i.type || "item",
           sectionLabel: i.sectionLabel || "",
@@ -291,6 +306,24 @@ export default function InvoiceEdit() {
   const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
   const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
 
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
+
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
       setPendingConfirmValues(values);
@@ -305,8 +338,8 @@ export default function InvoiceEdit() {
     setIsSubmitting(true);
     const filledItems = values.items.filter(i =>
       (i as any).type === "section"
-        ? ((i as any).sectionLabel || "").trim() !== ""
-        : (i.partNumber || "").replace(/<[^>]*>/g, "").trim() !== "" || (i.description || "").replace(/<[^>]*>/g, "").trim() !== ""
+        ? plainText((i as any).sectionLabel) !== ""
+        : plainText(i.partNumber) !== "" || plainText(i.description) !== ""
     );
     const realItems = filledItems.filter((i: any) => i.type !== "section");
     if (realItems.length === 0) {
@@ -318,19 +351,21 @@ export default function InvoiceEdit() {
       if ((i as any).type === "section") return { type: "section" as const, sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" };
       const disc = Number(i.discount) || 0;
       const qty = Number(i.qty) || 0;
-      const partNumber = (i.partNumber || "").replace(/<[^>]*>/g, "").trim();
+      const partNumber = plainText(i.partNumber);
       const stockItemId = Number((i as any).stockItemId);
       const warehouseId = Number((i as any).warehouseId);
+      const hasStockLink = Number.isFinite(stockItemId) && stockItemId > 0
+        && Number.isFinite(warehouseId) && warehouseId > 0;
       return {
         ...i,
         qty,
         partNumber,
         discount: disc,
         isFoc: !!(i as any).isFoc,
-        isStockItem: !!(i as any).isStockItem || (Number.isFinite(stockItemId) && stockItemId > 0),
-        stockItemId: Number.isFinite(stockItemId) && stockItemId > 0 ? stockItemId : undefined,
-        warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
-        warehouseName: (i as any).warehouseName || undefined,
+        isStockItem: hasStockLink,
+        stockItemId: hasStockLink ? stockItemId : undefined,
+        warehouseId: hasStockLink ? warehouseId : undefined,
+        warehouseName: hasStockLink ? (i as any).warehouseName || undefined : undefined,
         amount: (qty * i.unitPrice * (1 - disc / 100)).toFixed(2),
       };
     });
@@ -370,63 +405,49 @@ export default function InvoiceEdit() {
       invoiceId: id,
       items: stockLines,
     });
+    const cleanAddress = (values.deliveryAddress || "")
+      .split("\n\n")
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
     updateMutation.mutate({ id, data: {
       ...values,
       status: "confirmed",
       discountAmount: values.discountAmount,
+      deliveryAddress: cleanAddress || null,
       poRefNo: values.poRefNo || null,
       items: itemsWithAmount,
       createDeliveryOrder,
     } as any }, {
       onSuccess: async (saved: any) => {
-        await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
-        await invalidateInventoryQueries(queryClient);
-        await invalidateDocumentList(queryClient, "delivery-orders");
-        // Saved serial reservations belong to the invoice now; do not release
-        // them when the edit page unmounts.
-        newlyReservedIds.current.clear();
-        setIsSubmitting(false);
-        if (createDeliveryOrder) {
-          const doNumber = saved?.deliveryOrderNumber;
-          toast(doNumber
-            ? { title: `Delivery Order ${doNumber} created.` }
-            : { title: "Delivery Order was not created.", description: "Please try again.", variant: "destructive" });
-        }
-        if (openPreview) { setPreviewOpen(true); }
-        else {
-          const apply = (saved as any)?.stockApply;
-          const reduced = Array.isArray(apply?.reducedThisSave) ? apply.reducedThisSave : [];
-          const putBack = Array.isArray(apply?.putBackThisSave) ? apply.putBackThisSave : [];
-          const already = Array.isArray(apply?.alreadyIssued) ? apply.alreadyIssued : [];
-          if (reduced.length > 0) {
-            const summary = reduced
-              .map((l: any) => `${l.warehouseName || `WH#${l.warehouseId}`}: −${l.quantity}`)
-              .join(", ");
-            toast({
-              title: "Invoice saved — stock reduced",
-              description: `${summary}. Only the selected warehouse changed.`,
-            });
-          } else if (putBack.length > 0) {
-            const summary = putBack
-              .map((l: any) => `${l.warehouseName || `WH#${l.warehouseId}`}: +${l.quantity}`)
-              .join(", ");
-            toast({
-              title: "Invoice saved — qty lowered, stock put back",
-              description: `${summary} (same warehouse only).`,
-            });
-          } else if (already.length > 0) {
-            toast({
-              title: "Invoice saved — stock already matches qty",
-              description: "No further change. Increase qty to reduce more, or create a new Tax Invoice.",
-            });
-          } else {
-            toast({
-              title: "Invoice saved",
-              description: stockLines.length
-                ? "No warehouse stock change on this save."
-                : "No stock lines on this invoice.",
-            });
+        try {
+          queryClient.setQueryData(getListInvoicesQueryKey(), (old: any) => {
+            if (!Array.isArray(old)) return old;
+            return old.map((d: any) =>
+              d.id === id ? { ...d, ...saved, isModified: true } : d,
+            );
+          });
+          await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+          await invalidateDocumentList(queryClient, "invoices");
+          await invalidateInventoryQueries(queryClient);
+          await invalidateDocumentList(queryClient, "delivery-orders");
+          newlyReservedIds.current.clear();
+          if (createDeliveryOrder) {
+            const doNumber = saved?.deliveryOrderNumber;
+            toast(doNumber
+              ? { title: `Delivery Order ${doNumber} created.` }
+              : { title: "Delivery Order was not created.", description: "Please try again.", variant: "destructive" });
           }
+          if (openPreview) {
+            setPreviewOpen(true);
+          } else {
+            toast({ title: "Changes saved" });
+          }
+        } catch (err: any) {
+          toast({ title: "Error", description: err?.message || "Save succeeded but refresh failed.", variant: "destructive" });
+        } finally {
+          setIsSubmitting(false);
         }
       },
       onError: (err: any) => {
@@ -521,13 +542,63 @@ export default function InvoiceEdit() {
                   <FormItem><FormLabel>Contact Email</FormLabel>
                     <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="deliveryAddress" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
-                    <FormControl><Textarea placeholder="Delivery / ship-to address if different from billing…" className="resize-none" rows={2} {...field} /></FormControl>
-                    <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the invoice PDF when set.</p>
-                  </FormItem>
-                )} />
+                <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
+                  const addrs = (field.value || "").split("\n\n");
+                  if (addrs.length === 0 || (addrs.length === 1 && addrs[0] === "")) {
+                    addrs[0] = "";
+                  }
+                  return (
+                    <FormItem>
+                      <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
+                      <div className="space-y-2">
+                        {addrs.map((addr, idx) => (
+                          <div key={idx} className="relative group">
+                            <FormControl>
+                              <Textarea
+                                value={addr}
+                                onChange={(e) => {
+                                  const newAddrs = [...addrs];
+                                  newAddrs[idx] = e.target.value;
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+                                placeholder={`Ship-to Address #${idx + 1}`}
+                                className="resize-none pr-8 text-sm"
+                                rows={2}
+                              />
+                            </FormControl>
+                            {addrs.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newAddrs = addrs.filter((_, i) => i !== idx);
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+                                className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Remove Address"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+                          onClick={() => {
+                            const newAddrs = [...addrs, ""];
+                            field.onChange(newAddrs.join("\n\n"));
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add More Ship-To Address
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Auto-filled from customer directory. Appears on the invoice PDF when set.</p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
               </CardContent>
             </Card>
 
@@ -567,6 +638,26 @@ export default function InvoiceEdit() {
                     {(doc as any)?.soNumber || "—"}
                   </p>
                 </div>
+                <FormField control={form.control} name="salesPerson" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sales Person</FormLabel>
+                    <FormControl>
+                      <Select value={field.value || undefined} onValueChange={field.onChange}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select Sales Person" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {salesPersons.map((sp) => (
+                            <SelectItem key={sp.id} value={sp.name}>
+                              {sp.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -881,11 +972,138 @@ export default function InvoiceEdit() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-lg">Notes / Terms &amp; Conditions</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem><FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Terms, conditions, or special instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+                <FormField control={form.control} name="customerNote" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Customer Note</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="Note for the customer..."
+                        rows={4}
+                        className="min-h-[96px] resize-y"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="deliveryInstructions" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Delivery Instructions</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="Special instructions for delivery..."
+                        rows={4}
+                        className="min-h-[96px] resize-y"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="termsAndConditions" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Terms & Conditions</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="Terms & conditions..."
+                        rows={4}
+                        className="min-h-[96px] resize-y"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="authorisedSignature" render={({ field }) => {
+                  const inputRef = useRef<HTMLInputElement>(null);
+                  const handleFile = (file: File) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                      const src = e.target?.result as string;
+                      if (src) {
+                        const img = document.createElement("img");
+                        img.onload = () => {
+                          const canvas = document.createElement("canvas");
+                          let w = img.width, h = img.height;
+                          const maxW = 300, maxH = 100;
+                          if (w > maxW || h > maxH) {
+                            const r = Math.min(maxW / w, maxH / h);
+                            w = Math.round(w * r); h = Math.round(h * r);
+                          }
+                          canvas.width = w; canvas.height = h;
+                          canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+                          field.onChange(canvas.toDataURL("image/png"));
+                        };
+                        img.src = src;
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  };
+
+                  return (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Authorised Signature</FormLabel>
+                      <FormControl>
+                        <div className="flex flex-col border rounded-lg p-3 bg-muted/10 min-h-[96px]">
+                          <div className="flex items-center gap-4 flex-1">
+                            {field.value ? (
+                              <div className="relative group border rounded overflow-hidden bg-white p-2">
+                                <img src={field.value} alt="Authorised Signature" className="h-16 object-contain" />
+                                <button
+                                  type="button"
+                                  onClick={() => field.onChange("")}
+                                  className="absolute top-1 right-1 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
+                                >
+                                  <X className="h-3 w-3 text-white" />
+                                </button>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => inputRef.current?.click()}
+                                className="gap-2 text-xs"
+                              >
+                                <Upload className="h-4 w-4" /> Upload Signature Image
+                              </Button>
+                            )}
+                            <input
+                              ref={inputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleFile(f);
+                                e.target.value = "";
+                              }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-2">Appears at the bottom of the invoice PDF above the sign-off line.</p>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
+              </div>
             </CardContent>
           </Card>
 
@@ -906,7 +1124,7 @@ export default function InvoiceEdit() {
                 variant="outline"
                 disabled={isSubmitting}
                 className="gap-2 min-w-32"
-                onClick={form.handleSubmit(v => doSubmit(v, false))}
+                onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
               >
                 <Save className="h-4 w-4" />
                 {isSubmitting ? "Saving..." : "Save Changes"}
@@ -914,9 +1132,8 @@ export default function InvoiceEdit() {
               <Button
                 type="button"
                 disabled={isSubmitting}
-                variant="secondary"
                 className="gap-2"
-                onClick={form.handleSubmit(v => doSubmit(v, true))}
+                onClick={form.handleSubmit(v => doSubmit(v, true), onFormInvalid)}
               >
                 <Eye className="h-4 w-4" />
                 Save & Preview

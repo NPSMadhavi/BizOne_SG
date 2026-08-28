@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
+import type { FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
@@ -8,6 +9,7 @@ import { useCreateDeliveryOrder, useGetSettings, getGetSettingsQueryKey, getList
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,7 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
-import { Trash2, Save, Eye, Lock, Plus, FileInput, Package, ArrowLeft } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Plus, FileInput, Package, ArrowLeft, X, Upload } from "lucide-react";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { generateDO_PDF } from "@/lib/pdf";
@@ -28,14 +30,15 @@ import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { UomSelect } from "@/components/uom-select";
 import { useAuth } from "@/contexts/auth-context";
+import { plainText } from "@/lib/utils";
 
 const itemSchema = z.object({
-  partNumber: z.string().default(""),
-  uom: z.string().default(""),
-  description: z.string(),
+  partNumber: z.coerce.string().default(""),
+  uom: z.coerce.string().default(""),
+  description: z.coerce.string(),
   qty: z.coerce.number().min(1, "Must be > 0"),
-  itemImage: z.string().default(""),
-  serialNumbers: z.string().default(""),
+  itemImage: z.coerce.string().default(""),
+  serialNumbers: z.coerce.string().default(""),
 });
 
 const schema = z.object({
@@ -48,6 +51,10 @@ const schema = z.object({
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
   isPrivate: z.boolean().default(false),
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
@@ -64,10 +71,12 @@ export default function DeliveryOrderNew() {
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     defaultValues: {
-      customerName: "", customerAddress: "", customerContact: "",
+      customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
+      deliveryAddress: "",
       issueDate: getToday(), deliveryDate: "", paymentTerms: "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       isPrivate: false,
-      items: [{ partNumber: "", description: "", qty: 1, itemImage: "" }],
+      items: [{ partNumber: "", description: "", qty: 1, uom: "", itemImage: "", serialNumbers: "" }],
     },
   });
   useVedaFormFill(form);
@@ -98,7 +107,7 @@ export default function DeliveryOrderNew() {
       if (idx !== allItems.length - 1) return;
       const last = allItems[idx];
       if (!last) return;
-      const isEmpty = (!last.description || String(last.description).trim() === "") && (Number(last.qty) <= 1);
+      const isEmpty = plainText(last.description) === "" && (Number(last.qty) <= 1);
       if (!isEmpty && !appendLock.current) {
         appendLock.current = true;
         const focused = document.activeElement as HTMLElement | null;
@@ -109,9 +118,37 @@ export default function DeliveryOrderNew() {
     return () => sub.unsubscribe();
   }, [form, append]);
 
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
+
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (isSubmitting) return;
+    if (!selectedCompany) {
+      toast({ title: "Error", description: "Please select a company first.", variant: "destructive" });
+      return;
+    }
     setIsSubmitting(true);
-    const filledItems = values.items.filter(i => i.description.trim() !== "");
+    const filledItems = values.items.filter(i =>
+      plainText(i.partNumber) !== "" || plainText(i.description) !== ""
+    ).map(i => ({
+      ...i,
+      partNumber: plainText(i.partNumber),
+    }));
     if (filledItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
       setIsSubmitting(false);
@@ -163,7 +200,7 @@ export default function DeliveryOrderNew() {
       </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit((v) => onSubmit(v))} className="space-y-8">
+        <form onSubmit={form.handleSubmit((v) => onSubmit(v), onFormInvalid)} className="space-y-8">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
@@ -229,10 +266,7 @@ export default function DeliveryOrderNew() {
                   <p className="text-sm font-medium mb-1.5">Sales Order</p>
                   <p className="h-9 flex items-center px-3 rounded-md border bg-muted/40 text-sm font-mono text-muted-foreground">—</p>
                 </div>
-                <FormField control={form.control} name="notes" render={({ field }) => (
-                  <FormItem><FormLabel>Notes</FormLabel>
-                    <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Special delivery instructions..." className="min-h-[96px]" /></FormControl><FormMessage /></FormItem>
-                )} />
+
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -322,6 +356,21 @@ export default function DeliveryOrderNew() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <FormField control={form.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              
+              <DocumentAdditionalInfoFields control={form.control} />
+            </CardContent>
+          </Card>
+
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/delivery-orders")}>Cancel</Button>
             <Button
@@ -329,7 +378,7 @@ export default function DeliveryOrderNew() {
               variant="outline"
               disabled={isSubmitting}
               className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, false))}
+              onClick={form.handleSubmit(v => onSubmit(v, false), onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
@@ -338,10 +387,10 @@ export default function DeliveryOrderNew() {
               type="button"
               disabled={isSubmitting}
               className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true))}
+              onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
             >
               <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save"}
+              {isSubmitting ? "Saving..." : "Save & Preview"}
             </Button>
           </FormStickyActions>
         </form>

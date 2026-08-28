@@ -25,6 +25,10 @@ const FIELD_LABELS: Record<string, string> = {
   "invoice.payment_terms": "Payment Terms",
   "invoice.po_ref": "PO Reference",
   "invoice.notes": "Notes",
+  "invoice.customer_note": "Customer Note",
+  "invoice.delivery_instructions": "Delivery Instructions",
+  "invoice.terms_and_conditions": "Terms & Conditions",
+  "invoice.authorised_signature": "Authorised Signature",
   "invoice.subtotal": "Subtotal",
   "invoice.discount": "Discount",
   "invoice.tax": "Tax",
@@ -128,6 +132,10 @@ function renderTable(el: ReportElement, data: InvoiceReportPayload | null, desig
 
 function renderElement(el: ReportElement, data: InvoiceReportPayload | null, designMode: boolean): string {
   if (el.visible === false) return "";
+  if (el.id?.startsWith("cust-note-") && !designMode && !data?.invoice?.customer_note) return "";
+  if (el.id?.startsWith("deliv-inst-") && !designMode && !data?.invoice?.delivery_instructions) return "";
+  if (el.id?.startsWith("terms-") && !designMode && !data?.invoice?.terms_and_conditions) return "";
+  if (el.id?.startsWith("authorised-sig-") && !designMode && !data?.invoice?.authorised_signature) return "";
   switch (el.type) {
     case "text":
       return `<div style="${elementStyle(el)}">${escapeHtml(el.text || "")}</div>`;

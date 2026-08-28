@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, FileText, Receipt, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, FileText, Receipt, ShoppingBag, Copy } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -21,6 +21,51 @@ import {
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
   return fmtDate(dateStr);
+}
+
+function buildQuotationCopyPrefill(doc: any) {
+  const qtItems = (doc.items as any[]) ?? [];
+  const sub = Number(doc.subtotal) || 0;
+  const disc = Number(doc.discountAmount) || 0;
+  const taxAmt = Number(doc.tax) || 0;
+  const taxable = sub - disc;
+  const taxPct = taxable > 0 && taxAmt > 0
+    ? Math.round((taxAmt / taxable) * 1000) / 10
+    : 9;
+
+  return {
+    customerName: doc.customerName || "",
+    customerAddress: doc.customerAddress || "",
+    customerContact: doc.customerContact || "",
+    customerContactEmail: doc.customerContactEmail || "",
+    deliveryAddress: doc.deliveryAddress || "",
+    currency: doc.currency || "SGD",
+    paymentTerms: doc.paymentTerms || "30 Days Net",
+    notes: doc.notes || "",
+    termsAndConditions: doc.termsAndConditions || "",
+    deliveryInstructions: doc.deliveryInstructions || "",
+    customerNote: doc.customerNote || "",
+    authorisedSignature: doc.authorisedSignature || "",
+    validUntil: doc.validUntil || "",
+    deliveryDate: doc.deliveryDate || "",
+    tax: taxPct,
+    discountAmount: disc,
+    discountPct: disc > 0 && sub > 0 ? parseFloat((disc / sub * 100).toFixed(2)) : 0,
+    sourceQtNumber: doc.qtNumber,
+    items: qtItems.map((it: any) => ({
+      type: it.type || "item",
+      sectionLabel: it.sectionLabel || "",
+      sectionAlign: it.sectionAlign || "left",
+      partNumber: it.partNumber || "",
+      description: it.description || "",
+      qty: Number(it.qty) || 1,
+      uom: it.uom || "",
+      unitPrice: Number(it.unitPrice) || 0,
+      discount: Number(it.discount) || 0,
+      isFoc: !!it.isFoc,
+      itemImage: it.itemImage || "",
+    })),
+  };
 }
 
 export default function QuotationView() {
@@ -108,6 +153,12 @@ export default function QuotationView() {
     } finally {
       setConverting(null);
     }
+  };
+
+  const handleCopyToNew = () => {
+    if (!doc) return;
+    (window as any).__vedaPrefill = buildQuotationCopyPrefill(doc);
+    setLocation("/quotations/new");
   };
 
   const { data: doc, isLoading, refetch } = useGetQuotation(id, {
@@ -221,6 +272,13 @@ export default function QuotationView() {
           >
             <Pencil className="h-4 w-4" />Edit
           </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={handleCopyToNew}
+          >
+            <Copy className="h-4 w-4" />Copy to New Quotation
+          </Button>
           {canManage && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -276,6 +334,18 @@ export default function QuotationView() {
         <Card>
           <CardHeader><CardTitle className="text-base">Quotation Details</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
+            {(doc as any).issueDate && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Quotation Date</span>
+                <span>{fmtDate((doc as any).issueDate)}</span>
+              </div>
+            )}
+            {(doc as any).validUntil && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Valid Upto</span>
+                <span>{fmtDate((doc as any).validUntil)}</span>
+              </div>
+            )}
             {doc.paymentTerms && <div className="flex justify-between"><span className="text-muted-foreground">Payment Terms</span><span>{doc.paymentTerms}</span></div>}
             {doc.notes && <div><span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notes</span><div className="mt-1 text-sm prose prose-sm max-w-none [&_p]:my-1 [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5" dangerouslySetInnerHTML={{ __html: (doc as any).notes || "" }} /></div>}
           </CardContent>

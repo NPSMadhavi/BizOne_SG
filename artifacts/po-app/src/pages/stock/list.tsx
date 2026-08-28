@@ -128,6 +128,7 @@ export default function StockList() {
                 <th className="px-4 py-3 text-left font-medium">Name</th>
                 <th className="w-28 px-4 py-3 text-left font-medium">Batch No</th>
                 <th className="w-24 px-4 py-3 text-left font-medium">Type</th>
+                <th className="w-32 px-4 py-3 text-left font-medium">Sales Person</th>
                 <th className="w-16 px-4 py-3 text-left font-medium">UOM</th>
                 <th className="w-28 px-4 py-3 text-right font-medium">Unit Price</th>
                 <th className="w-28 px-4 py-3 text-right font-medium">Stock Qty</th>
@@ -138,7 +139,7 @@ export default function StockList() {
             <tbody className="divide-y">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
                     No stock items found. Create your first item.
                   </td>
                 </tr>
@@ -166,6 +167,9 @@ export default function StockList() {
                         )}
                         {item.type}
                       </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground font-medium">
+                      {item.salesPerson || "—"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{item.uom}</td>
                     <td className="px-4 py-3 text-right font-medium">
