@@ -32,6 +32,8 @@ import {
   Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { generatePOS_PDF } from "@/lib/pdf";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +44,17 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type CatalogTab = "all" | "category" | "favourites";
 type PaymentMethod = "Cash" | "NETS" | "Credit Card" | "PayNow" | "Voucher";
@@ -52,6 +65,17 @@ const PAYMENT_METHODS: { label: string; method: PaymentMethod }[] = [
   { label: "Credit Card", method: "Credit Card" },
   { label: "PayNow", method: "PayNow" },
   { label: "Voucher", method: "Voucher" },
+];
+
+const STANDARD_PAYMENT_METHODS: {
+  label: string;
+  method: PaymentMethod;
+  icon: typeof Banknote;
+}[] = [
+  { label: "Cash", method: "Cash", icon: Banknote },
+  { label: "NETS", method: "NETS", icon: CreditCard },
+  { label: "PayNow", method: "PayNow", icon: Smartphone },
+  { label: "Voucher", method: "Voucher", icon: Ticket },
 ];
 
 import { useAuth } from "@/contexts/auth-context";
@@ -140,6 +164,19 @@ function paymentAmount(payments: PaymentTender[], methods: string | string[]) {
   return sum > 0 ? money(sum) : "—";
 }
 
+function tenderTotalByMethod(tenders: PaymentTender[], method: PaymentMethod) {
+  return Math.round(
+    tenders.filter((t) => t.method === method).reduce((s, t) => s + t.amount, 0) * 100,
+  ) / 100;
+}
+
+function normalizePayments(payments: PaymentTender[] = []): PaymentTender[] {
+  return payments.map((p) => ({
+    ...p,
+    method: (p.method === ("Other" as string) ? "Voucher" : p.method) as PaymentMethod,
+  }));
+}
+
 function KpiCard({
   label,
   value,
@@ -168,6 +205,7 @@ function KpiCard({
 
 export default function PointOfSalePage() {
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const { salesPersons } = useSalesPersons();
   const [mode, setMode] = useState<"list" | "pos">("list");
   const [salesList, setSalesList] = useState<PosSaleRecord[]>(() => loadPosSales());
@@ -190,9 +228,13 @@ export default function PointOfSalePage() {
     }
   });
   const [tenders, setTenders] = useState<PaymentTender[]>([]);
+  const [baselinePayments, setBaselinePayments] = useState<PaymentTender[]>([]);
   const [payOpen, setPayOpen] = useState(false);
   const [payMethod, setPayMethod] = useState<PaymentMethod>("Cash");
   const [payAmount, setPayAmount] = useState(0);
+  const [pendingPayByMethod, setPendingPayByMethod] = useState<Partial<Record<PaymentMethod, number>>>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSale, setPreviewSale] = useState<PosSaleRecord | null>(null);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const gstRate = Number((settings as any)?.gstRate ?? GST_FALLBACK) || GST_FALLBACK;
@@ -247,8 +289,12 @@ export default function PointOfSalePage() {
   // GST exclusive: tax is added on top of taxable amount
   const gstAmt = (taxable * gstRate) / 100;
   const total = taxable + gstAmt;
-  const paidSoFar = tenders.reduce((s, t) => s + t.amount, 0);
+  const baselinePaid = baselinePayments.reduce((s, t) => s + t.amount, 0);
+  const sessionPaid = tenders.reduce((s, t) => s + t.amount, 0);
+  const paidSoFar = baselinePaid + sessionPaid;
   const balanceDue = Math.max(0, Math.round((total - paidSoFar) * 100) / 100);
+  const alreadyPaidTenders = editingSale ? baselinePayments : tenders;
+  const alreadyPaidTotal = alreadyPaidTenders.reduce((s, t) => s + t.amount, 0);
 
   const listStats = useMemo(() => {
     // KPIs match the transactions list (all saved POS sales), not a today-only filter.
@@ -274,19 +320,24 @@ export default function PointOfSalePage() {
           id: product.id,
           code: product.code,
           name: product.name,
-          unitPrice: product.unitPrice,
+          unitPrice: 0,
           qty: 1,
         },
       ];
     });
   }
 
-  function updateQty(id: number, qty: number) {
+  function updateUnitPrice(id: number, unitPrice: number) {
     setCart((prev) =>
-      prev
-        .map((l) => (l.id === id ? { ...l, qty: Math.max(0, qty) } : l))
-        .filter((l) => l.qty > 0),
+      prev.map((l) => (l.id === id ? { ...l, unitPrice: Math.max(0, unitPrice) } : l)),
     );
+  }
+
+  function updateQty(id: number, qty: number, removeIfZero = false) {
+    setCart((prev) => {
+      const next = prev.map((l) => (l.id === id ? { ...l, qty: Math.max(0, qty) } : l));
+      return removeIfZero ? next.filter((l) => l.qty > 0) : next;
+    });
   }
 
   function removeLine(id: number) {
@@ -300,6 +351,8 @@ export default function PointOfSalePage() {
     setDiscountType("manual");
     setNote("");
     setTenders([]);
+    setBaselinePayments([]);
+    setPendingPayByMethod({});
   }
 
   function startNewPos() {
@@ -315,10 +368,9 @@ export default function PointOfSalePage() {
     setDiscount(sale.discount || 0);
     setDiscountType("manual");
     setNote(sale.note || "");
-    setTenders(sale.payments.map((p) => ({
-      ...p,
-      method: (p.method === ("Other" as string) ? "Voucher" : p.method) as PaymentMethod,
-    })));
+    setBaselinePayments(normalizePayments(sale.payments || []));
+    setTenders([]);
+    setPendingPayByMethod({});
     setMode("pos");
   }
 
@@ -333,18 +385,53 @@ export default function PointOfSalePage() {
     setMode("list");
   }
 
-  function openPayment(method: PaymentMethod = "Cash") {
+  function switchToPayMethod(nextMethod: PaymentMethod) {
+    if (nextMethod === payMethod) return;
+
+    const raw = Math.max(0, Number(payAmount) || 0);
+
+    setPendingPayByMethod((prev) => {
+      const next = { ...prev };
+      if (raw > 0) next[payMethod] = raw;
+      else delete next[payMethod];
+
+      const pendingTotal = PAYMENT_METHODS.reduce((s, { method }) => s + (next[method] || 0), 0);
+      const remaining = Math.max(0, Math.round((total - paidSoFar - pendingTotal) * 100) / 100);
+
+      if (next[nextMethod] != null && next[nextMethod]! > 0) {
+        setPayAmount(next[nextMethod]!);
+      } else if (raw > 0) {
+        // Only auto-fill remaining when leaving a method with a typed amount
+        setPayAmount(remaining);
+      } else {
+        setPayAmount(0);
+      }
+      return next;
+    });
+    setPayMethod(nextMethod);
+  }
+
+  function openPayment(method: PaymentMethod = "Cash", options?: { allowZeroBalance?: boolean }) {
     if (cart.length === 0) {
       toast({ title: "Cart is empty", description: "Add items before taking payment." });
       return;
     }
-    if (balanceDue <= 0) {
+    if (cart.some((l) => !l.unitPrice || l.unitPrice <= 0)) {
+      toast({ title: "Enter price", description: "Set a price for each line item before payment." });
+      return;
+    }
+    if (balanceDue <= 0 && !options?.allowZeroBalance) {
       toast({ title: "Already paid", description: "No balance remaining on this sale." });
       return;
     }
     setPayMethod(method);
     setPayAmount(0);
+    setPendingPayByMethod({});
     setPayOpen(true);
+  }
+
+  function allCommittedPayments(): PaymentTender[] {
+    return editingSale ? [...baselinePayments, ...tenders] : [...tenders];
   }
 
   function buildSaleRecord(allTenders: PaymentTender[], existing?: PosSaleRecord | null): PosSaleRecord {
@@ -366,56 +453,145 @@ export default function PointOfSalePage() {
     };
   }
 
-  function finalizeSale(allTenders: PaymentTender[]) {
+  function finalizeSale(allTenders: PaymentTender[], options?: { showPreview?: boolean }) {
     const existing = editingSale;
+    let record: PosSaleRecord;
 
     if (existing) {
-      const record = buildSaleRecord(allTenders, existing);
+      record = buildSaleRecord(allTenders, existing);
       const nextList = salesList.map((s) => (s.id === existing.id ? record : s));
       setSalesList(nextList);
       savePosSales(nextList);
-      toast({
-        title: "POS updated",
-        description: `${record.posNumber} · ${paymentsLabel(allTenders)}`,
-      });
+      if (!options?.showPreview) {
+        toast({
+          title: "POS updated",
+          description: `${record.posNumber} · ${paymentsLabel(allTenders)}`,
+        });
+      }
     } else {
-      const record = buildSaleRecord(allTenders, null);
+      record = buildSaleRecord(allTenders, null);
       const nextList = [record, ...salesList];
       setSalesList(nextList);
       savePosSales(nextList);
-      toast({
-        title: "Payment complete",
-        description: `${record.posNumber} · ${paymentsLabel(allTenders)}${note ? " · Note saved" : ""}`,
-      });
     }
 
     setEditingSale(null);
     clearCart();
+    setBaselinePayments([]);
+    setTenders([]);
+    setPendingPayByMethod({});
     setPayOpen(false);
-    setMode("list");
+
+    if (options?.showPreview) {
+      setPreviewSale(record);
+      setPreviewOpen(true);
+    } else {
+      setMode("list");
+    }
   }
 
-  function updateSaleWithoutPayment() {
+  function stagedPaymentTotals() {
+    const otherPending = PAYMENT_METHODS.reduce(
+      (s, { method }) => (method !== payMethod ? s + (pendingPayByMethod[method] || 0) : s),
+      0,
+    );
+    const received = Math.max(0, Number(payAmount) || 0);
+    const due = Math.max(0, Math.round((total - paidSoFar - otherPending) * 100) / 100);
+    const thisPayApplied =
+      payMethod === "Cash" ? received : Math.min(received, due);
+    const stagedTotal = otherPending + thisPayApplied;
+    const paidTotal = Math.round((paidSoFar + stagedTotal) * 100) / 100;
+    const remainingAfter = Math.max(0, Math.round((total - paidTotal) * 100) / 100);
+    return { otherPending, received, due, thisPayApplied, stagedTotal, paidTotal, remainingAfter };
+  }
+
+  function buildTendersFromStaged(): PaymentTender[] {
+    const { thisPayApplied } = stagedPaymentTotals();
+    const next = [...allCommittedPayments()];
+    for (const { method } of PAYMENT_METHODS) {
+      if (method === payMethod) continue;
+      const amt = pendingPayByMethod[method];
+      if (amt && amt > 0) {
+        next.push({ method, amount: Math.round(amt * 100) / 100 });
+      }
+    }
+    if (thisPayApplied > 0) {
+      next.push({ method: payMethod, amount: thisPayApplied });
+    }
+    return next;
+  }
+
+  function saveEditingSale() {
     if (!editingSale) return;
     if (cart.length === 0) {
       toast({ title: "Cart is empty", description: "Add at least one item." });
       return;
     }
-    if (balanceDue > 0.001) {
-      toast({ title: "Balance remaining", description: `Pay remaining ${money(balanceDue)} first.` });
+    if (cart.some((l) => !l.unitPrice || l.unitPrice <= 0)) {
+      toast({ title: "Enter price", description: "Set a price for each line item before saving." });
       return;
     }
-    finalizeSale(tenders);
+    openPayment("Cash", { allowZeroBalance: true });
+  }
+
+  function paymentDisplayTotals() {
+    const pendingTotal = PAYMENT_METHODS.reduce(
+      (s, { method }) => s + (pendingPayByMethod[method] || 0),
+      0,
+    );
+    const thisPayRaw = Math.max(0, Number(payAmount) || 0);
+    const dueForInput = Math.max(
+      0,
+      Math.round((total - paidSoFar - pendingTotal) * 100) / 100,
+    );
+    const thisPayApplied =
+      payMethod === "Cash" ? thisPayRaw : Math.min(thisPayRaw, dueForInput);
+    const displayedPaid = Math.round((paidSoFar + pendingTotal + thisPayApplied) * 100) / 100;
+    const remainingAfter = Math.max(
+      0,
+      Math.round((total - paidSoFar - pendingTotal - thisPayApplied) * 100) / 100,
+    );
+    const cashChange =
+      payMethod === "Cash" && thisPayRaw > dueForInput + 0.001
+        ? Math.round((thisPayRaw - dueForInput) * 100) / 100
+        : 0;
+    return {
+      pendingTotal,
+      thisPayRaw,
+      dueForInput,
+      thisPayApplied,
+      displayedPaid,
+      remainingAfter,
+      cashChange,
+    };
+  }
+
+  function pendingPayByMethodHasValue() {
+    return PAYMENT_METHODS.some(({ method }) => (pendingPayByMethod[method] || 0) > 0);
+  }
+
+  function amountForMethod(method: PaymentMethod, thisPayApplied: number) {
+    const saved =
+      tenderTotalByMethod(alreadyPaidTenders, method) + tenderTotalByMethod(tenders, method);
+    const pending = pendingPayByMethod[method] || 0;
+    const unstaged = method === payMethod ? thisPayApplied : 0;
+    return Math.round((saved + pending + unstaged) * 100) / 100;
   }
 
   function savePayment() {
-    const due = balanceDue;
-    if (due <= 0) {
+    const { due, received, thisPayApplied, remainingAfter } = stagedPaymentTotals();
+
+    // Fully covered (saved + staged) — complete and show preview
+    if (remainingAfter <= 0.001) {
+      const finalTenders =
+        thisPayApplied > 0 || Object.keys(pendingPayByMethod).length > 0
+          ? buildTendersFromStaged()
+          : allCommittedPayments();
       setPayOpen(false);
+      finalizeSale(finalTenders, { showPreview: true });
       return;
     }
 
-    const received = Math.max(0, Number(payAmount) || 0);
     if (received <= 0) {
       toast({ title: "Enter amount", description: "Payment amount must be greater than zero." });
       return;
@@ -427,23 +603,28 @@ export default function PointOfSalePage() {
       return;
     }
 
-    const tenderAmt = Math.round(Math.min(received, due) * 100) / 100;
+    const tenderAmt = thisPayApplied;
 
     setTenders((prev) => {
       const nextTenders = [...prev, { method: payMethod, amount: tenderAmt }];
-      const nextPaid = nextTenders.reduce((s, t) => s + t.amount, 0);
-      const remaining = Math.max(0, Math.round((total - nextPaid) * 100) / 100);
+      const sessionPaid = nextTenders.reduce((s, t) => s + t.amount, 0);
+      const nextPaidSoFar = baselinePaid + sessionPaid;
+      const remaining = Math.max(0, Math.round((total - nextPaidSoFar) * 100) / 100);
+      const finalTenders = editingSale ? [...baselinePayments, ...nextTenders] : nextTenders;
 
       if (remaining <= 0.001) {
-        // Fully paid — close and complete (defer so tenders state is set)
         queueMicrotask(() => {
           setPayOpen(false);
-          finalizeSale(nextTenders);
+          finalizeSale(finalTenders, { showPreview: true });
         });
       } else {
-        // Split payment — keep dialog open for remaining balance
         queueMicrotask(() => {
           setPayAmount(remaining);
+          setPendingPayByMethod((p) => {
+            const next = { ...p };
+            delete next[payMethod];
+            return next;
+          });
           toast({
             title: `${payMethod} added`,
             description: `Paid ${money(tenderAmt)}. Remaining ${money(remaining)} — choose another method.`,
@@ -491,7 +672,6 @@ export default function PointOfSalePage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Point of Sale</h1>
-            <p className="mt-1 text-muted-foreground">View POS transactions and create new sales.</p>
           </div>
           <Button
             type="button"
@@ -566,7 +746,11 @@ export default function PointOfSalePage() {
                   </tr>
                 ) : (
                   paginatedSales.map((sale) => (
-                    <tr key={sale.id} className="border-b hover:bg-[#F8FAFC]">
+                    <tr
+                      key={sale.id}
+                      className="border-b cursor-pointer hover:bg-[#F8FAFC]"
+                      onClick={() => loadSaleForEdit(sale)}
+                    >
                       <td className="px-4 py-3 font-mono font-medium">{sale.posNumber}</td>
                       <td className="px-4 py-3 text-[#4B5563]">{formatStamp(sale.createdAt)}</td>
                       <td className="px-4 py-3">{sale.itemCount}</td>
@@ -580,10 +764,8 @@ export default function PointOfSalePage() {
                         <Badge className="bg-emerald-600 hover:bg-emerald-700">Paid</Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button type="button" variant="ghost" size="icon" title="Edit" onClick={() => loadSaleForEdit(sale)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                        <div className="flex justify-end gap-1 text-[#6B7280]">
+                          <Pencil className="h-4 w-4" />
                         </div>
                       </td>
                     </tr>
@@ -620,17 +802,33 @@ export default function PointOfSalePage() {
               <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
                 {editingSale ? `Edit ${editingSale.posNumber}` : "Create New POS"}
               </h1>
-              <p className="mt-1 text-muted-foreground">
-                {editingSale
-                  ? "Update items, discount, and payments for this sale."
-                  : "Process walk-in sales, payments, and quick checkout."}
-              </p>
             </div>
           </div>
           {editingSale && (
-            <Button type="button" variant="destructive" className="gap-2 shrink-0" onClick={deleteEditingSale}>
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="destructive" size="icon" className="shrink-0" title="Delete">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this POS sale?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete <strong>{editingSale.posNumber}</strong>. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-red-600 hover:bg-red-700"
+                    onClick={deleteEditingSale}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
         </div>
 
@@ -764,7 +962,7 @@ export default function PointOfSalePage() {
               <h2 className="text-base font-semibold text-[#111827]">Current Sale</h2>
             </div>
 
-            <div className="grid grid-cols-[1fr_72px_64px_64px_28px] gap-2 border-b border-[#E5E7EB] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+            <div className="grid grid-cols-[1fr_minmax(96px,auto)_64px_64px_28px] gap-2 border-b border-[#E5E7EB] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
               <span>Item</span>
               <span className="text-center">Qty</span>
               <span className="text-right">Price</span>
@@ -782,35 +980,59 @@ export default function PointOfSalePage() {
                 cart.map((line) => (
                   <div
                     key={line.id}
-                    className="grid grid-cols-[1fr_72px_64px_64px_28px] items-center gap-2 rounded-md px-2 py-2 hover:bg-[#F9FAFB]"
+                    className="grid grid-cols-[1fr_minmax(96px,auto)_64px_64px_28px] items-center gap-2 rounded-md px-2 py-2 hover:bg-[#F9FAFB]"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium text-[#111827]">
                         {line.code} / {line.name}
                       </p>
                     </div>
-                    <div className="flex items-center justify-center gap-0.5">
+                    <div className="flex shrink-0 items-center justify-center gap-0.5">
                       <button
                         type="button"
-                        className="rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
-                        onClick={() => updateQty(line.id, line.qty - 1)}
+                        className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
+                        onClick={() => updateQty(line.id, line.qty - 1, true)}
                       >
                         <Minus className="h-3 w-3" />
                       </button>
                       <input
-                        className="h-7 w-8 rounded border border-[#E5E7EB] text-center text-xs"
-                        value={line.qty}
-                        onChange={(e) => updateQty(line.id, parseInt(e.target.value, 10) || 0)}
+                        className="h-7 w-11 min-w-[2.75rem] shrink-0 rounded border border-[#E5E7EB] px-1 text-center text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        value={line.qty > 0 ? line.qty : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            updateQty(line.id, 0);
+                            return;
+                          }
+                          const n = parseInt(raw, 10);
+                          if (!Number.isNaN(n)) updateQty(line.id, n);
+                        }}
+                        onBlur={() => {
+                          setCart((prev) =>
+                            prev.map((l) => (l.id === line.id && l.qty <= 0 ? { ...l, qty: 1 } : l)),
+                          );
+                        }}
                       />
                       <button
                         type="button"
-                        className="rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
+                        className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
                         onClick={() => updateQty(line.id, line.qty + 1)}
                       >
                         <Plus className="h-3 w-3" />
                       </button>
                     </div>
-                    <p className="text-right text-xs text-[#4B5563]">{money(line.unitPrice)}</p>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="h-7 w-full rounded border border-[#E5E7EB] px-1 text-right text-xs"
+                      value={line.unitPrice > 0 ? line.unitPrice : ""}
+                      placeholder=""
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        updateUnitPrice(line.id, raw === "" ? 0 : parseFloat(raw) || 0);
+                      }}
+                    />
                     <p className="text-right text-xs font-semibold text-[#111827]">
                       {money(line.unitPrice * line.qty)}
                     </p>
@@ -827,10 +1049,10 @@ export default function PointOfSalePage() {
             </div>
 
             <div className="space-y-2.5 border-t border-[#E5E7EB] px-4 py-3 text-sm overflow-hidden">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[#4B5563] text-xs font-medium shrink-0">Sales Person</span>
+              <div className="flex items-center justify-between gap-2 text-[#4B5563]">
+                <span className="shrink-0">Sales Person</span>
                 <Select value={salesPerson} onValueChange={setSalesPerson}>
-                  <SelectTrigger className="h-8 flex-1 max-w-[180px] text-xs bg-white border-gray-200">
+                  <SelectTrigger className="h-8 flex-1 max-w-[180px] text-sm bg-white border-gray-200">
                     <SelectValue placeholder="Select Sales Person" />
                   </SelectTrigger>
                   <SelectContent>
@@ -884,36 +1106,56 @@ export default function PointOfSalePage() {
                 <span className="text-base font-semibold text-[#111827]">Total Amount</span>
                 <span className="text-2xl font-bold text-[#2563EB]">{money(total)}</span>
               </div>
-              {tenders.length > 0 && (
+              {alreadyPaidTotal > 0 && (
                 <>
                   <div className="flex justify-between text-[#4B5563]">
-                    <span>Paid</span>
-                    <span className="font-medium text-[#16A34A]">{money(paidSoFar)}</span>
+                    <span>Already Paid</span>
+                    <span className="font-medium text-[#16A34A]">{money(alreadyPaidTotal)}</span>
                   </div>
+                  <div className="space-y-1 rounded-md border border-emerald-100 bg-emerald-50/50 px-2 py-1.5 text-xs text-[#6B7280]">
+                    {PAYMENT_METHODS.map(({ label, method }) => {
+                      const amt = tenderTotalByMethod(alreadyPaidTenders, method);
+                      if (amt <= 0) return null;
+                      return (
+                        <div key={method} className="flex justify-between text-[#16A34A]">
+                          <span>{label}</span>
+                          <span className="font-medium">{money(amt)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {sessionPaid > 0 && (
+                    <div className="space-y-1 rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1.5 text-xs text-[#6B7280]">
+                      <p className="font-medium text-[#2563EB]">New Payment</p>
+                      {PAYMENT_METHODS.map(({ label, method }) => {
+                        const amt = tenderTotalByMethod(tenders, method);
+                        if (amt <= 0) return null;
+                        return (
+                          <div key={method} className="flex justify-between text-[#2563EB]">
+                            <span>{label}</span>
+                            <span className="font-medium">{money(amt)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className="flex justify-between font-semibold text-[#111827]">
                     <span>Balance Due</span>
                     <span className="text-[#DC2626]">{money(balanceDue)}</span>
-                  </div>
-                  <div className="space-y-1 rounded-md bg-[#F9FAFB] px-2 py-1.5 text-xs text-[#6B7280]">
-                    {tenders.map((t, i) => (
-                      <div key={i} className="flex justify-between">
-                        <span>{t.method}</span>
-                        <span>{money(t.amount)}</span>
-                      </div>
-                    ))}
                   </div>
                 </>
               )}
             </div>
 
             <div className="px-4 py-3">
-              {editingSale && balanceDue <= 0.001 ? (
+              {editingSale ? (
                 <Button
                   type="button"
-                  className="h-12 w-full gap-2 bg-[#2563EB] text-base font-semibold hover:bg-[#1D4ED8]"
-                  onClick={updateSaleWithoutPayment}
+                  variant="outline"
+                  className="h-12 w-full gap-2 text-base font-semibold"
+                  onClick={saveEditingSale}
                 >
-                  Update Sale <ArrowRight className="h-4 w-4" />
+                  Save Changes
                 </Button>
               ) : (
                 <Button
@@ -940,22 +1182,8 @@ export default function PointOfSalePage() {
 
           <div className="space-y-4 py-1">
             {(() => {
-              const thisPayRaw = Math.max(0, Number(payAmount) || 0);
-              const thisPayApplied = Math.min(thisPayRaw, balanceDue);
-              const paidTotal = Math.round((paidSoFar + thisPayApplied) * 100) / 100;
-              const remainingAfter = Math.max(0, Math.round((total - paidTotal) * 100) / 100);
-              const cashChange =
-                payMethod === "Cash" && thisPayRaw > balanceDue + 0.001
-                  ? Math.round((thisPayRaw - balanceDue) * 100) / 100
-                  : 0;
-
-              const amountByMethod = (method: PaymentMethod) => {
-                const saved = tenders
-                  .filter((t) => t.method === method)
-                  .reduce((s, t) => s + t.amount, 0);
-                const live = method === payMethod ? thisPayApplied : 0;
-                return Math.round((saved + live) * 100) / 100;
-              };
+              const { thisPayApplied, displayedPaid, remainingAfter, cashChange } =
+                paymentDisplayTotals();
 
               return (
             <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 space-y-2.5 text-sm">
@@ -965,19 +1193,20 @@ export default function PointOfSalePage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-[#4B5563]">Paid Payment</span>
-                <span className="font-semibold text-[#16A34A]">{money(paidTotal)}</span>
+                <span className="font-semibold text-[#16A34A]">{money(displayedPaid)}</span>
               </div>
               <div className="space-y-1 rounded-md border border-[#E5E7EB] bg-white px-2.5 py-2 text-xs text-[#6B7280]">
                 {PAYMENT_METHODS.map(({ label, method }) => {
-                  const amt = amountByMethod(method);
+                  const amt = amountForMethod(method, thisPayApplied);
                   const isActive = method === payMethod && thisPayApplied > 0;
+                  const isPending = (pendingPayByMethod[method] || 0) > 0;
                   return (
                     <div
                       key={method}
                       className={cn(
                         "flex justify-between",
-                        isActive && "font-medium text-[#2563EB]",
-                        amt > 0 && !isActive && "text-[#16A34A]",
+                        (isActive || isPending) && "font-medium text-[#2563EB]",
+                        amt > 0 && !isActive && !isPending && "text-[#16A34A]",
                       )}
                     >
                       <span>{label}</span>
@@ -1000,61 +1229,92 @@ export default function PointOfSalePage() {
 
             <div className="space-y-2">
               <Label>Payment Method</Label>
-              <div className="grid grid-cols-5 gap-2">
-                {(
-                  [
-                    { label: "Cash", icon: Banknote, method: "Cash" as PaymentMethod },
-                    { label: "NETS", icon: CreditCard, method: "NETS" as PaymentMethod },
-                    { label: "Credit Card", icon: CreditCard, method: "Credit Card" as PaymentMethod },
-                    { label: "PayNow", icon: Smartphone, method: "PayNow" as PaymentMethod },
-                    { label: "Voucher", icon: Ticket, method: "Voucher" as PaymentMethod },
-                  ] as const
-                ).map((q) => (
-                  <button
-                    key={q.method}
-                    type="button"
-                    onClick={() => {
-                      setPayMethod(q.method);
-                      // Keep remaining amount when switching method for split pay
-                      if ((Number(payAmount) || 0) <= 0 && balanceDue > 0) {
-                        setPayAmount(balanceDue);
-                      }
-                    }}
-                    className={cn(
-                      "flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center transition-colors",
-                      payMethod === q.method
-                        ? "border-[#2563EB] bg-[#EFF6FF] ring-1 ring-[#2563EB]"
-                        : "border-[#E5E7EB] hover:border-[#93C5FD] hover:bg-[#EFF6FF]",
-                    )}
-                  >
-                    <q.icon className={cn("h-4 w-4", payMethod === q.method ? "text-[#2563EB]" : "text-[#6B7280]")} />
-                    <span className="text-[10px] font-medium leading-tight text-[#374151]">{q.label}</span>
-                  </button>
-                ))}
+              <div className="grid grid-cols-4 gap-2">
+                {STANDARD_PAYMENT_METHODS.map((q) => {
+                  const creditCardActive = payMethod === "Credit Card";
+                  return (
+                    <button
+                      key={q.method}
+                      type="button"
+                      disabled={creditCardActive}
+                      onClick={() => switchToPayMethod(q.method)}
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center transition-colors",
+                        creditCardActive
+                          ? "cursor-not-allowed border-[#E5E7EB] bg-[#F3F4F6] opacity-50"
+                          : payMethod === q.method
+                            ? "border-[#2563EB] bg-[#EFF6FF] ring-1 ring-[#2563EB]"
+                            : "border-[#E5E7EB] hover:border-[#93C5FD] hover:bg-[#EFF6FF]",
+                      )}
+                    >
+                      <q.icon
+                        className={cn(
+                          "h-4 w-4",
+                          creditCardActive
+                            ? "text-[#9CA3AF]"
+                            : payMethod === q.method
+                              ? "text-[#2563EB]"
+                              : "text-[#6B7280]",
+                        )}
+                      />
+                      <span className="text-[10px] font-medium leading-tight text-[#374151]">{q.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="pay-amount">
-                {payMethod === "Cash" ? "Cash Received" : "Amount"}
-                {paidSoFar > 0 ? (
+            {balanceDue > 0.001 || pendingPayByMethodHasValue() ? (
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (payMethod === "Credit Card") {
+                    switchToPayMethod("Cash");
+                    return;
+                  }
+                  switchToPayMethod("Credit Card");
+                }}
+                className={cn(
+                  "flex shrink-0 flex-col items-center gap-1 rounded-lg border px-3 py-2 text-center transition-colors min-w-[88px]",
+                  payMethod === "Credit Card"
+                    ? "border-[#2563EB] bg-[#EFF6FF] ring-1 ring-[#2563EB]"
+                    : "border-[#E5E7EB] hover:border-[#93C5FD] hover:bg-[#EFF6FF]",
+                )}
+              >
+                <CreditCard
+                  className={cn(
+                    "h-4 w-4",
+                    payMethod === "Credit Card" ? "text-[#2563EB]" : "text-[#6B7280]",
+                  )}
+                />
+                <span className="text-[10px] font-medium leading-tight text-[#374151]">Credit Card</span>
+              </button>
+              <div className="min-w-0 flex-1 space-y-2">
+                <Label htmlFor="pay-amount">
+                  {payMethod === "Cash" ? "Cash Received" : "Amount"}
                   <span className="ml-2 font-normal text-[#6B7280]">
-                    (remaining {money(balanceDue)})
+                    (remaining {money(paymentDisplayTotals().remainingAfter)})
                   </span>
-                ) : null}
-              </Label>
-              <Input
-                id="pay-amount"
-                type="number"
-                min={0}
-                step="0.01"
-                autoFocus
-                value={payAmount || ""}
-                onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
-                className="h-11 text-base [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                placeholder="0.00"
-              />
+                </Label>
+                <Input
+                  id="pay-amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  autoFocus
+                  value={payAmount || ""}
+                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
+                  className="h-11 text-base [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
+            ) : alreadyPaidTotal > 0 ? (
+              <p className="rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-700">
+                All amounts already paid. Click <strong>Complete Payment</strong> to save and view receipt.
+              </p>
+            ) : null}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
@@ -1063,14 +1323,36 @@ export default function PointOfSalePage() {
             </Button>
             <Button type="button" className="bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={savePayment}>
               {(() => {
-                const thisPay = Math.min(Math.max(0, Number(payAmount) || 0), balanceDue);
-                const rem = Math.max(0, Math.round((balanceDue - thisPay) * 100) / 100);
-                return rem <= 0.001 ? "Complete Payment" : "Add Payment";
+                const { remainingAfter } = stagedPaymentTotals();
+                return remainingAfter <= 0.001 ? "Complete Payment" : "Add Payment";
               })()}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {previewSale && (
+        <PdfPreviewModal
+          open={previewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) {
+              setPreviewSale(null);
+              setMode("list");
+            }
+          }}
+          title={`POS Receipt ${previewSale.posNumber}`}
+          generatePdf={(opts) => generatePOS_PDF(previewSale, selectedCompany as any, opts)}
+          pdfFilename={`${previewSale.posNumber}.pdf`}
+          defaultEmailSubject={`POS Receipt ${previewSale.posNumber}`}
+          defaultEmailBody={`Please find attached POS receipt ${previewSale.posNumber}.`}
+          onEdit={() => {
+            loadSaleForEdit(previewSale);
+            setPreviewOpen(false);
+            setPreviewSale(null);
+          }}
+        />
+      )}
     </div>
   );
 }

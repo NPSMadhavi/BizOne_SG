@@ -1,9 +1,10 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Control } from "react-hook-form";
 import { Upload, X } from "lucide-react";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { processSignatureFile, SIGNATURE_FILE_ACCEPT } from "@/lib/signature-upload";
 
 type DocumentAdditionalInfoFieldsProps = {
   control: Control<any>;
@@ -66,28 +67,17 @@ export function DocumentAdditionalInfoFields({
 
       <FormField control={control} name="authorisedSignature" render={({ field }) => {
         const inputRef = useRef<HTMLInputElement>(null);
-        const handleFile = (file: File) => {
-          const reader = new FileReader();
-          reader.onload = async (e) => {
-            const src = e.target?.result as string;
-            if (src) {
-              const img = document.createElement("img");
-              img.onload = () => {
-                const canvas = document.createElement("canvas");
-                let w = img.width, h = img.height;
-                const maxW = 300, maxH = 100;
-                if (w > maxW || h > maxH) {
-                  const r = Math.min(maxW / w, maxH / h);
-                  w = Math.round(w * r); h = Math.round(h * r);
-                }
-                canvas.width = w; canvas.height = h;
-                canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-                field.onChange(canvas.toDataURL("image/png"));
-              };
-              img.src = src;
-            }
-          };
-          reader.readAsDataURL(file);
+        const [uploading, setUploading] = useState(false);
+
+        const handleFile = async (file: File) => {
+          setUploading(true);
+          try {
+            field.onChange(await processSignatureFile(file));
+          } catch {
+            // invalid type or read failure — ignore
+          } finally {
+            setUploading(false);
+          }
         };
 
         return (
@@ -113,18 +103,19 @@ export function DocumentAdditionalInfoFields({
                       variant="outline"
                       onClick={() => inputRef.current?.click()}
                       className="gap-2 text-xs"
+                      disabled={uploading}
                     >
-                      <Upload className="h-4 w-4" /> Upload Signature Image
+                      <Upload className="h-4 w-4" /> {uploading ? "Uploading..." : "Upload Signature"}
                     </Button>
                   )}
                   <input
                     ref={inputRef}
                     type="file"
-                    accept="image/*"
+                    accept={SIGNATURE_FILE_ACCEPT}
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
-                      if (f) handleFile(f);
+                      if (f) void handleFile(f);
                       e.target.value = "";
                     }}
                   />

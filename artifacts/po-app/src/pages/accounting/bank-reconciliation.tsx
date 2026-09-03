@@ -1711,9 +1711,6 @@ export default function BankReconciliation() {
               <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Bank Reconciliation</h1>
               {step === 4 && <Badge className="bg-emerald-600">Complete</Badge>}
             </div>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              Match and reconcile your bank transactions — upload new statements anytime
-            </p>
           </div>
         </div>
 

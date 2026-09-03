@@ -23,9 +23,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Employee } from "@shared/schema";
-import { queryClient, apiRequest } from "@/operations-8june/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import { format } from "date-fns";
@@ -36,23 +35,12 @@ import {
 
 import {
   Plus,
-  Trash2,
   FileText,
   Eye,
   Edit2,
   Download,
   ChevronDown,
 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Dialog,
 } from "@/components/ui/dialog";
@@ -69,7 +57,6 @@ export default function EmployeesPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDocumentFormOpen, setIsDocumentFormOpen] = useState(false);
   const [documentFormPending, setDocumentFormPending] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -78,28 +65,6 @@ export default function EmployeesPage() {
   // Fetch employees
   const { data: employees = [], isLoading } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
-  });
-  
-  // Delete employee mutation
-  const deleteEmployeeMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/employees/${id}`);
-    },
-    onSuccess: () => {
-      toast({
-        title: "Employee deleted",
-        description: "The employee has been deleted successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-      setIsDeleteDialogOpen(false);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to delete employee",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
   });
   
   const handleViewEmployee = (id: number) => {
@@ -111,20 +76,9 @@ export default function EmployeesPage() {
     setLocation(`/employees/${id}/edit`);
   };
   
-  const handleDeleteEmployee = (id: number) => {
-    setSelectedEmployeeId(id);
-    setIsDeleteDialogOpen(true);
-  };
-  
   const handleAddDocument = (id: number) => {
     setSelectedEmployeeId(id);
     setIsDocumentFormOpen(true);
-  };
-  
-  const confirmDelete = () => {
-    if (selectedEmployeeId) {
-      deleteEmployeeMutation.mutate(selectedEmployeeId);
-    }
   };
 
   const filteredEmployees = useMemo(() => employees.filter((employee) => {
@@ -231,7 +185,7 @@ export default function EmployeesPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Department</TableHead>
                     <TableHead>Designation</TableHead>
-                    <TableHead>Join Date</TableHead>
+                    <TableHead>Joining Date</TableHead>
                     <TableHead>Documents</TableHead>
                     <TableHead className="w-px text-left">Actions</TableHead>
                   </TableRow>
@@ -311,14 +265,6 @@ export default function EmployeesPage() {
                           >
                             <FileText className="h-4 w-4" />
                           </button>
-                          <button
-                            type="button"
-                            title="Delete employee"
-                            onClick={() => handleDeleteEmployee(employee.id)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition-colors hover:bg-red-100 active:scale-95"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -385,28 +331,6 @@ export default function EmployeesPage() {
           />
         </FormModalShell>
       </Dialog>
-      
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this employee?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the employee and all related data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-red-600 hover:bg-red-700"
-              disabled={deleteEmployeeMutation.isPending}
-            >
-              {deleteEmployeeMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <EntityViewDialog
         open={isViewDialogOpen}
@@ -481,7 +405,7 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
       <EntityViewField label="Department" value={employee.department} />
       <EntityViewField label="Designation" value={employee.designation} />
       <EntityViewField
-        label="Join Date"
+        label="Joining Date"
         value={employee.joinDate ? formatViewDate(employee.joinDate) : "-"}
       />
       <EntityViewField

@@ -218,7 +218,12 @@ CREATE TABLE stock_items (
     uom        TEXT         NOT NULL DEFAULT 'pcs',
     type       TEXT         NOT NULL DEFAULT 'product',
     unit_price NUMERIC(15,2)         DEFAULT 0,
+    mrp_price  NUMERIC(15,2)         DEFAULT 0,
     stock_qty  NUMERIC(15,3)         DEFAULT 0,
+    batch_no   TEXT,
+    alternate_uom TEXT,
+    alternate_qty NUMERIC(15,4)      DEFAULT 0,
+    main_qty   NUMERIC(15,4)         DEFAULT 0,
     is_active  BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );

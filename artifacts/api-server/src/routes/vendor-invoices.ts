@@ -42,6 +42,25 @@ function parsePI(doc: any) {
   };
 }
 
+function calcViLineAmount(qty: number, unitPrice: number, discount: number): number {
+  const base = qty * unitPrice;
+  return +(base - (base * discount) / 100).toFixed(2);
+}
+
+function normalizeViItems(items: any[]) {
+  return (items || []).map((it) => ({
+    type: it.type || "item",
+    sectionLabel: it.sectionLabel || "",
+    partNumber: String(it.partNumber || "").trim(),
+    description: String(it.description || "").trim(),
+    qty: Number(it.qty) || 0,
+    unitPrice: Number(it.unitPrice) || 0,
+    discount: Number(it.discount) || 0,
+    uom: it.uom || "",
+    amount: it.type === "section" ? 0 : calcViLineAmount(Number(it.qty) || 0, Number(it.unitPrice) || 0, Number(it.discount) || 0),
+  }));
+}
+
 async function recalcPI(piId: number, companyId: number): Promise<void> {
   const payments = await db.select().from(vendorPaymentsTable)
     .where(and(eq(vendorPaymentsTable.vendorInvoiceId, piId), eq(vendorPaymentsTable.companyId, companyId)));
@@ -91,7 +110,8 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
 
     const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes, expenseAccountId,
       gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate, paymentTerms, dueDate,
-      plannedPaymentDate, remindersEnabled, reminderStartAfterDay, reminderEmails, salesPerson } = req.body;
+      plannedPaymentDate, remindersEnabled, reminderStartAfterDay, reminderEmails, salesPerson, items,
+      customerNote, deliveryInstructions, termsAndConditions, authorisedSignature, discountAmount } = req.body;
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
   if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
     res.status(400).json({ error: "Valid total amount is required" }); return;
@@ -108,6 +128,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   })();
 
   const netAmount = Math.max(0, parseFloat(String(totalAmount)) - parseFloat(String(gstAmount ?? "0")));
+  const normalizedItems = normalizeViItems(items);
 
   try {
     const [doc] = await db.insert(vendorInvoicesTable).values({
@@ -128,9 +149,14 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       paidAmount: "0",
       status: "pending",
       notes: notes || null,
+      customerNote: customerNote || null,
+      deliveryInstructions: deliveryInstructions || null,
+      termsAndConditions: termsAndConditions || null,
+      authorisedSignature: authorisedSignature || null,
+      discountAmount: parseFloat(String(discountAmount ?? "0")).toFixed(2),
       expenseAccountId: parsedExpenseAccountId,
       salesPerson: salesPerson || null,
-      items: [],
+      items: normalizedItems,
       subtotal: netAmount.toFixed(2),
       tax: parseFloat(String(gstAmount ?? "0")).toFixed(2),
       gstTreatment: gstTreatment || "standard_rated",
@@ -191,7 +217,8 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
 
     const { piNumber, piDate, vendorName, poIds, poNumbers, currency, totalAmount, notes,
       gstTreatment, gstRate, gstAmount, gstInclusive, exchangeRate, paymentTerms, dueDate,
-      plannedPaymentDate, remindersEnabled, reminderStartAfterDay, reminderEmails, salesPerson } = req.body;
+      plannedPaymentDate, remindersEnabled, reminderStartAfterDay, reminderEmails, salesPerson, items,
+      customerNote, deliveryInstructions, termsAndConditions, authorisedSignature, discountAmount, expenseAccountId } = req.body;
   const updates: any = { updatedAt: new Date() };
   if (piNumber !== undefined) updates.piNumber = piNumber.trim();
   if (piDate !== undefined) updates.piDate = piDate;
@@ -206,13 +233,31 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   if (poNumbers !== undefined) updates.poNumbers = poNumbers;
   if (currency !== undefined) updates.currency = currency;
   if (totalAmount !== undefined) updates.totalAmount = parseFloat(totalAmount).toFixed(2);
+  if (items !== undefined) updates.items = normalizeViItems(items);
+  if (totalAmount !== undefined || gstAmount !== undefined) {
+    const resolvedTotal = totalAmount !== undefined ? parseFloat(String(totalAmount)) : parseFloat(String(existing.totalAmount ?? "0"));
+    const resolvedGst = gstAmount !== undefined ? parseFloat(String(gstAmount)) : parseFloat(String(existing.gstAmount ?? "0"));
+    const net = Math.max(0, resolvedTotal - resolvedGst);
+    updates.subtotal = net.toFixed(2);
+    updates.tax = resolvedGst.toFixed(2);
+  }
   if (notes !== undefined) updates.notes = notes || null;
+  if (customerNote !== undefined) updates.customerNote = customerNote || null;
+  if (deliveryInstructions !== undefined) updates.deliveryInstructions = deliveryInstructions || null;
+  if (termsAndConditions !== undefined) updates.termsAndConditions = termsAndConditions || null;
+  if (authorisedSignature !== undefined) updates.authorisedSignature = authorisedSignature || null;
+  if (discountAmount !== undefined) updates.discountAmount = parseFloat(String(discountAmount)).toFixed(2);
   if (gstTreatment !== undefined) updates.gstTreatment = gstTreatment;
   if (gstRate !== undefined) updates.gstRate = parseFloat(gstRate).toFixed(2);
   if (gstAmount !== undefined) updates.gstAmount = parseFloat(gstAmount).toFixed(2);
   if (gstInclusive !== undefined) updates.gstInclusive = !!gstInclusive;
   if (exchangeRate !== undefined) updates.exchangeRate = parseFloat(exchangeRate).toFixed(6);
   if (salesPerson !== undefined) updates.salesPerson = salesPerson || null;
+  if (expenseAccountId !== undefined) {
+    updates.expenseAccountId = expenseAccountId === null || expenseAccountId === "" || expenseAccountId === "none"
+      ? null
+      : Number(expenseAccountId);
+  }
 
   await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
   await recalcPI(id, existing.companyId);

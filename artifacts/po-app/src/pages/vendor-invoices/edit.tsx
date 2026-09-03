@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,14 +10,27 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation, useParams } from "wouter";
-import { Check, AlertTriangle, RefreshCw, Plus, ArrowLeft } from "lucide-react";
+import { Check, AlertTriangle, RefreshCw, Plus, ArrowLeft, Eye, BookOpen } from "lucide-react";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { generateVendorInvoice_PDF } from "@/lib/pdf";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { CURRENCIES } from "@/lib/currencies";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { useSalesPersons } from "@/hooks/use-sales-persons";
+import { VendorInvoiceLineItems } from "@/components/vendor-invoice-line-items";
+import { VendorInvoiceAdditionalInfo } from "@/components/vendor-invoice-additional-info";
+import {
+  calcViSubtotal,
+  computeViGstTotals,
+  emptyViLineItem,
+  mapDocItemsToViLines,
+  normalizeViItemsForApi,
+  type VendorInvoiceLineItem,
+} from "@/lib/vendor-invoice-items";
 
 function dueDateFromTerms(date: string, terms: string) {
   const match = terms.match(/(\d+)\s+Days?\s+Net/i);
@@ -38,6 +50,8 @@ export default function VendorInvoiceEdit() {
   const qc = useQueryClient();
 
   const [saving, setSaving] = useState(false);
+  const [savedDoc, setSavedDoc] = useState<any>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const [salesPerson, setSalesPerson] = useState("");
   const [newVendorOpen, setNewVendorOpen] = useState(false);
   const initialized = useRef(false);
@@ -55,7 +69,7 @@ export default function VendorInvoiceEdit() {
   const [dueDate, setDueDate] = useState("");
   const [plannedPaymentDate, setPlannedPaymentDate] = useState("");
   const [remindersEnabled, setRemindersEnabled] = useState(false);
-  const [reminderStartAfterDay, setReminderStartAfterDay] = useState(15);
+  const [reminderStartAfterDay, setReminderStartAfterDay] = useState("15");
   const [reminderEmail, setReminderEmail] = useState("");
   const [reminderEmails, setReminderEmails] = useState<string[]>([]);
   const [vendorSearch, setVendorSearch] = useState("");
@@ -63,13 +77,20 @@ export default function VendorInvoiceEdit() {
   const [vendorFromPo, setVendorFromPo] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currency, setCurrency] = useState((selectedCompany as any)?.currency || "SGD");
-  const [amount, setAmount] = useState("");
+  const [lineItems, setLineItems] = useState<VendorInvoiceLineItem[]>([emptyViLineItem()]);
   const [notes, setNotes] = useState("");
+  const [customerNote, setCustomerNote] = useState("");
+  const [deliveryInstructions, setDeliveryInstructions] = useState("");
+  const [termsAndConditions, setTermsAndConditions] = useState("");
+  const [authorisedSignature, setAuthorisedSignature] = useState("");
+  const [discountAmount, setDiscountAmount] = useState(0);
   const [selectedPoIds, setSelectedPoIds] = useState<number[]>([]);
-  const [amountAutoFilled, setAmountAutoFilled] = useState(false);
+  const [itemsAutoFilled, setItemsAutoFilled] = useState(false);
   const [poPickerOpen, setPoPickerOpen] = useState(false);
   const [gstTreatment, setGstTreatment] = useState("standard_rated");
   const [gstInclusive, setGstInclusive] = useState(false);
+  const [expenseAccountId, setExpenseAccountId] = useState<string>("none");
+  const [expenseAccountPickerOpen, setExpenseAccountPickerOpen] = useState(false);
   const [exchangeRate, setExchangeRate] = useState("1.000000");
   const [fetchingRate, setFetchingRate] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +127,21 @@ export default function VendorInvoiceEdit() {
     },
   });
 
+  const { data: allAccounts = [] } = useQuery<any[]>({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const expenseAccounts = useMemo(() =>
+    allAccounts.filter((a: any) => a.type === "expense" && a.isActive)
+      .sort((a: any, b: any) => a.code.localeCompare(b.code)),
+    [allAccounts]
+  );
+
   useEffect(() => {
     if (!pi || initialized.current) return;
 
@@ -120,17 +156,32 @@ export default function VendorInvoiceEdit() {
     setDueDate(pi.dueDate ? String(pi.dueDate).split("T")[0] : dueDateFromTerms(pi.piDate, pi.paymentTerms || "30 Days Net"));
     setPlannedPaymentDate(pi.plannedPaymentDate ? String(pi.plannedPaymentDate).split("T")[0] : "");
     setRemindersEnabled(!!pi.remindersEnabled);
-    setReminderStartAfterDay(pi.reminderStartAfterDay ?? 15);
+    setReminderStartAfterDay(
+      pi.reminderStartAfterDay != null && Number(pi.reminderStartAfterDay) > 0
+        ? String(pi.reminderStartAfterDay)
+        : "15"
+    );
     setReminderEmails(Array.isArray(pi.reminderEmails) ? pi.reminderEmails : []);
     setVendorSearch(pi.vendorName || "");
     setSelectedVendor(null);
     setSelectedPoIds(Array.isArray(pi.poIds) ? pi.poIds.map(Number) : []);
     setCurrency(pi.currency || (selectedCompany as any)?.currency || "SGD");
-    setAmount(String(isGstInclusive ? piTotalAmount : netAmount));
+    if (Array.isArray(pi.items) && pi.items.length > 0) {
+      setLineItems(mapDocItemsToViLines(pi.items));
+    } else {
+      const legacyAmount = isGstInclusive ? piTotalAmount : netAmount;
+      setLineItems([{ ...emptyViLineItem(), unitPrice: legacyAmount, qty: legacyAmount > 0 ? 1 : 1 }]);
+    }
     setNotes(pi.notes || "");
+    setCustomerNote(pi.customerNote || "");
+    setDeliveryInstructions(pi.deliveryInstructions || "");
+    setTermsAndConditions(pi.termsAndConditions || "");
+    setAuthorisedSignature(pi.authorisedSignature || "");
+    setDiscountAmount(parseFloat(String(pi.discountAmount ?? "0")) || 0);
     setGstTreatment(pi.gstTreatment || "standard_rated");
     setGstInclusive(isGstInclusive);
     setSalesPerson(pi.salesPerson || "");
+    setExpenseAccountId(pi.expenseAccountId ? String(pi.expenseAccountId) : "none");
     setExchangeRate(
       pi.exchangeRate != null && pi.exchangeRate !== ""
         ? Number(pi.exchangeRate).toFixed(6)
@@ -204,7 +255,21 @@ export default function VendorInvoiceEdit() {
     setVendorFromPo(false);
     if (vendor.currency) setCurrency(vendor.currency);
     setSelectedPoIds([]);
+    setItemsAutoFilled(false);
     setDropdownOpen(false);
+  };
+
+  const loadPoItems = (selectedPos: any[]) => {
+    const lines: VendorInvoiceLineItem[] = [];
+    for (const po of selectedPos) {
+      for (const it of po.items || []) {
+        lines.push(mapDocItemsToViLines([it])[0]);
+      }
+    }
+    if (lines.length > 0) {
+      setLineItems(lines);
+      setItemsAutoFilled(true);
+    }
   };
 
   const togglePo = (po: any) => {
@@ -215,9 +280,11 @@ export default function VendorInvoiceEdit() {
     setSelectedPoIds(newIds);
 
     const newSelectedPos = pos.filter((p: any) => newIds.includes(p.id));
-    const total = newSelectedPos.reduce((sum: number, p: any) => sum + parseFloat(p.remainingAmount ?? p.totalAmount ?? "0"), 0);
-    setAmount(newIds.length > 0 ? total.toFixed(2) : "");
-    setAmountAutoFilled(newIds.length > 0);
+    if (newIds.length > 0) loadPoItems(newSelectedPos);
+    else if (itemsAutoFilled) {
+      setLineItems([emptyViLineItem()]);
+      setItemsAutoFilled(false);
+    }
 
     if (!alreadySelected && !vendorName && po.vendorName) {
       setVendorSearch(po.vendorName);
@@ -242,31 +309,31 @@ export default function VendorInvoiceEdit() {
       .reduce((sum: number, p: any) => sum + parseFloat(p.remainingAmount ?? p.totalAmount ?? "0"), 0);
   }, [selectedPoIds, pos]);
 
-  const enteredAmount = parseFloat(amount) || 0;
+  const itemsSubtotal = calcViSubtotal(lineItems);
+  const enteredAmount = itemsSubtotal;
   const poOverrun = poTotal > 0 && enteredAmount > poTotal + 0.005;
   const overrunBy = poOverrun ? enteredAmount - poTotal : 0;
-  const poMismatch = poTotal > 0 && !poOverrun && enteredAmount > 0 && !amountAutoFilled &&
+  const poMismatch = poTotal > 0 && !poOverrun && enteredAmount > 0 && !itemsAutoFilled &&
     Math.abs(enteredAmount - poTotal) / poTotal > 0.05;
 
+  const isOverseas = gstTreatment === "zero_rated";
   const gstRateNum = gstTreatment === "standard_rated" ? 9 : 0;
-  const piAmountNum = parseFloat(amount) || 0;
-  let computedNetAmount: number, computedGstAmount: number, computedTotal: number;
-  if (gstRateNum === 0) {
-    computedNetAmount = piAmountNum; computedGstAmount = 0; computedTotal = piAmountNum;
-  } else if (gstInclusive) {
-    computedTotal    = piAmountNum;
-    computedGstAmount = +(piAmountNum * gstRateNum / (100 + gstRateNum)).toFixed(2);
-    computedNetAmount = +(piAmountNum - computedGstAmount).toFixed(2);
-  } else {
-    computedNetAmount = piAmountNum;
-    computedGstAmount = +(piAmountNum * gstRateNum / 100).toFixed(2);
-    computedTotal     = +(piAmountNum + computedGstAmount).toFixed(2);
-  }
+  const gstTotals = computeViGstTotals(itemsSubtotal, gstTreatment, gstInclusive, gstRateNum, discountAmount);
+  const { netAmount: computedNetAmount, gstAmount: computedGstAmount, totalAmount: computedTotal, taxableAmount } = gstTotals;
+
+  const handleOverseasChange = (v: boolean) => {
+    if (v) {
+      setGstTreatment("zero_rated");
+      setGstInclusive(false);
+    } else {
+      setGstTreatment("standard_rated");
+    }
+  };
 
   const handleSave = async () => {
     if (!piNumber.trim()) { toast({ title: "Error", description: "Vendor PI number is required", variant: "destructive" }); return; }
     if (!vendorName) { toast({ title: "Error", description: "Vendor name is required", variant: "destructive" }); return; }
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) { toast({ title: "Error", description: "Valid amount is required", variant: "destructive" }); return; }
+    if (itemsSubtotal <= 0) { toast({ title: "Error", description: "Add at least one line item with an amount", variant: "destructive" }); return; }
 
     setSaving(true);
     try {
@@ -282,6 +349,8 @@ export default function VendorInvoiceEdit() {
           poNumbers: poNumbers || null,
           currency,
           totalAmount: computedTotal,
+          items: normalizeViItemsForApi(lineItems),
+          subtotal: computedNetAmount,
           gstTreatment,
           gstRate: gstRateNum,
           gstAmount: computedGstAmount,
@@ -290,21 +359,35 @@ export default function VendorInvoiceEdit() {
           dueDate: dueDate || null,
           plannedPaymentDate: plannedPaymentDate || null,
           remindersEnabled,
-          reminderStartAfterDay: remindersEnabled ? reminderStartAfterDay : null,
+          reminderStartAfterDay: remindersEnabled ? (parseInt(reminderStartAfterDay, 10) || 15) : null,
           reminderEmails,
           exchangeRate: currency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1,
           notes: notes || null,
+          customerNote: customerNote || null,
+          deliveryInstructions: deliveryInstructions || null,
+          termsAndConditions: termsAndConditions || null,
+          authorisedSignature: authorisedSignature || null,
+          discountAmount,
           salesPerson: salesPerson || null,
+          expenseAccountId: (expenseAccountId && expenseAccountId !== "none") ? parseInt(expenseAccountId) : null,
         }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || "Failed to update");
       }
+      const updated = await res.json();
       toast({ title: "Vendor PI Updated" });
-      qc.invalidateQueries({ queryKey: ["vendor-invoices"] });
-      qc.invalidateQueries({ queryKey: ["vendor-invoice", id] });
-      setLocation(`/vendor-invoices/${id}`);
+      qc.setQueryData(["vendor-invoices"], (old: any) =>
+        Array.isArray(old)
+          ? old.map((d: any) => (d.id === updated.id ? { ...d, ...updated } : d))
+          : [updated],
+      );
+      qc.setQueryData(["vendor-invoice", String(id)], updated);
+      await qc.invalidateQueries({ queryKey: ["vendor-invoices"] });
+      await qc.invalidateQueries({ queryKey: ["vendor-invoice", id] });
+      setSavedDoc(updated);
+      setShowPreview(true);
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
@@ -344,15 +427,14 @@ export default function VendorInvoiceEdit() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Vendor PI / Invoice Number <span className="text-destructive">*</span></Label>
+              <Label>Vendor Invoice Number <span className="text-destructive">*</span></Label>
               <Input
-                placeholder="e.g. INV-2024-001"
                 value={piNumber}
                 onChange={e => setPiNumber(e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>PI Date</Label>
+              <Label>Vendor Invoice Date</Label>
               <Input type="date" value={piDate} onChange={e => setPiDate(e.target.value)} />
             </div>
           </div>
@@ -361,11 +443,11 @@ export default function VendorInvoiceEdit() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5"><Label>Payment Terms</Label><PaymentTermsSelect value={paymentTerms} onChange={setPaymentTerms} /></div>
               <div className="space-y-1.5"><Label>Due Date</Label><Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="bg-muted/40" /></div>
-              <div className="space-y-1.5"><Label>Planned Payment Date</Label><Input type="date" value={plannedPaymentDate} onChange={e => setPlannedPaymentDate(e.target.value)} /><p className="text-[11px] text-muted-foreground">Internal expected payment date.</p></div>
+              <div className="space-y-1.5"><Label>Planned Payment Date</Label><Input type="date" value={plannedPaymentDate} onChange={e => setPlannedPaymentDate(e.target.value)} /></div>
             </div>
             <div className="rounded-md border bg-background p-3 space-y-3">
               <div className="flex items-center justify-between"><div><Label>Payment reminders</Label><p className="text-xs text-muted-foreground">Daily reminders begin after the selected day.</p></div><Switch checked={remindersEnabled} onCheckedChange={setRemindersEnabled} /></div>
-              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Start after day</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(Number(e.target.value) || 0)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="name@example.com" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
+              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Start after day</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(e.target.value)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="name@example.com" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
             </div>
           </div>
 
@@ -554,19 +636,41 @@ export default function VendorInvoiceEdit() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>{gstInclusive && gstTreatment === "standard_rated" ? "PI Amount (incl. GST)" : "PI Amount (excl. GST)"} <span className="text-destructive">*</span></Label>
-              <Input
-                type="text" inputMode="decimal" min="0" step="0.01" placeholder="0.00"
-                value={amount}
-                onChange={e => { setAmount(e.target.value); setAmountAutoFilled(false); }}
-              />
-              {amountAutoFilled && !poOverrun && (
+              <Label>Currency</Label>
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map(c => (
+                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Sales Person</Label>
+              <Select value={salesPerson || undefined} onValueChange={setSalesPerson}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select Sales Person" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesPersons.map((sp) => (
+                    <SelectItem key={sp.id} value={sp.name}>
+                      {sp.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {selectedPoIds.length > 0 && (
+            <div className="space-y-1.5">
+              {itemsAutoFilled && !poOverrun && (
                 <p className="text-xs text-primary flex items-center gap-1">
-                  <Check className="h-3 w-3" /> Auto-calculated from selected PO(s) — edit if needed
+                  <Check className="h-3 w-3" /> Line items loaded from selected PO(s) — edit if needed
                 </p>
               )}
               {poOverrun && (
-                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 mt-1">
+                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2">
                   <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
                   <div className="text-xs text-amber-800">
                     <span className="font-semibold">Amount exceeds linked PO total</span>
@@ -581,7 +685,7 @@ export default function VendorInvoiceEdit() {
                 </div>
               )}
               {poMismatch && (
-                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 mt-1">
+                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2">
                   <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800">
                     Amount differs from PO remaining balance of{" "}
@@ -593,18 +697,7 @@ export default function VendorInvoiceEdit() {
                 </div>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label>Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map(c => (
-                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          )}
 
           {currency !== "SGD" && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
@@ -659,43 +752,120 @@ export default function VendorInvoiceEdit() {
               </div>
             )}
           </div>
-          {gstTreatment === "standard_rated" && piAmountNum > 0 && (
-            <div className="rounded-md bg-muted/40 border px-3 py-3 space-y-3 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Net Amount (excl. GST)</span>
-                <span className="font-mono">{currency} {computedNetAmount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-primary">
-                <span>GST (9%)</span>
-                <span className="font-mono">+ {currency} {computedGstAmount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-semibold border-t pt-3">
-                <span>Total Invoice Amount</span>
-                <span className="font-mono">{currency} {computedTotal.toFixed(2)}</span>
-              </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                Expense Account (GL)
+              </Label>
+              {(() => {
+                const selectedAccount = expenseAccounts.find((a: any) => String(a.id) === expenseAccountId);
+                return (
+                  <Popover modal={false} open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={expenseAccountPickerOpen}
+                        className={cn("w-full justify-between font-normal text-left h-9 px-3", !selectedAccount && "text-muted-foreground")}
+                      >
+                        <span className="truncate">
+                          {selectedAccount
+                            ? <><span className="font-mono text-xs mr-2 opacity-60">{selectedAccount.code}</span>{selectedAccount.name}</>
+                            : "— None (no journal entry) —"}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[420px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search expense accounts…" className="h-9" />
+                        <CommandList>
+                          <CommandEmpty>No account found.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="__none__"
+                              onSelect={() => { setExpenseAccountId("none"); setExpenseAccountPickerOpen(false); }}
+                              className="italic text-muted-foreground"
+                            >
+                              — None (no journal entry) —
+                              {expenseAccountId === "none" && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
+                            </CommandItem>
+                          </CommandGroup>
+                          <CommandGroup heading="Expense Accounts">
+                            {expenseAccounts.map((a: any) => (
+                              <CommandItem
+                                key={a.id}
+                                value={`${a.code} ${a.name}`}
+                                onSelect={() => { setExpenseAccountId(String(a.id)); setExpenseAccountPickerOpen(false); }}
+                                className="gap-2"
+                              >
+                                <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{a.code}</span>
+                                <span className="flex-1">{a.name}</span>
+                                {String(a.id) === expenseAccountId && <Check className="h-3.5 w-3.5 shrink-0" />}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                );
+              })()}
+              {expenseAccountId && expenseAccountId !== "none" && (
+                <p className="text-xs text-emerald-700 flex items-center gap-1">
+                  ✓ Will auto-post: DR {expenseAccounts.find((a: any) => String(a.id) === expenseAccountId)?.name} / CR Accounts Payable
+                </p>
+              )}
             </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label>Sales Person</Label>
-            <Select value={salesPerson || undefined} onValueChange={setSalesPerson}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select Sales Person" />
-              </SelectTrigger>
-              <SelectContent>
-                {salesPersons.map((sp) => (
-                  <SelectItem key={sp.id} value={sp.name}>
-                    {sp.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Internal notes..."
+              />
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Notes (internal)</Label>
-            <Textarea placeholder="Any notes..." value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
-          </div>
+        </CardContent>
+      </Card>
+
+      <VendorInvoiceLineItems
+        items={lineItems}
+        onChange={(items) => { setLineItems(items); setItemsAutoFilled(false); }}
+        currency={currency}
+        gstTreatment={gstTreatment}
+        gstRate={gstRateNum}
+        isOverseas={isOverseas}
+        onOverseasChange={handleOverseasChange}
+        discountAmount={discountAmount}
+        onDiscountAmountChange={setDiscountAmount}
+        totals={{
+          subtotal: itemsSubtotal,
+          discountAmount,
+          taxableAmount,
+          netAmount: computedNetAmount,
+          gstAmount: computedGstAmount,
+          totalAmount: computedTotal,
+        }}
+      />
+
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Additional Information</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VendorInvoiceAdditionalInfo
+            customerNote={customerNote}
+            onCustomerNoteChange={setCustomerNote}
+            deliveryInstructions={deliveryInstructions}
+            onDeliveryInstructionsChange={setDeliveryInstructions}
+            termsAndConditions={termsAndConditions}
+            onTermsAndConditionsChange={setTermsAndConditions}
+            authorisedSignature={authorisedSignature}
+            onAuthorisedSignatureChange={setAuthorisedSignature}
+          />
         </CardContent>
       </Card>
 
@@ -704,9 +874,10 @@ export default function VendorInvoiceEdit() {
         <Button
           onClick={handleSave}
           disabled={saving}
-          className="bg-[#2563EB] hover:bg-[#1d4ed8] text-white"
+          className="gap-2 bg-[#2563EB] hover:bg-[#1d4ed8] text-white"
         >
-          {saving ? "Saving..." : "Save Changes"}
+          <Eye className="h-4 w-4" />
+          {saving ? "Saving..." : "Save & Preview"}
         </Button>
       </div>
 
@@ -717,6 +888,34 @@ export default function VendorInvoiceEdit() {
           handleSelectVendor(vendor);
         }}
       />
+
+      {savedDoc && showPreview && (
+        <PdfPreviewModal
+          open={showPreview}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowPreview(false);
+              setLocation("/vendor-invoices");
+            }
+          }}
+          title={savedDoc.piNumber}
+          generatePdf={(opts) => generateVendorInvoice_PDF(savedDoc, selectedCompany, opts)}
+          pdfFilename={`${savedDoc.piNumber}.pdf`}
+          defaultEmailTo=""
+          defaultEmailSubject={`Vendor Invoice ${savedDoc.piNumber}`}
+          defaultEmailBody={`Dear Sir/Madam,\n\nPlease find attached Vendor Invoice ${savedDoc.piNumber}.\n\nThank you.`}
+          docInfo={{
+            docType: "Vendor Invoice",
+            docNumber: savedDoc.piNumber,
+            customerName: savedDoc.vendorName || "",
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((savedDoc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: savedDoc.currency || "SGD",
+            totalAmount: Number(savedDoc.totalAmount) || 0,
+          }}
+          onEdit={() => setLocation(`/vendor-invoices/${savedDoc.id}/edit`)}
+        />
+      )}
     </div>
   );
 }

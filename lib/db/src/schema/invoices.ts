@@ -27,7 +27,7 @@ export const invoicesTable = pgTable("invoices", {
   soId: integer("so_id"),
   soNumber: text("so_number"),
   status: text("status").notNull().default("draft"),
-  /** True after the invoice has been edited and saved at least once. */
+  /** True after a confirmed invoice is edited and saved again (not on first draft→confirmed save). */
   isModified: boolean("is_modified").default(false).notNull(),
   emailSentTo: text("email_sent_to"),
   voidReason: text("void_reason"),

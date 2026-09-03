@@ -5,6 +5,24 @@ import { adjustItemStockInWarehouse, deleteStockItem, resolveWarehouseId } from 
 
 const router: IRouter = Router();
 
+function normalizeAlternateFields(body: {
+  alternateUom?: unknown;
+  alternateQty?: unknown;
+  mainQty?: unknown;
+}) {
+  const alternateUom =
+    typeof body.alternateUom === "string" && body.alternateUom.trim()
+      ? body.alternateUom.trim()
+      : null;
+  const alternateQty = alternateUom
+    ? String(Math.max(0, Number(body.alternateQty) || 0))
+    : "0";
+  const mainQty = alternateUom
+    ? String(Math.max(0, Number(body.mainQty) || 0))
+    : "0";
+  return { alternateUom, alternateQty, mainQty };
+}
+
 router.get("/stock-items", async (req, res): Promise<void> => {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
   const companyId = req.session.companyId;
@@ -42,12 +60,15 @@ router.get("/stock-items", async (req, res): Promise<void> => {
   const totalByItem = new Map(totals.map((row) => [row.stockItemId, String(row.total)]));
 
   res.json(items.map((item) => {
-    if (item.type === "service") return item;
-    if (!totalByItem.has(item.id)) {
-      // No warehouse row yet — keep legacy stockQty for first-time pickers.
-      return item;
+    if (item.type === "service") {
+      return { ...item, stockQty: "0" };
     }
-    return { ...item, stockQty: totalByItem.get(item.id)! };
+    if (totalByItem.has(item.id)) {
+      return { ...item, stockQty: totalByItem.get(item.id)! };
+    }
+    // No warehouse row yet — keep legacy catalogue qty so Avail. Qty still shows.
+    const legacy = item.stockQty != null && item.stockQty !== "" ? String(item.stockQty) : "0";
+    return { ...item, stockQty: legacy };
   }));
 });
 
@@ -56,7 +77,7 @@ router.post("/stock-items", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
-  const { code, name, description, uom, type, unitPrice, stockQty, warehouseId, batchNo } = req.body;
+  const { code, name, description, uom, type, unitPrice, mrpPrice, stockQty, warehouseId, batchNo, isActive, alternateUom, alternateQty, mainQty } = req.body;
   if (!name) { res.status(400).json({ error: "name is required" }); return; }
 
   const resolvedCode = typeof code === "string" ? code.trim() : "";
@@ -64,19 +85,36 @@ router.post("/stock-items", async (req, res): Promise<void> => {
 
   const isProduct = type !== "service";
   const openingQty = isProduct ? Math.max(0, Number(stockQty) || 0) : 0;
+  const alt = normalizeAlternateFields({ alternateUom, alternateQty, mainQty });
 
-  const [item] = await db.insert(stockItemsTable).values({
-    companyId,
-    code: resolvedCode,
-    name,
-    description: description || null,
-    uom: uom || "Pcs",
-    type: isProduct ? "product" : "service",
-    unitPrice: unitPrice != null ? String(unitPrice) : "0",
-    stockQty: "0",
-    batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
-    isActive: true,
-  }).returning();
+  let item;
+  try {
+    [item] = await db.insert(stockItemsTable).values({
+      companyId,
+      code: resolvedCode,
+      name,
+      description: description || null,
+      uom: uom || "Pcs",
+      type: isProduct ? "product" : "service",
+      unitPrice: unitPrice != null ? String(unitPrice) : "0",
+      mrpPrice: mrpPrice != null ? String(mrpPrice) : "0",
+      stockQty: "0",
+      batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
+      alternateUom: alt.alternateUom,
+      alternateQty: alt.alternateQty,
+      mainQty: alt.mainQty,
+      isActive: isActive === undefined ? true : Boolean(isActive),
+    }).returning();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create stock item";
+    const isDup = /unique|duplicate/i.test(message);
+    res.status(isDup ? 409 : 500).json({
+      error: isDup
+        ? `Item code "${resolvedCode}" already exists. Use a different code.`
+        : message,
+    });
+    return;
+  }
 
   // Opening stock is booked as a warehouse movement so warehouse_stock, the item
   // total and the stock reports all start out in agreement.
@@ -118,7 +156,7 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const { code, name, description, uom, type, unitPrice, stockQty, isActive, warehouseId, batchNo } = req.body;
+  const { code, name, description, uom, type, unitPrice, mrpPrice, stockQty, isActive, warehouseId, batchNo, alternateUom, alternateQty, mainQty } = req.body;
   const update: Record<string, any> = {};
   if (code !== undefined) update.code = code;
   if (name !== undefined) update.name = name;
@@ -126,8 +164,25 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   if (uom !== undefined) update.uom = uom;
   if (type !== undefined) update.type = type === "service" ? "service" : "product";
   if (unitPrice !== undefined) update.unitPrice = String(unitPrice);
+  if (mrpPrice !== undefined) update.mrpPrice = String(mrpPrice);
   if (isActive !== undefined) update.isActive = Boolean(isActive);
   if (batchNo !== undefined) update.batchNo = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null;
+  if (alternateUom !== undefined || alternateQty !== undefined || mainQty !== undefined) {
+    const alt = normalizeAlternateFields({
+      alternateUom: alternateUom !== undefined ? alternateUom : undefined,
+      alternateQty,
+      mainQty,
+    });
+    // When only qty fields are sent without clearing uom, keep existing uom from body if provided.
+    if (alternateUom !== undefined) {
+      update.alternateUom = alt.alternateUom;
+      update.alternateQty = alt.alternateQty;
+      update.mainQty = alt.mainQty;
+    } else {
+      update.alternateQty = String(Math.max(0, Number(alternateQty) || 0));
+      update.mainQty = String(Math.max(0, Number(mainQty) || 0));
+    }
+  }
 
   const [updated] = Object.keys(update).length > 0
     ? await db.update(stockItemsTable).set(update).where(eq(stockItemsTable.id, id)).returning()

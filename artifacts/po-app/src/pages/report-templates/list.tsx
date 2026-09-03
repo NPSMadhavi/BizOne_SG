@@ -169,10 +169,7 @@ export default function ReportTemplateList() {
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Report Templates</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Company data comes from Settings → Companies. Templates store layout only.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Report Templates</h1>
         </div>
         {canCreate && (
           <Button className="gap-2" onClick={() => setCreateOpen(true)}>

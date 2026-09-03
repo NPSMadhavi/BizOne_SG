@@ -334,7 +334,7 @@ export default function PayrollPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
-      toast({ title: "Payroll configuration deleted" });
+      toast({ title: "Payroll deleted" });
     },
   });
 
@@ -346,7 +346,7 @@ export default function PayrollPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
-      toast({ title: "Payroll configuration and related records deleted" });
+      toast({ title: "Payroll and related records deleted" });
     },
     onError: (error) => {
       toast({
@@ -497,7 +497,7 @@ export default function PayrollPage() {
     if (configsToProcess.length === 0) {
       toast({
         title: "No eligible employees",
-        description: "Select at least one active payroll configuration to process.",
+        description: "Select at least one active payroll to process.",
         variant: "destructive",
       });
       return;
@@ -756,7 +756,7 @@ export default function PayrollPage() {
     if (!configs.length) {
       toast({
         title: "Nothing to export",
-        description: "There are no payroll configurations to export.",
+        description: "There is no payroll data to export.",
         variant: "destructive",
       });
       return;
@@ -804,11 +804,11 @@ export default function PayrollPage() {
     <>
       <ManagementPageHeader
         title="Payroll Management"
-        description="Manage employee payroll configurations and process monthly payroll"
+        description="Manage employee payroll and process monthly payroll"
         action={
           <div className="flex shrink-0 flex-nowrap items-center gap-2">
             <Button className={payrollPrimaryButtonClass} onClick={() => openConfigForm()}>
-              <Plus className="mr-2 h-4 w-4" /> Create Payroll Config
+              <Plus className="mr-2 h-4 w-4" /> Create Payroll
             </Button>
             <Button className={payrollPrimaryButtonClass} onClick={() => setLocation("/payroll/process")}>
               <Calculator className="mr-2 h-4 w-4" /> Process Payroll
@@ -830,7 +830,7 @@ export default function PayrollPage() {
           <div className="text-2xl font-bold text-[#111827]">
             {summaryLoading ? "—" : summary?.totalEmployees ?? 0}
           </div>
-          <p className="mt-1 text-xs text-[#6B7280]">Active payroll configurations</p>
+          <p className="mt-1 text-xs text-[#6B7280]">Employees on active payroll</p>
         </button>
         <button
           type="button"
@@ -881,7 +881,7 @@ export default function PayrollPage() {
       </div>
 
       <ManagementToolbarRow className="justify-between">
-        <h3 className="text-lg font-semibold text-[#111827]">Payroll Configurations</h3>
+        <h3 className="text-lg font-semibold text-[#111827]">Employee Payroll</h3>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -901,11 +901,11 @@ export default function PayrollPage() {
           <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
         ) : configs.length === 0 ? (
           <ManagementEmptyState
-            title="No payroll configurations"
-            description="Set up payroll configurations for your employees to start processing payroll."
+            title="No payroll set up"
+            description="Set up payroll for your employees to start processing payroll."
             action={
               <Button className={payrollPrimaryButtonClass} onClick={() => openConfigForm()}>
-                <Plus className="mr-2 h-4 w-4" /> Add First Configuration
+                <Plus className="mr-2 h-4 w-4" /> Add First Payroll
               </Button>
             }
           />
@@ -1005,7 +1005,7 @@ export default function PayrollPage() {
                         <div className="flex gap-1">
                           <button
                             type="button"
-                            title="Edit configuration"
+                            title="Edit payroll"
                             onClick={() => openConfigForm(config)}
                             className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
                           >
@@ -1013,7 +1013,7 @@ export default function PayrollPage() {
                           </button>
                           <button
                             type="button"
-                            title="View configuration"
+                            title="View payroll"
                             onClick={() => openConfigDetails(config)}
                             className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
                           >
@@ -1021,7 +1021,7 @@ export default function PayrollPage() {
                           </button>
                           <button
                             type="button"
-                            title="Delete configuration"
+                            title="Delete payroll"
                             disabled={deleteMutation.isPending}
                             onClick={() => deleteMutation.mutate(config.id)}
                             className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
@@ -1042,7 +1042,7 @@ export default function PayrollPage() {
       <EntityViewDialog
         open={detailOpen}
         onOpenChange={(open) => !open && closeDetails()}
-        title="Payroll Configuration Details"
+        title="Payroll Details"
         onClose={closeDetails}
         maxWidth="max-w-2xl"
       >
@@ -1262,7 +1262,7 @@ export default function PayrollPage() {
           <SheetHeader className="border-b px-6 py-4">
             <SheetTitle>
               {openDetail === "employees"
-                ? "Employees with Payroll Configurations"
+                ? "Employees with Payroll"
                 : openDetail === "gross"
                   ? "Payroll Records - Gross Pay"
                   : openDetail === "net"
@@ -1580,11 +1580,11 @@ export default function PayrollPage() {
       <Dialog open={showForceDeleteDialog} onOpenChange={setShowForceDeleteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cannot Delete Payroll Configuration</DialogTitle>
+            <DialogTitle>Cannot Delete Payroll</DialogTitle>
           </DialogHeader>
           <div className="py-2 text-sm text-[#6B7280]">
-            This payroll configuration has related payroll records. Do you want to delete all related
-            records and the configuration?
+            This payroll has related payroll records. Do you want to delete all related
+            records and the payroll setup?
           </div>
           <DialogFooter>
             <Button

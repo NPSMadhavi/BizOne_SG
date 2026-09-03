@@ -295,11 +295,11 @@ export default function CreditNoteEdit() {
       <div className="flex items-center justify-between pb-4 border-b border-gray-200">
         <div className="flex items-center gap-3">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation(`/credit-notes/${id}`)}
-            className="h-9 w-9 shrink-0"
+ type="button"
+ variant="ghost"
+ size="icon"
+ onClick={() => setLocation(`/credit-notes/${id}`)}
+ className="h-9 w-9 shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -355,25 +355,22 @@ export default function CreditNoteEdit() {
                       <FormLabel>Reference Invoice No.</FormLabel>
                       <FormControl>
                         <InvoiceRefPicker
-                          value={field.value || ""}
-                          loading={loadingInvoice}
-                          onChange={(v) => {
+ value={field.value || ""}
+ loading={loadingInvoice}
+ onChange={(v) => {
                             field.onChange(v);
                             if (!v) lastLoadedRef.current = "";
                           }}
-                          onSelectInvoice={(inv) => {
+ onSelectInvoice={(inv) => {
                             if (Array.isArray(inv.items) && inv.items.length > 0) {
                               applyInvoiceToForm(inv);
                             } else {
                               void loadFromInvoice(inv.invNumber);
                             }
                           }}
-                          onCommitTyped={(v) => void loadFromInvoice(v)}
+ onCommitTyped={(v) => void loadFromInvoice(v)}
                         />
                       </FormControl>
-                      <p className="text-[11px] text-muted-foreground">
-                        Type invoice no. or pick from list — stock items fill automatically
-                      </p>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
@@ -383,7 +380,7 @@ export default function CreditNoteEdit() {
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Reason for Return</FormLabel>
-                    <FormControl><Textarea {...field} rows={2} placeholder="Returned goods, billing error…" /></FormControl>
+                    <FormControl><Textarea {...field} rows={2}  /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
@@ -418,15 +415,15 @@ export default function CreditNoteEdit() {
               <CardTitle className="text-sm">Line Items</CardTitle>
               <div className="flex gap-2">
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8"
-                  onClick={() => append({ type: "section", sectionLabel: "Section Header", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
+ onClick={() => append({ type: "section", sectionLabel: "Section Header", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
                   <Layers className="h-3.5 w-3.5" />Add Section
                 </Button>
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8"
-                  onClick={() => append({ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
+ onClick={() => append({ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
                   <Plus className="h-3.5 w-3.5" />Add Item
                 </Button>
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8 text-primary border-primary/30 hover:bg-primary/5"
-                  onClick={() => setImportExcelOpen(true)}>
+ onClick={() => setImportExcelOpen(true)}>
                   <FileInput className="h-3.5 w-3.5" />Import from Excel / PDF
                 </Button>
               </div>
@@ -454,26 +451,26 @@ export default function CreditNoteEdit() {
                           <td className="px-3 py-2 text-gray-400 text-xs">{isSection ? "" : idx + 1}</td>
                           {isSection ? (
                             <td colSpan={6} className="px-3 py-2">
-                              <Input {...form.register(`items.${idx}.sectionLabel`)} placeholder="Section heading…" className="font-semibold text-gray-700 border-dashed" />
+                              <Input {...form.register(`items.${idx}.sectionLabel`)} className="font-semibold text-gray-700 border-dashed" />
                             </td>
                           ) : (
                             <>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-1">
-                                  <Input {...form.register(`items.${idx}.partNumber`)} placeholder="Part #" className="text-xs h-8" />
+                                  <Input {...form.register(`items.${idx}.partNumber`)} className="text-xs h-8" />
                                   <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-                                    onClick={() => setStockPickerIndex(idx)}
-                                    title="Pick from stock"
+ type="button"
+ variant="ghost"
+ size="icon"
+ className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+ onClick={() => setStockPickerIndex(idx)}
+ title="Pick from stock"
                                   >
                                     <Package className="h-3.5 w-3.5" />
                                   </Button>
                                 </div>
                               </td>
-                              <td className="px-3 py-2"><Input {...form.register(`items.${idx}.description`)} placeholder="Description" className="text-xs h-8" /></td>
+                              <td className="px-3 py-2"><Input {...form.register(`items.${idx}.description`)} className="text-xs h-8" /></td>
                               <td className="px-3 py-2"><Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" /></td>
                               <td className="px-3 py-2"><Input {...form.register(`items.${idx}.unitPrice`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-28 ml-auto" /></td>
                               <td className="px-3 py-2"><Input {...form.register(`items.${idx}.discount`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} max={100} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" /></td>
@@ -486,12 +483,12 @@ export default function CreditNoteEdit() {
                             <div className="flex items-center justify-end gap-0.5">
                               {!isSection && (
                                 <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-gray-400 hover:text-primary"
-                                  onClick={() => setStockPickerIndex(idx)}
-                                  title="Edit item"
+ type="button"
+ variant="ghost"
+ size="sm"
+ className="h-7 w-7 p-0 text-gray-400 hover:text-primary"
+ onClick={() => setStockPickerIndex(idx)}
+ title="Edit item"
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -534,7 +531,7 @@ export default function CreditNoteEdit() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -556,19 +553,19 @@ export default function CreditNoteEdit() {
       </Form>
 
       <ImportItemsDialog
-        open={importExcelOpen}
-        onClose={() => setImportExcelOpen(false)}
-        onImport={(imported, replace) => {
+ open={importExcelOpen}
+ onClose={() => setImportExcelOpen(false)}
+ onImport={(imported, replace) => {
           const newItems = imported.map(it => ({ type: "item" as const, sectionLabel: "", partNumber: it.partNumber, description: it.description, qty: it.qty, unitPrice: it.unitPrice, discount: 0, amount: 0 }));
           if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
         }}
       />
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        mode="receive"
-        onSelect={({ item, qty }: StockItemSelection) => {
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ mode="receive"
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, item.name);
@@ -580,15 +577,15 @@ export default function CreditNoteEdit() {
       />
       {showPreview && (savedDoc || doc) && (
         <PdfPreviewModal
-          open={showPreview}
-          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/credit-notes`); } }}
-          title={(savedDoc ?? doc).cnNumber}
-          generatePdf={(opts) => generateCreditNote_PDF(savedDoc ?? doc, selectedCompany, opts)}
-          pdfFilename={`${(savedDoc ?? doc).cnNumber}.pdf`}
-          defaultEmailTo={(savedDoc ?? doc as any).contactEmail || ""}
-          defaultEmailSubject={`Credit Note ${(savedDoc ?? doc).cnNumber}`}
-          defaultEmailBody={`Dear ${(savedDoc ?? doc as any).contactPerson || "Sir/Madam"},\n\nPlease find attached Credit Note ${(savedDoc ?? doc).cnNumber}.\n\nThank you.`}
-          docInfo={{
+ open={showPreview}
+ onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/credit-notes`); } }}
+ title={(savedDoc ?? doc).cnNumber}
+ generatePdf={(opts) => generateCreditNote_PDF(savedDoc ?? doc, selectedCompany, opts)}
+ pdfFilename={`${(savedDoc ?? doc).cnNumber}.pdf`}
+ defaultEmailTo={(savedDoc ?? doc as any).contactEmail || ""}
+ defaultEmailSubject={`Credit Note ${(savedDoc ?? doc).cnNumber}`}
+ defaultEmailBody={`Dear ${(savedDoc ?? doc as any).contactPerson || "Sir/Madam"},\n\nPlease find attached Credit Note ${(savedDoc ?? doc).cnNumber}.\n\nThank you.`}
+ docInfo={{
             docType: "Credit Note",
             docNumber: (savedDoc ?? doc).cnNumber,
             customerName: (savedDoc ?? doc as any).customerName || (savedDoc ?? doc as any).contactPerson || "",
@@ -597,7 +594,7 @@ export default function CreditNoteEdit() {
             currency: (savedDoc ?? doc as any).currency || "SGD",
             totalAmount: Number((savedDoc ?? doc as any).totalAmount) || 0,
           }}
-          onEdit={() => setShowPreview(false)}
+ onEdit={() => setShowPreview(false)}
         />
       )}
     </div>

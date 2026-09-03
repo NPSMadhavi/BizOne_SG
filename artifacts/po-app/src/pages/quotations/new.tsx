@@ -35,6 +35,8 @@ import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -68,6 +70,7 @@ const schema = z.object({
   issueDate: z.string().optional(),
   validUntil: z.string().optional(),
   deliveryDate: z.string().optional(),
+  salesPerson: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   termsAndConditions: z.string().optional(),
@@ -86,6 +89,7 @@ export default function QuotationNew() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { selectedCompany } = useAuth();
+  const { salesPersons } = useSalesPersons();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
@@ -106,7 +110,7 @@ export default function QuotationNew() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: getToday(), validUntil: "", deliveryDate: "", paymentTerms: "30 Days Net", notes: "",
+      issueDate: getToday(), validUntil: "", deliveryDate: "", salesPerson: "", paymentTerms: "30 Days Net", notes: "",
       termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD",
       tax: 9,
@@ -187,6 +191,7 @@ export default function QuotationNew() {
       issueDate: getToday(),
       validUntil: prefill.validUntil || "",
       deliveryDate: prefill.deliveryDate || "",
+      salesPerson: prefill.salesPerson || "",
       tax: prefill.tax ?? settings?.gstRate ?? 9,
       discountAmount: prefill.discountAmount ?? 0,
       isPrivate: false,
@@ -368,25 +373,24 @@ export default function QuotationNew() {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation("/quotations")}
-            className="h-9 w-9 shrink-0"
+ type="button"
+ variant="ghost"
+ size="icon"
+ onClick={() => setLocation("/quotations")}
+ className="h-9 w-9 shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Quotation</h1>
-            <p className="text-muted-foreground mt-1">Create a new customer quotation.</p>
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <Button
-            type="button"
-            variant="outline"
-            className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
-            onClick={() => setPoUploadOpen(true)}
+ type="button"
+ variant="outline"
+ className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
+ onClick={() => setPoUploadOpen(true)}
           >
             <Upload className="h-4 w-4" />
             Import Customer PO
@@ -410,10 +414,10 @@ export default function QuotationNew() {
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map(c => (
                   <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => form.setValue("currency", c.code)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+ key={c.code}
+ type="button"
+ onClick={() => form.setValue("currency", c.code)}
+ className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
                     {c.label}
                   </button>
@@ -427,8 +431,8 @@ export default function QuotationNew() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
                 <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
+ type="customer"
+ onSelect={(c) => {
                     form.setValue("customerName", c.name);
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
@@ -453,11 +457,10 @@ export default function QuotationNew() {
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <ContactAutocomplete
-                        type="customer"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Acme Corp"
-                        onSelect={(c) => {
+ type="customer"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -469,15 +472,15 @@ export default function QuotationNew() {
                 )} />
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Address</FormLabel>
-                    <FormControl><Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
                   <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
                   <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -498,27 +501,46 @@ export default function QuotationNew() {
                       <FormLabel>Quotation Valid Upto</FormLabel>
                       <FormControl>
                         <Input
-                          type="date"
-                          value={field.value || ""}
-                          min={form.watch("issueDate") || undefined}
-                          onChange={field.onChange}
+ type="date"
+ value={field.value || ""}
+ min={form.watch("issueDate") || undefined}
+ onChange={field.onChange}
                         />
                       </FormControl>
-                      <p className="text-[11px] text-muted-foreground">
-                        From the next day after this date, quotation becomes Cancelled.
-                      </p>
                       <FormMessage />
                     </FormItem>
                   )} />
                 </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
-                  <FormItem><FormLabel>Payment Terms</FormLabel>
-                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                  <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                    <FormItem><FormLabel>Payment Terms</FormLabel>
+                      <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={form.control} name="salesPerson" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sales Person</FormLabel>
+                      <FormControl>
+                        <Select value={field.value || undefined} onValueChange={field.onChange}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select Sales Person" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {salesPersons.map((sp) => (
+                              <SelectItem key={sp.id} value={sp.name}>
+                                {sp.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -557,8 +579,8 @@ export default function QuotationNew() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
-                      checked={isOverseas}
-                      onCheckedChange={(v) => {
+ checked={isOverseas}
+ onCheckedChange={(v) => {
                         setIsOverseas(v);
                         form.setValue("tax", v ? 0 : (settings?.gstRate ?? 0));
                       }}
@@ -622,7 +644,7 @@ export default function QuotationNew() {
                                   <div className="flex-1 min-w-0">
                                     <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
                                       <FormItem><FormControl>
-                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                        <RichTextEditor value={f.value} onChange={f.onChange}  />
                                       </FormControl></FormItem>
                                     )} />
                                   </div>
@@ -658,7 +680,7 @@ export default function QuotationNew() {
                               <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                                 <FormItem><FormControl>
                                   <div className="flex items-center gap-1">
-                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"  {...field} />
                                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                       <Package className="h-3.5 w-3.5" />
                                     </Button>
@@ -669,7 +691,7 @@ export default function QuotationNew() {
                             <td className="px-4 py-2 align-top">
                               <div className="flex gap-2 items-start">
                                 <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                                  <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                                  <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                                 )} />
                                 <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                                   <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
@@ -747,12 +769,12 @@ export default function QuotationNew() {
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
                         <Input
-                          inputMode="decimal"
-                          maxLength={3}
-                          placeholder="0"
-                          className="h-7 w-14 text-sm text-center pr-5"
-                          value={discountPct || ""}
-                          onChange={e => {
+ inputMode="decimal"
+ maxLength={3}
+ placeholder="0"
+ className="h-7 w-14 text-sm text-center pr-5"
+ value={discountPct || ""}
+ onChange={e => {
                             const raw = e.target.value.replace(/[^0-9.]/g, "");
                             const n = Math.min(parseFloat(raw) || 0, 100);
                             setDiscountPct(n);
@@ -764,8 +786,8 @@ export default function QuotationNew() {
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
                           <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
-                            value={field.value || ""}
-                            onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+ value={field.value || ""}
+ onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />
                         </FormControl></FormItem>
                       )} />
@@ -785,7 +807,7 @@ export default function QuotationNew() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -796,20 +818,20 @@ export default function QuotationNew() {
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/quotations")}>Cancel</Button>
             <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button
-              type="button"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
             >
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save & Preview"}
@@ -819,9 +841,9 @@ export default function QuotationNew() {
       </Form>
 
       <ImportItemsDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImport={(imported, replace) => {
+ open={importOpen}
+ onClose={() => setImportOpen(false)}
+ onImport={(imported, replace) => {
           const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
           const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
           if (replace) {
@@ -833,16 +855,16 @@ export default function QuotationNew() {
       />
 
       <CustomerPoUploadDialog
-        open={poUploadOpen}
-        onOpenChange={setPoUploadOpen}
-        onApply={handlePoExtracted}
+ open={poUploadOpen}
+ onOpenChange={setPoUploadOpen}
+ onApply={handlePoExtracted}
       />
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
-        onSelect={({ item, qty }: StockItemSelection) => {
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
@@ -854,24 +876,24 @@ export default function QuotationNew() {
       />
 
       <ImportFromQuotationDialog
-        open={importQtOpen}
-        onClose={() => setImportQtOpen(false)}
-        currentItems={form.getValues("items")}
-        onImport={(items) => { for (const item of items) append(item); }}
+ open={importQtOpen}
+ onClose={() => setImportQtOpen(false)}
+ currentItems={form.getValues("items")}
+ onImport={(items) => { for (const item of items) append(item); }}
       />
 
       <CurrencyMismatchDialog
-        open={currencyDialogOpen}
-        entityName={directoryCurrencyName}
-        entityType="customer"
-        defaultCurrency={directoryCurrency}
-        selectedCurrency={form.getValues("currency")}
-        onContinue={async () => {
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="customer"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
           setPendingConfirmValues(null);
         }}
-        onRevert={async () => {
+ onRevert={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) {
             const updated = { ...pendingConfirmValues, currency: directoryCurrency };
@@ -884,18 +906,18 @@ export default function QuotationNew() {
 
       {savedDoc && (
         <PdfPreviewModal
-          open={previewOpen}
-          onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
             setPreviewOpen(open);
             if (!open) setLocation(`/quotations`);
           }}
-          title={`Quotation ${savedDoc.qtNumber}`}
-          generatePdf={(opts) => generateQuotation_PDF(savedDoc, selectedCompany, settings as any, opts)}
-          pdfFilename={`${savedDoc.qtNumber}.pdf`}
-          defaultEmailTo={savedDoc.customerContactEmail || ""}
-          defaultEmailSubject={`Quotation ${savedDoc.qtNumber}`}
-          defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached our Quotation ${savedDoc.qtNumber} for your consideration.\n\nDo not hesitate to contact us if you have any questions.\n\nThank you.`}
-          docInfo={{
+ title={`Quotation ${savedDoc.qtNumber}`}
+ generatePdf={(opts) => generateQuotation_PDF(savedDoc, selectedCompany, settings as any, opts)}
+ pdfFilename={`${savedDoc.qtNumber}.pdf`}
+ defaultEmailTo={savedDoc.customerContactEmail || ""}
+ defaultEmailSubject={`Quotation ${savedDoc.qtNumber}`}
+ defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached our Quotation ${savedDoc.qtNumber} for your consideration.\n\nDo not hesitate to contact us if you have any questions.\n\nThank you.`}
+ docInfo={{
             docType: "Quotation",
             docNumber: savedDoc.qtNumber,
             customerName: savedDoc.customerName,
@@ -904,10 +926,10 @@ export default function QuotationNew() {
             currency: (savedDoc as any).currency || "SGD",
             totalAmount: Number(savedDoc.totalAmount) || 0,
           }}
-          onEmailSent={async (recipients) => {
+ onEmailSent={async (recipients) => {
             await fetch(`/api/quotations/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           }}
-          onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${savedDoc.id}/edit`); }}
+ onEdit={() => { setPreviewOpen(false); setLocation(`/quotations/${savedDoc.id}/edit`); }}
         />
       )}
     </div>

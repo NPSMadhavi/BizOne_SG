@@ -13,38 +13,15 @@ export type SalesPerson = {
 
 const STORAGE_KEY = "bizone_sales_persons_v1";
 
-const defaultSalesPersons: SalesPerson[] = [
-  {
-    id: "sp-1",
-    name: "John Tan",
-    employmentCode: "EMP-1001",
-    department: "Sales & Marketing",
-    phone: "+65 9123 4567",
-    country: "Singapore",
-    address: "10 Anson Road, International Plaza, Singapore 079903",
-    createdAt: "2026-04-01",
-  },
-  {
-    id: "sp-2",
-    name: "Sarah Lim",
-    employmentCode: "EMP-1002",
-    department: "Corporate Sales",
-    phone: "+65 9876 5432",
-    country: "Singapore",
-    address: "20 Orchard Road, Singapore 238888",
-    createdAt: "2026-04-01",
-  },
-];
-
 export function getSalesPersons(): SalesPerson[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
-    if (data) {
+    if (data !== null) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch {}
-  return defaultSalesPersons;
+  return [];
 }
 
 export function saveSalesPerson(person: Omit<SalesPerson, "id" | "createdAt"> & { id?: string }): SalesPerson[] {

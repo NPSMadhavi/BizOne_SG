@@ -33,7 +33,7 @@ interface Grn {
 
 function getStatusBadge(status: string) {
   switch (status) {
-    case "complete": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Complete</Badge>;
+    case "complete": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Confirmed</Badge>;
     case "partial":  return <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Partial</Badge>;
     case "draft":    return <Badge variant="secondary">Draft</Badge>;
     default:         return <Badge variant="outline">{status}</Badge>;
@@ -97,7 +97,6 @@ export default function GrnList() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Goods Receipt Notes</h1>
-          <p className="text-muted-foreground mt-1">Track received goods against Purchase Orders.</p>
         </div>
         <Button
           onClick={() => setLocation("/grn/new")}

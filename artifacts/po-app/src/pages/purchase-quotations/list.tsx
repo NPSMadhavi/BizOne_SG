@@ -127,7 +127,6 @@ export default function PurchaseQuotationList() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Purchase Quotations</h1>
-          <p className="text-muted-foreground mt-1">Manage and track all purchase quotations.</p>
         </div>
         <Link href="/purchase-quotations/new">
           <Button className="gap-2"><Plus className="h-4 w-4" />Create Purchase Quotation</Button>

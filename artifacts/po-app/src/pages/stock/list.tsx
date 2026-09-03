@@ -10,7 +10,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -115,23 +115,18 @@ export default function StockList() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">
-            {filtered.length} item{filtered.length !== 1 ? "s" : ""}
-          </CardTitle>
-        </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-y bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="w-32 px-4 py-3 text-left font-medium">Code</th>
-                <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="w-28 px-4 py-3 text-left font-medium">Batch No</th>
+                <th className="min-w-[180px] px-4 py-3 pr-12 text-left font-medium">Name</th>
+                <th className="w-36 px-4 py-3 pl-8 text-left font-medium">Batch No</th>
                 <th className="w-24 px-4 py-3 text-left font-medium">Type</th>
                 <th className="w-32 px-4 py-3 text-left font-medium">Sales Person</th>
                 <th className="w-16 px-4 py-3 text-left font-medium">UOM</th>
                 <th className="w-28 px-4 py-3 text-right font-medium">Unit Price</th>
-                <th className="w-28 px-4 py-3 text-right font-medium">Stock Qty</th>
+                <th className="w-28 px-4 py-3 text-right font-medium">Avail. Qty</th>
                 <th className="w-20 px-4 py-3 text-center font-medium">Status</th>
                 <th className="w-20 px-4 py-3" />
               </tr>
@@ -147,7 +142,7 @@ export default function StockList() {
                 paginatedItems.map((item: any) => (
                   <tr key={item.id} className="bg-card transition-colors hover:bg-muted/20">
                     <td className="px-4 py-3 font-mono text-sm font-medium">{item.code}</td>
-                    <td className="px-4 py-3">
+                    <td className="min-w-[180px] px-4 py-3 pr-12">
                       <div className="font-medium">{item.name}</div>
                       {item.description && (
                         <div className="max-w-xs truncate text-xs text-muted-foreground">
@@ -155,7 +150,7 @@ export default function StockList() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-muted-foreground">
+                    <td className="w-36 px-4 py-3 pl-8 font-mono text-muted-foreground">
                       {item.batchNo || "—"}
                     </td>
                     <td className="px-4 py-3">

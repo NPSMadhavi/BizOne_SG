@@ -4,6 +4,7 @@ import type { PurchaseOrder, PurchaseQuotation, Quotation, Invoice, DeliveryOrde
 import logoRsvUrl from "@assets/logo_1776054030755.png";
 import logoNetopsysUrl from "@assets/Netopsys_logo_Dark_1776066608427.png";
 import { fmtDate } from "./utils";
+import { normalizeProformaDoc } from "./proforma-financials";
 
 // ── Unicode font (Roboto) — supports ₹, €, £ and all PDF currency symbols ───
 let PDF_FONT = "helvetica";
@@ -1853,7 +1854,7 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
   const invBankBlockH = calcBlockHeight(doc, invBlocks, 125);
 
   // Strip trailing/empty item rows that have no description and no part number
-  const allInvItems = (inv.items as any[]).filter((item: any) => {
+  const allInvItems = (Array.isArray(inv.items) ? inv.items as any[] : []).filter((item: any) => {
     if (item.type === "section") return htmlToText(item.sectionLabel || "").trim() !== "";
     const hasDesc = htmlToText(item.description || "").trim() !== "";
     const hasPart = (item.partNumber || "").trim() !== "";
@@ -2034,16 +2035,21 @@ export async function generateInvoice_PDF(inv: Invoice, company?: Company | null
 
   // Bottom Right: Authorised Signature
   const sigImg = (inv as any).authorisedSignature;
-  if (sigImg) {
-    const sigW = 45;
-    const sigH = 15;
-    const sigX = marginRight - sigW;
-    const sigY = ty + 10;
-    doc.addImage(sigImg, "PNG", sigX, sigY, sigW, sigH, "", "FAST");
-    doc.setFont(PDF_FONT, "normal"); doc.setFontSize(8); doc.setTextColor(140, 140, 140);
-    doc.text("Authorised Signature", sigX + sigW / 2, sigY + sigH + 4, { align: "center" });
-    doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2);
-    doc.line(sigX, sigY + sigH, sigX + sigW, sigY + sigH);
+  if (sigImg && typeof sigImg === "string" && sigImg.startsWith("data:image/")) {
+    try {
+      const sigW = 45;
+      const sigH = 15;
+      const sigX = marginRight - sigW;
+      const sigY = ity + 10;
+      const fmt = sigImg.startsWith("data:image/png") ? "PNG" : "JPEG";
+      doc.addImage(sigImg, fmt, sigX, sigY, sigW, sigH, "", "FAST");
+      doc.setFont(PDF_FONT, "normal"); doc.setFontSize(8); doc.setTextColor(140, 140, 140);
+      doc.text("Authorised Signature", sigX + sigW / 2, sigY + sigH + 4, { align: "center" });
+      doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2);
+      doc.line(sigX, sigY + sigH, sigX + sigW, sigY + sigH);
+    } catch (e) {
+      console.warn("Authorised signature image skipped:", e);
+    }
   }
 
 
@@ -3585,28 +3591,42 @@ export async function generateDebitNote_PDF(
 
 // ── PROFORMA INVOICE PDF ──────────────────────────────────────────────────────
 export async function generatePI_PDF(pi: any, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  const normalized = normalizeProformaDoc(pi);
   const invShape: Invoice = {
-    ...pi,
-    invNumber: pi.piNumber,
-    poRefNo: pi.qtRefNo || null,
+    ...normalized,
+    invNumber: normalized.piNumber,
+    poRefNo: normalized.qtRefNo || null,
   } as unknown as Invoice;
   return generateInvoice_PDF(invShape, company, settings, { returnBase64: options?.returnBase64, titleOverride: "PROFORMA INVOICE" });
 }
 
 export async function generateVendorInvoice_PDF(pi: any, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  const rawItems = Array.isArray(pi?.items)
+    ? pi.items
+    : (typeof pi?.items === "string"
+      ? (() => { try { return JSON.parse(pi.items); } catch { return []; } })()
+      : []);
   const invShape: Invoice = {
     ...pi,
-    invNumber: pi.piNumber,
-    customerName: pi.vendorName,
+    invNumber: pi.piNumber || "VENDOR-INV",
+    customerName: pi.vendorName || "",
     customerAddress: pi.vendorAddress || "",
     customerContact: pi.vendorContact || "",
     customerContactEmail: pi.vendorEmail || pi.vendorContactEmail || "",
     issueDate: pi.piDate || pi.createdAt,
+    paymentTerms: pi.paymentTerms || "30 Days Net",
     poRefNo: pi.poNumbers || "",
-    items: pi.items || [],
-    subtotal: Number(pi.subtotal || pi.totalAmount || 0),
-    tax: Number(pi.tax || pi.gstAmount || 0),
+    currency: pi.currency || "SGD",
+    items: rawItems,
+    subtotal: Number(pi.subtotal ?? pi.netAmount ?? 0) || Number(pi.totalAmount || 0),
+    tax: Number(pi.tax ?? pi.gstAmount ?? 0),
     totalAmount: Number(pi.totalAmount || 0),
+    discountAmount: Number(pi.discountAmount || 0),
+    notes: pi.notes || "",
+    customerNote: pi.customerNote || "",
+    deliveryInstructions: pi.deliveryInstructions || "",
+    termsAndConditions: pi.termsAndConditions || "",
+    authorisedSignature: pi.authorisedSignature || null,
     status: pi.status || "confirmed",
   } as unknown as Invoice;
   return generateInvoice_PDF(invShape, company, null, { returnBase64: options?.returnBase64, titleOverride: "VENDOR INVOICE" });
@@ -3631,4 +3651,108 @@ export async function generateGRN_PDF(grn: any, company?: Company | null, option
     })),
   } as unknown as DeliveryOrder;
   return generateDO_PDF(doShape, company, { returnBase64: options?.returnBase64, titleOverride: "GOODS RECEIPT NOTE" });
+}
+
+// ── POS RECEIPT PDF ───────────────────────────────────────────────────────────
+export type PosSalePdfInput = {
+  posNumber: string;
+  createdAt: string;
+  items: Array<{ code: string; name: string; qty: number; unitPrice: number }>;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  payments: Array<{ method: string; amount: number }>;
+  salesPerson?: string;
+  note?: string;
+};
+
+export async function generatePOS_PDF(
+  sale: PosSalePdfInput,
+  company?: Company | null,
+  options?: { returnBase64?: boolean },
+): Promise<string | void> {
+  await ensurePdfFonts();
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  attachPdfFonts(doc);
+  const info = companyToInfo(company);
+  const logo = await getLogoData(getLogoUrl(company));
+  const currency = "SGD";
+  const dateStr = formatDate(sale.createdAt);
+
+  buildDocHeader(doc, logo, "POS RECEIPT", sale.posNumber, dateStr, "paid", info);
+
+  let y = 58;
+  if (sale.salesPerson) {
+    doc.setFontSize(9.5);
+    doc.setFont(PDF_FONT, "normal");
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Sales Person: ${sale.salesPerson}`, 14, y);
+    y += 6;
+  }
+
+  const body = sale.items.map((item, idx) => [
+    idx + 1,
+    item.code,
+    item.name,
+    item.qty,
+    fmtNum(item.unitPrice),
+    fmtNum(item.unitPrice * item.qty),
+  ]);
+
+  (doc as any).autoTable({
+    startY: y,
+    head: [["#", "Code", "Item", "Qty", "Price (S$)", "Amount (S$)"]],
+    body,
+    styles: { font: PDF_FONT, fontSize: 8.5, cellPadding: 2.5 },
+    headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+    margin: { left: 14, right: 14 },
+  });
+
+  const marginRight = doc.internal.pageSize.getWidth() - 14;
+  const labelX = marginRight - 55;
+  let ty = (doc as any).lastAutoTable.finalY + 10;
+
+  doc.setFontSize(9.5);
+  doc.setFont(PDF_FONT, "normal");
+  doc.setTextColor(60, 60, 60);
+
+  doc.text("Subtotal:", labelX, ty);
+  doc.text(fmtMoneyTotal(currency, sale.subtotal), marginRight, ty, { align: "right" });
+  ty += 6;
+  if (sale.discount > 0) {
+    doc.text("Discount:", labelX, ty);
+    doc.text(`-${fmtMoneyTotal(currency, sale.discount)}`, marginRight, ty, { align: "right" });
+    ty += 6;
+  }
+  doc.text("GST:", labelX, ty);
+  doc.text(fmtMoneyTotal(currency, sale.tax), marginRight, ty, { align: "right" });
+  ty += 6;
+  doc.setFont(PDF_FONT, "bold");
+  doc.text("Total:", labelX, ty);
+  doc.text(fmtMoneyTotal(currency, sale.total), marginRight, ty, { align: "right" });
+  ty += 10;
+
+  doc.setFont(PDF_FONT, "bold");
+  doc.text("Payments:", 14, ty);
+  ty += 5;
+  doc.setFont(PDF_FONT, "normal");
+  for (const p of sale.payments) {
+    doc.text(`${p.method}: ${fmtMoneyTotal(currency, p.amount)}`, 14, ty);
+    ty += 5;
+  }
+
+  if (sale.note?.trim()) {
+    ty += 4;
+    doc.setFont(PDF_FONT, "bold");
+    doc.text("Note:", 14, ty);
+    ty += 5;
+    doc.setFont(PDF_FONT, "normal");
+    const lines = doc.splitTextToSize(sale.note, doc.internal.pageSize.getWidth() - 28);
+    doc.text(lines, 14, ty);
+  }
+
+  buildDocFooter(doc, "POS Receipt");
+  if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
+  doc.save(`${sale.posNumber}.pdf`);
 }

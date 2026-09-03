@@ -76,14 +76,14 @@ export function ModalSectionHeader({
   title,
   action,
 }: {
-  icon: LucideIcon;
+  icon?: LucideIcon;
   title: string;
   action?: ReactNode;
 }) {
   return (
     <div className="mb-4 flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <Icon className="h-5 w-5 text-[#2563EB]" />
+        {Icon ? <Icon className="h-5 w-5 text-[#2563EB]" /> : null}
         <h3 className="text-base font-semibold text-[#111827]">{title}</h3>
       </div>
       {action}

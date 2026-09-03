@@ -504,9 +504,6 @@ export default function Admin() {
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
               {mode === "create" ? "Add User" : "Edit User"}
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Set login details and sidebar module access for each company.
-            </p>
           </div>
         </div>
 
@@ -700,7 +697,6 @@ export default function Admin() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">User Management</h1>
-          <p className="text-muted-foreground mt-1">Manage system access, roles, and module permissions per company.</p>
         </div>
 
         {canCreate && (

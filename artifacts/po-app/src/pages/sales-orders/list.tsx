@@ -90,7 +90,6 @@ export default function SalesOrderList() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Sales Orders</h1>
-          <p className="text-muted-foreground mt-1">Manage quotations converted to sales orders and saved orders.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <Link href="/sales-orders/new">
@@ -101,10 +100,6 @@ export default function SalesOrderList() {
 
       {/* Sales Orders */}
       <div className="space-y-3">
-        <div>
-          <h2 className="text-xl font-semibold">Sales Order</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Saved sales orders from the Generate Sales Order form.</p>
-        </div>
         <BulkEmailBar
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}

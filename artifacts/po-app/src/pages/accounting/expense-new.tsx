@@ -56,6 +56,7 @@ const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
   training: { label: "Training & Development", deductible: true, pct: 100, gstClaimable: true, note: "Staff courses, seminars, certifications" },
   insurance: { label: "Insurance", deductible: true, pct: 100, gstClaimable: true, note: "Business insurance premiums" },
   bank_charges: { label: "Bank Charges", deductible: true, pct: 100, gstClaimable: false, note: "Bank charges are exempt from GST" },
+  fixed_assets: { label: "Fixed Assets", deductible: true, pct: 100, gstClaimable: true, note: "Capital expenditure on fixed assets" },
   other: { label: "Other Expenses", deductible: true, pct: 100, gstClaimable: true, note: "Any other business expense" },
 };
 
@@ -212,6 +213,20 @@ export default function ExpenseNew() {
       autoCalcGst(amount, c.gstClaimable);
     }
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const category = params.get("category");
+    if (category && CATEGORY_CONFIG[category]) {
+      onCategoryChange(category);
+    }
+    const vendor = params.get("vendor");
+    if (vendor) setValue("vendorName", vendor);
+    const description = params.get("description");
+    if (description) setValue("description", description);
+    const reference = params.get("reference");
+    if (reference) setValue("notes", `Invoice ref: ${reference}`);
+  }, []);
 
   function onAmountChange(raw: string) {
     const cleaned = numericOnly(raw);

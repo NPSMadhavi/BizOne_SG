@@ -410,7 +410,6 @@ export default function Settings() {
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage company preferences and account settings.</p>
       </div>
 
       {selectedCompany && (

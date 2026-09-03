@@ -362,8 +362,8 @@ export default function InvoiceView() {
           {canManage && doc.status === "draft" && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4" />Delete Draft
+                <Button variant="outline" size="icon" className="border-red-300 text-red-700 hover:bg-red-50" title="Delete">
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -627,7 +627,9 @@ export default function InvoiceView() {
                               <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEditPayment(p)}>Edit</Button>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50">Delete</Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" title="Delete">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
                                   <AlertDialogHeader>

@@ -23,6 +23,7 @@ import { fmtDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { BankAccountField } from "@/components/bank-account-field";
+import { calcViLineAmount } from "@/lib/vendor-invoice-items";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -196,6 +197,10 @@ export default function VendorInvoiceView() {
   const payments: any[] = pi.payments || [];
   const balance = pi.totalAmount - pi.paidAmount;
   const progress = pi.totalAmount > 0 ? Math.min(100, (pi.paidAmount / pi.totalAmount) * 100) : 0;
+  const lineItems: any[] = Array.isArray(pi.items) ? pi.items : [];
+  const hasLineItems = lineItems.some((it) => it.type !== "section" && (Number(it.amount) > 0 || Number(it.qty) * Number(it.unitPrice) > 0));
+  const hasPartNo = lineItems.some((it) => it.partNumber);
+  const fmtAmt = (n: number) => new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -269,9 +274,10 @@ export default function VendorInvoiceView() {
                 <span className="font-medium font-mono">{pi.poNumbers}</span>
               </div>
             )}
-            {pi.notes && (
-              <div className="text-sm text-muted-foreground border-t pt-3">{pi.notes}</div>
-            )}
+            <div className="text-sm pt-2 border-t">
+              <span className="text-muted-foreground">Currency: </span>
+              <span className="font-medium">{pi.currency || "SGD"}</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -326,6 +332,134 @@ export default function VendorInvoiceView() {
           </CardContent>
         </Card>
       </div>
+
+      {hasLineItems && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Line Items</CardTitle>
+          </CardHeader>
+          {hasLineItems && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-y">
+                  <tr>
+                    <th className="px-6 py-3 font-medium w-12 text-center">#</th>
+                    {hasPartNo && <th className="px-6 py-3 font-medium whitespace-nowrap">Part No.</th>}
+                    <th className="px-6 py-3 font-medium">Description</th>
+                    <th className="px-6 py-3 font-medium text-center whitespace-nowrap">Qty</th>
+                    <th className="px-6 py-3 font-medium text-right whitespace-nowrap">Unit Price</th>
+                    <th className="px-6 py-3 font-medium text-right whitespace-nowrap">Disc %</th>
+                    <th className="px-6 py-3 font-medium text-right whitespace-nowrap">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y border-b">
+                  {lineItems.map((item: any, idx: number) => {
+                    if (item.type === "section") {
+                      const colSpan = 6 + (hasPartNo ? 1 : 0);
+                      return (
+                        <tr key={idx} className="bg-muted/30">
+                          <td colSpan={colSpan} className="px-6 py-2 font-semibold text-sm text-foreground">
+                            {item.sectionLabel}
+                          </td>
+                        </tr>
+                      );
+                    }
+                    let lineNum = 0;
+                    lineItems.slice(0, idx + 1).forEach((i: any) => { if (i.type !== "section") lineNum++; });
+                    const lineAmount = Number(item.amount) || calcViLineAmount(Number(item.qty) || 0, Number(item.unitPrice) || 0, Number(item.discount) || 0, item.isFoc);
+                    return (
+                      <tr key={idx} className="bg-card">
+                        <td className="px-6 py-4 text-center text-muted-foreground align-top">{lineNum}</td>
+                        {hasPartNo && <td className="px-6 py-4 text-muted-foreground align-top font-mono text-xs">{item.partNumber || "—"}</td>}
+                        <td className="px-6 py-4 text-muted-foreground align-top">{item.description}</td>
+                        <td className="px-6 py-4 text-center font-medium align-top">{item.qty}</td>
+                        <td className="px-6 py-4 text-right text-muted-foreground align-top">{fmtAmt(Number(item.unitPrice))}</td>
+                        <td className="px-6 py-4 text-right text-muted-foreground align-top">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>
+                        <td className="px-6 py-4 text-right font-medium align-top">{fmtAmt(lineAmount)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="p-6 bg-muted/20">
+            <div className="flex justify-end">
+              <div className="w-full md:w-64 space-y-3 shrink-0">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="font-medium">{formatCurrency(Number(pi.subtotal ?? 0), pi.currency)}</span>
+                  </div>
+                  {Number((pi as any).discountAmount) > 0 && (
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                      <span>Discount</span>
+                      <span>- {formatCurrency(Number((pi as any).discountAmount), pi.currency)}</span>
+                    </div>
+                  )}
+                  {(pi as any).gstAmount > 0 && (pi as any).gstTreatment === "standard_rated" && (
+                    <>
+                      <div className="flex justify-between text-sm text-muted-foreground">
+                        <span>Net Amount (excl. GST)</span>
+                        <span className="font-mono">{formatCurrency(pi.totalAmount - (pi as any).gstAmount, pi.currency)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-primary">
+                        <span>GST ({parseFloat((pi as any).gstRate ?? "9")}%)</span>
+                        <span className="font-mono">+ {formatCurrency(Number((pi as any).gstAmount ?? pi.tax ?? 0), pi.currency)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="h-px bg-border my-2" />
+                  <div className="flex justify-between text-lg font-bold text-primary">
+                    <span>Total Amount</span>
+                    <span>{formatCurrency(pi.totalAmount, pi.currency)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+        </Card>
+      )}
+
+      {(pi.notes || (pi as any).customerNote || (pi as any).deliveryInstructions || (pi as any).termsAndConditions || (pi as any).authorisedSignature) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Additional Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {pi.notes && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Internal Notes</p>
+                <div className="text-sm text-muted-foreground prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: pi.notes }} />
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(pi as any).customerNote && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Customer Note</p>
+                  <p className="text-sm whitespace-pre-line">{(pi as any).customerNote}</p>
+                </div>
+              )}
+              {(pi as any).deliveryInstructions && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Delivery Instructions</p>
+                  <p className="text-sm whitespace-pre-line">{(pi as any).deliveryInstructions}</p>
+                </div>
+              )}
+              {(pi as any).termsAndConditions && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Terms & Conditions</p>
+                  <p className="text-sm whitespace-pre-line">{(pi as any).termsAndConditions}</p>
+                </div>
+              )}
+              {(pi as any).authorisedSignature && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Authorised Signature</p>
+                  <img src={(pi as any).authorisedSignature} alt="Signature" className="max-h-16 object-contain border rounded p-2 bg-white" />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

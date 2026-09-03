@@ -99,7 +99,6 @@ export default function DeliveryOrderList() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Delivery Orders</h1>
-          <p className="text-muted-foreground mt-1">Manage and track all delivery orders.</p>
         </div>
         <Link href="/delivery-orders/new">
           <Button className="gap-2"><Plus className="h-4 w-4" />Create Delivery Order</Button>

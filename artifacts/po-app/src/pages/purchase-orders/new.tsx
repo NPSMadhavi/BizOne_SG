@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
+import type { FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation, useSearch } from "wouter";
@@ -27,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft, Upload } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, plainText } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { generatePO_PDF } from "@/lib/pdf";
@@ -44,11 +45,11 @@ import { useAuth } from "@/contexts/auth-context";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
-  sectionLabel: z.string().default(""),
+  sectionLabel: z.coerce.string().default(""),
   sectionAlign: z.enum(["left", "center"]).default("left"),
-  partNumber: z.string(),
-  uom: z.string().default(""),
-  description: z.string(),
+  partNumber: z.coerce.string(),
+  uom: z.coerce.string().default(""),
+  description: z.coerce.string(),
   qty: z.coerce.number().min(0).default(1),
   unitPrice: z.coerce.number().min(0, "Cannot be negative"),
   isStockItem: z.boolean().default(false),
@@ -336,13 +337,32 @@ export default function PurchaseOrderNew() {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(value);
 
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof poSchema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
+
   async function saveDocument(values: z.infer<typeof poSchema>, status: "draft" | "confirmed" = "draft") {
     const filledItems = values.items.filter(
       (item) => (item as any).type === "section"
-        ? ((item as any).sectionLabel || "").trim() !== ""
-        : (item.partNumber.trim() !== "" || item.description.trim() !== "")
+        ? plainText((item as any).sectionLabel) !== ""
+        : (plainText(item.partNumber) !== "" || plainText(item.description) !== "")
     );
-    if (filledItems.length === 0) {
+    const realItems = filledItems.filter((item: any) => item.type !== "section");
+    if (realItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
       return null;
     }
@@ -352,7 +372,7 @@ export default function PurchaseOrderNew() {
       if (hasStock && !(Number((item as any).warehouseId) > 0)) {
         toast({
           title: "Warehouse required",
-          description: `Select a warehouse for "${item.partNumber || "stock item"}" using the cube icon before saving.`,
+          description: `Select a warehouse for "${plainText(item.partNumber) || "stock item"}" using the cube icon before saving.`,
           variant: "destructive",
         });
         return null;
@@ -360,6 +380,8 @@ export default function PurchaseOrderNew() {
     }
     const itemsWithAmount = filledItems.map(item => ({
       ...item,
+      partNumber: plainText(item.partNumber),
+      description: item.description,
       amount: (item as any).type === "section" ? 0 : item.qty * item.unitPrice,
       isStockItem: item.isStockItem === true || Number((item as any).stockItemId) > 0,
       stockItemId: Number((item as any).stockItemId) > 0 ? Number((item as any).stockItemId) : undefined,
@@ -376,11 +398,14 @@ export default function PurchaseOrderNew() {
             queryClient.setQueryData(getListPurchaseOrdersQueryKey(), (old: any) =>
               Array.isArray(old) ? [data, ...old.filter((d: any) => d.id !== (data as any)?.id)] : [data],
             );
-            await Promise.all([
-              invalidateDocumentList(queryClient, "purchase-orders"),
-              invalidateInventoryQueries(queryClient),
-            ]);
             resolve(data);
+            const invalidateTasks: Promise<void>[] = [
+              invalidateDocumentList(queryClient, "purchase-orders"),
+            ];
+            if (status === "confirmed") {
+              invalidateTasks.push(invalidateInventoryQueries(queryClient));
+            }
+            await Promise.all(invalidateTasks);
           },
           onError: (error: any) => reject(error),
         }
@@ -457,11 +482,11 @@ export default function PurchaseOrderNew() {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation("/purchase-orders")}
-            className="h-9 w-9 shrink-0"
+ type="button"
+ variant="ghost"
+ size="icon"
+ onClick={() => setLocation("/purchase-orders")}
+ className="h-9 w-9 shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -472,10 +497,10 @@ export default function PurchaseOrderNew() {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <Button
-            type="button"
-            variant="outline"
-            className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
-            onClick={() => setPoUploadOpen(true)}
+ type="button"
+ variant="outline"
+ className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
+ onClick={() => setPoUploadOpen(true)}
           >
             <Upload className="h-4 w-4" />
             Import Customer PO
@@ -499,10 +524,10 @@ export default function PurchaseOrderNew() {
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map(c => (
                   <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => form.setValue("currency", c.code)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+ key={c.code}
+ type="button"
+ onClick={() => form.setValue("currency", c.code)}
+ className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
                     {c.label}
                   </button>
@@ -516,8 +541,8 @@ export default function PurchaseOrderNew() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Vendor Details</CardTitle>
                 <DirectoryPickerButton
-                  type="vendor"
-                  onSelect={(v) => {
+ type="vendor"
+ onSelect={(v) => {
                     form.setValue("vendorName", v.name);
                     form.setValue("vendorAddress", v.fullAddress);
                     form.setValue("vendorContact", v.contactPerson);
@@ -533,18 +558,17 @@ export default function PurchaseOrderNew() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <FormField
-                  control={form.control}
-                  name="vendorName"
-                  render={({ field }) => (
+ control={form.control}
+ name="vendorName"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
                         <ContactAutocomplete
-                          type="vendor"
-                          value={field.value}
-                          onChange={field.onChange}
-                          placeholder="Acme Corp"
-                          onSelect={(c) => {
+ type="vendor"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                             form.setValue("vendorName", c.name);
                             if (c.address) form.setValue("vendorAddress", c.address);
                             if (c.contact) form.setValue("vendorContact", c.contact);
@@ -558,34 +582,34 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="vendorAddress"
-                  render={({ field }) => (
+ control={form.control}
+ name="vendorAddress"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Address</FormLabel>
-                      <FormControl><Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} /></FormControl>
+                      <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="vendorContact"
-                  render={({ field }) => (
+ control={form.control}
+ name="vendorContact"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Person</FormLabel>
-                      <FormControl><Input placeholder="John Doe" {...field} /></FormControl>
+                      <FormControl><Input  {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="vendorContactEmail"
-                  render={({ field }) => (
+ control={form.control}
+ name="vendorContactEmail"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
-                      <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl>
+                      <FormControl><Input type="email" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -599,17 +623,17 @@ export default function PurchaseOrderNew() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <FormField
-                  control={form.control}
-                  name="customerId"
-                  render={({ field }) => (
+ control={form.control}
+ name="customerId"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
                         <Users className="h-3.5 w-3.5 text-muted-foreground" />
                         Customer (for reference) <span className="text-destructive">*</span>
                       </FormLabel>
                       <Select
-                        value={field.value != null ? String(field.value) : ""}
-                        onValueChange={(v) => field.onChange(v === "" ? null : Number(v))}
+ value={field.value != null ? String(field.value) : ""}
+ onValueChange={(v) => field.onChange(v === "" ? null : Number(v))}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -627,9 +651,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="customerPoRef"
-                  render={({ field }) => (
+ control={form.control}
+ name="customerPoRef"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Customer PO Ref No.</FormLabel>
                       <FormControl><Input placeholder="CUST-PO-2024-001" {...field} /></FormControl>
@@ -638,9 +662,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="quoteRefNo"
-                  render={({ field }) => (
+ control={form.control}
+ name="quoteRefNo"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Sales Quote Reference No.</FormLabel>
                       <FormControl><Input placeholder="SQ-2024-001" {...field} /></FormControl>
@@ -649,9 +673,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="deliveryAddress"
-                  render={({ field }) => (
+ control={form.control}
+ name="deliveryAddress"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Delivery Address</FormLabel>
                       <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl>
@@ -660,9 +684,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="issueDate"
-                  render={({ field }) => (
+ control={form.control}
+ name="issueDate"
+ render={({ field }) => (
                     <FormItem>
                       <FormControl>
                         <IssueDateField value={field.value || ""} onChange={field.onChange} label="PO Date" />
@@ -672,9 +696,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="deliveryDate"
-                  render={({ field }) => (
+ control={form.control}
+ name="deliveryDate"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Delivery Date</FormLabel>
                       <FormControl>
@@ -685,9 +709,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="paymentTerms"
-                  render={({ field }) => (
+ control={form.control}
+ name="paymentTerms"
+ render={({ field }) => (
                     <FormItem>
                       <FormLabel>Payment Terms</FormLabel>
                       <FormControl>
@@ -698,9 +722,9 @@ export default function PurchaseOrderNew() {
                   )}
                 />
                 <FormField
-                  control={form.control}
-                  name="isPrivate"
-                  render={({ field }) => (
+ control={form.control}
+ name="isPrivate"
+ render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
                         <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -779,7 +803,7 @@ export default function PurchaseOrderNew() {
                                 <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
                                 <div className="flex-1 min-w-0">
                                   <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
-                                    <FormItem><FormControl><RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." /></FormControl></FormItem>
+                                    <FormItem><FormControl><RichTextEditor value={f.value} onChange={f.onChange}  /></FormControl></FormItem>
                                   )} />
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0 mt-1">
@@ -813,7 +837,7 @@ export default function PurchaseOrderNew() {
                               <FormItem><FormControl>
                                 <div className="flex flex-col gap-0.5">
                                   <div className="flex items-center gap-1">
-                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                    <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"  {...field} />
                                     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                       <Package className="h-3.5 w-3.5" />
                                     </Button>
@@ -830,7 +854,7 @@ export default function PurchaseOrderNew() {
                           <td className="px-2 py-2 align-top">
                             <div className="flex gap-2 items-start">
                               <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                                <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                                <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                               )} />
                               <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                                 <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
@@ -901,9 +925,9 @@ export default function PurchaseOrderNew() {
               <div className="flex flex-col md:flex-row justify-between gap-6">
                 <div className="flex-1 max-w-md">
                   <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
+ control={form.control}
+ name="notes"
+ render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-muted-foreground">Additional Notes</FormLabel>
                         <FormControl>
@@ -943,20 +967,20 @@ export default function PurchaseOrderNew() {
               Cancel
             </Button>
             <Button
-              type="button"
-              variant="outline"
-              className="gap-2"
-              disabled={createMutation.isPending || isGenerating}
-              onClick={form.handleSubmit(onSaveDraft)}
+ type="button"
+ variant="outline"
+ className="gap-2"
+ disabled={createMutation.isPending || isGenerating}
+ onClick={form.handleSubmit(onSaveDraft, onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               Save as Draft
             </Button>
             <Button
-              type="button"
-              className="gap-2"
-              disabled={createMutation.isPending || isGenerating}
-              onClick={form.handleSubmit(onSaveAndPreview)}
+ type="button"
+ className="gap-2"
+ disabled={createMutation.isPending || isGenerating}
+ onClick={form.handleSubmit(onSaveAndPreview, onFormInvalid)}
             >
               {createMutation.isPending || isGenerating ? (
                 "Saving..."
@@ -972,17 +996,17 @@ export default function PurchaseOrderNew() {
       </Form>
 
       <CurrencyMismatchDialog
-        open={currencyDialogOpen}
-        entityName={directoryCurrencyName}
-        entityType="vendor"
-        defaultCurrency={directoryCurrency}
-        selectedCurrency={form.getValues("currency")}
-        onContinue={async () => {
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="vendor"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) await doSaveAndPreview(pendingConfirmValues);
           setPendingConfirmValues(null);
         }}
-        onRevert={async () => {
+ onRevert={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) {
             const updated = { ...pendingConfirmValues, currency: directoryCurrency };
@@ -994,9 +1018,9 @@ export default function PurchaseOrderNew() {
       />
 
       <ImportItemsDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImport={(imported, replace) => {
+ open={importOpen}
+ onClose={() => setImportOpen(false)}
+ onImport={(imported, replace) => {
           const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
           const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
           if (replace) {
@@ -1007,17 +1031,17 @@ export default function PurchaseOrderNew() {
         }}
       />
       <CustomerPoUploadDialog
-        open={poUploadOpen}
-        onOpenChange={setPoUploadOpen}
-        onApply={handlePoExtracted}
+ open={poUploadOpen}
+ onOpenChange={setPoUploadOpen}
+ onApply={handlePoExtracted}
       />
 
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        mode="receive"
-        onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ mode="receive"
+ onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           if (!warehouseId) {
             toast({
@@ -1041,18 +1065,18 @@ export default function PurchaseOrderNew() {
       />
       {savedPo && (
         <PdfPreviewModal
-          open={previewOpen}
-          onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
             setPreviewOpen(open);
             if (!open) setLocation(`/purchase-orders`);
           }}
-          title={`Purchase Order ${savedPo.poNumber}`}
-          generatePdf={(opts) => generatePO_PDF(savedPo, selectedCompany, opts)}
-          pdfFilename={`${savedPo.poNumber}.pdf`}
-          defaultEmailTo={(savedPo as any).vendorContactEmail || ""}
-          defaultEmailSubject={`${savedPo.poNumber} for ${savedPo.vendorName} | ${(selectedCompany as any)?.name || "RSV Infotech"}`}
-          defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
-          docInfo={{
+ title={`Purchase Order ${savedPo.poNumber}`}
+ generatePdf={(opts) => generatePO_PDF(savedPo, selectedCompany, opts)}
+ pdfFilename={`${savedPo.poNumber}.pdf`}
+ defaultEmailTo={(savedPo as any).vendorContactEmail || ""}
+ defaultEmailSubject={`${savedPo.poNumber} for ${savedPo.vendorName} | ${(selectedCompany as any)?.name || "RSV Infotech"}`}
+ defaultEmailBody={`Dear ${savedPo.vendorContact || "Sir/Madam"},\n\nPlease find attached our Purchase Order ${savedPo.poNumber}.\n\nKindly acknowledge receipt and confirm acceptance.\n\nThank you.`}
+ docInfo={{
             docType: "Purchase Order",
             docNumber: savedPo.poNumber,
             customerName: savedPo.vendorName,
@@ -1061,11 +1085,11 @@ export default function PurchaseOrderNew() {
             currency: (savedPo as any).currency || "SGD",
             totalAmount: Number(savedPo.totalAmount) || 0,
           }}
-          poId={savedPo.id}
-          onEmailSent={async (recipients) => {
+ poId={savedPo.id}
+ onEmailSent={async (recipients) => {
             await fetch(`/api/purchase-orders/${savedPo.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           }}
-          onEdit={() => {
+ onEdit={() => {
             setPreviewOpen(false);
             setLocation(`/purchase-orders/${savedPo.id}/edit`);
           }}

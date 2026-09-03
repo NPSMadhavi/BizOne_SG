@@ -257,8 +257,8 @@ export default function IncomeView() {
                 <CheckCircle2 className="h-4 w-4 mr-1.5" />Confirm & Post
               </Button>
               {canManage && (
-                <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-                  <Trash2 className="h-4 w-4 mr-1.5" />Delete
+                <Button variant="destructive" size="icon" onClick={() => setDeleteOpen(true)} title="Delete">
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               )}
             </>

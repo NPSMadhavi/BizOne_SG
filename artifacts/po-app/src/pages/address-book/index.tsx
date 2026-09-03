@@ -110,7 +110,6 @@ export default function AddressBookPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Address Book</h1>
-          <p className="text-muted-foreground mt-1">Email contacts saved automatically when you send documents.</p>
         </div>
         <Button className="gap-2" onClick={() => { setAddName(""); setAddEmail(""); setAddOpen(true); }}>
           <Plus className="h-4 w-4" />

@@ -28,6 +28,11 @@ import { Link } from "wouter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const CURRENCIES = ["SGD", "USD", "EUR", "GBP", "MYR", "INR"];
 
@@ -107,11 +112,12 @@ export default function DebitNoteEdit() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany } = useAuth();
+  const { selectedCompany, isAdmin } = useAuth();
   const qc = useQueryClient();
   const [showPreview, setShowPreview] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [ready, setReady] = useState(false);
   const [importExcelOpen, setImportExcelOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
@@ -279,6 +285,25 @@ export default function DebitNoteEdit() {
     } finally { setSubmitting(false); }
   }
 
+  async function handleDelete() {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      const r = await fetch(`/api/debit-notes/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to delete debit note");
+      }
+      await invalidateDocumentList(qc, "debit-notes");
+      toast({ title: "Deleted", description: `${doc?.dnNumber || "Debit note"} deleted.` });
+      setLocation("/debit-notes");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const currency = form.watch("currency");
   const fmt = (n: number) => new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
@@ -358,6 +383,7 @@ export default function DebitNoteEdit() {
                         <InvoiceRefPicker
                           value={field.value || ""}
                           loading={loadingInvoice}
+                          placeholder=""
                           onChange={(v) => {
                             field.onChange(v);
                             if (!v) lastLoadedRef.current = "";
@@ -372,9 +398,6 @@ export default function DebitNoteEdit() {
                           onCommitTyped={(v) => void loadFromInvoice(v)}
                         />
                       </FormControl>
-                      <p className="text-[11px] text-muted-foreground">
-                        Type invoice no. or pick from list — stock items fill automatically
-                      </p>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
@@ -384,7 +407,7 @@ export default function DebitNoteEdit() {
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Reason for Return</FormLabel>
-                    <FormControl><Textarea {...field} rows={2} placeholder="Returned goods, billing error…" /></FormControl>
+                    <FormControl><Textarea {...field} rows={2} /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
@@ -455,13 +478,13 @@ export default function DebitNoteEdit() {
                           <td className="px-3 py-2 text-gray-400 text-xs">{isSection ? "" : idx + 1}</td>
                           {isSection ? (
                             <td colSpan={6} className="px-3 py-2">
-                              <Input {...form.register(`items.${idx}.sectionLabel`)} placeholder="Section heading…" className="font-semibold text-gray-700 border-dashed" />
+                              <Input {...form.register(`items.${idx}.sectionLabel`)} className="font-semibold text-gray-700 border-dashed" />
                             </td>
                           ) : (
                             <>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-1">
-                                  <Input {...form.register(`items.${idx}.partNumber`)} placeholder="Part #" className="text-xs h-8" />
+                                  <Input {...form.register(`items.${idx}.partNumber`)} className="text-xs h-8" />
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -474,7 +497,7 @@ export default function DebitNoteEdit() {
                                   </Button>
                                 </div>
                               </td>
-                              <td className="px-3 py-2"><Input {...form.register(`items.${idx}.description`)} placeholder="Description" className="text-xs h-8" /></td>
+                              <td className="px-3 py-2"><Input {...form.register(`items.${idx}.description`)} className="text-xs h-8" /></td>
                               <td className="px-3 py-2"><Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" /></td>
                               <td className="px-3 py-2"><Input {...form.register(`items.${idx}.unitPrice`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-28 ml-auto" /></td>
                               <td className="px-3 py-2"><Input {...form.register(`items.${idx}.discount`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} max={100} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" /></td>
@@ -521,23 +544,60 @@ export default function DebitNoteEdit() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
             </CardContent>
           </Card>
 
-          <FormStickyActions>
-            <Button type="button" variant="outline" onClick={() => setLocation(`/debit-notes/${id}`)}>Cancel</Button>
-            <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
-              <Save className="h-4 w-4" />
-              {submitting ? "Saving..." : "Save Draft"}
-            </Button>
-            <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
-              <Eye className="h-4 w-4" />
-              {submitting ? "Saving..." : "Save & Preview"}
-            </Button>
+          <FormStickyActions className="justify-between">
+            <div>
+              {isAdmin && doc?.status !== "confirmed" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      disabled={deleting || submitting}
+                      title="Delete debit note"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Debit Note?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete {doc?.dnNumber || "this debit note"}. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {deleting ? "Deleting..." : "Delete"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" onClick={() => setLocation(`/debit-notes/${id}`)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
+                <Save className="h-4 w-4" />
+                {submitting ? "Saving..." : "Save Draft"}
+              </Button>
+              <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
+                <Eye className="h-4 w-4" />
+                {submitting ? "Saving..." : "Save & Preview"}
+              </Button>
+            </div>
           </FormStickyActions>
         </form>
       </Form>

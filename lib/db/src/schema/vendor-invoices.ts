@@ -20,6 +20,11 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   paidAmount: decimal("paid_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   status: text("status").notNull().default("pending"),
   notes: text("notes"),
+  customerNote: text("customer_note"),
+  deliveryInstructions: text("delivery_instructions"),
+  termsAndConditions: text("terms_and_conditions"),
+  authorisedSignature: text("authorised_signature"),
+  discountAmount: decimal("discount_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   expenseAccountId: integer("expense_account_id"),
   salesPerson: text("sales_person"),
   // Optional line-items payload (WMS / stock receive flows)

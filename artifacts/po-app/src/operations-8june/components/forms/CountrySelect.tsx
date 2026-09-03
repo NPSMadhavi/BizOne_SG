@@ -21,6 +21,8 @@ type CountrySelectProps = {
   onChange: (value: string) => void;
   /** Use a single chevron (e.g. company modals) instead of up/down pair */
   singleChevron?: boolean;
+  /** Hide the trigger chevron icon */
+  hideChevron?: boolean;
   /** Override trigger styling so the control matches the host form's inputs */
   className?: string;
 };
@@ -30,7 +32,7 @@ const keepScrollInList = (e: React.WheelEvent | React.TouchEvent) => {
   e.stopPropagation();
 };
 
-export function CountrySelect({ value, onChange, singleChevron = false, className }: CountrySelectProps) {
+export function CountrySelect({ value, onChange, singleChevron = false, hideChevron = false, className }: CountrySelectProps) {
   const [open, setOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const displayValue = value?.trim() || "";
@@ -52,10 +54,12 @@ export function CountrySelect({ value, onChange, singleChevron = false, classNam
           <span className={cn("truncate text-left", !displayValue && "text-muted-foreground")}>
             {displayValue || "Select Country"}
           </span>
-          {singleChevron ? (
-            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          ) : (
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          {!hideChevron && (
+            singleChevron ? (
+              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            ) : (
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            )
           )}
         </button>
       </PopoverTrigger>

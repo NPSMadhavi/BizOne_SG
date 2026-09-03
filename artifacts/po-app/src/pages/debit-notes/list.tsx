@@ -113,7 +113,6 @@ export default function DebitNoteList() {
           <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2">
             Debit Notes
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manual debit notes issued to vendors</p>
         </div>
         <Link href="/debit-notes/new">
           <Button className="gap-2"><Plus className="h-4 w-4" />Create Debit Note</Button>

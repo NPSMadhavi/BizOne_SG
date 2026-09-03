@@ -47,8 +47,6 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  console.log(`📡 API Request: ${method} ${url}`, data);
-  
   const res = await fetch(url, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
@@ -56,8 +54,6 @@ export async function apiRequest(
     credentials: "include",
   });
 
-  console.log(`📡 API Response: ${method} ${url} - Status: ${res.status}`);
-  
   await throwIfResNotOk(res);
   return res;
 }
@@ -94,13 +90,9 @@ export const getQueryFn: <T>(options: {
       url = `${baseUrl}/${paramString}`;
     }
     
-    console.log(`🔍 Query Fetch: ${url}`);
-    
     const res = await fetch(url, {
       credentials: "include",
     });
-
-    console.log(`🔍 Query Response: ${url} - Status: ${res.status}`);
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
@@ -108,7 +100,6 @@ export const getQueryFn: <T>(options: {
 
     await throwIfResNotOk(res);
     const data = await res.json();
-    console.log(`✅ Query Success: ${url}`, data);
     return parseApiResponse(data);
   };
 

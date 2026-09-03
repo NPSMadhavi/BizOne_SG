@@ -420,7 +420,6 @@ export default function BatchExpiryPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Batch & Expiry</h1>
-          <p className="mt-1 text-muted-foreground">Track product batches, manufacturing and expiry dates across warehouses.</p>
         </div>
         <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={openAdd}>
           <Plus className="h-4 w-4" /> Create Batch
@@ -696,8 +695,8 @@ export default function BatchExpiryPage() {
           </div>
           <DialogFooter className="gap-2 sm:justify-between">
             {editingId ? (
-              <Button type="button" variant="destructive" className="gap-2" onClick={handleDeleteBatch}>
-                <Trash2 className="h-4 w-4" /> Delete
+              <Button type="button" variant="destructive" size="icon" onClick={handleDeleteBatch} title="Delete">
+                <Trash2 className="h-4 w-4" />
               </Button>
             ) : (
               <span />

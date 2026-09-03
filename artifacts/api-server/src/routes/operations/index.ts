@@ -406,6 +406,7 @@ const EMPLOYEE_COLUMNS = [
   "designation", "join_date", "status", "salary", "annual_salary", "nationality",
   "pr_status", "date_of_birth", "passport_number", "passport_expiry", "visa_number",
   "visa_expiry", "visa_type", "visa_remarks", "nric_number", "nric_expiry",
+  "passport_scan", "visa_scan", "nric_scan",
 ];
 
 const DEPENDENT_COLUMNS = [

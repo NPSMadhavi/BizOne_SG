@@ -65,6 +65,7 @@ const schema = z.object({
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   issueDate: z.string().optional(),
+  qtNumber: z.string().optional(),
   deliveryDate: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
@@ -113,7 +114,7 @@ export default function SalesOrderEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: "", deliveryDate: "", paymentTerms: "", notes: "",
+      issueDate: "", qtNumber: "", deliveryDate: "", paymentTerms: "", notes: "",
       termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
@@ -142,6 +143,7 @@ export default function SalesOrderEdit() {
         customerContact: doc.customerContact || "",
         customerContactEmail: (doc as any).customerContactEmail || "",
         issueDate: (doc as any).issueDate || "",
+        qtNumber: (doc as any).qtNumber || "",
         deliveryDate: (doc as any).deliveryDate || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
@@ -248,7 +250,7 @@ export default function SalesOrderEdit() {
     });
     const isCancelled = values.status === "cancelled";
     const newStatus = isCancelled ? "cancelled" : (openPreview ? "confirmed" : "draft");
-    updateMutation.mutate({ id, data: { ...values, qtId: linkedQt.current.qtId, qtNumber: linkedQt.current.qtNumber, status: newStatus, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
+    updateMutation.mutate({ id, data: { ...values, qtId: linkedQt.current.qtId, qtNumber: values.qtNumber?.trim() || null, status: newStatus, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetSalesOrderQueryKey(id) });
         await invalidateDocumentList(queryClient, "sales-orders");
@@ -309,18 +311,13 @@ export default function SalesOrderEdit() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Sales Order</h1>
             <p className="text-muted-foreground mt-1">{doc.soNumber}</p>
-            {(doc as any).qtNumber && (
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Linked quotation: <span className="font-mono text-foreground">{(doc as any).qtNumber}</span>
-              </p>
-            )}
           </div>
         </div>
         <Button
-          type="button"
-          variant="outline"
-          className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 shrink-0"
-          onClick={() => setPoUploadOpen(true)}
+ type="button"
+ variant="outline"
+ className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 shrink-0"
+ onClick={() => setPoUploadOpen(true)}
         >
           <Upload className="h-4 w-4" />
           Import Customer PO
@@ -337,10 +334,10 @@ export default function SalesOrderEdit() {
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map(c => (
                   <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => form.setValue("currency", c.code)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+ key={c.code}
+ type="button"
+ onClick={() => form.setValue("currency", c.code)}
+ className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
                     {c.label}
                   </button>
@@ -354,8 +351,8 @@ export default function SalesOrderEdit() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
                 <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
+ type="customer"
+ onSelect={(c) => {
                     form.setValue("customerName", c.name);
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
@@ -380,10 +377,10 @@ export default function SalesOrderEdit() {
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <ContactAutocomplete
-                        type="customer"
-                        value={field.value}
-                        onChange={field.onChange}
-                        onSelect={(c) => {
+ type="customer"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -399,11 +396,11 @@ export default function SalesOrderEdit() {
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
                   <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
                   <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -419,16 +416,25 @@ export default function SalesOrderEdit() {
                       <option value="cancelled">Cancelled</option>
                     </select></FormItem>
                 )} />
-                <FormField control={form.control} name="issueDate" render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Sales Order Date" />
-                    </FormControl><FormMessage />
-                  </FormItem>
-                )} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField control={form.control} name="issueDate" render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <IssueDateField value={field.value || ""} onChange={field.onChange} label="Sales Order Date" />
+                      </FormControl><FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="qtNumber" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quotation Reference Number</FormLabel>
+                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
@@ -470,8 +476,8 @@ export default function SalesOrderEdit() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
-                      checked={isOverseas}
-                      onCheckedChange={(v) => {
+ checked={isOverseas}
+ onCheckedChange={(v) => {
                         setIsOverseas(v);
                         form.setValue("tax", v ? 0 : (docSettings?.gstRate ?? 0));
                       }}
@@ -535,7 +541,7 @@ export default function SalesOrderEdit() {
                                   <div className="flex-1 min-w-0">
                                     <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
                                       <FormItem><FormControl>
-                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                        <RichTextEditor value={f.value} onChange={f.onChange}  />
                                       </FormControl></FormItem>
                                     )} />
                                   </div>
@@ -570,7 +576,7 @@ export default function SalesOrderEdit() {
                             <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
                                 <div className="flex items-center gap-1">
-                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"  {...field} />
                                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                     <Package className="h-3.5 w-3.5" />
                                   </Button>
@@ -578,7 +584,7 @@ export default function SalesOrderEdit() {
                               </FormControl></FormItem>
                             )} /></td>
                             <td className="px-4 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                             )} /><FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                               <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
                             )} /></div></td>
@@ -643,12 +649,12 @@ export default function SalesOrderEdit() {
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
                         <Input
-                          inputMode="decimal"
-                          maxLength={3}
-                          placeholder="0"
-                          className="h-7 w-14 text-sm text-center pr-5"
-                          value={discountPct || ""}
-                          onChange={e => {
+ inputMode="decimal"
+ maxLength={3}
+ placeholder="0"
+ className="h-7 w-14 text-sm text-center pr-5"
+ value={discountPct || ""}
+ onChange={e => {
                             const raw = e.target.value.replace(/[^0-9.]/g, "");
                             const n = Math.min(parseFloat(raw) || 0, 100);
                             setDiscountPct(n);
@@ -660,8 +666,8 @@ export default function SalesOrderEdit() {
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
                           <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
-                            value={field.value || ""}
-                            onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+ value={field.value || ""}
+ onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />
                         </FormControl></FormItem>
                       )} />
@@ -681,7 +687,7 @@ export default function SalesOrderEdit() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -693,20 +699,20 @@ export default function SalesOrderEdit() {
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation(`/sales-orders/${id}`)}>Cancel</Button>
             <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              className="gap-2 min-w-32"
-              onClick={form.handleSubmit(v => doSubmit(v, false))}
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2 min-w-32"
+ onClick={form.handleSubmit(v => doSubmit(v, false))}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
             <Button
-              type="button"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true))}
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true))}
             >
               <Eye className="h-4 w-4" />
               Save & Preview
@@ -715,9 +721,9 @@ export default function SalesOrderEdit() {
         </form>
       </Form>
       <ImportItemsDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImport={(imported, replace) => {
+ open={importOpen}
+ onClose={() => setImportOpen(false)}
+ onImport={(imported, replace) => {
           const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
           const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
           if (replace) {
@@ -728,16 +734,16 @@ export default function SalesOrderEdit() {
         }}
       />
       <CustomerPoUploadDialog
-        open={poUploadOpen}
-        onOpenChange={setPoUploadOpen}
-        onApply={handlePoExtracted}
+ open={poUploadOpen}
+ onOpenChange={setPoUploadOpen}
+ onApply={handlePoExtracted}
       />
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
-        onSelect={({ item, qty }: StockItemSelection) => {
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
@@ -749,23 +755,23 @@ export default function SalesOrderEdit() {
       />
 
       <ImportFromQuotationDialog
-        open={importQtOpen}
-        onClose={() => setImportQtOpen(false)}
-        currentItems={form.getValues("items")}
-        onImport={(items) => { for (const item of items) append(item); }}
+ open={importQtOpen}
+ onClose={() => setImportQtOpen(false)}
+ currentItems={form.getValues("items")}
+ onImport={(items) => { for (const item of items) append(item); }}
       />
       <CurrencyMismatchDialog
-        open={currencyDialogOpen}
-        entityName={directoryCurrencyName}
-        entityType="customer"
-        defaultCurrency={directoryCurrency}
-        selectedCurrency={form.getValues("currency")}
-        onContinue={async () => {
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="customer"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
           setPendingConfirmValues(null);
         }}
-        onRevert={async () => {
+ onRevert={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) {
             const updated = { ...pendingConfirmValues, currency: directoryCurrency };
@@ -776,17 +782,17 @@ export default function SalesOrderEdit() {
         }}
       />
       <PdfPreviewModal
-        open={previewOpen}
-        onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
           setPreviewOpen(open);
           if (!open) setLocation(`/sales-orders`);
         }}
-        title={doc ? `SalesOrder ${doc.soNumber}` : "Sales Order Preview"}
-        generatePdf={(opts) => generateSalesOrder_PDF(doc!, selectedCompany, docSettings as any, opts)}
-        pdfFilename={doc ? `${doc.soNumber}.pdf` : "sales-order.pdf"}
-        defaultEmailTo={(doc as any)?.customerContactEmail || ""}
-        defaultEmailSubject={doc ? `SalesOrder ${doc.soNumber}` : "SalesOrder"}
-        docInfo={doc ? {
+ title={doc ? `SalesOrder ${doc.soNumber}` : "Sales Order Preview"}
+ generatePdf={(opts) => generateSalesOrder_PDF(doc!, selectedCompany, docSettings as any, opts)}
+ pdfFilename={doc ? `${doc.soNumber}.pdf` : "sales-order.pdf"}
+ defaultEmailTo={(doc as any)?.customerContactEmail || ""}
+ defaultEmailSubject={doc ? `SalesOrder ${doc.soNumber}` : "SalesOrder"}
+ docInfo={doc ? {
           docType: "Sales Order",
           docNumber: doc.soNumber,
           customerName: doc.customerName,
@@ -795,10 +801,10 @@ export default function SalesOrderEdit() {
           currency: (doc as any).currency || "SGD",
           totalAmount: Number(doc.totalAmount) || 0,
         } : undefined}
-        onEmailSent={async (recipients) => {
+ onEmailSent={async (recipients) => {
           await fetch(`/api/sales-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
         }}
-        onEdit={() => { setPreviewOpen(false); }}
+ onEdit={() => { setPreviewOpen(false); }}
       />
     </div>
   );

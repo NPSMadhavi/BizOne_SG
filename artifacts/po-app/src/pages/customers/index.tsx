@@ -17,15 +17,31 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users2, CheckCircle2, XCircle, MapPin, Globe, Info, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Edit2, Trash2, MapPin, Globe, Info, Check } from "lucide-react";
+import {
+  ManagementPageHeader,
+  ManagementSearchBar,
+  ManagementTableCard,
+  ManagementTableContainer,
+  ManagementEmptyState,
+  ManagementStatusPill,
+  ManagementIconAction,
+} from "@/operations-8june/components/layout/ManagementPageUI";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 import { useGetSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { CURRENCIES } from "@/lib/currencies";
+import { isInternationalParty } from "@/lib/countries";
 import { usePagination } from "@/hooks/use-pagination";
-import { ListPagination } from "@/components/list-pagination";
 
 interface Customer {
   id: number;
@@ -97,10 +113,7 @@ export default function CustomersPage() {
   const companyGstRate = settings?.gstRate ?? 9;
   const taxLabel = (settings as any)?.taxLabel ?? "GST";
 
-  const isInternational = Boolean(
-    form.country && companyCountry &&
-    form.country.toLowerCase() !== companyCountry.toLowerCase()
-  );
+  const isInternational = isInternationalParty(form.country, companyCountry);
 
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["customers"],
@@ -146,112 +159,120 @@ export default function CustomersPage() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Customers</h1>
-          <p className="text-muted-foreground mt-1">Manage your customer directory for this company.</p>
+    <>
+      <ManagementPageHeader
+        title="Customers"
+        action={
+          <Button
+            className="gap-2 bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
+            onClick={openNew}
+          >
+            <Plus className="h-4 w-4" /> New Customer
+          </Button>
+        }
+      />
+
+      <div className="mb-6 flex items-center justify-between gap-2">
+        <div className="w-full max-w-md [&>div]:mb-0">
+          <ManagementSearchBar
+            value={search}
+            onChange={setSearch}
+            placeholder="Search..."
+          />
         </div>
-        <Button onClick={openNew} className="gap-2">
-          <Plus className="h-4 w-4" /> New Customer
-        </Button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, country, postal code or email…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Users2 className="h-4 w-4 text-primary" />
-            {filtered.length} {filtered.length === 1 ? "Customer" : "Customers"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="px-6 py-10 text-center text-muted-foreground text-sm">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-6 py-12 text-center text-muted-foreground">
-              <Users2 className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No customers yet</p>
-              <p className="text-sm mt-1">Add your first customer to enable auto-fill on invoices and quotations.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-t">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium">Name</th>
-                    <th className="px-4 py-3 text-left font-medium">Country</th>
-                    <th className="px-4 py-3 text-left font-medium">Currency</th>
-                    <th className="px-4 py-3 text-left font-medium">Contact</th>
-                    <th className="px-4 py-3 text-left font-medium">{taxLabel}</th>
-                    <th className="px-4 py-3 text-left font-medium">GST / Tax No</th>
-                    <th className="px-4 py-3 text-left font-medium">Status</th>
-                    <th className="px-4 py-3 text-right font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {paginatedItems.map(c => (
-                    <tr key={c.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{c.name}</div>
-                        {(c.address || c.postalCode) && (
-                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <MapPin className="h-2.5 w-2.5 shrink-0" />
-                            <span className="truncate max-w-[200px]">{formatAddress(c)}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{c.country || "—"}</td>
-                      <td className="px-4 py-3">
-                        {c.currency
-                          ? <Badge variant="outline" className="font-mono text-xs">{c.currency}</Badge>
-                          : <span className="text-muted-foreground text-xs">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-xs">{c.contactPerson || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{c.contactEmail || ""}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {c.gstRegistered
-                          ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{effectiveGst(c)}</Badge>
-                          : <Badge variant="outline">0% (N/A)</Badge>}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs">{c.gstNo || "—"}</td>
-                      <td className="px-4 py-3">
-                        {c.isActive
-                          ? <span className="flex items-center gap-1 text-emerald-700 text-xs"><CheckCircle2 className="h-3.5 w-3.5" />Active</span>
-                          : <span className="flex items-center gap-1 text-muted-foreground text-xs"><XCircle className="h-3.5 w-3.5" />Inactive</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          {canManage && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
+      <ManagementTableCard pagination={{ page, totalPages, onPageChange: setPage }}>
+        {isLoading ? (
+          <p className="py-16 text-center text-sm text-[#6B7280]">Loading...</p>
+        ) : filtered.length > 0 ? (
+          <ManagementTableContainer>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Country</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead>Contact</TableHead>
+                  <TableHead>{taxLabel}</TableHead>
+                  <TableHead>GST / Tax No</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-px text-left">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedItems.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium text-[#111827]">
+                      <div>{c.name}</div>
+                      {(c.address || c.postalCode) && (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-[#6B7280]">
+                          <MapPin className="h-2.5 w-2.5 shrink-0" />
+                          <span className="max-w-[200px] truncate">{formatAddress(c)}</span>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
-        </CardContent>
-      </Card>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-[#444651]">{c.country || "—"}</TableCell>
+                    <TableCell>
+                      {c.currency
+                        ? <Badge variant="outline" className="font-mono text-xs">{c.currency}</Badge>
+                        : <span className="text-xs text-[#6B7280]">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-[#111827]">{c.contactPerson || "—"}</div>
+                      <div className="text-xs text-[#6B7280]">{c.contactEmail || ""}</div>
+                    </TableCell>
+                    <TableCell>
+                      {c.gstRegistered
+                        ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{effectiveGst(c)}</Badge>
+                        : <Badge variant="outline">0% (N/A)</Badge>}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-[#444651]">{c.gstNo || "—"}</TableCell>
+                    <TableCell>
+                      <ManagementStatusPill active={c.isActive} />
+                    </TableCell>
+                    <TableCell className="w-px whitespace-nowrap">
+                      <div className="flex items-center justify-start gap-2">
+                        <ManagementIconAction label="Edit customer" onClick={() => openEdit(c)}>
+                          <Edit2 className="h-4 w-4" />
+                        </ManagementIconAction>
+                        {canManage && (
+                          <ManagementIconAction
+                            variant="delete"
+                            label="Delete customer"
+                            onClick={() => setDeleteId(c.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </ManagementIconAction>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ManagementTableContainer>
+        ) : (
+          <ManagementEmptyState
+            title={search ? "No results found" : "No customers yet"}
+            description={
+              search
+                ? "Try adjusting your search terms."
+                : "Add your first customer to enable auto-fill on invoices and quotations."
+            }
+            action={
+              !search ? (
+                <Button
+                  className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
+                  onClick={openNew}
+                >
+                  <Plus className="mr-2 h-4 w-4" /> New Customer
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+      </ManagementTableCard>
 
       {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -262,7 +283,7 @@ export default function CustomersPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Company / Customer Name <span className="text-destructive">*</span></Label>
-              <Input value={form.name || ""} onChange={e => setField("name", e.target.value)} placeholder="Customer company or individual name" />
+              <Input value={form.name || ""} onChange={e => setField("name", e.target.value)} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -271,16 +292,16 @@ export default function CustomersPage() {
                 <CountrySelect
                   value={form.country || ""}
                   onChange={v => {
-                    const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                    const intl = isInternationalParty(v, companyCountry);
                     setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
                   }}
-                  singleChevron
+                  hideChevron
                   className="h-9 shadow-sm"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>Phone</Label>
-                <Input value={form.phone || ""} onChange={e => setField("phone", e.target.value)} placeholder="+65 xxxx xxxx" />
+                <Input value={form.phone || ""} onChange={e => setField("phone", e.target.value)} />
               </div>
             </div>
 
@@ -291,7 +312,7 @@ export default function CustomersPage() {
                 onChange={v => setField("address", v)}
                 onPostalCodeChange={v => setField("postalCode", v)}
                 country={form.country || undefined}
-                placeholder="Start typing to search address…"
+                placeholder=""
               />
             </div>
 
@@ -301,9 +322,7 @@ export default function CustomersPage() {
                 <Input
                   value={form.postalCode || ""}
                   onChange={e => setField("postalCode", e.target.value)}
-                  placeholder="e.g. 408564 (SG) or 530007 (IN)"
                 />
-                <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
               </div>
               <div className="space-y-1.5">
                 <Label>Default Currency</Label>
@@ -321,7 +340,6 @@ export default function CustomersPage() {
                           ? CURRENCIES.find(c => c.code === form.currency)?.label ?? form.currency
                           : "Select currency (optional)"}
                       </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
@@ -348,7 +366,6 @@ export default function CustomersPage() {
                     </Command>
                   </PopoverContent>
                 </Popover>
-                <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this customer.</p>
               </div>
             </div>
 
@@ -367,7 +384,6 @@ export default function CustomersPage() {
                             newAddrs[idx] = e.target.value;
                             setField("shipToAddress", newAddrs.join("\n\n"));
                           }}
-                          placeholder={`Ship-to Address #${idx + 1}`}
                           className="resize-none pr-8 text-sm"
                           rows={2}
                         />
@@ -407,11 +423,11 @@ export default function CustomersPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Contact Person</Label>
-                <Input value={form.contactPerson || ""} onChange={e => setField("contactPerson", e.target.value)} placeholder="Name" />
+                <Input value={form.contactPerson || ""} onChange={e => setField("contactPerson", e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Contact Email</Label>
-                <Input type="email" value={form.contactEmail || ""} onChange={e => setField("contactEmail", e.target.value)} placeholder="email@customer.com" />
+                <Input type="email" value={form.contactEmail || ""} onChange={e => setField("contactEmail", e.target.value)} />
               </div>
             </div>
 
@@ -443,7 +459,7 @@ export default function CustomersPage() {
                 {form.gstRegistered && (
                   <div className="space-y-1.5">
                     <Label>GST / Tax Registration Number</Label>
-                    <Input value={form.gstNo || ""} onChange={e => setField("gstNo", e.target.value)} placeholder="e.g. 200812581D / 22XXXXX1234X1ZX" />
+                    <Input value={form.gstNo || ""} onChange={e => setField("gstNo", e.target.value)} />
                   </div>
                 )}
               </div>
@@ -461,7 +477,6 @@ export default function CustomersPage() {
               <Textarea
                 value={form.quotationTerms || ""}
                 onChange={e => setField("quotationTerms", e.target.value)}
-                placeholder="Enter customer-specific T&C for quotations. Leave blank to use the default from Settings."
                 className="resize-none text-sm"
                 rows={5}
               />
@@ -500,6 +515,6 @@ export default function CustomersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

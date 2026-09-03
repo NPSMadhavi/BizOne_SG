@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -88,8 +87,8 @@ const locations = [
 type CustomOptionTarget = "type" | "category" | "manufacturer" | "location";
 
 const optionLabels: Record<CustomOptionTarget, string> = {
-  type: "Asset Type",
-  category: "Category",
+  type: "Asset Name",
+  category: "Asset Category",
   manufacturer: "Manufacturer",
   location: "Location",
 };
@@ -109,12 +108,17 @@ const depreciationMethods = [
   "Straight Line", "Reducing Balance", "Sum of Years Digits"
 ];
 
+const optionalDate = z.union([z.date(), z.literal(""), z.null(), z.undefined()]).optional().transform((val) => {
+  if (val == null || val === "") return undefined;
+  return val instanceof Date && !Number.isNaN(val.getTime()) ? val : undefined;
+});
+
 // Enhanced form schema with better validation
 const formSchema = insertAssetSchema.extend({
   tag: z.string().min(3, "Asset tag must be at least 3 characters"),
-  type: z.string().min(1, "Asset type is required"),
-  category: z.string().min(1, "Category is required"),
-  serial: z.string().min(1, "Serial number is required"),
+  type: z.string().min(1, "Asset name is required"),
+  category: z.string().min(1, "Asset category is required"),
+  serial: z.string().optional(),
   model: z.string().optional(),
   manufacturer: z.string().optional(),
   status: z.string().min(1, "Status is required"),
@@ -123,9 +127,9 @@ const formSchema = insertAssetSchema.extend({
   location: z.string().optional(),
   vendor: z.string().optional(),
   invoiceNumber: z.string().optional(),
-  purchaseDate: z.date().optional(),
-  warrantyExpiry: z.date().optional(),
-  depreciationStartDate: z.date().optional(),
+  purchaseDate: optionalDate,
+  warrantyExpiry: optionalDate,
+  depreciationStartDate: optionalDate,
   usefulLifeYears: z.number().min(1).max(20).optional(),
   depreciationMethod: z.string().optional(),
   description: z.string().optional(),
@@ -273,6 +277,65 @@ const emptyFormValues: AssetFormData = {
   cost: undefined,
 };
 
+const ASSET_FORM_DRAFT_KEY = "asset-form-return-draft";
+
+type AssetFormDraft = {
+  assetId?: number;
+  values: Record<string, unknown>;
+  attachments: AssetAttachment[];
+};
+
+function serializeAssetFormValues(values: AssetFormData): Record<string, unknown> {
+  return {
+    ...values,
+    purchaseDate:
+      values.purchaseDate instanceof Date && !Number.isNaN(values.purchaseDate.getTime())
+        ? values.purchaseDate.toISOString()
+        : undefined,
+    warrantyExpiry:
+      values.warrantyExpiry instanceof Date && !Number.isNaN(values.warrantyExpiry.getTime())
+        ? values.warrantyExpiry.toISOString()
+        : undefined,
+    depreciationStartDate:
+      values.depreciationStartDate instanceof Date &&
+      !Number.isNaN(values.depreciationStartDate.getTime())
+        ? values.depreciationStartDate.toISOString()
+        : undefined,
+  };
+}
+
+function deserializeAssetFormValues(raw: Record<string, unknown>): Partial<AssetFormData> {
+  const next = { ...raw };
+  if (typeof next.purchaseDate === "string") next.purchaseDate = toDateValue(next.purchaseDate);
+  if (typeof next.warrantyExpiry === "string") next.warrantyExpiry = toDateValue(next.warrantyExpiry);
+  if (typeof next.depreciationStartDate === "string") {
+    next.depreciationStartDate = toDateValue(next.depreciationStartDate);
+  }
+  return next as Partial<AssetFormData>;
+}
+
+function saveAssetFormDraft(draft: AssetFormDraft) {
+  try {
+    sessionStorage.setItem(ASSET_FORM_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // Ignore quota errors — navigation still works without draft restore.
+  }
+}
+
+function loadAssetFormDraft(): AssetFormDraft | null {
+  try {
+    const raw = sessionStorage.getItem(ASSET_FORM_DRAFT_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(ASSET_FORM_DRAFT_KEY);
+    const parsed = JSON.parse(raw) as AssetFormDraft;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    sessionStorage.removeItem(ASSET_FORM_DRAFT_KEY);
+    return null;
+  }
+}
+
 export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hideFooter, onPendingChange }: AssetFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -288,6 +351,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const [newOptionName, setNewOptionName] = useState("");
   const [attachments, setAttachments] = useState<AssetAttachment[]>(() => loadAssetAttachments(assetId));
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftRestoredRef = useRef(false);
   
   // Fetch vendors for dropdown
   const { data: vendors = [] } = useQuery({
@@ -370,6 +434,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     () => withStoredOption(depreciationMethods, resolvedAsset?.depreciationMethod),
     [resolvedAsset?.depreciationMethod],
   );
+
+  const employeeSelectOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return employees.filter((employee) => {
+      const name = String(employee.name ?? "").trim();
+      if (!name) return false;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [employees]);
   
   const form = useForm<AssetFormData>({
     resolver: zodResolver(formSchema),
@@ -377,13 +453,58 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     values: editFormValues,
   });
 
-  const assignedEmployeeName = String(resolvedAsset?.assignedTo ?? "").trim();
-  const hasAssignedEmployeeOption = employees.some(
-    (employee) => employee.name === assignedEmployeeName,
-  );
+  useEffect(() => {
+    if (draftRestoredRef.current) return;
+    if (assetId && !editFormValues) return;
+
+    const draft = loadAssetFormDraft();
+    if (draft) {
+      if (!assetId) {
+        form.reset({
+          ...emptyFormValues,
+          ...deserializeAssetFormValues(draft.values),
+        } as AssetFormData);
+        if (draft.attachments?.length) setAttachments(draft.attachments);
+        draftRestoredRef.current = true;
+      } else if (draft.assetId === assetId) {
+        form.reset({
+          ...form.getValues(),
+          ...deserializeAssetFormValues(draft.values),
+        } as AssetFormData);
+        if (draft.attachments?.length) setAttachments(draft.attachments);
+        draftRestoredRef.current = true;
+      }
+    } else if (!assetId) {
+      draftRestoredRef.current = true;
+    } else if (editFormValues) {
+      draftRestoredRef.current = true;
+    }
+  }, [assetId, editFormValues, form]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const assignEmployee = params.get("assignEmployee");
+    if (!assignEmployee) return;
+
+    form.setValue("assignedTo", assignEmployee, { shouldDirty: true, shouldValidate: true });
+    queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+
+    params.delete("assignEmployee");
+    const qs = params.toString();
+    const path = window.location.pathname + (qs ? `?${qs}` : "");
+    window.history.replaceState({}, "", path);
+  }, [form, queryClient]);
 
   const handleOpenEmployeeForm = () => {
-    setLocation("/employees/new");
+    saveAssetFormDraft({
+      assetId,
+      values: serializeAssetFormValues(form.getValues()),
+      attachments,
+    });
+    const returnTo = encodeURIComponent(
+      window.location.pathname + window.location.search,
+    );
+    setLocation(`/employees/new?returnTo=${returnTo}`);
   };
 
   const handleOpenCreateOption = (target: CustomOptionTarget) => {
@@ -475,7 +596,6 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
 
   const createAssetMutation = useMutation({
     mutationFn: async (data: AssetFormData) => {
-      console.log("📤 Submitting asset data:", data);
       const res = await apiRequest("POST", "/api/assets", data);
       const responseData = await res.json();
       if (!res.ok) {
@@ -537,9 +657,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   }, [createAssetMutation.isPending, updateAssetMutation.isPending, onPendingChange]);
 
   const onSubmit = (data: AssetFormData) => {
-    // Ensure all dates are properly converted to Date objects or ISO strings
     const cleanedData = {
       ...data,
+      serial: data.serial?.trim() || "",
       purchaseDate: data.purchaseDate ? (data.purchaseDate instanceof Date ? data.purchaseDate.toISOString() : new Date(data.purchaseDate).toISOString()) : undefined,
       warrantyExpiry: data.warrantyExpiry ? (data.warrantyExpiry instanceof Date ? data.warrantyExpiry.toISOString() : new Date(data.warrantyExpiry).toISOString()) : undefined,
       depreciationStartDate: data.depreciationStartDate ? (data.depreciationStartDate instanceof Date ? data.depreciationStartDate.toISOString() : new Date(data.depreciationStartDate).toISOString()) : undefined,
@@ -612,7 +732,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         name="type"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-sm font-medium text-[#111827]">Asset Type *</FormLabel>
+                            <FormLabel className="text-sm font-medium text-[#111827]">Asset Name *</FormLabel>
                             <Select
                               key={`type-${assetId ?? "new"}-${field.value}`}
                               onValueChange={field.onChange}
@@ -620,7 +740,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             >
                               <FormControl>
                                 <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select asset type" />
+                                  <SelectValue placeholder="Select asset name" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="max-h-[14rem]">
@@ -632,7 +752,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                   }}
                                 >
                                   <Plus className="h-4 w-4" />
-                                  Create New Asset Type
+                                  Create New Asset Name
                                 </div>
                                 <div className="my-1 border-t" />
                                 {typeOptions.map((type) => (
@@ -652,7 +772,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         name="category"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-sm font-medium text-[#111827]">Category *</FormLabel>
+                            <FormLabel className="text-sm font-medium text-[#111827]">Asset Category *</FormLabel>
                             <Select
                               key={`category-${assetId ?? "new"}-${field.value}`}
                               onValueChange={field.onChange}
@@ -660,7 +780,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             >
                               <FormControl>
                                 <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select category" />
+                                  <SelectValue placeholder="Select asset category" />
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="max-h-[14rem]">
@@ -672,7 +792,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                   }}
                                 >
                                   <Plus className="h-4 w-4" />
-                                  Create New Category
+                                  Create New Asset Category
                                 </div>
                                 <div className="my-1 border-t" />
                                 {categoryOptions.map((category) => (
@@ -692,7 +812,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         name="serial"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-sm font-medium text-[#111827]">Serial Number *</FormLabel>
+                            <FormLabel className="text-sm font-medium text-[#111827]">Serial Number</FormLabel>
                             <FormControl>
                               <Input placeholder="C02XN1ABMD6R" className="w-full" {...field} />
                             </FormControl>
@@ -812,7 +932,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                     <FormField
                       control={form.control}
                       name="assignedTo"
-                      render={({ field }) => (
+                      render={({ field }) => {
+                        const selectedName = String(field.value ?? "").trim();
+                        const orphanName =
+                          selectedName ||
+                          String(resolvedAsset?.assignedTo ?? "").trim();
+                        const orphanInList =
+                          orphanName &&
+                          employeeSelectOptions.some(
+                            (employee) => employee.name === orphanName,
+                          );
+
+                        return (
                         <FormItem>
                           <FormLabel className="text-sm font-medium text-[#111827]">Assigned To</FormLabel>
                           <Select
@@ -825,10 +956,12 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 <SelectValue placeholder={
                                   isLoadingEmployees 
                                     ? "Loading employees..." 
-                                    : employees.length === 0 
+                                    : employeeSelectOptions.length === 0 
                                       ? "No employees found - Create one first" 
                                       : "Select employee"
-                                } />
+                                }>
+                                  {selectedName || undefined}
+                                </SelectValue>
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="max-h-[14rem]">
@@ -842,27 +975,25 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 <UserPlus className="h-4 w-4" />
                                 Create New Employee
                               </div>
-                              {employees.length > 0 && (
+                              {employeeSelectOptions.length > 0 && (
                                 <div className="border-t my-1" />
                               )}
-                              {assignedEmployeeName && !hasAssignedEmployeeOption && (
-                                <SelectItem value={assignedEmployeeName}>
-                                  {assignedEmployeeName}
+                              {orphanName && !orphanInList && (
+                                <SelectItem value={orphanName}>
+                                  {orphanName}
                                 </SelectItem>
                               )}
-                              {employees.map((employee) => (
+                              {employeeSelectOptions.map((employee) => (
                                 <SelectItem key={employee.id} value={employee.name}>
                                   {employee.name} - {employee.designation}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                          <FormDescription className="text-xs text-[#6B7280]">
-                            Leave empty if available for assignment
-                          </FormDescription>
                           <FormMessage />
                         </FormItem>
-                      )}
+                        );
+                      }}
                     />
 
                     <FormField
@@ -1017,9 +1148,6 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                   ref={field.ref}
                                 />
                               </FormControl>
-                              <FormDescription className="text-xs text-[#6B7280]">
-                                Expected useful life for depreciation calculation
-                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1052,93 +1180,94 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
             </div>
           </section>
 
-          {/* Additional Notes */}
-          <section className="space-y-4">
-            <ModalSectionHeader icon={FileText} title="Additional Notes" />
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-sm font-medium text-[#111827]">Description / Notes</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Additional information about this asset..."
-                            className="min-h-[100px] resize-none"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription className="text-xs text-[#6B7280]">
-                          Any additional details, specifications, or notes about the asset
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-          </section>
+          {/* Additional Notes + Attachments */}
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+            <section className="space-y-4">
+              <ModalSectionHeader icon={FileText} title="Additional Notes" />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#111827]">Description / Notes</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Additional information about this asset..."
+                        className="min-h-[100px] resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </section>
 
-          {/* Attachments */}
-          <section className="space-y-4">
-            <ModalSectionHeader icon={Paperclip} title="Attachments" />
-            <div className="space-y-3">
-              <div className="flex flex-col items-start gap-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => {
-                    void handleFilesSelected(event.target.files);
-                    event.target.value = "";
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-[#E5E7EB] text-[#111827]"
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Files
-                </Button>
-                <p className="text-xs text-[#6B7280]">
-                  Attach invoices, warranty cards or photos.
-                </p>
-              </div>
-
-              {attachments.length > 0 && (
-                <ul className="space-y-2">
-                  {attachments.map((attachment) => (
-                    <li
-                      key={attachment.id}
-                      className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
+            <section className="space-y-4">
+              <ModalSectionHeader icon={Paperclip} title="Attachments" />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[#111827]">Files</label>
+                <div className="space-y-3">
+                  <div className="flex flex-col items-start gap-1">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => {
+                        void handleFilesSelected(event.target.files);
+                        event.target.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-[#E5E7EB] text-[#111827]"
                     >
-                      <a
-                        href={attachment.dataUrl}
-                        download={attachment.name}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 flex-1 truncate text-sm font-medium text-[#2563EB] hover:underline"
-                      >
-                        {attachment.name}
-                      </a>
-                      <span className="shrink-0 text-xs text-[#6B7280]">
-                        {formatFileSize(attachment.size)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAttachment(attachment.id)}
-                        className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#F3F4F6] hover:text-[#DC2626]"
-                        aria-label={`Remove ${attachment.name}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload Files
+                    </Button>
+                    <p className="text-xs text-[#6B7280]">
+                      Attach invoices, warranty cards or photos.
+                    </p>
+                  </div>
+
+                  {attachments.length > 0 && (
+                    <ul className="space-y-2">
+                      {attachments.map((attachment) => (
+                        <li
+                          key={attachment.id}
+                          className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
+                        >
+                          <a
+                            href={attachment.dataUrl}
+                            download={attachment.name}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="min-w-0 flex-1 truncate text-sm font-medium text-[#2563EB] hover:underline"
+                          >
+                            {attachment.name}
+                          </a>
+                          <span className="shrink-0 text-xs text-[#6B7280]">
+                            {formatFileSize(attachment.size)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAttachment(attachment.id)}
+                            className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#F3F4F6] hover:text-[#DC2626]"
+                            aria-label={`Remove ${attachment.name}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
 
           {!hideFooter && (
             <div className="flex justify-end gap-3">

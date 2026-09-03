@@ -99,7 +99,6 @@ export default function AuditLogPage() {
             <ShieldCheck className="h-8 w-8 text-primary" />
             Audit Log
           </h1>
-          <p className="text-muted-foreground mt-1">All write activity across the system, including who did what and when.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2">
           <RefreshCw className="h-4 w-4" /> Refresh

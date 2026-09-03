@@ -1,24 +1,54 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useMemo, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import { FormPageShell } from "@/operations-8june/components/layout/FormPageShell";
 import { ModalCancelButton, ModalSaveButton } from "@/operations-8june/components/forms/FormModalShell";
-import EmployeeForm from "@/operations-8june/components/forms/EmployeeForm";
+import EmployeeForm, { type CreatedEmployeeInfo } from "@/operations-8june/components/forms/EmployeeForm";
+
+function isSafeAssetReturnPath(path: string): boolean {
+  return path.startsWith("/assets/new") || /^\/assets\/\d+\/edit$/.test(path);
+}
 
 export default function EmployeeNewPage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [pending, setPending] = useState(false);
-  const goBack = () => setLocation("/employees");
+
+  const returnTo = useMemo(() => {
+    const value = new URLSearchParams(searchString).get("returnTo");
+    if (!value || !isSafeAssetReturnPath(value)) return null;
+    return value;
+  }, [searchString]);
+
+  const goBack = (created?: CreatedEmployeeInfo) => {
+    if (returnTo) {
+      if (created?.name) {
+        const [path, query = ""] = returnTo.split("?");
+        const params = new URLSearchParams(query);
+        params.set("assignEmployee", created.name);
+        const qs = params.toString();
+        setLocation(path + (qs ? `?${qs}` : ""));
+      } else {
+        setLocation(returnTo);
+      }
+      return;
+    }
+    setLocation("/employees");
+  };
 
   return (
     <FormPageShell
       title="Create Employee"
       description="Add a new employee record."
-      backHref="/employees"
+      backHref={returnTo ?? "/employees"}
       footer={
         <>
-          <ModalCancelButton onClick={goBack} />
+          <ModalCancelButton onClick={() => goBack()} />
           <ModalSaveButton
-            form="employee-form"
+            type="button"
+            onClick={() => {
+              const formEl = document.getElementById("employee-form") as HTMLFormElement | null;
+              formEl?.requestSubmit();
+            }}
             loading={pending}
             label="Save"
             loadingLabel="Saving..."

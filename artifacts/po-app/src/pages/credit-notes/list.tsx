@@ -111,7 +111,6 @@ export default function CreditNoteList() {
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4">
         <div>
           <h1 className="text-2xl font-bold text-[#2563EB]">Credit Notes</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manual credit notes issued to customers</p>
         </div>
         <Link href="/credit-notes/new">
           <Button className="gap-2"><Plus className="h-4 w-4" />Create Credit Note</Button>

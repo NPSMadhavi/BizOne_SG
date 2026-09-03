@@ -380,7 +380,7 @@ export default function GrnNew() {
 
   const statusBadge = grn ? (
     grn.status === "complete" ? (
-      <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Complete</Badge>
+      <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Confirmed</Badge>
     ) : grn.status === "partial" ? (
       <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Partial</Badge>
     ) : (

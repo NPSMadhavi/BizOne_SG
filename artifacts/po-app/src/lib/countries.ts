@@ -196,3 +196,33 @@ export const COUNTRIES = [
   "Zambia",
   "Zimbabwe",
 ] as const;
+
+/** Map common ISO codes to the country names used in pickers */
+const COUNTRY_CODE_ALIASES: Record<string, string> = {
+  sg: "singapore",
+  in: "india",
+  my: "malaysia",
+  us: "united states",
+  gb: "united kingdom",
+  uk: "united kingdom",
+};
+
+function normalizeCountryKey(country: string): string {
+  const key = country.trim().toLowerCase();
+  return COUNTRY_CODE_ALIASES[key] ?? key;
+}
+
+/** True when both values refer to the same country (e.g. SG vs Singapore). */
+export function isSameCountry(a?: string | null, b?: string | null): boolean {
+  if (!a?.trim() || !b?.trim()) return false;
+  return normalizeCountryKey(a) === normalizeCountryKey(b);
+}
+
+/** True when customer/vendor country differs from the company country. */
+export function isInternationalParty(
+  partyCountry?: string | null,
+  companyCountry?: string | null,
+): boolean {
+  if (!partyCountry?.trim() || !companyCountry?.trim()) return false;
+  return !isSameCountry(partyCountry, companyCountry);
+}

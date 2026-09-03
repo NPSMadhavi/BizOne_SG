@@ -82,7 +82,7 @@ async function receiveGrn(id: number, items: GrnItem[]): Promise<Grn> {
 function getStatusBadge(status: string) {
   switch (status) {
     case "complete":
-      return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Complete</Badge>;
+      return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">Confirmed</Badge>;
     case "partial":
       return <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Partial</Badge>;
     case "draft":
@@ -162,6 +162,7 @@ export default function GrnView() {
       setIsDirty(false);
       setConfirmOpen(false);
       toast({ title: "Goods Received", description: "GRN confirmed and stock updated successfully." });
+      setLocation("/grn");
     },
     onError: (err: any) => {
       setConfirmOpen(false);

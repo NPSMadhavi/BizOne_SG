@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { StringDatePicker } from "@/operations-8june/components/ui/date-picker";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/operations-8june/lib/queryClient";
 import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
@@ -215,7 +214,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const processPayrollMutation = useMutation({
     mutationFn: async (data: ProcessPayrollFormData & { forceOverwrite?: boolean }) => {
       if (!calculationPreview || !payrollConfig) {
-        throw new Error("Please select an employee with an active payroll configuration");
+        throw new Error("Please select an employee with active payroll");
       }
 
       const result = await processIndividualPayrollForConfig(
@@ -363,12 +362,12 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   return (
     <>
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 min-w-0 max-w-2xl">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               <section className="space-y-4">
                 <ModalSectionHeader icon={User} title="Employee & Pay Period" />
-                <div className="space-y-4">
+                <div className="space-y-4 max-w-2xl">
                   <FormField
                     control={form.control}
                     name="employeeId"
@@ -387,7 +386,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     )}
                   />
 
-                  <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
+                  <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
                     <FormField
                       control={form.control}
                       name="payPeriodStart"
@@ -428,14 +427,14 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
 
               <section className="space-y-4">
                 <ModalSectionHeader icon={Clock} title="Additional Hours & Adjustments" />
-                <div className="space-y-4">
+                <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2 max-w-2xl">
                   <FormField
                     control={form.control}
                     name="overtimeHours"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={payrollFormLabelClass}>
-                          Overtime Hours (Max 72 hours/month per MOM)
+                          Overtime Hours
                         </FormLabel>
                         <FormControl>
                           <Input
@@ -459,11 +458,16 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     name="notes"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={payrollFormLabelClass}>Notes (Optional)</FormLabel>
+                        <FormLabel className={payrollFormLabelClass}>Notes</FormLabel>
                         <FormControl>
-                          <Textarea
-                            placeholder="Add any notes or remarks for this payroll period..."
-                            {...field}
+                          <Input
+                            type="text"
+                            placeholder=""
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            name={field.name}
+                            ref={field.ref}
                           />
                         </FormControl>
                         <FormMessage />

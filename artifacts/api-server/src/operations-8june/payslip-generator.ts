@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import {
   formatPayrollMonthLabel,
   normalizePayPeriodDate,
@@ -644,19 +645,14 @@ function isPdfBuffer(buffer: Buffer): boolean {
 }
 
 async function launchPuppeteerBrowser() {
-  const launchOptions = {
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-  };
+  const executablePath = await chromium.executablePath();
 
-  try {
-    return await puppeteer.launch(launchOptions);
-  } catch {
-    return await puppeteer.launch({
-      ...launchOptions,
-      channel: "chrome",
-    });
-  }
+  return await puppeteer.launch({
+    executablePath,
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    headless: chromium.headless,
+  });
 }
 
 export async function generatePayslipPdf(data: PayslipData): Promise<Buffer> {

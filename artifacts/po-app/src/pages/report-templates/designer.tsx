@@ -373,7 +373,7 @@ export default function ReportDesignerPage() {
         <div className="flex items-center gap-2 min-w-0">
           <Button variant="ghost" size="icon" onClick={goBack}><ArrowLeft className="h-4 w-4" /></Button>
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground">Report Designer · {existing?.reportTypeName || reportType}</p>
+            <p className="text-xs font-medium text-[#2563EB]">Report Designer · {existing?.reportTypeName || reportType}</p>
             <Input
               className="h-8 font-semibold border-none shadow-none px-0"
               value={name}

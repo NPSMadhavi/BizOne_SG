@@ -27,7 +27,7 @@ const QUERY_KEYS: Record<DocumentListKind, readonly unknown[]> = {
   quotations: getListQuotationsQueryKey(),
   "sales-orders": getListSalesOrdersQueryKey(),
   "delivery-orders": getListDeliveryOrdersQueryKey(),
-  "proforma-invoices": ["/api/proforma-invoices"],
+  "proforma-invoices": ["proforma-invoices"],
   "credit-notes": ["credit-notes"],
   "debit-notes": ["debit-notes"],
   grn: ["grns"],

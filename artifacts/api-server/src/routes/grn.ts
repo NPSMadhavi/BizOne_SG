@@ -457,16 +457,6 @@ export async function postPurchaseOrderWarehouseStock(params: {
       const currentQty = previousTotal;
       const adjustment = desired.qty - currentQty;
 
-      console.log("[PO STOCK SYNC]", JSON.stringify({
-        poId: po.id,
-        poNumber: po.poNumber,
-        stockItemId,
-        warehouseId: desired.warehouseId,
-        previouslyAppliedQty: currentQty,
-        desiredQty: desired.qty,
-        adjustment,
-      }));
-
       if (Math.abs(adjustment) < 0.0005) {
         const balance = await getWarehouseBalance(tx, desired.warehouseId, stockItemId);
         await upsertPurchaseOrderMovement(tx, {
@@ -843,14 +833,6 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
         }
 
         // STOCK IN to selected warehouse only — never touches another warehouse.
-        console.log("[INVENTORY UPDATE]", JSON.stringify({
-          transactionType: "grn",
-          transactionId: id,
-          warehouseId,
-          stockItemId,
-          quantity: addQty,
-          movementType: "IN",
-        }));
         await applyMovement(tx, {
           companyId,
           warehouseId,

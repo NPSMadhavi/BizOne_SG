@@ -16,15 +16,13 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Asset } from "@shared/schema";
-import { apiRequest, parseApiResponse } from "@/operations-8june/lib/queryClient";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import AssetViewDialog from "@/operations-8june/components/forms/AssetViewDialog";
 import {
   Plus,
-  Trash2,
   Edit2,
   Eye,
   UserPlus,
@@ -38,16 +36,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import AssignAssetModal from "@/operations-8june/components/modals/AssignAssetModal";
 import { usePagination } from "@/hooks/use-pagination";
 
@@ -103,10 +91,8 @@ function calcAssetDepreciation(asset: Asset) {
 export default function AssetsPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const queryClient = useQueryClient();
   const { selectedCompany, isLoading: authLoading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
@@ -120,32 +106,6 @@ export default function AssetsPage() {
     staleTime: 0,
   });
   
-  const deleteAssetMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/assets/${id}`);
-      const json = await res.json();
-      return parseApiResponse(json);
-    },
-    onSuccess: async () => {
-      toast({
-        title: "Asset deleted",
-        description: "The asset has been deleted successfully.",
-      });
-      await queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
-      await queryClient.refetchQueries({ queryKey: ["/api/assets"] });
-      setIsDeleteDialogOpen(false);
-      setSelectedAssetId(null);
-    },
-    onError: (error: Error) => {
-      console.error("❌ Asset deletion failed:", error);
-      toast({
-        title: "Failed to delete asset",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-  
   const handleViewAsset = (asset: Asset) => {
     setViewingAsset(asset);
     setIsViewDialogOpen(true);
@@ -155,20 +115,9 @@ export default function AssetsPage() {
     setLocation(`/assets/${asset.id}/edit`);
   };
   
-  const handleDeleteAsset = (id: number) => {
-    setSelectedAssetId(id);
-    setIsDeleteDialogOpen(true);
-  };
-  
   const handleAssignAsset = (id: number) => {
     setSelectedAssetId(id);
     setIsAssignDialogOpen(true);
-  };
-  
-  const confirmDelete = () => {
-    if (selectedAssetId && !deleteAssetMutation.isPending) {
-      deleteAssetMutation.mutate(selectedAssetId);
-    }
   };
 
   const assetList = Array.isArray(assets) ? assets : [];
@@ -607,14 +556,6 @@ export default function AssetsPage() {
                               <UserPlus className="h-4 w-4" />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            title="Delete asset"
-                            onClick={() => handleDeleteAsset(asset.id)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition-colors hover:bg-red-100 active:scale-95"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -653,27 +594,6 @@ export default function AssetsPage() {
         asset={viewingAsset}
       />
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this asset?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the asset and remove all related data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-red-600 hover:bg-red-700"
-              disabled={deleteAssetMutation.isPending}
-            >
-              {deleteAssetMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
       <AssignAssetModal
         open={isAssignDialogOpen}
         onClose={() => {

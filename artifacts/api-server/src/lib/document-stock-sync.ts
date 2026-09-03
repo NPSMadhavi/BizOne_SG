@@ -46,8 +46,8 @@ function lineKey(warehouseId: number, stockItemId: number): string {
   return `${warehouseId}:${stockItemId}`;
 }
 
-function inventoryLog(payload: Record<string, unknown>): void {
-  console.log("[INVENTORY UPDATE]", JSON.stringify(payload));
+function inventoryLog(_payload: Record<string, unknown>): void {
+  // Debug logging removed
 }
 
 function aggregateByWarehouseItem(lines: DocumentStockLine[]): Map<string, DocumentStockLine> {

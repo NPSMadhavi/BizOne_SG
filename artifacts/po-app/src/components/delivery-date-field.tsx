@@ -12,9 +12,15 @@ const QUICK_OPTIONS = [
 interface DeliveryDateFieldProps {
   value?: string;
   onChange: (val: string) => void;
+  /** When false, hides the "or" custom text input (date picker + quick chips only). */
+  allowCustomText?: boolean;
 }
 
-export function DeliveryDateField({ value = "", onChange }: DeliveryDateFieldProps) {
+export function DeliveryDateField({
+  value = "",
+  onChange,
+  allowCustomText = true,
+}: DeliveryDateFieldProps) {
   const isDateString = /^\d{4}-\d{2}-\d{2}$/.test(value || "");
 
   const nativeToDisplay = (v: string) => {
@@ -54,20 +60,24 @@ export function DeliveryDateField({ value = "", onChange }: DeliveryDateFieldPro
           );
         })}
       </div>
-      <div className="flex gap-2 items-center">
+      <div className={allowCustomText ? "flex gap-2 items-center" : ""}>
         <Input
           type="date"
           value={isDateString ? value : ""}
           onChange={e => onChange(e.target.value)}
-          className="flex-1"
+          className={allowCustomText ? "flex-1" : "w-full"}
         />
-        <span className="text-muted-foreground text-xs shrink-0">or</span>
-        <Input
-          placeholder="Custom text (e.g. Q2 2026)"
-          value={isDateString ? "" : (value || "")}
-          onChange={e => onChange(e.target.value)}
-          className="flex-1"
-        />
+        {allowCustomText && (
+          <>
+            <span className="text-muted-foreground text-xs shrink-0">or</span>
+            <Input
+              placeholder="Custom text (e.g. Q2 2026)"
+              value={isDateString ? "" : (value || "")}
+              onChange={e => onChange(e.target.value)}
+              className="flex-1"
+            />
+          </>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import { useCreateInvoice, useGetSettings, getGetSettingsQueryKey, useListPurcha
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { previewRunningNumber } from "@/lib/running-number";
+import { processSignatureFile, SIGNATURE_FILE_ACCEPT } from "@/lib/signature-upload";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
@@ -504,17 +505,6 @@ export default function InvoiceNew() {
         return;
       }
     }
-    console.log("[TAX INVOICE SAVE]", {
-      mode: "create",
-      items: itemsWithAmount
-        .filter((i: any) => i.type !== "section" && i.stockItemId)
-        .map((i: any) => ({
-          warehouseId: i.warehouseId,
-          stockItemId: i.stockItemId,
-          quantity: i.qty,
-          partNumber: i.partNumber,
-        })),
-    });
     const cleanAddress = (values.deliveryAddress || "")
       .split("\n\n")
       .map((s: string) => s.trim())
@@ -584,35 +574,34 @@ export default function InvoiceNew() {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation("/invoices")}
-            className="h-9 w-9 shrink-0"
+ type="button"
+ variant="ghost"
+ size="icon"
+ onClick={() => setLocation("/invoices")}
+ className="h-9 w-9 shrink-0"
             aria-label="Back to invoices"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Invoice</h1>
-            <p className="text-muted-foreground mt-1">Create a new customer invoice.</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <Button
-            type="button"
-            variant="outline"
-            className="gap-2 border-dashed border-violet-500/60 text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30"
-            onClick={() => setAiOpen(true)}
+ type="button"
+ variant="outline"
+ className="gap-2 border-dashed border-violet-500/60 text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30"
+ onClick={() => setAiOpen(true)}
           >
             <Sparkles className="h-4 w-4" />
             Generate with AI
           </Button>
           <Button
-            type="button"
-            variant="outline"
-            className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
-            onClick={() => setPoUploadOpen(true)}
+ type="button"
+ variant="outline"
+ className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5"
+ onClick={() => setPoUploadOpen(true)}
           >
             <Upload className="h-4 w-4" />
             Import Customer PO
@@ -636,10 +625,10 @@ export default function InvoiceNew() {
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map(c => (
                   <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => form.setValue("currency", c.code)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+ key={c.code}
+ type="button"
+ onClick={() => form.setValue("currency", c.code)}
+ className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
                     {c.label}
                   </button>
@@ -653,8 +642,8 @@ export default function InvoiceNew() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
                 <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
+ type="customer"
+ onSelect={(c) => {
                     form.setValue("customerName", c.name);
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
@@ -674,11 +663,10 @@ export default function InvoiceNew() {
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <ContactAutocomplete
-                        type="customer"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Acme Corp"
-                        onSelect={(c) => {
+ type="customer"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -690,15 +678,15 @@ export default function InvoiceNew() {
                 )} />
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Address</FormLabel>
-                    <FormControl><Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
                   <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
                   <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
                   const addrs = (field.value || "").split("\n\n");
@@ -713,26 +701,26 @@ export default function InvoiceNew() {
                           <div key={idx} className="relative group">
                             <FormControl>
                               <Textarea
-                                value={addr}
-                                onChange={(e) => {
+ value={addr}
+ onChange={(e) => {
                                   const newAddrs = [...addrs];
                                   newAddrs[idx] = e.target.value;
                                   field.onChange(newAddrs.join("\n\n"));
                                 }}
-                                placeholder={`Ship-to Address #${idx + 1}`}
-                                className="resize-none pr-8 text-sm"
-                                rows={2}
+ placeholder={`Ship-to Address #${idx + 1}`}
+ className="resize-none pr-8 text-sm"
+ rows={2}
                               />
                             </FormControl>
                             {addrs.length > 1 && (
                               <button
-                                type="button"
-                                onClick={() => {
+ type="button"
+ onClick={() => {
                                   const newAddrs = addrs.filter((_, i) => i !== idx);
                                   field.onChange(newAddrs.join("\n\n"));
                                 }}
-                                className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Remove Address"
+ className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+ title="Remove Address"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -740,11 +728,11 @@ export default function InvoiceNew() {
                           </div>
                         ))}
                         <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
-                          onClick={() => {
+ type="button"
+ variant="outline"
+ size="sm"
+ className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+ onClick={() => {
                             const newAddrs = [...addrs, ""];
                             field.onChange(newAddrs.join("\n\n"));
                           }}
@@ -841,8 +829,8 @@ export default function InvoiceNew() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
-                      checked={isOverseas}
-                      onCheckedChange={(v) => {
+ checked={isOverseas}
+ onCheckedChange={(v) => {
                         setIsOverseas(v);
                         form.setValue("tax", v ? 0 : (settings?.gstRate ?? 0));
                       }}
@@ -907,7 +895,7 @@ export default function InvoiceNew() {
                                   <div className="flex-1 min-w-0">
                                     <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
                                       <FormItem><FormControl>
-                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                        <RichTextEditor value={f.value} onChange={f.onChange}  />
                                       </FormControl></FormItem>
                                     )} />
                                   </div>
@@ -944,10 +932,10 @@ export default function InvoiceNew() {
                               <FormItem><FormControl>
                                 <div className="flex items-center gap-1">
                                   <Input
-                                    className="h-8 text-sm border-0 bg-transparent focus:bg-background"
-                                    placeholder="Optional"
-                                    value={field.value}
-                                    onChange={(e) => {
+ className="h-8 text-sm border-0 bg-transparent focus:bg-background"
+                                    
+ value={field.value}
+ onChange={(e) => {
                                       const next = e.target.value;
                                       field.onChange(next);
                                       // Manual part edits must not keep a stale cube-picked binding
@@ -962,9 +950,9 @@ export default function InvoiceNew() {
                                         form.setValue(`items.${index}.selectedSerialIds`, []);
                                       }
                                     }}
-                                    onBlur={field.onBlur}
-                                    name={field.name}
-                                    ref={field.ref}
+ onBlur={field.onBlur}
+ name={field.name}
+ ref={field.ref}
                                   />
                                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                     <Package className="h-3.5 w-3.5" />
@@ -976,7 +964,7 @@ export default function InvoiceNew() {
                           <td className="px-2 py-2 align-top">
                             <div className="flex gap-2 items-start">
                               <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                                <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                                <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                               )} />
                               <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                                 <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
@@ -987,13 +975,13 @@ export default function InvoiceNew() {
                             <FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
                               <FormItem><FormControl>
                                 <Input
-                                  type="number"
-                                  inputMode="decimal"
-                                  min="0"
-                                  step="any"
-                                  className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background"
+ type="number"
+ inputMode="decimal"
+ min="0"
+ step="any"
+ className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background"
                                   {...field}
-                                  onChange={(event) => field.onChange(event.target.value === "" ? "" : Number(event.target.value))}
+ onChange={(event) => field.onChange(event.target.value === "" ? "" : Number(event.target.value))}
                                 />
                               </FormControl></FormItem>
                             )} />
@@ -1049,9 +1037,9 @@ export default function InvoiceNew() {
                                   <Checkbox checked={field.value} onCheckedChange={field.onChange} title="Serialized stock item" />
                                   {field.value && (
                                     <button
-                                      type="button"
-                                      onClick={() => setPickerIndex(index)}
-                                      className="text-xs text-primary hover:underline whitespace-nowrap"
+ type="button"
+ onClick={() => setPickerIndex(index)}
+ className="text-xs text-primary hover:underline whitespace-nowrap"
                                     >
                                       {(form.watch(`items.${index}.selectedSerials`) || []).length > 0
                                         ? `${(form.watch(`items.${index}.selectedSerials`) || []).length} S/N`
@@ -1106,12 +1094,12 @@ export default function InvoiceNew() {
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
                         <Input
-                          inputMode="decimal"
-                          maxLength={3}
-                          placeholder="0"
-                          className="h-7 w-14 text-sm text-center pr-5"
-                          value={discountPct || ""}
-                          onChange={e => {
+ inputMode="decimal"
+ maxLength={3}
+ placeholder="0"
+ className="h-7 w-14 text-sm text-center pr-5"
+ value={discountPct || ""}
+ onChange={e => {
                             const raw = e.target.value.replace(/[^0-9.]/g, "");
                             const n = Math.min(parseFloat(raw) || 0, 100);
                             setDiscountPct(n);
@@ -1123,8 +1111,8 @@ export default function InvoiceNew() {
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
                           <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
-                            value={field.value || ""}
-                            onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+ value={field.value || ""}
+ onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />
                         </FormControl></FormItem>
                       )} />
@@ -1144,7 +1132,7 @@ export default function InvoiceNew() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -1155,11 +1143,11 @@ export default function InvoiceNew() {
                     <FormLabel>Customer Note</FormLabel>
                     <FormControl>
                       <Textarea
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        placeholder="Note for the customer..."
-                        rows={4}
-                        className="min-h-[96px] resize-y"
+ value={field.value ?? ""}
+ onChange={field.onChange}
+                        
+ rows={4}
+ className="min-h-[96px] resize-y"
                       />
                     </FormControl>
                     <FormMessage />
@@ -1171,11 +1159,11 @@ export default function InvoiceNew() {
                     <FormLabel>Delivery Instructions</FormLabel>
                     <FormControl>
                       <Textarea
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        placeholder="Special instructions for delivery..."
-                        rows={4}
-                        className="min-h-[96px] resize-y"
+ value={field.value ?? ""}
+ onChange={field.onChange}
+                        
+ rows={4}
+ className="min-h-[96px] resize-y"
                       />
                     </FormControl>
                     <FormMessage />
@@ -1187,11 +1175,11 @@ export default function InvoiceNew() {
                     <FormLabel>Terms & Conditions</FormLabel>
                     <FormControl>
                       <Textarea
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        placeholder="Terms & conditions..."
-                        rows={4}
-                        className="min-h-[96px] resize-y"
+ value={field.value ?? ""}
+ onChange={field.onChange}
+                        
+ rows={4}
+ className="min-h-[96px] resize-y"
                       />
                     </FormControl>
                     <FormMessage />
@@ -1200,28 +1188,17 @@ export default function InvoiceNew() {
 
                 <FormField control={form.control} name="authorisedSignature" render={({ field }) => {
                   const inputRef = useRef<HTMLInputElement>(null);
-                  const handleFile = (file: File) => {
-                    const reader = new FileReader();
-                    reader.onload = async (e) => {
-                      const src = e.target?.result as string;
-                      if (src) {
-                        const img = document.createElement("img");
-                        img.onload = () => {
-                          const canvas = document.createElement("canvas");
-                          let w = img.width, h = img.height;
-                          const maxW = 300, maxH = 100;
-                          if (w > maxW || h > maxH) {
-                            const r = Math.min(maxW / w, maxH / h);
-                            w = Math.round(w * r); h = Math.round(h * r);
-                          }
-                          canvas.width = w; canvas.height = h;
-                          canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-                          field.onChange(canvas.toDataURL("image/png"));
-                        };
-                        img.src = src;
-                      }
-                    };
-                    reader.readAsDataURL(file);
+                  const [uploading, setUploading] = useState(false);
+
+                  const handleFile = async (file: File) => {
+                    setUploading(true);
+                    try {
+                      field.onChange(await processSignatureFile(file));
+                    } catch {
+                      // invalid type or read failure — ignore
+                    } finally {
+                      setUploading(false);
+                    }
                   };
 
                   return (
@@ -1234,31 +1211,32 @@ export default function InvoiceNew() {
                               <div className="relative group border rounded overflow-hidden bg-white p-2">
                                 <img src={field.value} alt="Authorised Signature" className="h-16 object-contain" />
                                 <button
-                                  type="button"
-                                  onClick={() => field.onChange("")}
-                                  className="absolute top-1 right-1 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
+ type="button"
+ onClick={() => field.onChange("")}
+ className="absolute top-1 right-1 bg-black/50 rounded-full p-1 hover:bg-black/70 transition-colors"
                                 >
                                   <X className="h-3 w-3 text-white" />
                                 </button>
                               </div>
                             ) : (
                               <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => inputRef.current?.click()}
-                                className="gap-2 text-xs"
+ type="button"
+ variant="outline"
+ onClick={() => inputRef.current?.click()}
+ className="gap-2 text-xs"
+ disabled={uploading}
                               >
-                                <Upload className="h-4 w-4" /> Upload Signature Image
+                                <Upload className="h-4 w-4" /> {uploading ? "Uploading..." : "Upload Signature"}
                               </Button>
                             )}
                             <input
-                              ref={inputRef}
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
+ ref={inputRef}
+ type="file"
+ accept={SIGNATURE_FILE_ACCEPT}
+ className="hidden"
+ onChange={(e) => {
                                 const f = e.target.files?.[0];
-                                if (f) handleFile(f);
+                                if (f) void handleFile(f);
                                 e.target.value = "";
                               }}
                             />
@@ -1278,8 +1256,8 @@ export default function InvoiceNew() {
             <div className="flex justify-end">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
                 <Checkbox
-                  checked={createDeliveryOrder}
-                  onCheckedChange={(checked) => setCreateDeliveryOrder(checked === true)}
+ checked={createDeliveryOrder}
+ onCheckedChange={(checked) => setCreateDeliveryOrder(checked === true)}
                 />
                 Converted into Delivery Order
               </label>
@@ -1287,20 +1265,20 @@ export default function InvoiceNew() {
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" onClick={() => setLocation("/invoices")}>Cancel</Button>
               <Button
-                type="button"
-                variant="outline"
-                disabled={isSubmitting}
-                className="gap-2"
-                onClick={form.handleSubmit(v => doSubmit(v, false))}
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => doSubmit(v, false))}
               >
                 <Save className="h-4 w-4" />
                 {isSubmitting ? "Saving..." : "Save as Draft"}
               </Button>
               <Button
-                type="button"
-                disabled={isSubmitting}
-                className="gap-2"
-                onClick={form.handleSubmit(v => onSubmit(v, true))}
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true))}
               >
                 <Eye className="h-4 w-4" />
                 {isSubmitting ? "Saving..." : "Save & Preview"}
@@ -1312,12 +1290,12 @@ export default function InvoiceNew() {
 
       {pickerIndex !== null && (
         <SerialPickerDialog
-          open={pickerIndex !== null}
-          onOpenChange={(open) => { if (!open) setPickerIndex(null); }}
-          partNumber={form.watch(`items.${pickerIndex}.partNumber`) || ""}
-          currentSelected={form.watch(`items.${pickerIndex}.selectedSerials`) || []}
-          currentSelectedIds={form.watch(`items.${pickerIndex}.selectedSerialIds`) || []}
-          onConfirm={(serials, serialIds) => {
+ open={pickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setPickerIndex(null); }}
+ partNumber={form.watch(`items.${pickerIndex}.partNumber`) || ""}
+ currentSelected={form.watch(`items.${pickerIndex}.selectedSerials`) || []}
+ currentSelectedIds={form.watch(`items.${pickerIndex}.selectedSerialIds`) || []}
+ onConfirm={(serials, serialIds) => {
             const prevIds: number[] = form.getValues(`items.${pickerIndex!}.selectedSerialIds`) || [];
             const toRelease = prevIds.filter(id => !serialIds.includes(id));
             const toReserve = serialIds.filter(id => !prevIds.includes(id));
@@ -1335,9 +1313,9 @@ export default function InvoiceNew() {
       )}
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           if (!warehouseId) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
@@ -1371,17 +1349,17 @@ export default function InvoiceNew() {
       />
 
       <CurrencyMismatchDialog
-        open={currencyDialogOpen}
-        entityName={directoryCurrencyName}
-        entityType="customer"
-        defaultCurrency={directoryCurrency}
-        selectedCurrency={form.getValues("currency")}
-        onContinue={async () => {
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="customer"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
           setPendingConfirmValues(null);
         }}
-        onRevert={async () => {
+ onRevert={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) {
             const updated = { ...pendingConfirmValues, currency: directoryCurrency };
@@ -1393,42 +1371,42 @@ export default function InvoiceNew() {
       />
 
       <AiInvoiceDialog
-        open={aiOpen}
-        onOpenChange={setAiOpen}
-        onApply={handleAiApply}
+ open={aiOpen}
+ onOpenChange={setAiOpen}
+ onApply={handleAiApply}
       />
 
       <CustomerPoUploadDialog
-        open={poUploadOpen}
-        onOpenChange={setPoUploadOpen}
-        onApply={handlePoExtracted}
+ open={poUploadOpen}
+ onOpenChange={setPoUploadOpen}
+ onApply={handlePoExtracted}
       />
 
       <ImportFromPODialog
-        open={importPOOpen}
-        onOpenChange={setImportPOOpen}
-        mode="invoice"
-        onImport={imported => handleImportFromPO(imported as InvoiceImportItem[])}
+ open={importPOOpen}
+ onOpenChange={setImportPOOpen}
+ mode="invoice"
+ onImport={imported => handleImportFromPO(imported as InvoiceImportItem[])}
       />
       {savedDoc && (
         <PdfPreviewModal
-          open={previewOpen}
-          onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
             setPreviewOpen(open);
             if (!open) setLocation(`/invoices`);
           }}
-          title={`Invoice ${savedDoc.invNumber}`}
-          generatePdf={(opts) => generateInvoicePdfSmart(
+ title={`Invoice ${savedDoc.invNumber}`}
+ generatePdf={(opts) => generateInvoicePdfSmart(
             savedDoc.id,
             () => generateInvoice_PDF(savedDoc, selectedCompany, undefined, opts),
             { ...opts, filename: `${savedDoc.invNumber}.pdf` },
           )}
-          pdfFilename={`${savedDoc.invNumber}.pdf`}
-          defaultEmailTo={savedDoc.customerContactEmail || ""}
-          defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
-          defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
-          onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
-          onEmailSent={async (recipients) => {
+ pdfFilename={`${savedDoc.invNumber}.pdf`}
+ defaultEmailTo={savedDoc.customerContactEmail || ""}
+ defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
+ defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+ onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
+ onEmailSent={async (recipients) => {
             await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
             setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: recipients.join(", ") } : prev);
           }}

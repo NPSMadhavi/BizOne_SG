@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
 import { CURRENCIES } from "@/lib/currencies";
+import { isInternationalParty } from "@/lib/countries";
 
 interface Vendor {
   id: number;
@@ -73,10 +74,7 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
 
   const setField = (k: string, val: any) => setForm(p => ({ ...p, [k]: val }));
 
-  const isInternational = Boolean(
-    form.country && companyCountry &&
-    form.country.toLowerCase() !== companyCountry.toLowerCase()
-  );
+  const isInternational = isInternationalParty(form.country, companyCountry);
 
   const mutation = useMutation({
     mutationFn: createVendor,
@@ -107,7 +105,7 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
               <CountrySelect
                 value={form.country}
                 onChange={v => {
-                  const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                  const intl = isInternationalParty(v, companyCountry);
                   setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
                 }}
                 singleChevron

@@ -207,7 +207,7 @@ export default function MultiPriceLevelPage() {
         />
       )}
       {showManagement && <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2"><Button variant="ghost" size="icon" title="Back to saved invoice table" onClick={() => { setShowManagement(false); setEditingInvoiceIndex(null); setEditingInvoice(null); }}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold tracking-tight text-[#132d52]">Price Management</h1><p className="text-sm text-muted-foreground">Manage multiple price levels, item prices and quantity pricing</p></div></div>
+        <div className="flex items-center gap-2"><Button variant="ghost" size="icon" title="Back to saved invoice table" onClick={() => { setShowManagement(false); setEditingInvoiceIndex(null); setEditingInvoice(null); }}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold tracking-tight text-[#132d52]">Price Management</h1></div></div>
         <Button className="gap-2 bg-[#1265d8] hover:bg-[#0d55b8]" onClick={() => setLocation("/multi-price-level/new")}><Plus className="h-4 w-4" /> New Price Level</Button>
       </div>}
 
@@ -287,7 +287,7 @@ function SavedInvoiceTable({ invoices, onManagement, onDelete, onEdit, onPreview
     });
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Saved Sales Invoices");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Price Levels");
     XLSX.writeFile(workbook, `Saved_Sales_Invoices_${new Date().toISOString().slice(0, 10)}.xlsx`);
     toast({ title: "Excel Exported", description: "Saved sales invoices exported to Excel." });
   };
@@ -299,7 +299,7 @@ function SavedInvoiceTable({ invoices, onManagement, onDelete, onEdit, onPreview
     }
     const doc = new jsPDF();
     doc.setFontSize(16);
-    doc.text("Saved Sales Invoices", 14, 15);
+    doc.text("Price Levels", 14, 15);
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toISOString().slice(0, 10)}`, 14, 22);
 
@@ -335,8 +335,7 @@ function SavedInvoiceTable({ invoices, onManagement, onDelete, onEdit, onPreview
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Saved Sales Invoices</h1>
-          <p className="mt-1 text-muted-foreground">Saved sales invoice definitions with price levels.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Price Levels</h1>
         </div>
         <div className="flex items-center gap-2">
           <DropdownMenu>

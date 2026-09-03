@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, ShoppingBag, FileText } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, ShoppingBag } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generatePurchaseQuotation_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -180,8 +180,7 @@ export default function PurchaseQuotationView() {
             disabled={!!converting || !canConvert}
             title={!canConvert ? "Confirm the purchase quotation before converting" : undefined}
           >
-            {converting === "vendor-invoice" ? <span className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /> : <FileText className="h-4 w-4" />}
-            Convert to Vendor Invoice
+            {converting === "vendor-invoice" ? "Converting..." : "Convert to Vendor Invoice"}
           </Button>
           <Button
             variant="outline"

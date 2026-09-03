@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
@@ -30,6 +31,10 @@ import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useAuth } from "@/contexts/auth-context";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -85,7 +90,7 @@ export default function ProformaInvoiceEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany } = useAuth();
+  const { selectedCompany, canManage } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -279,9 +284,26 @@ export default function ProformaInvoiceEdit() {
       .filter(Boolean)
       .join("\n\n");
 
-    updateMutation.mutate({ ...values, deliveryAddress: cleanAddress || null, items: itemsWithAmount } as any, {
-      onSuccess: async () => {
-        await queryClient.refetchQueries({ queryKey: ["proforma-invoices", id] });
+    const isCancelled = values.status === "cancelled";
+    const newStatus = isCancelled
+      ? "cancelled"
+      : openPreview
+        ? "confirmed"
+        : values.status || "draft";
+
+    updateMutation.mutate({
+      ...values,
+      status: newStatus,
+      deliveryAddress: cleanAddress || null,
+      items: itemsWithAmount,
+    } as any, {
+      onSuccess: async (data) => {
+        if (data?.status) form.setValue("status", data.status as any);
+        queryClient.setQueryData(["proforma-invoices"], (old: any) =>
+          Array.isArray(old) ? old.map((d: any) => d.id === id ? data : d) : old,
+        );
+        queryClient.setQueryData(["proforma-invoices", id], data);
+        await invalidateDocumentList(queryClient, "proforma-invoices");
         setIsSubmitting(false);
         if (openPreview) { setPreviewOpen(true); }
         else { toast({ title: "Proforma Invoice saved." }); setLocation(`/proforma-invoices/${id}`); }
@@ -315,10 +337,10 @@ export default function ProformaInvoiceEdit() {
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map(c => (
                   <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => form.setValue("currency", c.code)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+ key={c.code}
+ type="button"
+ onClick={() => form.setValue("currency", c.code)}
+ className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
                     {c.label}
                   </button>
@@ -332,8 +354,8 @@ export default function ProformaInvoiceEdit() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
                 <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
+ type="customer"
+ onSelect={(c) => {
                     form.setValue("customerName", c.name);
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
@@ -353,10 +375,10 @@ export default function ProformaInvoiceEdit() {
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <ContactAutocomplete
-                        type="customer"
-                        value={field.value}
-                        onChange={field.onChange}
-                        onSelect={(c) => {
+ type="customer"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -372,11 +394,11 @@ export default function ProformaInvoiceEdit() {
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
                   <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
                   <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
                   const addrs = (field.value || "").split("\n\n");
@@ -391,26 +413,26 @@ export default function ProformaInvoiceEdit() {
                           <div key={idx} className="relative group">
                             <FormControl>
                               <Textarea
-                                value={addr}
-                                onChange={(e) => {
+ value={addr}
+ onChange={(e) => {
                                   const newAddrs = [...addrs];
                                   newAddrs[idx] = e.target.value;
                                   field.onChange(newAddrs.join("\n\n"));
                                 }}
-                                placeholder={`Ship-to Address #${idx + 1}`}
-                                className="resize-none pr-8 text-sm"
-                                rows={2}
+ placeholder={`Ship-to Address #${idx + 1}`}
+ className="resize-none pr-8 text-sm"
+ rows={2}
                               />
                             </FormControl>
                             {addrs.length > 1 && (
                               <button
-                                type="button"
-                                onClick={() => {
+ type="button"
+ onClick={() => {
                                   const newAddrs = addrs.filter((_, i) => i !== idx);
                                   field.onChange(newAddrs.join("\n\n"));
                                 }}
-                                className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Remove Address"
+ className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+ title="Remove Address"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -418,11 +440,11 @@ export default function ProformaInvoiceEdit() {
                           </div>
                         ))}
                         <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
-                          onClick={() => {
+ type="button"
+ variant="outline"
+ size="sm"
+ className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+ onClick={() => {
                             const newAddrs = [...addrs, ""];
                             field.onChange(newAddrs.join("\n\n"));
                           }}
@@ -466,7 +488,7 @@ export default function ProformaInvoiceEdit() {
                 )} />
                 <FormField control={form.control} name="qtRefNo" render={({ field }) => (
                   <FormItem><FormLabel>Quotation Ref No.</FormLabel>
-                    <FormControl><Input placeholder="e.g. QT-0001" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
@@ -501,8 +523,8 @@ export default function ProformaInvoiceEdit() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
-                      checked={isOverseas}
-                      onCheckedChange={(v) => {
+ checked={isOverseas}
+ onCheckedChange={(v) => {
                         setIsOverseas(v);
                         form.setValue("tax", v ? 0 : (docSettings?.gstRate ?? 0));
                       }}
@@ -564,7 +586,7 @@ export default function ProformaInvoiceEdit() {
                                   <div className="flex-1 min-w-0">
                                     <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
                                       <FormItem><FormControl>
-                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                        <RichTextEditor value={f.value} onChange={f.onChange}  />
                                       </FormControl></FormItem>
                                     )} />
                                   </div>
@@ -599,7 +621,7 @@ export default function ProformaInvoiceEdit() {
                           <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                             <FormItem><FormControl>
                               <div className="flex items-center gap-1">
-                                <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"  {...field} />
                                 <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                   <Package className="h-3.5 w-3.5" />
                                 </Button>
@@ -607,7 +629,7 @@ export default function ProformaInvoiceEdit() {
                             </FormControl></FormItem>
                           )} /></td>
                           <td className="px-2 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                            <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                            <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                           )} /><FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                             <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
                           )} /></div></td>
@@ -687,12 +709,12 @@ export default function ProformaInvoiceEdit() {
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
                         <Input
-                          inputMode="decimal"
-                          maxLength={3}
-                          placeholder="0"
-                          className="h-7 w-14 text-sm text-center pr-5"
-                          value={discountPct || ""}
-                          onChange={e => {
+ inputMode="decimal"
+ maxLength={3}
+ placeholder="0"
+ className="h-7 w-14 text-sm text-center pr-5"
+ value={discountPct || ""}
+ onChange={e => {
                             const raw = e.target.value.replace(/[^0-9.]/g, "");
                             const n = Math.min(parseFloat(raw) || 0, 100);
                             setDiscountPct(n);
@@ -704,8 +726,8 @@ export default function ProformaInvoiceEdit() {
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
                           <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
-                            value={field.value || ""}
-                            onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+ value={field.value || ""}
+ onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />
                         </FormControl></FormItem>
                       )} />
@@ -725,7 +747,7 @@ export default function ProformaInvoiceEdit() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -734,36 +756,85 @@ export default function ProformaInvoiceEdit() {
             </CardContent>
           </Card>
 
-          <FormStickyActions>
-            <Button type="button" variant="outline" onClick={() => setLocation(`/proforma-invoices/${id}`)}>Cancel</Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => doSubmit(v, false))}
-            >
-              <Save className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save"}
-            </Button>
-            <Button
-              type="button"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true))}
-            >
-              <Eye className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save & Preview"}
-            </Button>
+          <FormStickyActions className="justify-between">
+            <div>
+              {canManage && doc?.status === "draft" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+ type="button"
+ variant="outline"
+ size="icon"
+ className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+ title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete <strong>{doc.piNumber}</strong>. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+ className="bg-red-600 hover:bg-red-700"
+ onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/proforma-invoices/${id}`, { method: "DELETE", credentials: "include" });
+                            if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+                            queryClient.setQueryData(["proforma-invoices"], (old: any) =>
+                              Array.isArray(old) ? old.filter((d: any) => d.id !== id) : old,
+                            );
+                            await invalidateDocumentList(queryClient, "proforma-invoices");
+                            toast({ title: "Proforma Invoice deleted." });
+                            setLocation("/proforma-invoices");
+                          } catch (err: any) {
+                            toast({ title: "Error", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" onClick={() => setLocation(`/proforma-invoices/${id}`)}>Cancel</Button>
+              <Button
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => doSubmit(v, false))}
+              >
+                <Save className="h-4 w-4" />
+                {isSubmitting ? "Saving..." : "Save"}
+              </Button>
+              <Button
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true))}
+              >
+                <Eye className="h-4 w-4" />
+                {isSubmitting ? "Saving..." : "Save & Preview"}
+              </Button>
+            </div>
           </FormStickyActions>
         </form>
       </Form>
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
-        onSelect={({ item, qty }: StockItemSelection) => {
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
@@ -774,17 +845,17 @@ export default function ProformaInvoiceEdit() {
       />
 
       <CurrencyMismatchDialog
-        open={currencyDialogOpen}
-        entityName={directoryCurrencyName}
-        entityType="customer"
-        defaultCurrency={directoryCurrency}
-        selectedCurrency={form.getValues("currency")}
-        onContinue={async () => {
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="customer"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
           setPendingConfirmValues(null);
         }}
-        onRevert={async () => {
+ onRevert={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) {
             const updated = { ...pendingConfirmValues, currency: directoryCurrency };
@@ -796,27 +867,27 @@ export default function ProformaInvoiceEdit() {
       />
 
       <ImportItemsDialog
-        open={importExcelOpen}
-        onClose={() => setImportExcelOpen(false)}
-        onImport={(imported, replace) => {
+ open={importExcelOpen}
+ onClose={() => setImportExcelOpen(false)}
+ onImport={(imported, replace) => {
           const newItems = imported.map(it => ({ ...blankPiItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
           if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
         }}
       />
       {doc && (
         <PdfPreviewModal
-          open={previewOpen}
-          onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
             setPreviewOpen(open);
             if (!open) setLocation(`/proforma-invoices`);
           }}
-          title={`Proforma Invoice ${doc.piNumber}`}
-          generatePdf={(opts) => generatePI_PDF(doc, selectedCompany, undefined, opts)}
-          pdfFilename={`${doc.piNumber}.pdf`}
-          defaultEmailTo={doc.customerContactEmail || ""}
-          defaultEmailSubject={`Proforma Invoice ${doc.piNumber}`}
-          defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached our Proforma Invoice ${doc.piNumber} for your consideration.\n\nThank you.`}
-          docInfo={{
+ title={`Proforma Invoice ${doc.piNumber}`}
+ generatePdf={(opts) => generatePI_PDF(doc, selectedCompany, undefined, opts)}
+ pdfFilename={`${doc.piNumber}.pdf`}
+ defaultEmailTo={doc.customerContactEmail || ""}
+ defaultEmailSubject={`Proforma Invoice ${doc.piNumber}`}
+ defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached our Proforma Invoice ${doc.piNumber} for your consideration.\n\nThank you.`}
+ docInfo={{
             docType: "Proforma Invoice",
             docNumber: doc.piNumber,
             customerName: doc.customerName,
@@ -825,8 +896,8 @@ export default function ProformaInvoiceEdit() {
             currency: (doc as any).currency || "SGD",
             totalAmount: Number(doc.totalAmount) || 0,
           }}
-          onEdit={() => { setPreviewOpen(false); }}
-          onEmailSent={async (recipients) => {
+ onEdit={() => { setPreviewOpen(false); }}
+ onEmailSent={async (recipients) => {
             await markSentMutation.mutateAsync(recipients);
             await queryClient.invalidateQueries({ queryKey: ["proforma-invoices", id] });
           }}

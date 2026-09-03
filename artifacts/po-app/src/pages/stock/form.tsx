@@ -11,7 +11,6 @@ import { inventoryApi } from "@/lib/inventory-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -22,7 +21,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Package, Plus, Wrench } from "lucide-react";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const UOM_OPTIONS = [
   { value: "Nos", label: "Nos (Numbers)" },
@@ -38,6 +36,9 @@ const UOM_OPTIONS = [
   { value: "Roll", label: "Roll" },
   { value: "Carton", label: "Carton" },
   { value: "Case", label: "Case" },
+  { value: "Strip", label: "Strip" },
+  { value: "Kg", label: "Kg" },
+  { value: "Litre", label: "Litre" },
 ];
 
 const CUSTOM_UOM_STORAGE_KEY = "stock-custom-uoms";
@@ -72,15 +73,17 @@ function normalizeUom(raw?: string | null) {
 const EMPTY_FORM = {
   code: "",
   name: "",
-  description: "",
-  salesPerson: "",
   uom: "Pcs",
   type: "product" as "product" | "service",
   unitPrice: "" as string | number,
+  mrpPrice: "" as string | number,
   stockQty: "" as string | number,
   batchNo: "",
   isActive: true,
   warehouseId: "" as string,
+  alternateUom: "",
+  alternateQty: "" as string | number,
+  mainQty: "" as string | number,
 };
 
 export default function StockItemFormPage() {
@@ -89,13 +92,18 @@ export default function StockItemFormPage() {
   const isEdit = Number.isFinite(editId) && editId > 0;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
   const [createUomOpen, setCreateUomOpen] = useState(false);
   const [newUomName, setNewUomName] = useState("");
+  const [altUnitsOpen, setAltUnitsOpen] = useState(false);
+  const [altDraft, setAltDraft] = useState({
+    alternateUom: "",
+    alternateQty: "",
+    mainQty: "",
+  });
   const [loaded, setLoaded] = useState(!isEdit);
 
   const createMutation = useCreateStockItem();
@@ -137,15 +145,26 @@ export default function StockItemFormPage() {
     setForm({
       code: item.code || "",
       name: item.name || "",
-      description: item.description || "",
-      salesPerson: (item as any).salesPerson || "",
       uom: normalizeUom(item.uom),
       type: item.type === "service" ? "service" : "product",
       unitPrice: item.unitPrice != null && item.unitPrice !== "" ? String(item.unitPrice) : "",
+      mrpPrice:
+        (item as any).mrpPrice != null && (item as any).mrpPrice !== ""
+          ? String((item as any).mrpPrice)
+          : "",
       stockQty: item.stockQty != null && item.stockQty !== "" ? String(item.stockQty) : "",
       batchNo: item.batchNo || "",
       isActive: item.isActive ?? true,
       warehouseId: "",
+      alternateUom: (item as any).alternateUom || "",
+      alternateQty:
+        (item as any).alternateQty != null && (item as any).alternateQty !== ""
+          ? String((item as any).alternateQty)
+          : "",
+      mainQty:
+        (item as any).mainQty != null && (item as any).mainQty !== ""
+          ? String((item as any).mainQty)
+          : "",
     });
     setLoaded(true);
   }, [isEdit, editId, items]);
@@ -162,10 +181,48 @@ export default function StockItemFormPage() {
       extras.push({ value, label: value });
     };
     for (const uom of customUoms) addExtra(uom);
-    for (const item of items as any[]) addExtra(item?.uom);
+    for (const item of items as any[]) {
+      addExtra(item?.uom);
+      addExtra(item?.alternateUom);
+    }
     addExtra(form.uom);
+    addExtra(form.alternateUom);
     return [...UOM_OPTIONS, ...extras];
-  }, [customUoms, form.uom, items]);
+  }, [customUoms, form.uom, form.alternateUom, items]);
+
+  function openAdditionalUnits() {
+    setAltDraft({
+      alternateUom: form.alternateUom || "",
+      alternateQty: form.alternateQty !== "" && form.alternateQty != null ? String(form.alternateQty) : "0",
+      mainQty: form.mainQty !== "" && form.mainQty != null ? String(form.mainQty) : "0",
+    });
+    setAltUnitsOpen(true);
+  }
+
+  function saveAdditionalUnits() {
+    const alt = altDraft.alternateUom.trim();
+    if (alt && alt.toLowerCase() === form.uom.toLowerCase()) {
+      toast({
+        title: "Invalid units",
+        description: "Alternate unit must be different from the main UOM.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      alternateUom: alt,
+      alternateQty: alt ? Number(altDraft.alternateQty) || 0 : "",
+      mainQty: alt ? Number(altDraft.mainQty) || 0 : "",
+    }));
+    setAltUnitsOpen(false);
+  }
+
+  function clearAdditionalUnits() {
+    setAltDraft({ alternateUom: "", alternateQty: "0", mainQty: "0" });
+    setForm((f) => ({ ...f, alternateUom: "", alternateQty: "", mainQty: "" }));
+    setAltUnitsOpen(false);
+  }
 
   function handleCreateUom() {
     const name = newUomName.trim();
@@ -207,7 +264,7 @@ export default function StockItemFormPage() {
     if (form.type === "product" && Number(form.stockQty) > 0 && !selectedWarehouseId) {
       toast({
         title: "Error",
-        description: "Select a warehouse for the stock quantity.",
+        description: "Select a warehouse for the opening quantity.",
         variant: "destructive",
       });
       return;
@@ -216,15 +273,18 @@ export default function StockItemFormPage() {
     const payload = {
       code: form.code.trim(),
       name: form.name.trim(),
-      description: form.description.trim() || undefined,
       uom: form.uom.trim() || "Pcs",
       type: form.type,
       unitPrice: Number(form.unitPrice) || 0,
+      mrpPrice: Number(form.mrpPrice) || 0,
       stockQty: Number(form.stockQty) || 0,
       batchNo: form.batchNo.trim() || undefined,
       isActive: form.isActive,
       warehouseId:
         form.type === "product" && selectedWarehouseId ? Number(selectedWarehouseId) : undefined,
+      alternateUom: form.alternateUom.trim() || null,
+      alternateQty: form.alternateUom.trim() ? Number(form.alternateQty) || 0 : 0,
+      mainQty: form.alternateUom.trim() ? Number(form.mainQty) || 0 : 0,
     };
 
     if (isEdit) {
@@ -289,9 +349,6 @@ export default function StockItemFormPage() {
           <h1 className="text-2xl font-bold text-[#2563EB]">
             {isEdit ? "Edit Stock Item" : "New Stock Item"}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {isEdit ? "Update catalogue item details." : "Add a product or service to your catalogue."}
-          </p>
         </div>
       </div>
 
@@ -337,13 +394,26 @@ export default function StockItemFormPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <button
+                type="button"
+                onClick={openAdditionalUnits}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Additional units
+              </button>
+              {form.alternateUom ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {Number(form.alternateQty) || 0} {form.alternateUom} = {Number(form.mainQty) || 0}{" "}
+                  {form.uom}
+                </p>
+              ) : null}
             </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className={`space-y-1.5 ${form.type !== "product" ? "sm:col-span-2" : ""}`}>
               <Label>
-                Name <span className="text-destructive">*</span>
+                Item Name <span className="text-destructive">*</span>
               </Label>
               <Input
                 placeholder="Item name"
@@ -371,11 +441,6 @@ export default function StockItemFormPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[11px] text-muted-foreground">
-                  {isEdit
-                    ? "Quantity changes are booked in this warehouse."
-                    : "Opening stock quantity is added to this warehouse."}
-                </p>
               </div>
             )}
           </div>
@@ -413,7 +478,7 @@ export default function StockItemFormPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Unit Price</Label>
+              <Label>Opening Price</Label>
               <Input
                 type="text"
                 inputMode="decimal"
@@ -423,7 +488,7 @@ export default function StockItemFormPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Stock Quantity</Label>
+              <Label>Opening Quantity</Label>
               <Input
                 type="text"
                 inputMode="decimal"
@@ -435,47 +500,23 @@ export default function StockItemFormPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea
-                placeholder="Optional description..."
-                className="resize-none"
-                rows={3}
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+              <Label className="shrink-0 text-sm font-medium">Active</Label>
+              <Switch
+                checked={form.isActive}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Sales Person</Label>
-              <Select
-                value={form.salesPerson || ""}
-                onValueChange={(v) => setForm((f) => ({ ...f, salesPerson: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Sales Person" />
-                </SelectTrigger>
-                <SelectContent>
-                  {salesPersons.map((sp) => (
-                    <SelectItem key={sp.id} value={sp.name}>
-                      {sp.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>MRP Price</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder="0"
+                value={form.mrpPrice}
+                onChange={(e) => setForm((f) => ({ ...f, mrpPrice: e.target.value }))}
+              />
             </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
-            <div className="flex-1">
-              <p className="text-sm font-medium">Active</p>
-              <p className="text-xs text-muted-foreground">
-                Whether this item is available for use in documents
-              </p>
-            </div>
-            <Switch
-              checked={form.isActive}
-              onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))}
-            />
           </div>
         </CardContent>
       </Card>
@@ -514,6 +555,80 @@ export default function StockItemFormPage() {
             </Button>
             <Button type="button" onClick={handleCreateUom}>
               Add UOM
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={altUnitsOpen} onOpenChange={setAltUnitsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Additional Units</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 rounded-md border bg-muted/30 p-4 text-sm">
+            <div className="grid grid-cols-[120px_12px_1fr] items-center gap-2">
+              <span className="font-medium text-muted-foreground">Units</span>
+              <span className="text-muted-foreground">:</span>
+              <span className="font-semibold uppercase tracking-wide">{form.uom || "—"}</span>
+            </div>
+
+            <div className="grid grid-cols-[120px_12px_1fr] items-center gap-2">
+              <span className="font-medium text-muted-foreground">Alternate units</span>
+              <span className="text-muted-foreground">:</span>
+              <Select
+                value={altDraft.alternateUom || undefined}
+                onValueChange={(v) => setAltDraft((d) => ({ ...d, alternateUom: v }))}
+              >
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Select alternate unit" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48 overflow-y-auto">
+                  {uomOptions
+                    .filter((o) => o.value.toLowerCase() !== form.uom.toLowerCase())
+                    .map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-[120px_12px_1fr] items-center gap-2">
+              <span className="font-medium text-muted-foreground">where</span>
+              <span className="text-muted-foreground">:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="h-8 w-16 text-center"
+                  value={altDraft.alternateQty}
+                  onChange={(e) => setAltDraft((d) => ({ ...d, alternateQty: e.target.value }))}
+                />
+                <span className="font-semibold uppercase">
+                  {altDraft.alternateUom || "—"}
+                </span>
+                <span className="text-muted-foreground">=</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  className="h-8 w-16 text-center"
+                  value={altDraft.mainQty}
+                  onChange={(e) => setAltDraft((d) => ({ ...d, mainQty: e.target.value }))}
+                />
+                <span className="font-semibold uppercase">{form.uom || "—"}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="ghost" onClick={clearAdditionalUnits}>
+              Clear
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setAltUnitsOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveAdditionalUnits}>
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -210,13 +210,11 @@ export default function PurchaseOrderView() {
         <Button
           variant="outline"
           className={`${btnClass} border-blue-300 text-blue-700 hover:bg-blue-50`}
-          title="Vendor Invoice"
           onClick={() => setLocation(
             `/vendor-invoices/new?poId=${id}&poNumber=${encodeURIComponent(po.poNumber)}&vendorName=${encodeURIComponent(po.vendorName)}&amount=${po.totalAmount}&currency=${encodeURIComponent((po as any).currency || "SGD")}`
           )}
         >
-          <FileInput className={iconClass} />
-          Vendor Invoice
+          Convert to Vendor Invoice
         </Button>
       )}
       <Button variant="outline" className={btnClass} onClick={() => setLocation(`/purchase-orders/${id}/edit`)}>

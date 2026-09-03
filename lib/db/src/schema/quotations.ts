@@ -13,6 +13,7 @@ export const quotationsTable = pgTable("quotations", {
   /** Quotation is valid through this date (YYYY-MM-DD); from the next day status becomes cancelled. */
   validUntil: text("valid_until"),
   deliveryDate: text("delivery_date"),
+  salesPerson: text("sales_person"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
   isPrivate: boolean("is_private").default(false).notNull(),

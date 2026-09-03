@@ -119,8 +119,8 @@ export default function JournalEntryView() {
         {canManage && isManual && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">
-                <Trash2 className="h-4 w-4" /> Delete
+              <Button variant="outline" size="icon" className="border-red-300 text-red-700 hover:bg-red-50" title="Delete">
+                <Trash2 className="h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>

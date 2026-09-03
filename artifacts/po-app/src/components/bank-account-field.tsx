@@ -4,18 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Building2, Plus } from "lucide-react";
+import { Building2 } from "lucide-react";
 
 export type BankAccountItem = {
   id: string;
   bankName: string;
+  bankCode?: string;
+  branchCode?: string;
   accountNumber: string;
+  swiftBic?: string;
   accountHolder?: string;
   currency?: string;
   label: string;
 };
-
-const DEFAULT_BANK_ACCOUNTS: BankAccountItem[] = [];
 
 export function getStoredBankAccounts(): BankAccountItem[] {
   try {
@@ -68,9 +69,10 @@ export function BankAccountField({
   const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
   const [createBankOpen, setCreateBankOpen] = useState(false);
   const [newBankName, setNewBankName] = useState("");
+  const [newBankCode, setNewBankCode] = useState("");
+  const [newBranchCode, setNewBranchCode] = useState("");
   const [newAccountNum, setNewAccountNum] = useState("");
-  const [newAccountHolder, setNewAccountHolder] = useState("");
-  const [newCurrency, setNewCurrency] = useState("SGD");
+  const [newSwiftBic, setNewSwiftBic] = useState("");
 
   useEffect(() => {
     setBankAccounts(getStoredBankAccounts());
@@ -81,26 +83,32 @@ export function BankAccountField({
     paymentMethod === "Bank Transfer" ||
     paymentMethod?.toLowerCase().includes("bank");
 
+  const resetCreateForm = () => {
+    setNewBankName("");
+    setNewBankCode("");
+    setNewBranchCode("");
+    setNewAccountNum("");
+    setNewSwiftBic("");
+  };
+
   const handleCreateBank = () => {
     if (!newBankName.trim() || !newAccountNum.trim()) return;
     const created = saveNewBankAccount({
       bankName: newBankName.trim(),
+      bankCode: newBankCode.trim() || undefined,
+      branchCode: newBranchCode.trim() || undefined,
       accountNumber: newAccountNum.trim(),
-      accountHolder: newAccountHolder.trim(),
-      currency: newCurrency,
+      swiftBic: newSwiftBic.trim() || undefined,
     });
     setBankAccounts(getStoredBankAccounts());
     onBankAccountChange(created.label);
-    setNewBankName("");
-    setNewAccountNum("");
-    setNewAccountHolder("");
-    setNewCurrency("SGD");
+    resetCreateForm();
     setCreateBankOpen(false);
   };
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
         <div className="space-y-1.5">
           <Label>Payment Method</Label>
           <Select value={paymentMethod} onValueChange={onPaymentMethodChange}>
@@ -117,7 +125,7 @@ export function BankAccountField({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <Label>Select Bank Account</Label>
           <Select
             disabled={!isBankTransfer}
@@ -133,10 +141,13 @@ export function BankAccountField({
             <SelectTrigger className={`w-full ${isBankTransfer ? "border-[#2563EB]/40 bg-blue-50/20 focus:ring-2 focus:ring-[#2563EB]" : "bg-muted/50 text-muted-foreground opacity-70"}`}>
               <SelectValue placeholder={isBankTransfer ? "Select bank account..." : "Select Bank Account"} />
             </SelectTrigger>
-            <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)]">
+            <SelectContent
+              position="popper"
+              className="w-[var(--radix-select-trigger-width)] max-w-[var(--radix-select-trigger-width)]"
+            >
               <SelectItem
                 value="CREATE_NEW_BANK_ACCOUNT"
-                className="text-[#2563EB] font-semibold cursor-pointer border-b pb-2 mb-1"
+                className="text-xs font-medium text-[#2563EB] cursor-pointer border-b pb-1.5 mb-1 truncate"
               >
                 + Create Bank Account
               </SelectItem>
@@ -155,7 +166,13 @@ export function BankAccountField({
         </div>
       </div>
 
-      <Dialog open={createBankOpen} onOpenChange={setCreateBankOpen}>
+      <Dialog
+        open={createBankOpen}
+        onOpenChange={(open) => {
+          setCreateBankOpen(open);
+          if (!open) resetCreateForm();
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#2563EB]">
@@ -166,44 +183,50 @@ export function BankAccountField({
             <div className="space-y-1">
               <Label className="text-xs">Bank Name *</Label>
               <Input
-                placeholder="e.g. DBS Bank, OCBC Bank, UOB, Citibank"
                 value={newBankName}
                 onChange={(e) => setNewBankName(e.target.value)}
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Bank Code</Label>
+                <Input
+                  value={newBankCode}
+                  onChange={(e) => setNewBankCode(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Branch Code</Label>
+                <Input
+                  value={newBranchCode}
+                  onChange={(e) => setNewBranchCode(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="space-y-1">
               <Label className="text-xs">Account Number *</Label>
               <Input
-                placeholder="e.g. 123-45678-9"
                 value={newAccountNum}
                 onChange={(e) => setNewAccountNum(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Account Holder Name</Label>
+              <Label className="text-xs">SWIFT / BIC Code</Label>
               <Input
-                placeholder="e.g. BizOne SG Pte Ltd"
-                value={newAccountHolder}
-                onChange={(e) => setNewAccountHolder(e.target.value)}
+                value={newSwiftBic}
+                onChange={(e) => setNewSwiftBic(e.target.value)}
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Currency</Label>
-              <Select value={newCurrency} onValueChange={setNewCurrency}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SGD">SGD - Singapore Dollar</SelectItem>
-                  <SelectItem value="USD">USD - US Dollar</SelectItem>
-                  <SelectItem value="EUR">EUR - Euro</SelectItem>
-                  <SelectItem value="MYR">MYR - Malaysian Ringgit</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => setCreateBankOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                resetCreateForm();
+                setCreateBankOpen(false);
+              }}
+            >
               Cancel
             </Button>
             <Button

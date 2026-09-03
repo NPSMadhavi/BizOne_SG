@@ -121,7 +121,6 @@ export default function VendorInvoiceList() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Vendor Invoices</h1>
-          <p className="text-muted-foreground mt-1">Track vendor purchase invoices and payments</p>
         </div>
         <Button onClick={() => setLocation("/vendor-invoices/new")} className="gap-2">
           <Plus className="h-4 w-4" />

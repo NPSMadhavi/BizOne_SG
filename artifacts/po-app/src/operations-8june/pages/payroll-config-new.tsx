@@ -8,7 +8,7 @@ export default function PayrollConfigNewPage() {
 
   return (
     <FormPageShell
-      title="Add Payroll Configuration"
+      title="Add Payroll"
       description="Set up payroll details for an employee."
       backHref="/payroll"
     >

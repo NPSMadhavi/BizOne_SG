@@ -39,7 +39,7 @@ const router: IRouter = Router();
 /**
  * Preserve stockItemId when the client omits it on resave.
  * Warehouse MUST come from the client (cube picker) for that same stock item.
- * Never invent MAIN / index / other-line warehouses — that caused WH1 vs WH2 mix-ups.
+ * Part-number text matching stock codes does NOT auto-bind inventory — use the cube icon.
  */
 export async function mergeInvoiceStockMeta(
   companyId: number,
@@ -51,15 +51,13 @@ export async function mergeInvoiceStockMeta(
   const prev = Array.isArray(previous) ? previous : [];
 
   const allStockItems = await db
-    .select({ id: stockItemsTable.id, code: stockItemsTable.code })
+    .select({ id: stockItemsTable.id })
     .from(stockItemsTable)
     .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.type, "product")));
 
-  const stockByCode = new Map<string, number>();
   const validStockIds = new Set<number>();
   for (const s of allStockItems) {
     validStockIds.add(s.id);
-    if (s.code) stockByCode.set(s.code.toLowerCase().trim(), s.id);
   }
 
   const netQtyByStockItem = new Map<number, number>();
@@ -90,7 +88,6 @@ export async function mergeInvoiceStockMeta(
     const incomingStockId = rawIncomingStockId && validStockIds.has(rawIncomingStockId)
       ? rawIncomingStockId
       : undefined;
-    const codeStockId = cleanPart ? stockByCode.get(cleanPart) : undefined;
 
     const prevLine =
       (rawIncomingStockId
@@ -104,10 +101,12 @@ export async function mergeInvoiceStockMeta(
         : undefined);
 
     const prevStockId = Number(prevLine?.stockItemId) > 0 ? Number(prevLine.stockItemId) : undefined;
-    let stockItemId = pickValidStockId(incomingStockId, codeStockId, prevStockId && validStockIds.has(prevStockId) ? prevStockId : undefined);
 
-    // Keep deleted-catalog ids only when stock was already issued on this invoice.
-    if (!stockItemId && prevStockId && Number(prevLine?.warehouseId) > 0) {
+    // Only bind stock when the client explicitly picked via cube (incomingStockId)
+    // or stock was already issued on this invoice. Do NOT auto-link by part-number code match.
+    let stockItemId = pickValidStockId(incomingStockId);
+
+    if (!stockItemId && prevStockId && validStockIds.has(prevStockId) && Number(prevLine?.warehouseId) > 0) {
       const issuedQty = netQtyByStockItem.get(prevStockId) ?? 0;
       if (issuedQty > 0.0005) stockItemId = prevStockId;
     }
@@ -328,12 +327,6 @@ router.post("/invoices", async (req, res): Promise<void> => {
   const createdStatus = status || "draft";
   const stockItems = await mergeInvoiceStockMeta(companyId, items as any[], items as any[]);
 
-  console.log("[TAX_INVOICE_TRACE:CREATE_PAYLOAD]", JSON.stringify({
-    invNumber,
-    incomingItems: (items as any[] || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
-    mergedStockItems: (stockItems || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
-  }));
-
   let doc: any;
   let stockApply: { reducedThisSave: any[]; putBackThisSave: any[]; alreadyIssued: any[] } = {
     reducedThisSave: [],
@@ -542,8 +535,6 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),
     poRefNo: poRefNo ?? null,
-    // Any edit+save marks the invoice as modified (badge next to Confirmed).
-    isModified: true,
   };
   if (currency !== undefined) updateData.currency = currency;
   if (exchangeRate !== undefined) updateData.exchangeRate = parseFloat(exchangeRate).toFixed(6);
@@ -556,6 +547,12 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
 
   const [existing] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  // Only mark modified when saving an invoice that was already confirmed (not first draft→confirmed save).
+  const wasAlreadyConfirmed = !["draft"].includes(String(existing.status));
+  if (wasAlreadyConfirmed) {
+    updateData.isModified = true;
+  }
 
   const nextStatus = status || existing.status;
   // Confirmed invoices keep stock issued. Draft/void/cancelled do not issue.
@@ -580,13 +577,6 @@ router.put("/invoices/:id", async (req, res): Promise<void> => {
     updated = await db.transaction(async (tx) => {
       if (wasStockTracked || stockTrackedStatus) {
         const stockItems = stockTrackedStatus ? await mergeInvoiceStockMeta(existing.companyId, items as any[], existing.items as any[], id) : [];
-        console.log("[TAX_INVOICE_TRACE:UPDATE_PAYLOAD]", JSON.stringify({
-          invoiceId: id,
-          invNumber: existing.invNumber,
-          incomingItems: (items as any[] || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
-          existingItems: ((existing.items as any[]) || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
-          mergedStockItems: (stockItems || []).map((i) => ({ partNumber: i.partNumber, stockItemId: i.stockItemId, warehouseId: i.warehouseId, qty: i.qty })),
-        }));
         stockApply = await syncInvoiceStock({
           companyId: existing.companyId,
           invoiceId: id,

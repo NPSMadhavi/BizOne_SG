@@ -9,12 +9,13 @@ import { Switch } from "@/components/ui/switch";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Globe, Info, ChevronsUpDown, Check, Trash2, Plus } from "lucide-react";
+import { Globe, Info, Check, Trash2, Plus } from "lucide-react";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
 import { CURRENCIES } from "@/lib/currencies";
+import { isInternationalParty } from "@/lib/countries";
 
 interface Customer {
   id: number;
@@ -76,10 +77,7 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
 
   const setField = (k: string, val: any) => setForm(p => ({ ...p, [k]: val }));
 
-  const isInternational = Boolean(
-    form.country && companyCountry &&
-    form.country.toLowerCase() !== companyCountry.toLowerCase()
-  );
+  const isInternational = isInternationalParty(form.country, companyCountry);
 
   const mutation = useMutation({
     mutationFn: createCustomer,
@@ -101,7 +99,7 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Company / Customer Name <span className="text-destructive">*</span></Label>
-            <Input value={form.name} onChange={e => setField("name", e.target.value)} placeholder="Customer company or individual name" autoFocus />
+            <Input value={form.name} onChange={e => setField("name", e.target.value)} autoFocus />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -110,16 +108,16 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
               <CountrySelect
                 value={form.country}
                 onChange={v => {
-                  const intl = companyCountry && v.toLowerCase() !== companyCountry.toLowerCase();
+                  const intl = isInternationalParty(v, companyCountry);
                   setForm(p => ({ ...p, country: v, gstRegistered: intl ? false : p.gstRegistered, gstNo: intl ? "" : p.gstNo }));
                 }}
-                singleChevron
+                hideChevron
                 className="h-9 shadow-sm"
               />
             </div>
             <div className="space-y-1.5">
               <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setField("phone", e.target.value)} placeholder="+65 xxxx xxxx" />
+              <Input value={form.phone} onChange={e => setField("phone", e.target.value)} />
             </div>
           </div>
 
@@ -130,15 +128,14 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
               onChange={v => setField("address", v)}
               onPostalCodeChange={v => setField("postalCode", v)}
               country={form.country || undefined}
-              placeholder="Start typing to search address…"
+              placeholder=""
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Postal Code</Label>
-              <Input value={form.postalCode} onChange={e => setField("postalCode", e.target.value)} placeholder="e.g. 408564 (SG) or 530007 (IN)" />
-              <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
+              <Input value={form.postalCode} onChange={e => setField("postalCode", e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label>Default Currency</Label>
@@ -148,7 +145,6 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
                     <span className={form.currency ? "text-foreground" : "text-muted-foreground"}>
                       {form.currency ? CURRENCIES.find(c => c.code === form.currency)?.label ?? form.currency : "Select currency (optional)"}
                     </span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
@@ -168,7 +164,6 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
                   </Command>
                 </PopoverContent>
               </Popover>
-              <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this customer.</p>
             </div>
           </div>
 
@@ -187,7 +182,6 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
                           newAddrs[idx] = e.target.value;
                           setField("shipToAddress", newAddrs.join("\n\n"));
                         }}
-                        placeholder={`Ship-to Address #${idx + 1}`}
                         className="resize-none pr-8 text-sm"
                         rows={2}
                       />
@@ -226,11 +220,11 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Contact Person</Label>
-              <Input value={form.contactPerson} onChange={e => setField("contactPerson", e.target.value)} placeholder="Name" />
+              <Input value={form.contactPerson} onChange={e => setField("contactPerson", e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label>Contact Email</Label>
-              <Input type="email" value={form.contactEmail} onChange={e => setField("contactEmail", e.target.value)} placeholder="email@customer.com" />
+              <Input type="email" value={form.contactEmail} onChange={e => setField("contactEmail", e.target.value)} />
             </div>
           </div>
 
@@ -257,7 +251,7 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
               {form.gstRegistered && (
                 <div className="space-y-1.5">
                   <Label>GST / Tax Registration Number</Label>
-                  <Input value={form.gstNo} onChange={e => setField("gstNo", e.target.value)} placeholder="e.g. 200812581D / 22XXXXX1234X1ZX" />
+                  <Input value={form.gstNo} onChange={e => setField("gstNo", e.target.value)} />
                 </div>
               )}
             </div>

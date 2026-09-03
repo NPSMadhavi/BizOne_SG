@@ -580,9 +580,6 @@ ${styles}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Stock Reports</h1>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            View, generate and print stock reports for better inventory control and record keeping.
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" className="gap-2" onClick={() => setSavedOpen(true)}>

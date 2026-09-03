@@ -11,6 +11,7 @@
     "test:reports": "node --experimental-strip-types --test src/lib/reports/field-resolver.test.ts"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "@types/nodemailer": "^8.0.0",
     "@workspace/api-zod": "*",
     "@workspace/db": "*",
@@ -29,7 +30,8 @@
     "pg": "^8.20.0",
     "pino": "^9",
     "pino-http": "^10",
-    "puppeteer": "^24.15.0"
+    "puppeteer": "^24.15.0",
+    "puppeteer-core": "^24.43.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

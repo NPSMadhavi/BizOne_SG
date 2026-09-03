@@ -261,11 +261,11 @@ export default function CreditNoteNew() {
       <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-4">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation("/credit-notes")}
-            className="h-9 w-9 shrink-0"
+ type="button"
+ variant="ghost"
+ size="icon"
+ onClick={() => setLocation("/credit-notes")}
+ className="h-9 w-9 shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -294,7 +294,7 @@ export default function CreditNoteNew() {
                   <FormField control={form.control} name="customerName" render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input {...field} placeholder="Customer name" /></FormControl>
+                      <FormControl><Input {...field}  /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -309,20 +309,20 @@ export default function CreditNoteNew() {
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>
-                    <FormControl><Textarea {...field} rows={3} placeholder="Customer address" /></FormControl>
+                    <FormControl><Textarea {...field} rows={3}  /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
                   <FormField control={form.control} name="contactPerson" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Person</FormLabel>
-                      <FormControl><Input {...field} placeholder="Name" /></FormControl>
+                      <FormControl><Input {...field}  /></FormControl>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="contactEmail" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
-                      <FormControl><Input {...field} type="email" placeholder="email@example.com" /></FormControl>
+                      <FormControl><Input {...field} type="email"  /></FormControl>
                     </FormItem>
                   )} />
                 </div>
@@ -338,25 +338,22 @@ export default function CreditNoteNew() {
                       <FormLabel>Reference Invoice No.</FormLabel>
                       <FormControl>
                         <InvoiceRefPicker
-                          value={field.value || ""}
-                          loading={loadingInvoice}
-                          onChange={(v) => {
+ value={field.value || ""}
+ loading={loadingInvoice}
+ onChange={(v) => {
                             field.onChange(v);
                             if (!v) lastLoadedRef.current = "";
                           }}
-                          onSelectInvoice={(inv) => {
+ onSelectInvoice={(inv) => {
                             if (Array.isArray(inv.items) && inv.items.length > 0) {
                               applyInvoiceToForm(inv);
                             } else {
                               void loadFromInvoice(inv.invNumber);
                             }
                           }}
-                          onCommitTyped={(v) => void loadFromInvoice(v)}
+ onCommitTyped={(v) => void loadFromInvoice(v)}
                         />
                       </FormControl>
-                      <p className="text-[11px] text-muted-foreground">
-                        Type invoice no. or pick from list — stock items fill automatically
-                      </p>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
@@ -366,7 +363,7 @@ export default function CreditNoteNew() {
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Reason for Return</FormLabel>
-                    <FormControl><Textarea {...field} rows={2} placeholder="e.g. Returned goods, billing error, price adjustment…" /></FormControl>
+                    <FormControl><Textarea {...field} rows={2}  /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
@@ -389,7 +386,7 @@ export default function CreditNoteNew() {
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Notes (internal)</FormLabel>
-                    <FormControl><Input {...field} placeholder="Internal notes" /></FormControl>
+                    <FormControl><Input {...field}  /></FormControl>
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
@@ -408,15 +405,15 @@ export default function CreditNoteNew() {
               <CardTitle className="text-sm">Line Items</CardTitle>
               <div className="flex gap-2">
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8"
-                  onClick={() => append({ type: "section", sectionLabel: "Section Header", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
+ onClick={() => append({ type: "section", sectionLabel: "Section Header", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
                   <Layers className="h-3.5 w-3.5" />Add Section
                 </Button>
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8"
-                  onClick={() => append({ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
+ onClick={() => append({ type: "item", sectionLabel: "", partNumber: "", description: "", qty: 1, unitPrice: 0, discount: 0, amount: 0 })}>
                   <Plus className="h-3.5 w-3.5" />Add Item
                 </Button>
                 <Button type="button" size="sm" variant="outline" className="gap-1.5 text-xs h-8 text-primary border-primary/30 hover:bg-primary/5"
-                  onClick={() => setImportExcelOpen(true)}>
+ onClick={() => setImportExcelOpen(true)}>
                   <FileInput className="h-3.5 w-3.5" />Import from Excel / PDF
                 </Button>
               </div>
@@ -446,29 +443,29 @@ export default function CreditNoteNew() {
                             <td colSpan={6} className="px-3 py-2">
                               <Input
                                 {...form.register(`items.${idx}.sectionLabel`)}
-                                placeholder="Section heading…"
-                                className="font-semibold text-gray-700 border-dashed"
+                                
+ className="font-semibold text-gray-700 border-dashed"
                               />
                             </td>
                           ) : (
                             <>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-1">
-                                  <Input {...form.register(`items.${idx}.partNumber`)} placeholder="Part #" className="text-xs h-8" />
+                                  <Input {...form.register(`items.${idx}.partNumber`)} className="text-xs h-8" />
                                   <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-                                    onClick={() => setStockPickerIndex(idx)}
-                                    title="Pick from stock"
+ type="button"
+ variant="ghost"
+ size="icon"
+ className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+ onClick={() => setStockPickerIndex(idx)}
+ title="Pick from stock"
                                   >
                                     <Package className="h-3.5 w-3.5" />
                                   </Button>
                                 </div>
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.description`)} placeholder="Description" className="text-xs h-8" />
+                                <Input {...form.register(`items.${idx}.description`)} className="text-xs h-8" />
                               </td>
                               <td className="px-3 py-2">
                                 <Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
@@ -488,12 +485,12 @@ export default function CreditNoteNew() {
                             <div className="flex items-center justify-end gap-0.5">
                               {!isSection && (
                                 <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-gray-400 hover:text-primary"
-                                  onClick={() => setStockPickerIndex(idx)}
-                                  title="Edit item"
+ type="button"
+ variant="ghost"
+ size="sm"
+ className="h-7 w-7 p-0 text-gray-400 hover:text-primary"
+ onClick={() => setStockPickerIndex(idx)}
+ title="Edit item"
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -542,7 +539,7 @@ export default function CreditNoteNew() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -564,19 +561,19 @@ export default function CreditNoteNew() {
       </Form>
 
       <ImportItemsDialog
-        open={importExcelOpen}
-        onClose={() => setImportExcelOpen(false)}
-        onImport={(imported, replace) => {
+ open={importExcelOpen}
+ onClose={() => setImportExcelOpen(false)}
+ onImport={(imported, replace) => {
           const newItems = imported.map(it => ({ type: "item" as const, sectionLabel: "", partNumber: it.partNumber, description: it.description, qty: it.qty, unitPrice: it.unitPrice, discount: 0, amount: 0 }));
           if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
         }}
       />
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
-        mode="receive"
-        onSelect={({ item, qty }: StockItemSelection) => {
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ mode="receive"
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, item.name);
@@ -588,15 +585,15 @@ export default function CreditNoteNew() {
       />
       {savedDoc && showPreview && (
         <PdfPreviewModal
-          open={showPreview}
-          onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/credit-notes`); } }}
-          title={savedDoc.cnNumber}
-          generatePdf={(opts) => generateCreditNote_PDF(savedDoc, selectedCompany, opts)}
-          pdfFilename={`${savedDoc.cnNumber}.pdf`}
-          defaultEmailTo={(savedDoc as any).contactEmail || ""}
-          defaultEmailSubject={`Credit Note ${savedDoc.cnNumber}`}
-          defaultEmailBody={`Dear ${(savedDoc as any).contactPerson || "Sir/Madam"},\n\nPlease find attached Credit Note ${savedDoc.cnNumber}.\n\nThank you.`}
-          docInfo={{
+ open={showPreview}
+ onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/credit-notes`); } }}
+ title={savedDoc.cnNumber}
+ generatePdf={(opts) => generateCreditNote_PDF(savedDoc, selectedCompany, opts)}
+ pdfFilename={`${savedDoc.cnNumber}.pdf`}
+ defaultEmailTo={(savedDoc as any).contactEmail || ""}
+ defaultEmailSubject={`Credit Note ${savedDoc.cnNumber}`}
+ defaultEmailBody={`Dear ${(savedDoc as any).contactPerson || "Sir/Madam"},\n\nPlease find attached Credit Note ${savedDoc.cnNumber}.\n\nThank you.`}
+ docInfo={{
             docType: "Credit Note",
             docNumber: savedDoc.cnNumber,
             customerName: (savedDoc as any).customerName || (savedDoc as any).contactPerson || "",
@@ -605,7 +602,7 @@ export default function CreditNoteNew() {
             currency: (savedDoc as any).currency || "SGD",
             totalAmount: Number((savedDoc as any).totalAmount) || 0,
           }}
-          onEdit={() => setLocation(`/credit-notes/${savedDoc.id}/edit`)}
+ onEdit={() => setLocation(`/credit-notes/${savedDoc.id}/edit`)}
         />
       )}
     </div>

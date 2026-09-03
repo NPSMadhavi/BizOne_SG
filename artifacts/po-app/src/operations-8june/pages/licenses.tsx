@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient } from "@/operations-8june/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 import {
   ManagementPageHeader,
   ManagementTableCard,
@@ -20,23 +19,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { DownloadIcon, Edit2, Eye, Plus, Trash2 } from "lucide-react";
-import * as XLSX from "xlsx";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Download, Edit2, Eye, Plus, ChevronDown } from "lucide-react";
 import { License } from "@shared/schema";
 import { format, isAfter, isBefore, addDays } from "date-fns";
 import LicenseViewDialog from "@/operations-8june/components/forms/LicenseViewDialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import { cn } from "@/lib/utils";
+import {
+  exportLicensesToExcel,
+  exportLicensesToPdf,
+} from "@/operations-8june/lib/license-export";
 
 const FILTER_TABS = [
   { id: "all", label: "All Licenses" },
@@ -50,10 +48,8 @@ export default function LicensesPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
   const [selectedLicense, setSelectedLicense] = useState<License | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTabId>("all");
-  const [isExporting, setIsExporting] = useState(false);
 
   // Fetch licenses
   const { data: licenses = [], isLoading } = useQuery<License[]>({
@@ -79,51 +75,7 @@ export default function LicensesPage() {
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filteredLicenses);
 
-  // Delete license mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await fetch(`/api/licenses/${id}`, {
-        method: "DELETE",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/licenses"] });
-      toast({
-        title: "License deleted",
-        description: "The license has been deleted successfully.",
-      });
-      setIsDeleteAlertOpen(false);
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to delete the license. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Handle license deletion
-  const handleDelete = () => {
-    if (selectedLicense) {
-      deleteMutation.mutate(selectedLicense.id);
-    }
-  };
-
-  // License status label for export (matches table badge logic)
-  const getLicenseStatusLabel = (license: License) => {
-    if (!license.expiryDate) return "-";
-
-    const expiryDate = new Date(license.expiryDate);
-    const now = new Date();
-
-    if (isBefore(expiryDate, now)) return "Expired";
-    if (isBefore(expiryDate, addDays(now, 90))) return "Expiring Soon";
-    return "Valid";
-  };
-
-  // Export visible table data to Excel
-  const handleGenerateReport = () => {
+  const handleExport = (formatType: "excel" | "pdf") => {
     if (filteredLicenses.length === 0) {
       toast({
         title: "No data to export",
@@ -133,57 +85,26 @@ export default function LicensesPage() {
       return;
     }
 
-    setIsExporting(true);
     try {
-      const rows = filteredLicenses.map((license) => ({
-        Name: license.name,
-        Type: license.type,
-        Key: license.licenseKey || "-",
-        "Purchase Date": license.purchaseDate
-          ? format(new Date(license.purchaseDate), "MMM d, yyyy")
-          : "-",
-        "Expiry Date": license.expiryDate
-          ? format(new Date(license.expiryDate), "MMM d, yyyy")
-          : "Never",
-        Status: getLicenseStatusLabel(license),
-        Asset: license.assetId ? `#${license.assetId}` : "-",
-        Seats: license.seats ?? "-",
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      worksheet["!cols"] = [
-        { wch: 28 },
-        { wch: 14 },
-        { wch: 24 },
-        { wch: 16 },
-        { wch: 16 },
-        { wch: 14 },
-        { wch: 10 },
-        { wch: 8 },
-      ];
-
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Licenses");
-
-      const tabLabel =
-        activeTab === "all" ? "all" : activeTab === "expiring" ? "expiring" : "expired";
-      XLSX.writeFile(
-        workbook,
-        `licenses-${tabLabel}-${format(new Date(), "yyyy-MM-dd")}.xlsx`
-      );
-
-      toast({
-        title: "Report downloaded",
-        description: "The licenses report has been downloaded as an Excel file.",
-      });
+      if (formatType === "excel") {
+        exportLicensesToExcel(filteredLicenses, activeTab);
+        toast({
+          title: "Export successful",
+          description: "License data has been downloaded as an Excel file.",
+        });
+      } else {
+        exportLicensesToPdf(filteredLicenses, activeTab);
+        toast({
+          title: "Export successful",
+          description: "License data has been downloaded as a PDF file.",
+        });
+      }
     } catch {
       toast({
         title: "Export failed",
         description: "Unable to download the report. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsExporting(false);
     }
   };
 
@@ -209,15 +130,27 @@ export default function LicensesPage() {
         title="Licenses"
         action={
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={handleGenerateReport}
-              disabled={isExporting}
-              className="flex items-center gap-2 border-[#E4E4E4]"
-            >
-              {isExporting ? null : <DownloadIcon className="h-4 w-4" />}
-              {isExporting ? "Exporting..." : "Export"}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2 border-[#E4E4E4]"
+                  disabled={filteredLicenses.length === 0}
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                  <ChevronDown className="h-4 w-4 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("excel")}>
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
               onClick={() => setLocation("/licenses/new")}
@@ -350,17 +283,6 @@ export default function LicensesPage() {
                           >
                             <Edit2 className="h-4 w-4" />
                           </button>
-                          <button
-                            type="button"
-                            title="Delete license"
-                            onClick={() => {
-                              setSelectedLicense(license);
-                              setIsDeleteAlertOpen(true);
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition-colors hover:bg-red-100 active:scale-95"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -376,28 +298,6 @@ export default function LicensesPage() {
         onClose={() => setIsViewModalOpen(false)}
         license={selectedLicense}
       />
-
-      {/* Delete License Alert */}
-      <AlertDialog
-        open={isDeleteAlertOpen}
-        onOpenChange={setIsDeleteAlertOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
-              license and remove it from our servers.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

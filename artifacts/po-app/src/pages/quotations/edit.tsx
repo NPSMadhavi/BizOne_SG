@@ -35,6 +35,8 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generateQuotation_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -68,6 +70,7 @@ const schema = z.object({
   issueDate: z.string().optional(),
   validUntil: z.string().optional(),
   deliveryDate: z.string().optional(),
+  salesPerson: z.string().optional(),
   paymentTerms: z.string().optional(),
   notes: z.string().optional(),
   termsAndConditions: z.string().optional(),
@@ -88,6 +91,7 @@ export default function QuotationEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -114,7 +118,7 @@ export default function QuotationEdit() {
     resolver: zodResolver(schema),
     defaultValues: {
       customerName: "", customerAddress: "", customerContact: "", customerContactEmail: "",
-      issueDate: "", validUntil: "", deliveryDate: "", paymentTerms: "", notes: "",
+      issueDate: "", validUntil: "", deliveryDate: "", salesPerson: "", paymentTerms: "", notes: "",
       termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
       currency: "SGD", status: "draft", tax: 9,
       discountAmount: 0,
@@ -145,6 +149,7 @@ export default function QuotationEdit() {
         issueDate: (doc as any).issueDate || "",
         validUntil: (doc as any).validUntil || "",
         deliveryDate: (doc as any).deliveryDate || "",
+        salesPerson: (doc as any).salesPerson || "",
         paymentTerms: doc.paymentTerms || "",
         notes: doc.notes || "",
         termsAndConditions: (doc as any).termsAndConditions || "",
@@ -352,10 +357,10 @@ export default function QuotationEdit() {
           </div>
         </div>
         <Button
-          type="button"
-          variant="outline"
-          className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 shrink-0"
-          onClick={() => setPoUploadOpen(true)}
+ type="button"
+ variant="outline"
+ className="gap-2 border-dashed border-primary/50 text-primary hover:bg-primary/5 shrink-0"
+ onClick={() => setPoUploadOpen(true)}
         >
           <Upload className="h-4 w-4" />
           Import Customer PO
@@ -372,10 +377,10 @@ export default function QuotationEdit() {
               <div className="flex flex-wrap gap-2">
                 {CURRENCIES.map(c => (
                   <button
-                    key={c.code}
-                    type="button"
-                    onClick={() => form.setValue("currency", c.code)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+ key={c.code}
+ type="button"
+ onClick={() => form.setValue("currency", c.code)}
+ className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
                     {c.label}
                   </button>
@@ -389,8 +394,8 @@ export default function QuotationEdit() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
                 <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
+ type="customer"
+ onSelect={(c) => {
                     form.setValue("customerName", c.name);
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
@@ -415,10 +420,10 @@ export default function QuotationEdit() {
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <ContactAutocomplete
-                        type="customer"
-                        value={field.value}
-                        onChange={field.onChange}
-                        onSelect={(c) => {
+ type="customer"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -434,11 +439,11 @@ export default function QuotationEdit() {
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
                   <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
                   <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input placeholder="john@example.com" type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -467,10 +472,10 @@ export default function QuotationEdit() {
                       <FormLabel>Quotation Valid Upto</FormLabel>
                       <FormControl>
                         <Input
-                          type="date"
-                          value={field.value || ""}
-                          min={form.watch("issueDate") || undefined}
-                          onChange={field.onChange}
+ type="date"
+ value={field.value || ""}
+ min={form.watch("issueDate") || undefined}
+ onChange={field.onChange}
                         />
                       </FormControl>
                       <p className="text-[11px] text-muted-foreground">
@@ -482,12 +487,34 @@ export default function QuotationEdit() {
                 </div>
                 <FormField control={form.control} name="deliveryDate" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
-                  <FormItem><FormLabel>Payment Terms</FormLabel>
-                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl></FormItem>
-                )} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                  <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                    <FormItem><FormLabel>Payment Terms</FormLabel>
+                      <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                  )} />
+                  <FormField control={form.control} name="salesPerson" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sales Person</FormLabel>
+                      <FormControl>
+                        <Select value={field.value || undefined} onValueChange={field.onChange}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select Sales Person" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {salesPersons.map((sp) => (
+                              <SelectItem key={sp.id} value={sp.name}>
+                                {sp.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
@@ -524,8 +551,8 @@ export default function QuotationEdit() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">Overseas / Export</span>
                     <Switch
-                      checked={isOverseas}
-                      onCheckedChange={(v) => {
+ checked={isOverseas}
+ onCheckedChange={(v) => {
                         setIsOverseas(v);
                         form.setValue("tax", v ? 0 : (docSettings?.gstRate ?? 0));
                       }}
@@ -589,7 +616,7 @@ export default function QuotationEdit() {
                                   <div className="flex-1 min-w-0">
                                     <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
                                       <FormItem><FormControl>
-                                        <RichTextEditor value={f.value} onChange={f.onChange} placeholder="Section header text..." />
+                                        <RichTextEditor value={f.value} onChange={f.onChange}  />
                                       </FormControl></FormItem>
                                     )} />
                                   </div>
@@ -624,7 +651,7 @@ export default function QuotationEdit() {
                             <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
                               <FormItem><FormControl>
                                 <div className="flex items-center gap-1">
-                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40" placeholder="Item" {...field} />
+                                  <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"  {...field} />
                                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
                                     <Package className="h-3.5 w-3.5" />
                                   </Button>
@@ -632,7 +659,7 @@ export default function QuotationEdit() {
                               </FormControl></FormItem>
                             )} /></td>
                             <td className="px-4 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                             )} /><FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                               <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
                             )} /></div></td>
@@ -697,12 +724,12 @@ export default function QuotationEdit() {
                     <div className="flex items-center gap-1.5">
                       <div className="relative">
                         <Input
-                          inputMode="decimal"
-                          maxLength={3}
-                          placeholder="0"
-                          className="h-7 w-14 text-sm text-center pr-5"
-                          value={discountPct || ""}
-                          onChange={e => {
+ inputMode="decimal"
+ maxLength={3}
+ placeholder="0"
+ className="h-7 w-14 text-sm text-center pr-5"
+ value={discountPct || ""}
+ onChange={e => {
                             const raw = e.target.value.replace(/[^0-9.]/g, "");
                             const n = Math.min(parseFloat(raw) || 0, 100);
                             setDiscountPct(n);
@@ -714,8 +741,8 @@ export default function QuotationEdit() {
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
                           <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
-                            value={field.value || ""}
-                            onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+ value={field.value || ""}
+ onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />
                         </FormControl></FormItem>
                       )} />
@@ -735,7 +762,7 @@ export default function QuotationEdit() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -747,20 +774,20 @@ export default function QuotationEdit() {
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation(`/quotations/${id}`)}>Cancel</Button>
             <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              className="gap-2 min-w-32"
-              onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2 min-w-32"
+ onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
             <Button
-              type="button"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
             >
               <Eye className="h-4 w-4" />
               Save & Preview
@@ -769,9 +796,9 @@ export default function QuotationEdit() {
         </form>
       </Form>
       <ImportItemsDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImport={(imported, replace) => {
+ open={importOpen}
+ onClose={() => setImportOpen(false)}
+ onImport={(imported, replace) => {
           const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
           const newItems = imported.map((it) => ({ ...blankItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
           if (replace) {
@@ -782,16 +809,16 @@ export default function QuotationEdit() {
         }}
       />
       <CustomerPoUploadDialog
-        open={poUploadOpen}
-        onOpenChange={setPoUploadOpen}
-        onApply={handlePoExtracted}
+ open={poUploadOpen}
+ onOpenChange={setPoUploadOpen}
+ onApply={handlePoExtracted}
       />
 
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
-        onSelect={({ item, qty }: StockItemSelection) => {
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
@@ -803,23 +830,23 @@ export default function QuotationEdit() {
       />
 
       <ImportFromQuotationDialog
-        open={importQtOpen}
-        onClose={() => setImportQtOpen(false)}
-        currentItems={form.getValues("items")}
-        onImport={(items) => { for (const item of items) append(item); }}
+ open={importQtOpen}
+ onClose={() => setImportQtOpen(false)}
+ currentItems={form.getValues("items")}
+ onImport={(items) => { for (const item of items) append(item); }}
       />
       <CurrencyMismatchDialog
-        open={currencyDialogOpen}
-        entityName={directoryCurrencyName}
-        entityType="customer"
-        defaultCurrency={directoryCurrency}
-        selectedCurrency={form.getValues("currency")}
-        onContinue={async () => {
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="customer"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
           setPendingConfirmValues(null);
         }}
-        onRevert={async () => {
+ onRevert={async () => {
           setCurrencyDialogOpen(false);
           if (pendingConfirmValues) {
             const updated = { ...pendingConfirmValues, currency: directoryCurrency };
@@ -830,17 +857,17 @@ export default function QuotationEdit() {
         }}
       />
       <PdfPreviewModal
-        open={previewOpen}
-        onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
           setPreviewOpen(open);
           if (!open) setLocation(`/quotations`);
         }}
-        title={doc ? `Quotation ${doc.qtNumber}` : "Quotation Preview"}
-        generatePdf={(opts) => generateQuotation_PDF(doc!, selectedCompany, docSettings as any, opts)}
-        pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}
-        defaultEmailTo={(doc as any)?.customerContactEmail || ""}
-        defaultEmailSubject={doc ? `Quotation ${doc.qtNumber}` : "Quotation"}
-        docInfo={doc ? {
+ title={doc ? `Quotation ${doc.qtNumber}` : "Quotation Preview"}
+ generatePdf={(opts) => generateQuotation_PDF(doc!, selectedCompany, docSettings as any, opts)}
+ pdfFilename={doc ? `${doc.qtNumber}.pdf` : "quotation.pdf"}
+ defaultEmailTo={(doc as any)?.customerContactEmail || ""}
+ defaultEmailSubject={doc ? `Quotation ${doc.qtNumber}` : "Quotation"}
+ docInfo={doc ? {
           docType: "Quotation",
           docNumber: doc.qtNumber,
           customerName: doc.customerName,
@@ -849,10 +876,10 @@ export default function QuotationEdit() {
           currency: (doc as any).currency || "SGD",
           totalAmount: Number(doc.totalAmount) || 0,
         } : undefined}
-        onEmailSent={async (recipients) => {
+ onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
         }}
-        onEdit={() => { setPreviewOpen(false); }}
+ onEdit={() => { setPreviewOpen(false); }}
       />
     </div>
   );

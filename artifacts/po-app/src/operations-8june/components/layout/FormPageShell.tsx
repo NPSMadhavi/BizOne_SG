@@ -9,6 +9,7 @@ export function FormPageShell({
   backHref,
   children,
   footer,
+  headerAction,
   className,
 }: {
   title: string;
@@ -16,24 +17,28 @@ export function FormPageShell({
   backHref: string;
   children: ReactNode;
   footer?: ReactNode;
+  headerAction?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn("space-y-6 pb-8", className)}>
-      <div className="flex items-start gap-3">
-        <Link
-          href={backHref}
-          className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#2563EB] transition-opacity hover:opacity-75"
-          aria-label="Back"
-        >
-          <ArrowLeft className="h-6 w-6" />
-        </Link>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">{title}</h1>
-          {description ? (
-            <p className="mt-1 text-sm text-[#6B7280]">{description}</p>
-          ) : null}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <Link
+            href={backHref}
+            className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#2563EB] transition-opacity hover:opacity-75"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-6 w-6" />
+          </Link>
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">{title}</h1>
+            {description ? (
+              <p className="mt-1 text-sm text-[#6B7280]">{description}</p>
+            ) : null}
+          </div>
         </div>
+        {headerAction ? <div className="shrink-0 pt-1">{headerAction}</div> : null}
       </div>
 
       <div
@@ -48,7 +53,7 @@ export function FormPageShell({
       </div>
 
       {footer ? (
-        <div className="flex justify-end gap-3">{footer}</div>
+        <div className="flex w-full justify-end gap-3">{footer}</div>
       ) : null}
     </div>
   );

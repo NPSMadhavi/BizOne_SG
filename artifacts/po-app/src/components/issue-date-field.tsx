@@ -6,6 +6,7 @@ interface IssueDateFieldProps {
   onChange: (val: string) => void;
   label?: string;
   className?: string;
+  hideHints?: boolean;
 }
 
 function today(): string {
@@ -19,7 +20,7 @@ function daysDiff(dateStr: string): number {
   return Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function IssueDateField({ value, onChange, label = "Document Date", className }: IssueDateFieldProps) {
+export function IssueDateField({ value, onChange, label = "Document Date", className, hideHints = false }: IssueDateFieldProps) {
   const effectiveValue = value || today();
   const diff = daysDiff(effectiveValue);
   const isBackdated = diff > 0;
@@ -38,19 +39,19 @@ export function IssueDateField({ value, onChange, label = "Document Date", class
         max={today()}
         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       />
-      {isFuture && (
+      {!hideHints && isFuture && (
         <p className="flex items-center gap-1.5 text-xs text-amber-600">
           <AlertTriangle className="h-3 w-3 shrink-0" />
           Future dates are not recommended for issued documents.
         </p>
       )}
-      {isBackdated && !isStale && (
+      {!hideHints && isBackdated && !isStale && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Info className="h-3 w-3 shrink-0" />
           Backdated {diff} day{diff !== 1 ? "s" : ""} — acceptable if work/goods were supplied on this date.
         </p>
       )}
-      {isStale && (
+      {!hideHints && isStale && (
         <p className="flex items-center gap-1.5 text-xs text-amber-600">
           <AlertTriangle className="h-3 w-3 shrink-0" />
           Backdated {diff} days. IRAS recommends invoices be issued within 30 days of supply.

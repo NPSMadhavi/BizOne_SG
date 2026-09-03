@@ -120,19 +120,6 @@ export async function applyMovement(
     quantityOut: qtyOut,
   });
 
-  console.log("[TAX_INVOICE_TRACE]", JSON.stringify({
-    invoiceId: input.referenceId,
-    documentNumber: input.documentNumber,
-    referenceType: input.referenceType,
-    transactionType: input.transactionType,
-    stockItemId: input.stockItemId,
-    warehouseId: input.warehouseId,
-    quantityIn: qtyIn,
-    quantityOut: qtyOut,
-    newStockQuantity: next,
-    movementType: qtyIn > 0 ? "IN" : "OUT",
-  }));
-
   await tx.insert(stockMovementsTable).values({
     companyId: input.companyId,
     warehouseId: input.warehouseId,

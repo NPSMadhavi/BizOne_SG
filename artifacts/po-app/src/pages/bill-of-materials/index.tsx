@@ -42,6 +42,54 @@ import {
 
 import { useSalesPersons } from "@/hooks/use-sales-persons";
 
+const UOM_OPTIONS = [
+  { value: "Nos", label: "Nos (Numbers)" },
+  { value: "Pcs", label: "Pcs (Pieces)" },
+  { value: "Unit", label: "Unit" },
+  { value: "Pair", label: "Pair" },
+  { value: "Set", label: "Set" },
+  { value: "Dozen", label: "Dozen" },
+  { value: "Box", label: "Box" },
+  { value: "Pack", label: "Pack" },
+  { value: "Packet", label: "Packet" },
+  { value: "Bundle", label: "Bundle" },
+  { value: "Roll", label: "Roll" },
+  { value: "Carton", label: "Carton" },
+  { value: "Case", label: "Case" },
+  { value: "Strip", label: "Strip" },
+  { value: "Kg", label: "Kg" },
+  { value: "Litre", label: "Litre" },
+];
+
+const CUSTOM_UOM_STORAGE_KEY = "stock-custom-uoms";
+
+function loadCustomUoms(): string[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_UOM_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((v) => String(v).trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomUoms(values: string[]) {
+  try {
+    localStorage.setItem(CUSTOM_UOM_STORAGE_KEY, JSON.stringify(values));
+  } catch {
+    // ignore
+  }
+}
+
+function normalizeUom(raw?: string | null) {
+  const value = (raw || "").trim();
+  if (!value) return "Pcs";
+  return UOM_OPTIONS.find((o) => o.value.toLowerCase() === value.toLowerCase())?.value ?? value;
+}
+
 type BomComponent = {
   id: string;
   itemCode: string;
@@ -252,12 +300,15 @@ export default function BillOfMaterialsPage() {
 
   const [compDialogOpen, setCompDialogOpen] = useState(false);
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
+  const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
+  const [createUomOpen, setCreateUomOpen] = useState(false);
+  const [newUomName, setNewUomName] = useState("");
   const [compForm, setCompForm] = useState({
     stockItemId: "",
     itemCode: "",
     itemName: "",
     qty: 1,
-    uom: "PCS",
+    uom: "Pcs",
     wastagePct: 0,
     unitCost: 0,
     availableQty: 0,
@@ -289,6 +340,44 @@ export default function BillOfMaterialsPage() {
   }, [stockItems]);
 
   const componentOptions = useMemo(() => allStockOptions, [allStockOptions]);
+
+  const uomOptions = useMemo(() => {
+    const seen = new Set(UOM_OPTIONS.map((o) => o.value.toLowerCase()));
+    const extras: { value: string; label: string }[] = [];
+    const addExtra = (raw?: string | null) => {
+      const value = (raw || "").trim();
+      if (!value) return;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      extras.push({ value, label: value });
+    };
+    for (const uom of customUoms) addExtra(uom);
+    for (const item of allStockOptions) addExtra(item.uom);
+    for (const c of components) addExtra(c.uom);
+    addExtra(compForm.uom);
+    return [...UOM_OPTIONS, ...extras];
+  }, [customUoms, allStockOptions, components, compForm.uom]);
+
+  function handleCreateUom() {
+    const name = newUomName.trim();
+    if (!name) {
+      toast({ title: "Name required", description: "Enter a UOM name.", variant: "destructive" });
+      return;
+    }
+    const existing = uomOptions.find((o) => o.value.toLowerCase() === name.toLowerCase());
+    const selected = existing?.value ?? name;
+    if (!existing) {
+      setCustomUoms((current) => {
+        const next = [...current, name];
+        saveCustomUoms(next);
+        return next;
+      });
+    }
+    setCompForm((f) => ({ ...f, uom: selected }));
+    setCreateUomOpen(false);
+    setNewUomName("");
+  }
 
   const warehouseOptions = useMemo(
     () => warehouses.filter((w) => w.isActive !== false).map((w) => ({ id: Number(w.id), name: String(w.name) })),
@@ -497,7 +586,7 @@ export default function BillOfMaterialsPage() {
       itemCode: "",
       itemName: "",
       qty: 1,
-      uom: "PCS",
+      uom: "Pcs",
       wastagePct: 0,
       unitCost: 0,
       availableQty: 0,
@@ -513,7 +602,7 @@ export default function BillOfMaterialsPage() {
       itemCode: c.itemCode,
       itemName: c.itemName,
       qty: c.qty,
-      uom: c.uom,
+      uom: normalizeUom(c.uom),
       wastagePct: c.wastagePct,
       unitCost: c.unitCost,
       availableQty: getAvailableQty(c.itemCode, c.availableQty),
@@ -527,7 +616,7 @@ export default function BillOfMaterialsPage() {
       stockItemId: item.id,
       itemCode: item.code,
       itemName: item.name,
-      uom: item.uom,
+      uom: normalizeUom(item.uom),
       unitCost: item.unitPrice,
       qty: f.qty > 0 ? f.qty : 1,
       availableQty: getAvailableQty(item.code, item.stockQty),
@@ -595,7 +684,6 @@ export default function BillOfMaterialsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Bill of Materials (BOM)</h1>
-            <p className="mt-1 text-muted-foreground">Saved BOM definitions for finished products.</p>
           </div>
           <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={() => { resetForm(); setMode("form"); }}>
             <Plus className="h-4 w-4" /> Create BOM
@@ -662,11 +750,11 @@ export default function BillOfMaterialsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="mt-0.5 h-9 w-9 shrink-0"
-            onClick={() => setMode("list")}
+ type="button"
+ variant="ghost"
+ size="icon"
+ className="mt-0.5 h-9 w-9 shrink-0"
+ onClick={() => setMode("list")}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -681,10 +769,10 @@ export default function BillOfMaterialsPage() {
         </div>
         <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <Button
-            type="button"
-            variant="outline"
-            className="gap-2"
-            onClick={() => {
+ type="button"
+ variant="outline"
+ className="gap-2"
+ onClick={() => {
               try {
                 localStorage.setItem(DRAFT_KEY, JSON.stringify(buildRecord("draft")));
               } catch {
@@ -700,10 +788,11 @@ export default function BillOfMaterialsPage() {
           </Button>
           {editingId && (
             <Button
-              type="button"
-              variant="destructive"
-              className="gap-2"
-              onClick={() => {
+ type="button"
+ variant="destructive"
+ size="icon"
+ title="Delete"
+ onClick={() => {
                 const next = bomList.filter((x) => x.id !== editingId);
                 setBomList(next);
                 saveList(next);
@@ -712,7 +801,7 @@ export default function BillOfMaterialsPage() {
                 setMode("list");
               }}
             >
-              <Trash2 className="h-4 w-4" /> Delete
+              <Trash2 className="h-4 w-4" />
             </Button>
           )}
         </div>
@@ -731,28 +820,28 @@ export default function BillOfMaterialsPage() {
                 <div className="space-y-1.5 min-w-0">
                   <Label>Product</Label>
                   <Input
-                    value={productName}
-                    onChange={(e) => setProductName(e.target.value)}
-                    placeholder="Enter product"
+ value={productName}
+ onChange={(e) => setProductName(e.target.value)}
+                    
                   />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label>Qty</Label>
                   <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={outputQty || ""}
-                    onChange={(e) => setOutputQty(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
-                    className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+ type="number"
+ min={0}
+ step="0.01"
+ value={outputQty || ""}
+ onChange={(e) => setOutputQty(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+ className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label>UOM</Label>
                   <Input
-                    value={outputUom}
-                    onChange={(e) => setOutputUom(e.target.value)}
-                    placeholder="PCS"
+ value={outputUom}
+ onChange={(e) => setOutputUom(e.target.value)}
+ placeholder="PCS"
                   />
                 </div>
                 <div className="space-y-1.5 min-w-0">
@@ -771,9 +860,9 @@ export default function BillOfMaterialsPage() {
                 <div className="space-y-1.5 min-w-0 sm:col-span-2 lg:col-span-1">
                   <Label>Category</Label>
                   <Input
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    placeholder="Enter category"
+ value={category}
+ onChange={(e) => setCategory(e.target.value)}
+                    
                   />
                 </div>
               </div>
@@ -829,7 +918,7 @@ export default function BillOfMaterialsPage() {
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[#E5E7EB]">
               <div className="flex-1 overflow-auto">
-              <table className="w-full min-w-[860px] text-sm">
+              <table className="w-full min-w-[700px] text-sm">
                 <thead>
                   <tr className="border-b bg-[#F9FAFB] text-left text-xs uppercase tracking-wide text-[#6B7280]">
                     <th className="px-3 py-2.5">#</th>
@@ -837,8 +926,6 @@ export default function BillOfMaterialsPage() {
                     <th className="px-3 py-2.5">Item Name</th>
                     <th className="px-3 py-2.5 text-right">Required Qty</th>
                     <th className="px-3 py-2.5">UOM</th>
-                    <th className="px-3 py-2.5 text-right">Wastage %</th>
-                    <th className="px-3 py-2.5 text-right">Unit Cost (SGD)</th>
                     <th className="px-3 py-2.5 text-right">Total Cost (SGD)</th>
                     <th className="px-3 py-2.5 text-right">Action</th>
                   </tr>
@@ -846,7 +933,7 @@ export default function BillOfMaterialsPage() {
                 <tbody className="min-h-[240px]">
                   {components.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-20 text-center text-sm text-[#6B7280]">
+                      <td colSpan={7} className="px-3 py-20 text-center text-sm text-[#6B7280]">
                         No components added. Click &quot;Add Component&quot; to add raw materials.
                       </td>
                     </tr>
@@ -862,8 +949,6 @@ export default function BillOfMaterialsPage() {
                       <td className="px-3 py-2.5 text-[#111827]">{c.itemName}</td>
                       <td className="px-3 py-2.5 text-right">{c.qty}</td>
                       <td className="px-3 py-2.5">{c.uom}</td>
-                      <td className="px-3 py-2.5 text-right">{c.wastagePct ? `${c.wastagePct}%` : ""}</td>
-                      <td className="px-3 py-2.5 text-right">{c.unitCost ? c.unitCost.toFixed(2) : ""}</td>
                       <td className="px-3 py-2.5 text-right font-medium">{lineTotal(c, outputQty).toFixed(2)}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex justify-end gap-1">
@@ -871,9 +956,9 @@ export default function BillOfMaterialsPage() {
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            type="button"
-                            className="rounded p-1 text-[#DC2626] hover:bg-[#FEF2F2]"
-                            onClick={() => setComponents((prev) => prev.filter((x) => x.id !== c.id))}
+ type="button"
+ className="rounded p-1 text-[#DC2626] hover:bg-[#FEF2F2]"
+ onClick={() => setComponents((prev) => prev.filter((x) => x.id !== c.id))}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -901,37 +986,37 @@ export default function BillOfMaterialsPage() {
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[#6B7280]">Labour Cost</span>
                 <Input
-                  type="number"
-                  className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={labourCost || ""}
-                  onChange={(e) => setLabourCost(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+ type="number"
+ className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+ value={labourCost || ""}
+ onChange={(e) => setLabourCost(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
                 />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[#6B7280]">Machine Cost</span>
                 <Input
-                  type="number"
-                  className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={machineCost || ""}
-                  onChange={(e) => setMachineCost(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+ type="number"
+ className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+ value={machineCost || ""}
+ onChange={(e) => setMachineCost(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
                 />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[#6B7280]">Other Exp</span>
                 <Input
-                  type="number"
-                  className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={overhead || ""}
-                  onChange={(e) => setOverhead(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+ type="number"
+ className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+ value={overhead || ""}
+ onChange={(e) => setOverhead(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
                 />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[#6B7280]">Wastage %</span>
                 <Input
-                  type="number"
-                  className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  value={wastagePct || ""}
-                  onChange={(e) => setWastagePct(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+ type="number"
+ className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+ value={wastagePct || ""}
+ onChange={(e) => setWastagePct(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
                 />
               </div>
               {wastagePct > 0 && materialCost > 0 ? (
@@ -990,9 +1075,9 @@ export default function BillOfMaterialsPage() {
               </table>
             </div>
             <button
-              type="button"
-              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[#2563EB]"
-              onClick={() => setLocation("/inventory/reports")}
+ type="button"
+ className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[#2563EB]"
+ onClick={() => setLocation("/inventory/reports")}
             >
               View Full Stock Report <ArrowRight className="h-3 w-3" />
             </button>
@@ -1013,9 +1098,9 @@ export default function BillOfMaterialsPage() {
       {/* Footer actions — same pattern as other document pages */}
       <div className="flex justify-end gap-3 pb-2 pt-2">
         <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
+ type="button"
+ variant="outline"
+ onClick={() => {
             resetForm();
             setMode("list");
           }}
@@ -1039,12 +1124,12 @@ export default function BillOfMaterialsPage() {
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Stock Item *</Label>
               <Select
-                value={compForm.stockItemId}
-                onValueChange={(id) => {
+ value={compForm.stockItemId}
+ onValueChange={(id) => {
                   const item = componentOptions.find((p) => p.id === id);
                   if (item) applyStockItemToCompForm(item);
                 }}
-                disabled={!componentOptions.length}
+ disabled={!componentOptions.length}
               >
                 <SelectTrigger><SelectValue placeholder="Select stock item" /></SelectTrigger>
                 <SelectContent>
@@ -1065,49 +1150,77 @@ export default function BillOfMaterialsPage() {
             <div className="space-y-1.5">
               <Label>Required Qty</Label>
               <Input
-                type="number"
-                className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                value={compForm.qty || ""}
-                onChange={(e) => setCompForm((f) => ({ ...f, qty: e.target.value === "" ? 0 : Number(e.target.value) || 0 }))}
+ type="number"
+ className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+ value={compForm.qty || ""}
+ onChange={(e) => setCompForm((f) => ({ ...f, qty: e.target.value === "" ? 0 : Number(e.target.value) || 0 }))}
               />
             </div>
             <div className="space-y-1.5">
               <Label>UOM</Label>
-              <Input value={compForm.uom} onChange={(e) => setCompForm((f) => ({ ...f, uom: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Wastage %</Label>
-              <Input
-                type="number"
-                className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                value={compForm.wastagePct || ""}
-                onChange={(e) => setCompForm((f) => ({ ...f, wastagePct: e.target.value === "" ? 0 : Number(e.target.value) || 0 }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Unit Cost (SGD)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                value={compForm.unitCost || ""}
-                onChange={(e) => setCompForm((f) => ({ ...f, unitCost: e.target.value === "" ? 0 : Number(e.target.value) || 0 }))}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label>Available Qty {warehouse ? `(${warehouse})` : ""}</Label>
-              <Input
-                type="number"
-                readOnly
-                className="bg-[#F9FAFB]"
-                value={compForm.itemCode ? getAvailableQty(compForm.itemCode, compForm.availableQty) || "" : ""}
-              />
+              <Select
+ value={compForm.uom || undefined}
+ onValueChange={(v) => setCompForm((f) => ({ ...f, uom: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select UOM" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48 overflow-y-auto">
+                  <div
+ className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+ onClick={(event) => {
+                      event.preventDefault();
+                      setNewUomName("");
+                      setCreateUomOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create New UOM
+                  </div>
+                  <div className="my-1 border-t" />
+                  {uomOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setCompDialogOpen(false)}>Cancel</Button>
             <Button type="button" className="bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={saveComponent}>
               {editingCompId ? "Save Changes" : "Add Component"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createUomOpen} onOpenChange={setCreateUomOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create New UOM</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label>UOM Name</Label>
+            <Input
+ value={newUomName}
+ onChange={(e) => setNewUomName(e.target.value)}
+              
+ onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreateUom();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateUomOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleCreateUom}>
+              Add UOM
             </Button>
           </DialogFooter>
         </DialogContent>

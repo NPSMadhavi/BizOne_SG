@@ -25,6 +25,18 @@ export async function runStartupMigrations(): Promise<void> {
       sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batch_no text`,
     },
     {
+      name: "stock_items.mrp_price",
+      sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS mrp_price numeric(15,2) DEFAULT 0`,
+    },
+    {
+      name: "stock_items.alternate_uom",
+      sql: sql`
+        ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_uom text;
+        ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_qty numeric(15,4) DEFAULT 0;
+        ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS main_qty numeric(15,4) DEFAULT 0;
+      `,
+    },
+    {
       name: "customers.quotation_terms",
       sql: sql`ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
     },
@@ -148,6 +160,10 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "quotations.valid_until",
       sql: sql`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS valid_until text`,
+    },
+    {
+      name: "quotations.sales_person",
+      sql: sql`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS sales_person text`,
     },
     {
       name: "delivery_orders.so_id",
@@ -296,6 +312,18 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "vendor_invoices.tax",
       sql: sql`ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS tax numeric(15,2) NOT NULL DEFAULT 0`,
+    },
+    {
+      name: "vendor_invoices.additional_info",
+      sql: sql`
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS customer_note text;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS delivery_instructions text;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS terms_and_conditions text;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS authorised_signature text;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS discount_amount numeric(15,2) NOT NULL DEFAULT 0;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS expense_account_id integer;
+        ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS sales_person text;
+      `,
     },
     {
       name: "invoices.exchange_rate",

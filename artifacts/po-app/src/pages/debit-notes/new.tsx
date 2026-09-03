@@ -295,7 +295,7 @@ export default function DebitNoteNew() {
                   <FormField control={form.control} name="customerName" render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input {...field} placeholder="Vendor name" /></FormControl>
+                      <FormControl><Input {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -311,20 +311,20 @@ export default function DebitNoteNew() {
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Address</FormLabel>
-                    <FormControl><Textarea {...field} rows={3} placeholder="Vendor address" /></FormControl>
+                    <FormControl><Textarea {...field} rows={3} /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
                   <FormField control={form.control} name="contactPerson" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Person</FormLabel>
-                      <FormControl><Input {...field} placeholder="Name" /></FormControl>
+                      <FormControl><Input {...field} /></FormControl>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="contactEmail" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
-                      <FormControl><Input {...field} type="email" placeholder="email@example.com" /></FormControl>
+                      <FormControl><Input {...field} type="email" /></FormControl>
                     </FormItem>
                   )} />
                 </div>
@@ -342,6 +342,7 @@ export default function DebitNoteNew() {
                         <InvoiceRefPicker
                           value={field.value || ""}
                           loading={loadingInvoice}
+                          placeholder=""
                           onChange={(v) => {
                             field.onChange(v);
                             if (!v) lastLoadedRef.current = "";
@@ -356,9 +357,6 @@ export default function DebitNoteNew() {
                           onCommitTyped={(v) => void loadFromInvoice(v)}
                         />
                       </FormControl>
-                      <p className="text-[11px] text-muted-foreground">
-                        Type invoice no. or pick from list — stock items fill automatically
-                      </p>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
@@ -368,7 +366,7 @@ export default function DebitNoteNew() {
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Reason for Return</FormLabel>
-                    <FormControl><Textarea {...field} rows={2} placeholder="e.g. Returned goods, billing error, price adjustment…" /></FormControl>
+                    <FormControl><Textarea {...field} rows={2} /></FormControl>
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">
@@ -391,7 +389,7 @@ export default function DebitNoteNew() {
                 <FormField control={form.control} name="notes" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Notes (internal)</FormLabel>
-                    <FormControl><Input {...field} placeholder="Internal notes" /></FormControl>
+                    <FormControl><Input {...field} /></FormControl>
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
@@ -448,7 +446,6 @@ export default function DebitNoteNew() {
                             <td colSpan={6} className="px-3 py-2">
                               <Input
                                 {...form.register(`items.${idx}.sectionLabel`)}
-                                placeholder="Section heading…"
                                 className="font-semibold text-gray-700 border-dashed"
                               />
                             </td>
@@ -456,7 +453,7 @@ export default function DebitNoteNew() {
                             <>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-1">
-                                  <Input {...form.register(`items.${idx}.partNumber`)} placeholder="Part #" className="text-xs h-8" />
+                                  <Input {...form.register(`items.${idx}.partNumber`)} className="text-xs h-8" />
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -470,7 +467,7 @@ export default function DebitNoteNew() {
                                 </div>
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.description`)} placeholder="Description" className="text-xs h-8" />
+                                <Input {...form.register(`items.${idx}.description`)} className="text-xs h-8" />
                               </td>
                               <td className="px-3 py-2">
                                 <Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
@@ -530,7 +527,7 @@ export default function DebitNoteNew() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

@@ -318,8 +318,8 @@ export function StockItemPickerDialog({
                   <TableRow className="bg-muted/50">
                     <TableHead className="w-28">Code</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-24 text-right">Avail. Qty</TableHead>
-                    <TableHead className="w-28 text-right">Unit Price</TableHead>
+                    <TableHead className="w-32 min-w-[7.5rem] text-right whitespace-nowrap">Avail. Qty</TableHead>
+                    <TableHead className="w-28 text-right whitespace-nowrap">Unit Price</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -337,7 +337,11 @@ export function StockItemPickerDialog({
                     </TableRow>
                   )}
                   {!isLoading && items.map((item) => {
-                    const qty = Number(item.stockQty) || 0;
+                    const qty = Number(item.stockQty);
+                    const avail = Number.isFinite(qty) ? qty : 0;
+                    const availLabel = Number.isInteger(avail)
+                      ? String(avail)
+                      : avail.toFixed(3).replace(/\.?0+$/, "");
                     return (
                       <TableRow
                         key={item.id}
@@ -352,13 +356,16 @@ export function StockItemPickerDialog({
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Badge variant={qty > 0 ? "default" : "secondary"} className="text-xs">
-                            {qty} {item.uom}
+                          <Badge
+                            variant={avail > 0 ? "default" : "secondary"}
+                            className="text-xs font-semibold tabular-nums"
+                          >
+                            {availLabel} {item.uom || ""}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right text-sm font-medium">
-                          {Number(item.unitPrice).toFixed(2)}
-                          <span className="text-xs text-muted-foreground ml-1">/{item.uom}</span>
+                          {Number(item.unitPrice || 0).toFixed(2)}
+                          <span className="text-xs text-muted-foreground ml-1">/{item.uom || "—"}</span>
                         </TableCell>
                       </TableRow>
                     );
@@ -419,7 +426,11 @@ export function StockItemPickerDialog({
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
                   QTY / <span className="text-foreground">
-                    {stockLoading ? "Checking availability…" : `${maxQty} ${selectedItem.uom} available`}
+                    {stockLoading
+                      ? "Checking availability…"
+                      : selectedWarehouseId
+                        ? `${maxQty} ${selectedItem.uom} available in warehouse`
+                        : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available (select warehouse)`}
                   </span>
                 </span>
               </div>

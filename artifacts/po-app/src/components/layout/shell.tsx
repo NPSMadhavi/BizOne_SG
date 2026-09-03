@@ -503,7 +503,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       >
         {(isAdmin || hasModuleAccess("assets")) && (
           <NavItem href="/assets" icon={Monitor} active={location.startsWith("/assets")} inGroup>
-            Assets
+            Fixed Assets
           </NavItem>
         )}
         {(isAdmin || hasModuleAccess("licenses")) && (
@@ -552,7 +552,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         }
       >
         {/* ── Purchases ── */}
-        {(hasModuleAccess("purchase_quotations") || hasModuleAccess("purchase_orders") || hasModuleAccess("vendor_invoices") || hasModuleAccess("grn")) && (
+        {(hasModuleAccess("purchase_quotations") || hasModuleAccess("purchase_orders") || hasModuleAccess("vendor_invoices") || hasModuleAccess("grn") || hasModuleAccess("debit_notes")) && (
           <div className="px-3 pt-2 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Purchases</span>
           </div>
@@ -577,9 +577,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
             GoodsReceipt Note
           </NavItem>
         )}
+        {hasModuleAccess("debit_notes") && (
+          <NavItem href="/debit-notes" icon={FilePlus} active={location.startsWith("/debit-notes")} inGroup>
+            Debit Notes
+          </NavItem>
+        )}
 
         {/* ── Sales ── */}
-        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("debit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("point_of_sale") || hasModuleAccess("bill_of_materials") || hasModuleAccess("multi_price_level")) && (
+        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("point_of_sale") || hasModuleAccess("bill_of_materials") || hasModuleAccess("multi_price_level")) && (
           <div className="px-3 pt-3 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Sales</span>
           </div>
@@ -609,11 +614,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Credit Notes
           </NavItem>
         )}
-        {hasModuleAccess("debit_notes") && (
-          <NavItem href="/debit-notes" icon={FilePlus} active={location.startsWith("/debit-notes")} inGroup>
-            Debit Notes
-          </NavItem>
-        )}
         {hasModuleAccess("delivery_orders") && (
           <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")} inGroup>
             Delivery Orders
@@ -631,7 +631,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
         {hasModuleAccess("multi_price_level") && (
           <NavItem href="/multi-price-level" icon={DollarSign} active={location.startsWith("/multi-price-level")} inGroup>
-            Multi Price Level
+            Multiple Price Levels
           </NavItem>
         )}
       </NavGroup>

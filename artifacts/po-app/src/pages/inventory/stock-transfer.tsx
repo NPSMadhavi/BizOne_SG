@@ -231,7 +231,6 @@ export default function StockTransferPage() {
     <div className="space-y-6">
       <InventoryPageHeader
         title="Warehouse Management"
-        subtitle="Live warehouse stock availability. Tax Invoice reduces source warehouse qty only."
         action={
           <Button onClick={() => setDialogOpen(true)} className="gap-2 bg-[#1265d8] hover:bg-[#0d55b8] shadow-sm">
             <Plus className="h-4 w-4" /> Create Stock Transfer

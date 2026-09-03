@@ -1,16 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useForm, useFieldArray, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertEmployeeSchema, insertDependentSchema, Employee } from "@shared/schema";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/operations-8june/lib/queryClient";
+import { queryClient, apiRequest, parseApiResponse } from "@/operations-8june/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -27,7 +26,7 @@ import {
 } from "@/components/ui/select";
 
 import { isBefore } from "date-fns";
-import { Users, FileText, Plus, Trash2, User } from "lucide-react";
+import { Users, FileText, Plus, Trash2, User, Upload } from "lucide-react";
 import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
 import { cn } from "@/lib/utils";
 import {
@@ -57,15 +56,15 @@ const dependentSchema = z.object({
 
 // Extended employee form schema with dependents
 const employeeFormSchema = insertEmployeeSchema.extend({
-  employeeId: z.string().min(1, "Employee ID is required"),
+  employeeId: z.coerce.string().min(1, "Employee ID is required"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Valid email is required"),
   phone: z.string().min(8, "Phone number must be at least 8 characters"),
   address: z.string().min(10, "Address must be at least 10 characters"),
   department: z.string().min(2, "Department must be at least 2 characters"),
   designation: z.string().min(2, "Designation must be at least 2 characters"),
-  joinDate: z.date({ required_error: "Join date is required" }),
-  dateOfBirth: z.date({ required_error: "Date of birth is required" }),
+  joinDate: z.date({ required_error: "Joining date is required" }),
+  dateOfBirth: z.date({ required_error: "Date of birth is required" }).optional().nullable(),
   status: z.enum(["active", "resigned", "on_hold", "terminated"]),
   salary: z.string().min(1, "Salary is required"),
   annualSalary: z.string().optional().nullable(),
@@ -102,10 +101,12 @@ const employeeFormSchema = insertEmployeeSchema.extend({
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
 
+export type CreatedEmployeeInfo = { name: string; id?: number };
+
 interface EmployeeFormProps {
   employee?: Employee;
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (created?: CreatedEmployeeInfo) => void;
   formId?: string;
   hideShell?: boolean;
   onPendingChange?: (pending: boolean) => void;
@@ -122,9 +123,15 @@ export default function EmployeeForm({
   const { toast } = useToast();
   const { user, selectedCompany } = useAuth();
   const isEditMode = !!employee;
+  const passportInputRef = useRef<HTMLInputElement>(null);
+  const visaInputRef = useRef<HTMLInputElement>(null);
+  const nricInputRef = useRef<HTMLInputElement>(null);
   
+  const toFormString = (value: unknown) =>
+    value == null || value === "" ? "" : String(value);
+
   const getDefaultValues = (emp?: Employee) => ({
-    employeeId: emp?.employeeId || "",
+    employeeId: toFormString(emp?.employeeId),
     name: emp?.name || "",
     email: (emp as any)?.email || "",
     phone: (emp as any)?.phone || "",
@@ -139,11 +146,11 @@ export default function EmployeeForm({
     nationality: (emp as any)?.nationality || "",
     prStatus: (emp as any)?.prStatus || "",
     companyId: (emp as any)?.companyId ?? selectedCompany?.id ?? null,
-    passportNumber: emp?.passportNumber || "",
+    passportNumber: toFormString(emp?.passportNumber),
     passportExpiry: emp?.passportExpiry ? new Date(emp.passportExpiry) : null,
-    visaNumber: emp?.visaNumber || "",
+    visaNumber: toFormString(emp?.visaNumber),
     visaExpiry: emp?.visaExpiry ? new Date(emp.visaExpiry) : null,
-    nricNumber: (emp as any)?.nricNumber || "",
+    nricNumber: toFormString((emp as any)?.nricNumber),
     nricExpiry: (emp as any)?.nricExpiry ? new Date((emp as any).nricExpiry) : null,
     visaType: emp?.visaType || null,
     visaRemarks: emp?.visaRemarks || "",
@@ -167,11 +174,14 @@ export default function EmployeeForm({
   // Track if form has been initialized to prevent repeated resets
   const [formInitialized, setFormInitialized] = useState(false);
   
-  // Reset form only when sheet opens or employee changes (not on every existingDependents update)
+  // Reset form when sheet opens or employee changes
   useEffect(() => {
-    if (isOpen && !formInitialized) {
+    if (isOpen && employee) {
       const defaults = getDefaultValues(employee);
       form.reset(defaults);
+      setFormInitialized(true);
+    } else if (isOpen && !employee) {
+      form.reset(getDefaultValues());
       setFormInitialized(true);
     }
     if (!isOpen) {
@@ -232,7 +242,8 @@ export default function EmployeeForm({
       const response = await apiRequest("POST", "/api/employees", serializedData);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const created = parseApiResponse<{ name?: string; id?: number }>(data);
       toast({
         title: "Success",
         description: "Employee created successfully!",
@@ -242,7 +253,10 @@ export default function EmployeeForm({
       queryClient.invalidateQueries({ queryKey: ["/api/employee-payroll"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
       form.reset();
-      onClose();
+      onClose({
+        name: String(created?.name ?? ""),
+        id: created?.id != null ? Number(created.id) : undefined,
+      });
     },
     onError: (error: Error) => {
       toast({
@@ -379,10 +393,13 @@ export default function EmployeeForm({
                     <FormLabel className={formLabelClass}>Employee ID *</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="e.g. EMP001"
+                        placeholder=""
                         className="font-mono"
-                        {...field}
-                        value={field.value || ""}
+                        name={field.name}
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        value={field.value != null ? String(field.value) : ""}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -390,8 +407,8 @@ export default function EmployeeForm({
                 )} />
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Full Name *</FormLabel>
-                    <FormControl><Input placeholder="John Doe" {...field} /></FormControl>
+                    <FormLabel className={formLabelClass}>Employee Name *</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -402,14 +419,14 @@ export default function EmployeeForm({
                 <FormField control={form.control} name="email" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Email *</FormLabel>
-                    <FormControl><Input type="email" placeholder="john.doe@company.com" {...field} /></FormControl>
+                    <FormControl><Input type="email" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="phone" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Phone Number *</FormLabel>
-                    <FormControl><Input type="tel" placeholder="+65 9123 4567" {...field} /></FormControl>
+                    <FormControl><Input type="tel" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -420,14 +437,14 @@ export default function EmployeeForm({
                 <FormField control={form.control} name="department" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Department *</FormLabel>
-                    <FormControl><Input placeholder="Engineering" {...field} /></FormControl>
+                    <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="salary" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Salary *</FormLabel>
+                      <FormLabel className={formLabelClass}>Monthly Salary *</FormLabel>
                       <FormControl>
                         <Input
                           type="text"
@@ -482,7 +499,7 @@ export default function EmployeeForm({
                 <FormField control={form.control} name="designation" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Designation *</FormLabel>
-                    <FormControl><Input placeholder="Software Engineer" {...field} /></FormControl>
+                    <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -501,7 +518,7 @@ export default function EmployeeForm({
                       >
                         <FormControl><SelectTrigger><SelectValue placeholder="Select nationality" /></SelectTrigger></FormControl>
                         <SelectContent>
-                          <SelectItem value="Singapore">Singapore</SelectItem>
+                          <SelectItem value="Singapore">Singaporean</SelectItem>
                           <SelectItem value="PR">PR</SelectItem>
                           <SelectItem value="Foreigner">Foreigner</SelectItem>
                         </SelectContent>
@@ -540,8 +557,8 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="joinDate" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Join Date *</FormLabel>
-                    <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select join date" max={new Date().toISOString().split("T")[0]} min="1900-01-01" /></FormControl>
+                    <FormLabel className={formLabelClass}>Joining Date *</FormLabel>
+                    <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select joining date" max={new Date().toISOString().split("T")[0]} min="1900-01-01" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -549,7 +566,7 @@ export default function EmployeeForm({
                   <FormField control={form.control} name="passportNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Passport Number</FormLabel>
-                      <FormControl><Input placeholder="A1234567" {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -630,7 +647,7 @@ export default function EmployeeForm({
                   <FormField control={form.control} name="nricNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>NRIC/IC Number</FormLabel>
-                      <FormControl><Input placeholder="S1234567A" {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -640,7 +657,7 @@ export default function EmployeeForm({
                     <FormField control={form.control} name="visaNumber" render={({ field }) => (
                       <FormItem>
                         <FormLabel className={formLabelClass}>Visa Permit Number</FormLabel>
-                        <FormControl><Input placeholder="WP1234567" {...field} value={field.value || ""} /></FormControl>
+                        <FormControl><Input {...field} value={field.value || ""} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -667,14 +684,14 @@ export default function EmployeeForm({
                 <FormField control={form.control} name="address" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Address *</FormLabel>
-                    <FormControl><Textarea placeholder="123 Main Street, Singapore 123456" className="min-h-[100px]" {...field} /></FormControl>
+                    <FormControl><Textarea className="min-h-[100px]" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="visaRemarks" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Visa Remarks</FormLabel>
-                    <FormControl><Textarea placeholder="Optional visa notes..." className="min-h-[100px]" {...field} value={field.value || ""} /></FormControl>
+                    <FormControl><Textarea className="min-h-[100px]" {...field} value={field.value || ""} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -693,22 +710,31 @@ export default function EmployeeForm({
                             <FormLabel>Passport Scan</FormLabel>
                             <FormControl>
                               <div className="flex flex-col gap-2">
-                                <Input
+                                <input
+                                  ref={passportInputRef}
                                   type="file"
                                   accept=".pdf,.jpg,.jpeg,.png"
+                                  className="hidden"
                                   onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) handleFileUpload(file, "passportScan");
+                                    e.target.value = "";
                                   }}
                                 />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => passportInputRef.current?.click()}
+                                  className="border-[#E5E7EB] text-[#111827]"
+                                >
+                                  <Upload className="mr-2 h-4 w-4" />
+                                  Upload
+                                </Button>
                                 {field.value && (
                                   <p className="text-xs text-green-600">File uploaded successfully</p>
                                 )}
                               </div>
                             </FormControl>
-                            <FormDescription className="text-xs">
-                              Upload passport scan (PDF/JPG/PNG)
-                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -723,22 +749,31 @@ export default function EmployeeForm({
                             <FormLabel>Visa/Work Permit Scan</FormLabel>
                             <FormControl>
                               <div className="flex flex-col gap-2">
-                                <Input
+                                <input
+                                  ref={visaInputRef}
                                   type="file"
                                   accept=".pdf,.jpg,.jpeg,.png"
+                                  className="hidden"
                                   onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) handleFileUpload(file, "visaScan");
+                                    e.target.value = "";
                                   }}
                                 />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => visaInputRef.current?.click()}
+                                  className="border-[#E5E7EB] text-[#111827]"
+                                >
+                                  <Upload className="mr-2 h-4 w-4" />
+                                  Upload
+                                </Button>
                                 {field.value && (
                                   <p className="text-xs text-green-600">File uploaded successfully</p>
                                 )}
                               </div>
                             </FormControl>
-                            <FormDescription className="text-xs">
-                              Upload visa or work permit scan
-                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -753,22 +788,31 @@ export default function EmployeeForm({
                             <FormLabel>NRIC/ID Scan (Optional)</FormLabel>
                             <FormControl>
                               <div className="flex flex-col gap-2">
-                                <Input
+                                <input
+                                  ref={nricInputRef}
                                   type="file"
                                   accept=".pdf,.jpg,.jpeg,.png"
+                                  className="hidden"
                                   onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) handleFileUpload(file, "nricScan");
+                                    e.target.value = "";
                                   }}
                                 />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => nricInputRef.current?.click()}
+                                  className="border-[#E5E7EB] text-[#111827]"
+                                >
+                                  <Upload className="mr-2 h-4 w-4" />
+                                  Upload
+                                </Button>
                                 {field.value && (
                                   <p className="text-xs text-green-600">File uploaded successfully</p>
                                 )}
                               </div>
                             </FormControl>
-                            <FormDescription className="text-xs">
-                              Upload NRIC or ID copy (optional)
-                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -830,7 +874,7 @@ export default function EmployeeForm({
                                     <FormItem>
                                       <FormLabel>Full Name*</FormLabel>
                                       <FormControl>
-                                        <Input placeholder="John Doe" {...field} />
+                                        <Input {...field} />
                                       </FormControl>
                                       <FormMessage />
                                     </FormItem>
@@ -871,7 +915,7 @@ export default function EmployeeForm({
                                     <FormItem>
                                       <FormLabel>Passport Number</FormLabel>
                                       <FormControl>
-                                        <Input placeholder="Optional" {...field} />
+                                        <Input {...field} />
                                       </FormControl>
                                       <FormMessage />
                                     </FormItem>
@@ -905,7 +949,7 @@ export default function EmployeeForm({
                                     <FormItem>
                                       <FormLabel>Visa Number</FormLabel>
                                       <FormControl>
-                                        <Input placeholder="Optional" {...field} />
+                                        <Input {...field} />
                                       </FormControl>
                                       <FormMessage />
                                     </FormItem>

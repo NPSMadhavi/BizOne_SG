@@ -87,6 +87,26 @@ function inRange(iso: string | null | undefined, from: Date, to: Date) {
   return t >= start && t <= end;
 }
 
+function invoiceBalance(inv: { totalAmount?: string | number; paidAmount?: string | number; balance?: string | number }) {
+  if (inv.balance != null && inv.balance !== "") {
+    return Math.max(0, parseFloat(String(inv.balance)) || 0);
+  }
+  const total = parseFloat(String(inv.totalAmount)) || 0;
+  const paid = parseFloat(String(inv.paidAmount)) || 0;
+  return Math.max(0, total - paid);
+}
+
+function isOpenReceivable(status: string | null | undefined) {
+  return !["paid", "void", "cancelled", "draft"].includes(String(status || ""));
+}
+
+function vendorOutstanding(vi: { totalAmount?: string | number; paidAmount?: string | number; status?: string }) {
+  if (vi.status === "paid") return 0;
+  const total = parseFloat(String(vi.totalAmount)) || 0;
+  const paid = parseFloat(String(vi.paidAmount)) || 0;
+  return Math.max(0, total - paid);
+}
+
 type PeriodPreset = "this-month" | "last-month" | "this-quarter" | "this-year" | "custom";
 
 const PERIOD_PRESETS: { id: PeriodPreset; label: string }[] = [
@@ -365,11 +385,21 @@ export default function Dashboard() {
     },
   });
 
+  const { data: vendorInvoices = [] } = useQuery({
+    queryKey: ["dashboard-vendor-invoices"],
+    queryFn: async () => {
+      const res = await fetch("/api/vendor-invoices", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json() as Promise<any[]>;
+    },
+  });
+
   const metrics = useMemo(() => {
     const invList = (invoices as any[]) || [];
     const expList = (expenses as any[]) || [];
     const incomeList = (incomeRecords as any[]) || [];
     const poList = (purchaseOrders as any[]) || [];
+    const viList = (vendorInvoices as any[]) || [];
 
     const monthInvoices = invList.filter((i) =>
       inRange(i.issueDate || i.createdAt, new Date(rangeFrom), new Date(rangeTo)),
@@ -396,22 +426,20 @@ export default function Dashboard() {
     const netProfit = totalIncome - totalExpenses;
 
     const receivable = invList
-      .filter((i) => ["confirmed", "sent", "overdue"].includes(String(i.status)) || (i.status === "confirmed" && !i.paidAt))
-      .filter((i) => i.status !== "paid" && i.status !== "void" && i.status !== "cancelled" && i.status !== "draft")
-      .reduce((s, i) => s + (parseFloat(i.totalAmount) || 0), 0);
+      .filter((i) => isOpenReceivable(i.status))
+      .reduce((s, i) => s + invoiceBalance(i), 0);
 
     const overdueReceivable = invList
       .filter((i) => {
-        if (i.status === "paid" || i.status === "void" || i.status === "cancelled" || i.status === "draft") return false;
+        if (!isOpenReceivable(i.status)) return false;
         const due = i.deliveryDate || i.dueDate;
         if (!due) return i.status === "overdue";
         return new Date(due) < new Date(new Date().toISOString().slice(0, 10));
       })
-      .reduce((s, i) => s + (parseFloat(i.totalAmount) || 0), 0);
+      .reduce((s, i) => s + invoiceBalance(i), 0);
 
-    const payable = poList
-      .filter((p) => p.status === "confirmed" || p.status === "sent")
-      .reduce((s, p) => s + (parseFloat(String(p.totalAmount)) || 0), 0);
+    const payable = viList
+      .reduce((s, vi) => s + vendorOutstanding(vi), 0);
 
     // Split selected range into up to 5 buckets for the sparkline
     const spanMs = Math.max(rangeTo.getTime() - rangeFrom.getTime(), 24 * 60 * 60 * 1000);
@@ -568,7 +596,7 @@ export default function Dashboard() {
       lowStock,
       transactions: txns.slice(0, 5),
     };
-  }, [invoices, expenses, incomeRecords, purchaseOrders, stockItems, rangeFrom, rangeTo]);
+  }, [invoices, expenses, incomeRecords, purchaseOrders, vendorInvoices, stockItems, rangeFrom, rangeTo]);
 
   const summaryCards = [
     {

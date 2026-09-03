@@ -127,7 +127,7 @@ router.post("/quotations", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, validUntil, deliveryDate, paymentTerms, notes, items, tax,
+    deliveryAddress, issueDate, validUntil, deliveryDate, paymentTerms, salesPerson, notes, items, tax,
     currency, discountAmount, isPrivate, status,
     termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
@@ -154,7 +154,7 @@ router.post("/quotations", async (req, res): Promise<void> => {
       customerContactEmail, deliveryAddress,
       issueDate: issueDate || today,
       validUntil: validUntil || null,
-      deliveryDate, paymentTerms, notes, items,
+      deliveryDate, paymentTerms, salesPerson: salesPerson || null, notes, items,
       currency: currency || "SGD",
       isPrivate: isPrivate === true,
       subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2), tax: taxAmt.toFixed(2),
@@ -216,7 +216,7 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 
   const {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, validUntil, deliveryDate, paymentTerms, notes, items, tax, status,
+    deliveryAddress, issueDate, validUntil, deliveryDate, paymentTerms, salesPerson, notes, items, tax, status,
     currency, discountAmount, isPrivate,
     termsAndConditions, deliveryInstructions, customerNote, authorisedSignature,
   } = req.body;
@@ -229,7 +229,7 @@ router.put("/quotations/:id", async (req, res): Promise<void> => {
 
   const updateData: any = {
     customerName, customerAddress, customerContact, customerContactEmail,
-    deliveryAddress, issueDate, deliveryDate, paymentTerms, notes, items,
+    deliveryAddress, issueDate, deliveryDate, paymentTerms, salesPerson: salesPerson || null, notes, items,
     validUntil: validUntil || null,
     subtotal: subtotal.toFixed(2), discountAmount: docDiscount.toFixed(2),
     tax: taxAmt.toFixed(2), totalAmount: totalAmount.toFixed(2),

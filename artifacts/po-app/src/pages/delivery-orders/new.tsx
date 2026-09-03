@@ -178,11 +178,11 @@ export default function DeliveryOrderNew() {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation("/delivery-orders")}
-            className="h-9 w-9 shrink-0"
+ type="button"
+ variant="ghost"
+ size="icon"
+ onClick={() => setLocation("/delivery-orders")}
+ className="h-9 w-9 shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -206,8 +206,8 @@ export default function DeliveryOrderNew() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
                 <DirectoryPickerButton
-                  type="customer"
-                  onSelect={(c) => {
+ type="customer"
+ onSelect={(c) => {
                     form.setValue("customerName", c.name);
                     form.setValue("customerAddress", c.fullAddress);
                     form.setValue("customerContact", c.contactPerson);
@@ -220,11 +220,10 @@ export default function DeliveryOrderNew() {
                   <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <ContactAutocomplete
-                        type="customer"
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder="Acme Corp"
-                        onSelect={(c) => {
+ type="customer"
+ value={field.value}
+ onChange={field.onChange}
+ onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -235,11 +234,11 @@ export default function DeliveryOrderNew() {
                 )} />
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Delivery Address</FormLabel>
-                    <FormControl><Textarea placeholder="123 Business Rd..." className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="customerContact" render={({ field }) => (
                   <FormItem><FormLabel>Contact Person / Email</FormLabel>
-                    <FormControl><Input placeholder="John Doe (john@example.com)" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </CardContent>
             </Card>
@@ -314,7 +313,7 @@ export default function DeliveryOrderNew() {
                         <td className="px-4 py-2 align-top">
                           <div className="flex gap-1 items-center">
                             <FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
-                              <FormItem className="flex-1"><FormControl><Input className="h-8 text-sm font-mono" placeholder="Item no." {...field} /></FormControl></FormItem>
+                              <FormItem className="flex-1"><FormControl><Input className="h-8 text-sm font-mono"  {...field} /></FormControl></FormItem>
                             )} />
                             <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary" title="Pick from stock catalog" onClick={() => setStockPickerIndex(index)}>
                               <Package className="h-3.5 w-3.5" />
@@ -324,7 +323,7 @@ export default function DeliveryOrderNew() {
                         <td className="px-4 py-2 align-top">
                           <div className="flex gap-2 items-start">
                             <FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
-                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange} placeholder="Item description" /></FormControl></FormItem>
+                              <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
                             )} />
                             <FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
                               <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
@@ -362,7 +361,7 @@ export default function DeliveryOrderNew() {
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Internal Notes</FormLabel>
-                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Internal notes (not shown on PDF)..." className="min-h-[96px]" /></FormControl>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -374,20 +373,20 @@ export default function DeliveryOrderNew() {
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/delivery-orders")}>Cancel</Button>
             <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, false), onFormInvalid)}
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, false), onFormInvalid)}
             >
               <Save className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save as Draft"}
             </Button>
             <Button
-              type="button"
-              disabled={isSubmitting}
-              className="gap-2"
-              onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true), onFormInvalid)}
             >
               <Eye className="h-4 w-4" />
               {isSubmitting ? "Saving..." : "Save & Preview"}
@@ -397,17 +396,17 @@ export default function DeliveryOrderNew() {
       </Form>
 
       <ImportItemsDialog
-        open={importExcelOpen}
-        onClose={() => setImportExcelOpen(false)}
-        onImport={(imported, replace) => {
+ open={importExcelOpen}
+ onClose={() => setImportExcelOpen(false)}
+ onImport={(imported, replace) => {
           const newItems = imported.map(it => ({ partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, itemImage: "", serialNumbers: "" }));
           if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
         }}
       />
       <StockItemPickerDialog
-        open={stockPickerIndex !== null}
-        onOpenChange={(v) => { if (!v) setStockPickerIndex(null); }}
-        onSelect={({ item, selectedSerials, qty }: StockItemSelection) => {
+ open={stockPickerIndex !== null}
+ onOpenChange={(v) => { if (!v) setStockPickerIndex(null); }}
+ onSelect={({ item, selectedSerials, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           const desc = [item.name, item.description].filter(Boolean).join(" — ");
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
@@ -420,18 +419,18 @@ export default function DeliveryOrderNew() {
       />
       {savedDoc && (
         <PdfPreviewModal
-          open={previewOpen}
-          onOpenChange={(open) => {
+ open={previewOpen}
+ onOpenChange={(open) => {
             setPreviewOpen(open);
             if (!open) setLocation(`/delivery-orders`);
           }}
-          title={`Delivery Order ${savedDoc.doNumber}`}
-          generatePdf={(opts) => generateDO_PDF(savedDoc, selectedCompany, opts)}
-          pdfFilename={`${savedDoc.doNumber}.pdf`}
-          defaultEmailTo=""
-          defaultEmailSubject={`Delivery Order ${savedDoc.doNumber}`}
-          defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${savedDoc.doNumber}.\n\nThank you.`}
-          docInfo={{
+ title={`Delivery Order ${savedDoc.doNumber}`}
+ generatePdf={(opts) => generateDO_PDF(savedDoc, selectedCompany, opts)}
+ pdfFilename={`${savedDoc.doNumber}.pdf`}
+ defaultEmailTo=""
+ defaultEmailSubject={`Delivery Order ${savedDoc.doNumber}`}
+ defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Delivery Order ${savedDoc.doNumber}.\n\nThank you.`}
+ docInfo={{
             docType: "Delivery Order",
             docNumber: savedDoc.doNumber,
             customerName: savedDoc.customerName,
@@ -440,11 +439,11 @@ export default function DeliveryOrderNew() {
             currency: "SGD",
             totalAmount: 0,
           }}
-          onEmailSent={async (recipients) => {
+ onEmailSent={async (recipients) => {
             await fetch(`/api/delivery-orders/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
             await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
           }}
-          onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${savedDoc.id}/edit`); }}
+ onEdit={() => { setPreviewOpen(false); setLocation(`/delivery-orders/${savedDoc.id}/edit`); }}
         />
       )}
     </div>

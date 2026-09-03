@@ -8,11 +8,6 @@ import { apiRequest, queryClient } from "@/operations-8june/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   FormModalShell,
@@ -48,7 +43,7 @@ import {
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { format, isAfter, isBefore } from "date-fns";
-import { CalendarIcon, Shield, DollarSign, Users, Building, RotateCcw, CheckCircle, Search, Plus, Eye, EyeOff } from "lucide-react";
+import { CalendarIcon, Users, RotateCcw, CheckCircle, Search, Plus, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   TooltipProvider,
@@ -63,6 +58,7 @@ import {
   CommandInput,
   CommandItem,
 } from "@/components/ui/command";
+import { VendorCreateDialog } from "@/components/vendor-create-dialog";
 
 // Function to create the schema based on whether license key is required
 const createLicenseFormSchema = (hasLicenseKey: boolean) => {
@@ -275,7 +271,7 @@ export default function LicenseForm({
               className="space-y-8"
             >
               <section className="space-y-4">
-                <ModalSectionHeader icon={Shield} title="License Information" />
+                <ModalSectionHeader title="License Information" />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                           {/* Name */}
                           <FormField
@@ -291,9 +287,6 @@ export default function LicenseForm({
                                     autoFocus
                                   />
                                 </FormControl>
-                                <FormDescription className="text-xs">
-                                  Enter the software or service name
-                                </FormDescription>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -323,9 +316,6 @@ export default function LicenseForm({
                                     <SelectItem value="other">Other</SelectItem>
                                   </SelectContent>
                                 </Select>
-                                <FormDescription className="text-xs">
-                                  Category of license
-                                </FormDescription>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -401,7 +391,7 @@ export default function LicenseForm({
               </section>
 
               <section className="space-y-4">
-                <ModalSectionHeader icon={DollarSign} title="Finance & Dates" />
+                <ModalSectionHeader title="Finance & Dates" />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
 
                           {/* Cost */}
@@ -412,29 +402,22 @@ export default function LicenseForm({
                               <FormItem>
                                 <FormLabel>License Cost (SGD)</FormLabel>
                                 <FormControl>
-                                  <div className="relative">
-                                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      placeholder=""
-                                      className="pl-10"
-                                      name={field.name}
-                                      ref={field.ref}
-                                      onBlur={field.onBlur}
-                                      value={field.value || ""}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        if (v === "" || /^\d*\.?\d*$/.test(v)) {
-                                          field.onChange(v);
-                                        }
-                                      }}
-                                    />
-                                  </div>
+                                  <Input
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder=""
+                                    name={field.name}
+                                    ref={field.ref}
+                                    onBlur={field.onBlur}
+                                    value={field.value || ""}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      if (v === "" || /^\d*\.?\d*$/.test(v)) {
+                                        field.onChange(v);
+                                      }
+                                    }}
+                                  />
                                 </FormControl>
-                                <FormDescription className="text-xs">
-                                  Total cost paid for this license in Singapore Dollars
-                                </FormDescription>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -455,9 +438,6 @@ export default function LicenseForm({
                                     min="1900-01-01"
                                   />
                                 </FormControl>
-                                <FormDescription className="text-xs">
-                                  When was this license purchased or acquired
-                                </FormDescription>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -495,15 +475,6 @@ export default function LicenseForm({
                                       className={cn(isExpiredLicense && "border-red-500")}
                                     />
                                   </FormControl>
-                                  <FormDescription className={cn(
-                                    "text-xs",
-                                    isExpiredLicense && "text-red-600"
-                                  )}>
-                                    {isExpiredLicense 
-                                      ? "This license has expired and will be marked as expired"
-                                      : "When does this license expire (must be after purchase date)"
-                                    }
-                                  </FormDescription>
                                   <FormMessage />
                                 </FormItem>
                               );
@@ -553,9 +524,6 @@ export default function LicenseForm({
                                     </SelectItem>
                                   </SelectContent>
                                 </Select>
-                                <FormDescription className="text-xs text-[#6B7280]">
-                                  Current license status
-                                </FormDescription>
                                 <FormMessage />
                               </FormItem>
                             )}
@@ -564,7 +532,7 @@ export default function LicenseForm({
               </section>
 
               <section className="space-y-4">
-                <ModalSectionHeader icon={Users} title="Assignment" />
+                <ModalSectionHeader title="Assignment" />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
 
                         {/* Associated Asset - Searchable */}
@@ -644,9 +612,6 @@ export default function LicenseForm({
                                   </Command>
                                 </PopoverContent>
                               </Popover>
-                              <FormDescription className="text-xs">
-                                Link this license to a specific device or hardware asset
-                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -672,18 +637,16 @@ export default function LicenseForm({
                                   data-testid="input-seats"
                                 />
                               </FormControl>
-                              <FormDescription className="text-xs">
-                                Number of users licensed to use this software
-                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
                         />
+
                 </div>
               </section>
 
               <section className="space-y-4">
-                <ModalSectionHeader icon={Building} title="Additional Information" />
+                <ModalSectionHeader title="Additional Information" />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
 
                       {/* Vendor */}
@@ -704,6 +667,17 @@ export default function LicenseForm({
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
+                                  <div
+                                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      setIsVendorFormOpen(true);
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                    Create New Vendor
+                                  </div>
+                                  <div className="my-1 border-t" />
                                   <SelectItem value="none">
                                     <span className="text-gray-500">No vendor</span>
                                   </SelectItem>
@@ -725,9 +699,6 @@ export default function LicenseForm({
                                 <Plus className="h-4 w-4" />
                               </Button>
                             </div>
-                            <FormDescription className="text-xs">
-                              Software vendor or license provider
-                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -776,9 +747,6 @@ export default function LicenseForm({
                                 </SelectItem>
                               </SelectContent>
                             </Select>
-                            <FormDescription className="text-xs">
-                              How often this license needs to be renewed
-                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -800,9 +768,6 @@ export default function LicenseForm({
                                   value={field.value || ""}
                                 />
                               </FormControl>
-                              <FormDescription className="text-xs">
-                                Any additional details, terms, or special conditions
-                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -847,86 +812,14 @@ export default function LicenseForm({
         </Dialog>
       )}
 
-      {/* Quick Add Vendor Dialog */}
-      <Dialog open={isVendorFormOpen} onOpenChange={setIsVendorFormOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Quick Add Vendor</DialogTitle>
-            <DialogDescription>
-              Add a new vendor for license tracking
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label htmlFor="vendor-name" className="text-sm font-medium">Vendor Name *</label>
-              <Input
-                id="vendor-name"
-                placeholder="e.g., Microsoft, Adobe, Oracle"
-                data-testid="input-vendor-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="vendor-contact" className="text-sm font-medium">Contact *</label>
-              <Input
-                id="vendor-contact"
-                placeholder="Phone or contact person"
-                data-testid="input-vendor-contact"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="vendor-email" className="text-sm font-medium">Email *</label>
-              <Input
-                id="vendor-email"
-                type="email"
-                placeholder="vendor@example.com"
-                data-testid="input-vendor-email"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsVendorFormOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              type="button" 
-              onClick={async () => {
-                const name = (document.getElementById('vendor-name') as HTMLInputElement)?.value;
-                const contact = (document.getElementById('vendor-contact') as HTMLInputElement)?.value;
-                const email = (document.getElementById('vendor-email') as HTMLInputElement)?.value;
-                
-                if (!name || !contact || !email) {
-                  toast({
-                    title: "Missing fields",
-                    description: "Please fill in all required fields",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-
-                try {
-                  const res = await apiRequest("POST", "/api/vendors", { name, contact, email });
-                  const newVendor = await res.json();
-                  queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
-                  form.setValue("vendorId", newVendor.id);
-                  toast({
-                    title: "Vendor created",
-                    description: "New vendor has been added successfully",
-                  });
-                  setIsVendorFormOpen(false);
-                } catch (error: any) {
-                  toast({
-                    title: "Failed to create vendor",
-                    description: error.message || "Please try again",
-                    variant: "destructive",
-                  });
-                }
-              }}
-            >
-              Add Vendor
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <VendorCreateDialog
+        open={isVendorFormOpen}
+        onOpenChange={setIsVendorFormOpen}
+        onSuccess={(vendor) => {
+          queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
+          form.setValue("vendorId", vendor.id);
+        }}
+      />
     </>
   );
 }

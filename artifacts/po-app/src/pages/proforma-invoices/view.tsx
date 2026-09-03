@@ -173,8 +173,8 @@ export default function ProformaInvoiceView() {
           {canManage && isDraft && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-red-300 text-red-700 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4" />Delete Draft
+                <Button variant="outline" size="icon" className="border-red-300 text-red-700 hover:bg-red-50" title="Delete">
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -192,6 +192,10 @@ export default function ProformaInvoiceView() {
                       try {
                         const res = await fetch(`/api/proforma-invoices/${id}`, { method: "DELETE", credentials: "include" });
                         if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+                        qc.setQueryData(["proforma-invoices"], (old: any) =>
+                          Array.isArray(old) ? old.filter((d: any) => d.id !== id) : old,
+                        );
+                        await qc.invalidateQueries({ queryKey: ["proforma-invoices"] });
                         toast({ title: "Proforma Invoice deleted." });
                         setLocation("/proforma-invoices");
                       } catch (err: any) {

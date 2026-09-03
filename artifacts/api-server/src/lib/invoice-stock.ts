@@ -64,8 +64,8 @@ function lineKey(warehouseId: number, stockItemId: number): string {
   return `${warehouseId}:${stockItemId}`;
 }
 
-function inventoryLog(payload: Record<string, unknown>): void {
-  console.log("[INVENTORY UPDATE]", JSON.stringify(payload));
+function inventoryLog(_payload: Record<string, unknown>): void {
+  // Debug logging removed
 }
 
 async function assertStockItem(
@@ -362,14 +362,6 @@ async function syncInvoiceStockInTx(
       + `Pick each stock item with the cube icon and select a warehouse.`,
     );
   }
-
-  console.log("[TAX INVOICE SAVE]", JSON.stringify({
-    invoiceId: params.invoiceId,
-    invNumber: params.invNumber,
-    step: "upsert_tax_invoice_movement",
-    desired: Array.from(desiredByItem.values()),
-    previouslyApplied,
-  }));
 
   const result: InvoiceStockApplyResult = {
     reducedThisSave: [],

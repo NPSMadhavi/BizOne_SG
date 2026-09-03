@@ -25,15 +25,15 @@ export default function PayrollConfigEditPage() {
 
   if (!config) {
     return (
-      <FormPageShell title="Edit Payroll Configuration" backHref="/payroll">
-        <p className="text-sm text-[#6B7280]">Loading configuration…</p>
+      <FormPageShell title="Edit Payroll" backHref="/payroll">
+        <p className="text-sm text-[#6B7280]">Loading payroll…</p>
       </FormPageShell>
     );
   }
 
   return (
     <FormPageShell
-      title="Edit Payroll Configuration"
+      title="Edit Payroll"
       description="Update payroll setup for this employee."
       backHref="/payroll"
     >

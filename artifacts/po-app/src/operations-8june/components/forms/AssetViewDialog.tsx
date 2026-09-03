@@ -55,10 +55,10 @@ export default function AssetViewDialog({ open, onClose, asset }: AssetViewDialo
       <EntityViewFieldGrid>
         <EntityViewField label="Asset Tag" value={asset.tag} />
         <EntityViewField
-          label="Type"
+          label="Asset Name"
           value={<EntityViewTypeBadge>{formatLabel(asset.type)}</EntityViewTypeBadge>}
         />
-        <EntityViewField label="Category" value={formatLabel(asset.category)} />
+        <EntityViewField label="Asset Category" value={formatLabel(asset.category)} />
         <EntityViewField label="Serial Number" value={asset.serial} />
         <EntityViewField label="Model" value={asset.model || "-"} />
         <EntityViewField label="Manufacturer" value={formatLabel(asset.manufacturer)} />

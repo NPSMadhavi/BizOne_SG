@@ -167,7 +167,6 @@ export default function WarehousesPage() {
     <div className="space-y-6 pb-8">
       <InventoryPageHeader
         title="Warehouses"
-        subtitle="Manage all warehouses and create new warehouse locations."
         action={
           <Button className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={openCreate}>
             <Plus className="h-4 w-4" /> Create Warehouse
