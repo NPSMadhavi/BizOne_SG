@@ -16,6 +16,7 @@ import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { postInvoiceJE, reverseInvoiceJE } from "../lib/invoice-auto-post.js";
 import { postARPaymentJE, reverseARPaymentJE } from "../lib/invoice-payment-je.js";
+import { assertPeriodWritable } from "../lib/financial-year.js";
 import {
   deductInvoiceStock,
   restoreInvoiceStock,
@@ -317,6 +318,10 @@ router.post("/invoices", async (req, res): Promise<void> => {
 
   if (!customerName || !items) { res.status(400).json({ error: "customerName and items are required" }); return; }
 
+  const resolvedIssueDate = issueDate || new Date().toISOString().split("T")[0];
+  const periodCheck = await assertPeriodWritable(companyId, resolvedIssueDate);
+  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
+
   const subtotal = (items as any[]).reduce((s: number, item: any) => (item.type === "section" || item.isFoc) ? s : s + parseFloat(item.amount || "0"), 0);
   const docDiscount = Number(discountAmount) || 0;
   const taxableAmount = subtotal - docDiscount;
@@ -338,7 +343,7 @@ router.post("/invoices", async (req, res): Promise<void> => {
     doc = await db.transaction(async (tx) => {
       const [created] = await tx.insert(invoicesTable).values({
         invNumber, companyId: req.session.companyId!, customerName, customerAddress, customerContact,
-        customerContactEmail, deliveryAddress, issueDate: issueDate || new Date().toISOString().split("T")[0], deliveryDate, paymentTerms, salesPerson: salesPerson || null, notes,
+        customerContactEmail, deliveryAddress, issueDate: resolvedIssueDate, deliveryDate, paymentTerms, salesPerson: salesPerson || null, notes,
         items: stockItems,
         currency: currency || "SGD",
         exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,

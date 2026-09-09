@@ -300,7 +300,7 @@ export default function PurchaseQuotationNew() {
                     form.setValue("vendorAddress", c.fullAddress);
                     form.setValue("vendorContact", c.contactPerson);
                     form.setValue("vendorContactEmail", c.contactEmail);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
+                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
                     if (c.currency) {
                       form.setValue("currency", c.currency);
                       setDirectoryCurrency(c.currency);

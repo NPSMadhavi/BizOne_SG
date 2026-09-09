@@ -6,7 +6,20 @@ import {
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/auth-context";
-import { pathToAppModule } from "@/contexts/auth-modules";
+import { queueVedaFormAction } from "@/hooks/useVedaFormActions";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getGetPurchaseOrderQueryKey,
+  getListPurchaseOrdersQueryKey,
+  getGetInvoiceQueryKey,
+  getListInvoicesQueryKey,
+  getGetQuotationQueryKey,
+  getListQuotationsQueryKey,
+  getGetDeliveryOrderQueryKey,
+  getListDeliveryOrdersQueryKey,
+} from "@workspace/api-client-react";
+import { vedaAutoSendDocumentEmail, type VedaEmailDocType } from "@/lib/veda-send-email";
+import { useToast } from "@/hooks/use-toast";
 
 interface Message {
   id: string;
@@ -83,10 +96,84 @@ const TOOL_LABELS: Record<string, string> = {
   getCompanySettings: "Loading settings",
   getFinancialStats: "Calculating stats",
   fillCurrentForm: "Updating form",
+  submitCurrentForm: "Saving form",
+  previewCurrentDocument: "Opening preview",
+  downloadCurrentDocument: "Downloading PDF",
+  updateDocumentFields: "Updating document",
   navigateTo: "Navigating",
   createInvoice: "Creating invoice",
   createQuotation: "Creating quotation",
+  createPurchaseOrder: "Creating purchase order",
+  createDeliveryOrder: "Creating delivery order",
+  confirmDocument: "Confirming document",
+  voidInvoice: "Voiding invoice",
+  knockOffInvoice: "Marking invoice paid",
+  sendDocumentEmail: "Preparing email",
 };
+
+/** Store navigation prefill for supported new-document pages (and legacy invoice key). */
+function storeVedaPrefill(prefill: unknown) {
+  if (!prefill) return;
+  (window as any).__vedaPrefill = prefill;
+  // Invoice new page still reads the legacy key — keep both in sync without changing that page.
+  (window as any).__ariaPrefill = prefill;
+}
+
+/** Let Veda open any module page even if sidebar assignment would block it. */
+function unlockVedaModules() {
+  (window as any).__vedaModuleUnlock = true;
+  try { sessionStorage.setItem("veda_module_unlock", "1"); } catch {}
+}
+export function isVedaModuleUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  if ((window as any).__vedaModuleUnlock) return true;
+  try { return sessionStorage.getItem("veda_module_unlock") === "1"; } catch { return false; }
+}
+
+function normalizeNavPath(path: string): string {
+  let p = String(path || "").trim();
+  if (!p) return "/dashboard";
+  if (!p.startsWith("/")) p = `/${p}`;
+  return p;
+}
+
+/** Instant client-side navigate for clear "go to / open …" phrases (no LLM wait). */
+function matchQuickNavigate(command: string): string | null {
+  const t = String(command || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit|create|make|add)\b/.test(t)
+    || /\b(page|module|screen|list)\b/.test(t)
+    || /^(invoices?|quotations?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|stock|grn|dashboard|settings|point\s*of\s*sale|pos)$/.test(t);
+  if (!wantsNav) return null;
+
+  // Create / new forms
+  if (/\b(create|new|add|make)\b/.test(t) && /\binvoices?\b/.test(t)) return "/invoices/new";
+  if (/\b(create|new|add|make)\b/.test(t) && /\bquotations?\b|\bquotes?\b/.test(t)) return "/quotations/new";
+  if (/\b(create|new|add|make)\b/.test(t) && /\bpurchase\s*orders?\b/.test(t)) return "/purchase-orders/new";
+  if (/\b(create|new|add|make)\b/.test(t) && /\bdelivery\s*orders?\b/.test(t)) return "/delivery-orders/new";
+
+  if (/\bnew\b/.test(t) && /\binvoices?\b/.test(t)) return "/invoices/new";
+  if (/\bnew\b/.test(t) && /\bquotations?\b/.test(t)) return "/quotations/new";
+  if (/\bnew\b/.test(t) && /\bpurchase\s*orders?\b/.test(t)) return "/purchase-orders/new";
+  if (/\bnew\b/.test(t) && /\bdelivery\s*orders?\b/.test(t)) return "/delivery-orders/new";
+
+  if (/\bpurchase\s*orders?\b/.test(t)) return "/purchase-orders";
+  if (/\bpoint\s*of\s*sale\b/.test(t)) return "/point-of-sale";
+  if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return "/vendor-invoices";
+  if (/\binvoices?\b/.test(t)) return "/invoices";
+  if (/\bquotations?\b|\bquotes?\b/.test(t)) return "/quotations";
+  if (/\bdelivery\s*orders?\b/.test(t)) return "/delivery-orders";
+  if (/\bsales\s*orders?\b/.test(t)) return "/sales-orders";
+  if (/\bcustomers?\b/.test(t)) return "/customers";
+  if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return "/vendors";
+  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b/.test(t)) return "/stock";
+  if (/\bgrn\b|\bgoods\s*received\b/.test(t)) return "/grn";
+  if (/\bdashboard\b|\bhome\b/.test(t)) return "/dashboard";
+  if (/\bsettings?\b/.test(t)) return "/settings";
+  if (/\bexpenses?\b/.test(t)) return "/accounting/expenses";
+  if (/\baccounting\b/.test(t)) return "/accounting/chart-of-accounts";
+  return null;
+}
 
 const PATH_LABELS: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -120,6 +207,43 @@ const SUGGESTIONS = [
 ];
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function applyVedaDocumentCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  payload: { docType: string; id: number; document?: any },
+) {
+  const { docType, id, document } = payload;
+  if (!id) return;
+
+  const detailKey =
+    docType === "po" ? getGetPurchaseOrderQueryKey(id)
+    : docType === "inv" ? getGetInvoiceQueryKey(id)
+    : docType === "qt" ? getGetQuotationQueryKey(id)
+    : docType === "do" ? getGetDeliveryOrderQueryKey(id)
+    : null;
+  const listKey =
+    docType === "po" ? getListPurchaseOrdersQueryKey()
+    : docType === "inv" ? getListInvoicesQueryKey()
+    : docType === "qt" ? getListQuotationsQueryKey()
+    : docType === "do" ? getListDeliveryOrdersQueryKey()
+    : null;
+
+  if (detailKey && document) {
+    queryClient.setQueryData(detailKey, (old: any) => old ? { ...old, ...document } : document);
+  }
+  if (detailKey) {
+    void queryClient.invalidateQueries({ queryKey: detailKey });
+  }
+  if (listKey) {
+    if (document) {
+      queryClient.setQueryData(listKey, (old: any) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((row: any) => (row.id === id ? { ...row, ...document } : row));
+      });
+    }
+    void queryClient.invalidateQueries({ queryKey: listKey });
+  }
+}
 
 // ── Track user gesture so we know TTS is unblocked ────────────────────────
 let _userHasInteracted = false;
@@ -207,7 +331,7 @@ function speakBrowser(text: string): Promise<void> {
     setTimeout(() => {
       if (_browserTtsResolve !== resolve) return; // already cancelled by a newer call
       const utt = new SpeechSynthesisUtterance(clean);
-      utt.rate = 1.0;
+      utt.rate = 1.12;
       utt.pitch = 1.05;
       utt.volume = 1.0;
       const voice = _cachedVoice ?? pickBestVoice(window.speechSynthesis.getVoices());
@@ -225,6 +349,127 @@ async function speak(text: string): Promise<void> {
   await speakBrowser(clean);
 }
 
+function cancelSpeech() {
+  window.speechSynthesis?.cancel();
+  _browserTtsResolve?.();
+  _browserTtsResolve = null;
+  if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
+}
+
+// Chrome allows only ONE SpeechRecognition at a time. All Veda voice paths must
+// go through this mutex or wake / listen / barge-in steal the mic from each other.
+let _activeSpeechRec: any = null;
+function killSpeechMic() {
+  const rec = _activeSpeechRec;
+  _activeSpeechRec = null;
+  if (!rec) return;
+  try {
+    rec.onresult = null;
+    rec.onerror = null;
+    rec.onend = null;
+    rec.abort();
+  } catch {}
+}
+function claimSpeechMic(rec: any) {
+  killSpeechMic();
+  _activeSpeechRec = rec;
+}
+
+// Only clear stop intents — do NOT match "thank you" / "done" / "close" (causes false auto-stop)
+const HARD_STOP_RE =
+  /\b(stop\s+it|stop\s+veda|stop\s+talking|shut\s*up|be\s*quiet|cancel\s+that|never\s*mind|that'?s\s+all|goodbye|good\s*bye)\b/i;
+const HARD_STOP_ONLY_RE =
+  /^\s*(stop(\s+it)?|bye|goodbye|exit)\s*[.!]?\s*$/i;
+
+function isStopCommand(text: string) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  return HARD_STOP_ONLY_RE.test(t) || HARD_STOP_RE.test(t);
+}
+
+/** Ignore room chatter / noise fragments — only accept clear addressed speech. */
+function isLikelyNoise(text: string): boolean {
+  const t = String(text || "").trim().toLowerCase();
+  if (!t) return true;
+  if (isStopCommand(t)) return false;
+  // Short yes/no / numbers are valid field answers
+  if (/^(yes|yeah|yep|yup|ok|okay|sure|no|nope|nah|sgd|usd|eur|inr|myr|gbp|\d+([.,]\d+)?)$/i.test(t)) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  // Single tiny word from background (hmm, the, a, uh) — ignore
+  if (words.length === 1 && words[0].length < 3) return true;
+  if (words.length === 1 && /^(the|a|an|and|or|to|of|is|it|um|uh|ah|oh|hmm|ha|la|na|aa|ee)$/i.test(words[0])) return true;
+  // Very short mumbled fragment without intent words
+  if (t.replace(/\s+/g, "").length < 3) return true;
+  return false;
+}
+
+/** Speak fully unless user clearly says stop — do NOT barge-in on room chatter. */
+function speakWithHardStopOnly(
+  text: string,
+  opts?: { signal?: AbortSignal },
+): Promise<{ interrupted: boolean; stop?: boolean }> {
+  return new Promise((resolve) => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    let settled = false;
+    let bargeRec: any = null;
+    let startRecTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = (result: { interrupted: boolean; stop?: boolean }) => {
+      if (settled) return;
+      settled = true;
+      if (startRecTimer) clearTimeout(startRecTimer);
+      if (_activeSpeechRec === bargeRec) _activeSpeechRec = null;
+      try {
+        if (bargeRec) {
+          bargeRec.onresult = null;
+          bargeRec.onerror = null;
+          bargeRec.onend = null;
+          bargeRec.abort();
+        }
+      } catch {}
+      bargeRec = null;
+      if (result.stop) cancelSpeech();
+      resolve(result);
+    };
+
+    opts?.signal?.addEventListener("abort", () => finish({ interrupted: false }));
+
+    // Only listen for hard stop while speaking — ignore other voices in the room
+    startRecTimer = setTimeout(() => {
+      if (settled || !SR) return;
+      try {
+        bargeRec = new SR();
+        bargeRec.continuous = true;
+        bargeRec.interimResults = true;
+        bargeRec.lang = "en-IN";
+        claimSpeechMic(bargeRec);
+        bargeRec.onresult = (evt: any) => {
+          if (settled) return;
+          let heard = "";
+          for (let i = evt.resultIndex; i < evt.results.length; i++) {
+            heard += evt.results[i][0]?.transcript || "";
+          }
+          heard = heard.trim();
+          if (isStopCommand(heard)) {
+            finish({ interrupted: true, stop: true });
+          }
+        };
+        bargeRec.onerror = () => {};
+        bargeRec.onend = () => {
+          if (!settled && bargeRec && _activeSpeechRec === bargeRec) {
+            try { bargeRec.start(); } catch {}
+          }
+        };
+        bargeRec.start();
+      } catch {}
+    }, 600);
+
+    speak(text)
+      .then(() => finish({ interrupted: false }))
+      .catch(() => finish({ interrupted: false }));
+  });
+}
+
 // ── SSE stream ────────────────────────────────────────────────────────────────
 async function streamChat(
   messages: { role: string; content: string }[],
@@ -234,6 +479,8 @@ async function streamChat(
   onNav: (path: string, prefill: any, reason: string) => void,
   signal: AbortSignal,
   onFill?: (fields: Record<string, any>) => void,
+  onFormAction?: (action: "save" | "preview" | "download") => void,
+  onDocumentUpdated?: (payload: { docType: string; id: number; fields?: Record<string, any>; document?: any }) => void,
   onEmail?: (docType: string, id: number, recipients: string[], docNumber?: string) => void,
   currentPath?: string,
   selectedCompanyId?: number | null,
@@ -259,6 +506,18 @@ async function streamChat(
         if (ev.type === "tool_call" && ev.name) onTool(ev.name);
         if (ev.type === "navigate") onNav(ev.path, ev.prefill, ev.reason || "");
         if (ev.type === "fill_form" && ev.fields) onFill?.(ev.fields);
+        if (ev.type === "form_action" && ev.action) onFormAction?.(ev.action);
+        if (ev.type === "document_updated") {
+          onDocumentUpdated?.({
+            docType: ev.docType,
+            id: ev.id,
+            fields: ev.fields,
+            document: ev.document,
+          });
+          window.dispatchEvent(new CustomEvent("veda:document-updated", {
+            detail: { docType: ev.docType, id: ev.id, fields: ev.fields, document: ev.document },
+          }));
+        }
         if (ev.type === "trigger_email") {
           (window as any).__vedaOpenEmail = { recipients: ev.recipients, docType: ev.docType, id: ev.id };
           onEmail?.(ev.docType, ev.id, ev.recipients, ev.docNumber);
@@ -322,15 +581,64 @@ function useVoice() {
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
 // Keep as a plain variable (not const) so HMR always refreshes it in place.
 // The hook reads it via a ref so stale useCallback closures always see the latest value.
-// Only keep phonetically-close variants of "Veda".
-// Removed common English words (weather, better, letter, meter, leader, reader,
-// feeder, cedar, vector) that were causing constant false positives.
-let WAKE_WORDS = /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder)\b/i;
+// Phonetic / STT variants of "Veda" only — avoid common English words that false-trigger.
+let WAKE_WORDS = /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedaah|vedha|veyda|veida|beeda|bheda)\b/i;
 const WAKE_WORDS_REF = { current: WAKE_WORDS };
 WAKE_WORDS_REF.current = WAKE_WORDS;
 
+/** Normalize STT text and detect wake + optional follow-on command. */
+function matchWakeUtterance(raw: string): { hit: boolean; followOn?: string } {
+  const t = String(raw || "")
+    .toLowerCase()
+    .replace(/[^\w\s']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return { hit: false };
+
+  // Drop leading filler so "say veda" / "hey veda" / "ok veda" still wake
+  const strippedLead = t.replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|yo|oye|hello)\s+/i, "").trim();
+  const candidates = [t, strippedLead];
+
+  for (const c of candidates) {
+    if (!WAKE_WORDS_REF.current.test(c)) continue;
+    // reset lastIndex in case flag quirks
+    WAKE_WORDS_REF.current.lastIndex = 0;
+    const followOn = c
+      .replace(WAKE_WORDS_REF.current, " ")
+      .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|yo|oye|hello)\s+/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
+  }
+
+  // Single-token fuzzy: STT often mangles short "Veda" (e.g. "ved", "veda.", "v eda")
+  const one = strippedLead.replace(/\s+/g, "");
+  if (one.length >= 3 && one.length <= 8) {
+    const target = "veda";
+    let dist = 0;
+    const a = one.slice(0, 8);
+    const b = target;
+    const m = a.length;
+    const n = b.length;
+    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+    dist = dp[m][n];
+    if (dist <= 1) return { hit: true };
+  }
+
+  return { hit: false };
+}
+
 function useWakeWord(
-  onWakeWord: () => void,
+  onWakeWord: (followOnCommand?: string) => void,
   enabled: boolean,
   onMicError?: (code: string) => void,
   onHeard?: (text: string) => void,
@@ -355,7 +663,13 @@ function useWakeWord(
     clearWatchdog();
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     if (recRef.current) {
-      try { recRef.current.abort(); } catch {}
+      if (_activeSpeechRec === recRef.current) _activeSpeechRec = null;
+      try {
+        recRef.current.onresult = null;
+        recRef.current.onerror = null;
+        recRef.current.onend = null;
+        recRef.current.abort();
+      } catch {}
       recRef.current = null;
     }
   }, [clearWatchdog]);
@@ -366,77 +680,71 @@ function useWakeWord(
     if (!SR) return;
     try {
       const rec = new SR();
+      // Single-shot sessions are more reliable than continuous for short wake words
       rec.continuous      = false;
-      rec.interimResults  = false;
-      rec.lang            = "en-US";
-      rec.maxAlternatives = 8; // more alternatives → more chances to catch "Veda"
-      recRef.current      = rec;
+      rec.interimResults  = true;
+      rec.lang            = "en-IN";
+      rec.maxAlternatives = 5;
+      claimSpeechMic(rec);
+      recRef.current = rec;
 
-      // Watchdog: Chrome sometimes silently hangs (no onresult/onerror/onend).
-      // If no event fires within 14 s, force-abort and restart.
       clearWatchdog();
       watchdogRef.current = setTimeout(() => {
-        if (recRef.current) {
-          try { recRef.current.abort(); } catch {}
-          recRef.current = null;
-        }
-        if (enabledRef.current) timerRef.current = setTimeout(startListening, 400);
-      }, 14_000);
+        stopListening();
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, 100);
+      }, 10_000);
+
+      let fired = false;
+      const tryWake = (text: string) => {
+        if (fired || !text) return;
+        onHeardRef.current?.(text);
+        const match = matchWakeUtterance(text);
+        if (!match.hit) return;
+        fired = true;
+        stopListening();
+        onWakeRef.current(match.followOn);
+      };
 
       rec.onresult = (evt: any) => {
-        clearWatchdog();
-        // Collect all alternatives, sorted best-first (Chrome already orders them).
-        const heard: string[] = [];
         for (let i = 0; i < evt.results.length; i++) {
           for (let j = 0; j < evt.results[i].length; j++) {
             const t = (evt.results[i][j].transcript || "").toLowerCase().trim();
-            if (t) heard.push(t);
-          }
-        }
-        // Show whatever was best-heard in the debug chip
-        if (heard.length > 0) onHeardRef.current?.(heard[0]);
-
-        for (const t of heard) {
-          if (WAKE_WORDS_REF.current.test(t)) {
-            recRef.current = null;
-            onWakeRef.current();
-            return;
+            if (t) tryWake(t);
+            if (fired) return;
           }
         }
       };
 
       rec.onerror = (e: any) => {
         clearWatchdog();
+        if (_activeSpeechRec === rec) _activeSpeechRec = null;
         recRef.current = null;
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           onMicErrRef.current?.(e.error);
           return;
         }
-        // no-speech is normal — restart quickly; other errors give browser more breathing room
-        const delay = e.error === "no-speech" ? 200 : 1500;
-        if (enabledRef.current) timerRef.current = setTimeout(startListening, delay);
+        const delay = e.error === "no-speech" ? 60 : 350;
+        if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, delay);
       };
 
       rec.onend = () => {
         clearWatchdog();
+        if (_activeSpeechRec === rec) _activeSpeechRec = null;
         recRef.current = null;
-        // 300 ms is the sweet spot — fast enough to feel responsive, long enough that
-        // Chrome's mic-release doesn't cause the next session to silently fail.
-        if (enabledRef.current) timerRef.current = setTimeout(startListening, 300);
+        if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, 100);
       };
 
       rec.start();
     } catch {
       clearWatchdog();
       recRef.current = null;
-      if (enabledRef.current) timerRef.current = setTimeout(startListening, 900);
+      if (enabledRef.current) timerRef.current = setTimeout(startListening, 350);
     }
-  }, [clearWatchdog]);
+  }, [clearWatchdog, stopListening]);
 
   useEffect(() => {
     if (enabled) {
-      // Small initial delay so the page/mic is ready before the first session
-      timerRef.current = setTimeout(startListening, 800);
+      timerRef.current = setTimeout(startListening, 100);
     } else {
       stopListening();
     }
@@ -449,9 +757,7 @@ function useWakeWord(
   return { supported };
 }
 
-// ── Ambient voice capture — keeps listening until speech detected or timeout ──
-// Uses continuous=false but restarts on no-speech/early-end so the listening
-// mode doesn't close automatically when the user hasn't spoken yet.
+// ── Command capture — exclusive mic, pause ends the utterance ──
 function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -470,8 +776,16 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       if (maxTimer) { clearTimeout(maxTimer); maxTimer = null; }
       if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
-      try { rec?.abort(); } catch {}
-      resolve(text);
+      if (_activeSpeechRec === rec) _activeSpeechRec = null;
+      try {
+        if (rec) {
+          rec.onresult = null;
+          rec.onerror = null;
+          rec.onend = null;
+          rec.abort();
+        }
+      } catch {}
+      resolve(String(text || "").trim());
     };
 
     const startRec = () => {
@@ -480,60 +794,91 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
         rec = new SR();
         rec.continuous = false;
         rec.interimResults = true;
-        rec.lang = "en-US";
-        rec.maxAlternatives = 1;
+        rec.lang = "en-IN";
+        rec.maxAlternatives = 3;
+        claimSpeechMic(rec);
 
         rec.onresult = (evt: any) => {
           for (let i = evt.resultIndex; i < evt.results.length; i++) {
-            const t = evt.results[i][0].transcript;
+            let best = evt.results[i][0]?.transcript || "";
+            let bestConf = evt.results[i][0]?.confidence ?? 0;
+            for (let j = 1; j < evt.results[i].length; j++) {
+              const alt = evt.results[i][j];
+              const c = alt?.confidence ?? 0;
+              if (c > bestConf) {
+                best = alt.transcript;
+                bestConf = c;
+              }
+            }
+            const t = String(best || "").trim();
+            if (!t) continue;
+            // Drop low-confidence room noise (0 means unknown — allow; <0.35 discard)
+            if (bestConf > 0 && bestConf < 0.35) continue;
+
             if (evt.results[i].isFinal) {
-              finalText = t;
+              if (isLikelyNoise(t) && !finalText) {
+                // Ignore stray single-word background hits; keep listening
+                continue;
+              }
+              finalText = (finalText ? `${finalText} ${t}` : t).trim();
+              onInterim(finalText);
               if (silenceTimer) clearTimeout(silenceTimer);
-              // 800 ms after final word — catches appended words
-              silenceTimer = setTimeout(() => done(finalText), 800);
+              if (isStopCommand(finalText)) {
+                done(finalText);
+                return;
+              }
+              // Longer pause so background chatter doesn't cut the user's answer short
+              silenceTimer = setTimeout(() => {
+                if (isLikelyNoise(finalText)) {
+                  finalText = "";
+                  onInterim("");
+                  return;
+                }
+                done(finalText);
+              }, 900);
             } else {
+              // Don't end utterance on interim alone — wait for final (reduces room pickup)
               onInterim(t);
               if (silenceTimer) clearTimeout(silenceTimer);
-              silenceTimer = setTimeout(() => done(finalText), 2500);
+              if (isStopCommand(t)) {
+                done(t);
+                return;
+              }
             }
           }
         };
 
         rec.onerror = (e: any) => {
+          if (_activeSpeechRec === rec) _activeSpeechRec = null;
           rec = null;
           if (e.error === "no-speech") {
-            // Normal — browser heard nothing; restart immediately and keep waiting
-            if (!resolved) restartTimer = setTimeout(startRec, 100);
+            if (!resolved) restartTimer = setTimeout(startRec, 50);
           } else if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-            done(""); // mic blocked — give up
+            done("");
           } else {
-            // Other transient errors — brief pause then retry
-            if (!resolved) restartTimer = setTimeout(startRec, 500);
+            if (!resolved) restartTimer = setTimeout(startRec, 250);
           }
         };
 
         rec.onend = () => {
+          if (_activeSpeechRec === rec) _activeSpeechRec = null;
           rec = null;
           if (resolved) return;
-          if (finalText) {
-            // Already have text — silence timer handles it
-          } else {
-            // Ended early without speech — restart to keep listening
-            restartTimer = setTimeout(startRec, 150);
-          }
+          if (!finalText) restartTimer = setTimeout(startRec, 70);
         };
 
         rec.start();
       } catch {
         rec = null;
-        if (!resolved) restartTimer = setTimeout(startRec, 500);
+        if (!resolved) restartTimer = setTimeout(startRec, 250);
       }
     };
 
-    // Hard cap: 20 s total (user has plenty of time to speak)
     maxTimer = setTimeout(() => done(finalText), 20000);
     signal?.addEventListener("abort", () => done(finalText));
 
+    // Ensure wake mic is dead before command mic starts
+    killSpeechMic();
     startRec();
   });
 }
@@ -549,40 +894,83 @@ export function AgentPanel() {
   const [transcribing, setTranscribing] = useState(false);
   const [micError, setMicError] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [ambientMode, setAmbientMode] = useState(() => {
-    try { return localStorage.getItem("veda_ambient") === "1"; } catch { return false; }
-  });
+  // Always-on hands-free: wake word "Veda" works without opening the chat panel.
+  // Chat panel opens ONLY when the user clicks the Veda icon.
+  const [handsFree, setHandsFree] = useState(true);
   // Ambient conversation state machine
   const [convState, setConvState] = useState<ConvState>("idle");
   const [convText, setConvText] = useState("");
+  const [panelListening, setPanelListening] = useState(false);
   const convActiveRef = useRef(false);
   const ambientAbortRef = useRef<AbortController | null>(null);
   const ambientHistoryRef = useRef<{ role: string; content: string }[]>([]);
+  const panelListenAbortRef = useRef<AbortController | null>(null);
 
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const { recording, start, stop } = useVoice();
   const [location, navigate] = useLocation();
   const [memory] = useState(() => loadMemory());
-  const { selectedCompany, hasModuleAccess, isAdmin } = useAuth();
+  const { selectedCompany } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  const canOpenPath = useCallback((path: string) => {
-    if (isAdmin) return true;
-    const module = pathToAppModule(path);
-    if (!module) return true;
-    return hasModuleAccess(module);
-  }, [isAdmin, hasModuleAccess]);
+  const handleDocumentUpdated = useCallback((payload: { docType: string; id: number; fields?: Record<string, any>; document?: any }) => {
+    applyVedaDocumentCache(queryClient, payload);
+  }, [queryClient]);
+
+  const handleVedaEmail = useCallback(async (
+    docType: string,
+    id: number,
+    recipients: string[],
+    docNumber?: string,
+  ) => {
+    const typed = (["inv", "qt", "po", "do"].includes(docType) ? docType : "po") as VedaEmailDocType;
+    toast({
+      title: "Sending email…",
+      description: `Preparing ${docNumber || "document"} PDF for ${recipients.join(", ")}`,
+    });
+    const result = await vedaAutoSendDocumentEmail({
+      docType: typed,
+      id,
+      recipients,
+      company: selectedCompany,
+      companyName: (selectedCompany as any)?.name,
+    });
+    if (!result.ok) {
+      toast({
+        title: "Email not sent",
+        description: result.error + (result.error.includes("SMTP")
+          ? ""
+          : " Check Settings → Email / SMTP configuration."),
+        variant: "destructive",
+      });
+      return;
+    }
+    applyVedaDocumentCache(queryClient, {
+      docType: typed,
+      id,
+      document: {
+        status: "sent",
+        emailSentTo: result.recipients.join(", "),
+      },
+    });
+    toast({
+      title: "Email sent",
+      description: `${result.docNumber} sent to ${result.recipients.join(", ")}.`,
+    });
+  }, [queryClient, selectedCompany, toast]);
+
+  const canOpenPath = useCallback((_path: string) => true, []);
 
   const hasMessages = messages.length > 0;
 
-  // ── Ambient conversation loop ──
-  // greeting: what Veda says at the start of this conversation turn
-  //   button press  → "Yes Boss, how may I help you?"
-  //   wake word     → "Yes Boss"
-  const runAmbientConversation = useCallback(async (greeting = "Yes Boss") => {
+  // ── Ambient conversation loop (exclusive mic: wake OR listen OR barge-in) ──
+  const runAmbientConversation = useCallback(async (greeting = "Yes?", firstCommand?: string) => {
     if (convActiveRef.current) return;
     convActiveRef.current = true;
+    killSpeechMic();
+    cancelSpeech();
     const ctrl = new AbortController();
     ambientAbortRef.current = ctrl;
     ambientHistoryRef.current = [];
@@ -590,65 +978,131 @@ export function AgentPanel() {
     try {
       setConvState("greeting");
       setConvText(greeting);
-      // Only speak the greeting if the browser has received a user gesture
-      // (click/keydown). On page-load with ambient restored from localStorage,
-      // speechSynthesis.speak() is silently blocked — we skip speech but still
-      // show the visual overlay and proceed straight to listening.
-      if (_userHasInteracted) {
-        await speak(greeting);
-        // Give the audio hardware ~400 ms to switch from speaker → mic
-        await new Promise(r => setTimeout(r, 400));
-      } else {
-        // No user gesture yet — just wait a beat so the UI updates before mic opens
-        await new Promise(r => setTimeout(r, 200));
-      }
 
-      let silenceStreak = 0;
-      // Track the last thing Veda said so we can detect mic echo
+      if (_userHasInteracted) void speak(greeting);
+      // Wait for wake mic to fully release before command mic
+      await new Promise(r => setTimeout(r, 220));
+
       let lastSpokenWords: string[] = [];
+      let pendingFirst = (firstCommand || "").trim();
 
-      // Helper: is this command just Veda's own TTS echoing back?
       const isEcho = (cmd: string) => {
         if (lastSpokenWords.length === 0) return false;
         const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3);
         if (cmdWords.length === 0) return false;
         const matches = cmdWords.filter(w => lastSpokenWords.includes(w)).length;
-        // If >40% of the command's words came from what Veda just said, treat as echo
-        return matches / cmdWords.length > 0.4;
+        return matches / cmdWords.length > 0.45;
       };
 
       while (convActiveRef.current) {
-        setConvState("listening");
-        setConvText("");
-
-        const command = await listenForCommand(t => setConvText(t), ctrl.signal);
+        let command = "";
+        if (pendingFirst) {
+          command = pendingFirst;
+          pendingFirst = "";
+          setConvState("listening");
+          setConvText(command);
+        } else {
+          setConvState("listening");
+          setConvText("");
+          command = await listenForCommand(t => setConvText(t), ctrl.signal);
+        }
         if (ctrl.signal.aborted || !convActiveRef.current) break;
 
-        if (!command.trim()) {
-          silenceStreak++;
-          if (silenceStreak >= 1) break;
+        if (!command.trim() || isLikelyNoise(command)) {
+          // Keep listening — ignore empty / room noise (do NOT auto-stop)
           continue;
         }
-        silenceStreak = 0;
 
-        // Discard if it looks like Veda's own TTS being picked up by the mic
         if (isEcho(command)) {
-          lastSpokenWords = []; // clear so next round is not filtered
+          lastSpokenWords = [];
           continue;
         }
         lastSpokenWords = [];
 
-        if (/\b(stop|bye|goodbye|that'?s all|thanks veda|thank you|no thanks|done|exit|close)\b/i.test(command)) {
+        const wakeAgain = matchWakeUtterance(command);
+        if (wakeAgain.hit && wakeAgain.followOn) command = wakeAgain.followOn;
+        else if (wakeAgain.hit && !wakeAgain.followOn) {
+          cancelSpeech();
+          void speak("Yes?");
+          continue;
+        }
+
+        if (isStopCommand(command)) {
+          cancelSpeech();
+          killSpeechMic();
           setConvState("speaking");
-          setConvText("Okay!");
-          await speak("Okay.");
+          setConvText("Okay, stopped.");
+          await speak("Okay, stopped.");
           break;
+        }
+
+        // Instant navigate for clear "go to / open / create …"
+        const quickPath = matchQuickNavigate(command);
+        if (quickPath) {
+          unlockVedaModules();
+          navigate(normalizeNavPath(quickPath));
+          setConvState("speaking");
+          const label = PATH_LABELS[quickPath] || quickPath;
+          setConvText(`Opening ${label}`);
+          void speak(`Opening ${label}`);
+          await new Promise(r => setTimeout(r, 450));
+
+          // New form → start guided field-by-field (ask first field)
+          if (quickPath.endsWith("/new")) {
+            setConvState("processing");
+            let response = "";
+            try {
+              await streamChat(
+                [
+                  ...ambientHistoryRef.current,
+                  {
+                    role: "user",
+                    content: `${command}\n\n[The ${label} form is now open at ${quickPath}. Start guided create: ask ONLY the first field now.]`,
+                  },
+                ],
+                memory,
+                chunk => { response += chunk; setConvText(response.slice(-150)); },
+                () => {},
+                (path, prefill) => {
+                  unlockVedaModules();
+                  storeVedaPrefill(prefill);
+                  navigate(normalizeNavPath(path));
+                },
+                ctrl.signal,
+                (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+                (action) => queueVedaFormAction(action),
+                handleDocumentUpdated,
+                (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
+                quickPath,
+                selectedCompany?.id,
+              );
+              if (response) {
+                ambientHistoryRef.current = [
+                  ...ambientHistoryRef.current,
+                  { role: "user", content: command },
+                  { role: "assistant", content: response },
+                ].slice(-16);
+                setConvState("speaking");
+                setConvText(response.slice(0, 240));
+                const spoken = await speakWithHardStopOnly(response.slice(0, 600), { signal: ctrl.signal });
+                if (spoken.stop) {
+                  await speak("Okay, stopped.");
+                  break;
+                }
+              }
+            } catch (e: any) {
+              if (e.name === "AbortError" || ctrl.signal.aborted) break;
+            }
+          }
+          continue;
         }
 
         setConvState("processing");
         setConvText(command);
+        cancelSpeech();
 
         let response = "";
+        let didNavigate = false;
         try {
           await streamChat(
             [...ambientHistoryRef.current, { role: "user", content: command }],
@@ -656,29 +1110,50 @@ export function AgentPanel() {
             chunk => { response += chunk; setConvText(response.slice(-150)); },
             () => {},
             (path, prefill) => {
-              if (!canOpenPath(path)) return;
-              if (prefill) (window as any).__vedaPrefill = prefill;
-              navigate(path);
+              unlockVedaModules();
+              storeVedaPrefill(prefill);
+              navigate(normalizeNavPath(path));
+              didNavigate = true;
             },
             ctrl.signal,
             (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
-            (_dt, _id, recipients) => { window.dispatchEvent(new CustomEvent("veda:open-email", { detail: { recipients } })); },
+            (action) => queueVedaFormAction(action),
+            handleDocumentUpdated,
+            (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
             location,
             selectedCompany?.id,
           );
-          if (response) {
-            ambientHistoryRef.current = [
-              ...ambientHistoryRef.current,
-              { role: "user", content: command },
-              { role: "assistant", content: response },
-            ].slice(-16);
-            // Remember what Veda is about to say so we can filter the echo
-            lastSpokenWords = response.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          if (ctrl.signal.aborted || !convActiveRef.current) break;
+
+          if (response || didNavigate) {
+            if (response) {
+              ambientHistoryRef.current = [
+                ...ambientHistoryRef.current,
+                { role: "user", content: command },
+                { role: "assistant", content: response },
+              ].slice(-16);
+            }
+            lastSpokenWords = (response || "").toLowerCase().split(/\s+/).filter(w => w.length > 3);
             setConvState("speaking");
-            setConvText(response.slice(0, 240));
-            await speak(response.slice(0, 600));
-            // Longer pause so speaker→mic switch is complete before next listen
-            await new Promise(r => setTimeout(r, 1200));
+            const speakText = response
+              ? response.slice(0, 600)
+              : didNavigate ? "Done." : "";
+            setConvText((response || (didNavigate ? "Done." : "")).slice(0, 240));
+
+            if (speakText) {
+              const spoken = await speakWithHardStopOnly(speakText, {
+                signal: ctrl.signal,
+              });
+              if (ctrl.signal.aborted || !convActiveRef.current) break;
+
+              if (spoken.stop) {
+                cancelSpeech();
+                killSpeechMic();
+                await speak("Okay, stopped.");
+                break;
+              }
+              await new Promise(r => setTimeout(r, 250));
+            }
           }
         } catch (e: any) {
           if (e.name === "AbortError" || ctrl.signal.aborted) break;
@@ -689,58 +1164,53 @@ export function AgentPanel() {
     } finally {
       convActiveRef.current = false;
       ambientAbortRef.current = null;
-      // Brief pause so the mic from the last listenForCommand fully releases
-      // before the wake-word hook tries to claim it again. Without this gap,
-      // the new SpeechRecognition can silently fail, leaving "Veda" unresponsive.
-      await new Promise(r => setTimeout(r, 700));
+      cancelSpeech();
+      killSpeechMic();
+      await new Promise(r => setTimeout(r, 200));
       setConvState("idle");
       setConvText("");
     }
-  }, [navigate, memory, location, canOpenPath, selectedCompany?.id]);
+  }, [navigate, memory, location, canOpenPath, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail]);
 
-  const handleWakeWord = useCallback(() => {
-    runAmbientConversation("Yes Boss"); // short acknowledgment on wake word
+  const handleWakeWord = useCallback((followOn?: string) => {
+    if (convActiveRef.current) {
+      // Interrupt current turn (including TTS) and restart
+      convActiveRef.current = false;
+      ambientAbortRef.current?.abort();
+      cancelSpeech();
+      killSpeechMic();
+      setTimeout(() => runAmbientConversation("Yes?", followOn), 250);
+      return;
+    }
+    runAmbientConversation("Yes?", followOn);
   }, [runAmbientConversation]);
 
   const stopConversation = useCallback(() => {
     convActiveRef.current = false;
     ambientAbortRef.current?.abort();
-    window.speechSynthesis?.cancel();
+    cancelSpeech();
+    killSpeechMic();
     setConvState("idle");
     setConvText("");
   }, []);
 
-  // Wake word error state (set when mic permission is denied/blocked in this context)
   const [wakeError, setWakeError] = useState<string | null>(null);
-  const [lastHeard, setLastHeard] = useState<string>("");
-  const lastHeardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleHeard = useCallback((text: string) => {
-    setLastHeard(text);
-    if (lastHeardTimerRef.current) clearTimeout(lastHeardTimerRef.current);
-    lastHeardTimerRef.current = setTimeout(() => setLastHeard(""), 3000);
-  }, []);
+  // Wake ONLY when idle — never alongside command listen or barge-in (mic conflict)
+  const wakeEnabled = handsFree && !open && !panelListening && convState === "idle";
 
-  // Wake word only active when ambient on AND no active conversation
   const { supported: wakeSupported } = useWakeWord(
     handleWakeWord,
-    ambientMode && convState === "idle",
+    wakeEnabled,
     (code) => setWakeError(code),
-    handleHeard,
   );
 
-  const toggleAmbient = useCallback(() => {
-    const next = !ambientMode;
-    try { localStorage.setItem("veda_ambient", next ? "1" : "0"); } catch {}
-    if (next) {
-      setWakeError(null);
-      setAmbientMode(true);
-      // Immediately greet and enter conversation — don't wait for wake word
-      runAmbientConversation("Yes Boss, how may I help you?");
-    } else {
-      setAmbientMode(false);
-    }
-  }, [ambientMode, runAmbientConversation]);
+  const toggleHandsFree = useCallback(() => {
+    const next = !handsFree;
+    setHandsFree(next);
+    if (!next) stopConversation();
+    else setWakeError(null);
+  }, [handsFree, stopConversation]);
 
   // Focus input when opened
   useEffect(() => {
@@ -752,18 +1222,26 @@ export function AgentPanel() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Keyboard shortcuts: Escape = close panel; Alt+M = trigger Veda (reliable iframe fallback)
+  // Escape stops hands-free conversation; Alt+M wakes Veda
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { close(); return; }
+      if (e.key === "Escape") {
+        if (convState !== "idle") {
+          e.preventDefault();
+          stopConversation();
+          return;
+        }
+        close();
+        return;
+      }
       if (e.altKey && e.key.toLowerCase() === "m" && convState === "idle" && !open) {
         e.preventDefault();
-        runAmbientConversation("Yes Boss, how may I help you?");
+        runAmbientConversation("Yes?");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [convState, open, runAmbientConversation]);
+  }, [convState, open, runAmbientConversation, stopConversation]);
 
   // Auto-clear mic error after 3 seconds
   useEffect(() => {
@@ -772,22 +1250,60 @@ export function AgentPanel() {
     return () => clearTimeout(t);
   }, [micError]);
 
+  // First click/key anywhere unlocks mic permission so "Veda" works without opening chat
+  useEffect(() => {
+    let done = false;
+    const unlock = async () => {
+      if (done) return;
+      done = true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+        setWakeError(null);
+      } catch {
+        // leave wakeError to SpeechRecognition if it fails later
+      }
+    };
+    window.addEventListener("pointerdown", unlock, { once: true, capture: true });
+    window.addEventListener("keydown", unlock, { once: true, capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+    };
+  }, []);
+
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
   const handleNavigate = useCallback((path: string, prefill: any, reason: string) => {
-    if (!canOpenPath(path)) return;
-    if (prefill) (window as any).__vedaPrefill = prefill;
-    const label = PATH_LABELS[path] || reason || path.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
+    unlockVedaModules();
+    storeVedaPrefill(prefill);
+    const normalized = normalizeNavPath(path);
+    const label = PATH_LABELS[normalized] || reason || normalized.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
-        ? { ...m, navigated: { path, label } }
+        ? { ...m, navigated: { path: normalized, label } }
         : m
     ));
-    navigate(path);
-  }, [navigate, canOpenPath]);
+    navigate(normalized);
+  }, [navigate]);
 
   const send = useCallback(async (text: string, fromVoice = false) => {
     if (!text.trim() || thinking) return;
+    const quickPath = matchQuickNavigate(text.trim());
+    if (quickPath) {
+      unlockVedaModules();
+      const label = PATH_LABELS[quickPath] || quickPath;
+      const uid = Date.now().toString();
+      const aid = `asst-${uid}`;
+      setMessages(p => [...p,
+        { id: uid, role: "user", content: text.trim(), fromVoice },
+        { id: aid, role: "assistant", content: `Opening ${label}.`, complete: true, navigated: { path: quickPath, label }, toolCalls: ["navigateTo"] },
+      ]);
+      setInput("");
+      navigate(normalizeNavPath(quickPath));
+      if (fromVoice) void speak(`Opening ${label}`);
+      return;
+    }
     const uid = Date.now().toString();
     const aid = `asst-${uid}`;
     setMessages(p => [...p,
@@ -806,49 +1322,56 @@ export function AgentPanel() {
         (path, prefill, reason) => handleNavigate(path, prefill, reason),
         abortRef.current.signal,
         (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
-        (_dt, _id, recipients) => { window.dispatchEvent(new CustomEvent("veda:open-email", { detail: { recipients } })); },
+        (action) => queueVedaFormAction(action),
+        handleDocumentUpdated,
+        (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
         location,
         selectedCompany?.id,
       );
       const inv = full.match(/\b(INV-\d+)\b/);
       const qt = full.match(/\b(QT-\d+)\b/);
-      if (inv && hasModuleAccess("invoices")) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
-      else if (qt && hasModuleAccess("quotations")) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
+      if (inv) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
+      else if (qt) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
       else { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true } : m)); }
       if (fromVoice && full) await speak(full.slice(0, 600));
     } catch (e: any) {
       if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
     } finally { setThinking(false); abortRef.current = null; }
-  }, [thinking, history, memory, handleNavigate, location, selectedCompany?.id, hasModuleAccess]);
+  }, [thinking, history, memory, handleNavigate, location, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail, navigate]);
 
   const submit = () => send(input);
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); }
   };
 
+  // Panel mic: one tap starts listening; utterance ends on pause (silence) — not tap-to-stop.
   const mic = async () => {
-    if (transcribing) return;
-    if (recording) {
-      const blob = await stop();
-      if (blob.size < 1000) {
-        setVoiceError("Recording too short — hold and speak a bit longer.");
-        return;
-      }
-      setTranscribing(true);
-      setVoiceError(null);
-      try {
-        const t = await transcribe(blob);
-        if (t.trim()) await send(t, true);
-        else setVoiceError("Couldn't catch that — try again.");
-      } catch (e: any) {
-        setVoiceError(e?.message || "Voice transcription failed. Check API key and restart API server.");
-      } finally {
-        setTranscribing(false);
-      }
-    } else {
-      setVoiceError(null);
-      const ok = await start();
-      if (!ok) setMicError(true);
+    if (thinking || transcribing) return;
+    // Second tap only cancels if already listening (escape hatch)
+    if (panelListening) {
+      panelListenAbortRef.current?.abort();
+      return;
+    }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceError("Voice listening needs Chrome or Edge. Say \"Veda\" with hands-free, or type instead.");
+      return;
+    }
+    setVoiceError(null);
+    setMicError(false);
+    setPanelListening(true);
+    const ctrl = new AbortController();
+    panelListenAbortRef.current = ctrl;
+    try {
+      const t = await listenForCommand(() => {}, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      if (t.trim()) await send(t, true);
+      else setVoiceError("Couldn't catch that — speak again, then pause when done.");
+    } catch {
+      setVoiceError("Voice listening failed — try again or type instead.");
+    } finally {
+      setPanelListening(false);
+      panelListenAbortRef.current = null;
     }
   };
 
@@ -861,89 +1384,42 @@ export function AgentPanel() {
 
   return (
     <>
-      {/* ── Ambient conversation overlay (shown instead of panel during voice conv) ── */}
-      {convState !== "idle" && !open && (
-        <div className="fixed bottom-24 right-6 z-50 w-72 bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
-                <Sparkles className="h-3 w-3" />
-              </div>
-              <span className="text-sm font-semibold">Veda</span>
-              <span className={cn(
-                "text-xs transition-colors",
-                convState === "listening" ? "text-primary" : "text-muted-foreground",
-              )}>
-                {convState === "greeting" ? "· hello!" : convState === "listening" ? "· listening…" : convState === "processing" ? "· thinking…" : "· speaking…"}
-              </span>
-            </div>
-            <button
-              onClick={stopConversation}
-              className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Stop conversation"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-          <div className="px-3 py-3 min-h-[64px] flex items-center">
-            {convState === "listening" ? (
-              <div className="flex items-center gap-3 w-full">
-                <div className="flex items-end gap-[3px] shrink-0 h-6">
-                  {[2,3,5,6,4,5,3,2].map((h, i) => (
-                    <span key={i} className="w-[3px] rounded-full bg-primary animate-pulse"
-                      style={{ height: `${h * 3}px`, animationDelay: `${i * 70}ms` }} />
-                  ))}
-                </div>
-                <span className="text-xs text-muted-foreground italic truncate">
-                  {convText || "Go ahead…"}
-                </span>
-              </div>
-            ) : convState === "processing" ? (
-              <div className="flex items-center gap-2 w-full">
-                <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                <span className="text-xs text-muted-foreground truncate">{convText || "Thinking…"}</span>
-              </div>
-            ) : (
-              <span className="text-sm text-foreground leading-snug line-clamp-4">{convText}</span>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Hands-free voice runs fully hidden — no overlay box. Chat opens only via FAB. */}
 
-      {/* ── FAB trigger ── */}
+      {/* ── FAB trigger — chat panel opens ONLY from this icon ── */}
       {!open && (
         <div className="group fixed bottom-6 right-0 z-40 flex flex-col items-end gap-2 translate-x-[calc(100%-10px)] hover:translate-x-0 transition-transform duration-300 ease-in-out pr-3">
-          {/* Debug: show what wake-word listener last heard */}
-          {ambientMode && convState === "idle" && lastHeard && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs bg-muted border border-border shadow-sm max-w-[200px]">
-              <span className="text-muted-foreground shrink-0">heard:</span>
-              <span className="truncate font-mono text-foreground">{lastHeard}</span>
-            </div>
-          )}
-          {/* Ambient mode toggle chip */}
           {wakeSupported && (
             <button
-              onClick={toggleAmbient}
-              title={ambientMode ? "Ambient mode ON — say 'Veda' anytime" : "Enable ambient mode"}
+              onClick={toggleHandsFree}
+              title={
+                wakeError
+                  ? "Mic blocked — allow microphone, or press Alt+M"
+                  : handsFree
+                  ? "Hands-free ON — say Veda anytime (stays hidden)"
+                  : "Enable hands-free listening"
+              }
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all opacity-0 group-hover:opacity-100 duration-200",
-                ambientMode
-                  ? "bg-primary text-primary-foreground animate-pulse"
+                wakeError
+                  ? "bg-yellow-500/10 text-yellow-700 border border-yellow-300"
+                  : handsFree
+                  ? "bg-primary text-primary-foreground"
                   : "bg-background border border-border text-muted-foreground hover:text-foreground",
               )}
             >
               <Radio className="h-3 w-3" />
-              {wakeError ? "⚠ Mic blocked" : ambientMode ? "Ambient ON" : "Ambient"}
+              {wakeError ? "⚠ Mic blocked" : handsFree ? "Listening" : "Hands-free OFF"}
             </button>
           )}
           <button
             onClick={() => setOpen(true)}
-            title="Ask Veda"
+            title="Open Veda chat"
             className={cn(
               "relative flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95",
             )}
           >
-            {ambientMode && (
+            {handsFree && convState === "idle" && (
               <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
             )}
             <Sparkles className="h-5 w-5" />
@@ -963,36 +1439,35 @@ export function AgentPanel() {
                 </div>
                 <span className="text-sm font-semibold">Veda</span>
                 <span className="text-xs text-muted-foreground">· AI assistant</span>
-                {ambientMode && (
+                {handsFree && (
                   <span className="flex items-center gap-1 text-xs text-primary font-medium">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                    listening
+                    hands-free
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-1">
-                {/* Ambient toggle */}
                 {wakeSupported && (
                   <button
-                    onClick={toggleAmbient}
+                    onClick={toggleHandsFree}
                     title={
                       wakeError
-                        ? "Mic blocked by browser — try opening the app in a new tab, or use Alt+M as wake shortcut"
-                        : ambientMode
-                        ? "Ambient ON — say 'Veda' or press Alt+M"
-                        : "Enable ambient mode (say 'Veda' or press Alt+M)"
+                        ? "Mic blocked by browser — allow microphone, or use Alt+M"
+                        : handsFree
+                        ? "Hands-free ON — Veda stays hidden until you open chat"
+                        : "Turn on hands-free listening"
                     }
                     className={cn(
                       "flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors",
                       wakeError
                         ? "bg-yellow-500/10 text-yellow-600 font-medium"
-                        : ambientMode
+                        : handsFree
                         ? "bg-primary/10 text-primary font-medium"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted",
                     )}
                   >
                     <Radio className="h-3 w-3" />
-                    {wakeError ? "⚠ Mic blocked" : ambientMode ? "Ambient ON" : "Ambient"}
+                    {wakeError ? "⚠ Mic blocked" : handsFree ? "Hands-free" : "Hands-free OFF"}
                   </button>
                 )}
                 {hasMessages && (
@@ -1022,52 +1497,50 @@ export function AgentPanel() {
                     <div className="text-center">
                       <p className="text-sm text-muted-foreground mb-1">Hi there</p>
                         <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
-                        {ambientMode && (
-                          <p className="text-xs text-primary mt-1.5 flex items-center justify-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                            Say "Veda" anytime to get my attention
+                        {handsFree && (
+                          <p className="text-xs text-muted-foreground mt-1.5">
+                            Hands-free is on — talk to Veda without opening this chat
                           </p>
                         )}
                       </div>
 
-                      {/* Speak button */}
+                      {/* Speak button — silence ends the utterance */}
                       <div className="w-full flex flex-col items-center gap-3">
                         <button
                           onClick={mic}
-                          disabled={transcribing}
+                          disabled={transcribing || thinking}
                           className={cn(
                             "relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-semibold text-base transition-all duration-200 shadow-md select-none",
                             micError
                               ? "bg-red-100 text-red-600 border border-red-200"
-                              : recording
+                              : panelListening
                               ? "bg-red-500 text-white shadow-red-200 shadow-lg scale-[1.02]"
-                              : transcribing
-                              ? "bg-muted text-muted-foreground cursor-wait"
                               : "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]",
                           )}
                         >
-                          {recording && (
+                          {panelListening && (
                             <span className="absolute inset-0 rounded-2xl animate-ping bg-red-400 opacity-30 pointer-events-none" />
                           )}
                           <span className={cn(
                             "flex items-center justify-center w-9 h-9 rounded-full shrink-0",
-                            recording ? "bg-white/20" : "bg-white/15",
+                            panelListening ? "bg-white/20" : "bg-white/15",
                           )}>
-                            {transcribing
-                              ? <Loader2 className="h-5 w-5 animate-spin" />
-                              : recording
-                              ? <Square className="h-4 w-4 fill-current" />
+                            {panelListening
+                              ? <Mic className="h-5 w-5" />
                               : <Mic className="h-5 w-5" />}
                           </span>
                           <span className="flex flex-col items-start leading-tight">
                             <span className="text-sm font-semibold">
-                              {micError ? "Mic access denied" : transcribing ? "Transcribing…" : recording ? "Listening… tap to stop" : "Speak to Veda"}
+                              {micError ? "Mic access denied" : panelListening ? "Listening… pause when done" : "Speak to Veda"}
                             </span>
-                            {!recording && !transcribing && !micError && (
-                              <span className="text-xs opacity-70 font-normal">Tap and talk — I'm listening</span>
+                            {!panelListening && !micError && (
+                              <span className="text-xs opacity-70 font-normal">Speak, then pause — no tap to stop</span>
+                            )}
+                            {panelListening && (
+                              <span className="text-xs opacity-70 font-normal">Ends automatically when you pause</span>
                             )}
                           </span>
-                          {recording && (
+                          {panelListening && (
                             <span className="ml-auto flex items-center gap-[3px]">
                               {[1,2,3,4,3].map((h, i) => (
                                 <span key={i} className="w-[3px] rounded-full bg-white/80 animate-pulse" style={{ height: `${h * 5}px`, animationDelay: `${i * 100}ms` }} />
@@ -1241,9 +1714,9 @@ export function AgentPanel() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={onKey}
-                    placeholder={recording ? "🔴 Listening…" : "Ask Veda anything…"}
+                    placeholder={panelListening ? "Listening… pause when done" : "Ask Veda anything…"}
                     rows={1}
-                    disabled={thinking || recording || transcribing}
+                    disabled={thinking || panelListening || transcribing}
                     className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[22px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
                     onInput={e => {
                       const el = e.currentTarget;
@@ -1265,17 +1738,15 @@ export function AgentPanel() {
                       <button
                         onClick={mic}
                         disabled={transcribing || thinking}
-                        title={micError ? "Mic access denied" : recording ? "Stop" : "Speak"}
+                        title={micError ? "Mic access denied" : panelListening ? "Cancel listening" : "Speak — ends when you pause"}
                         className={cn(
                           "w-7 h-7 rounded-full flex items-center justify-center transition-all",
                           micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
-                            : recording ? "bg-red-500 text-white animate-pulse"
+                            : panelListening ? "bg-red-500 text-white animate-pulse"
                             : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : recording ? <Square className="h-3 w-3 fill-current" />
-                          : <Mic className="h-3.5 w-3.5" />}
+                        <Mic className="h-3.5 w-3.5" />
                       </button>
                       {micError && (
                         <div className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap text-xs bg-red-600 text-white px-2 py-0.5 rounded pointer-events-none">
@@ -1285,7 +1756,7 @@ export function AgentPanel() {
                     </div>
                     <button
                       onClick={submit}
-                      disabled={!input.trim() || thinking || recording}
+                      disabled={!input.trim() || thinking || panelListening}
                       className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                     >
                       <Send className="h-3 w-3" />
@@ -1293,7 +1764,7 @@ export function AgentPanel() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground text-center mt-1.5">
-                  Enter to send · Esc to close
+                  Enter to send · Esc to close · Speak then pause
                 </p>
               </div>
             )}

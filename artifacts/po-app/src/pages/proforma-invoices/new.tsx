@@ -355,7 +355,7 @@ export default function ProformaInvoiceNew() {
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
                     if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
+                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
                     if (c.currency) {
                       form.setValue("currency", c.currency);
                       setDirectoryCurrency(c.currency);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+﻿import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,7 +13,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { StringDatePicker } from "@/operations-8june/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -27,10 +26,6 @@ import { insertEmployeePayrollSchema } from "@shared/schema";
 import {
   Calculator,
   DollarSign,
-  MinusCircle,
-  User,
-  Wallet,
-  IdCard,
 } from "lucide-react";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
@@ -53,10 +48,10 @@ const payrollConfigSchema = insertEmployeePayrollSchema
   baseSalary: z.coerce.number().min(1, "Basic salary is required"),
   hourlyRate: optionalAmount,
   overtimeRate: optionalAmount,
-  citizenshipStatus: z.enum(["citizen", "pr", "foreigner"]),
+  citizenshipStatus: z.enum(["citizen", "pr", "foreigner"]).default("citizen"),
   citizenshipDisplay: z.string().optional(),
-  age: z.coerce.number().min(16, "Employee must be at least 16 years old"),
-  dateOfBirth: z.string().min(1, "Date of birth is required"),
+  age: z.coerce.number().min(16, "Employee must be at least 16 years old").optional(),
+  dateOfBirth: z.string().optional(),
   workingDays: optionalAmount,
   allowanceTransport: optionalAmount,
   allowanceMeal: optionalAmount,
@@ -96,9 +91,9 @@ function mapNationalityToCitizenship(nationality?: string): "citizen" | "pr" | "
 
 function formatCitizenshipDisplay(employee: any): string {
   if (employee?.nationality === "PR") {
-    if (employee?.prStatus === "1 Year") return "PR — 1";
-    if (employee?.prStatus === "2 Years") return "PR — 2";
-    if (employee?.prStatus === "3 Years and Above") return "PR — 3+";
+    if (employee?.prStatus === "1 Year") return "PR - 1";
+    if (employee?.prStatus === "2 Years") return "PR - 2";
+    if (employee?.prStatus === "3 Years and Above") return "PR - 3+";
     return "PR";
   }
   if (employee?.nationality === "Singapore") return "Singapore Citizen";
@@ -112,11 +107,11 @@ function formatNationalityDisplay(employee: any): string {
     if (employee.prStatus === "2 Years") return "PR (2 Year)";
     if (employee.prStatus === "3 Years and Above") return "PR (3+ Year)";
   }
-  return employee?.nationality || "—";
+  return employee?.nationality || "-";
 }
 
 function formatPrStatusDisplay(prStatus?: string): string {
-  if (!prStatus) return "—";
+  if (!prStatus) return "-";
   if (prStatus === "1 Year") return "1 Year PR";
   if (prStatus === "2 Years") return "2 Year PR";
   if (prStatus === "3 Years and Above") return "3+ Year PR";
@@ -124,9 +119,9 @@ function formatPrStatusDisplay(prStatus?: string): string {
 }
 
 function formatDisplayDate(value?: string | Date | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("en-GB");
 }
 
@@ -144,7 +139,7 @@ function formatCurrency(amount: number) {
   }).format(amount || 0);
 }
 
-/** Monthly CPF ordinary wage: Basic × (working days / 30). Full basic if days not set. */
+/** Monthly CPF ordinary wage: Basic x (working days / 30). Full basic if days not set. */
 const CPF_STANDARD_MONTH_DAYS = 30;
 
 function calcBasicSalaryForCpf(
@@ -195,8 +190,8 @@ function OptionalAmountInput({
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-[#2563EB]">{label}</p>
-      <p className="mt-0.5 text-sm font-semibold text-[#111827]">{value}</p>
+      <p className="text-sm font-medium text-[#2563EB]">{label}</p>
+      <p className="mt-1 text-base font-semibold text-[#111827]">{value}</p>
     </div>
   );
 }
@@ -362,7 +357,6 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   const baseSalary = Number(form.watch("baseSalary") || 0);
   const workingDaysRaw = form.watch("workingDays");
   const basicSalaryForCpf = calcBasicSalaryForCpf(baseSalary, workingDaysRaw);
-  const annualSalaryAuto = baseSalary * 12;
   const age = Number(form.watch("age") || 0);
   const citizenshipStatus = form.watch("citizenshipStatus");
   const allowanceTransport = Number(form.watch("allowanceTransport") || 0);
@@ -454,11 +448,20 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   const savePayrollConfigMutation = useMutation({
     mutationFn: async (data: PayrollConfigFormData) => {
+      const resolvedAge =
+        Number(data.age) ||
+        (data.dateOfBirth ? calculateAge(new Date(data.dateOfBirth)) : 0) ||
+        (selectedEmployee?.dateOfBirth
+          ? calculateAge(new Date(selectedEmployee.dateOfBirth))
+          : 0);
+      if (!resolvedAge || resolvedAge < 16) {
+        throw new Error("Selected employee must have a valid date of birth (age 16+).");
+      }
       const payload = buildPayrollConfigPayload(
         data,
         selectedEmployee,
-        data.citizenshipStatus,
-        data.age
+        data.citizenshipStatus || "citizen",
+        resolvedAge
       );
 
       const res = editData?.id
@@ -509,55 +512,54 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   return (
     <TooltipProvider>
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,42rem)_minmax(0,18rem)] lg:items-start">
-        <div className="min-w-0 max-w-2xl">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-              <section className="space-y-4">
-                <ModalSectionHeader icon={User} title="Employee Selection" />
-                <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="employeeId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Employee *</FormLabel>
-                      {isEditMode ? (
-                        <FormControl>
-                          <Input
-                            readOnly
-                            value={
-                              selectedEmployee
-                                ? `${selectedEmployee.name} (${selectedEmployee.employeeId}) — ${selectedEmployee.designation}`
-                                : editData?.employeeName
-                                  ? `${editData.employeeName} — ${editData.designation ?? ""}`
-                                  : "Selected employee"
-                            }
-                          />
-                        </FormControl>
-                      ) : (
-                        <FormControl>
-                          <EmployeeCombobox
-                            employees={employeeOptions}
-                            value={field.value}
-                            onChange={(id) => field.onChange(id)}
-                            disabled={employeesLoading}
-                            loading={employeesLoading}
-                          />
-                        </FormControl>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+      <div className="w-full">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            <section className="space-y-4">
+              <FormField
+                control={form.control}
+                name="employeeId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Employee *</FormLabel>
+                    {isEditMode ? (
+                      <FormControl>
+                        <Input
+                          readOnly
+                          value={
+                            selectedEmployee
+                              ? `${selectedEmployee.name} (${selectedEmployee.employeeId}) - ${selectedEmployee.designation}`
+                              : editData?.employeeName
+                                ? `${editData.employeeName} - ${editData.designation ?? ""}`
+                                : "Selected employee"
+                          }
+                          className={readOnlyInputClass}
+                        />
+                      </FormControl>
+                    ) : (
+                      <FormControl>
+                        <EmployeeCombobox
+                          employees={employeeOptions}
+                          value={field.value}
+                          onChange={(id) => field.onChange(id)}
+                          disabled={employeesLoading}
+                          loading={employeesLoading}
+                        />
+                      </FormControl>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-                {selectedEmployee && (
-                  <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-4">
-                    <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-                      <InfoItem label="Employee ID" value={selectedEmployee.employeeId || "—"} />
-                      <InfoItem label="Employee Name" value={selectedEmployee.name || "—"} />
-                      <InfoItem label="Department" value={selectedEmployee.department || "—"} />
-                      <InfoItem label="Designation" value={selectedEmployee.designation || "—"} />
+              {selectedEmployee && (
+                <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-5">
+                    <div className="grid grid-cols-1 content-start gap-x-8 gap-y-5 sm:grid-cols-2">
+                      <InfoItem label="Employee ID" value={selectedEmployee.employeeId || "-"} />
+                      <InfoItem label="Employee Name" value={selectedEmployee.name || "-"} />
+                      <InfoItem label="Department" value={selectedEmployee.department || "-"} />
+                      <InfoItem label="Designation" value={selectedEmployee.designation || "-"} />
                       <InfoItem
                         label="Basic Salary"
                         value={formatCurrency(parseFloat(selectedEmployee.salary || "0"))}
@@ -580,104 +582,288 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                         value={
                           selectedEmployee.dateOfBirth
                             ? String(calculateAge(new Date(selectedEmployee.dateOfBirth)))
-                            : String(form.watch("age") || "—")
+                            : String(form.watch("age") || "-")
                         }
                       />
                     </div>
                   </div>
-                )}
-              </div>
+
+                  <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+                    <h3 className="mb-2 flex items-center gap-2 text-base font-semibold text-[#111827]">
+                      <Calculator className="h-4 w-4 text-[#2563EB]" />
+                      CPF Preview
+                    </h3>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Basic Salary</span>
+                        <span className="font-medium text-[#111827]">{formatCurrency(baseSalary)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Basic salary for CPF</span>
+                        <span className="font-medium text-[#111827]">{formatCurrency(basicSalaryForCpf)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Allowances</span>
+                        <span className="font-medium text-[#111827]">{formatCurrency(allowancesTotal)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-[#E5E7EB] pt-1.5">
+                        <span className="font-semibold text-[#111827]">Gross Salary</span>
+                        <span className="font-semibold text-[#111827]">{formatCurrency(grossSalary)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Deductions</span>
+                        <span className="font-medium text-[#DC2626]">-{formatCurrency(deductionsTotal)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">CPF Rate (Employee)</span>
+                        <span className="text-[#111827]">{formatRatePercent(employeeCpfRate)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">CPF Amount (Employee)</span>
+                        <span className="font-medium text-[#DC2626]">-{formatCurrency(employeeCpf)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">CPF Rate (Employer)</span>
+                        <span className="text-[#111827]">{formatRatePercent(employerCpfRate)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">CPF Amount (Employer)</span>
+                        <span className="text-[#111827]">{formatCurrency(employerCpf)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Total CPF</span>
+                        <span className="text-[#111827]">{formatCurrency(totalCpf)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-[#E5E7EB] pt-1.5">
+                        <span className="text-base font-semibold text-[#111827]">Net Salary</span>
+                        <span className="text-lg font-bold text-[#16A34A]">{formatCurrency(netSalary)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="space-y-4">
-              <ModalSectionHeader icon={DollarSign} title="Payheads" />
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="baseSalary"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Basic Salary (SGD) *</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder=""
-                          value={field.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
-                            field.onChange(v === "" ? undefined : Number(v));
-                          }}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormItem>
-                  <FormLabel className={formLabelClass}>Annual Salary</FormLabel>
-                  <FormControl>
-                    <Input
-                      readOnly
-                      placeholder=""
-                      value={baseSalary ? formatCurrency(annualSalaryAuto) : ""}
-                      className={readOnlyInputClass}
-                    />
-                  </FormControl>
-                </FormItem>
-                <FormField
-                  control={form.control}
-                  name="payrollPeriod"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Payroll Period *</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
+              <ModalSectionHeader title="Payheads" />
+
+              <div className="space-y-4">
+                <h4 className="inline-flex items-center rounded-md bg-[#EFF6FF] px-3 py-1.5 text-sm font-bold tracking-wide text-[#1D4ED8]">
+                  Earnings
+                </h4>
+                <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="baseSalary"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Basic Salary *</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
+                          <div className="relative">
+                            {selectedEmployee && (
+                              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#6B7280]">
+                                <DollarSign className="h-4 w-4" />
+                              </span>
+                            )}
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder=""
+                              className={selectedEmployee ? "pl-9" : undefined}
+                              value={field.value ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
+                                field.onChange(v === "" ? undefined : Number(v));
+                              }}
+                              onBlur={field.onBlur}
+                              name={field.name}
+                              ref={field.ref}
+                            />
+                          </div>
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="monthly">Monthly</SelectItem>
-                          <SelectItem value="bi_weekly">Bi-weekly</SelectItem>
-                          <SelectItem value="weekly">Weekly</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="workingDays"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>No of Working Days</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder=""
-                          value={field.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value.replace(/\D/g, "");
-                            field.onChange(v === "" ? undefined : parseInt(v, 10));
-                          }}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="payrollPeriod"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Payroll Period *</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                            <SelectItem value="bi_weekly">Bi-weekly</SelectItem>
+                            <SelectItem value="weekly">Weekly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="workingDays"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>No of Working Days</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder=""
+                            value={field.value ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, "");
+                              field.onChange(v === "" ? undefined : parseInt(v, 10));
+                            }}
+                            onBlur={field.onBlur}
+                            name={field.name}
+                            ref={field.ref}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="overtimeRate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Overtime (hr)</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="hourlyRate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>For hr SGD</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="allowanceTransport"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Travelling Allowance</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="allowanceMeal"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Food Allowance</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="allowancePhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Mobile Allowance</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="allowanceOthers"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Other Allowance</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="inline-flex items-center rounded-md bg-[#FEF2F2] px-3 py-1.5 text-sm font-bold tracking-wide text-[#B91C1C]">
+                  Deduction
+                </h4>
+                <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="deductionMedical"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Medical Deduction</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="deductionAdvance"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Advanced / Loan Recovery</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="deductionOthers"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Other Deductions</FormLabel>
+                        <FormControl>
+                          <OptionalAmountInput field={field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormItem>
-                  <FormLabel className={formLabelClass}>Basic salary for CPF</FormLabel>
+                  <FormLabel className={formLabelClass}>Salary for CPF</FormLabel>
                   <FormControl>
                     <Input
                       readOnly
@@ -687,275 +873,16 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     />
                   </FormControl>
                 </FormItem>
-              </div>
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="hourlyRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Hourly Rate</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="overtimeRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Overtime Rate</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <ModalSectionHeader icon={IdCard} title="Employee Details (CPF)" />
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="citizenshipDisplay"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Citizenship Status</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder=""
-                          {...field}
-                          value={field.value || ""}
-                          onChange={(e) => {
-                            field.onChange(e.target.value);
-                            const value = e.target.value.toLowerCase();
-                            if (value.includes("pr")) form.setValue("citizenshipStatus", "pr");
-                            else if (value.includes("foreigner")) form.setValue("citizenshipStatus", "foreigner");
-                            else if (value.includes("singapore") || value.includes("citizen"))
-                              form.setValue("citizenshipStatus", "citizen");
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="dateOfBirth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Date of Birth</FormLabel>
-                      <FormControl>
-                        <StringDatePicker
-                          placeholder=""
-                          value={field.value ?? ""}
-                          onChange={(value) => {
-                            field.onChange(value || "");
-                            if (value) {
-                              const age = calculateAge(new Date(value));
-                              form.setValue("age", age);
-                            }
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="age"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Age</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder=""
-                          value={field.value ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value.replace(/\D/g, "");
-                            field.onChange(v === "" ? undefined : parseInt(v, 10));
-                          }}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <ModalSectionHeader icon={Wallet} title="Allowances" />
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="allowanceTransport"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Transport Allowance</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="allowanceMeal"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Food Allowance</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="allowancePhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Mobile Allowance</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="allowanceOthers"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Other Allowances</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <ModalSectionHeader icon={MinusCircle} title="Employee Deductions" />
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="deductionMedical"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Medical Insurance</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="deductionAdvance"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Advanced / Loan Recovery</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="deductionOthers"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Other Deductions</FormLabel>
-                      <FormControl>
-                        <OptionalAmountInput field={field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              <ModalSectionHeader icon={Calculator} title="CPF Calculation" />
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormItem>
-                  <FormLabel className={formLabelClass}>Gross Salary</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder=""
-                    value={hasPayrollPreview ? formatCurrency(grossSalary) : ""}
-                    className={readOnlyInputClass}
-                  />
-                </FormItem>
                 <FormItem>
                   <FormLabel className={formLabelClass}>CPF Capped Limit</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder=""
-                    value={formatCurrency(CPF_WAGE_CEILING)}
-                    className={readOnlyInputClass}
-                  />
-                </FormItem>
-                <FormItem>
-                  <FormLabel className={formLabelClass}>CPF Rate (Employee %)</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder=""
-                    value={hasPayrollPreview ? formatRatePercent(employeeCpfRate) : ""}
-                    className={readOnlyInputClass}
-                  />
-                </FormItem>
-                <FormItem>
-                  <FormLabel className={formLabelClass}>CPF Amount (Employee)</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder=""
-                    value={hasPayrollPreview ? formatCurrency(employeeCpf) : ""}
-                    className={readOnlyInputClass}
-                  />
-                </FormItem>
-                <FormItem>
-                  <FormLabel className={formLabelClass}>CPF Rate (Employer %)</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder=""
-                    value={hasPayrollPreview ? formatRatePercent(employerCpfRate) : ""}
-                    className={readOnlyInputClass}
-                  />
-                </FormItem>
-                <FormItem>
-                  <FormLabel className={formLabelClass}>CPF Amount (Employer)</FormLabel>
-                  <Input
-                    readOnly
-                    placeholder=""
-                    value={hasPayrollPreview ? formatCurrency(employerCpf) : ""}
-                    className={readOnlyInputClass}
-                  />
+                  <FormControl>
+                    <Input
+                      readOnly
+                      placeholder=""
+                      value={formatCurrency(CPF_WAGE_CEILING)}
+                      className={readOnlyInputClass}
+                    />
+                  </FormControl>
                 </FormItem>
               </div>
             </section>
@@ -986,62 +913,6 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
           </form>
         </Form>
       </div>
-
-      <div className="lg:col-span-1">
-        <div className="sticky top-4 rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-5">
-          <h3 className="mb-4 flex items-center gap-2 text-base font-semibold text-[#111827]">
-            <Calculator className="h-4 w-4 text-[#2563EB]" />
-            CPF Preview
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">Basic Salary</span>
-              <span className="font-medium text-[#111827]">{formatCurrency(baseSalary)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">Basic salary for CPF</span>
-              <span className="font-medium text-[#111827]">{formatCurrency(basicSalaryForCpf)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">Allowances</span>
-              <span className="font-medium text-[#111827]">{formatCurrency(allowancesTotal)}</span>
-            </div>
-            <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
-              <span className="font-semibold text-[#111827]">Gross Salary</span>
-              <span className="font-semibold text-[#111827]">{formatCurrency(grossSalary)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">Deductions</span>
-              <span className="font-medium text-[#DC2626]">-{formatCurrency(deductionsTotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">CPF Rate (Employee)</span>
-              <span className="text-[#111827]">{formatRatePercent(employeeCpfRate)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">CPF Amount (Employee)</span>
-              <span className="font-medium text-[#DC2626]">-{formatCurrency(employeeCpf)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">CPF Rate (Employer)</span>
-              <span className="text-[#111827]">{formatRatePercent(employerCpfRate)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">CPF Amount (Employer)</span>
-              <span className="text-[#111827]">{formatCurrency(employerCpf)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[#6B7280]">Total CPF</span>
-              <span className="text-[#111827]">{formatCurrency(totalCpf)}</span>
-            </div>
-            <div className="flex justify-between border-t border-[#E5E7EB] pt-3">
-              <span className="text-base font-semibold text-[#111827]">Net Salary</span>
-              <span className="text-lg font-bold text-[#16A34A]">{formatCurrency(netSalary)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
     </TooltipProvider>
   );
 }

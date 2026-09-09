@@ -6,6 +6,7 @@ import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js"
 import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
 import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
+import { assertPeriodWritable } from "../lib/financial-year.js";
 
 const router: IRouter = Router();
 
@@ -195,6 +196,8 @@ router.post("/journal-entries", async (req, res): Promise<void> => {
   };
 
   if (!entryDate)        { res.status(400).json({ error: "Entry date is required" }); return; }
+  const periodCheck = await assertPeriodWritable(companyId, entryDate);
+  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
   if (!description?.trim()) { res.status(400).json({ error: "Description is required" }); return; }
   if (!Array.isArray(lines) || lines.length < 2) {
     res.status(400).json({ error: "At least 2 journal lines are required" }); return;
@@ -257,6 +260,8 @@ router.delete("/journal-entries/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Auto-posted entries cannot be deleted. They are reversed automatically when the source document changes." });
     return;
   }
+  const periodCheck = await assertPeriodWritable(req.session.companyId!, entry.entryDate);
+  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
 
   await db.delete(journalLinesTable).where(eq(journalLinesTable.journalEntryId, id));
   await db.delete(journalEntriesTable).where(eq(journalEntriesTable.id, id));
@@ -1777,6 +1782,8 @@ router.post("/ar/bulk-payment", async (req, res): Promise<void> => {
   if (!customerName || !paymentDate || !allocations || !Array.isArray(allocations)) {
     res.status(400).json({ error: "customerName, paymentDate, and allocations are required" }); return;
   }
+  const arPeriod = await assertPeriodWritable(companyId, paymentDate);
+  if (!arPeriod.ok) { res.status(arPeriod.status).json({ error: arPeriod.error }); return; }
 
   const totalNum = parseFloat(String(totalAmount || 0));
   const allocTotal = (allocations as any[]).reduce((s, a) => s + parseFloat(String(a.amount || 0)), 0);
@@ -2036,6 +2043,8 @@ router.post("/ap/bulk-payment", async (req, res): Promise<void> => {
   if (!vendorName || !paymentDate || !allocations || !Array.isArray(allocations)) {
     res.status(400).json({ error: "vendorName, paymentDate, and allocations are required" }); return;
   }
+  const apPeriod = await assertPeriodWritable(companyId, paymentDate);
+  if (!apPeriod.ok) { res.status(apPeriod.status).json({ error: apPeriod.error }); return; }
 
   const totalNum = parseFloat(String(totalAmount || 0));
   const isCash = (paymentMethod || "bank_transfer") === "cash";

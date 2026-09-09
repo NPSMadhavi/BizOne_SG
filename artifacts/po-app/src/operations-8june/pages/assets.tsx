@@ -493,8 +493,8 @@ export default function AssetsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Asset Tag</TableHead>
-                    <TableHead>Type / Category</TableHead>
-                    <TableHead>Serial</TableHead>
+                    <TableHead>Asset Type</TableHead>
+                    <TableHead>Asset Category</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Assigned To</TableHead>
                     <TableHead>Location</TableHead>
@@ -506,13 +506,8 @@ export default function AssetsPage() {
                   {paginatedItems.map((asset) => (
                     <TableRow key={asset.id}>
                       <TableCell className="font-medium text-[#111827]">{asset.tag}</TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="text-[#111827]">{asset.type}</div>
-                          <div className="text-sm text-[#6B7280]">{asset.category}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-[#444651]">{asset.serial}</TableCell>
+                      <TableCell className="text-[#111827]">{asset.type || "—"}</TableCell>
+                      <TableCell className="text-[#444651]">{asset.category || "—"}</TableCell>
                       <TableCell>
                         <span
                           className="inline-flex items-center rounded-full px-3 py-0.5 text-xs font-medium capitalize"

@@ -863,6 +863,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Settings
           </NavItem>
         )}
+        {(isAdmin || hasModuleAccess("settings")) && isSingapore && (
+          <NavItem href="/settings/backups" icon={Archive} active={location.startsWith("/settings/backups")} inGroup>
+            Backup & Restore
+          </NavItem>
+        )}
         {(isAdmin || hasModuleAccess("report_templates")) && (
           <NavItem href="/report-templates" icon={LayoutTemplate} active={location.startsWith("/report-templates")} inGroup>
             Report Design

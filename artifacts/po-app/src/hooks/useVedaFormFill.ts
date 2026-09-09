@@ -10,7 +10,7 @@ export function useVedaFormFill(form: UseFormReturn<any>) {
         form.setValue(key as any, value as any, {
           shouldDirty: true,
           shouldTouch: true,
-          shouldValidate: false,
+          shouldValidate: true,
         });
       });
     };

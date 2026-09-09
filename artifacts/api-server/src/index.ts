@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
 import { seedInvoiceReportDefinition } from "./lib/reports/seed.js";
 import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, reconcileStockQuantitiesOnStartup, runStartupMigrations, scrubAccidentalModuleDefaultsOnStartup } from "./lib/startup-backfill.js";
+import { startBackupScheduler } from "./lib/accounting-backup.js";
 
 const rawPort = process.env["PORT"];
 
@@ -28,13 +29,14 @@ runStartupMigrations()
   .then(() => backfillExchangeRatesOnStartup())
   .then(() => reconcileStockQuantitiesOnStartup())
   .then(() => {
-    app.listen(port, (err) => {
+    app.listen(port, "0.0.0.0", (err) => {
       if (err) {
         logger.error({ err }, "Error listening on port");
         process.exit(1);
       }
 
-      logger.info({ pid: process.pid, hostname: "localhost", port }, "Server listening");
+      logger.info({ pid: process.pid, hostname: "0.0.0.0", port }, "Server listening");
+      startBackupScheduler();
     });
   })
   .catch((err) => {

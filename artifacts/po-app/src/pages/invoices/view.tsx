@@ -17,9 +17,10 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { BankAccountField } from "@/components/bank-account-field";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -138,6 +139,37 @@ export default function InvoiceView() {
 
   const { data: docSettings } = useGetSettings({
     query: { queryKey: getGetSettingsQueryKey() },
+  });
+
+  useVedaFormActions({
+    onSave: () => {
+      if (!id) return;
+      setLocation(`/invoices/${id}/edit`);
+    },
+    onPreview: () => {
+      if (!doc) {
+        toast({ title: "Invoice not loaded yet", variant: "destructive" });
+        return;
+      }
+      setPreviewOpen(true);
+    },
+    onDownload: () => {
+      if (!doc) {
+        toast({ title: "Invoice not loaded yet", variant: "destructive" });
+        return;
+      }
+      void (async () => {
+        try {
+          await generateInvoicePdfSmart(
+            id,
+            () => generateInvoice_PDF(doc, selectedCompany, docSettings as any),
+            { filename: `${doc.invNumber}.pdf` },
+          );
+        } catch (e: any) {
+          toast({ title: "Download failed", description: e?.message || "Could not download PDF.", variant: "destructive" });
+        }
+      })();
+    },
   });
 
   const voidMutation = useVoidInvoice();

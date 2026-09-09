@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft, X } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
@@ -179,6 +181,8 @@ export default function InvoiceEdit() {
       items: [{ type: "item" as const, sectionLabel: "", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, isStockItem: false, selectedSerials: [], selectedSerialIds: [], itemImage: "" }],
     },
   });
+
+  useVedaFormFill(form);
 
   useEffect(() => {
     if (doc && !initialized.current) {
@@ -444,6 +448,12 @@ export default function InvoiceEdit() {
     });
   }
 
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => onSubmit(v, false), onFormInvalid)(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+    onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+  });
+
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
@@ -490,7 +500,7 @@ export default function InvoiceEdit() {
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
                     if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
+                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
                     if (c.currency) {
                       form.setValue("currency", c.currency);
                       setDirectoryCurrency(c.currency);

@@ -26,7 +26,21 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    ...(process.env.NODE_ENV !== "production" ? [runtimeErrorOverlay()] : []),
+    ...(process.env.NODE_ENV !== "production"
+      ? [
+          runtimeErrorOverlay({
+            // Replit overlay turns null/non-Error events into "(unknown runtime error)"
+            // with an empty stack — usually ResizeObserver noise from Radix dialogs/popovers.
+            filter(error) {
+              const message = String(error?.message ?? "");
+              if (!message || message === "(unknown runtime error)") return false;
+              if (/ResizeObserver loop/i.test(message)) return false;
+              if (/^Script error\.?$/i.test(message)) return false;
+              return true;
+            },
+          }),
+        ]
+      : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

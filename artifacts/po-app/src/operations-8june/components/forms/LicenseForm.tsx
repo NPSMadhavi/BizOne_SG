@@ -35,15 +35,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import { format, isAfter, isBefore } from "date-fns";
-import { CalendarIcon, Users, RotateCcw, CheckCircle, Search, Plus, Eye, EyeOff } from "lucide-react";
+import { isAfter, isBefore } from "date-fns";
+import {
+  Users,
+  CheckCircle,
+  Search,
+  Plus,
+  Eye,
+  EyeOff,
+  Clock,
+  Calendar,
+  Settings,
+  Info,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   TooltipProvider,
@@ -82,10 +92,12 @@ const createLicenseFormSchema = (hasLicenseKey: boolean) => {
       .optional()
       .nullable()
       .refine((val) => !val || /^\d+(\.\d{1,2})?$/.test(val), "Cost must be a valid decimal number"),
-    seats: z.number().int().min(1, "Seats must be at least 1").optional().nullable(),
+    seats: z.number().int().min(1).optional().nullable(),
     notes: z.string().optional().nullable(),
     vendorId: z.number().nullable().optional(),
     renewalCycle: z.enum(["none", "monthly", "yearly", "custom"]).optional().nullable(),
+    customRenewalEvery: z.coerce.number().int().min(1).optional(),
+    customRenewalUnit: z.enum(["days", "weeks", "months", "years"]).optional(),
     status: z.enum(["active", "expired", "revoked", "assigned"]).optional().nullable(),
   });
   
@@ -106,6 +118,21 @@ const createLicenseFormSchema = (hasLicenseKey: boolean) => {
 const licenseFormSchema = createLicenseFormSchema(true);
 
 type LicenseFormValues = z.infer<typeof licenseFormSchema>;
+
+type CustomRenewalUnit = "days" | "weeks" | "months" | "years";
+
+function parseCustomRenewal(notes?: string | null): { every: number; unit: CustomRenewalUnit } {
+  if (!notes) return { every: 3, unit: "months" };
+  const tagged = notes.match(/^__CR__:(\d+):(days|weeks|months|years)$/);
+  if (tagged) {
+    return { every: Number(tagged[1]), unit: tagged[2] as CustomRenewalUnit };
+  }
+  const readable = notes.match(/^Renews every (\d+) (days|weeks|months|years)$/i);
+  if (readable) {
+    return { every: Number(readable[1]), unit: readable[2].toLowerCase() as CustomRenewalUnit };
+  }
+  return { every: 3, unit: "months" };
+}
 
 interface LicenseFormProps {
   isOpen: boolean;
@@ -146,6 +173,7 @@ export default function LicenseForm({
   });
 
   // Initialize form with default values or existing license data
+  const parsedCustom = parseCustomRenewal(license?.notes);
   const form = useForm<LicenseFormValues>({
     resolver: zodResolver(createLicenseFormSchema(hasLicenseKey)),
     defaultValues: {
@@ -160,6 +188,8 @@ export default function LicenseForm({
       notes: license?.notes || "",
       vendorId: license?.vendorId || null,
       renewalCycle: license?.renewalCycle || "none",
+      customRenewalEvery: parsedCustom.every,
+      customRenewalUnit: parsedCustom.unit,
       status: license?.status || "active",
     },
   });
@@ -236,13 +266,21 @@ export default function LicenseForm({
 
   // Handle form submission
   const onSubmit = (values: LicenseFormValues) => {
-    // Convert date strings to Date objects and handle other validations
-    const updatedValues = {
-      ...values,
+    const { customRenewalEvery, customRenewalUnit, ...rest } = values;
+    const every = customRenewalEvery && customRenewalEvery > 0 ? customRenewalEvery : 3;
+    const unit = customRenewalUnit || "months";
+
+    const updatedValues: LicenseFormValues = {
+      ...rest,
       purchaseDate: values.purchaseDate ? new Date(values.purchaseDate) : null,
       expiryDate: values.expiryDate ? new Date(values.expiryDate) : null,
+      seats: values.seats ?? null,
+      notes:
+        values.renewalCycle === "custom"
+          ? `__CR__:${every}:${unit}`
+          : null,
     };
-    
+
     // Auto-set status to expired if expiry date has passed
     if (updatedValues.expiryDate && isBefore(updatedValues.expiryDate, new Date())) {
       updatedValues.status = "expired";
@@ -310,7 +348,6 @@ export default function LicenseForm({
                                   </FormControl>
                                   <SelectContent>
                                     <SelectItem value="software">Software</SelectItem>
-                                    <SelectItem value="hardware">Hardware</SelectItem>
                                     <SelectItem value="subscription">Subscription</SelectItem>
                                     <SelectItem value="service">Service</SelectItem>
                                     <SelectItem value="other">Other</SelectItem>
@@ -391,7 +428,7 @@ export default function LicenseForm({
               </section>
 
               <section className="space-y-4">
-                <ModalSectionHeader title="Finance & Dates" />
+                <ModalSectionHeader title="Purchase Details" />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
 
                           {/* Cost */}
@@ -400,7 +437,7 @@ export default function LicenseForm({
                             name="cost"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>License Cost (SGD)</FormLabel>
+                                <FormLabel>Purchase Value</FormLabel>
                                 <FormControl>
                                   <Input
                                     type="text"
@@ -532,16 +569,15 @@ export default function LicenseForm({
               </section>
 
               <section className="space-y-4">
-                <ModalSectionHeader title="Assignment" />
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
 
-                        {/* Associated Asset - Searchable */}
+                        {/* Asset Licenses - Searchable */}
                         <FormField
                           control={form.control}
                           name="assetId"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Associated Asset</FormLabel>
+                              <FormLabel>Asset Licenses</FormLabel>
                               <Popover open={assetSearchOpen} onOpenChange={setAssetSearchOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
@@ -617,38 +653,6 @@ export default function LicenseForm({
                           )}
                         />
 
-                        {/* Seats */}
-                        <FormField
-                          control={form.control}
-                          name="seats"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Number of Seats</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="text"
-                                  placeholder=""
-                                  {...field}
-                                  value={field.value || ""}
-                                  onChange={(e) => {
-                                    const value = e.target.value ? parseInt(e.target.value) : null;
-                                    field.onChange(value);
-                                  }}
-                                  data-testid="input-seats"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                </div>
-              </section>
-
-              <section className="space-y-4">
-                <ModalSectionHeader title="Additional Information" />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-
                       {/* Vendor */}
                       <FormField
                         control={form.control}
@@ -705,73 +709,135 @@ export default function LicenseForm({
                       />
 
                       {/* Renewal Cycle */}
-                      <FormField
-                        control={form.control}
-                        name="renewalCycle"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Renewal Cycle</FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              defaultValue={field.value || "none"}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select renewal cycle" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="none">
-                                  <div className="flex items-center gap-2">
-                                    <span className="h-3 w-3 rounded-full bg-gray-400"></span>
-                                    One-time Purchase
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="monthly">
-                                  <div className="flex items-center gap-2">
-                                    <RotateCcw className="h-3 w-3 text-blue-600" />
-                                    Monthly
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="yearly">
-                                  <div className="flex items-center gap-2">
-                                    <RotateCcw className="h-3 w-3 text-green-600" />
-                                    Yearly
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="custom">
-                                  <div className="flex items-center gap-2">
-                                    <RotateCcw className="h-3 w-3 text-purple-600" />
-                                    Custom
-                                  </div>
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Notes - Full Width */}
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-2 space-y-3">
                         <FormField
                           control={form.control}
-                          name="notes"
+                          name="renewalCycle"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Notes</FormLabel>
-                              <FormControl>
-                                <Textarea
-                                  placeholder="Additional information about this license..."
-                                  className="min-h-[100px]"
-                                  {...field}
-                                  value={field.value || ""}
-                                />
-                              </FormControl>
+                              <FormLabel className="inline-flex items-center gap-1.5">
+                                Renewal Cycle
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280]">
+                                      <Info className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    How often this license renews
+                                  </TooltipContent>
+                                </Tooltip>
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || "none"}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select renewal cycle" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="none">
+                                    <div className="flex items-center gap-2">
+                                      <Clock className="h-4 w-4 text-[#9CA3AF]" />
+                                      One-time
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="monthly">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="h-4 w-4 text-emerald-600" />
+                                      Monthly
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="yearly">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className="h-4 w-4 text-orange-500" />
+                                      Yearly
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="custom">
+                                    <div className="flex items-center gap-2">
+                                      <Settings className="h-4 w-4 text-violet-600" />
+                                      Custom
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
                               <FormMessage />
                             </FormItem>
                           )}
                         />
+
+                        {form.watch("renewalCycle") === "custom" && (
+                          <div className="rounded-xl border border-[#E0E7FF] bg-[#F8FAFF] p-4 space-y-4">
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EDE9FE]">
+                                <Settings className="h-4 w-4 text-violet-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-[#111827]">Custom Renewal Period</p>
+                                <p className="text-xs text-[#6B7280]">
+                                  Set your own renewal period by choosing the interval and unit.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-4">
+                              <FormField
+                                control={form.control}
+                                name="customRenewalEvery"
+                                render={({ field }) => (
+                                  <FormItem className="w-[140px] gap-0 space-y-0">
+                                    <FormLabel className="mb-1.5 block h-4 text-xs font-medium leading-4 text-[#6B7280]">
+                                      Repeat every
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        min={1}
+                                        className="!mt-0 h-10 w-full bg-white"
+                                        value={field.value ?? 3}
+                                        onChange={(e) => {
+                                          const n = parseInt(e.target.value, 10);
+                                          field.onChange(Number.isFinite(n) && n > 0 ? n : 1);
+                                        }}
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name="customRenewalUnit"
+                                render={({ field }) => (
+                                  <FormItem className="w-[160px] gap-0 space-y-0">
+                                    <FormLabel className="mb-1.5 block h-4 text-xs font-medium leading-4 text-[#6B7280]">
+                                      Unit
+                                    </FormLabel>
+                                    <Select
+                                      value={field.value || "months"}
+                                      onValueChange={field.onChange}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger className="!mt-0 h-10 w-full bg-white">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="days">Days</SelectItem>
+                                        <SelectItem value="weeks">Weeks</SelectItem>
+                                        <SelectItem value="months">Months</SelectItem>
+                                        <SelectItem value="years">Years</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                 </div>
               </section>

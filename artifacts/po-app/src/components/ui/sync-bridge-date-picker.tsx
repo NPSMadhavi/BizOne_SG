@@ -420,32 +420,37 @@ export function SyncBridgeDatePicker({
 
   return (
     <div className="w-full min-w-0 max-w-full">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setOpen} modal={false}>
         <PopoverTrigger asChild>
           <button
             type="button"
             disabled={disabled}
             className={cn(
-              "box-border flex h-10 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border bg-white px-2.5 text-left text-sm sm:px-3",
+              "box-border flex h-9 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-transparent px-3 py-1 text-left text-sm shadow-sm transition-colors",
+              "text-foreground placeholder:text-muted-foreground",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               "disabled:cursor-not-allowed disabled:opacity-50",
               className
             )}
-            style={{ borderColor: TEAL, color: TEAL }}
           >
             <span
-              className={cn("min-w-0 flex-1 truncate", !value && "font-normal")}
-              style={!value ? { color: TEAL_MUTED } : undefined}
+              className={cn(
+                "min-w-0 flex-1 truncate",
+                !value && "text-muted-foreground font-normal"
+              )}
             >
               {value ? formatDisplay(value, mode) : displayPlaceholder}
             </span>
-            <CalendarIcon className="h-4 w-4 shrink-0 opacity-80" style={{ color: TEAL }} />
+            <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           </button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-auto border bg-white p-0 shadow-lg"
+          className="z-[80] w-auto border bg-white p-0 shadow-lg"
           align="start"
           sideOffset={6}
           style={{ borderColor: "hsl(0 0% 85%)" }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <DatePickerPanel
             viewYear={viewYear}

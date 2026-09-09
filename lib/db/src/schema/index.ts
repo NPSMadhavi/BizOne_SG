@@ -38,3 +38,5 @@ export * from "./roles-permissions";
 export * from "./report-definitions";
 export * from "./report-fields";
 export * from "./report-templates";
+export * from "./financial-years";
+export * from "./accounting-backups";

@@ -4,6 +4,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { postIncomeJE, reverseIncomeJE } from "../lib/income-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
+import { assertPeriodWritable } from "../lib/financial-year.js";
 
 const router: IRouter = Router();
 
@@ -91,6 +92,8 @@ router.post("/income", async (req, res): Promise<void> => {
   } = req.body;
 
   if (!incomeDate) { res.status(400).json({ error: "Income date is required" }); return; }
+  const periodCheck = await assertPeriodWritable(companyId, incomeDate);
+  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
   if (!payerName?.trim()) { res.status(400).json({ error: "Payer name is required" }); return; }
   if (!description?.trim()) { res.status(400).json({ error: "Description is required" }); return; }
   if (!category) { res.status(400).json({ error: "Category is required" }); return; }

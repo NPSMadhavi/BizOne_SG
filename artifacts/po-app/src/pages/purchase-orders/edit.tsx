@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
@@ -149,6 +150,28 @@ export default function PurchaseOrderEdit() {
     },
   });
   useVedaFormFill(form);
+
+  // When Veda updates the PO in the DB while this edit page is open, sync the form.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      if (detail.docType !== "po" || Number(detail.id) !== id) return;
+      const fields = detail.fields || {};
+      if (fields.vendorName != null) form.setValue("vendorName", fields.vendorName, { shouldDirty: true, shouldValidate: true });
+      if (fields.vendorAddress != null) form.setValue("vendorAddress", fields.vendorAddress, { shouldDirty: true });
+      if (fields.vendorContact != null) form.setValue("vendorContact", fields.vendorContact, { shouldDirty: true });
+      if (fields.vendorContactEmail != null) form.setValue("vendorContactEmail", fields.vendorContactEmail, { shouldDirty: true });
+      if (fields.paymentTerms != null) form.setValue("paymentTerms", fields.paymentTerms, { shouldDirty: true });
+      if (fields.deliveryDate != null) form.setValue("deliveryDate", fields.deliveryDate, { shouldDirty: true });
+      if (fields.deliveryAddress != null) form.setValue("deliveryAddress", fields.deliveryAddress, { shouldDirty: true });
+      if (fields.currency != null) form.setValue("currency", fields.currency, { shouldDirty: true });
+      if (fields.notes != null) form.setValue("notes", fields.notes, { shouldDirty: true });
+      if (fields.quoteRefNo != null) form.setValue("quoteRefNo", fields.quoteRefNo, { shouldDirty: true });
+      if (Array.isArray(fields.items)) form.setValue("items", fields.items as any, { shouldDirty: true });
+    };
+    window.addEventListener("veda:document-updated", handler);
+    return () => window.removeEventListener("veda:document-updated", handler);
+  }, [form, id]);
 
   useEffect(() => {
     if (po && !initialized) {
@@ -363,6 +386,12 @@ export default function PurchaseOrderEdit() {
       }
     );
   }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit(onSubmit, onFormInvalid)(); },
+    onPreview: () => { void form.handleSubmit(doSaveConfirmed, onFormInvalid)(); },
+    onDownload: () => { void form.handleSubmit(doSaveConfirmed, onFormInvalid)(); },
+  });
 
   if (isLoading || !initialized) {
     return (

@@ -6,6 +6,8 @@ import { insertAssetSchema, type Employee, type Asset } from "@shared/schema";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { previewRunningNumber } from "@/lib/running-number";
 import { apiRequest } from "@/operations-8june/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import {
@@ -352,6 +354,15 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const [attachments, setAttachments] = useState<AssetAttachment[]>(() => loadAssetAttachments(assetId));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const draftRestoredRef = useRef(false);
+
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+  const nextAssetTag = !isEditMode
+    ? previewRunningNumber(
+        (settings as any)?.faPrefix ?? "FA",
+        (settings as any)?.faCounter,
+        (settings as any)?.faSuffix ?? "",
+      )
+    : "";
   
   // Fetch vendors for dropdown
   const { data: vendors = [] } = useQuery({
@@ -452,6 +463,12 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     defaultValues: editFormValues ?? emptyFormValues,
     values: editFormValues,
   });
+
+  useEffect(() => {
+    if (!isEditMode && nextAssetTag) {
+      form.setValue("tag", nextAssetTag, { shouldValidate: false });
+    }
+  }, [form, isEditMode, nextAssetTag]);
 
   useEffect(() => {
     if (draftRestoredRef.current) return;
@@ -611,6 +628,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       });
       if (created?.id != null) saveAssetAttachments(created.id, attachments);
       await queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
+      await queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
       await queryClient.refetchQueries({ queryKey: ["/api/assets"] });
       form.reset(emptyFormValues);
       setAttachments([]);
@@ -704,22 +722,24 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="flex items-center gap-2 text-sm font-medium text-[#111827]">
-                              Asset Tag *
+                              Asset Tag <span className="text-destructive">*</span>
                               <Tooltip>
                                 <TooltipTrigger>
                                   <HelpCircle className="h-4 w-4 text-gray-400" />
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Unique identifier for tracking this asset</p>
+                                  <p>{isEditMode ? "Unique identifier for tracking this asset" : "Auto-generated from Settings → Running Numbers"}</p>
                                 </TooltipContent>
                               </Tooltip>
                             </FormLabel>
                             <FormControl>
                               <Input 
-                                placeholder="IT-LAP-001" 
-                                className="w-full" 
-                                autoFocus
-                                {...field} 
+                                placeholder="Auto-generated" 
+                                className="w-full bg-muted/40" 
+                                autoFocus={!isEditMode ? false : true}
+                                readOnly={!isEditMode}
+                                {...field}
+                                value={!isEditMode ? (nextAssetTag || field.value) : field.value}
                               />
                             </FormControl>
                             <FormMessage />

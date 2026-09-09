@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
+import { nextDocNumber } from "../../lib/running-numbers.js";
 import { saveEmployeeDocumentUpload } from "../../lib/operations-upload";
 import {
   batchProcessPayrollCompany,
@@ -489,7 +490,8 @@ router.get("/assets/:id", async (req, res): Promise<void> => {
 router.post("/assets", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
-    const body = { status: "available", ...req.body };
+    const tag = await nextDocNumber("fa", req.session.companyId!);
+    const body = { status: "available", ...req.body, tag };
     const { sql, values } = buildInsert("assets", req.session.companyId!, body, ASSET_COLUMNS);
     const result = await pool.query(sql, values);
     res.status(201).json(formatRow(result.rows[0]));
@@ -751,7 +753,12 @@ router.post("/employees", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     const companyId = req.session.companyId!;
-    const { dependents, ...body } = req.body;
+    const { dependents, companyId: _ignoredCompanyId, ...rawBody } = req.body;
+    const body: Record<string, unknown> = { ...rawBody };
+    // Empty optional strings -> null (avoids enum/text quirks); omit blank scan payloads
+    for (const key of Object.keys(body)) {
+      if (body[key] === "") body[key] = null;
+    }
     if (!body.employeeId) {
       body.employeeId = await nextEmployeeCode(companyId);
     }
@@ -766,7 +773,8 @@ router.post("/employees", async (req, res): Promise<void> => {
     }
     res.status(201).json(employee);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to create employee" });
+    console.error("Failed to create employee:", err);
+    res.status(500).json({ error: err?.message ?? "Failed to create employee", message: err?.message ?? "Failed to create employee" });
   }
 });
 

@@ -49,10 +49,24 @@ export default function LicenseViewDialog({ open, onClose, license }: LicenseVie
     return { label: "Valid", variant: "valid" as const };
   })();
 
+  const customRenewal = (() => {
+    if (license.renewalCycle !== "custom" || !license.notes) return null;
+    const tagged = license.notes.match(/^__CR__:(\d+):(days|weeks|months|years)$/);
+    if (!tagged) return null;
+    const every = Number(tagged[1]);
+    const unit = tagged[2];
+    const singular = unit.replace(/s$/, "");
+    return `Renews every ${every} ${every === 1 ? singular : unit}`;
+  })();
+
   const renewalCycle =
-    license.renewalCycle && license.renewalCycle !== "none"
-      ? license.renewalCycle.replace(/_/g, " ")
-      : "None";
+    license.renewalCycle === "custom" && customRenewal
+      ? customRenewal
+      : license.renewalCycle && license.renewalCycle !== "none"
+        ? license.renewalCycle.replace(/_/g, " ")
+        : "One-time";
+
+  const isInternalCustomNote = !!license.notes?.startsWith("__CR__:");
 
   return (
     <EntityViewDialog
@@ -74,10 +88,6 @@ export default function LicenseViewDialog({ open, onClose, license }: LicenseVie
             <EntityViewStatusBadge status={statusInfo.label} variant={statusInfo.variant} />
           }
         />
-        <EntityViewField
-          label="Seats"
-          value={license.seats != null ? String(license.seats) : "-"}
-        />
         <EntityViewCopyField label="License Key" value={license.licenseKey} />
         <EntityViewField label="Purchase date" value={formatViewDate(license.purchaseDate)} />
         <EntityViewField
@@ -85,16 +95,16 @@ export default function LicenseViewDialog({ open, onClose, license }: LicenseVie
           value={license.expiryDate ? formatViewDate(license.expiryDate) : "-"}
         />
         <EntityViewField
-          label="Cost"
+          label="Purchase value"
           value={license.cost ? `$${license.cost}` : "-"}
         />
         <EntityViewField label="Renewal cycle" value={renewalCycle} />
         <EntityViewField
-          label="Vendor ID"
+          label="Vendor"
           value={linkedVendor?.name || (license.vendorId ? String(license.vendorId) : "-")}
         />
         <EntityViewField
-          label="Asset ID"
+          label="Asset licenses"
           value={
             linkedAsset
               ? `${linkedAsset.tag} - ${linkedAsset.type}`
@@ -103,7 +113,7 @@ export default function LicenseViewDialog({ open, onClose, license }: LicenseVie
                 : "-"
           }
         />
-        {license.notes ? (
+        {license.notes && !isInternalCustomNote ? (
           <EntityViewField label="Notes" value={license.notes} fullWidth />
         ) : null}
       </EntityViewFieldGrid>

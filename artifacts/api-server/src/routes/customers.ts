@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, customersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -10,7 +10,7 @@ router.get("/customers", async (req, res) => {
   try {
     const customers = await db.select().from(customersTable)
       .where(eq(customersTable.companyId, companyId))
-      .orderBy(customersTable.name);
+      .orderBy(desc(customersTable.createdAt), desc(customersTable.id));
     return res.json(customers);
   } catch {
     return res.status(500).json({ error: "Failed to fetch customers" });

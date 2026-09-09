@@ -20,6 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft, X } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
@@ -185,6 +187,8 @@ export default function InvoiceNew() {
       items: [blankInvItem],
     },
   });
+
+  useVedaFormFill(form);
 
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
@@ -569,6 +573,12 @@ export default function InvoiceNew() {
     });
   }
 
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => onSubmit(v, false))(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true))(); },
+    onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true))(); },
+  });
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-start justify-between gap-4">
@@ -649,7 +659,7 @@ export default function InvoiceNew() {
                     form.setValue("customerContact", c.contactPerson);
                     form.setValue("customerContactEmail", c.contactEmail);
                     if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(c.effectiveGstRate === 0); }
+                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
                     if (c.currency) {
                       form.setValue("currency", c.currency);
                       setDirectoryCurrency(c.currency);

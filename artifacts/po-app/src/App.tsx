@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense, useEffect } from "react";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
+import { DateRangeProvider } from "@/contexts/date-range-context";
 import type { AppModule } from "@/contexts/auth-modules";
 import { Shell } from "@/components/layout/shell";
 import { MaintenanceGuard } from "@/components/maintenance-guard";
@@ -136,6 +137,7 @@ const IncomeList         = lazy(() => import("@/pages/accounting/income"));
 const IncomeNew          = lazy(() => import("@/pages/accounting/income-new"));
 const IncomeEdit         = lazy(() => import("@/pages/accounting/income-edit"));
 const IncomeView         = lazy(() => import("@/pages/accounting/income-view"));
+const AccountingBackups  = lazy(() => import("@/pages/settings/backups"));
 
 const AssetsPage         = lazy(() => import("@/operations-8june/pages/assets"));
 const AssetNewPage       = lazy(() => import("@/operations-8june/pages/asset-new"));
@@ -217,6 +219,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/accounting/income/new": "New Income Entry",
   "/admin": "User Management",
   "/settings": "Settings",
+  "/settings/backups": "Backup & Restore",
   "/report-templates": "Report Templates",
   "/select-company": "Select Company",
   "/login": "Sign In",
@@ -290,9 +293,15 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
 
   if (adminOnly && !isAdmin) return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
 
-  if (module && !isAdmin && !hasModuleAccess(module)) return <AccessDenied />;
+  // Veda can unlock modules for the session so "go to invoices" etc. actually open
+  const vedaUnlock = typeof window !== "undefined" && (
+    (window as any).__vedaModuleUnlock === true
+    || (() => { try { return sessionStorage.getItem("veda_module_unlock") === "1"; } catch { return false; } })()
+  );
 
-  if (anyOf && !isAdmin && !anyOf.some((m) => hasModuleAccess(m))) return <AccessDenied />;
+  if (module && !isAdmin && !hasModuleAccess(module) && !vedaUnlock) return <AccessDenied />;
+
+  if (anyOf && !isAdmin && !anyOf.some((m) => hasModuleAccess(m)) && !vedaUnlock) return <AccessDenied />;
 
   return <Component />;
 }
@@ -458,6 +467,7 @@ function Router() {
           <Route path="/accounting/expenses/:id/edit">{() => <ProtectedRoute component={ExpenseEdit} />}</Route>
           <Route path="/accounting/expenses/:id">{() => <ProtectedRoute component={ExpenseView} />}</Route>
           <Route path="/accounting/expenses">{() => <ProtectedRoute component={ExpensesList} />}</Route>
+          <Route path="/accounting/backups">{() => <Redirect to="/settings/backups" />}</Route>
           <Route path="/accounting/income/new">{() => <ProtectedRoute component={IncomeNew} />}</Route>
           <Route path="/accounting/income/:id/edit">{() => <ProtectedRoute component={IncomeEdit} />}</Route>
           <Route path="/accounting/income/:id">{() => <ProtectedRoute component={IncomeView} />}</Route>
@@ -465,6 +475,7 @@ function Router() {
 
           {/* System — admin only */}
           <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
+          <Route path="/settings/backups">{() => <ProtectedRoute component={AccountingBackups} adminOnly={true} />}</Route>
           <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
           <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
           <Route path="/report-templates/:id/edit">{() => <ProtectedRoute component={ReportDesignerPage} module="report_templates" />}</Route>
@@ -483,9 +494,11 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
-            <MaintenanceGuard>
-              <Router />
-            </MaintenanceGuard>
+            <DateRangeProvider>
+              <MaintenanceGuard>
+                <Router />
+              </MaintenanceGuard>
+            </DateRangeProvider>
           </AuthProvider>
         </WouterRouter>
         <Toaster />

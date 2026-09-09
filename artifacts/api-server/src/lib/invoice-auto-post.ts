@@ -18,6 +18,7 @@ import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTab
 import { eq, and, sql } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
 import { isSingaporeCountry } from "./singapore.js";
+import { assertPeriodWritable } from "./financial-year.js";
 
 interface InvoiceSnap {
   id: number;
@@ -57,6 +58,10 @@ export async function postInvoiceJE(invoice: InvoiceSnap, userId: number, log?: 
 
   if (!(await isSingapore(companyId))) return;
 
+  const entryDate = (issueDate || new Date().toISOString().split("T")[0]);
+  const periodCheck = await assertPeriodWritable(companyId, entryDate);
+  if (!periodCheck.ok) throw new Error(periodCheck.error);
+
   // Idempotency: skip if a JE was already posted for this invoice
   const [existing] = await db.select({ id: journalEntriesTable.id })
     .from(journalEntriesTable)
@@ -88,7 +93,6 @@ export async function postInvoiceJE(invoice: InvoiceSnap, userId: number, log?: 
   const taxableAmt = parseFloat((subtotalAmt - discAmt).toFixed(2));
   const gstAmt     = parseFloat(invoice.tax)             || 0; // already in dollars
 
-  const entryDate = (issueDate || new Date().toISOString().split("T")[0]);
   const desc = `Invoice ${invNumber} — ${customerName}`;
 
   const lines: Array<{ accountId: number; description: string; debit: string; credit: string }> = [];

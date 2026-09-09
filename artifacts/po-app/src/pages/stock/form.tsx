@@ -76,7 +76,6 @@ const EMPTY_FORM = {
   uom: "Pcs",
   type: "product" as "product" | "service",
   unitPrice: "" as string | number,
-  mrpPrice: "" as string | number,
   stockQty: "" as string | number,
   batchNo: "",
   isActive: true,
@@ -148,10 +147,6 @@ export default function StockItemFormPage() {
       uom: normalizeUom(item.uom),
       type: item.type === "service" ? "service" : "product",
       unitPrice: item.unitPrice != null && item.unitPrice !== "" ? String(item.unitPrice) : "",
-      mrpPrice:
-        (item as any).mrpPrice != null && (item as any).mrpPrice !== ""
-          ? String((item as any).mrpPrice)
-          : "",
       stockQty: item.stockQty != null && item.stockQty !== "" ? String(item.stockQty) : "",
       batchNo: item.batchNo || "",
       isActive: item.isActive ?? true,
@@ -276,7 +271,6 @@ export default function StockItemFormPage() {
       uom: form.uom.trim() || "Pcs",
       type: form.type,
       unitPrice: Number(form.unitPrice) || 0,
-      mrpPrice: Number(form.mrpPrice) || 0,
       stockQty: Number(form.stockQty) || 0,
       batchNo: form.batchNo.trim() || undefined,
       isActive: form.isActive,
@@ -478,23 +472,23 @@ export default function StockItemFormPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Opening Price</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                placeholder="0"
-                value={form.unitPrice}
-                onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Opening Quantity</Label>
+              <Label>Opening Stock Quantity</Label>
               <Input
                 type="text"
                 inputMode="decimal"
                 placeholder="0"
                 value={form.stockQty}
                 onChange={(e) => setForm((f) => ({ ...f, stockQty: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Opening Stock Amount</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder="0"
+                value={form.unitPrice}
+                onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))}
               />
             </div>
           </div>
@@ -505,16 +499,6 @@ export default function StockItemFormPage() {
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>MRP Price</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                placeholder="0"
-                value={form.mrpPrice}
-                onChange={(e) => setForm((f) => ({ ...f, mrpPrice: e.target.value }))}
               />
             </div>
           </div>

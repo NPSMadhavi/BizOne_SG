@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
@@ -86,6 +87,33 @@ export default function PurchaseOrderView() {
 
   const { data: po, isLoading, refetch: refetchPO } = useGetPurchaseOrder(id, {
     query: { queryKey: getGetPurchaseOrderQueryKey(id), enabled: !!id }
+  });
+
+  useVedaFormActions({
+    onSave: () => {
+      if (!id) return;
+      setLocation(`/purchase-orders/${id}/edit`);
+    },
+    onPreview: () => {
+      if (!po) {
+        toast({ title: "Purchase order not loaded yet", variant: "destructive" });
+        return;
+      }
+      setPreviewOpen(true);
+    },
+    onDownload: () => {
+      if (!po) {
+        toast({ title: "Purchase order not loaded yet", variant: "destructive" });
+        return;
+      }
+      void (async () => {
+        try {
+          await generatePO_PDF(po, selectedCompany);
+        } catch (e: any) {
+          toast({ title: "Download failed", description: e?.message || "Could not download PDF.", variant: "destructive" });
+        }
+      })();
+    },
   });
 
   const { data: grns } = useQuery<any[]>({

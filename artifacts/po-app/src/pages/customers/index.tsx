@@ -37,6 +37,8 @@ import {
   ManagementIconAction,
 } from "@/operations-8june/components/layout/ManagementPageUI";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
+import { SingaporePhoneInput } from "@/components/singapore-phone-input";
+import { formatSingaporePhoneForApi, parseSingaporePhoneDigits } from "@/lib/singapore-phone";
 import { useGetSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/auth-context";
 import { CURRENCIES } from "@/lib/currencies";
@@ -63,7 +65,7 @@ interface Customer {
 }
 
 const blank = (): Partial<Customer> => ({
-  name: "", address: "", postalCode: "", country: "", contactPerson: "",
+  name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
   contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "",
   shipToAddress: "", quotationTerms: "", isActive: true,
 });
@@ -300,8 +302,11 @@ export default function CustomersPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Phone</Label>
-                <Input value={form.phone || ""} onChange={e => setField("phone", e.target.value)} />
+                <Label>Phone Number</Label>
+                <SingaporePhoneInput
+                  value={form.phone || ""}
+                  onChange={(digits) => setField("phone", digits)}
+                />
               </div>
             </div>
 
@@ -494,7 +499,16 @@ export default function CustomersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => mutation.mutate(form)} disabled={!form.name || mutation.isPending}>
+            <Button
+              onClick={() => {
+                const digits = parseSingaporePhoneDigits(form.phone || "");
+                mutation.mutate({
+                  ...form,
+                  phone: digits ? formatSingaporePhoneForApi(digits) : "",
+                });
+              }}
+              disabled={!form.name || mutation.isPending}
+            >
               {mutation.isPending ? "Saving…" : editing ? "Update Customer" : "Create Customer"}
             </Button>
           </DialogFooter>

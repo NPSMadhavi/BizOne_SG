@@ -10,6 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Globe, Info, ChevronsUpDown, Check } from "lucide-react";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
+import { SingaporePhoneInput } from "@/components/singapore-phone-input";
+import { formatSingaporePhoneForApi, parseSingaporePhoneDigits } from "@/lib/singapore-phone";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
@@ -32,7 +34,7 @@ interface Vendor {
 }
 
 const blank = () => ({
-  name: "", address: "", postalCode: "", country: "", contactPerson: "",
+  name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
   contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "", isActive: true,
 });
 
@@ -113,8 +115,11 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setField("phone", e.target.value)} placeholder="+65 xxxx xxxx" />
+              <Label>Phone Number</Label>
+              <SingaporePhoneInput
+                value={form.phone}
+                onChange={(digits) => setField("phone", digits)}
+              />
             </div>
           </div>
 
@@ -216,7 +221,16 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={!form.name || mutation.isPending}>
+          <Button
+            onClick={() => {
+              const digits = parseSingaporePhoneDigits(form.phone || "");
+              mutation.mutate({
+                ...form,
+                phone: digits ? formatSingaporePhoneForApi(digits) : "",
+              });
+            }}
+            disabled={!form.name || mutation.isPending}
+          >
             {mutation.isPending ? "Saving…" : "Create Vendor"}
           </Button>
         </DialogFooter>

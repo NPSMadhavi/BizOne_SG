@@ -4,6 +4,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { postExpenseJE, reverseExpenseJE, backfillExpenseJEs } from "../lib/expense-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
+import { assertPeriodWritable } from "../lib/financial-year.js";
 
 const router: IRouter = Router();
 
@@ -73,6 +74,8 @@ router.post("/expenses", async (req, res): Promise<void> => {
   } = req.body;
 
   if (!expenseDate) { res.status(400).json({ error: "Expense date is required" }); return; }
+  const periodCheck = await assertPeriodWritable(companyId, expenseDate);
+  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor / payee name is required" }); return; }
   if (!description?.trim()) { res.status(400).json({ error: "Description is required" }); return; }
   if (!category) { res.status(400).json({ error: "Category is required" }); return; }

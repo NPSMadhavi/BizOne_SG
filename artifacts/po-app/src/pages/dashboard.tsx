@@ -6,7 +6,6 @@ import {
 } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import {
-  Calendar as CalendarIcon,
   TrendingUp,
   TrendingDown,
   DollarSign,
@@ -20,13 +19,13 @@ import {
   RotateCcw,
   AlertCircle,
   Clock,
-  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { fmtDate } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { DateRangeFilter } from "@/components/date-range-filter";
+import { FinancialYearControls, CloseFyStartNextWizard } from "@/components/financial-year-controls";
+import { useDateRangeOptional } from "@/contexts/date-range-context";
+import { PERIOD_PRESETS, inRange } from "@/lib/date-range";
 
 const money = (v: number) =>
   new Intl.NumberFormat("en-SG", {
@@ -41,51 +40,6 @@ const moneyExact = (v: number) =>
     currency: "SGD",
     minimumFractionDigits: 2,
   }).format(v || 0);
-
-function startOfMonth(d = new Date()) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-function endOfMonth(d = new Date()) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
-}
-function startOfQuarter(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3) * 3;
-  return new Date(d.getFullYear(), q, 1);
-}
-function endOfQuarter(d = new Date()) {
-  const q = Math.floor(d.getMonth() / 3) * 3;
-  return new Date(d.getFullYear(), q + 3, 0);
-}
-function startOfYear(d = new Date()) {
-  return new Date(d.getFullYear(), 0, 1);
-}
-function endOfYear(d = new Date()) {
-  return new Date(d.getFullYear(), 11, 31);
-}
-function toInputDate(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-function fromInputDate(s: string) {
-  const [y, m, d] = s.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
-}
-function fmtRangeLabel(from: Date, to: Date) {
-  const opts: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short", year: "numeric" };
-  return `${from.toLocaleDateString("en-GB", opts)} - ${to.toLocaleDateString("en-GB", opts)}`;
-}
-function inRange(iso: string | null | undefined, from: Date, to: Date) {
-  if (!iso) return false;
-  const d = new Date(iso.slice(0, 10));
-  if (Number.isNaN(d.getTime())) return false;
-  const t = d.getTime();
-  const start = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
-  const end = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).getTime();
-  return t >= start && t <= end;
-}
 
 function invoiceBalance(inv: { totalAmount?: string | number; paidAmount?: string | number; balance?: string | number }) {
   if (inv.balance != null && inv.balance !== "") {
@@ -105,148 +59,6 @@ function vendorOutstanding(vi: { totalAmount?: string | number; paidAmount?: str
   const total = parseFloat(String(vi.totalAmount)) || 0;
   const paid = parseFloat(String(vi.paidAmount)) || 0;
   return Math.max(0, total - paid);
-}
-
-type PeriodPreset = "this-month" | "last-month" | "this-quarter" | "this-year" | "custom";
-
-const PERIOD_PRESETS: { id: PeriodPreset; label: string }[] = [
-  { id: "this-month", label: "This Month" },
-  { id: "last-month", label: "Last Month" },
-  { id: "this-quarter", label: "This Quarter" },
-  { id: "this-year", label: "This Year" },
-  { id: "custom", label: "Custom Range" },
-];
-
-function rangeForPreset(preset: PeriodPreset, customFrom: Date, customTo: Date): { from: Date; to: Date } {
-  const now = new Date();
-  switch (preset) {
-    case "last-month": {
-      const ref = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      return { from: startOfMonth(ref), to: endOfMonth(ref) };
-    }
-    case "this-quarter":
-      return { from: startOfQuarter(now), to: endOfQuarter(now) };
-    case "this-year":
-      return { from: startOfYear(now), to: endOfYear(now) };
-    case "custom":
-      return {
-        from: customFrom <= customTo ? customFrom : customTo,
-        to: customFrom <= customTo ? customTo : customFrom,
-      };
-    case "this-month":
-    default:
-      return { from: startOfMonth(now), to: endOfMonth(now) };
-  }
-}
-
-function DateRangeFilter({
-  preset,
-  rangeFrom,
-  rangeTo,
-  onApply,
-}: {
-  preset: PeriodPreset;
-  rangeFrom: Date;
-  rangeTo: Date;
-  onApply: (preset: PeriodPreset, from: Date, to: Date) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [draftPreset, setDraftPreset] = useState<PeriodPreset>(preset);
-  const [draftFrom, setDraftFrom] = useState(toInputDate(rangeFrom));
-  const [draftTo, setDraftTo] = useState(toInputDate(rangeTo));
-
-  function openPopover(next: boolean) {
-    if (next) {
-      setDraftPreset(preset);
-      setDraftFrom(toInputDate(rangeFrom));
-      setDraftTo(toInputDate(rangeTo));
-    }
-    setOpen(next);
-  }
-
-  function selectPreset(id: PeriodPreset) {
-    setDraftPreset(id);
-    if (id === "custom") return;
-    const { from, to } = rangeForPreset(id, rangeFrom, rangeTo);
-    setDraftFrom(toInputDate(from));
-    setDraftTo(toInputDate(to));
-  }
-
-  function apply() {
-    const from = fromInputDate(draftFrom) ?? rangeFrom;
-    const to = fromInputDate(draftTo) ?? rangeTo;
-    const resolved = rangeForPreset(draftPreset, from, to);
-    onApply(draftPreset, resolved.from, resolved.to);
-    setOpen(false);
-  }
-
-  return (
-    <Popover open={open} onOpenChange={openPopover}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-xl border border-[#e8edf5] bg-white px-4 py-2.5 text-[13px] font-medium text-[#101828] shadow-sm transition hover:bg-[#f8fafc]"
-        >
-          <CalendarIcon size={16} className="text-[#64748b]" />
-          {fmtRangeLabel(rangeFrom, rangeTo)}
-          <ChevronDown size={14} className={`text-[#94a3b8] transition ${open ? "rotate-180" : ""}`} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[320px] p-3 space-y-3">
-        <p className="text-[12px] font-semibold text-[#64748b] uppercase tracking-wide">Date range</p>
-        <div className="grid grid-cols-2 gap-1.5">
-          {PERIOD_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => selectPreset(p.id)}
-              className={`rounded-lg px-2.5 py-2 text-left text-[12px] font-medium transition ${
-                draftPreset === p.id
-                  ? "bg-[#1a73e8] text-white shadow-sm"
-                  : "bg-[#f8fafc] text-[#475569] hover:bg-[#f0f4ff] hover:text-[#1a73e8]"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[#64748b]">From</label>
-            <Input
-              type="date"
-              value={draftFrom}
-              onChange={(e) => {
-                setDraftPreset("custom");
-                setDraftFrom(e.target.value);
-              }}
-              className="h-9 text-[13px]"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[#64748b]">To</label>
-            <Input
-              type="date"
-              value={draftTo}
-              onChange={(e) => {
-                setDraftPreset("custom");
-                setDraftTo(e.target.value);
-              }}
-              className="h-9 text-[13px]"
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button type="button" size="sm" onClick={apply}>
-            Apply
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 function LineChart({ incomePts, expensePts, labels }: {
@@ -339,17 +151,10 @@ export default function Dashboard() {
     (user?.fullName && user.fullName.trim()) ||
     "there";
 
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("this-month");
-  const [rangeFrom, setRangeFrom] = useState(() => startOfMonth());
-  const [rangeTo, setRangeTo] = useState(() => endOfMonth());
+  const { periodPreset, rangeFrom, rangeTo, applyDateRange } = useDateRangeOptional();
+  const [fyRolloverRequest, setFyRolloverRequest] = useState<{ from: string; to: string } | null>(null);
 
   const periodChipLabel = PERIOD_PRESETS.find((p) => p.id === periodPreset)?.label ?? "Custom Range";
-
-  function applyDateRange(preset: PeriodPreset, from: Date, to: Date) {
-    setPeriodPreset(preset);
-    setRangeFrom(from);
-    setRangeTo(to);
-  }
 
   const { data: invoices = [] } = useListInvoices({
     query: { queryKey: getListInvoicesQueryKey() },
@@ -702,13 +507,23 @@ export default function Dashboard() {
             Welcome back, {userName}! 👋
           </p>
         </div>
-        <DateRangeFilter
-          preset={periodPreset}
-          rangeFrom={rangeFrom}
-          rangeTo={rangeTo}
-          onApply={applyDateRange}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <FinancialYearControls />
+          <DateRangeFilter
+            preset={periodPreset}
+            rangeFrom={rangeFrom}
+            rangeTo={rangeTo}
+            onApply={applyDateRange}
+            showCloseFyButton
+            onCloseFyClick={(from, to) => setFyRolloverRequest({ from, to })}
+          />
+        </div>
       </div>
+
+      <CloseFyStartNextWizard
+        openRequest={fyRolloverRequest}
+        onOpenRequestHandled={() => setFyRolloverRequest(null)}
+      />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

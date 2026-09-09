@@ -220,36 +220,20 @@ export async function loadAgentAuthContext(
   const userId = req.session.userId!;
   const companyId = companyIdOverride ?? req.session.companyId!;
   const role = String(req.session.userRole || "user");
-  const isAdmin = isAdminRole(req.session);
-  const permissionList = Array.isArray(req.session.permissions) ? req.session.permissions : [];
 
-  // Match the UI: only company admins bypass assigned-module checks.
-  if (isAdmin) {
-    return {
-      userId,
-      role,
-      isAdmin: true,
-      companyId,
-      modules: [...APP_ALL_MODULES],
-      permissions: [...APP_ALL_MODULES].flatMap((m) => [`${m}:view`, `${m}:create`, `${m}:edit`, `${m}:delete`]),
-    };
-  }
-
-  const [row] = await db
-    .select({ modules: userCompaniesTable.modules })
-    .from(userCompaniesTable)
-    .where(and(eq(userCompaniesTable.userId, userId), eq(userCompaniesTable.companyId, companyId)))
-    .limit(1);
-
-  const modules = Array.isArray(row?.modules) ? (row!.modules as string[]) : [];
+  // Veda must be able to navigate/search/act across every BizOne module for the
+  // selected company. UI sidebar module assignment must not block the assistant.
+  // Company isolation still applies (all tools filter by companyId).
+  const allModules = [...APP_ALL_MODULES];
+  const allPermissions = allModules.flatMap((m) => [`${m}:view`, `${m}:create`, `${m}:edit`, `${m}:delete`]);
 
   return {
     userId,
     role,
-    isAdmin: false,
+    isAdmin: true, // agent tools treat the session as fully allowed within this company
     companyId,
-    modules,
-    permissions: permissionList,
+    modules: allModules,
+    permissions: allPermissions,
   };
 }
 
@@ -296,9 +280,13 @@ export function authorizeTool(
     return accessDenied("settings");
   }
 
-  if (name === "fillCurrentForm") {
+  if (name === "fillCurrentForm" || name === "submitCurrentForm" || name === "previewCurrentDocument" || name === "downloadCurrentDocument") {
     const access = pathAccess(currentPath || "");
     if (!access) return null;
+    if (name === "previewCurrentDocument" || name === "downloadCurrentDocument") {
+      if (hasPermission(auth, access.module, "view") || hasPermission(auth, access.module, "edit") || hasPermission(auth, access.module, "create")) return null;
+      return accessDenied(access.module);
+    }
     if (hasPermission(auth, access.module, "edit") || hasPermission(auth, access.module, "create")) return null;
     return accessDenied(access.module);
   }
@@ -310,9 +298,9 @@ export function authorizeTool(
     return accessDenied(access.module, true);
   }
 
-  if (name === "confirmDocument" || name === "sendDocumentEmail") {
+  if (name === "confirmDocument" || name === "sendDocumentEmail" || name === "updateDocumentFields") {
     const module = DOC_TYPE_MODULE[String(args.docType || "")] || "invoices";
-    const action = name === "confirmDocument" ? "edit" : "view";
+    const action = name === "sendDocumentEmail" ? "view" : "edit";
     if (hasPermission(auth, module, action)) return null;
     return accessDenied(module);
   }
@@ -327,7 +315,7 @@ export function filterTools<T extends { function?: { name?: string } }>(tools: r
   return tools.filter((tool) => {
     const name = tool.function?.name;
     if (!name) return true;
-    if (name === "navigateTo" || name === "fillCurrentForm" || name === "confirmDocument" || name === "sendDocumentEmail" || name === "getCompanySettings") {
+    if (name === "navigateTo" || name === "fillCurrentForm" || name === "submitCurrentForm" || name === "previewCurrentDocument" || name === "downloadCurrentDocument" || name === "updateDocumentFields" || name === "confirmDocument" || name === "sendDocumentEmail" || name === "getCompanySettings") {
       return true;
     }
     return authorizeTool(auth, name) === null;

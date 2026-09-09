@@ -16,6 +16,7 @@
 import { db, accountsTable, journalEntriesTable, journalLinesTable, expensesTable } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
+import { assertPeriodWritable } from "./financial-year.js";
 
 // Expense category → GL account code (from the default chart of accounts)
 const CATEGORY_ACCOUNT: Record<string, string> = {
@@ -61,6 +62,9 @@ export async function postExpenseJE(
   log?: any,
 ): Promise<number | null> {
   await ensureAccountsSeeded(expense.companyId);
+
+  const periodCheck = await assertPeriodWritable(expense.companyId, expense.expenseDate);
+  if (!periodCheck.ok) throw new Error(periodCheck.error);
 
   // Idempotency: skip if a JE already exists for this expense
   const [existing] = await db.select({ id: journalEntriesTable.id })

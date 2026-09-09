@@ -16,6 +16,7 @@ import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTab
 import { eq, and } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
 import { isSingaporeCountry } from "./singapore.js";
+import { assertPeriodWritable } from "./financial-year.js";
 
 async function isSingapore(companyId: number): Promise<boolean> {
   const [co] = await db.select({ country: companiesTable.country })
@@ -50,6 +51,9 @@ export async function postARPaymentJE(
   if (!(await isSingapore(payment.companyId))) return;
 
   await ensureAccountsSeeded(payment.companyId);
+
+  const periodCheck = await assertPeriodWritable(payment.companyId, payment.paymentDate);
+  if (!periodCheck.ok) throw new Error(periodCheck.error);
 
   const [existing] = await db.select({ id: journalEntriesTable.id })
     .from(journalEntriesTable)

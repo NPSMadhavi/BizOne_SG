@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft, Upload } from "lucide-react";
 import { cn, plainText } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -449,6 +450,12 @@ export default function PurchaseOrderNew() {
       setIsGenerating(false);
     }
   }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit(onSaveDraft)(); },
+    onPreview: () => { void form.handleSubmit(onSaveAndPreview)(); },
+    onDownload: () => { void form.handleSubmit(onSaveAndPreview)(); },
+  });
 
   function handlePoExtracted(data: ExtractedPoData) {
     const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };

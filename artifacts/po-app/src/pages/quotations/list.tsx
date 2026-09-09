@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Search, Plus, MailCheck, CheckCircle2, MoreHorizontal, Eye, Pencil, FileText, Receipt, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
@@ -42,6 +42,7 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
 
 export default function QuotationList() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
@@ -52,6 +53,12 @@ export default function QuotationList() {
   const { selectedCompany } = useAuth();
   const currentYear = new Date().getFullYear();
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  // Veda only: /quotations?status=confirmed — no status chips in UI
+  const statusFilter = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return (params.get("status") || "").toLowerCase();
+  }, [searchString]);
 
   const { data: docs, isLoading } = useListQuotations({
     query: { queryKey: getListQuotationsQueryKey() },
@@ -98,10 +105,11 @@ export default function QuotationList() {
   const bulk = useBulkPartyEmail({ allDocs: docs ?? [], dateFiltered: filteredByDate, getPartyName });
 
   const filtered = useMemo(() => filteredByDate.filter((d) => {
+    if (statusFilter && d.status !== statusFilter) return false;
     if (!bulk.matchesParty(d)) return false;
     const t = searchTerm.toLowerCase();
     return d.qtNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-  }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty]);
+  }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty, statusFilter]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
   const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,6 +50,7 @@ const ACTIVE_STATUSES = new Set(["confirmed", "sent", "draft", "partial"]);
 
 export default function InvoiceList() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
@@ -58,6 +59,12 @@ export default function InvoiceList() {
   const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  // Veda only: /invoices?status=paid — no status chips in UI
+  const statusFilter = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return (params.get("status") || "").toLowerCase();
+  }, [searchString]);
 
   const { data: docs = [], isLoading } = useListInvoices({
     query: { queryKey: getListInvoicesQueryKey() },
@@ -94,10 +101,11 @@ export default function InvoiceList() {
 
   const filtered = useMemo(() =>
     filteredByDate.filter(d => {
+      if (statusFilter && d.status !== statusFilter) return false;
       if (!bulk.matchesParty(d)) return false;
       const t = searchTerm.toLowerCase();
       return d.invNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-    }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty]);
+    }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty, statusFilter]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
   const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);

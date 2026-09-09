@@ -43,7 +43,7 @@ export function FormPageShell({
 
       <div
         className={cn(
-          "rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-sm md:p-8",
+          "rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm md:p-5",
           "[&_input:not([type=checkbox]):not([type=radio])]:h-10 [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-white [&_input:not([type=checkbox]):not([type=radio])]:text-[#111827] [&_input:not([type=checkbox]):not([type=radio])]:shadow-sm [&_input:not([type=checkbox]):not([type=radio])]:placeholder:text-[#9CA3AF]",
           "[&_textarea]:border-[#E5E7EB] [&_textarea]:bg-white [&_textarea]:text-[#111827] [&_textarea]:placeholder:text-[#9CA3AF]",
           "[&_[role=combobox]]:h-10 [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-white [&_[role=combobox]]:text-[#111827] [&_[role=combobox]]:shadow-sm",

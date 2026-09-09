@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import signature from "cookie-signature";
 import pg from "pg";
 import path from "path";
 import fs from "fs";
@@ -10,6 +11,10 @@ import fs from "fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { seedCompanies } from "./routes/companies";
+
+// cookie-signature may be CJS; ensure .sign exists
+const signCookie = (sid: string, secret: string) =>
+  "s:" + (signature as { sign: (val: string, secret: string) => string }).sign(sid, secret);
 
 const app: Express = express();
 
@@ -77,6 +82,23 @@ pgPool
       "Failed to create session table",
     );
   });
+
+/**
+ * Mobile clients (React Native) often cannot read Set-Cookie.
+ * Accept unsigned session id via X-BizOne-Session and inject a signed cookie
+ * before express-session runs.
+ */
+app.use((req, _res, next) => {
+  const mobileSid = req.headers["x-bizone-session"];
+  if (typeof mobileSid === "string" && mobileSid.length > 5) {
+    const existing = req.headers.cookie || "";
+    if (!existing.includes("bizone.sid=")) {
+      const signed = signCookie(mobileSid, sessionSecret);
+      req.headers.cookie = `bizone.sid=${signed}${existing ? `; ${existing}` : ""}`;
+    }
+  }
+  next();
+});
 
 app.use(
   session({

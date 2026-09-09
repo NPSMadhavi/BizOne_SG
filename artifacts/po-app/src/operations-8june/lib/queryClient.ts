@@ -30,7 +30,7 @@ async function throwIfResNotOk(res: Response) {
     
     // For 500 errors, provide more context
     if (res.status === 500) {
-      throw new Error(errorData.message || "Internal server error. Please check server logs.");
+      throw new Error(errorData.message || errorData.error || "Internal server error. Please check server logs.");
     }
     
     // Express default 404 pages come back as HTML — show a clear message instead

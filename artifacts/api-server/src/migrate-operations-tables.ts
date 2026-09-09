@@ -54,6 +54,9 @@ const OPERATIONS_TABLE_MIGRATIONS = [
     visa_remarks TEXT,
     nric_number TEXT,
     nric_expiry TIMESTAMPTZ,
+    passport_scan TEXT,
+    visa_scan TEXT,
+    nric_scan TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`,
   `CREATE TABLE IF NOT EXISTS dependents (

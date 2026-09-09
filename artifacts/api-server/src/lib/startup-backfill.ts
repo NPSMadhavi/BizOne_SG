@@ -21,6 +21,202 @@ export async function runStartupMigrations(): Promise<void> {
 
   const steps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     {
+      name: "financial_years and opening balance tables",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS financial_years (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          label text NOT NULL,
+          start_date text NOT NULL,
+          end_date text NOT NULL,
+          status text NOT NULL DEFAULT 'inactive',
+          audit_status text NOT NULL DEFAULT 'pending',
+          closed_at timestamptz,
+          closed_by integer,
+          closed_by_username text,
+          activated_at timestamptz,
+          activated_by integer,
+          activated_by_username text,
+          reopened_at timestamptz,
+          reopened_by integer,
+          opening_balances_generated boolean NOT NULL DEFAULT false,
+          opening_journal_entry_id integer,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS financial_years_company_dates_uidx
+          ON financial_years (company_id, start_date, end_date);
+
+        CREATE TABLE IF NOT EXISTS opening_balances (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          financial_year_id integer NOT NULL,
+          account_id integer,
+          account_code text NOT NULL,
+          account_name text NOT NULL,
+          account_type text,
+          debit numeric(15,2) NOT NULL DEFAULT 0,
+          credit numeric(15,2) NOT NULL DEFAULT 0,
+          notes text,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS customer_opening_balances (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          financial_year_id integer NOT NULL,
+          customer_id integer,
+          customer_name text NOT NULL,
+          amount numeric(15,2) NOT NULL DEFAULT 0,
+          currency text NOT NULL DEFAULT 'SGD',
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS vendor_opening_balances (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          financial_year_id integer NOT NULL,
+          vendor_id integer,
+          vendor_name text NOT NULL,
+          amount numeric(15,2) NOT NULL DEFAULT 0,
+          currency text NOT NULL DEFAULT 'SGD',
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS inventory_opening_balances (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          financial_year_id integer NOT NULL,
+          stock_item_id integer,
+          item_code text,
+          item_name text NOT NULL,
+          warehouse_id integer,
+          warehouse_name text,
+          quantity numeric(15,4) NOT NULL DEFAULT 0,
+          value numeric(15,2) NOT NULL DEFAULT 0,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS fixed_asset_opening_balances (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          financial_year_id integer NOT NULL,
+          account_code text,
+          description text NOT NULL,
+          amount numeric(15,2) NOT NULL DEFAULT 0,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS bank_opening_balances (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          financial_year_id integer NOT NULL,
+          account_id integer,
+          account_code text NOT NULL,
+          account_name text NOT NULL,
+          amount numeric(15,2) NOT NULL DEFAULT 0,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+      `,
+    },
+    {
+      name: "accounting_backups schedule and retention tables",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS accounting_backups (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          backup_code text NOT NULL,
+          backup_type text NOT NULL,
+          from_date text,
+          to_date text,
+          financial_year_id integer,
+          financial_year_label text,
+          status text NOT NULL DEFAULT 'pending',
+          storage_path text,
+          storage_ref text,
+          file_size_bytes bigint,
+          checksum_sha256 text,
+          backup_source text NOT NULL DEFAULT 'manual',
+          schedule_id integer,
+          error_message text,
+          created_by integer,
+          created_by_username text,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          completed_at timestamptz,
+          restored_at timestamptz,
+          restored_by integer
+        );
+        CREATE INDEX IF NOT EXISTS accounting_backups_company_idx ON accounting_backups (company_id);
+        CREATE INDEX IF NOT EXISTS accounting_backups_status_idx ON accounting_backups (company_id, status);
+
+        CREATE TABLE IF NOT EXISTS backup_schedules (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          enabled boolean NOT NULL DEFAULT true,
+          frequency text NOT NULL,
+          time_of_day text NOT NULL DEFAULT '23:00',
+          day_of_week integer,
+          backup_type text NOT NULL DEFAULT 'accounting',
+          last_run_at timestamptz,
+          next_run_at timestamptz,
+          created_by integer,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS backup_retention_settings (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL UNIQUE,
+          daily_keep_days integer NOT NULL DEFAULT 30,
+          weekly_keep_weeks integer NOT NULL DEFAULT 12,
+          monthly_keep_months integer NOT NULL DEFAULT 12,
+          financial_year_keep_forever boolean NOT NULL DEFAULT true,
+          updated_by integer,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS accounting_restore_operations (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          restore_code text NOT NULL,
+          backup_id integer NOT NULL,
+          backup_code text NOT NULL,
+          restore_type text NOT NULL,
+          status text NOT NULL DEFAULT 'PENDING',
+          safety_backup_id integer,
+          safety_backup_code text,
+          steps_json text,
+          result_message text,
+          error_details text,
+          started_by integer,
+          started_by_username text,
+          started_at timestamptz NOT NULL DEFAULT now(),
+          completed_at timestamptz
+        );
+        CREATE INDEX IF NOT EXISTS accounting_restore_ops_company_idx ON accounting_restore_operations (company_id);
+        CREATE INDEX IF NOT EXISTS accounting_restore_ops_backup_idx ON accounting_restore_operations (backup_id);
+      `,
+    },
+    {
+      name: "ensure accounting_restore_operations table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS accounting_restore_operations (
+          id serial PRIMARY KEY,
+          company_id integer NOT NULL,
+          restore_code text NOT NULL,
+          backup_id integer NOT NULL,
+          backup_code text NOT NULL,
+          restore_type text NOT NULL,
+          status text NOT NULL DEFAULT 'PENDING',
+          safety_backup_id integer,
+          safety_backup_code text,
+          steps_json text,
+          result_message text,
+          error_details text,
+          started_by integer,
+          started_by_username text,
+          started_at timestamptz NOT NULL DEFAULT now(),
+          completed_at timestamptz
+        );
+        CREATE INDEX IF NOT EXISTS accounting_restore_ops_company_idx ON accounting_restore_operations (company_id);
+        CREATE INDEX IF NOT EXISTS accounting_restore_ops_backup_idx ON accounting_restore_operations (backup_id);
+      `,
+    },
+    {
       name: "stock_items.batch_no",
       sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batch_no text`,
     },
@@ -265,6 +461,22 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "settings.dn_suffix",
       sql: sql`ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_suffix text NOT NULL DEFAULT ''`,
+    },
+    {
+      name: "settings.fa running numbers",
+      sql: sql`
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_prefix text DEFAULT 'FA';
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_counter integer NOT NULL DEFAULT 0;
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_suffix text DEFAULT '';
+      `,
+    },
+    {
+      name: "employees document scan columns",
+      sql: sql`
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_scan text;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_scan text;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS nric_scan text;
+      `,
     },
     {
       name: "companies.gst_reg_no",

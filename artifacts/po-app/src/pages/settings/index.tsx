@@ -157,6 +157,7 @@ export default function Settings() {
   const [rnST, setRnST] = useState<RunningNumberConfig>({ prefix: "ST", counter: "0", suffix: "" });
   const [rnSA, setRnSA] = useState<RunningNumberConfig>({ prefix: "SA", counter: "0", suffix: "" });
   const [rnSI, setRnSI] = useState<RunningNumberConfig>({ prefix: "STK", counter: "0", suffix: "" });
+  const [rnFA, setRnFA] = useState<RunningNumberConfig>({ prefix: "FA", counter: "0", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
 
   const [maintEnabled, setMaintEnabled] = useState(false);
@@ -243,6 +244,7 @@ export default function Settings() {
       setRnST({ prefix: (settings as any).stPrefix ?? "ST", counter: String((settings as any).stCounter ?? 0), suffix: (settings as any).stSuffix ?? "" });
       setRnSA({ prefix: (settings as any).saPrefix ?? "SA", counter: String((settings as any).saCounter ?? 0), suffix: (settings as any).saSuffix ?? "" });
       setRnSI({ prefix: (settings as any).siPrefix ?? "STK", counter: String((settings as any).siCounter ?? 0), suffix: (settings as any).siSuffix ?? "" });
+      setRnFA({ prefix: (settings as any).faPrefix ?? "FA", counter: String((settings as any).faCounter ?? 0), suffix: (settings as any).faSuffix ?? "" });
     }
     if (settings && !docsEditing) {
       setBankDetails((settings as any).bankDetails ?? "");
@@ -330,6 +332,7 @@ export default function Settings() {
           stPrefix: rnST.prefix, stCounter: parseInt(rnST.counter) || 0, stSuffix: rnST.suffix,
           saPrefix: rnSA.prefix, saCounter: parseInt(rnSA.counter) || 0, saSuffix: rnSA.suffix,
           siPrefix: rnSI.prefix, siCounter: parseInt(rnSI.counter) || 0, siSuffix: rnSI.suffix,
+          faPrefix: rnFA.prefix, faCounter: parseInt(rnFA.counter) || 0, faSuffix: rnFA.suffix,
         } as any,
       },
       {
@@ -592,6 +595,7 @@ export default function Settings() {
                     { label: "Goods Issue Note (GIN)", state: rnGIN, setter: setRnGIN },
                     { label: "Stock Adjustment", state: rnSA, setter: setRnSA },
                     { label: "Stock Item Code", state: rnSI, setter: setRnSI },
+                    { label: "Fixed Asset Tag", state: rnFA, setter: setRnFA },
                   ] as { label: string; state: RunningNumberConfig; setter: (v: RunningNumberConfig) => void }[]).map(({ label, state, setter }) => (
                     <div key={label} className="rounded-lg border p-4 space-y-3">
                       <div className="flex items-center justify-between">

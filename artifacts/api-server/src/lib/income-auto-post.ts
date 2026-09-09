@@ -21,6 +21,7 @@
 import { db, accountsTable, journalEntriesTable, journalLinesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
+import { assertPeriodWritable } from "./financial-year.js";
 
 async function getAccountByCode(companyId: number, code: string) {
   const [acct] = await db.select()
@@ -52,6 +53,9 @@ export async function postIncomeJE(
   log?: any,
 ): Promise<void> {
   await ensureAccountsSeeded(income.companyId);
+
+  const periodCheck = await assertPeriodWritable(income.companyId, income.incomeDate);
+  if (!periodCheck.ok) throw new Error(periodCheck.error);
 
   // Idempotency check
   const [existing] = await db.select({ id: journalEntriesTable.id })

@@ -11,6 +11,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Globe, Info, Check, Trash2, Plus } from "lucide-react";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
+import { SingaporePhoneInput } from "@/components/singapore-phone-input";
+import { formatSingaporePhoneForApi, parseSingaporePhoneDigits } from "@/lib/singapore-phone";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
@@ -35,7 +37,7 @@ interface Customer {
 }
 
 const blank = () => ({
-  name: "", address: "", postalCode: "", country: "", contactPerson: "",
+  name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
   contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "",
   shipToAddress: "", quotationTerms: "", isActive: true,
 });
@@ -116,8 +118,11 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setField("phone", e.target.value)} />
+              <Label>Phone Number</Label>
+              <SingaporePhoneInput
+                value={form.phone}
+                onChange={(digits) => setField("phone", digits)}
+              />
             </div>
           </div>
 
@@ -266,7 +271,16 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={!form.name || mutation.isPending}>
+          <Button
+            onClick={() => {
+              const digits = parseSingaporePhoneDigits(form.phone || "");
+              mutation.mutate({
+                ...form,
+                phone: digits ? formatSingaporePhoneForApi(digits) : "",
+              });
+            }}
+            disabled={!form.name || mutation.isPending}
+          >
             {mutation.isPending ? "Saving…" : "Create Customer"}
           </Button>
         </DialogFooter>

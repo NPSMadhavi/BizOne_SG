@@ -20,6 +20,7 @@
 import { db, accountsTable, journalEntriesTable, journalLinesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
+import { assertPeriodWritable } from "./financial-year.js";
 
 async function getAccountByCode(companyId: number, code: string) {
   const [acct] = await db.select()
@@ -55,6 +56,10 @@ export async function postVendorInvoiceJE(
 
   await ensureAccountsSeeded(pi.companyId);
 
+  const entryDate = pi.piDate || new Date().toISOString().split("T")[0];
+  const periodCheck = await assertPeriodWritable(pi.companyId, entryDate);
+  if (!periodCheck.ok) throw new Error(periodCheck.error);
+
   const [existing] = await db.select({ id: journalEntriesTable.id })
     .from(journalEntriesTable)
     .where(and(
@@ -78,7 +83,6 @@ export async function postVendorInvoiceJE(
   const gst      = parseFloat(String(pi.gstAmount ?? "0"));
   const net      = total - gst;
   const isSR     = !pi.gstTreatment || pi.gstTreatment === "standard_rated";
-  const entryDate = pi.piDate || new Date().toISOString().split("T")[0];
   const desc     = `Vendor PI ${pi.piNumber} — ${pi.vendorName}`;
 
   try {

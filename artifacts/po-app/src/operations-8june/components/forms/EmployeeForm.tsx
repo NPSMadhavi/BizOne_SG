@@ -390,7 +390,7 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="employeeId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Employee ID *</FormLabel>
+                    <FormLabel className={formLabelClass}>Employee ID <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                       <Input
                         placeholder=""
@@ -407,7 +407,7 @@ export default function EmployeeForm({
                 )} />
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Employee Name *</FormLabel>
+                    <FormLabel className={formLabelClass}>Employee Name <span className="text-destructive">*</span></FormLabel>
                     <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -418,14 +418,14 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="email" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Email *</FormLabel>
+                    <FormLabel className={formLabelClass}>Email <span className="text-destructive">*</span></FormLabel>
                     <FormControl><Input type="email" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="phone" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Phone Number *</FormLabel>
+                    <FormLabel className={formLabelClass}>Phone Number <span className="text-destructive">*</span></FormLabel>
                     <FormControl><Input type="tel" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -436,7 +436,7 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="department" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Department *</FormLabel>
+                    <FormLabel className={formLabelClass}>Department <span className="text-destructive">*</span></FormLabel>
                     <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -444,7 +444,7 @@ export default function EmployeeForm({
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="salary" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Monthly Salary *</FormLabel>
+                      <FormLabel className={formLabelClass}>Monthly Salary <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
                         <Input
                           type="text"
@@ -498,7 +498,7 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="designation" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Designation *</FormLabel>
+                    <FormLabel className={formLabelClass}>Designation <span className="text-destructive">*</span></FormLabel>
                     <FormControl><Input {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -506,7 +506,7 @@ export default function EmployeeForm({
                 <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="nationality" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Nationality *</FormLabel>
+                      <FormLabel className={formLabelClass}>Nationality <span className="text-destructive">*</span></FormLabel>
                       <Select
                         onValueChange={(value) => {
                           field.onChange(value);
@@ -529,7 +529,7 @@ export default function EmployeeForm({
                   <FormField control={form.control} name="prStatus" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>
-                        PR Status{isPrNationality ? " *" : ""}
+                        PR Status{isPrNationality ? <> <span className="text-destructive">*</span></> : null}
                       </FormLabel>
                       <Select
                         onValueChange={field.onChange}
@@ -557,7 +557,7 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="joinDate" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Joining Date *</FormLabel>
+                    <FormLabel className={formLabelClass}>Joining Date <span className="text-destructive">*</span></FormLabel>
                     <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select joining date" max={new Date().toISOString().split("T")[0]} min="1900-01-01" /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -584,7 +584,7 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Date of Birth *</FormLabel>
+                    <FormLabel className={formLabelClass}>Date of Birth <span className="text-destructive">*</span></FormLabel>
                     <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select date of birth" max={new Date().toISOString().split("T")[0]} min="1900-01-01" /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -683,7 +683,7 @@ export default function EmployeeForm({
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="address" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Address *</FormLabel>
+                    <FormLabel className={formLabelClass}>Address <span className="text-destructive">*</span></FormLabel>
                     <FormControl><Textarea className="min-h-[100px]" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -872,7 +872,7 @@ export default function EmployeeForm({
                                   name={`dependents.${index}.name`}
                                   render={({ field }) => (
                                     <FormItem>
-                                      <FormLabel>Full Name*</FormLabel>
+                                      <FormLabel>Full Name<span className="text-destructive">*</span></FormLabel>
                                       <FormControl>
                                         <Input {...field} />
                                       </FormControl>
@@ -887,7 +887,7 @@ export default function EmployeeForm({
                                   name={`dependents.${index}.relationship`}
                                   render={({ field }) => (
                                     <FormItem>
-                                      <FormLabel>Relationship*</FormLabel>
+                                      <FormLabel>Relationship<span className="text-destructive">*</span></FormLabel>
                                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                                         <FormControl>
                                           <SelectTrigger>

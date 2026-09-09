@@ -299,7 +299,16 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     req.session.companyId = sessionCompanyId;
   }
 
-  res.json({ user: formatUser(user, companies, req.session.companyId, req.session.permissions) });
+  req.session.save((err) => {
+    if (err) {
+      res.status(500).json({ error: "Failed to create session" });
+      return;
+    }
+    res.json({
+      user: formatUser(user, companies, req.session.companyId, req.session.permissions),
+      sessionId: req.sessionID,
+    });
+  });
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {

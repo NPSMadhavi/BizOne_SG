@@ -9,6 +9,7 @@ import {
   reversePaymentJE,
 } from "../lib/vendor-invoice-auto-post.js";
 import { nextDocNumber } from "../lib/running-numbers.js";
+import { assertPeriodWritable } from "../lib/financial-year.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -116,6 +117,9 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   if (!totalAmount || isNaN(Number(totalAmount)) || Number(totalAmount) <= 0) {
     res.status(400).json({ error: "Valid total amount is required" }); return;
   }
+  const resolvedPiDate = piDate || new Date().toISOString().split("T")[0];
+  const periodCheck = await assertPeriodWritable(companyId, resolvedPiDate);
+  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
 
   const resolvedPiNumber = (typeof piNumber === "string" && piNumber.trim())
     ? piNumber.trim()
@@ -134,7 +138,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     const [doc] = await db.insert(vendorInvoicesTable).values({
       companyId,
       piNumber: resolvedPiNumber,
-      piDate: piDate || new Date().toISOString().split("T")[0],
+      piDate: resolvedPiDate,
       paymentTerms: paymentTerms || "30 Days Net",
       dueDate: dueDate || null,
       plannedPaymentDate: plannedPaymentDate || null,

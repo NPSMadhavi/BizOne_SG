@@ -15,6 +15,7 @@ import { Plus, Search, Eye, Trash2, BookOpen } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import { ClosedYearBanner, usePeriodReadOnly } from "@/components/financial-year-controls";
 
 interface JournalEntry {
   id: number;
@@ -44,6 +45,7 @@ export default function JournalEntriesList() {
   const { canManage } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { readOnly } = usePeriodReadOnly();
 
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -85,6 +87,7 @@ export default function JournalEntriesList() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      <ClosedYearBanner />
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Journal Entries</h1>
@@ -92,9 +95,11 @@ export default function JournalEntriesList() {
             {isLoading ? "Loading…" : `${filtered.length} entr${filtered.length !== 1 ? "ies" : "y"}`}
           </p>
         </div>
-        <Button className="gap-2" onClick={() => setLocation("/accounting/journal-entries/new")}>
-          <Plus className="h-4 w-4" /> New Journal Entry
-        </Button>
+        {!readOnly && (
+          <Button className="gap-2" onClick={() => setLocation("/accounting/journal-entries/new")}>
+            <Plus className="h-4 w-4" /> New Journal Entry
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -185,7 +190,7 @@ export default function JournalEntriesList() {
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        {canManage && entry.refType === "manual" && (
+                        {canManage && !readOnly && entry.refType === "manual" && (
                           <Button
                             variant="ghost" size="sm"
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"

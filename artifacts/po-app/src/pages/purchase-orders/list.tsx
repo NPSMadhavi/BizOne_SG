@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Search, Plus, ArrowRight, MailCheck, Calendar, ChevronLeft, ChevronRight, Mail } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,6 +50,7 @@ function isSendable(po: PurchaseOrder) {
 
 export default function PurchaseOrderList() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [searchTerm, setSearchTerm] = useState("");
   const [vendorFilter, setVendorFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -61,6 +62,18 @@ export default function PurchaseOrderList() {
   const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const currentYear = new Date().getFullYear();
+
+  // Veda only: /purchase-orders?status=confirmed (no status chips in UI)
+  const statusFilter = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return (params.get("status") || "").toLowerCase();
+  }, [searchString]);
+
+  const clearListFilters = () => {
+    setSearchTerm("");
+    setVendorFilter("all");
+    setLocation("/purchase-orders");
+  };
 
   const { data: pos, isLoading } = useListPurchaseOrders({
     query: {
@@ -113,11 +126,12 @@ export default function PurchaseOrderList() {
   }, [pos, filterMode, filterYear, customFrom, customTo]);
 
   const filteredPOs = useMemo(() => filteredByDate.filter(po => {
+    if (statusFilter && po.status !== statusFilter) return false;
     if (vendorFilter !== "all" && po.vendorName !== vendorFilter) return false;
     const term = searchTerm.toLowerCase();
     if (!term) return true;
     return po.poNumber.toLowerCase().includes(term) || po.vendorName.toLowerCase().includes(term);
-  }), [filteredByDate, searchTerm, vendorFilter]);
+  }), [filteredByDate, searchTerm, vendorFilter, statusFilter]);
 
   const sendableFiltered = useMemo(
     () => filteredPOs.filter(isSendable),
@@ -225,7 +239,7 @@ export default function PurchaseOrderList() {
         )}
       </div>
 
-      <Card className="p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+      <Card className="p-4 flex flex-col sm:flex-row gap-3 sm:items-center flex-wrap">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search by PO Number or Vendor..." className="pl-9" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -287,9 +301,9 @@ export default function PurchaseOrderList() {
                   <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <Search className="h-8 w-8 text-muted-foreground/50"/>
-                      <p>No purchase orders found.</p>
-                      {(searchTerm || vendorFilter !== "all") && (
-                        <Button variant="link" onClick={() => { setSearchTerm(""); setVendorFilter("all"); }}>Clear filters</Button>
+                      <p>No purchase orders found{statusFilter ? ` with status "${statusFilter}"` : ""}.</p>
+                      {(searchTerm || vendorFilter !== "all" || statusFilter) && (
+                        <Button variant="link" onClick={clearListFilters}>Clear filters</Button>
                       )}
                     </div>
                   </td>

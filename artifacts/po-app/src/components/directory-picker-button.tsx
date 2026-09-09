@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useGetSettings } from "@workspace/api-client-react";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
 import { CustomerCreateDialog } from "@/components/customer-create-dialog";
+import { isInternationalParty, isSameCountry } from "@/lib/countries";
 
 interface DirectoryEntry {
   id: number;
@@ -37,6 +38,8 @@ export interface PickedEntry {
   contactEmail: string;
   phone: string;
   effectiveGstRate: number;
+  /** True when party country differs from company country (SG vs Singapore treated as same). */
+  isOverseas: boolean;
   gstNo: string;
   country: string;
   fullAddress: string;
@@ -91,31 +94,48 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
     (e.address || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  function computeEffectiveGst(entry: DirectoryEntry): number {
+  function computeEffectiveGst(entry: { country?: string | null; gstRegistered?: boolean }): number {
     if (!entry.gstRegistered) return 0;
-    const entryCountry = (entry.country || "").toLowerCase();
-    const coCountry = companyCountry.toLowerCase();
-    if (!entryCountry || !coCountry || entryCountry !== coCountry) return 0;
+    // Local GST only when party country matches company (SG === Singapore)
+    if (!isSameCountry(entry.country, companyCountry)) return 0;
     return companyGstRate;
   }
 
-  function handlePick(entry: DirectoryEntry) {
-    const effectiveGstRate = computeEffectiveGst(entry);
-    onSelect({
+  function toPickedEntry(entry: {
+    name: string;
+    address?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+    contactPerson?: string | null;
+    contactEmail?: string | null;
+    phone?: string | null;
+    currency?: string | null;
+    gstRegistered?: boolean;
+    gstNo?: string | null;
+    shipToAddress?: string | null;
+    quotationTerms?: string | null;
+  }): PickedEntry {
+    const isOverseas = isInternationalParty(entry.country, companyCountry);
+    return {
       name: entry.name,
       address: entry.address || "",
       postalCode: entry.postalCode || "",
       contactPerson: entry.contactPerson || "",
       contactEmail: entry.contactEmail || "",
       phone: entry.phone || "",
-      effectiveGstRate,
+      effectiveGstRate: computeEffectiveGst(entry),
+      isOverseas,
       gstNo: entry.gstNo || "",
       country: entry.country || "",
       fullAddress: buildFullAddress(entry),
       currency: entry.currency || "",
       shipToAddress: entry.shipToAddress || "",
       quotationTerms: entry.quotationTerms || "",
-    });
+    };
+  }
+
+  function handlePick(entry: DirectoryEntry) {
+    onSelect(toPickedEntry(entry));
     setSearch("");
     setOpen(false);
   }
@@ -138,25 +158,7 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
     phone?: string | null; currency?: string | null; gstRegistered?: boolean; gstNo?: string | null;
     shipToAddress?: string | null; quotationTerms?: string | null;
   }) {
-    const entryCountry = (entry.country || "").toLowerCase();
-    const coCountry = companyCountry.toLowerCase();
-    const isLocal = entryCountry && coCountry && entryCountry === coCountry;
-    const effectiveGstRate = entry.gstRegistered && isLocal ? companyGstRate : 0;
-    onSelect({
-      name: entry.name,
-      address: entry.address || "",
-      postalCode: entry.postalCode || "",
-      contactPerson: entry.contactPerson || "",
-      contactEmail: entry.contactEmail || "",
-      phone: entry.phone || "",
-      effectiveGstRate,
-      gstNo: entry.gstNo || "",
-      country: entry.country || "",
-      fullAddress: buildFullAddress(entry),
-      currency: entry.currency || "",
-      shipToAddress: entry.shipToAddress || "",
-      quotationTerms: entry.quotationTerms || "",
-    });
+    onSelect(toPickedEntry(entry));
   }
 
   const Icon = type === "vendor" ? Building2 : Users2;
@@ -231,7 +233,7 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
             ) : (
               filtered.map(entry => {
                 const effectiveGst = computeEffectiveGst(entry);
-                const isLocal = (entry.country || "").toLowerCase() === companyCountry.toLowerCase();
+                const isLocal = isSameCountry(entry.country, companyCountry);
                 return (
                   <button
                     key={entry.id}

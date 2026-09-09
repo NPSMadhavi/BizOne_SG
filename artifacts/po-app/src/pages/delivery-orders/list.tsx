@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { Search, Plus, Eye, Pencil, MailCheck, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +37,7 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
 
 export default function DeliveryOrderList() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
@@ -45,6 +46,12 @@ export default function DeliveryOrderList() {
   const currentYear = new Date().getFullYear();
   const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
+
+  // Veda only: /delivery-orders?status=confirmed — no status chips in UI
+  const statusFilter = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return (params.get("status") || "").toLowerCase();
+  }, [searchString]);
 
   const { data: docs, isLoading } = useListDeliveryOrders({
     query: { queryKey: getListDeliveryOrdersQueryKey() },
@@ -75,10 +82,11 @@ export default function DeliveryOrderList() {
   const bulk = useBulkPartyEmail<(typeof filteredByDate)[number]>({ allDocs: docs ?? [], dateFiltered: filteredByDate, getPartyName });
 
   const filtered = useMemo(() => filteredByDate.filter((d) => {
+    if (statusFilter && d.status !== statusFilter) return false;
     if (!bulk.matchesParty(d)) return false;
     const t = searchTerm.toLowerCase();
     return d.doNumber.toLowerCase().includes(t) || d.customerName.toLowerCase().includes(t);
-  }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty]);
+  }), [filteredByDate, searchTerm, bulk.partyFilter, bulk.matchesParty, statusFilter]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
   const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
