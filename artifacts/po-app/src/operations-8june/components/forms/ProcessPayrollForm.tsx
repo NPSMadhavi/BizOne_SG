@@ -12,15 +12,19 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { StringDatePicker } from "@/operations-8june/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/operations-8june/lib/queryClient";
-import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
+import {
+  calculateSyncBridgePayrollPreview,
+  type SyncBridgePayrollPreview,
+} from "@/operations-8june/lib/payroll-utils";
 import {
   processIndividualPayrollForConfig,
+  batchProcessPayrollForPeriod,
   findPayrollRecordForPeriod,
   hasPayrollDataChanged,
+  resolveBatchPayrollStatus,
   derivePayrollMonthYear,
   getLastCompletedPayPeriod,
   normalizePayPeriodFromDate,
@@ -44,8 +48,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+/** Special employeeId value: process every active payroll config. */
+const ALL_EMPLOYEES_ID = 0;
+
 const processPayrollSchema = z.object({
-  employeeId: z.coerce.number().min(1, "Please select an employee"),
+  employeeId: z.coerce.number().min(0, "Please select an employee"),
   payPeriodStart: z.string().min(1, "Start date is required"),
   payPeriodEnd: z.string().min(1, "End date is required"),
 });
@@ -57,7 +64,15 @@ interface ProcessPayrollFormProps {
   onCancel: () => void;
 }
 
-type ProcessedDialogMode = "overwrite" | "no-changes" | null;
+type ProcessedDialogMode = "overwrite" | "no-changes" | "pending" | null;
+
+type PreviewView = SyncBridgePayrollPreview & {
+  monthlySalary: number;
+  mode: "individual" | "all";
+  employeeCount: number;
+  /** When bulk / mixed rates, rates are omitted in the UI */
+  ratesMixed?: boolean;
+};
 
 function applyPayPeriodMonth(
   dateStr: string,
@@ -94,6 +109,35 @@ function formatCurrency(amount: number) {
   }).format(amount || 0);
 }
 
+function buildEmployeePreview(config: any, employee: any): SyncBridgePayrollPreview & { monthlySalary: number } {
+  const baseSalary = parseFloat(config.baseSalary) || 0;
+  const allowances = config.allowances || {};
+  const deductions = config.deductions || {};
+  const otFromConfig =
+    Number(allowances.overtime) ||
+    (parseFloat(config.overtimeRate || "0") || 0) * (parseFloat(config.hourlyRate || "0") || 0);
+  const overtimePay = Math.round(otFromConfig * 100) / 100;
+  const dob = employee.dateOfBirth ? new Date(employee.dateOfBirth) : null;
+  const age = dob && !Number.isNaN(dob.getTime()) ? calculateAge(dob) : 30;
+
+  const preview = calculateSyncBridgePayrollPreview({
+    monthlySalary: baseSalary,
+    age,
+    citizenshipStatus: mapNationalityToCitizenship(employee.nationality),
+    prStatus: employee.prStatus,
+    overtimePay,
+    allowances: {
+      transport: Number(allowances.transport) || 0,
+      meal: Number(allowances.meal) || 0,
+      phone: Number(allowances.phone) || 0,
+      others: Number(allowances.others) || 0,
+    },
+    deductions,
+  });
+
+  return { ...preview, monthlySalary: baseSalary };
+}
+
 export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayrollFormProps) {
   const { toast } = useToast();
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
@@ -117,6 +161,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const form = useForm<ProcessPayrollFormData>({
     resolver: zodResolver(processPayrollSchema),
     defaultValues: {
+      employeeId: undefined as unknown as number,
       ...getLastCompletedPayPeriod(),
     },
   });
@@ -124,12 +169,30 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const employeeId = form.watch("employeeId");
   const payPeriodStart = form.watch("payPeriodStart");
   const payPeriodEnd = form.watch("payPeriodEnd");
+  const isAllEmployees = Number(employeeId) === ALL_EMPLOYEES_ID;
   const dialogPayPeriodStart = pendingFormData?.payPeriodStart ?? payPeriodStart;
   const dialogMonthLabel = derivePayrollMonthYear(dialogPayPeriodStart).monthLabel;
 
-  const openProcessedDialog = (data: ProcessPayrollFormData, dataChanged: boolean) => {
+  const activeConfigs = useMemo(
+    () => payrollConfigs.filter((c: any) => c.isActive),
+    [payrollConfigs]
+  );
+
+  const activeConfigEmployeePairs = useMemo(() => {
+    return activeConfigs
+      .map((config: any) => {
+        const employee = employees.find(
+          (emp: any) => Number(emp.id) === Number(config.employeeId)
+        );
+        if (!employee) return null;
+        return { config, employee };
+      })
+      .filter(Boolean) as Array<{ config: any; employee: any }>;
+  }, [activeConfigs, employees]);
+
+  const openProcessedDialog = (data: ProcessPayrollFormData, mode: ProcessedDialogMode) => {
     setPendingFormData(data);
-    setProcessedDialogMode(dataChanged ? "overwrite" : "no-changes");
+    setProcessedDialogMode(mode);
     setProcessedDialogOpen(true);
   };
 
@@ -139,29 +202,14 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
     setPendingFormData(null);
   };
 
-  const resolvePayrollChangeStatus = (data: ProcessPayrollFormData) => {
-    const config = payrollConfigs.find(
-      (c: any) => Number(c.employeeId) === Number(data.employeeId) && c.isActive
-    );
-    const existingRecord = findPayrollRecordForPeriod(
-      data.employeeId,
-      payrollRecords,
-      data.payPeriodStart,
-      data.payPeriodEnd
-    );
-
-    if (!existingRecord) {
-      return { alreadyProcessed: false, dataChanged: false };
+  useEffect(() => {
+    if (!employeeId && employeeId !== 0) {
+      setSelectedEmployee(null);
+      setPayrollConfig(null);
+      return;
     }
 
-    return {
-      alreadyProcessed: true,
-      dataChanged: hasPayrollDataChanged(config, existingRecord, 0),
-    };
-  };
-
-  useEffect(() => {
-    if (!employeeId) {
+    if (Number(employeeId) === ALL_EMPLOYEES_ID) {
       setSelectedEmployee(null);
       setPayrollConfig(null);
       return;
@@ -181,44 +229,74 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
     }
   }, [employeeId, employees, payrollConfigs]);
 
-  const calculationPreview = useMemo(() => {
+  const calculationPreview = useMemo((): PreviewView | null => {
+    if (isAllEmployees) {
+      if (activeConfigEmployeePairs.length === 0) return null;
+
+      const previews = activeConfigEmployeePairs.map(({ config, employee }) =>
+        buildEmployeePreview(config, employee)
+      );
+
+      const sum = (pick: (p: (typeof previews)[0]) => number) =>
+        Math.round(previews.reduce((acc, p) => acc + pick(p), 0) * 100) / 100;
+
+      const employeeRates = new Set(previews.map((p) => p.employeeRate));
+      const employerRates = new Set(previews.map((p) => p.employerRate));
+      const ratesMixed = employeeRates.size > 1 || employerRates.size > 1;
+
+      return {
+        mode: "all",
+        employeeCount: previews.length,
+        ratesMixed,
+        monthlySalary: sum((p) => p.monthlySalary),
+        annualSalary: sum((p) => p.annualSalary),
+        allowancesTotal: sum((p) => p.allowancesTotal),
+        deductionsTotal: sum((p) => p.deductionsTotal),
+        grossBeforeDeductions: sum((p) => p.grossBeforeDeductions),
+        grossPay: sum((p) => p.grossPay),
+        employeeRate: ratesMixed ? 0 : previews[0].employeeRate,
+        employerRate: ratesMixed ? 0 : previews[0].employerRate,
+        employeeCpf: sum((p) => p.employeeCpf),
+        employerCpf: sum((p) => p.employerCpf),
+        totalCpf: sum((p) => p.totalCpf),
+        netPay: sum((p) => p.netPay),
+      };
+    }
+
     if (!payrollConfig || !selectedEmployee) return null;
-
-    const baseSalary = parseFloat(payrollConfig.baseSalary) || 0;
-    const allowances = payrollConfig.allowances || {};
-    const deductions = payrollConfig.deductions || {};
-    // Config: overtimeRate = hours, hourlyRate = SGD/hour (or stored allowances.overtime)
-    const otFromConfig =
-      Number(allowances.overtime) ||
-      (parseFloat(payrollConfig.overtimeRate || "0") || 0) *
-        (parseFloat(payrollConfig.hourlyRate || "0") || 0);
-    const overtimePay = Math.round(otFromConfig * 100) / 100;
-    const dob = selectedEmployee.dateOfBirth
-      ? new Date(selectedEmployee.dateOfBirth)
-      : null;
-    const age = dob && !Number.isNaN(dob.getTime()) ? calculateAge(dob) : 30;
-
-    const preview = calculateSyncBridgePayrollPreview({
-      monthlySalary: baseSalary,
-      age,
-      citizenshipStatus: mapNationalityToCitizenship(selectedEmployee.nationality),
-      prStatus: selectedEmployee.prStatus,
-      overtimePay,
-      allowances: {
-        transport: Number(allowances.transport) || 0,
-        meal: Number(allowances.meal) || 0,
-        phone: Number(allowances.phone) || 0,
-        others: Number(allowances.others) || 0,
-      },
-      deductions,
-    });
-
-    return { ...preview, monthlySalary: baseSalary };
-  }, [payrollConfig, selectedEmployee]);
+    const preview = buildEmployeePreview(payrollConfig, selectedEmployee);
+    return {
+      ...preview,
+      mode: "individual",
+      employeeCount: 1,
+      ratesMixed: false,
+    };
+  }, [isAllEmployees, activeConfigEmployeePairs, payrollConfig, selectedEmployee]);
 
   const processPayrollMutation = useMutation({
-    mutationFn: async (data: ProcessPayrollFormData & { forceOverwrite?: boolean }) => {
-      if (!calculationPreview || !payrollConfig) {
+    mutationFn: async (
+      data: ProcessPayrollFormData & {
+        forceOverwrite?: boolean;
+        processScope?: "pending" | "changed";
+      }
+    ) => {
+      if (Number(data.employeeId) === ALL_EMPLOYEES_ID) {
+        if (activeConfigs.length === 0) {
+          throw new Error("No active payroll configurations found");
+        }
+        const result = await batchProcessPayrollForPeriod(
+          data.payPeriodStart,
+          data.payPeriodEnd,
+          activeConfigs.map((c: any) => Number(c.id)),
+          {
+            forceOverwrite: data.forceOverwrite === true,
+            processScope: data.processScope,
+          }
+        );
+        return { kind: "batch" as const, result };
+      }
+
+      if (!payrollConfig) {
         throw new Error("Please select an employee with active payroll");
       }
 
@@ -233,8 +311,11 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
 
       if ("alreadyProcessed" in result && result.alreadyProcessed) {
         return {
-          alreadyProcessed: true as const,
-          dataChanged: result.dataChanged === true,
+          kind: "individual" as const,
+          result: {
+            alreadyProcessed: true as const,
+            dataChanged: result.dataChanged === true,
+          },
         };
       }
 
@@ -242,34 +323,67 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         throw new Error(result.message || "Failed to process payroll");
       }
 
-      return result;
+      return { kind: "individual" as const, result };
     },
-    onSuccess: (result, variables) => {
-      if (result && "alreadyProcessed" in result && result.alreadyProcessed) {
-        if (variables.forceOverwrite) {
+    onSuccess: (payload, variables) => {
+      if (payload.kind === "batch") {
+        const result = payload.result;
+
+        if ("scenario" in result && result.scenario === "pending" && result.needsPendingConfirmation) {
+          openProcessedDialog(variables, "pending");
+          return;
+        }
+        if ("needsOverwriteConfirmation" in result && result.needsOverwriteConfirmation) {
+          openProcessedDialog(variables, "overwrite");
+          return;
+        }
+        if ("scenario" in result && result.scenario === "no-changes" && !variables.forceOverwrite) {
+          openProcessedDialog(variables, "no-changes");
+          return;
+        }
+
+        if (!result.ok) {
           toast({
-            title: "Overwrite failed",
-            description: "Could not overwrite payroll. Please try again.",
+            title: "Batch processing result",
+            description: result.message,
             variant: "destructive",
           });
           return;
         }
 
-        const formData = pendingFormData ?? variables;
-        openProcessedDialog(formData, result.dataChanged === true);
+        queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
+        closeProcessedDialog();
+        toast({
+          title: variables.forceOverwrite ? "Payroll overwritten" : "Payroll processed",
+          description: `Payroll for ${derivePayrollMonthYear(variables.payPeriodStart).monthLabel} processed for all employees. Download payslips from Payroll when needed.`,
+        });
+        onSuccess();
         return;
       }
 
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] });
+      const result = payload.result;
+      if (result && "alreadyProcessed" in result && result.alreadyProcessed) {
+        if (variables.forceOverwrite) {
+          toast({
+            title: "Could not overwrite",
+            description: "Payroll could not be overwritten. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+        openProcessedDialog(variables, result.dataChanged ? "overwrite" : "no-changes");
+        return;
+      }
+
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
       closeProcessedDialog();
-      const wasUpdated = "action" in result && result.action === "updated";
       toast({
-        title: wasUpdated ? "Payroll Updated Successfully" : "Payroll Processed Successfully",
-        description: wasUpdated
-          ? "Payroll values updated. Download the payslip from Payroll when needed."
-          : "Payroll saved. Download the payslip from Payroll when needed.",
+        title: "Payroll Processed",
+        description: "Payroll processed successfully. Download the payslip from Payroll when needed.",
       });
       onSuccess();
     },
@@ -283,10 +397,52 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   });
 
   const onSubmit = (data: ProcessPayrollFormData) => {
-    const { alreadyProcessed, dataChanged } = resolvePayrollChangeStatus(data);
+    if (Number(data.employeeId) === ALL_EMPLOYEES_ID) {
+      const status = resolveBatchPayrollStatus(
+        activeConfigs,
+        payrollRecords,
+        data.payPeriodStart,
+        data.payPeriodEnd
+      );
 
-    if (alreadyProcessed) {
-      openProcessedDialog(data, dataChanged);
+      // All employees are brand-new for this period → process immediately
+      if (
+        status.scenario === "pending" &&
+        status.changedCount === 0 &&
+        status.unchangedCount === 0
+      ) {
+        setPendingFormData(data);
+        processPayrollMutation.mutate({ ...data, processScope: "pending" });
+        return;
+      }
+
+      if (status.scenario === "pending") {
+        openProcessedDialog(data, "pending");
+        return;
+      }
+      if (status.scenario === "values-changed") {
+        openProcessedDialog(data, "overwrite");
+        return;
+      }
+      openProcessedDialog(data, "no-changes");
+      return;
+    }
+
+    const config = payrollConfigs.find(
+      (c: any) => Number(c.employeeId) === Number(data.employeeId) && c.isActive
+    );
+    const existingRecord = findPayrollRecordForPeriod(
+      data.employeeId,
+      payrollRecords,
+      data.payPeriodStart,
+      data.payPeriodEnd
+    );
+
+    if (existingRecord) {
+      openProcessedDialog(
+        data,
+        hasPayrollDataChanged(config, existingRecord, 0) ? "overwrite" : "no-changes"
+      );
       return;
     }
 
@@ -295,9 +451,9 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   };
 
   const handleProcessClick = () => {
-    const { payPeriodStart, payPeriodEnd } = form.getValues();
+    const values = form.getValues();
 
-    if (!isPayPeriodEligibleForProcessing(payPeriodStart, payPeriodEnd)) {
+    if (!isPayPeriodEligibleForProcessing(values.payPeriodStart, values.payPeriodEnd)) {
       toast({
         title: "Payroll not allowed",
         description: PAYROLL_CURRENT_MONTH_ERROR,
@@ -306,10 +462,21 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       return;
     }
 
+    if (values.employeeId === undefined || values.employeeId === null || Number.isNaN(Number(values.employeeId))) {
+      toast({
+        title: "Employee required",
+        description: "Please select an employee or All Employees.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!calculationPreview) {
       toast({
         title: "Payroll not calculated",
-        description: "Please select an employee to calculate payroll first.",
+        description: isAllEmployees
+          ? "No active payroll configurations found for employees."
+          : "Please select an employee to calculate payroll first.",
         variant: "destructive",
       });
       return;
@@ -320,7 +487,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
 
   const handleConfirmOverwrite = () => {
     const formData = pendingFormData ?? form.getValues();
-    if (!formData?.employeeId) {
+    if (formData?.employeeId === undefined || formData?.employeeId === null) {
       toast({
         title: "Error",
         description: "Form data is unavailable. Please close the dialog and try again.",
@@ -328,6 +495,16 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       });
       return;
     }
+
+    if (Number(formData.employeeId) === ALL_EMPLOYEES_ID) {
+      if (processedDialogMode === "pending") {
+        processPayrollMutation.mutate({ ...formData, processScope: "pending" });
+        return;
+      }
+      processPayrollMutation.mutate({ ...formData, forceOverwrite: true });
+      return;
+    }
+
     processPayrollMutation.mutate({ ...formData, forceOverwrite: true });
   };
 
@@ -341,28 +518,28 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
     );
   }
 
-  const activeConfigs = payrollConfigs.filter((c: any) => c.isActive);
-  const processEmployeeOptions = activeConfigs
-    .map((config: any) => {
-      const employee = employees.find(
-        (emp: any) => Number(emp.id) === Number(config.employeeId)
-      );
-      if (!employee) return null;
-      return {
-        id: Number(config.employeeId),
-        name: employee.name,
-        employeeId: employee.employeeId,
-        designation: `${employee.designation || ""} (${formatCurrency(parseFloat(config.baseSalary))}/month)`.trim(),
-        department: employee.department,
-      };
-    })
-    .filter(Boolean) as Array<{
-      id: number;
-      name: string;
-      employeeId: string;
-      designation: string;
-      department?: string;
-    }>;
+  const processEmployeeOptions = [
+    {
+      id: ALL_EMPLOYEES_ID,
+      name: "All Employees",
+      employeeId: `${activeConfigEmployeePairs.length} active`,
+      designation: "Process payroll for everyone",
+    },
+    ...activeConfigEmployeePairs.map(({ config, employee }) => ({
+      id: Number(config.employeeId),
+      name: employee.name,
+      employeeId: employee.employeeId,
+      designation: `${employee.designation || ""} (${formatCurrency(parseFloat(config.baseSalary))}/month)`.trim(),
+      department: employee.department,
+    })),
+  ];
+
+  const rateEmployeeLabel = calculationPreview?.ratesMixed
+    ? "—"
+    : `${calculationPreview?.employeeRate ?? 0}%`;
+  const rateEmployerLabel = calculationPreview?.ratesMixed
+    ? "—"
+    : `${calculationPreview?.employerRate ?? 0}%`;
 
   return (
     <>
@@ -384,6 +561,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                             employees={processEmployeeOptions}
                             value={field.value}
                             onChange={(id) => field.onChange(id)}
+                            placeholder="Select employee or All Employees"
                           />
                         </FormControl>
                         <FormMessage />
@@ -445,7 +623,11 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                   onClick={handleProcessClick}
                   className={payrollPrimaryButtonClass}
                 >
-                  {processPayrollMutation.isPending ? "Processing..." : "Process Payroll"}
+                  {processPayrollMutation.isPending
+                    ? "Processing..."
+                    : isAllEmployees
+                      ? "Process All Employees"
+                      : "Process Payroll"}
                 </Button>
               </div>
             </form>
@@ -454,10 +636,17 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
 
         <div className="lg:col-span-1">
           <div className="sticky top-4 rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-5">
-            <h3 className="mb-4 flex items-center gap-2 text-base font-semibold text-[#111827]">
+            <h3 className="mb-1 flex items-center gap-2 text-base font-semibold text-[#111827]">
               <Calculator className="h-4 w-4 text-[#2563EB]" />
               Singapore Payroll Calculation
             </h3>
+            {calculationPreview?.mode === "all" ? (
+              <p className="mb-4 text-xs text-[#6B7280]">
+                Combined totals for {calculationPreview.employeeCount} employees
+              </p>
+            ) : (
+              <div className="mb-4" />
+            )}
             {calculationPreview ? (
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -472,12 +661,6 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     {formatCurrency(calculationPreview.allowancesTotal)}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6B7280]">Deductions</span>
-                  <span className="font-medium text-[#DC2626]">
-                    -{formatCurrency(calculationPreview.deductionsTotal)}
-                  </span>
-                </div>
                 <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
                   <span className="font-semibold text-[#111827]">Gross Salary</span>
                   <span className="font-semibold text-[#111827]">
@@ -486,7 +669,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#6B7280]">CPF Rate (Employee)</span>
-                  <span className="text-[#111827]">{calculationPreview.employeeRate}%</span>
+                  <span className="text-[#111827]">{rateEmployeeLabel}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#6B7280]">CPF Amount (Employee)</span>
@@ -496,7 +679,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#6B7280]">CPF Rate (Employer)</span>
-                  <span className="text-[#111827]">{calculationPreview.employerRate}%</span>
+                  <span className="text-[#111827]">{rateEmployerLabel}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#6B7280]">CPF Amount (Employer)</span>
@@ -504,8 +687,19 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     {formatCurrency(calculationPreview.employerCpf)}
                   </span>
                 </div>
+                <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
+                  <span className="text-[#6B7280]">Total Deductions</span>
+                  <span className="font-medium text-[#DC2626]">
+                    -
+                    {formatCurrency(
+                      calculationPreview.deductionsTotal + calculationPreview.employeeCpf
+                    )}
+                  </span>
+                </div>
                 <div className="flex justify-between border-t border-[#E5E7EB] pt-3">
-                  <span className="text-base font-semibold text-[#111827]">Net Salary</span>
+                  <span className="text-base font-semibold text-[#111827]">
+                    {calculationPreview.mode === "all" ? "Total Net Salary" : "Net Salary"}
+                  </span>
                   <span className="text-lg font-bold text-[#16A34A]">
                     {formatCurrency(calculationPreview.netPay)}
                   </span>
@@ -513,7 +707,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
               </div>
             ) : (
               <p className="py-8 text-center text-sm text-[#6B7280]">
-                Select an employee to view payroll calculation
+                Select an employee or All Employees to view payroll calculation
               </p>
             )}
           </div>
@@ -529,25 +723,44 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       >
         <DialogContent className="max-w-md border border-gray-200 bg-white">
           <DialogHeader>
-            <DialogTitle className="text-gray-900">Payroll Already Processed</DialogTitle>
+            <DialogTitle className="text-gray-900">
+              {processedDialogMode === "pending"
+                ? "Process Remaining Employees"
+                : "Payroll Already Processed"}
+            </DialogTitle>
             <div className="space-y-2 pt-2 text-sm text-gray-600">
-              <p>
-                Payroll for{" "}
-                <span className="font-semibold text-gray-900">{dialogMonthLabel}</span> has already
-                been processed.
-              </p>
-              {processedDialogMode === "overwrite" ? (
-                <>
-                  <p>The payroll values have been modified.</p>
-                  <p>Do you want to overwrite the existing payroll for this period?</p>
-                </>
+              {processedDialogMode === "pending" ? (
+                <p>
+                  Payroll for{" "}
+                  <span className="font-semibold text-gray-900">{dialogMonthLabel}</span> is not
+                  processed for some employees. Do you want to process payroll for all pending
+                  employees?
+                </p>
               ) : (
-                <p>There are no changes to process.</p>
+                <>
+                  <p>
+                    Payroll for{" "}
+                    <span className="font-semibold text-gray-900">{dialogMonthLabel}</span> has
+                    already been processed
+                    {isAllEmployees || Number(pendingFormData?.employeeId) === ALL_EMPLOYEES_ID
+                      ? " for one or more employees"
+                      : ""}
+                    .
+                  </p>
+                  {processedDialogMode === "overwrite" ? (
+                    <>
+                      <p>The payroll values have been modified.</p>
+                      <p>Do you want to overwrite the existing payroll for this period?</p>
+                    </>
+                  ) : (
+                    <p>There are no changes to process.</p>
+                  )}
+                </>
               )}
             </div>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            {processedDialogMode === "overwrite" ? (
+            {processedDialogMode === "overwrite" || processedDialogMode === "pending" ? (
               <>
                 <Button
                   type="button"

@@ -5,6 +5,7 @@ import { saveEmployeeDocumentUpload } from "../../lib/operations-upload";
 import {
   batchProcessPayrollCompany,
   downloadPayslipForConfigCompany,
+  downloadPayslipsBatchForPeriodCompany,
   downloadPayslipsCompany,
   previewPayslipCompany,
   processIndividualPayrollCompany,
@@ -1372,6 +1373,11 @@ router.post("/payroll/process/batch", async (req, res): Promise<void> => {
 router.post("/payroll/payslips/download-config", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   await downloadPayslipForConfigCompany(req, res, pool);
+});
+
+router.post("/payroll/payslips/download-batch", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  await downloadPayslipsBatchForPeriodCompany(req, res, pool);
 });
 
 router.post("/payroll/payslips/download", async (req, res): Promise<void> => {

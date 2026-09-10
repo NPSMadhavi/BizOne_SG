@@ -36,6 +36,11 @@ import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
 import { useSalesPersons } from "@/hooks/use-sales-persons";
+import { SingaporePhoneInput } from "@/components/singapore-phone-input";
+import {
+  formatSingaporePhoneForApi,
+  parseSingaporePhoneDigits,
+} from "@/lib/singapore-phone";
 
 const EMPTY = {
   code: "",
@@ -98,7 +103,7 @@ export default function WarehousesPage() {
       pinCode: row.pinCode || "",
       country: row.country || "Singapore",
       contactPerson: row.contactPerson || "",
-      contactNumber: row.contactNumber || "",
+      contactNumber: parseSingaporePhoneDigits(row.contactNumber || ""),
       email: row.email || "",
       salesPerson: row.salesPerson || "",
       isActive: row.isActive ?? true,
@@ -124,8 +129,13 @@ export default function WarehousesPage() {
 
     setSaving(true);
     try {
-      if (editRow) await inventoryApi.updateWarehouse(editRow.id, form);
-      else await inventoryApi.createWarehouse(form);
+      const phoneDigits = parseSingaporePhoneDigits(form.contactNumber || "");
+      const payload = {
+        ...form,
+        contactNumber: phoneDigits ? formatSingaporePhoneForApi(phoneDigits) : "",
+      };
+      if (editRow) await inventoryApi.updateWarehouse(editRow.id, payload);
+      else await inventoryApi.createWarehouse(payload);
       toast({
         title: editRow ? "Warehouse updated" : "Warehouse created",
         description: "Warehouse saved successfully.",
@@ -202,6 +212,7 @@ export default function WarehousesPage() {
                   <th className="py-3 pr-4">City</th>
                   <th className="py-3 pr-4">State</th>
                   <th className="py-3 pr-4">Contact</th>
+                  <th className="py-3 pr-4">Phone</th>
                   <th className="py-3 pr-4">Sales Person</th>
                   <th className="py-3 pr-4">Status</th>
                   <th className="py-3">Actions</th>
@@ -222,6 +233,7 @@ export default function WarehousesPage() {
                     <td className="py-3 pr-4 text-[#444651]">{r.city || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.state || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.contactPerson || "-"}</td>
+                    <td className="py-3 pr-4 text-[#444651]">{r.contactNumber || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.salesPerson || "-"}</td>
                     <td className="py-3 pr-4">
                       <InventoryStatusBadge status={r.isActive ? "active" : "inactive"} />
@@ -312,10 +324,9 @@ export default function WarehousesPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Phone Number</Label>
-              <Input
-                placeholder="Enter phone number"
+              <SingaporePhoneInput
                 value={form.contactNumber}
-                onChange={(e) => updateField("contactNumber", e.target.value)}
+                onChange={(digits) => updateField("contactNumber", digits)}
               />
             </div>
             <div className="space-y-1.5">

@@ -3,8 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Load key=value pairs from .env into process.env (does not override existing vars).
- * Looks in the usual places for local / monorepo runs.
+ * Load key=value pairs from .env into process.env.
+ *
+ * Critical for Plesk/Passenger:
+ * - Never overwrite host-supplied PORT / NODE_ENV (and related) once set.
+ * - Placeholder detection applies only to integration secrets (API keys / SMTP),
+ *   never to short values like PORT ("8080") or NODE_ENV ("production").
  */
 function parseEnvFile(filePath: string): Record<string, string> {
   if (!fs.existsSync(filePath)) return {};
@@ -27,13 +31,47 @@ function parseEnvFile(filePath: string): Record<string, string> {
   return env;
 }
 
+/** Set by Passenger / Plesk / the OS — .env must not clobber these when present. */
+const HOST_OWNED_KEYS = new Set([
+  "PORT",
+  "NODE_ENV",
+  "HOST",
+  "PASSENGER_APP_ENV",
+  "PASSENGER_SPAWN_WORK_DIR",
+  "PASSENGER_CONNECT_PASSWORD",
+]);
+
+/** Local secrets that may safely replace empty/placeholder process env values. */
+const PREFER_FILE_KEYS = new Set([
+  "AI_INTEGRATIONS_OPENAI_API_KEY",
+  "AI_INTEGRATIONS_OPENAI_BASE_URL",
+  "OPENAI_API_KEY",
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_USER",
+  "SMTP_PASS",
+  "SMTP_FROM",
+  "SMTP_SECURE",
+]);
+
+function looksLikeSecretPlaceholder(v: string | undefined): boolean {
+  if (!v) return true;
+  const k = v.trim().toLowerCase();
+  return (
+    k.includes("your-openai") ||
+    k.includes("your-api-key") ||
+    k === "sk-xxx" ||
+    k.endsWith("-here")
+  );
+}
+
 export function loadLocalEnv(): void {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const cwd = process.cwd();
   const candidates = [
-    path.join(here, ".env"), // src/.env when running from source maps / ts
+    path.join(here, ".env"), // next to bundled entry (dist/) or src/
     path.join(cwd, "src", ".env"), // artifacts/api-server/src/.env (dev.mjs cwd)
-    path.join(cwd, ".env"),
+    path.join(cwd, ".env"), // app root on Plesk (/sg.biz1.in/.env)
     path.resolve(here, "..", ".env"),
     path.resolve(here, "..", "src", ".env"),
   ];
@@ -43,38 +81,32 @@ export function loadLocalEnv(): void {
     Object.assign(merged, parseEnvFile(file));
   }
 
-  const preferFileKeys = new Set([
-    "AI_INTEGRATIONS_OPENAI_API_KEY",
-    "AI_INTEGRATIONS_OPENAI_BASE_URL",
-    "OPENAI_API_KEY",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_USER",
-    "SMTP_PASS",
-    "SMTP_FROM",
-    "SMTP_SECURE",
-  ]);
-
-  function looksLikePlaceholder(v: string | undefined): boolean {
-    if (!v) return true;
-    const k = v.trim().toLowerCase();
-    return (
-      k.length < 20 ||
-      k.includes("your-openai") ||
-      k.includes("your-api-key") ||
-      k === "sk-xxx" ||
-      k.endsWith("-here")
-    );
-  }
-
   for (const [key, value] of Object.entries(merged)) {
     const current = process.env[key];
-    const shouldSet =
-      preferFileKeys.has(key) ||
-      current === undefined ||
-      current === "" ||
-      looksLikePlaceholder(current);
-    if (shouldSet) {
+
+    // Passenger/Plesk own these. If already set (even to a short port number), keep them.
+    if (HOST_OWNED_KEYS.has(key)) {
+      if (current !== undefined && current !== "") continue;
+      // Only fill when completely unset; never install an empty PORT from .env.
+      if (value !== "") {
+        process.env[key] = value;
+      }
+      continue;
+    }
+
+    if (PREFER_FILE_KEYS.has(key)) {
+      if (
+        current === undefined ||
+        current === "" ||
+        looksLikeSecretPlaceholder(current)
+      ) {
+        process.env[key] = value;
+      }
+      continue;
+    }
+
+    // Default: fill gaps only — never override a non-empty process env value.
+    if (current === undefined || current === "") {
       process.env[key] = value;
     }
   }

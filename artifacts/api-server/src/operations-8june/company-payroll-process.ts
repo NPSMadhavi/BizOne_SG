@@ -739,6 +739,7 @@ export async function batchProcessPayrollCompany(
       skipped: configs.length - configsToProcess.length,
       failures: [],
     };
+    const processedConfigIds = new Set<number>();
 
     for (const config of configsToProcess) {
       const employeeResult = await pool.query<DbEmployee>(
@@ -775,6 +776,7 @@ export async function batchProcessPayrollCompany(
 
         if (result.action === "created") summary.processedNew++;
         else if (result.action === "updated") summary.updated++;
+        processedConfigIds.add(config.id);
       } catch (error) {
         summary.failures.push({
           employeeName,
@@ -791,13 +793,62 @@ export async function batchProcessPayrollCompany(
       return;
     }
 
-    // Persist payroll only — payslips are generated on demand via download/view.
-    res.json({
-      ok: true,
-      summary,
-      message:
-        "Payroll processed successfully. Download payslips from Payroll when needed.",
-    });
+    // Generate payslips and auto-download after successful batch process.
+    const zipFiles: Array<{ filename: string; buffer: Buffer }> = [];
+    for (const config of configsToProcess.filter((item) => processedConfigIds.has(item.id))) {
+      try {
+        const slip = await generatePayslipForPeriod(
+          pool,
+          companyId,
+          config.id,
+          resolvedPayPeriodStart,
+          resolvedPayPeriodEnd,
+        );
+        if ("error" in slip) {
+          const empResult = await pool.query<{ name: string }>(
+            `SELECT name FROM employees WHERE id = $1 AND company_id = $2`,
+            [config.employee_id, companyId],
+          );
+          summary.failures.push({
+            employeeName: empResult.rows[0]?.name ?? `Employee ${config.employee_id}`,
+            message: slip.error.message || "Failed to generate payslip",
+          });
+          continue;
+        }
+        zipFiles.push({ filename: slip.downloadFilename, buffer: slip.pdfBuffer });
+      } catch (error) {
+        const empResult = await pool.query<{ name: string }>(
+          `SELECT name FROM employees WHERE id = $1 AND company_id = $2`,
+          [config.employee_id, companyId],
+        );
+        summary.failures.push({
+          employeeName: empResult.rows[0]?.name ?? `Employee ${config.employee_id}`,
+          message: error instanceof Error ? error.message : "Failed to generate payslip",
+        });
+      }
+    }
+
+    res.setHeader("X-Payroll-Summary", JSON.stringify(summary));
+
+    if (zipFiles.length === 0) {
+      // Payroll saved, but PDF generation failed — client can still download manually.
+      res.json({
+        ok: true,
+        summary,
+        message:
+          "Payroll processed successfully. Download payslips from Payroll when needed.",
+      });
+      return;
+    }
+
+    // Batch process always returns one ZIP containing all payslips.
+    const zipFilename = getBatchZipNameFromPeriod(resolvedPayPeriodStart);
+    const zipPath = await createPayslipZipArchive(zipFiles);
+    const sessionId = req.session?.id as string | undefined;
+    if (sessionId) {
+      registerSessionPayslipZip(sessionId, zipPath);
+    }
+    sendPayslipZipFile(res, zipPath, zipFilename, sessionId);
   } catch (error) {
     console.error("Error in batch payroll processing:", error);
     const message = error instanceof Error ? error.message : "Failed to batch process payroll";
@@ -1118,6 +1169,74 @@ export async function downloadPayslipsCompany(
     console.error("Error generating payslips:", error);
     res.status(500).json({
       message: error instanceof Error ? error.message : "Failed to generate payslips",
+    });
+  }
+}
+
+/** Download one ZIP of payslips for many employees in a single pay period. */
+export async function downloadPayslipsBatchForPeriodCompany(
+  req: Request,
+  res: Response,
+  pool: Pool,
+): Promise<void> {
+  try {
+    const companyId = req.session.companyId!;
+    const { payrollConfigIds, payPeriodStart, payPeriodEnd } = req.body ?? {};
+    const start = normalizePayPeriodDate(payPeriodStart);
+    const end = normalizePayPeriodDate(payPeriodEnd);
+
+    if (!start || !end) {
+      res.status(400).json({ message: "payPeriodStart and payPeriodEnd are required" });
+      return;
+    }
+
+    if (!Array.isArray(payrollConfigIds) || payrollConfigIds.length === 0) {
+      res.status(400).json({ message: "payrollConfigIds are required" });
+      return;
+    }
+
+    const idList = payrollConfigIds.map(Number).filter((id) => Number.isFinite(id) && id > 0);
+    if (idList.length === 0) {
+      res.status(400).json({ message: "Invalid payrollConfigIds" });
+      return;
+    }
+
+    const zipFiles: Array<{ filename: string; buffer: Buffer }> = [];
+    const failures: string[] = [];
+
+    for (const payrollConfigId of idList) {
+      const result = await generatePayslipForPeriod(pool, companyId, payrollConfigId, start, end);
+      if ("error" in result) {
+        failures.push(`Config ${payrollConfigId}: ${result.error.message}`);
+        continue;
+      }
+      zipFiles.push({ filename: result.downloadFilename, buffer: result.pdfBuffer });
+    }
+
+    if (zipFiles.length === 0) {
+      res.status(404).json({
+        message:
+          failures.length > 0
+            ? `No payslips generated. ${failures.join("; ")}`
+            : "No payslips found for the selected employees and period.",
+      });
+      return;
+    }
+
+    const zipFilename = getBatchZipNameFromPeriod(start);
+    const zipPath = await createPayslipZipArchive(zipFiles);
+    const sessionId = req.session?.id as string | undefined;
+    if (sessionId) {
+      registerSessionPayslipZip(sessionId, zipPath);
+    }
+    if (failures.length > 0) {
+      res.setHeader("X-Payslip-Missing", failures.join(" | "));
+    }
+    sendPayslipZipFile(res, zipPath, zipFilename, sessionId);
+  } catch (error) {
+    console.error("Error generating batch payslip ZIP:", error);
+    res.status(500).json({
+      message: error instanceof Error ? error.message : "Failed to generate payslip ZIP",
     });
   }
 }

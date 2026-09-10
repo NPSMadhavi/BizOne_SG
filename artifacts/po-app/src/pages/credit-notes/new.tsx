@@ -48,7 +48,7 @@ const schema = z.object({
   contactPerson: z.string().default(""),
   contactEmail: z.string().default(""),
   refInvNumber: z.string().default(""),
-  reason: z.string().default(""),
+  reason: z.string().trim().min(1, "Reason for return is required"),
   issueDate: z.string().default(getToday()),
   currency: z.string().default("SGD"),
   taxRate: z.coerce.number().min(0).max(100).default(9),
@@ -362,8 +362,9 @@ export default function CreditNoteNew() {
                 </div>
                 <FormField control={form.control} name="reason" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reason for Return</FormLabel>
-                    <FormControl><Textarea {...field} rows={2}  /></FormControl>
+                    <FormLabel>Reason for Return <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Textarea {...field} rows={2} /></FormControl>
+                    <FormMessage />
                   </FormItem>
                 )} />
                 <div className="grid grid-cols-2 gap-3">

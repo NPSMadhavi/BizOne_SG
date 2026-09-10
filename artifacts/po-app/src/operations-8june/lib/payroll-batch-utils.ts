@@ -309,10 +309,12 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   anchor.style.display = "none";
   anchor.href = url;
   anchor.download = filename;
+  anchor.rel = "noopener";
   document.body.appendChild(anchor);
   anchor.click();
-  window.URL.revokeObjectURL(url);
   anchor.remove();
+  // Delay revoke so the browser can finish starting the download.
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 }
 
 function isPdfArrayBuffer(buffer: ArrayBuffer): boolean {
@@ -330,7 +332,10 @@ function isZipArrayBuffer(buffer: ArrayBuffer): boolean {
 export async function downloadPayrollFileResponse(
   res: Response,
   fallbackFilename: string
-): Promise<{ ok: true; action?: string } | { ok: false; message: string; summary?: BatchPayrollSummary }> {
+): Promise<
+  | { ok: true; action?: string; downloaded: boolean; summary?: BatchPayrollSummary; message?: string }
+  | { ok: false; message: string; summary?: BatchPayrollSummary }
+> {
   const summaryHeader = res.headers.get("X-Payroll-Summary");
   const summary = summaryHeader ? (JSON.parse(summaryHeader) as BatchPayrollSummary) : undefined;
 
@@ -352,7 +357,12 @@ export async function downloadPayrollFileResponse(
       fallbackFilename
     );
     triggerBrowserDownload(blob, filename);
-    return { ok: true, action: res.headers.get("X-Payroll-Action") || undefined };
+    return {
+      ok: true,
+      downloaded: true,
+      action: res.headers.get("X-Payroll-Action") || undefined,
+      summary,
+    };
   }
 
   if (isZipArrayBuffer(arrayBuffer)) {
@@ -362,12 +372,24 @@ export async function downloadPayrollFileResponse(
       fallbackFilename.endsWith(".zip") ? fallbackFilename : `${fallbackFilename}.zip`
     );
     triggerBrowserDownload(blob, filename);
-    return { ok: true };
+    return { ok: true, downloaded: true, summary };
   }
 
   try {
     const data = JSON.parse(new TextDecoder().decode(arrayBuffer));
-    return { ok: false, message: data.message || "Processing failed", summary: data.summary };
+    if (data.ok === true || (data.summary && data.scenario == null && !data.needsOverwriteConfirmation)) {
+      return {
+        ok: true,
+        downloaded: false,
+        summary: (data.summary ?? summary) as BatchPayrollSummary | undefined,
+        message: (data.message as string | undefined) || undefined,
+      };
+    }
+    return {
+      ok: false,
+      message: data.message || "Processing failed",
+      summary: data.summary ?? summary,
+    };
   } catch {
     return { ok: false, message: "Server did not return a valid payslip file", summary };
   }
@@ -489,6 +511,7 @@ export async function batchProcessPayrollForPeriod(
     if (res.ok && data.ok !== false) {
       return {
         ok: true as const,
+        downloaded: false as const,
         summary: data.summary as BatchPayrollSummary | undefined,
         message: (data.message as string | undefined) || "Payroll processed successfully.",
       };
@@ -502,18 +525,19 @@ export async function batchProcessPayrollForPeriod(
     };
   }
 
-  // Legacy zip response — do not auto-download; treat as success if HTTP OK.
-  const summaryHeader = res.headers.get("X-Payroll-Summary");
-  const summary = summaryHeader ? (JSON.parse(summaryHeader) as BatchPayrollSummary) : undefined;
-  if (res.ok) {
-    await res.arrayBuffer().catch(() => undefined);
-    return { ok: true as const, summary };
-  }
-
+  // Auto-download PDF/ZIP payslips returned after successful batch process.
   const { monthLabel } = derivePayrollMonthYear(payPeriodStart);
   const fallbackFilename = `Payslips_${monthLabel.replace(" ", "_")}.zip`;
   const result = await downloadPayrollFileResponse(res, fallbackFilename);
-  return { ...result, summary };
+  if (result.ok) {
+    return {
+      ok: true as const,
+      downloaded: result.downloaded === true,
+      summary: result.summary,
+      message: result.message,
+    };
+  }
+  return { ...result, summary: result.summary };
 }
 
 export function getUniquePayrollRecords(records: any[] = []) {
@@ -568,4 +592,133 @@ export async function downloadPayslipForConfig(
   const fallbackFilename = `Payslip_${config.employeeName?.replace(/[^a-zA-Z0-9]+/g, "_") || "Employee"}_${formatPayrollMonthLabel(year, month).replace(" ", "_")}.pdf`;
 
   return downloadPayrollFileResponse(res, fallbackFilename);
+}
+
+/** CRC32 for ZIP (STORE / no compression). */
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function u16(n: number): Uint8Array {
+  return new Uint8Array([n & 0xff, (n >>> 8) & 0xff]);
+}
+
+function u32(n: number): Uint8Array {
+  return new Uint8Array([n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff]);
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+/** Build an uncompressed ZIP blob (one download for many payslip PDFs). */
+export function createPayslipZipBlob(files: Array<{ filename: string; data: Uint8Array }>): Blob {
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = new TextEncoder().encode(file.filename);
+    const crc = crc32(file.data);
+    const localHeader = concatBytes([
+      u32(0x04034b50),
+      u16(20),
+      u16(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(file.data.length),
+      u32(file.data.length),
+      u16(nameBytes.length),
+      u16(0),
+      nameBytes,
+    ]);
+    localParts.push(localHeader, file.data);
+
+    const centralHeader = concatBytes([
+      u32(0x02014b50),
+      u16(20),
+      u16(20),
+      u16(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(file.data.length),
+      u32(file.data.length),
+      u16(nameBytes.length),
+      u16(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(0),
+      u32(offset),
+      nameBytes,
+    ]);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + file.data.length;
+  }
+
+  const centralDir = concatBytes(centralParts);
+  const endRecord = concatBytes([
+    u32(0x06054b50),
+    u16(0),
+    u16(0),
+    u16(files.length),
+    u16(files.length),
+    u32(centralDir.length),
+    u32(offset),
+    u16(0),
+  ]);
+
+  return new Blob([concatBytes([...localParts, centralDir, endRecord])], {
+    type: "application/zip",
+  });
+}
+
+/** Download one ZIP with all selected employees' payslips for the pay period. */
+export async function downloadBatchPayslipsZip(
+  configs: Array<{ id: number; employeeName?: string }>,
+  payPeriodStart: string,
+  payPeriodEnd: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { monthLabel } = derivePayrollMonthYear(payPeriodStart);
+  const fallbackFilename = `Payslips_${monthLabel.replace(" ", "_")}.zip`;
+
+  const res = await fetch("/api/payroll/payslips/download-batch", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      payrollConfigIds: configs.map((c) => c.id),
+      payPeriodStart,
+      payPeriodEnd,
+    }),
+  });
+
+  const result = await downloadPayrollFileResponse(res, fallbackFilename);
+  if (result.ok && result.downloaded) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    message: result.ok
+      ? "Server did not return a payslip ZIP"
+      : result.message || "Failed to download payslip ZIP",
+  };
 }

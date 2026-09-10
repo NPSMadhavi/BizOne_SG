@@ -61,6 +61,9 @@ import {
   isPayPeriodDateDisabled,
   getPayPeriodForMonth,
   findPayrollRecordForPeriod,
+  downloadPayslipForConfig,
+  downloadBatchPayslipsZip,
+  createPayslipZipBlob,
   type BatchPayrollScenario,
 } from "@/operations-8june/lib/payroll-batch-utils";
 import {
@@ -243,6 +246,21 @@ async function resolvePayslipPdfForMonth(args: {
     title: `${config.employeeName} - ${formatPayrollMonthLabel(year, month)}`,
     filename: payslipPdfFilename(config.employeeName, month, year),
   };
+}
+
+function findLatestAvailablePayslipMonth(
+  employeeDbId: number,
+  payrollRecords: any[],
+  now = new Date()
+): { year: number; month: number } | null {
+  const currentYear = now.getFullYear();
+  for (let year = currentYear; year >= currentYear - 5; year -= 1) {
+    const available = getAvailablePayslipMonthsForEmployee(employeeDbId, year, payrollRecords, now);
+    if (available.length > 0) {
+      return { year, month: available[available.length - 1] };
+    }
+  }
+  return null;
 }
 
 export default function PayrollPage() {
@@ -528,14 +546,21 @@ export default function PayrollPage() {
       return;
     }
 
-    const { monthLabel } = derivePayrollMonthYear(batchPayPeriodStart);
+    const { monthLabel, year, month } = derivePayrollMonthYear(batchPayPeriodStart);
     setIsBatchProcessing(true);
 
     try {
+      const targetConfigIds =
+        selectedIds.length > 0 ? selectedIds : undefined;
+      const configsForDownload =
+        selectedIds.length > 0
+          ? configs.filter((c) => selectedIds.includes(c.id) && c.isActive)
+          : activeConfigs;
+
       const result = await batchProcessPayrollForPeriod(
         batchPayPeriodStart,
         batchPayPeriodEnd,
-        selectedIds.length > 0 ? selectedIds : undefined,
+        targetConfigIds,
         {
           processScope: options?.processScope,
           forceOverwrite: options?.forceOverwrite === true,
@@ -550,17 +575,85 @@ export default function PayrollPage() {
 
       await queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/payroll/records"] });
       setSelectedIds([]);
       closeBatchConfirmDialog();
 
       if (result.ok) {
+        let payslipsDownloaded = "downloaded" in result && result.downloaded === true;
+
+        // If batch API did not return a ZIP (e.g. PDF gen failed mid-process), fetch one ZIP.
+        if (!payslipsDownloaded && configsForDownload.length > 0) {
+          const zipResult = await downloadBatchPayslipsZip(
+            configsForDownload,
+            batchPayPeriodStart,
+            batchPayPeriodEnd
+          );
+          if (zipResult.ok) {
+            payslipsDownloaded = true;
+          } else if (year && month) {
+            // Last resort: build one client-side ZIP (never separate PDF downloads).
+            const zipEntries: Array<{ filename: string; data: Uint8Array }> = [];
+            const freshRecords =
+              (queryClient.getQueryData<any[]>(["/api/payroll/records"]) as any[]) ||
+              payrollRecords;
+
+            for (const config of configsForDownload) {
+              try {
+                const resolved = await resolvePayslipPdfForMonth({
+                  config,
+                  month,
+                  year,
+                  employees,
+                  payrollRecords: freshRecords,
+                  company: selectedCompany,
+                });
+                if (!resolved) continue;
+                const blob = await generatePayslip_PDF(resolved.data, {
+                  returnBlob: true,
+                  filename: resolved.filename,
+                });
+                if (blob instanceof Blob) {
+                  zipEntries.push({
+                    filename: resolved.filename,
+                    data: new Uint8Array(await blob.arrayBuffer()),
+                  });
+                }
+              } catch {
+                // Skip failed employee; keep building ZIP for the rest.
+              }
+            }
+
+            if (zipEntries.length > 0) {
+              const zipBlob = createPayslipZipBlob(zipEntries);
+              const url = window.URL.createObjectURL(zipBlob);
+              const anchor = document.createElement("a");
+              anchor.href = url;
+              anchor.download = `Payslips_${monthLabel.replace(" ", "_")}.zip`;
+              anchor.rel = "noopener";
+              anchor.style.display = "none";
+              document.body.appendChild(anchor);
+              anchor.click();
+              anchor.remove();
+              window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+              payslipsDownloaded = true;
+            }
+          }
+        }
+
         toast({
           title: options?.forceOverwrite ? "Payroll overwritten" : "Batch payroll complete",
-          description: options?.forceOverwrite
-            ? `Payroll overwritten for the selected period (${monthLabel}). Download payslips from Payroll when needed.`
-            : options?.processScope === "changed"
-              ? `Payroll updated for employees with changed values (${monthLabel}). Download payslips when needed.`
-              : `Payroll for ${monthLabel} processed successfully. Download payslips from Payroll when needed.`,
+          description: payslipsDownloaded
+            ? options?.forceOverwrite
+              ? `Payroll overwritten for ${monthLabel}. Payslip ZIP downloaded.`
+              : options?.processScope === "changed"
+                ? `Payroll updated for employees with changed values (${monthLabel}). Payslip ZIP downloaded.`
+                : `Payroll for ${monthLabel} processed successfully. Payslip ZIP downloaded.`
+            : options?.forceOverwrite
+              ? `Payroll overwritten for the selected period (${monthLabel}). Download payslips from Payroll when needed.`
+              : options?.processScope === "changed"
+                ? `Payroll updated for employees with changed values (${monthLabel}). Download payslips when needed.`
+                : `Payroll for ${monthLabel} processed successfully. Download payslips from Payroll when needed.`,
         });
       } else {
         toast({
@@ -590,6 +683,99 @@ export default function PayrollPage() {
     }
   };
 
+  const handlePayslipButtonClick = (config: PayrollConfig) => {
+    const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
+    if (!latest) {
+      toast({
+        title: "Payslip unavailable",
+        description: "Process payroll first, then download the payslip.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let availableCount = 0;
+    const currentYear = new Date().getFullYear();
+    for (let year = currentYear; year >= currentYear - 5; year -= 1) {
+      availableCount += getAvailablePayslipMonthsForEmployee(
+        config.employeeId,
+        year,
+        payrollRecords
+      ).length;
+      if (availableCount > 1) break;
+    }
+
+    // Multiple processed months → let the user choose; otherwise download immediately.
+    if (availableCount > 1) {
+      openPayslipModal(config);
+      return;
+    }
+
+    void handleQuickPayslipDownload(config);
+  };
+
+  const handleQuickPayslipDownload = async (config: PayrollConfig) => {
+    const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
+    if (!latest) {
+      toast({
+        title: "Payslip unavailable",
+        description: "Process payroll first, then download the payslip.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsPayslipDownloading(true);
+    try {
+      // Prefer server PDF when available; fall back to client jsPDF from processed data.
+      const serverDownload = await downloadPayslipForConfig(
+        config,
+        getPayPeriodForMonth(latest.year, latest.month).payPeriodStart,
+        getPayPeriodForMonth(latest.year, latest.month).payPeriodEnd
+      );
+      if (serverDownload.ok) {
+        toast({
+          title: "Payslip downloaded",
+          description: `Downloaded payslip for ${config.employeeName} (${formatPayrollMonthLabel(latest.year, latest.month)}).`,
+        });
+        return;
+      }
+
+      const resolved = await resolvePayslipPdfForMonth({
+        config,
+        month: latest.month,
+        year: latest.year,
+        employees,
+        payrollRecords,
+        company: selectedCompany,
+      });
+      if (!resolved) {
+        toast({
+          title: "Download failed",
+          description:
+            serverDownload.message ||
+            "No processed payroll found for this employee. Process payroll first, then download.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await generatePayslip_PDF(resolved.data, { filename: resolved.filename });
+      toast({
+        title: "Payslip downloaded",
+        description: `Downloaded payslip for ${config.employeeName} (${formatPayrollMonthLabel(latest.year, latest.month)}).`,
+      });
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: error instanceof Error ? error.message : "Failed to download payslip.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPayslipDownloading(false);
+    }
+  };
+
   const handlePayslipDownload = async () => {
     if (!payslipConfig) return;
     if (selectedPayslipMonths.length === 0) {
@@ -609,6 +795,20 @@ export default function PayrollPage() {
 
       for (let i = 0; i < selectedPayslipMonths.length; i++) {
         const month = selectedPayslipMonths[i];
+        const period = getPayPeriodForMonth(payslipYear, month);
+        const serverDownload = await downloadPayslipForConfig(
+          payslipConfig,
+          period.payPeriodStart,
+          period.payPeriodEnd
+        );
+        if (serverDownload.ok) {
+          downloaded.push(formatPayrollMonthLabel(payslipYear, month));
+          if (i < selectedPayslipMonths.length - 1) {
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          continue;
+        }
+
         const resolved = await resolvePayslipPdfForMonth({
           config: payslipConfig,
           month,
@@ -991,11 +1191,11 @@ export default function PayrollPage() {
                           type="button"
                           title={
                             canDownloadPayslip
-                              ? `Download payslip for ${config.employeeName}`
+                              ? `Download latest payslip for ${config.employeeName}`
                               : "Process payroll first to enable payslip download"
                           }
-                          disabled={!canDownloadPayslip || isBatchProcessing}
-                          onClick={() => openPayslipModal(config)}
+                          disabled={!canDownloadPayslip || isBatchProcessing || isPayslipDownloading}
+                          onClick={() => handlePayslipButtonClick(config)}
                           className="flex h-8 w-8 items-center justify-center rounded-full bg-[#CCFBF1] text-[#0D9488] transition-colors hover:bg-[#99F6E4] disabled:pointer-events-none disabled:opacity-40"
                         >
                           <Download className="h-4 w-4" />

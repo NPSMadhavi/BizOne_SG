@@ -242,10 +242,35 @@ export async function getDefaultWarehouseId(companyId: number): Promise<number |
 }
 
 /**
- * Ensures a "Main Warehouse" (code MAIN) exists for the company.
- * Creates it when missing — even if other warehouses already exist.
+ * Ensures a default warehouse exists for the company.
+ * Prefer the existing isDefault row — never overwrite user-edited code/name/status.
+ * Creates code MAIN only when the company has no default and no MAIN yet.
  */
 export async function ensureDefaultWarehouse(companyId: number): Promise<number> {
+  const clearOtherDefaults = async (keepId: number) => {
+    await db.update(warehousesTable)
+      .set({ isDefault: false })
+      .where(and(
+        eq(warehousesTable.companyId, companyId),
+        ne(warehousesTable.id, keepId),
+      ));
+  };
+
+  // 1) Already have a default warehouse — preserve all user fields (including code).
+  const [byDefault] = await db
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(and(
+      eq(warehousesTable.companyId, companyId),
+      eq(warehousesTable.isDefault, true),
+    ))
+    .limit(1);
+  if (byDefault) {
+    await clearOtherDefaults(byDefault.id);
+    return byDefault.id;
+  }
+
+  // 2) Legacy: code MAIN exists but not flagged default yet.
   const [byCode] = await db
     .select({ id: warehousesTable.id })
     .from(warehousesTable)
@@ -256,17 +281,13 @@ export async function ensureDefaultWarehouse(companyId: number): Promise<number>
     .limit(1);
   if (byCode) {
     await db.update(warehousesTable)
-      .set({ isDefault: true, isActive: true, name: "Main Warehouse" })
+      .set({ isDefault: true })
       .where(eq(warehousesTable.id, byCode.id));
-    await db.update(warehousesTable)
-      .set({ isDefault: false })
-      .where(and(
-        eq(warehousesTable.companyId, companyId),
-        ne(warehousesTable.id, byCode.id),
-      ));
+    await clearOtherDefaults(byCode.id);
     return byCode.id;
   }
 
+  // 3) Legacy: named "Main Warehouse" — promote without forcing code back to MAIN.
   const [byName] = await db
     .select({ id: warehousesTable.id })
     .from(warehousesTable)
@@ -277,17 +298,13 @@ export async function ensureDefaultWarehouse(companyId: number): Promise<number>
     .limit(1);
   if (byName) {
     await db.update(warehousesTable)
-      .set({ isDefault: true, isActive: true, code: "MAIN", name: "Main Warehouse" })
+      .set({ isDefault: true })
       .where(eq(warehousesTable.id, byName.id));
-    await db.update(warehousesTable)
-      .set({ isDefault: false })
-      .where(and(
-        eq(warehousesTable.companyId, companyId),
-        ne(warehousesTable.id, byName.id),
-      ));
+    await clearOtherDefaults(byName.id);
     return byName.id;
   }
 
+  // 4) Brand-new company: create default MAIN.
   const [wh] = await db
     .insert(warehousesTable)
     .values({
@@ -299,13 +316,7 @@ export async function ensureDefaultWarehouse(companyId: number): Promise<number>
     })
     .returning({ id: warehousesTable.id });
 
-  await db.update(warehousesTable)
-    .set({ isDefault: false })
-    .where(and(
-      eq(warehousesTable.companyId, companyId),
-      ne(warehousesTable.id, wh.id),
-    ));
-
+  await clearOtherDefaults(wh.id);
   return wh.id;
 }
 

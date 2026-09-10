@@ -96,8 +96,8 @@ function fitText(doc: jsPDF, text: string, maxW: number, startSize: number, minS
  */
 export async function generatePayslip_PDF(
   data: PayslipPdfData,
-  options?: { returnBase64?: boolean; filename?: string },
-): Promise<string | void> {
+  options?: { returnBase64?: boolean; returnBlob?: boolean; filename?: string },
+): Promise<string | Blob | void> {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 12;
@@ -260,13 +260,27 @@ export async function generatePayslip_PDF(
 
   const filename = options?.filename || payslipPdfFilename(employeeName, data.month, data.year);
   if (options?.returnBase64) return doc.output("datauristring").split(",")[1];
-  doc.save(filename);
+  if (options?.returnBlob) return doc.output("blob");
+
+  // Prefer blob + <a download> over doc.save() so downloads still work after async
+  // fetches (browsers often block doc.save() once the user-gesture token expires).
+  const blob = doc.output("blob");
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 }
 
 function sumComponentMap(value: unknown): number {
   if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
   return Object.values(value as Record<string, unknown>).reduce(
-    (sum, item) => sum + (Number(item) || 0),
+    (sum: number, item) => sum + (Number(item) || 0),
     0,
   );
 }

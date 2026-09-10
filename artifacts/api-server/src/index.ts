@@ -8,18 +8,19 @@ import { startBackupScheduler } from "./lib/accounting-backup.js";
 import { ensureUploadDirectories } from "./lib/ensure-uploads.js";
 import { pool } from "@workspace/db";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+function resolveListenPort(): number {
+  // Re-read after load-env so Passenger/Plesk PORT is never replaced by a stale capture.
+  const rawPort = process.env["PORT"];
+  if (!rawPort) {
+    throw new Error(
+      "PORT environment variable is required but was not provided.",
+    );
+  }
+  const port = Number(rawPort);
+  if (Number.isNaN(port) || port <= 0) {
+    throw new Error(`Invalid PORT value: "${rawPort}"`);
+  }
+  return port;
 }
 
 async function logSafeDbDiagnostics(): Promise<void> {
@@ -72,6 +73,7 @@ runStartupMigrations()
   .then(() => backfillExchangeRatesOnStartup())
   .then(() => reconcileStockQuantitiesOnStartup())
   .then(() => {
+    const port = resolveListenPort();
     app.listen(port, "0.0.0.0", (err) => {
       if (err) {
         logger.error({ err }, "Error listening on port");

@@ -15,8 +15,7 @@
     "build:backend": "npm run build:libs && npm run build --workspace=@workspace/api-server",
     "build:frontend": "npm run build --workspace=@workspace/po-app",
     "typecheck:libs": "tsc --build",
-    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present",
-    "diagnose:production": "node artifacts/api-server/dist/index.mjs"
+    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "typescript": "~5.9.2",
