@@ -10,9 +10,11 @@
   ],
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
-    "build": "npm run build --workspace=@workspace/api-server && npm run build --workspace=@workspace/po-app",
-    "build:backend": "npm run build --workspace=@workspace/api-server",
-    "build:frontend": "npm run build --workspace=@workspace/po-app",    "typecheck:libs": "tsc --build",
+    "build": "npm run build:libs && npm run build --workspace=@workspace/api-server && npm run build --workspace=@workspace/po-app",
+    "build:libs": "tsc --build",
+    "build:backend": "npm run build:libs && npm run build --workspace=@workspace/api-server",
+    "build:frontend": "npm run build --workspace=@workspace/po-app",
+    "typecheck:libs": "tsc --build",
     "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

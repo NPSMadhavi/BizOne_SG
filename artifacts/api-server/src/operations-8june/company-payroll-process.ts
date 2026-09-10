@@ -515,7 +515,7 @@ export async function processIndividualPayrollCompany(
     }
 
     const ctx = await loadPayrollContext(pool, companyId, payrollConfigIdNum);
-    if ("error" in ctx) {
+    if ("error" in ctx && ctx.error) {
       res.status(ctx.error.status).json({ message: ctx.error.message });
       return;
     }
@@ -854,9 +854,14 @@ async function generatePayslipForPeriod(
   payrollConfigId: number,
   payPeriodStart: string,
   payPeriodEnd: string,
-) {
+): Promise<
+  | { pdfBuffer: Buffer; downloadFilename: string; payslipData: PayslipData }
+  | { error: { status: number; message: string } }
+> {
   const ctx = await loadPayrollContext(pool, companyId, payrollConfigId);
-  if ("error" in ctx) return ctx;
+  if ("error" in ctx && ctx.error) {
+    return { error: ctx.error };
+  }
 
   const { config, employee, company } = ctx;
   const record = await findPayrollRecordForPeriod(
@@ -902,7 +907,7 @@ export async function previewPayslipCompany(
 
     const { payPeriodStart, payPeriodEnd } = getPayPeriodForMonth(yearNum, monthNum);
     const ctx = await loadPayrollContext(pool, companyId, payrollConfigIdNum);
-    if ("error" in ctx) {
+    if ("error" in ctx && ctx.error) {
       res.status(ctx.error.status).json({ message: ctx.error.message });
       return;
     }
@@ -971,7 +976,7 @@ export async function downloadPayslipForConfigCompany(
       : defaultPeriod.payPeriodEnd;
 
     const result = await generatePayslipForPeriod(pool, companyId, payrollConfigIdNum, start, end);
-    if ("error" in result && result.error) {
+    if ("error" in result) {
       res.status(result.error.status).json({ message: result.error.message });
       return;
     }
@@ -1011,7 +1016,7 @@ export async function viewPayslipCompany(
       payPeriodEnd,
     );
 
-    if ("error" in result && result.error) {
+    if ("error" in result) {
       res.status(result.error.status).json({ message: result.error.message });
       return;
     }
@@ -1051,7 +1056,7 @@ export async function downloadPayslipsCompany(
     }
 
     const ctx = await loadPayrollContext(pool, companyId, payrollConfigIdNum);
-    if ("error" in ctx) {
+    if ("error" in ctx && ctx.error) {
       res.status(ctx.error.status).json({ message: ctx.error.message });
       return;
     }
@@ -1069,7 +1074,7 @@ export async function downloadPayslipsCompany(
         payPeriodEnd,
       );
 
-      if ("error" in result && result.error) {
+      if ("error" in result) {
         missingMonths.push(`${MONTH_NAMES[month - 1]} ${yearNum}`);
         continue;
       }
@@ -1096,7 +1101,9 @@ export async function downloadPayslipsCompany(
       return;
     }
 
-    const zipPath = await createPayslipZipArchive(generatedFiles);
+    const zipPath = await createPayslipZipArchive(
+      generatedFiles.map((f) => ({ filename: f.downloadFilename, buffer: f.buffer })),
+    );
     const sessionId = req.session?.id as string | undefined;
     if (sessionId) {
       registerSessionPayslipZip(sessionId, zipPath);

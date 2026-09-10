@@ -227,7 +227,13 @@ router.post("/send-email", emailUpload.any(), async (req, res): Promise<void> =>
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to send email" });
+    console.error("[email] send failed:", err?.message || err);
+    res.status(500).json({
+      error:
+        process.env.NODE_ENV === "production"
+          ? "Failed to send email. Check SMTP settings or try again later."
+          : err?.message || "Failed to send email",
+    });
   }
 });
 

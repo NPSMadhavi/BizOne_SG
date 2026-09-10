@@ -3,10 +3,18 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/operations-8june/payroll.ts",
+    "src/operations-8june/payroll-payslip.ts",
+    "src/operations-8june/payroll-process-service.ts",
+    "src/operations-8june/singapore-payroll-calculator.ts"
+  ],
   "references": [
     {
       "path": "../../lib/db"

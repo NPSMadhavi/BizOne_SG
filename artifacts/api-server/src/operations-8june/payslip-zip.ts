@@ -2,9 +2,16 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createWriteStream } from "fs";
+import { createRequire } from "node:module";
 import type { Response } from "express";
-import archiver from "archiver";
+import type { Archiver, ArchiverOptions } from "archiver";
 import { getEmployeeNamePart } from "./payslip-generator";
+
+const require = createRequire(import.meta.url);
+const createArchiver = require("archiver") as (
+  format: string,
+  options?: ArchiverOptions,
+) => Archiver;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,7 +85,7 @@ export async function createPayslipZipArchive(
     `payslips-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`
   );
   const output = createWriteStream(zipPath);
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = createArchiver("zip", { zlib: { level: 9 } });
 
   await new Promise<void>((resolve, reject) => {
     output.on("close", () => resolve());

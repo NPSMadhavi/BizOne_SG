@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, decimal, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, decimal, timestamp, boolean } from "drizzle-orm/pg-core";
 import { companiesTable } from "./companies";
 
 export const INCOME_CATEGORIES = [
@@ -29,6 +29,9 @@ export const incomeRecordsTable = pgTable("income_records", {
   amount:         decimal("amount",     { precision: 15, scale: 2 }).notNull(),
   gstAmount:      decimal("gst_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   gstTreatment:   text("gst_treatment").notNull().default("standard_rated"),
+  gstClaimable:   boolean("gst_claimable").notNull().default(false),
+  isDeductible:   boolean("is_deductible").notNull().default(true),
+  deductiblePct:  integer("deductible_pct").notNull().default(100),
   currency:       text("currency").notNull().default("SGD"),
   // Exchange rate to SGD at income date (1.000000 for SGD records)
   exchangeRate:   decimal("exchange_rate", { precision: 10, scale: 6 }).notNull().default("1.000000"),

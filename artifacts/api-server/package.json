@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "node ./build.mjs && node --enable-source-maps ./dist/index.mjs",
     "build": "node ./build.mjs",
+    "prebuild": "npm run build --workspace=@workspace/db --if-present",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretypecheck": "npm run build --workspace=@workspace/db --if-present && npm run build --workspace=@workspace/api-zod --if-present && npm run build --workspace=@workspace/integrations-openai-ai-server --if-present",
     "test:reports": "node --experimental-strip-types --test src/lib/reports/field-resolver.test.ts"
   },
   "dependencies": {
@@ -34,6 +36,7 @@
     "puppeteer-core": "^24.43.1"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/cookie-parser": "^1.4.10",

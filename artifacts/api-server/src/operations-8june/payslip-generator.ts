@@ -667,11 +667,16 @@ async function launchPuppeteerBrowser() {
 
   try {
     const executablePath = await chromium.executablePath();
+    const chromiumOpts = chromium as typeof chromium & {
+      defaultViewport?: { width: number; height: number } | null;
+      headless?: boolean | "shell";
+      args: string[];
+    };
     return await puppeteer.launch({
       executablePath,
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      headless: chromium.headless,
+      args: chromiumOpts.args,
+      defaultViewport: chromiumOpts.defaultViewport ?? undefined,
+      headless: chromiumOpts.headless ?? true,
     });
   } catch {
     try {
@@ -688,7 +693,7 @@ export async function generatePayslipPdf(data: PayslipData): Promise<Buffer> {
   try {
     browser = await launchPuppeteerBrowser();
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, { waitUntil: "load" });
     const pdfBytes = await page.pdf({
       format: "A4",
       printBackground: true,

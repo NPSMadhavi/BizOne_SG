@@ -15,6 +15,8 @@ import { and, eq, ilike, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type WarehouseStockQty = typeof warehouseStockTable.$inferSelect.quantity;
+type WarehouseStockQtyRow = { quantity: WarehouseStockQty };
 
 export type MovementType =
   | "opening_stock"
@@ -75,7 +77,7 @@ export async function getItemTotalStock(
       eq(warehouseStockTable.companyId, companyId),
       eq(warehouseStockTable.stockItemId, stockItemId),
     ));
-  return rows.reduce((sum, r) => sum + toQty(r.quantity), 0);
+  return rows.reduce((sum: number, r: WarehouseStockQtyRow) => sum + toQty(r.quantity), 0);
 }
 
 export async function syncItemTotalStock(
@@ -216,7 +218,7 @@ export async function warehouseHasStock(
     .select({ quantity: warehouseStockTable.quantity })
     .from(warehouseStockTable)
     .where(eq(warehouseStockTable.warehouseId, warehouseId));
-  return rows.some(r => toQty(r.quantity) > 0);
+  return rows.some((r: WarehouseStockQtyRow) => toQty(r.quantity) > 0);
 }
 
 export async function itemHasTransactions(
@@ -357,7 +359,7 @@ export async function setItemStockQuantity(params: {
   const reference = params.reference ?? "Stock quantity updated";
   const documentNumber = `SQ-${params.stockItemId}-${Date.now()}`;
 
-  await db.transaction(async (tx) => {
+  await db.transaction(async (tx: Tx) => {
     if (delta > 0) {
       await applyMovement(tx, {
         companyId: params.companyId,
@@ -413,7 +415,7 @@ export async function adjustItemStockInWarehouse(params: {
   const documentNumber = `SQ-${params.stockItemId}-${Date.now()}`;
   const reference = params.reference ?? "Stock quantity updated";
 
-  await db.transaction(async (tx) => {
+  await db.transaction(async (tx: Tx) => {
     await applyMovement(tx, {
       companyId: params.companyId,
       warehouseId: params.warehouseId,
@@ -453,7 +455,7 @@ export async function deleteStockItem(companyId: number, stockItemId: number): P
     .where(and(eq(stockItemsTable.id, stockItemId), eq(stockItemsTable.companyId, companyId)));
   if (!item) throw new Error("Stock item not found");
 
-  await db.transaction(async (tx) => {
+  await db.transaction(async (tx: Tx) => {
     // Use raw SQL deletes so a missing optional WMS table cannot break the whole delete.
     await tx.execute(sql`
       DELETE FROM goods_receipt_items

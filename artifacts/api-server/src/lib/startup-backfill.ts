@@ -11,6 +11,27 @@ import { logger } from "./logger.js";
 import { migrateWmsTables } from "../migrate-wms-tables.js";
 import { migrateOperationsTables } from "../migrate-operations-tables.js";
 import { migrateAuthFields } from "../migrate-auth-fields.js";
+import { migrateDrizzleColumns } from "../migrate-drizzle-columns.js";
+
+function isSoftMigrationStep(name: string): boolean {
+  const n = name.toLowerCase();
+  return (
+    n.includes("backfill") ||
+    n.includes("clear orphan") ||
+    n.includes("reconcile") ||
+    n.includes("scrub")
+  );
+}
+
+function isBenignPgError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return (
+    code === "42701" || // duplicate_column
+    code === "42P07" || // duplicate_table
+    code === "42710" || // duplicate_object
+    code === "42P01" // undefined_table (rare race)
+  );
+}
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
 export async function runStartupMigrations(): Promise<void> {
@@ -960,9 +981,27 @@ export async function runStartupMigrations(): Promise<void> {
     try {
       await db.execute(step.sql);
     } catch (err) {
-      logger.warn({ err, step: step.name }, "[startup-migrations] step skipped");
+      if (isBenignPgError(err)) {
+        logger.info({ step: step.name }, "[startup-migrations] step already applied");
+        continue;
+      }
+      if (isSoftMigrationStep(step.name)) {
+        logger.warn({ err, step: step.name }, "[startup-migrations] soft step skipped");
+        continue;
+      }
+      logger.error({ err, step: step.name }, "[startup-migrations] CRITICAL step failed");
+      throw err;
     }
   }
+
+  // Align Drizzle schema columns on existing tables (ADD COLUMN IF NOT EXISTS only).
+  try {
+    await migrateDrizzleColumns();
+  } catch (err) {
+    logger.error({ err }, "Drizzle column migration failed — refusing to start");
+    throw err;
+  }
+
   logger.info("[startup-migrations] schema up to date");
 }
 

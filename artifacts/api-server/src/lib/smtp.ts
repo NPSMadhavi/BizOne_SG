@@ -9,6 +9,11 @@ export type SmtpSettings = {
   smtpSecure: boolean;
 };
 
+/** DB rows use `null`; env/partial configs may use `undefined`. */
+export type SmtpSettingsInput = {
+  [K in keyof SmtpSettings]?: SmtpSettings[K] | null;
+};
+
 function clean(value?: string | null): string {
   return (value || "").trim();
 }
@@ -33,7 +38,7 @@ function parseSecureFlag(port: string, raw?: string | null): boolean {
  * Use one complete credential set — never mix DB user with .env password.
  * Prefer SMTP_* from .env when all three are set, so local config is actually used.
  */
-export function resolveSmtpSettings(dbSettings?: Partial<SmtpSettings> | null): SmtpSettings | null {
+export function resolveSmtpSettings(dbSettings?: SmtpSettingsInput | null): SmtpSettings | null {
   const envHost = clean(process.env.SMTP_HOST);
   const envUser = clean(process.env.SMTP_USER);
   const envPass = cleanPass(process.env.SMTP_PASS);
@@ -84,7 +89,7 @@ export function resolveSmtpSettings(dbSettings?: Partial<SmtpSettings> | null): 
   };
 }
 
-export function isSmtpConfigured(dbSettings?: Partial<SmtpSettings> | null): boolean {
+export function isSmtpConfigured(dbSettings?: SmtpSettingsInput | null): boolean {
   return resolveSmtpSettings(dbSettings) != null;
 }
 

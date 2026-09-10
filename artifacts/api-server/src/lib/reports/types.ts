@@ -88,6 +88,10 @@ export interface InvoiceReportData {
   payment_terms: string;
   po_ref: string;
   notes: string;
+  customer_note: string;
+  delivery_instructions: string;
+  terms_and_conditions: string;
+  authorised_signature: string;
   subtotal: string;
   discount: string;
   tax: string;
@@ -155,6 +159,10 @@ export const EMPTY_INVOICE: InvoiceReportData = {
   payment_terms: "",
   po_ref: "",
   notes: "",
+  customer_note: "",
+  delivery_instructions: "",
+  terms_and_conditions: "",
+  authorised_signature: "",
   subtotal: "",
   discount: "",
   tax: "",

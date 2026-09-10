@@ -9,6 +9,10 @@
     "./image": "./src/image/index.ts",
     "./audio": "./src/audio/index.ts"
   },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
   "dependencies": {
     "openai": "^6.27.0",
     "p-limit": "^7.3.0",

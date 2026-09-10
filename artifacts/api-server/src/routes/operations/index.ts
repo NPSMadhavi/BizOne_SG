@@ -145,8 +145,9 @@ function formatRows(rows: Record<string, unknown>[]): Record<string, unknown>[] 
   return rows.map(formatRow);
 }
 
-function parseId(param: string | undefined): number | null {
-  const id = parseInt(param ?? "", 10);
+function parseId(param: string | string[] | undefined): number | null {
+  const raw = Array.isArray(param) ? param[0] : param;
+  const id = parseInt(raw ?? "", 10);
   return Number.isFinite(id) ? id : null;
 }
 

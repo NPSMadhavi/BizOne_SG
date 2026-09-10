@@ -11,12 +11,23 @@ import fs from "fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { seedCompanies } from "./routes/companies";
+import { sanitizeErrorMessage, logServerError } from "./lib/safe-error.js";
 
 // cookie-signature may be CJS; ensure .sign exists
 const signCookie = (sid: string, secret: string) =>
   "s:" + (signature as { sign: (val: string, secret: string) => string }).sign(sid, secret);
 
+const isProd = process.env.NODE_ENV === "production";
+
 const app: Express = express();
+
+/**
+ * Plesk / nginx terminates TLS. Trust X-Forwarded-* so secure cookies and
+ * protocol detection work behind the reverse proxy.
+ */
+if (isProd || process.env.TRUST_PROXY === "true" || process.env.TRUST_PROXY === "1") {
+  app.set("trust proxy", 1);
+}
 
 /**
  * ---------------------------------------------------------
@@ -44,7 +55,45 @@ app.use(
   }),
 );
 
-app.use(cors({ origin: true, credentials: true }));
+/** Comma-separated origins, e.g. https://sg.biz1.in,https://www.sg.biz1.in */
+const corsOrigins = (process.env.CORS_ORIGINS || process.env.APP_URL || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+let corsProdWarningLogged = false;
+
+app.use(
+  cors({
+    credentials: true,
+    origin(origin, callback) {
+      // Non-browser / same-origin requests may omit Origin
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (!isProd) {
+        callback(null, true);
+        return;
+      }
+      if (corsOrigins.length === 0) {
+        if (!corsProdWarningLogged) {
+          corsProdWarningLogged = true;
+          logger.warn(
+            "CORS_ORIGINS / APP_URL not set in production — reflecting request origin. Set CORS_ORIGINS for stricter control.",
+          );
+        }
+        callback(null, true);
+        return;
+      }
+      if (corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+  }),
+);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -55,13 +104,36 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
  * ---------------------------------------------------------
  */
 
+if (isProd && !process.env.SESSION_SECRET) {
+  throw new Error(
+    "SESSION_SECRET is required in production. Set a strong random secret in the Plesk environment.",
+  );
+}
+
 const sessionSecret =
-  process.env.SESSION_SECRET ?? "rsv-infotech-po-secret-2024";
+  process.env.SESSION_SECRET ||
+  (!isProd ? "dev-only-insecure-session-secret" : "");
+
+if (!sessionSecret) {
+  throw new Error("SESSION_SECRET is required");
+}
+
+const cookieSecure =
+  process.env.COOKIE_SECURE === "true" ||
+  process.env.COOKIE_SECURE === "1" ||
+  (isProd && process.env.COOKIE_SECURE !== "false");
 
 const PgSession = connectPgSimple(session);
 
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
+  ...(process.env.DATABASE_SSL === "true" || process.env.DATABASE_SSL === "require"
+    ? {
+        ssl: {
+          rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== "false",
+        },
+      }
+    : {}),
 });
 
 pgPool
@@ -116,7 +188,7 @@ app.use(
     saveUninitialized: false,
 
     cookie: {
-      secure: false,
+      secure: cookieSecure,
       httpOnly: true,
       sameSite: "lax",
     },
@@ -275,14 +347,15 @@ if (!frontendPath) {
 app.use(
   (
     err: any,
-    _req: any,
+    req: any,
     res: any,
     _next: any,
   ) => {
-    logger.error(
-      { err },
-      "Unhandled route error",
-    );
+    logServerError(logger, err, {
+      reqId: req?.id,
+      method: req?.method,
+      url: req?.url?.split("?")[0],
+    });
 
     const status =
       err.status ??
@@ -290,9 +363,7 @@ app.use(
       500;
 
     res.status(status).json({
-      error:
-        err?.message ??
-        "Internal server error",
+      error: sanitizeErrorMessage(err, "Internal server error"),
     });
   },
 );
