@@ -316,8 +316,8 @@ app.use(
   ) => {
     logServerError(logger, err, {
       reqId: req?.id,
-      method: req?.method,
-      url: req?.url?.split("?")[0],
+      route: `${req?.method || ""} ${String(req?.originalUrl || req?.url || "").split("?")[0]}`.trim(),
+      operation: req?.method && req?.url ? `${req.method} ${String(req.originalUrl || req.url).split("?")[0]}` : undefined,
     });
 
     const status =

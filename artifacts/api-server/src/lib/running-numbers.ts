@@ -58,18 +58,49 @@ export function buildDocNumber(prefix: string, counter: number, suffix: string):
   return `${prefix || ""}${String(counter)}${suffix || ""}`;
 }
 
+/**
+ * These document numbers have a GLOBAL unique constraint (not per-company).
+ * Existence checks must not filter by company_id or INSERT hits PostgreSQL 23505
+ * when another company already used the same number.
+ */
+const GLOBAL_UNIQUE_DOC_TYPES: ReadonlySet<DocType> = new Set([
+  "po", "pq", "qt", "so", "do", "grn",
+]);
+
+function executeRows(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result as Record<string, unknown>[];
+  const rows = (result as { rows?: unknown } | null)?.rows;
+  return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+}
+
+function isUndefinedTable(err: unknown): boolean {
+  let current: unknown = err;
+  for (let i = 0; i < 6 && current; i++) {
+    if (typeof current === "object" && current !== null) {
+      const rec = current as { code?: unknown; cause?: unknown };
+      if (rec.code === "42P01") return true;
+      current = rec.cause;
+    } else {
+      break;
+    }
+  }
+  return false;
+}
+
 async function numberExists(type: DocType, number: string, companyId?: number): Promise<boolean> {
   const tables = TABLE_MAP[type];
+  const scopeByCompany =
+    companyId != null && !GLOBAL_UNIQUE_DOC_TYPES.has(type);
   for (const { table, col } of tables) {
-    const companyClause = companyId ? sql` AND company_id = ${companyId}` : sql``;
+    const companyClause = scopeByCompany ? sql` AND company_id = ${companyId}` : sql``;
     try {
-      const rows = await db.execute(
+      const result = await db.execute(
         sql`SELECT 1 FROM ${sql.raw(table)} WHERE ${sql.raw(col)} = ${number}${companyClause} LIMIT 1`
-      ) as unknown as any[];
-      const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-      if (arr.length > 0) return true;
-    } catch {
-      // Table may not exist yet in some environments — skip
+      );
+      if (executeRows(result).length > 0) return true;
+    } catch (err) {
+      if (isUndefinedTable(err)) continue;
+      throw err;
     }
   }
   return false;
@@ -81,34 +112,27 @@ export async function nextDocNumber(type: DocType, companyId?: number): Promise<
   const prefixCol = cols.prefix;
   const suffixCol = cols.suffix;
 
-  let rows: any[];
+  const result = companyId
+    ? await db.execute(
+        sql`UPDATE settings SET ${sql.raw(counterCol)} = COALESCE(${sql.raw(counterCol)}, 0) + 1 WHERE company_id = ${companyId} RETURNING *`
+      )
+    : await db.execute(
+        sql`UPDATE settings SET ${sql.raw(counterCol)} = COALESCE(${sql.raw(counterCol)}, 0) + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
+      );
 
-  if (companyId) {
-    rows = await db.execute(
-      sql`UPDATE settings SET ${sql.raw(counterCol)} = COALESCE(${sql.raw(counterCol)}, 0) + 1 WHERE company_id = ${companyId} RETURNING *`
-    ) as unknown as any[];
-  } else {
-    rows = await db.execute(
-      sql`UPDATE settings SET ${sql.raw(counterCol)} = COALESCE(${sql.raw(counterCol)}, 0) + 1 WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1) RETURNING *`
-    ) as unknown as any[];
-  }
+  const s = executeRows(result)[0];
 
-  const s = Array.isArray(rows) ? rows[0] : (rows as any).rows?.[0];
-
-  if (!s) {
-    return `${cols.fallbackPrefix}1`;
-  }
-
-  const prefix = s[prefixCol] ?? cols.fallbackPrefix;
-  const suffix = s[suffixCol] ?? "";
-  let counter = Number(s[counterCol]) || 1;
+  const prefix = (s?.[prefixCol] as string | undefined) ?? cols.fallbackPrefix;
+  const suffix = (s?.[suffixCol] as string | undefined) ?? "";
+  let counter = Number(s?.[counterCol]) || 1;
   let candidate = buildDocNumber(prefix, counter, suffix);
 
   let safety = 0;
-  while (await numberExists(type, candidate, companyId) && safety < 50) {
+  while (await numberExists(type, candidate, companyId) && safety < 1000) {
     safety++;
     counter++;
     candidate = buildDocNumber(prefix, counter, suffix);
+    if (!s) continue;
     if (companyId) {
       await db.execute(
         sql`UPDATE settings SET ${sql.raw(counterCol)} = ${counter} WHERE company_id = ${companyId}`

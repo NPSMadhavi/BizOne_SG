@@ -63,10 +63,16 @@ async function fetchEntries(type: "vendor" | "customer"): Promise<DirectoryEntry
 }
 
 function buildFullAddress(entry: { address?: string | null; country?: string | null; postalCode?: string | null }): string {
+  const address = (entry.address || "").trim();
+  const country = (entry.country || "").trim();
+  const postalCode = (entry.postalCode || "").trim();
   const lines: string[] = [];
-  if (entry.address) lines.push(entry.address);
-  const cityLine = [entry.country, entry.postalCode].filter(Boolean).join(" ");
-  if (cityLine) lines.push(cityLine);
+  if (address) lines.push(address);
+  const addressLower = address.toLowerCase();
+  const cityParts: string[] = [];
+  if (country && !addressLower.includes(country.toLowerCase())) cityParts.push(country);
+  if (postalCode && !addressLower.includes(postalCode.toLowerCase())) cityParts.push(postalCode);
+  if (cityParts.length > 0) lines.push(cityParts.join(" "));
   return lines.join("\n");
 }
 

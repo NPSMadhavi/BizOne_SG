@@ -105,6 +105,7 @@ export default function SalesOrderNew() {
   const [selectedQtId, setSelectedQtId] = useState<number | null>(urlQuotationId ? Number(urlQuotationId) : null);
   const [qtPrefilled, setQtPrefilled] = useState(false);
   const [discountPct, setDiscountPct] = useState(0);
+  const submittingRef = useRef(false);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -369,6 +370,8 @@ export default function SalesOrderNew() {
   }
 
   async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (submittingRef.current || isSubmitting) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
     const filledItems = values.items.filter(i => {
       if ((i as any).type === "section") return ((i as any).sectionLabel || "").trim() !== "";
@@ -377,6 +380,7 @@ export default function SalesOrderNew() {
     const realItems = filledItems.filter((i: any) => i.type !== "section");
     if (realItems.length === 0) {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
+      submittingRef.current = false;
       setIsSubmitting(false);
       return;
     }
@@ -385,27 +389,34 @@ export default function SalesOrderNew() {
       const disc = Number(i.discount) || 0;
       return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
     });
-    createMutation.mutate({ data: { ...values, qtId: selectedQtId, qtNumber: values.qtNumber?.trim() || null, status: openPreview ? "confirmed" : "draft", discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
-      onSuccess: async (data) => {
-        // Show the New Sales Order in the list immediately (no manual refresh).
-        queryClient.setQueryData(getListSalesOrdersQueryKey(), (old: any) =>
-          Array.isArray(old) ? [data, ...old.filter((d: any) => d.id !== (data as any)?.id)] : [data],
-        );
-        await invalidateDocumentList(queryClient, "sales-orders");
-        setIsSubmitting(false);
-        if (openPreview) {
-          setSavedDoc(data);
-          setPreviewOpen(true);
-        } else {
-          toast({ title: "Draft saved." });
-          setLocation("/sales-orders");
-        }
-      },
-      onError: (err: any) => {
-        toast({ title: "Error", description: err?.message || "Failed to create sales order.", variant: "destructive" });
-        setIsSubmitting(false);
-      },
-    });
+    try {
+      const data = await createMutation.mutateAsync({
+        data: {
+          ...values,
+          qtId: selectedQtId,
+          qtNumber: values.qtNumber?.trim() || null,
+          status: openPreview ? "confirmed" : "draft",
+          discountAmount: values.discountAmount,
+          items: itemsWithAmount,
+        } as any,
+      });
+      queryClient.setQueryData(getListSalesOrdersQueryKey(), (old: any) =>
+        Array.isArray(old) ? [data, ...old.filter((d: any) => d.id !== (data as any)?.id)] : [data],
+      );
+      await invalidateDocumentList(queryClient, "sales-orders");
+      if (openPreview) {
+        setSavedDoc(data);
+        setPreviewOpen(true);
+      } else {
+        toast({ title: "Draft saved." });
+        setLocation("/sales-orders");
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "Failed to create sales order.", variant: "destructive" });
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
   }
 
   return (

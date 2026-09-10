@@ -18,6 +18,22 @@ export function sanitizeErrorMessage(err: unknown, fallback = "An unexpected err
   return fallback;
 }
 
+export function extractPostgresError(err: unknown): { pgCode?: string; constraint?: string } {
+  let current: unknown = err;
+  for (let i = 0; i < 6 && current; i++) {
+    if (typeof current !== "object" || current === null) break;
+    const rec = current as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (typeof rec.code === "string" && /^[0-9A-Z]{5}$/.test(rec.code)) {
+      return {
+        pgCode: rec.code,
+        constraint: typeof rec.constraint === "string" ? rec.constraint : undefined,
+      };
+    }
+    current = rec.cause;
+  }
+  return {};
+}
+
 export function logServerError(
   logger: { error: (obj: object, msg?: string) => void },
   err: unknown,
@@ -25,9 +41,11 @@ export function logServerError(
 ): void {
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : undefined;
+  const pg = extractPostgresError(err);
   logger.error(
     {
       ...context,
+      ...pg,
       errMessage: SENSITIVE.test(message) ? "[redacted]" : message,
       stack: stack && !SENSITIVE.test(stack) ? stack : undefined,
     },

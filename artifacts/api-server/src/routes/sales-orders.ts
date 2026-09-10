@@ -3,6 +3,8 @@ import { db, salesOrdersTable, usersTable, customersTable, invoicesTable, delive
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
+import { logger } from "../lib/logger.js";
+import { logServerError, sanitizeErrorMessage } from "../lib/safe-error.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -121,39 +123,55 @@ router.post("/sales-orders", async (req, res): Promise<void> => {
   const taxAmt = typeof tax === "number" ? (taxableAmount * tax) / 100 : 0;
   const totalAmount = taxableAmount + taxAmt;
 
-  const soNumber = await nextDocNumber("so", companyId);
+  let soNumber: string | undefined;
+  let salesOrderId: number | undefined;
+  try {
+    soNumber = await nextDocNumber("so", companyId);
 
-  const [doc] = await db.insert(salesOrdersTable).values({
-    soNumber,
-    companyId,
-    qtId: qtId ? Number(qtId) : null,
-    qtNumber: qtNumber || null,
-    customerName,
-    customerAddress,
-    customerContact,
-    customerContactEmail,
-    deliveryAddress,
-    issueDate: issueDate || new Date().toISOString().split("T")[0],
-    deliveryDate,
-    paymentTerms,
-    notes,
-    items,
-    currency: currency || "SGD",
-    isPrivate: isPrivate === true,
-    subtotal: subtotal.toFixed(2),
-    discountAmount: docDiscount.toFixed(2),
-    tax: taxAmt.toFixed(2),
-    totalAmount: totalAmount.toFixed(2),
-    status: status || "draft",
-    createdBy: req.session.userId!,
-    termsAndConditions,
-    deliveryInstructions,
-    customerNote,
-    authorisedSignature,
-  }).returning();
-  await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
-  logAudit({ req, action: "create", entityType: "sales_order", entityId: doc.id, entityLabel: doc.soNumber });
-  res.status(201).json(parseDoc(doc));
+    const [doc] = await db.insert(salesOrdersTable).values({
+      soNumber,
+      companyId,
+      qtId: qtId ? Number(qtId) : null,
+      qtNumber: qtNumber || null,
+      customerName,
+      customerAddress,
+      customerContact,
+      customerContactEmail,
+      deliveryAddress,
+      issueDate: issueDate || new Date().toISOString().split("T")[0],
+      deliveryDate,
+      paymentTerms,
+      notes,
+      items,
+      currency: currency || "SGD",
+      isPrivate: isPrivate === true,
+      subtotal: subtotal.toFixed(2),
+      discountAmount: docDiscount.toFixed(2),
+      tax: taxAmt.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+      status: status || "draft",
+      createdBy: req.session.userId!,
+      termsAndConditions,
+      deliveryInstructions,
+      customerNote,
+      authorisedSignature,
+    }).returning();
+    salesOrderId = doc.id;
+    await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
+    logAudit({ req, action: "create", entityType: "sales_order", entityId: doc.id, entityLabel: doc.soNumber });
+    res.status(201).json(parseDoc(doc));
+  } catch (err) {
+    logServerError(req.log ?? logger, err, {
+      reqId: req.id,
+      route: "POST /api/sales-orders",
+      operation: "sales_order_create",
+      salesOrderId: salesOrderId ?? null,
+      soNumber: soNumber ?? null,
+    });
+    if (!res.headersSent) {
+      res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to create sales order") });
+    }
+  }
 });
 
 router.get("/sales-orders/:id", async (req, res): Promise<void> => {
