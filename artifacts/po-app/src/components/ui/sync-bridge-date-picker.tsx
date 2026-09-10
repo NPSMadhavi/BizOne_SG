@@ -52,10 +52,21 @@ function parseYmd(v?: string | null): Date | null {
   return new Date(y, m - 1, day);
 }
 
-function toYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+function toYmd(d: Date | string | number | null | undefined): string {
+  if (d == null || d === "") return "";
+  let date: Date | null = null;
+  if (d instanceof Date) {
+    date = Number.isNaN(d.getTime()) ? null : d;
+  } else if (typeof d === "string") {
+    date = parseYmd(d);
+  } else if (typeof d === "number") {
+    const tmp = new Date(d);
+    date = Number.isNaN(tmp.getTime()) ? null : tmp;
+  }
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
@@ -474,7 +485,7 @@ export function SyncBridgeDatePicker({
 }
 
 export interface SyncBridgeDateObjectPickerProps {
-  value?: Date | null;
+  value?: Date | string | null;
   onChange: (value?: Date) => void;
   mode?: DatePickerMode;
   placeholder?: string;

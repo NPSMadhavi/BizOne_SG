@@ -23,14 +23,36 @@ function isSoftMigrationStep(name: string): boolean {
   );
 }
 
+/** Intended benign Postgres codes only — do not expand without audit evidence. */
+const BENIGN_PG_CODES = new Set([
+  "42701", // duplicate_column
+  "42P07", // duplicate_table
+  "42710", // duplicate_object
+  "42P01", // undefined_table (race / optional table not yet present)
+]);
+
+/**
+ * Drizzle's db.execute() wraps node-pg errors so the SQLSTATE often lives on
+ * err.cause.code rather than err.code. Check both (plus one nested cause).
+ */
+function getPgErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const e = err as { code?: unknown; cause?: unknown };
+  if (typeof e.code === "string" && e.code.length > 0) return e.code;
+  if (e.cause && typeof e.cause === "object") {
+    const c = e.cause as { code?: unknown; cause?: unknown };
+    if (typeof c.code === "string" && c.code.length > 0) return c.code;
+    if (c.cause && typeof c.cause === "object") {
+      const nested = (c.cause as { code?: unknown }).code;
+      if (typeof nested === "string" && nested.length > 0) return nested;
+    }
+  }
+  return undefined;
+}
+
 function isBenignPgError(err: unknown): boolean {
-  const code = (err as { code?: string })?.code;
-  return (
-    code === "42701" || // duplicate_column
-    code === "42P07" || // duplicate_table
-    code === "42710" || // duplicate_object
-    code === "42P01" // undefined_table (rare race)
-  );
+  const code = getPgErrorCode(err);
+  return code != null && BENIGN_PG_CODES.has(code);
 }
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
@@ -288,7 +310,8 @@ export async function runStartupMigrations(): Promise<void> {
       sql: sql`ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
     },
     {
-      name: "vendor invoice payment schedule and reminders",
+      // Schema only — never couple with pi_date UPDATE (pi_date may be absent on older DBs).
+      name: "vendor invoice payment schedule and reminders columns",
       sql: sql`
         ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS payment_terms text NOT NULL DEFAULT '30 Days Net';
         ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS due_date text;
@@ -296,9 +319,32 @@ export async function runStartupMigrations(): Promise<void> {
         ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS reminders_enabled boolean NOT NULL DEFAULT false;
         ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS reminder_start_after_day integer;
         ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS reminder_emails jsonb NOT NULL DEFAULT '[]'::jsonb;
-        UPDATE vendor_invoices
-        SET due_date = (to_date(pi_date, 'YYYY-MM-DD') + interval '30 days')::date::text
-        WHERE due_date IS NULL AND pi_date ~ '^\\d{4}-\\d{2}-\\d{2}$';
+      `,
+    },
+    {
+      // Data backfill only when pi_date + due_date both exist. Missing pi_date → no-op (not 42703).
+      // Not soft-named: real permission/SQL failures remain fatal. 42703 is NOT globally benign.
+      name: "vendor invoice due_date from pi_date when column exists",
+      sql: sql`
+        DO $vendor_due_backfill$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'vendor_invoices'
+              AND column_name = 'pi_date'
+          ) AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'vendor_invoices'
+              AND column_name = 'due_date'
+          ) THEN
+            UPDATE vendor_invoices
+            SET due_date = (to_date(pi_date, 'YYYY-MM-DD') + interval '30 days')::date::text
+            WHERE due_date IS NULL AND pi_date ~ '^\\d{4}-\\d{2}-\\d{2}$';
+          END IF;
+        END
+        $vendor_due_backfill$;
       `,
     },
     {
@@ -994,20 +1040,28 @@ export async function runStartupMigrations(): Promise<void> {
     try {
       await db.execute(step.sql);
     } catch (err) {
+      const pgCode = getPgErrorCode(err);
+      const pgMessage = err instanceof Error ? err.message : String(err);
       if (isBenignPgError(err)) {
-        logger.info({ step: step.name }, "[startup-migrations] step already applied");
+        logger.info(
+          { step: step.name, pgCode, pgMessage },
+          "[startup-migrations] step already applied",
+        );
         continue;
       }
       if (isSoftMigrationStep(step.name)) {
-        logger.warn({ err, step: step.name }, "[startup-migrations] soft step skipped");
+        logger.warn(
+          { err, step: step.name, pgCode, pgMessage },
+          "[startup-migrations] soft step skipped",
+        );
         continue;
       }
       logger.error(
         {
           err,
           step: step.name,
-          pgCode: (err as { code?: string })?.code,
-          pgMessage: err instanceof Error ? err.message : String(err),
+          pgCode,
+          pgMessage,
         },
         "[startup-migrations] CRITICAL step failed",
       );

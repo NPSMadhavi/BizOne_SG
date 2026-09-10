@@ -40,7 +40,7 @@ import {
 } from "@/operations-8june/components/forms/FormModalShell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
-import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormFill, clearVedaFormFillQueue } from "@/hooks/useVedaFormFill";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { SingaporePhoneInput } from "@/components/singapore-phone-input";
 import { formatSingaporePhoneForApi, parseSingaporePhoneDigits, validateSingaporePhoneDigits } from "@/lib/singapore-phone";
@@ -183,20 +183,21 @@ export default function EmployeeForm({
   // Track if form has been initialized to prevent repeated resets
   const [formInitialized, setFormInitialized] = useState(false);
   
-  // Reset form when sheet opens or employee changes
+  // Reset form when sheet opens or employee changes (avoid wiping live Veda fills on create remount)
   useEffect(() => {
     if (isOpen && employee) {
       const defaults = getDefaultValues(employee);
       form.reset(defaults);
       setFormInitialized(true);
-    } else if (isOpen && !employee) {
+    } else if (isOpen && !employee && !formInitialized) {
       form.reset(getDefaultValues());
       setFormInitialized(true);
     }
     if (!isOpen) {
       setFormInitialized(false);
+      clearVedaFormFillQueue();
     }
-  }, [employee?.id, isOpen]);
+  }, [employee?.id, isOpen, formInitialized]);
 
   // Apply Veda navigateTo prefill once the form is open
   useEffect(() => {

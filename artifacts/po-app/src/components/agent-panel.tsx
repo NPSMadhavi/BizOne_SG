@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/auth-context";
 import { queueVedaFormAction } from "@/hooks/useVedaFormActions";
+import { queueVedaFormFill } from "@/hooks/useVedaFormFill";
+import {
+  dispatchOptimisticGuidedFill,
+  guidedAnswerHint,
+  isGuidedCreatePath,
+} from "@/lib/veda-optimistic-fill";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetPurchaseOrderQueryKey,
@@ -1044,10 +1050,22 @@ export function AgentPanel() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [location, navigate] = useLocation();
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  /** Sticky path for guided create while ambient loop is open (avoids stale location closure). */
+  const guidedFormPathRef = useRef<string | null>(null);
   const [memory] = useState(() => loadMemory());
   const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const resolveAgentPath = useCallback(() => {
+    return guidedFormPathRef.current || locationRef.current || location;
+  }, [location]);
+
+  const dispatchFill = useCallback((fields: Record<string, any>) => {
+    queueVedaFormFill(fields);
+  }, []);
 
   const handleDocumentUpdated = useCallback((payload: { docType: string; id: number; fields?: Record<string, any>; document?: any }) => {
     applyVedaDocumentCache(queryClient, payload);
@@ -1184,17 +1202,18 @@ export function AgentPanel() {
           unlockVedaModules();
           if (quick.prefill) storeVedaPrefill(quick.prefill);
           navigate(normalizeNavPath(quickPath));
+          if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
           setConvState("speaking");
           const label = PATH_LABELS[quickPath] || quickPath;
           const partyHint = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
           setConvText(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
           void speak(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
-          await new Promise(r => setTimeout(r, 450));
+          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 200 : 450));
 
           // Prefill only when we have trusted form keys (rare)
           if (quick.prefill) {
-            await new Promise(r => setTimeout(r, 350));
-            window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: quick.prefill }));
+            await new Promise(r => setTimeout(r, 100));
+            dispatchFill(quick.prefill);
           }
 
           // New form / directory create → start guided field-by-field
@@ -1202,9 +1221,14 @@ export function AgentPanel() {
             setConvState("processing");
             let response = "";
             try {
+              const isEmployee = /\/employees\//.test(quickPath);
               const known = partyHint
-                ? `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the customer/vendor name again.`
-                : `Start guided create: ask ONLY the first field now (customer/vendor name).`;
+                ? (isEmployee
+                  ? `User already gave a name hint "${partyHint}". Immediately fillCurrentForm with name (and employeeId if they said one). Then ask ONLY the next required field in ≤6 words.`
+                  : `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the customer/vendor name again.`)
+                : (isEmployee
+                  ? `Start guided employee create: ask ONLY "Employee ID?" now. After each answer: fillCurrentForm first, then next short question. Order: employeeId → name → email → phone → address → department → salary → designation → nationality → dateOfBirth → joinDate (skip if today ok) → status.`
+                  : `Start guided create: ask ONLY the first field now.`);
               await streamChat(
                 [
                   ...ambientHistoryRef.current,
@@ -1220,9 +1244,10 @@ export function AgentPanel() {
                   unlockVedaModules();
                   storeVedaPrefill(prefill);
                   navigate(normalizeNavPath(path));
+                  if (isGuidedCreatePath(path)) guidedFormPathRef.current = path;
                 },
                 ctrl.signal,
-                (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+                dispatchFill,
                 (action) => queueVedaFormAction(action),
                 handleDocumentUpdated,
                 (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
@@ -1237,7 +1262,9 @@ export function AgentPanel() {
                 ].slice(-16);
                 setConvState("speaking");
                 setConvText(response.slice(0, 240));
-                const spoken = await speakWithHardStopOnly(response.slice(0, 600), { signal: ctrl.signal });
+                // Guided: speak only the short question — long TTS delays the next field
+                const speakLimit = isGuidedCreatePath(quickPath) ? 120 : 600;
+                const spoken = await speakWithHardStopOnly(response.slice(0, speakLimit), { signal: ctrl.signal });
                 if (spoken.stop) {
                   await speak("Okay, stopped.");
                   break;
@@ -1254,11 +1281,17 @@ export function AgentPanel() {
         setConvText(command);
         cancelSpeech();
 
+        const agentPath = resolveAgentPath();
+        const lastAsst = [...ambientHistoryRef.current].reverse().find(m => m.role === "assistant")?.content || "";
+        // Live form fill BEFORE waiting on the LLM (~instant UI)
+        dispatchOptimisticGuidedFill(lastAsst, command, agentPath);
+
         let response = "";
         let didNavigate = false;
         try {
+          const userContent = `${command}${guidedAnswerHint(agentPath)}`;
           await streamChat(
-            [...ambientHistoryRef.current, { role: "user", content: command }],
+            [...ambientHistoryRef.current, { role: "user", content: userContent }],
             memory,
             chunk => { response += chunk; setConvText(response.slice(-150)); },
             () => {},
@@ -1266,14 +1299,15 @@ export function AgentPanel() {
               unlockVedaModules();
               storeVedaPrefill(prefill);
               navigate(normalizeNavPath(path));
+              if (isGuidedCreatePath(path)) guidedFormPathRef.current = path;
               didNavigate = true;
             },
             ctrl.signal,
-            (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+            dispatchFill,
             (action) => queueVedaFormAction(action),
             handleDocumentUpdated,
             (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
-            location,
+            agentPath,
             selectedCompany?.id,
           );
           if (ctrl.signal.aborted || !convActiveRef.current) break;
@@ -1288,8 +1322,9 @@ export function AgentPanel() {
             }
             lastSpokenWords = (response || "").toLowerCase().split(/\s+/).filter(w => w.length > 3);
             setConvState("speaking");
+            const speakLimit = isGuidedCreatePath(agentPath) ? 120 : 600;
             const speakText = response
-              ? response.slice(0, 600)
+              ? response.slice(0, speakLimit)
               : didNavigate ? "Done." : "";
             setConvText((response || (didNavigate ? "Done." : "")).slice(0, 240));
 
@@ -1305,7 +1340,7 @@ export function AgentPanel() {
                 await speak("Okay, stopped.");
                 break;
               }
-              await new Promise(r => setTimeout(r, 250));
+              await new Promise(r => setTimeout(r, isGuidedCreatePath(agentPath) ? 80 : 250));
             }
           } else {
             // Empty agent reply — still acknowledge so user knows mic worked
@@ -1327,13 +1362,14 @@ export function AgentPanel() {
     } finally {
       convActiveRef.current = false;
       ambientAbortRef.current = null;
+      guidedFormPathRef.current = null;
       cancelSpeech();
       killSpeechMic();
       await new Promise(r => setTimeout(r, 200));
       setConvState("idle");
       setConvText("");
     }
-  }, [navigate, memory, location, canOpenPath, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail]);
+  }, [navigate, memory, resolveAgentPath, dispatchFill, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail]);
 
   const handleWakeWord = useCallback((followOn?: string) => {
     if (convActiveRef.current) {
@@ -1442,6 +1478,7 @@ export function AgentPanel() {
     unlockVedaModules();
     storeVedaPrefill(prefill);
     const normalized = normalizeNavPath(path);
+    if (isGuidedCreatePath(normalized)) guidedFormPathRef.current = normalized;
     const label = PATH_LABELS[normalized] || reason || normalized.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
@@ -1472,18 +1509,24 @@ export function AgentPanel() {
       setInput("");
       if (quick.prefill) storeVedaPrefill(quick.prefill);
       navigate(normalizeNavPath(quickPath));
+      if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
       if (quick.prefill) {
         window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: quick.prefill }));
-        }, 500);
+          dispatchFill(quick.prefill);
+        }, 200);
       }
       if (fromVoice) void speak(msg);
 
       // Continue into agent guided create (same turn) without re-matching quick-nav
       if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
+        const isEmployee = /\/employees\//.test(quickPath);
         const known = partyHint
-          ? `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the name again.`
-          : `Start guided create: ask ONLY the first field now.`;
+          ? (isEmployee
+            ? `User already gave a name hint "${partyHint}". Immediately fillCurrentForm with name. Then ask ONLY the next required field in ≤6 words.`
+            : `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the name again.`)
+          : (isEmployee
+            ? `Start guided employee create: ask ONLY "Employee ID?" now. After each answer fillCurrentForm first then next short question. Order: employeeId → name → email → phone → address → department → salary → designation → nationality → dateOfBirth → joinDate → status.`
+            : `Start guided create: ask ONLY the first field now.`);
         const kickoff = `${normalizeVoiceTranscript(text.trim())}\n\n[The ${label} form is now open at ${quickPath}. ${known}]`;
         const gid = `asst-guide-${uid}`;
         setMessages(p => [...p, { id: gid, role: "assistant", content: "", toolCalls: [] }]);
@@ -1498,7 +1541,7 @@ export function AgentPanel() {
             tool => setMessages(p => p.map(m => m.id === gid ? { ...m, toolCalls: [...(m.toolCalls ?? []), tool] } : m)),
             (path, prefill, reason) => handleNavigate(path, prefill, reason),
             abortRef.current.signal,
-            (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+            dispatchFill,
             (action) => queueVedaFormAction(action),
             handleDocumentUpdated,
             (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
@@ -1506,7 +1549,7 @@ export function AgentPanel() {
             selectedCompany?.id,
           );
           setMessages(p => p.map(m => m.id === gid ? { ...m, complete: true } : m));
-          if (fromVoice && full) await speak(full.slice(0, 600));
+          if (fromVoice && full) await speak(full.slice(0, isGuidedCreatePath(quickPath) ? 120 : 600));
         } catch (e: any) {
           if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === gid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
         } finally {
@@ -1518,6 +1561,9 @@ export function AgentPanel() {
     }
     const uid = Date.now().toString();
     const aid = `asst-${uid}`;
+    const agentPath = resolveAgentPath();
+    const lastAsst = [...messages].reverse().find(m => m.role === "assistant" && m.content)?.content || "";
+    dispatchOptimisticGuidedFill(lastAsst, text.trim(), agentPath);
     setMessages(p => [...p,
       { id: uid, role: "user", content: text.trim(), fromVoice },
       { id: aid, role: "assistant", content: "", toolCalls: [] },
@@ -1526,18 +1572,22 @@ export function AgentPanel() {
     abortRef.current = new AbortController();
     let full = "";
     try {
+      const userContent = `${text.trim()}${guidedAnswerHint(agentPath)}`;
       await streamChat(
-        [...history, { role: "user", content: text.trim() }],
+        [...history, { role: "user", content: userContent }],
         memory,
         chunk => { full += chunk; setMessages(p => p.map(m => m.id === aid ? { ...m, content: full } : m)); },
         tool => setMessages(p => p.map(m => m.id === aid ? { ...m, toolCalls: [...(m.toolCalls ?? []), tool] } : m)),
-        (path, prefill, reason) => handleNavigate(path, prefill, reason),
+        (path, prefill, reason) => {
+          if (isGuidedCreatePath(path)) guidedFormPathRef.current = path;
+          handleNavigate(path, prefill, reason);
+        },
         abortRef.current.signal,
-        (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+        dispatchFill,
         (action) => queueVedaFormAction(action),
         handleDocumentUpdated,
         (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
-        location,
+        agentPath,
         selectedCompany?.id,
       );
       const inv = full.match(/\b(INV-\d+)\b/);
@@ -1545,11 +1595,11 @@ export function AgentPanel() {
       if (inv) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: inv[1], path: "/invoices" } } : m)); appendMemory(`Created invoice ${inv[1]}`); }
       else if (qt) { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, docRef: { number: qt[1], path: "/quotations" } } : m)); appendMemory(`Created quotation ${qt[1]}`); }
       else { setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true } : m)); }
-      if (fromVoice && full) await speak(full.slice(0, 600));
+      if (fromVoice && full) await speak(full.slice(0, isGuidedCreatePath(agentPath) ? 120 : 600));
     } catch (e: any) {
       if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === aid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
     } finally { setThinking(false); abortRef.current = null; }
-  }, [thinking, history, memory, handleNavigate, location, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail, navigate]);
+  }, [thinking, history, memory, handleNavigate, resolveAgentPath, dispatchFill, messages, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail, navigate]);
 
   const submit = () => send(input);
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
