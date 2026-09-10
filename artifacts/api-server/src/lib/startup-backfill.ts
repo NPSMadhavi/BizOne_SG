@@ -35,7 +35,7 @@ const BENIGN_PG_CODES = new Set([
  * Drizzle's db.execute() wraps node-pg errors so the SQLSTATE often lives on
  * err.cause.code rather than err.code. Check both (plus one nested cause).
  */
-function getPgErrorCode(err: unknown): string | undefined {
+export function getPgErrorCode(err: unknown): string | undefined {
   if (!err || typeof err !== "object") return undefined;
   const e = err as { code?: unknown; cause?: unknown };
   if (typeof e.code === "string" && e.code.length > 0) return e.code;
@@ -55,13 +55,22 @@ function isBenignPgError(err: unknown): boolean {
   return code != null && BENIGN_PG_CODES.has(code);
 }
 
+function annotateMigrationError(err: unknown, step: string): never {
+  if (err && typeof err === "object") {
+    (err as { migrationStep?: string; pgCode?: string }).migrationStep = step;
+    const code = getPgErrorCode(err);
+    if (code) (err as { pgCode?: string }).pgCode = code;
+  }
+  throw err;
+}
+
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
 export async function runStartupMigrations(): Promise<void> {
   try {
     await migrateWmsTables();
   } catch (err) {
     logger.error({ err }, "WMS tables migration failed");
-    throw err;
+    annotateMigrationError(err, "migrateWmsTables");
   }
 
   // HR / payroll / assets / licenses (unprefixed company-scoped tables).
@@ -70,7 +79,7 @@ export async function runStartupMigrations(): Promise<void> {
     await migrateOperationsTables();
   } catch (err) {
     logger.error({ err }, "Operations tables migration failed");
-    throw err;
+    annotateMigrationError(err, "migrateOperationsTables");
   }
 
   try {
@@ -1065,7 +1074,7 @@ export async function runStartupMigrations(): Promise<void> {
         },
         "[startup-migrations] CRITICAL step failed",
       );
-      throw err;
+      annotateMigrationError(err, step.name);
     }
   }
 
@@ -1074,7 +1083,7 @@ export async function runStartupMigrations(): Promise<void> {
     await migrateDrizzleColumns();
   } catch (err) {
     logger.error({ err }, "Drizzle column migration failed — refusing to start");
-    throw err;
+    annotateMigrationError(err, "migrateDrizzleColumns / critical column verification");
   }
 
   logger.info("[startup-migrations] schema up to date");

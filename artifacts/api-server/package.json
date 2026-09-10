@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "prebuild": "npm run build --workspace=@workspace/db --if-present",
     "start": "node --enable-source-maps ./dist/index.mjs",
+    "migrate:production": "node --enable-source-maps ./dist/index.mjs --migrate-only",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretypecheck": "npm run build --workspace=@workspace/db --if-present && npm run build --workspace=@workspace/api-zod --if-present && npm run build --workspace=@workspace/integrations-openai-ai-server --if-present",
     "test:reports": "node --experimental-strip-types --test src/lib/reports/field-resolver.test.ts"

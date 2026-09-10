@@ -7,6 +7,7 @@ import {
   backfillExchangeRatesOnStartup,
   backfillExpenseJEsOnStartup,
   backfillInvoiceJEsOnStartup,
+  getPgErrorCode,
   reconcileStockQuantitiesOnStartup,
   runStartupMigrations,
   scrubAccidentalModuleDefaultsOnStartup,
@@ -73,6 +74,48 @@ async function logSafeDbDiagnostics(): Promise<void> {
   }
 }
 
+function isMigrateOnly(): boolean {
+  return (
+    process.argv.includes("--migrate-only") ||
+    process.env.MIGRATE_ONLY === "1" ||
+    process.env.MIGRATE_ONLY === "true"
+  );
+}
+
+function printMigrationFailure(err: unknown): void {
+  const step =
+    err && typeof err === "object" && "migrationStep" in err
+      ? String((err as { migrationStep?: string }).migrationStep || "")
+      : "";
+  const pgCode =
+    (err && typeof err === "object" && "pgCode" in err
+      ? String((err as { pgCode?: string }).pgCode || "")
+      : "") || getPgErrorCode(err) || "(none)";
+  const message = err instanceof Error ? err.message : String(err);
+  // Structured console lines for operators (no secrets).
+  console.error("FIRST FAILURE: migration");
+  console.error(`STEP: ${step || "(unknown)"}`);
+  console.error(`POSTGRES CODE: ${pgCode}`);
+  console.error(`MESSAGE: ${message}`);
+  logger.error(
+    {
+      err,
+      step: step || undefined,
+      pgCode: pgCode === "(none)" ? undefined : pgCode,
+      message,
+    },
+    "Failed to initialize database / startup migrations",
+  );
+}
+
+async function endPoolQuietly(): Promise<void> {
+  try {
+    await pool.end();
+  } catch {
+    /* ignore */
+  }
+}
+
 // load-env has already run (side-effect import). Validate production config next.
 try {
   assertProductionConfig();
@@ -81,51 +124,63 @@ try {
   process.exit(1);
 }
 
-const uploads = ensureUploadDirectories();
-if (!uploads.ok) {
-  logger.warn(
-    { uploadsRoot: uploads.uploadsRoot, error: uploads.error },
-    "[startup] continuing without writable uploads directory",
-  );
-}
-
-runStartupMigrations()
-  .then(() => logSafeDbDiagnostics())
-  .then(() => seedIfEmpty())
-  .then(() => seedInvoiceReportDefinition())
-  .then(() => scrubAccidentalModuleDefaultsOnStartup())
-  .then(() => backfillExpenseJEsOnStartup())
-  .then(() => backfillInvoiceJEsOnStartup())
-  .then(() => backfillExchangeRatesOnStartup())
-  .then(() => reconcileStockQuantitiesOnStartup())
-  .then(() => {
-    const port = resolveListenPort();
-    app.listen(port, "0.0.0.0", (err) => {
-      if (err) {
-        logger.error({ err }, "Error listening on port");
-        process.exit(1);
-      }
-
-      logger.info(
-        {
-          pid: process.pid,
-          hostname: "0.0.0.0",
-          port,
-          migrationStatus: "complete",
-        },
-        "Server listening",
-      );
-      startBackupScheduler();
+/** Offline / Plesk one-shot: same runStartupMigrations() as boot, never listen. */
+if (isMigrateOnly()) {
+  logger.info("[migrate:production] starting (migrations only, no listen)");
+  runStartupMigrations()
+    .then(async () => {
+      await logSafeDbDiagnostics();
+      logger.info("[migrate:production] SUCCESS — schema migrations complete");
+      console.log("MIGRATION COMMAND: PASS");
+      await endPoolQuietly();
+      process.exit(0);
+    })
+    .catch(async (err) => {
+      printMigrationFailure(err);
+      console.error("MIGRATION COMMAND: FAIL");
+      await endPoolQuietly();
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    logger.error(
-      {
-        err,
-        pgCode: (err as { code?: string })?.code,
-        message: err instanceof Error ? err.message : String(err),
-      },
-      "Failed to initialize database / startup migrations",
+} else {
+  const uploads = ensureUploadDirectories();
+  if (!uploads.ok) {
+    logger.warn(
+      { uploadsRoot: uploads.uploadsRoot, error: uploads.error },
+      "[startup] continuing without writable uploads directory",
     );
-    process.exit(1);
-  });
+  }
+
+  runStartupMigrations()
+    .then(() => logSafeDbDiagnostics())
+    .then(() => seedIfEmpty())
+    .then(() => seedInvoiceReportDefinition())
+    .then(() => scrubAccidentalModuleDefaultsOnStartup())
+    .then(() => backfillExpenseJEsOnStartup())
+    .then(() => backfillInvoiceJEsOnStartup())
+    .then(() => backfillExchangeRatesOnStartup())
+    .then(() => reconcileStockQuantitiesOnStartup())
+    .then(() => {
+      const port = resolveListenPort();
+      app.listen(port, "0.0.0.0", (err) => {
+        if (err) {
+          logger.error({ err }, "Error listening on port");
+          process.exit(1);
+        }
+
+        logger.info(
+          {
+            pid: process.pid,
+            hostname: "0.0.0.0",
+            port,
+            migrationStatus: "complete",
+          },
+          "Server listening",
+        );
+        startBackupScheduler();
+      });
+    })
+    .catch((err) => {
+      printMigrationFailure(err);
+      process.exit(1);
+    });
+}
