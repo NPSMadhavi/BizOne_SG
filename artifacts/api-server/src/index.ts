@@ -1,8 +1,9 @@
 import "./load-env";
-import app, { assertProductionConfig } from "./app";
+import app, { assertProductionConfig, frontendPath } from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
 import { seedInvoiceReportDefinition } from "./lib/reports/seed.js";
+import { seedCompanies } from "./routes/companies";
 import {
   backfillExchangeRatesOnStartup,
   backfillExpenseJEsOnStartup,
@@ -11,25 +12,21 @@ import {
   reconcileStockQuantitiesOnStartup,
   runStartupMigrations,
   scrubAccidentalModuleDefaultsOnStartup,
+  withStartupBootstrapLock,
 } from "./lib/startup-backfill.js";
 import { startBackupScheduler } from "./lib/accounting-backup.js";
 import { ensureUploadDirectories } from "./lib/ensure-uploads.js";
 import { pool } from "@workspace/db";
 
 /**
- * Passenger provides PORT. Never hardcode. Never fall back to 3000.
- * Re-read at listen time so load-env cannot stale-capture an empty value.
+ * Under Passenger, listen() is intercepted and bound to a Passenger-owned
+ * socket — the port is ignored. PORT only matters standalone (local dev).
  */
 function resolveListenPort(): number {
   const rawPort = process.env["PORT"];
-  if (!rawPort) {
-    throw new Error(
-      "PORT environment variable is required but was not provided. " +
-        "Passenger/Plesk must inject PORT — do not hardcode it.",
-    );
-  }
+  if (!rawPort) return 3000;
   const port = Number(rawPort);
-  if (Number.isNaN(port) || port <= 0) {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error(`Invalid PORT value: "${rawPort}"`);
   }
   return port;
@@ -116,6 +113,64 @@ async function endPoolQuietly(): Promise<void> {
   }
 }
 
+function annotateBootstrapError(err: unknown, step: string): never {
+  if (err && typeof err === "object") {
+    (err as { bootstrapStep?: string; pgCode?: string }).bootstrapStep = step;
+    const code = getPgErrorCode(err);
+    if (code) (err as { pgCode?: string }).pgCode = code;
+  }
+  throw err;
+}
+
+async function runBootstrapStep(
+  name: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    annotateBootstrapError(err, name);
+  }
+}
+
+/**
+ * Single coordinated startup bootstrap.
+ * Blocking advisory lock: one worker runs schema + data writers; others wait
+ * then re-enter the same idempotent work. Process death releases the lock.
+ */
+async function runCoordinatedStartupBootstrap(): Promise<void> {
+  await withStartupBootstrapLock(async () => {
+    try {
+      await runStartupMigrations();
+    } catch (err) {
+      printMigrationFailure(err);
+      throw err;
+    }
+    await runBootstrapStep("seedCompanies", () => seedCompanies());
+    await runBootstrapStep("seedIfEmpty", () => seedIfEmpty());
+    await runBootstrapStep("seedInvoiceReportDefinition", () =>
+      seedInvoiceReportDefinition(),
+    );
+    await runBootstrapStep(
+      "scrubAccidentalModuleDefaultsOnStartup",
+      () => scrubAccidentalModuleDefaultsOnStartup(),
+    );
+    await runBootstrapStep("backfillExpenseJEsOnStartup", () =>
+      backfillExpenseJEsOnStartup(),
+    );
+    await runBootstrapStep("backfillInvoiceJEsOnStartup", () =>
+      backfillInvoiceJEsOnStartup(),
+    );
+    await runBootstrapStep("backfillExchangeRatesOnStartup", () =>
+      backfillExchangeRatesOnStartup(),
+    );
+    await runBootstrapStep("reconcileStockQuantitiesOnStartup", () =>
+      reconcileStockQuantitiesOnStartup(),
+    );
+    logger.info("[startup-bootstrap] complete");
+  });
+}
+
 // load-env has already run (side-effect import). Validate production config next.
 try {
   assertProductionConfig();
@@ -124,19 +179,25 @@ try {
   process.exit(1);
 }
 
-/** Offline / Plesk one-shot: same runStartupMigrations() as boot, never listen. */
+/** Offline / Plesk one-shot: same coordinated bootstrap as boot, never listen. */
 if (isMigrateOnly()) {
-  logger.info("[migrate:production] starting (migrations only, no listen)");
-  runStartupMigrations()
+  logger.info("[migrate:production] starting (bootstrap only, no listen)");
+  runCoordinatedStartupBootstrap()
     .then(async () => {
       await logSafeDbDiagnostics();
-      logger.info("[migrate:production] SUCCESS — schema migrations complete");
+      logger.info("[migrate:production] SUCCESS — startup bootstrap complete");
       console.log("MIGRATION COMMAND: PASS");
       await endPoolQuietly();
       process.exit(0);
     })
     .catch(async (err) => {
-      printMigrationFailure(err);
+      const step =
+        err && typeof err === "object" && "migrationStep" in err
+          ? String((err as { migrationStep?: string }).migrationStep || "")
+          : "";
+      if (!step) {
+        logger.error({ err }, "Startup failed");
+      }
       console.error("MIGRATION COMMAND: FAIL");
       await endPoolQuietly();
       process.exit(1);
@@ -150,16 +211,16 @@ if (isMigrateOnly()) {
     );
   }
 
-  runStartupMigrations()
+  runCoordinatedStartupBootstrap()
     .then(() => logSafeDbDiagnostics())
-    .then(() => seedIfEmpty())
-    .then(() => seedInvoiceReportDefinition())
-    .then(() => scrubAccidentalModuleDefaultsOnStartup())
-    .then(() => backfillExpenseJEsOnStartup())
-    .then(() => backfillInvoiceJEsOnStartup())
-    .then(() => backfillExchangeRatesOnStartup())
-    .then(() => reconcileStockQuantitiesOnStartup())
     .then(() => {
+      if (!frontendPath) {
+        logger.error(
+          "React frontend build directory was not found — refusing to listen",
+        );
+        process.exit(1);
+        return;
+      }
       const port = resolveListenPort();
       app.listen(port, "0.0.0.0", (err) => {
         if (err) {
@@ -180,7 +241,28 @@ if (isMigrateOnly()) {
       });
     })
     .catch((err) => {
-      printMigrationFailure(err);
+      const isMigration =
+        err && typeof err === "object" && "migrationStep" in err;
+      if (!isMigration) {
+        const step =
+          err && typeof err === "object" && "bootstrapStep" in err
+            ? String((err as { bootstrapStep?: string }).bootstrapStep || "")
+            : "";
+        const pgCode =
+          (err && typeof err === "object" && "pgCode" in err
+            ? String((err as { pgCode?: string }).pgCode || "")
+            : "") || getPgErrorCode(err) || "(none)";
+        logger.error(
+          {
+            err,
+            step: step || undefined,
+            pgCode: pgCode === "(none)" ? undefined : pgCode,
+          },
+          "Startup failed",
+        );
+      } else {
+        logger.error({ err }, "Startup failed");
+      }
       process.exit(1);
     });
 }

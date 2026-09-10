@@ -2,7 +2,7 @@
  * Startup migrations + exchange-rate backfill.
  * Safe to call on every boot — all DDL uses IF NOT EXISTS / idempotent checks.
  */
-import { db, companiesTable, userCompaniesTable, usersTable } from "@workspace/db";
+import { db, pool, companiesTable, userCompaniesTable, usersTable } from "@workspace/db";
 import { sql, eq } from "drizzle-orm";
 import { getExchangeRateToSGD } from "./exchange-rate.js";
 import { backfillExpenseJEs } from "./expense-auto-post.js";
@@ -62,6 +62,50 @@ function annotateMigrationError(err: unknown, step: string): never {
     if (code) (err as { pgCode?: string }).pgCode = code;
   }
   throw err;
+}
+
+/**
+ * Session-level PostgreSQL advisory lock for Passenger multi-worker startup.
+ * Blocking (pg_advisory_lock, not try). Released on unlock or connection drop.
+ * Key is stable across deploys — do not change without a dual-lock window.
+ */
+export const STARTUP_BOOTSTRAP_LOCK_KEY = 87201401;
+
+export async function withStartupBootstrapLock<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    logger.info(
+      { lockKey: STARTUP_BOOTSTRAP_LOCK_KEY, pid: process.pid },
+      "[startup-bootstrap] waiting for advisory lock",
+    );
+    await client.query("SELECT pg_advisory_lock($1)", [STARTUP_BOOTSTRAP_LOCK_KEY]);
+    logger.info(
+      { lockKey: STARTUP_BOOTSTRAP_LOCK_KEY, pid: process.pid },
+      "[startup-bootstrap] acquired advisory lock",
+    );
+    try {
+      return await fn();
+    } finally {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1)", [
+          STARTUP_BOOTSTRAP_LOCK_KEY,
+        ]);
+        logger.info(
+          { lockKey: STARTUP_BOOTSTRAP_LOCK_KEY, pid: process.pid },
+          "[startup-bootstrap] released advisory lock",
+        );
+      } catch (unlockErr) {
+        logger.warn(
+          { err: unlockErr, pid: process.pid },
+          "[startup-bootstrap] unlock failed — lock will release when this connection closes",
+        );
+      }
+    }
+  } finally {
+    client.release();
+  }
 }
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */

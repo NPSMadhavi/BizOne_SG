@@ -7,10 +7,10 @@ import signature from "cookie-signature";
 import pg from "pg";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { seedCompanies } from "./routes/companies";
 import { sanitizeErrorMessage, logServerError } from "./lib/safe-error.js";
 
 // cookie-signature may be CJS; ensure .sign exists
@@ -205,71 +205,34 @@ app.use("/api", router);
 
 /**
  * ---------------------------------------------------------
- * Seed companies
- * ---------------------------------------------------------
- */
-
-seedCompanies().catch((err) => {
-  logger.error(
-    { err },
-    "Failed to seed companies",
-  );
-});
-
-/**
- * ---------------------------------------------------------
  * React/Vite frontend
  * ---------------------------------------------------------
  *
- * Your frontend build is:
- *
- * artifacts/
- *   po-app/
- *     dist/
- *       public/
- *         index.html
- *         assets/
- *         fonts/
- *
- * We support both possible working directories:
- *
- * 1. /home/biz1admin/sg.biz1.in
- * 2. /home/biz1admin/sg.biz1.in/artifacts
- *
- * You can also explicitly set FRONTEND_DIST_PATH
- * in Plesk environment variables.
+ * Bundled runtime: import.meta.url is artifacts/api-server/dist/index.mjs
+ * so module-relative po-app is ../../po-app/dist/public from dist/.
+ * process.cwd() is NOT trusted under Passenger.
  * ---------------------------------------------------------
  */
 
+const here = path.dirname(fileURLToPath(import.meta.url));
+
 const frontendCandidates = [
-  // If the application runs from:
-  // /home/biz1admin/sg.biz1.in
-  path.resolve(
-    process.cwd(),
-    "artifacts/po-app/dist/public",
-  ),
-
-  // If the application runs from:
-  // /home/biz1admin/sg.biz1.in/artifacts
-  path.resolve(
-    process.cwd(),
-    "po-app/dist/public",
-  ),
-
-  // Optional explicit environment variable
   process.env.FRONTEND_DIST_PATH,
+  path.resolve(here, "..", "..", "po-app", "dist", "public"),
+  path.resolve(process.cwd(), "artifacts/po-app/dist/public"),
+  path.resolve(process.cwd(), "po-app/dist/public"),
 ].filter(Boolean) as string[];
 
-const frontendPath = frontendCandidates.find((directory) =>
-  fs.existsSync(
-    path.join(directory, "index.html"),
-  ),
-);
+export const frontendPath =
+  frontendCandidates.find((directory) =>
+    fs.existsSync(path.join(directory, "index.html")),
+  ) ?? null;
 
 if (!frontendPath) {
   logger.error(
     {
       cwd: process.cwd(),
+      moduleDir: here,
       candidates: frontendCandidates,
     },
     "React frontend build directory was not found",

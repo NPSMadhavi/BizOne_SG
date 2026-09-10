@@ -197,6 +197,16 @@ export const DRIZZLE_TABLE_CREATES: string[] = [
     created_by integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
+  `CREATE TABLE IF NOT EXISTS maintenance (
+    id serial PRIMARY KEY,
+    is_enabled boolean NOT NULL DEFAULT false,
+    scheduled_start text,
+    scheduled_end text,
+    message text,
+    contact_email text,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    updated_by_user text
+  )`,
 ];
 
 /**

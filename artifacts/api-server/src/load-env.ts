@@ -81,8 +81,9 @@ export function loadLocalEnv(): void {
     path.join(here, ".env"), // next to bundled entry (dist/) or src/
     path.join(cwd, "src", ".env"), // artifacts/api-server/src/.env (dev.mjs cwd)
     path.join(cwd, ".env"), // app root on Plesk
-    path.resolve(here, "..", ".env"),
+    path.resolve(here, "..", ".env"), // artifacts/api-server/.env
     path.resolve(here, "..", "src", ".env"),
+    path.resolve(here, "..", "..", "..", ".env"), // repo / Application Root (module-relative)
   ];
 
   const merged: Record<string, string> = {};
