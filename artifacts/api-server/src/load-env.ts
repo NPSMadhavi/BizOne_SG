@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
  * Load key=value pairs from .env into process.env.
  *
  * Critical for Plesk/Passenger:
- * - Never overwrite host-supplied PORT / NODE_ENV (and related) once set.
+ * - Never overwrite host-supplied PORT / NODE_ENV / PASSENGER_* once set.
  * - Placeholder detection applies only to integration secrets (API keys / SMTP),
  *   never to short values like PORT ("8080") or NODE_ENV ("production").
  */
@@ -31,7 +31,7 @@ function parseEnvFile(filePath: string): Record<string, string> {
   return env;
 }
 
-/** Set by Passenger / Plesk / the OS — .env must not clobber these when present. */
+/** Explicit host-owned keys (Passenger / Plesk / OS). */
 const HOST_OWNED_KEYS = new Set([
   "PORT",
   "NODE_ENV",
@@ -39,7 +39,15 @@ const HOST_OWNED_KEYS = new Set([
   "PASSENGER_APP_ENV",
   "PASSENGER_SPAWN_WORK_DIR",
   "PASSENGER_CONNECT_PASSWORD",
+  "PASSENGER_INSTANCE_REGISTRY_DIR",
 ]);
+
+function isHostOwnedKey(key: string): boolean {
+  if (HOST_OWNED_KEYS.has(key)) return true;
+  // Any Passenger-injected variable
+  if (key.startsWith("PASSENGER_")) return true;
+  return false;
+}
 
 /** Local secrets that may safely replace empty/placeholder process env values. */
 const PREFER_FILE_KEYS = new Set([
@@ -57,6 +65,7 @@ const PREFER_FILE_KEYS = new Set([
 function looksLikeSecretPlaceholder(v: string | undefined): boolean {
   if (!v) return true;
   const k = v.trim().toLowerCase();
+  // Intentionally NO length check — short values like PORT must never match.
   return (
     k.includes("your-openai") ||
     k.includes("your-api-key") ||
@@ -71,7 +80,7 @@ export function loadLocalEnv(): void {
   const candidates = [
     path.join(here, ".env"), // next to bundled entry (dist/) or src/
     path.join(cwd, "src", ".env"), // artifacts/api-server/src/.env (dev.mjs cwd)
-    path.join(cwd, ".env"), // app root on Plesk (/sg.biz1.in/.env)
+    path.join(cwd, ".env"), // app root on Plesk
     path.resolve(here, "..", ".env"),
     path.resolve(here, "..", "src", ".env"),
   ];
@@ -85,7 +94,7 @@ export function loadLocalEnv(): void {
     const current = process.env[key];
 
     // Passenger/Plesk own these. If already set (even to a short port number), keep them.
-    if (HOST_OWNED_KEYS.has(key)) {
+    if (isHostOwnedKey(key)) {
       if (current !== undefined && current !== "") continue;
       // Only fill when completely unset; never install an empty PORT from .env.
       if (value !== "") {
@@ -106,6 +115,7 @@ export function loadLocalEnv(): void {
     }
 
     // Default: fill gaps only — never override a non-empty process env value.
+    // (SESSION_SECRET, DATABASE_URL, CORS_ORIGINS, etc. can come from .env when unset.)
     if (current === undefined || current === "") {
       process.env[key] = value;
     }

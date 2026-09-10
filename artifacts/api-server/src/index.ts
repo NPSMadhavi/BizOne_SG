@@ -1,19 +1,30 @@
 import "./load-env";
-import app from "./app";
+import app, { assertProductionConfig } from "./app";
 import { logger } from "./lib/logger";
 import { seedIfEmpty } from "./seed";
 import { seedInvoiceReportDefinition } from "./lib/reports/seed.js";
-import { backfillExchangeRatesOnStartup, backfillExpenseJEsOnStartup, backfillInvoiceJEsOnStartup, reconcileStockQuantitiesOnStartup, runStartupMigrations, scrubAccidentalModuleDefaultsOnStartup } from "./lib/startup-backfill.js";
+import {
+  backfillExchangeRatesOnStartup,
+  backfillExpenseJEsOnStartup,
+  backfillInvoiceJEsOnStartup,
+  reconcileStockQuantitiesOnStartup,
+  runStartupMigrations,
+  scrubAccidentalModuleDefaultsOnStartup,
+} from "./lib/startup-backfill.js";
 import { startBackupScheduler } from "./lib/accounting-backup.js";
 import { ensureUploadDirectories } from "./lib/ensure-uploads.js";
 import { pool } from "@workspace/db";
 
+/**
+ * Passenger provides PORT. Never hardcode. Never fall back to 3000.
+ * Re-read at listen time so load-env cannot stale-capture an empty value.
+ */
 function resolveListenPort(): number {
-  // Re-read after load-env so Passenger/Plesk PORT is never replaced by a stale capture.
   const rawPort = process.env["PORT"];
   if (!rawPort) {
     throw new Error(
-      "PORT environment variable is required but was not provided.",
+      "PORT environment variable is required but was not provided. " +
+        "Passenger/Plesk must inject PORT — do not hardcode it.",
     );
   }
   const port = Number(rawPort);
@@ -23,6 +34,7 @@ function resolveListenPort(): number {
   return port;
 }
 
+/** Informational only — migrations already proved DB connectivity. */
 async function logSafeDbDiagnostics(): Promise<void> {
   try {
     const result = await pool.query<{
@@ -56,12 +68,26 @@ async function logSafeDbDiagnostics(): Promise<void> {
       "[startup] database connection OK (credentials not logged)",
     );
   } catch (err) {
-    logger.error({ err }, "[startup] database diagnostics failed");
-    throw err;
+    // Migrations already required a working DB; do not independently kill boot.
+    logger.warn({ err }, "[startup] database diagnostics failed (non-fatal after migrations)");
   }
 }
 
-ensureUploadDirectories();
+// load-env has already run (side-effect import). Validate production config next.
+try {
+  assertProductionConfig();
+} catch (err) {
+  logger.error({ err }, "Production configuration invalid — refusing to start");
+  process.exit(1);
+}
+
+const uploads = ensureUploadDirectories();
+if (!uploads.ok) {
+  logger.warn(
+    { uploadsRoot: uploads.uploadsRoot, error: uploads.error },
+    "[startup] continuing without writable uploads directory",
+  );
+}
 
 runStartupMigrations()
   .then(() => logSafeDbDiagnostics())
@@ -93,6 +119,13 @@ runStartupMigrations()
     });
   })
   .catch((err) => {
-    logger.error({ err }, "Failed to initialize database");
+    logger.error(
+      {
+        err,
+        pgCode: (err as { code?: string })?.code,
+        message: err instanceof Error ? err.message : String(err),
+      },
+      "Failed to initialize database / startup migrations",
+    );
     process.exit(1);
   });

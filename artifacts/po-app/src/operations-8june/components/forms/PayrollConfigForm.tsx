@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -135,24 +135,53 @@ function formatCurrency(amount: number) {
   }).format(amount || 0);
 }
 
-/** Monthly CPF ordinary wage.
- * Full month (30 or 31 working days) → full basic salary (no uplift).
- * Partial month (< 30) → basic × days / 30.
- */
-const CPF_STANDARD_MONTH_DAYS = 30;
+const PAYROLL_MONTH_OPTIONS = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+] as const;
 
+/** Calendar days in a month (28/29/30/31) for the given year. */
+function getDaysInMonth(month: number, year = new Date().getFullYear()): number {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return 30;
+  return new Date(year, month, 0).getDate();
+}
+
+/**
+ * Prorated basic for CPF / pay:
+ * (monthly salary ÷ days in selected month) × working days
+ * Example: $3,100 ÷ 31 × 30 ≠ $3,100 ÷ 30 × 30
+ */
 function calcBasicSalaryForCpf(
   baseSalary: number,
-  workingDays?: number | null
+  workingDays?: number | null,
+  monthDays?: number | null
 ): number {
   const base = Number(baseSalary) || 0;
   if (base <= 0) return 0;
+
   const days = Number(workingDays);
-  if (!Number.isFinite(days) || days <= 0) return Math.round(base * 100) / 100;
-  // Cap at 30 so 31-day months do not pay more than basic
-  const effectiveDays = Math.min(days, CPF_STANDARD_MONTH_DAYS);
-  const prorated = (base * effectiveDays) / CPF_STANDARD_MONTH_DAYS;
-  return Math.round(prorated * 100) / 100;
+  if (!Number.isFinite(days) || days <= 0) {
+    return Math.round(base * 100) / 100;
+  }
+
+  const rawMonthDays = Number(monthDays);
+  const divisor =
+    Number.isFinite(rawMonthDays) && rawMonthDays > 0 ? rawMonthDays : days;
+  if (divisor <= 0) return Math.round(base * 100) / 100;
+
+  const prorated = (base / divisor) * days;
+  // Never pay more than the configured monthly basic.
+  return Math.round(Math.min(base, prorated) * 100) / 100;
 }
 
 function formatRatePercent(rate: number): string {
@@ -229,7 +258,8 @@ function buildPayrollConfigPayload(
   data: PayrollConfigFormData,
   selectedEmployee: any,
   citizenshipStatus: string,
-  age: number
+  age: number,
+  monthDays?: number | null
 ) {
   const {
     age: _age,
@@ -269,7 +299,8 @@ function buildPayrollConfigPayload(
   const calculation = calculateSyncBridgePayrollPreview({
     monthlySalary: calcBasicSalaryForCpf(
       Number(payrollData.baseSalary) || 0,
-      workingDays != null ? Number(workingDays) : undefined
+      workingDays != null ? Number(workingDays) : undefined,
+      monthDays
     ),
     age,
     citizenshipStatus: citizenshipStatus as "citizen" | "pr" | "foreigner",
@@ -357,6 +388,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   });
 
   const isEditMode = Boolean(editData?.id);
+  const [selectedPayrollMonth, setSelectedPayrollMonth] = useState<number | null>(null);
 
   const selectedEmployeeId = form.watch("employeeId");
   const selectedEmployee = useMemo(
@@ -369,7 +401,13 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   const baseSalary = Number(form.watch("baseSalary") || 0);
   const workingDaysRaw = form.watch("workingDays");
-  const basicSalaryForCpf = calcBasicSalaryForCpf(baseSalary, workingDaysRaw);
+  const selectedMonthDays =
+    selectedPayrollMonth != null ? getDaysInMonth(selectedPayrollMonth) : null;
+  const basicSalaryForCpf = calcBasicSalaryForCpf(
+    baseSalary,
+    workingDaysRaw,
+    selectedMonthDays
+  );
   const age = Number(form.watch("age") || 0);
   const citizenshipStatus = form.watch("citizenshipStatus");
   const overtimeHours = Number(form.watch("overtimeRate") || 0); // field labeled Overtime Hours
@@ -479,7 +517,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
         data,
         selectedEmployee,
         data.citizenshipStatus || "citizen",
-        resolvedAge
+        resolvedAge,
+        selectedPayrollMonth != null ? getDaysInMonth(selectedPayrollMonth) : null
       );
 
       const res = editData?.id
@@ -537,41 +576,69 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             <section className="space-y-4">
-              <FormField
-                control={form.control}
-                name="employeeId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className={formLabelClass}>Employee *</FormLabel>
-                    {isEditMode ? (
-                      <FormControl>
-                        <Input
-                          readOnly
-                          value={
-                            selectedEmployee
-                              ? `${selectedEmployee.name} (${selectedEmployee.employeeId}) - ${selectedEmployee.designation}`
-                              : editData?.employeeName
-                                ? `${editData.employeeName} - ${editData.designation ?? ""}`
-                                : "Selected employee"
-                          }
-                          className={readOnlyInputClass}
-                        />
-                      </FormControl>
-                    ) : (
-                      <FormControl>
-                        <EmployeeCombobox
-                          employees={employeeOptions}
-                          value={field.value}
-                          onChange={(id) => field.onChange(id)}
-                          disabled={employeesLoading}
-                          loading={employeesLoading}
-                        />
-                      </FormControl>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="employeeId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className={formLabelClass}>Employee *</FormLabel>
+                      {isEditMode ? (
+                        <FormControl>
+                          <Input
+                            readOnly
+                            value={
+                              selectedEmployee
+                                ? `${selectedEmployee.name} (${selectedEmployee.employeeId}) - ${selectedEmployee.designation}`
+                                : editData?.employeeName
+                                  ? `${editData.employeeName} - ${editData.designation ?? ""}`
+                                  : "Selected employee"
+                            }
+                            className={readOnlyInputClass}
+                          />
+                        </FormControl>
+                      ) : (
+                        <FormControl>
+                          <EmployeeCombobox
+                            employees={employeeOptions}
+                            value={field.value}
+                            onChange={(id) => field.onChange(id)}
+                            disabled={employeesLoading}
+                            loading={employeesLoading}
+                          />
+                        </FormControl>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormItem>
+                  <FormLabel className={formLabelClass}>Month</FormLabel>
+                  <Select
+                    value={selectedPayrollMonth != null ? String(selectedPayrollMonth) : undefined}
+                    onValueChange={(value) => {
+                      const month = Number(value);
+                      setSelectedPayrollMonth(month);
+                      form.setValue("workingDays", getDaysInMonth(month), {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select month" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYROLL_MONTH_OPTIONS.map((month) => (
+                        <SelectItem key={month.value} value={String(month.value)}>
+                          {month.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              </div>
 
               {selectedEmployee && (
                 <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
@@ -741,7 +808,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                           <Input
                             type="text"
                             inputMode="numeric"
-                            placeholder="30 or 31"
+                            placeholder=""
                             value={field.value ?? ""}
                             onChange={(e) => {
                               const v = e.target.value.replace(/\D/g, "");

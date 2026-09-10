@@ -210,9 +210,8 @@ export default function WarehousesPage() {
                   <th className="py-3 pr-4">Code</th>
                   <th className="py-3 pr-4">Name</th>
                   <th className="py-3 pr-4">City</th>
-                  <th className="py-3 pr-4">State</th>
                   <th className="py-3 pr-4">Contact</th>
-                  <th className="py-3 pr-4">Phone</th>
+                  <th className="py-3 pr-4">Contact Number</th>
                   <th className="py-3 pr-4">Sales Person</th>
                   <th className="py-3 pr-4">Status</th>
                   <th className="py-3">Actions</th>
@@ -231,7 +230,6 @@ export default function WarehousesPage() {
                     </td>
                     <td className="py-3 pr-4 font-medium text-[#111827]">{r.name}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.city || "-"}</td>
-                    <td className="py-3 pr-4 text-[#444651]">{r.state || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.contactPerson || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.contactNumber || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.salesPerson || "-"}</td>
@@ -323,7 +321,7 @@ export default function WarehousesPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Phone Number</Label>
+              <Label>Contact Number</Label>
               <SingaporePhoneInput
                 value={form.contactNumber}
                 onChange={(digits) => updateField("contactNumber", digits)}

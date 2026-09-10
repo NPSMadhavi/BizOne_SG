@@ -59,6 +59,19 @@ export async function runStartupMigrations(): Promise<void> {
 
   const steps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     {
+      name: "express-session table",
+      sql: sql`
+        CREATE TABLE IF NOT EXISTS "session" (
+          "sid" varchar NOT NULL COLLATE "default",
+          "sess" json NOT NULL,
+          "expire" timestamp(6) NOT NULL,
+          CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+        );
+        CREATE INDEX IF NOT EXISTS "IDX_session_expire"
+          ON "session" ("expire");
+      `,
+    },
+    {
       name: "financial_years and opening balance tables",
       sql: sql`
         CREATE TABLE IF NOT EXISTS financial_years (
@@ -989,7 +1002,15 @@ export async function runStartupMigrations(): Promise<void> {
         logger.warn({ err, step: step.name }, "[startup-migrations] soft step skipped");
         continue;
       }
-      logger.error({ err, step: step.name }, "[startup-migrations] CRITICAL step failed");
+      logger.error(
+        {
+          err,
+          step: step.name,
+          pgCode: (err as { code?: string })?.code,
+          pgMessage: err instanceof Error ? err.message : String(err),
+        },
+        "[startup-migrations] CRITICAL step failed",
+      );
       throw err;
     }
   }

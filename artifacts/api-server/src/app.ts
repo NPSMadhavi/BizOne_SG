@@ -102,21 +102,33 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
  * ---------------------------------------------------------
  * Session configuration
  * ---------------------------------------------------------
+ *
+ * SESSION_SECRET must be set in production (Plesk custom env or .env).
+ * Validation runs from index.ts via assertProductionConfig() AFTER load-env,
+ * so importing this module does not kill Passenger before env is loaded.
  */
 
-if (isProd && !process.env.SESSION_SECRET) {
-  throw new Error(
-    "SESSION_SECRET is required in production. Set a strong random secret in the Plesk environment.",
-  );
+/**
+ * Fail fast with a deploy-actionable message. Call from index after load-env.
+ * Does not generate a random secret (that would invalidate sessions each restart).
+ */
+export function assertProductionConfig(): void {
+  if (!isProd) return;
+  const secret = process.env.SESSION_SECRET?.trim();
+  if (!secret) {
+    throw new Error(
+      "SESSION_SECRET is required in production. " +
+        "Set it in Plesk → Node.js → Custom environment variables " +
+        "(or in the application .env on the server). " +
+        "Generate once (openssl rand -hex 32) and keep the same value across restarts. " +
+        "Passenger provides PORT automatically — do not set PORT in .env if Passenger already sets it.",
+    );
+  }
 }
 
 const sessionSecret =
-  process.env.SESSION_SECRET ||
+  process.env.SESSION_SECRET?.trim() ||
   (!isProd ? "dev-only-insecure-session-secret" : "");
-
-if (!sessionSecret) {
-  throw new Error("SESSION_SECRET is required");
-}
 
 const cookieSecure =
   process.env.COOKIE_SECURE === "true" ||
@@ -136,24 +148,7 @@ const pgPool = new pg.Pool({
     : {}),
 });
 
-pgPool
-  .query(`
-    CREATE TABLE IF NOT EXISTS "session" (
-      "sid" varchar NOT NULL COLLATE "default",
-      "sess" json NOT NULL,
-      "expire" timestamp(6) NOT NULL,
-      CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
-    );
-
-    CREATE INDEX IF NOT EXISTS "IDX_session_expire"
-    ON "session" ("expire");
-  `)
-  .catch((err: unknown) => {
-    logger.error(
-      { err },
-      "Failed to create session table",
-    );
-  });
+// Session table DDL lives in runStartupMigrations() (awaited) — no fire-and-forget here.
 
 /**
  * Mobile clients (React Native) often cannot read Set-Cookie.
@@ -165,6 +160,10 @@ app.use((req, _res, next) => {
   if (typeof mobileSid === "string" && mobileSid.length > 5) {
     const existing = req.headers.cookie || "";
     if (!existing.includes("bizone.sid=")) {
+      if (!sessionSecret) {
+        next(new Error("SESSION_SECRET is not configured"));
+        return;
+      }
       const signed = signCookie(mobileSid, sessionSecret);
       req.headers.cookie = `bizone.sid=${signed}${existing ? `; ${existing}` : ""}`;
     }
@@ -181,7 +180,8 @@ app.use(
       tableName: "session",
     }),
 
-    secret: sessionSecret,
+    // Production: assertProductionConfig() ensures this is non-empty before listen.
+    secret: sessionSecret || "dev-only-insecure-session-secret",
 
     resave: false,
 
