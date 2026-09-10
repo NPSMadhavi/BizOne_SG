@@ -9,6 +9,8 @@ import { backfillExpenseJEs } from "./expense-auto-post.js";
 import { backfillInvoiceJEs } from "./invoice-auto-post.js";
 import { logger } from "./logger.js";
 import { migrateWmsTables } from "../migrate-wms-tables.js";
+import { migrateOperationsTables } from "../migrate-operations-tables.js";
+import { migrateAuthFields } from "../migrate-auth-fields.js";
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
 export async function runStartupMigrations(): Promise<void> {
@@ -17,6 +19,21 @@ export async function runStartupMigrations(): Promise<void> {
   } catch (err) {
     logger.error({ err }, "WMS tables migration failed");
     throw err;
+  }
+
+  // HR / payroll / assets / licenses (unprefixed company-scoped tables).
+  // Required on Plesk: without this, create/save fails when tables/columns are missing.
+  try {
+    await migrateOperationsTables();
+  } catch (err) {
+    logger.error({ err }, "Operations tables migration failed");
+    throw err;
+  }
+
+  try {
+    await migrateAuthFields();
+  } catch (err) {
+    logger.warn({ err }, "Auth fields migration failed (non-fatal)");
   }
 
   const steps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [

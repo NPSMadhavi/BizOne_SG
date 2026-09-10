@@ -557,10 +557,10 @@ export default function PayrollPage() {
         toast({
           title: options?.forceOverwrite ? "Payroll overwritten" : "Batch payroll complete",
           description: options?.forceOverwrite
-            ? `Payslips regenerated for the selected period (${monthLabel}).`
+            ? `Payroll overwritten for the selected period (${monthLabel}). Download payslips from Payroll when needed.`
             : options?.processScope === "changed"
-              ? `Payslips regenerated for employees with updated payroll values (${monthLabel}).`
-              : `Payroll for ${monthLabel} processed successfully. Payslips have been downloaded.`,
+              ? `Payroll updated for employees with changed values (${monthLabel}). Download payslips when needed.`
+              : `Payroll for ${monthLabel} processed successfully. Download payslips from Payroll when needed.`,
         });
       } else {
         toast({
@@ -1205,7 +1205,7 @@ export default function PayrollPage() {
                   <p>Payroll for the selected period has already been processed.</p>
                   <p>
                     Payroll values have been modified for one or more employees. Do you want to
-                    overwrite the existing payslips and regenerate them?
+                    overwrite the existing payroll for those employees?
                   </p>
                 </>
               ) : (

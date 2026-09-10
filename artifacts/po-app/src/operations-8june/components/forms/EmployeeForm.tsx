@@ -40,6 +40,10 @@ import {
 } from "@/operations-8june/components/forms/FormModalShell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
+import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
+import { SingaporePhoneInput } from "@/components/singapore-phone-input";
+import { formatSingaporePhoneForApi, parseSingaporePhoneDigits, validateSingaporePhoneDigits } from "@/lib/singapore-phone";
 
 // Dependent schema for the form
 const dependentSchema = z.object({
@@ -59,7 +63,9 @@ const employeeFormSchema = insertEmployeeSchema.extend({
   employeeId: z.coerce.string().min(1, "Employee ID is required"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Valid email is required"),
-  phone: z.string().min(8, "Phone number must be at least 8 characters"),
+  phone: z.string().refine((v) => !validateSingaporePhoneDigits(parseSingaporePhoneDigits(v)), {
+    message: "Enter a valid 8-digit Singapore phone number",
+  }),
   address: z.string().min(10, "Address must be at least 10 characters"),
   department: z.string().min(2, "Department must be at least 2 characters"),
   designation: z.string().min(2, "Designation must be at least 2 characters"),
@@ -134,7 +140,7 @@ export default function EmployeeForm({
     employeeId: toFormString(emp?.employeeId),
     name: emp?.name || "",
     email: (emp as any)?.email || "",
-    phone: (emp as any)?.phone || "",
+    phone: parseSingaporePhoneDigits((emp as any)?.phone || ""),
     address: (emp as any)?.address || "",
     department: emp?.department || "",
     designation: emp?.designation || "",
@@ -171,6 +177,9 @@ export default function EmployeeForm({
     shouldFocusError: true,
   });
 
+  // Let Veda fill fields live on the open employee form
+  useVedaFormFill(form);
+
   // Track if form has been initialized to prevent repeated resets
   const [formInitialized, setFormInitialized] = useState(false);
   
@@ -188,6 +197,23 @@ export default function EmployeeForm({
       setFormInitialized(false);
     }
   }, [employee?.id, isOpen]);
+
+  // Apply Veda navigateTo prefill once the form is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const prefill = (window as any).__vedaPrefill;
+    if (!prefill || typeof prefill !== "object") return;
+    (window as any).__vedaPrefill = null;
+    Object.entries(prefill as Record<string, unknown>).forEach(([key, value]) => {
+      if (value == null) return;
+      let v: unknown = value;
+      if (typeof value === "string" && /(?:Date|Expiry)$/.test(key) && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+        const d = new Date(value);
+        if (!Number.isNaN(d.getTime())) v = d;
+      }
+      form.setValue(key as any, v as any, { shouldDirty: true, shouldValidate: true });
+    });
+  }, [isOpen, form]);
 
   useEffect(() => {
     if (isOpen && selectedCompany?.id != null) {
@@ -228,6 +254,7 @@ export default function EmployeeForm({
       const serializedData = {
         ...data,
         employeeId: data.employeeId?.trim(),
+        phone: formatSingaporePhoneForApi(parseSingaporePhoneDigits(data.phone || "")),
         joinDate: data.joinDate.toISOString(),
         dateOfBirth: data.dateOfBirth ? data.dateOfBirth.toISOString() : null,
         passportExpiry: data.passportExpiry ? data.passportExpiry.toISOString() : null,
@@ -274,6 +301,7 @@ export default function EmployeeForm({
       const serializedData = {
         ...data,
         employeeId: data.employeeId?.trim(),
+        phone: formatSingaporePhoneForApi(parseSingaporePhoneDigits(data.phone || "")),
         joinDate: data.joinDate.toISOString(),
         dateOfBirth: data.dateOfBirth ? data.dateOfBirth.toISOString() : null,
         passportExpiry: data.passportExpiry ? data.passportExpiry.toISOString() : null,
@@ -359,6 +387,12 @@ export default function EmployeeForm({
     [toast]
   );
 
+  useVedaFormActions({
+    onSave: () => {
+      void form.handleSubmit(onSubmit, onInvalid)();
+    },
+  });
+
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -426,7 +460,12 @@ export default function EmployeeForm({
                 <FormField control={form.control} name="phone" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Phone Number <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input type="tel" {...field} /></FormControl>
+                    <FormControl>
+                      <SingaporePhoneInput
+                        value={field.value || ""}
+                        onChange={(digits) => field.onChange(digits)}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />

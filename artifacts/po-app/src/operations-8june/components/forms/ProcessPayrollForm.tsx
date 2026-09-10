@@ -35,7 +35,7 @@ import {
 } from "@/operations-8june/lib/payroll-ui";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
-import { Calculator, Clock, User } from "lucide-react";
+import { Calculator, User } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -48,8 +48,6 @@ const processPayrollSchema = z.object({
   employeeId: z.coerce.number().min(1, "Please select an employee"),
   payPeriodStart: z.string().min(1, "Start date is required"),
   payPeriodEnd: z.string().min(1, "End date is required"),
-  overtimeHours: z.coerce.number().min(0).optional(),
-  notes: z.string().optional(),
 });
 
 type ProcessPayrollFormData = z.infer<typeof processPayrollSchema>;
@@ -119,13 +117,11 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const form = useForm<ProcessPayrollFormData>({
     resolver: zodResolver(processPayrollSchema),
     defaultValues: {
-      overtimeHours: undefined,
       ...getLastCompletedPayPeriod(),
     },
   });
 
   const employeeId = form.watch("employeeId");
-  const overtimeHours = Number(form.watch("overtimeHours") || 0);
   const payPeriodStart = form.watch("payPeriodStart");
   const payPeriodEnd = form.watch("payPeriodEnd");
   const dialogPayPeriodStart = pendingFormData?.payPeriodStart ?? payPeriodStart;
@@ -160,7 +156,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
 
     return {
       alreadyProcessed: true,
-      dataChanged: hasPayrollDataChanged(config, existingRecord, Number(data.overtimeHours) || 0),
+      dataChanged: hasPayrollDataChanged(config, existingRecord, 0),
     };
   };
 
@@ -191,8 +187,12 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
     const baseSalary = parseFloat(payrollConfig.baseSalary) || 0;
     const allowances = payrollConfig.allowances || {};
     const deductions = payrollConfig.deductions || {};
-    const overtimeRate = parseFloat(payrollConfig.overtimeRate || "0") || 0;
-    const overtimePay = overtimeHours * overtimeRate;
+    // Config: overtimeRate = hours, hourlyRate = SGD/hour (or stored allowances.overtime)
+    const otFromConfig =
+      Number(allowances.overtime) ||
+      (parseFloat(payrollConfig.overtimeRate || "0") || 0) *
+        (parseFloat(payrollConfig.hourlyRate || "0") || 0);
+    const overtimePay = Math.round(otFromConfig * 100) / 100;
     const dob = selectedEmployee.dateOfBirth
       ? new Date(selectedEmployee.dateOfBirth)
       : null;
@@ -204,12 +204,17 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       citizenshipStatus: mapNationalityToCitizenship(selectedEmployee.nationality),
       prStatus: selectedEmployee.prStatus,
       overtimePay,
-      allowances,
+      allowances: {
+        transport: Number(allowances.transport) || 0,
+        meal: Number(allowances.meal) || 0,
+        phone: Number(allowances.phone) || 0,
+        others: Number(allowances.others) || 0,
+      },
       deductions,
     });
 
     return { ...preview, monthlySalary: baseSalary };
-  }, [payrollConfig, selectedEmployee, overtimeHours]);
+  }, [payrollConfig, selectedEmployee]);
 
   const processPayrollMutation = useMutation({
     mutationFn: async (data: ProcessPayrollFormData & { forceOverwrite?: boolean }) => {
@@ -221,8 +226,8 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         payrollConfig,
         data.payPeriodStart,
         data.payPeriodEnd,
-        data.overtimeHours || 0,
-        data.notes,
+        0,
+        undefined,
         { forceOverwrite: data.forceOverwrite === true }
       );
 
@@ -244,7 +249,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         if (variables.forceOverwrite) {
           toast({
             title: "Overwrite failed",
-            description: "Could not regenerate the payslip. Please try again.",
+            description: "Could not overwrite payroll. Please try again.",
             variant: "destructive",
           });
           return;
@@ -263,8 +268,8 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       toast({
         title: wasUpdated ? "Payroll Updated Successfully" : "Payroll Processed Successfully",
         description: wasUpdated
-          ? "The payslip has been regenerated and downloaded successfully."
-          : "Payroll saved and payslip downloaded automatically.",
+          ? "Payroll values updated. Download the payslip from Payroll when needed."
+          : "Payroll saved. Download the payslip from Payroll when needed.",
       });
       onSuccess();
     },
@@ -425,58 +430,6 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                 </div>
               </section>
 
-              <section className="space-y-4">
-                <ModalSectionHeader icon={Clock} title="Additional Hours & Adjustments" />
-                <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2 max-w-2xl">
-                  <FormField
-                    control={form.control}
-                    name="overtimeHours"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payrollFormLabelClass}>
-                          Overtime Hours
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder=""
-                            value={field.value ?? ""}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
-                              field.onChange(v === "" ? undefined : parseFloat(v));
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payrollFormLabelClass}>Notes</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="text"
-                            placeholder=""
-                            value={field.value ?? ""}
-                            onChange={field.onChange}
-                            onBlur={field.onBlur}
-                            name={field.name}
-                            ref={field.ref}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </section>
-
               <div className="flex justify-end gap-3">
                 <Button
                   type="button"
@@ -586,7 +539,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
               {processedDialogMode === "overwrite" ? (
                 <>
                   <p>The payroll values have been modified.</p>
-                  <p>Do you want to overwrite the existing payslip and regenerate it?</p>
+                  <p>Do you want to overwrite the existing payroll for this period?</p>
                 </>
               ) : (
                 <p>There are no changes to process.</p>

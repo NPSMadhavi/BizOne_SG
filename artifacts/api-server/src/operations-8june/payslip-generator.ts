@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 import chromium from "@sparticuz/chromium";
 import {
   formatPayrollMonthLabel,
@@ -645,14 +645,41 @@ function isPdfBuffer(buffer: Buffer): boolean {
 }
 
 async function launchPuppeteerBrowser() {
-  const executablePath = await chromium.executablePath();
+  const launchOptions = {
+    headless: true as const,
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  };
 
-  return await puppeteer.launch({
-    executablePath,
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    headless: chromium.headless,
-  });
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH;
+  if (envPath) {
+    return puppeteer.launch({ ...launchOptions, executablePath: envPath });
+  }
+
+  // Windows / local: use puppeteer's bundled Chrome (or installed Chrome).
+  // @sparticuz/chromium often fails on Windows with ENOENT under %TEMP%\chromium.
+  if (process.platform === "win32") {
+    try {
+      return await puppeteer.launch(launchOptions);
+    } catch {
+      return await puppeteer.launch({ ...launchOptions, channel: "chrome" as const });
+    }
+  }
+
+  try {
+    const executablePath = await chromium.executablePath();
+    return await puppeteer.launch({
+      executablePath,
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      headless: chromium.headless,
+    });
+  } catch {
+    try {
+      return await puppeteer.launch(launchOptions);
+    } catch {
+      return await puppeteer.launch({ ...launchOptions, channel: "chrome" as const });
+    }
+  }
 }
 
 export async function generatePayslipPdf(data: PayslipData): Promise<Buffer> {

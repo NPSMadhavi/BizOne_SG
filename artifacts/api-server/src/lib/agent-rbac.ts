@@ -152,6 +152,13 @@ const STATIC_TOOL_ACCESS: Record<string, { module: string; action: string }> = {
   createQuotation: { module: "quotations", action: "create" },
   createPurchaseOrder: { module: "purchase_orders", action: "create" },
   createDeliveryOrder: { module: "delivery_orders", action: "create" },
+  searchEmployees: { module: "employees", action: "view" },
+  createEmployee: { module: "employees", action: "create" },
+  updateEmployee: { module: "employees", action: "edit" },
+  createCustomer: { module: "customers", action: "create" },
+  updateCustomer: { module: "customers", action: "edit" },
+  createVendor: { module: "vendors", action: "create" },
+  updateVendor: { module: "vendors", action: "edit" },
   voidInvoice: { module: "invoices", action: "edit" },
   knockOffInvoice: { module: "invoices", action: "edit" },
 };
@@ -315,7 +322,7 @@ export function filterTools<T extends { function?: { name?: string } }>(tools: r
   return tools.filter((tool) => {
     const name = tool.function?.name;
     if (!name) return true;
-    if (name === "navigateTo" || name === "fillCurrentForm" || name === "submitCurrentForm" || name === "previewCurrentDocument" || name === "downloadCurrentDocument" || name === "updateDocumentFields" || name === "confirmDocument" || name === "sendDocumentEmail" || name === "getCompanySettings") {
+    if (name === "navigateTo" || name === "openDirectoryForm" || name === "fillCurrentForm" || name === "submitCurrentForm" || name === "previewCurrentDocument" || name === "downloadCurrentDocument" || name === "updateDocumentFields" || name === "confirmDocument" || name === "sendDocumentEmail" || name === "getCompanySettings") {
       return true;
     }
     return authorizeTool(auth, name) === null;

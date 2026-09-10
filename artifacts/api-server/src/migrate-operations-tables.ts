@@ -1,6 +1,11 @@
+/**
+ * Idempotent HR / Operations (8June) schema for company-scoped tables.
+ * Called from runStartupMigrations() on every API boot (Plesk-safe).
+ */
 import { pool } from "@workspace/db";
 import { logger } from "./lib/logger";
 
+/** Fresh installs — CREATE TABLE IF NOT EXISTS with full current columns. */
 const OPERATIONS_TABLE_MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS assets (
     id SERIAL PRIMARY KEY,
@@ -116,13 +121,24 @@ const OPERATIONS_TABLE_MIGRATIONS = [
     employee_id INTEGER NOT NULL,
     base_salary NUMERIC(10,2) NOT NULL,
     payroll_period TEXT NOT NULL DEFAULT 'monthly',
+    hourly_rate NUMERIC(8,2),
+    overtime_rate NUMERIC(8,2),
+    no_of_working_days INTEGER,
     cpf_employee_rate NUMERIC(5,2),
     cpf_employer_rate NUMERIC(5,2),
-    allowances JSONB DEFAULT '[]',
-    deductions JSONB DEFAULT '[]',
+    tax_rate NUMERIC(5,2) DEFAULT 0,
+    cpf_rate NUMERIC(5,2),
+    cpf_amount NUMERIC(12,2),
+    employer_cpf_rate NUMERIC(5,2),
+    employer_cpf_amount NUMERIC(12,2),
+    net_salary NUMERIC(12,2),
+    allowances JSONB DEFAULT '{}'::jsonb,
+    deductions JSONB DEFAULT '{}'::jsonb,
     bank_name TEXT,
     bank_account TEXT,
     is_active BOOLEAN DEFAULT TRUE,
+    effective_from DATE,
+    effective_to DATE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`,
@@ -133,13 +149,20 @@ const OPERATIONS_TABLE_MIGRATIONS = [
     payroll_config_id INTEGER,
     pay_period_start TIMESTAMPTZ NOT NULL,
     pay_period_end TIMESTAMPTZ NOT NULL,
+    base_salary NUMERIC(10,2),
+    overtime_hours NUMERIC(6,2) DEFAULT 0,
+    overtime_pay NUMERIC(10,2) DEFAULT 0,
+    allowances JSONB DEFAULT '{}'::jsonb,
+    deductions JSONB DEFAULT '{}'::jsonb,
     gross_pay NUMERIC(12,2) NOT NULL,
     net_pay NUMERIC(12,2) NOT NULL,
     cpf_employee NUMERIC(12,2) DEFAULT 0,
     cpf_employer NUMERIC(12,2) DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'draft',
+    notes TEXT,
     processed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
   )`,
   `CREATE TABLE IF NOT EXISTS service_reports (
     id SERIAL PRIMARY KEY,
@@ -179,8 +202,107 @@ const OPERATIONS_TABLE_MIGRATIONS = [
   )`,
 ];
 
+/**
+ * Existing DBs — ADD COLUMN IF NOT EXISTS so older Plesk databases pick up
+ * new fields without destructive recreate.
+ */
+const OPERATIONS_COLUMN_MIGRATIONS = [
+  // employees
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS annual_salary TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS pr_status TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS date_of_birth TIMESTAMPTZ`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_number TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_expiry TIMESTAMPTZ`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_number TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_expiry TIMESTAMPTZ`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_type TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_remarks TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS nric_number TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS nric_expiry TIMESTAMPTZ`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_scan TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_scan TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS nric_scan TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INTEGER`,
+
+  // assets
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS vendor_id INTEGER`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS invoice_number TEXT`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_start_date TIMESTAMPTZ`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS useful_life_years INTEGER`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_method TEXT`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS has_license BOOLEAN DEFAULT FALSE`,
+
+  // employee_payroll (working days, OT, CPF breakdown, effective dates)
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS hourly_rate NUMERIC(8,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS overtime_rate NUMERIC(8,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS no_of_working_days INTEGER`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS cpf_employee_rate NUMERIC(5,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS cpf_employer_rate NUMERIC(5,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) DEFAULT 0`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS cpf_rate NUMERIC(5,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS cpf_amount NUMERIC(12,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS employer_cpf_rate NUMERIC(5,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS employer_cpf_amount NUMERIC(12,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS net_salary NUMERIC(12,2)`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS bank_name TEXT`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS bank_account TEXT`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS effective_from DATE`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS effective_to DATE`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS allowances JSONB DEFAULT '{}'::jsonb`,
+  `ALTER TABLE employee_payroll ADD COLUMN IF NOT EXISTS deductions JSONB DEFAULT '{}'::jsonb`,
+
+  // payroll_records
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS payroll_config_id INTEGER`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS base_salary NUMERIC(10,2)`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS overtime_hours NUMERIC(6,2) DEFAULT 0`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS overtime_pay NUMERIC(10,2) DEFAULT 0`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS allowances JSONB DEFAULT '{}'::jsonb`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS deductions JSONB DEFAULT '{}'::jsonb`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS cpf_employee NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS cpf_employer NUMERIC(12,2) DEFAULT 0`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS notes TEXT`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+
+  // licenses
+  `ALTER TABLE licenses ADD COLUMN IF NOT EXISTS vendor_id INTEGER`,
+  `ALTER TABLE licenses ADD COLUMN IF NOT EXISTS renewal_cycle TEXT DEFAULT 'none'`,
+  `ALTER TABLE licenses ADD COLUMN IF NOT EXISTS notes TEXT`,
+
+  // service_reports
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS customer_id INTEGER`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS customer_address TEXT`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS customer_contact_person TEXT`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS customer_phone TEXT`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS customer_email TEXT`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS engineer_id INTEGER`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS remarks TEXT`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS created_by INTEGER`,
+  `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+];
+
+const OPERATIONS_INDEX_MIGRATIONS = [
+  `CREATE INDEX IF NOT EXISTS employees_company_id_idx ON employees (company_id)`,
+  `CREATE INDEX IF NOT EXISTS employee_payroll_company_id_idx ON employee_payroll (company_id)`,
+  `CREATE INDEX IF NOT EXISTS employee_payroll_employee_id_idx ON employee_payroll (employee_id)`,
+  `CREATE INDEX IF NOT EXISTS payroll_records_company_id_idx ON payroll_records (company_id)`,
+  `CREATE INDEX IF NOT EXISTS payroll_records_employee_period_idx ON payroll_records (company_id, employee_id, pay_period_start, pay_period_end)`,
+  `CREATE INDEX IF NOT EXISTS assets_company_id_idx ON assets (company_id)`,
+  `CREATE INDEX IF NOT EXISTS licenses_company_id_idx ON licenses (company_id)`,
+  `CREATE INDEX IF NOT EXISTS service_reports_company_id_idx ON service_reports (company_id)`,
+  `CREATE INDEX IF NOT EXISTS employee_documents_company_id_idx ON employee_documents (company_id)`,
+];
+
 export async function migrateOperationsTables(): Promise<void> {
   for (const statement of OPERATIONS_TABLE_MIGRATIONS) {
+    await pool.query(statement);
+  }
+  for (const statement of OPERATIONS_COLUMN_MIGRATIONS) {
+    await pool.query(statement);
+  }
+  for (const statement of OPERATIONS_INDEX_MIGRATIONS) {
     await pool.query(statement);
   }
   logger.info("Operations tables migration complete");

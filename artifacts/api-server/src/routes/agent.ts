@@ -3,7 +3,7 @@ import express from "express";
 import {
   db, invoicesTable, quotationsTable, customersTable, stockItemsTable,
   settingsTable, purchaseOrdersTable, vendorsTable, deliveryOrdersTable,
-  vendorInvoicesTable, grnTable,
+  vendorInvoicesTable, grnTable, pool,
 } from "@workspace/db";
 import { eq, and, ilike, or, desc, SQL, gte } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -204,16 +204,16 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "fillCurrentForm",
-      description: "Update specific fields in the document form that is currently open (new or edit page). Use when the user asks to change, set, or update fields on the form they're already on — payment terms, delivery date, currency, customer details, shipping address, notes, etc. Do NOT use navigateTo. Just call this to instantly update the visible form fields.",
+      description: "Update specific fields on the form currently open (document, employee, customer, or vendor). Use when the user asks to change/set fields, or during guided create after each answer. Do NOT use navigateTo — instantly patches the visible form.",
       parameters: {
         type: "object",
         properties: {
           fields: {
             type: "object",
-            description: "Fields to update on the open form. Common keys: customerName, customerAddress, customerContact, customerContactEmail, paymentTerms (e.g. '15 Days Net', '30 Days Net', 'COD', 'Advance'), deliveryDate (YYYY-MM-DD), currency (SGD/USD/EUR/GBP/MYR/INR), notes, shipToAddress, tax (number), poRefNo, discountAmount (number). For PO forms: vendorName, vendorAddress, vendorContact, vendorContactEmail, deliveryAddress. Only include keys that need to change.",
+            description: "Fields to update. Document keys: customerName, customerAddress, customerContact, customerContactEmail, paymentTerms, deliveryDate (YYYY-MM-DD), currency, notes, shipToAddress, tax, poRefNo, discountAmount; PO: vendorName, vendorAddress, vendorContact, vendorContactEmail, deliveryAddress. Employee keys: name, email, phone, address, department, designation, joinDate (YYYY-MM-DD), dateOfBirth, status (active/resigned/on_hold/terminated), salary, annualSalary, nationality (Singapore/PR/Foreigner), prStatus, passportNumber, passportExpiry, visaNumber, visaExpiry, visaType, nricNumber, nricExpiry, employeeId. Customer/vendor keys: name, address, postalCode, country, contactPerson, contactEmail, phone, currency, gstRegistered, gstNo, shipToAddress, quotationTerms, isActive.",
             additionalProperties: true,
           },
-          summary: { type: "string", description: "One-line summary of what changed, e.g. 'Set payment terms to 15 days and delivery date to 31 Jul 2026'" },
+          summary: { type: "string", description: "One-line summary of what changed, e.g. 'Set employee name to Priya'" },
         },
         required: ["fields", "summary"],
       },
@@ -223,11 +223,11 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "submitCurrentForm",
-      description: "Save/submit the document form that is currently open (new or edit page). Use when the user asks to save, update, or submit the open invoice/quotation/PO/DO form. Call fillCurrentForm first if fields still need changing. This does NOT create a document via API — it clicks Save on the open form.",
+      description: "Save/submit the form currently open (invoice/quotation/PO/DO/employee, or customer/vendor dialog). Use when the user asks to save or submit. Call fillCurrentForm first if fields still need changing. Clicks Save on the open form.",
       parameters: {
         type: "object",
         properties: {
-          summary: { type: "string", description: "One-line summary, e.g. 'Saving invoice with customer Venkatesh'" },
+          summary: { type: "string", description: "One-line summary, e.g. 'Saving employee Priya'" },
         },
         required: ["summary"],
       },
@@ -292,15 +292,173 @@ const AGENT_TOOLS = [
         properties: {
           path: {
             type: "string",
-            description: "App route. Pages: /dashboard, /settings, /customers, /vendors, /stock, /grn, /vendor-invoices, /accounting, /expenses, /accounting/gst-f5. Document lists: /invoices, /quotations, /purchase-orders, /delivery-orders. Filter lists with query params e.g. /purchase-orders?status=confirmed, /invoices?status=paid. New forms: /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new. View specific doc: /invoices/:id, /quotations/:id, /purchase-orders/:id, /delivery-orders/:id. Edit specific doc: /invoices/:id/edit, /quotations/:id/edit, /purchase-orders/:id/edit, /delivery-orders/:id/edit. Admin: /admin/users.",
+            description: "App route. Pages: /dashboard, /settings, /customers, /customers?vedaNew=1, /vendors, /vendors?vedaNew=1, /employees, /employees/new, /employees/:id/edit, /stock, /grn, /vendor-invoices, /accounting, /expenses. Document lists: /invoices, /quotations, /purchase-orders, /delivery-orders. New forms: /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new. View/edit: /invoices/:id, /invoices/:id/edit, etc. Admin: /admin/users.",
           },
           prefill: {
             type: "object",
-            description: "Form pre-fill data for /new pages. Shape: { customerName, customerAddress, customerContact, customerContactEmail, currency, paymentTerms, notes, items: [{description, partNumber, qty, unitPrice}] }",
+            description: "Form pre-fill for /new pages. Documents: { customerName, ... }. Employees: { name, email, phone, department, designation, ... }.",
           },
-          reason: { type: "string", description: "Brief description shown while navigating, e.g. 'Opening new invoice for SP Systems'" },
+          reason: { type: "string", description: "Brief description, e.g. 'Opening new employee form for Priya'" },
         },
         required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "openDirectoryForm",
+      description: "Open the New/Edit Customer or Vendor dialog. Prefer navigateTo /customers?vedaNew=1 or /vendors?vedaNew=1 first. For employees use navigateTo /employees/new.",
+      parameters: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["customer", "vendor"] },
+          mode: { type: "string", enum: ["new", "edit"] },
+          id: { type: "integer", description: "Required when mode=edit" },
+          reason: { type: "string" },
+        },
+        required: ["type"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchEmployees",
+      description: "Search employees by name, employee ID, email, or department.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Name, EMP code, email, or department — pass FULL name as spoken" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createEmployee",
+      description: "Create an employee via API (fast path). Prefer guided form on /employees/new with fillCurrentForm + submitCurrentForm when collecting fields with the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          address: { type: "string" },
+          department: { type: "string" },
+          designation: { type: "string" },
+          joinDate: { type: "string", description: "YYYY-MM-DD" },
+          dateOfBirth: { type: "string" },
+          status: { type: "string", enum: ["active", "resigned", "on_hold", "terminated"] },
+          salary: { type: "string" },
+          annualSalary: { type: "string" },
+          nationality: { type: "string", enum: ["Singapore", "PR", "Foreigner"] },
+          prStatus: { type: "string" },
+          employeeId: { type: "string" },
+          passportNumber: { type: "string" },
+          visaNumber: { type: "string" },
+          nricNumber: { type: "string" },
+          visaType: { type: "string" },
+        },
+        required: ["name", "email", "phone", "address", "department", "designation", "salary", "nationality"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateEmployee",
+      description: "Update an existing employee by database id. Prefer /employees/:id/edit + fillCurrentForm + submitCurrentForm for guided edits.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          fields: { type: "object", additionalProperties: true },
+          summary: { type: "string" },
+        },
+        required: ["id", "fields"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createCustomer",
+      description: "Create a customer via API. Prefer guided dialog: navigateTo /customers?vedaNew=1 → fillCurrentForm → submitCurrentForm.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          address: { type: "string" },
+          postalCode: { type: "string" },
+          country: { type: "string" },
+          contactPerson: { type: "string" },
+          contactEmail: { type: "string" },
+          phone: { type: "string" },
+          currency: { type: "string" },
+          gstRegistered: { type: "boolean" },
+          gstNo: { type: "string" },
+          shipToAddress: { type: "string" },
+          quotationTerms: { type: "string" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateCustomer",
+      description: "Update an existing customer by id.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          fields: { type: "object", additionalProperties: true },
+          summary: { type: "string" },
+        },
+        required: ["id", "fields"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createVendor",
+      description: "Create a vendor via API. Prefer guided dialog on /vendors?vedaNew=1 when collecting fields with the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          address: { type: "string" },
+          postalCode: { type: "string" },
+          country: { type: "string" },
+          contactPerson: { type: "string" },
+          contactEmail: { type: "string" },
+          phone: { type: "string" },
+          currency: { type: "string" },
+          gstRegistered: { type: "boolean" },
+          gstNo: { type: "string" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateVendor",
+      description: "Update an existing vendor by id.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          fields: { type: "object", additionalProperties: true },
+          summary: { type: "string" },
+        },
+        required: ["id", "fields"],
       },
     },
   },
@@ -1067,6 +1225,229 @@ async function executeTool(
       return { _navigate: true, path: args.path, prefill: args.prefill || null, reason: args.reason || "" };
     }
 
+    case "openDirectoryForm": {
+      return {
+        _openDirectoryForm: true,
+        type: args.type,
+        mode: args.mode || "new",
+        id: args.id ?? null,
+        reason: args.reason || "",
+      };
+    }
+
+    case "searchEmployees": {
+      const q = `%${String(args.query || "").trim()}%`;
+      const result = await pool.query(
+        `SELECT id, employee_id, name, email, phone, department, designation, status, join_date, nationality, salary
+         FROM employees
+         WHERE company_id = $1
+           AND (name ILIKE $2 OR email ILIKE $2 OR COALESCE(employee_id,'') ILIKE $2 OR COALESCE(department,'') ILIKE $2 OR COALESCE(phone,'') ILIKE $2)
+         ORDER BY name
+         LIMIT 10`,
+        [companyId, q],
+      );
+      if (!result.rows.length) return { message: "No employees found matching that search." };
+      return result.rows.map((r: any) => ({
+        id: r.id,
+        employeeId: r.employee_id,
+        name: r.name,
+        email: r.email,
+        phone: r.phone,
+        department: r.department,
+        designation: r.designation,
+        status: r.status,
+        joinDate: r.join_date,
+        nationality: r.nationality,
+        salary: r.salary,
+        editPath: `/employees/${r.id}/edit`,
+      }));
+    }
+
+    case "createEmployee": {
+      const body = { ...args };
+      delete body.dependents;
+      for (const k of Object.keys(body)) {
+        if (body[k] === "") body[k] = null;
+      }
+      if (!body.employeeId) {
+        const last = await pool.query(
+          `SELECT employee_id FROM employees WHERE company_id = $1 ORDER BY id DESC LIMIT 1`,
+          [companyId],
+        );
+        const prev = last.rows[0]?.employee_id as string | undefined;
+        const match = prev?.match(/(\d+)$/);
+        const next = match ? parseInt(match[1], 10) + 1 : 1;
+        body.employeeId = `EMP-${String(next).padStart(4, "0")}`;
+      }
+      if (!body.joinDate) body.joinDate = new Date().toISOString();
+      if (!body.status) body.status = "active";
+
+      const colMap: Record<string, string> = {
+        employeeId: "employee_id", name: "name", email: "email", phone: "phone", address: "address",
+        department: "department", designation: "designation", joinDate: "join_date", status: "status",
+        salary: "salary", annualSalary: "annual_salary", nationality: "nationality", prStatus: "pr_status",
+        dateOfBirth: "date_of_birth", passportNumber: "passport_number", passportExpiry: "passport_expiry",
+        visaNumber: "visa_number", visaExpiry: "visa_expiry", visaType: "visa_type", visaRemarks: "visa_remarks",
+        nricNumber: "nric_number", nricExpiry: "nric_expiry",
+      };
+      const cols: string[] = ["company_id"];
+      const vals: any[] = [companyId];
+      const ph: string[] = ["$1"];
+      let i = 2;
+      for (const [camel, snake] of Object.entries(colMap)) {
+        if (body[camel] === undefined || body[camel] === null) continue;
+        cols.push(snake);
+        vals.push(body[camel]);
+        ph.push(`$${i++}`);
+      }
+      const result = await pool.query(
+        `INSERT INTO employees (${cols.join(", ")}) VALUES (${ph.join(", ")}) RETURNING *`,
+        vals,
+      );
+      const row = result.rows[0];
+      return {
+        success: true,
+        employee: {
+          id: row.id,
+          employeeId: row.employee_id,
+          name: row.name,
+          email: row.email,
+          department: row.department,
+          designation: row.designation,
+          status: row.status,
+        },
+        _navigate: true,
+        path: `/employees/${row.id}/edit`,
+        prefill: null,
+        reason: `Created employee ${row.name}`,
+      };
+    }
+
+    case "updateEmployee": {
+      const id = Number(args.id);
+      const fields = args.fields || {};
+      if (!id || typeof fields !== "object") return { error: "id and fields are required" };
+      const colMap: Record<string, string> = {
+        employeeId: "employee_id", name: "name", email: "email", phone: "phone", address: "address",
+        department: "department", designation: "designation", joinDate: "join_date", status: "status",
+        salary: "salary", annualSalary: "annual_salary", nationality: "nationality", prStatus: "pr_status",
+        dateOfBirth: "date_of_birth", passportNumber: "passport_number", passportExpiry: "passport_expiry",
+        visaNumber: "visa_number", visaExpiry: "visa_expiry", visaType: "visa_type", visaRemarks: "visa_remarks",
+        nricNumber: "nric_number", nricExpiry: "nric_expiry",
+      };
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let i = 1;
+      for (const [camel, snake] of Object.entries(colMap)) {
+        if (fields[camel] === undefined) continue;
+        sets.push(`${snake} = $${i++}`);
+        vals.push(fields[camel] === "" ? null : fields[camel]);
+      }
+      if (!sets.length) return { error: "No valid fields to update" };
+      vals.push(id, companyId);
+      const result = await pool.query(
+        `UPDATE employees SET ${sets.join(", ")} WHERE id = $${i++} AND company_id = $${i} RETURNING *`,
+        vals,
+      );
+      if (!result.rows[0]) return { error: "Employee not found" };
+      const row = result.rows[0];
+      return {
+        success: true,
+        employee: { id: row.id, employeeId: row.employee_id, name: row.name },
+        summary: args.summary || "Employee updated",
+        _navigate: true,
+        path: `/employees/${row.id}/edit`,
+        prefill: null,
+        reason: args.summary || `Updated employee ${row.name}`,
+      };
+    }
+
+    case "createCustomer": {
+      const [customer] = await db.insert(customersTable).values({
+        companyId,
+        name: args.name,
+        address: args.address || null,
+        postalCode: args.postalCode || null,
+        country: args.country || "Singapore",
+        contactPerson: args.contactPerson || null,
+        contactEmail: args.contactEmail || null,
+        phone: args.phone || null,
+        currency: args.currency || null,
+        gstRegistered: Boolean(args.gstRegistered),
+        gstNo: args.gstRegistered && args.gstNo ? args.gstNo : null,
+        shipToAddress: args.shipToAddress || null,
+        quotationTerms: args.quotationTerms || null,
+      }).returning();
+      return {
+        success: true,
+        customer: { id: customer.id, name: customer.name },
+        _navigate: true,
+        path: "/customers",
+        prefill: null,
+        reason: `Created customer ${customer.name}`,
+      };
+    }
+
+    case "updateCustomer": {
+      const id = Number(args.id);
+      const fields = args.fields || {};
+      if (!id) return { error: "id is required" };
+      const allowed = ["name", "address", "postalCode", "country", "contactPerson", "contactEmail", "phone", "currency", "gstRegistered", "gstNo", "shipToAddress", "quotationTerms", "isActive"] as const;
+      const patch: Record<string, any> = {};
+      for (const k of allowed) {
+        if (fields[k] !== undefined) patch[k] = fields[k];
+      }
+      if (!Object.keys(patch).length) return { error: "No valid fields to update" };
+      const [customer] = await db.update(customersTable)
+        .set(patch)
+        .where(and(eq(customersTable.id, id), eq(customersTable.companyId, companyId)))
+        .returning();
+      if (!customer) return { error: "Customer not found" };
+      return { success: true, customer: { id: customer.id, name: customer.name }, summary: args.summary || "Customer updated" };
+    }
+
+    case "createVendor": {
+      const [vendor] = await db.insert(vendorsTable).values({
+        companyId,
+        name: args.name,
+        address: args.address || null,
+        postalCode: args.postalCode || null,
+        country: args.country || "Singapore",
+        contactPerson: args.contactPerson || null,
+        contactEmail: args.contactEmail || null,
+        phone: args.phone || null,
+        currency: args.currency || null,
+        gstRegistered: Boolean(args.gstRegistered),
+        gstNo: args.gstRegistered && args.gstNo ? args.gstNo : null,
+      }).returning();
+      return {
+        success: true,
+        vendor: { id: vendor.id, name: vendor.name },
+        _navigate: true,
+        path: "/vendors",
+        prefill: null,
+        reason: `Created vendor ${vendor.name}`,
+      };
+    }
+
+    case "updateVendor": {
+      const id = Number(args.id);
+      const fields = args.fields || {};
+      if (!id) return { error: "id is required" };
+      const allowed = ["name", "address", "postalCode", "country", "contactPerson", "contactEmail", "phone", "currency", "gstRegistered", "gstNo", "isActive"] as const;
+      const patch: Record<string, any> = {};
+      for (const k of allowed) {
+        if (fields[k] !== undefined) patch[k] = fields[k];
+      }
+      if (!Object.keys(patch).length) return { error: "No valid fields to update" };
+      const [vendor] = await db.update(vendorsTable)
+        .set(patch)
+        .where(and(eq(vendorsTable.id, id), eq(vendorsTable.companyId, companyId)))
+        .returning();
+      if (!vendor) return { error: "Vendor not found" };
+      return { success: true, vendor: { id: vendor.id, name: vendor.name }, summary: args.summary || "Vendor updated" };
+    }
+
     case "createInvoice": {
       const { items, gstRate = 0, discountAmount = 0, fromQuotationId, issueDate, ...rest } = args;
       const subtotal = items.reduce((s: number, i: any) => s + Number(i.amount), 0);
@@ -1302,7 +1683,9 @@ Current page: ${currentPath || "unknown"}.
 - Always pass the FULL name exactly as the user says it (including spaces): "Micro United Network" not just "Micro"
 - The search is fuzzy and matches partial names — pass as many words as the user gives
 - If voice input gives you "SP Systems" pass "SP Systems" exactly — do not shorten or abbreviate
+- Voice STT often mishears names slightly (e.g. "SP System" vs "SP Systems", "Westcon" vs "West Conn"). ALWAYS searchCustomers/searchVendors first, then pick the closest directory match. If close enough, use the directory spelling in fillCurrentForm — tell the user which name you selected.
 - If first search returns nothing, try a shorter subset of words from the name
+- Never invent a customer that isn't in the utterance or directory search results
 
 ### Opening specific documents
 When a user asks "what was the last PO for Westcon?" or "show me the SP SYSNET invoice":
@@ -1335,16 +1718,33 @@ Key MUST be vendorName / customerName. Never say it was changed unless updateDoc
 - After guided create fields are done: ask "Shall I save this?" → submitCurrentForm only on yes
 
 ### Guided create — field by field (critical)
-When the user asks to create a new invoice / quotation / purchase order / delivery order (or "create new"):
-1. navigateTo the matching /new form FIRST (e.g. /invoices/new, /purchase-orders/new). Do not use createInvoice/createQuotation API for this guided flow.
-2. Then ask ONE field at a time. Wait for the user's answer before asking the next.
-3. After each answer: call fillCurrentForm with ONLY that field (or those few keys), briefly confirm what you filled, then ask the next field.
-4. Typical order:
+When the user asks to create a new invoice / quotation / purchase order / delivery order / employee / customer / vendor (or "create new" / "add a person" / "open a quotation form"):
+1. Open the matching form FIRST:
+   - Documents: navigateTo /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new
+   - Employee: navigateTo /employees/new
+   - Customer: navigateTo /customers?vedaNew=1 (opens New Customer dialog)
+   - Vendor: navigateTo /vendors?vedaNew=1 (opens New Vendor dialog)
+   Do NOT use API create* tools for this guided flow. Do NOT navigateTo the list page (/quotations) when they asked to create/open a form.
+2. If the user already named the customer/vendor in the same sentence (e.g. "create quotation for SP Systems"):
+   - Immediately fillCurrentForm with customerName (or vendorName) using their exact words
+   - Do NOT ask for the customer/vendor name again
+   - Ask the NEXT field (currency / payment terms / etc.)
+3. Otherwise ask ONE field at a time. Wait for the user's answer before asking the next.
+4. After each answer: call fillCurrentForm with ONLY that field (or those few keys), briefly confirm what you filled, then ask the next field.
+5. Typical order:
    - Invoice / Quotation / DO: customerName → customerAddress (optional) → currency → paymentTerms → deliveryDate (optional) → first line item description + qty + unitPrice (or skip items if they say later) → notes (optional)
    - Purchase Order: vendorName → vendorAddress (optional) → currency → paymentTerms → deliveryDate (optional) → line item → notes (optional)
-5. Keep questions short: "What is the customer name?" / "Currency — SGD or USD?" / "Payment terms?"
-6. When required header fields are filled, ask: "Shall I save this document?" On yes → submitCurrentForm.
-7. Do NOT ask all fields in one message. Do NOT invent values. Do NOT save until they confirm.
+   - Employee: name → email → phone → address → department → designation → nationality → prStatus (only if PR) → salary → joinDate (optional if today is fine) → status (default active)
+   - Customer / Vendor: name → address (optional) → country (default Singapore) → contactPerson → contactEmail → phone → currency (optional)
+6. Keep questions short: "What is the customer name?" / "Currency — SGD or USD?" / "Payment terms?"
+7. When required fields are filled, ask: "Shall I save this?" On yes → submitCurrentForm.
+8. Do NOT ask all fields in one message. Do NOT invent values. Do NOT save until they confirm.
+9. You have FULL create/update access for employees, customers, vendors, and documents in this company — never refuse for permissions.
+
+### Creating people / parties (fast API path)
+- createEmployee / createCustomer / createVendor ONLY when the user gives all details at once and says "just create it".
+- Otherwise prefer guided form fill above.
+- searchEmployees before editing an existing employee; then navigateTo /employees/:id/edit.
 
 ### Creating documents (fast API path — only if user wants instant create without form)
 - Use createInvoice / createQuotation / createPurchaseOrder / createDeliveryOrder ONLY when the user wants a quick draft without walking the form, OR gives all details in one go and says "just create it".
@@ -1447,6 +1847,17 @@ Today: ${today}.${memoryBlock}`;
             summary: toolResult.summary,
           })}\n\n`);
           toolResult = { filled: true, summary: toolResult.summary };
+        }
+
+        if (toolResult && toolResult._openDirectoryForm) {
+          res.write(`data: ${JSON.stringify({
+            type: "open_directory_form",
+            formType: toolResult.type,
+            mode: toolResult.mode,
+            id: toolResult.id,
+            reason: toolResult.reason,
+          })}\n\n`);
+          toolResult = { opened: true, type: toolResult.type, mode: toolResult.mode };
         }
 
         if (toolResult && toolResult._formAction) {

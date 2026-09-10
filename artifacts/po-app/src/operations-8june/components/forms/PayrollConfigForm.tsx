@@ -102,11 +102,7 @@ function formatCitizenshipDisplay(employee: any): string {
 }
 
 function formatNationalityDisplay(employee: any): string {
-  if (employee?.nationality === "PR" && employee?.prStatus) {
-    if (employee.prStatus === "1 Year") return "PR (1 Year)";
-    if (employee.prStatus === "2 Years") return "PR (2 Year)";
-    if (employee.prStatus === "3 Years and Above") return "PR (3+ Year)";
-  }
+  // Nationality only — PR years belong in PR Status
   return employee?.nationality || "-";
 }
 
@@ -139,7 +135,10 @@ function formatCurrency(amount: number) {
   }).format(amount || 0);
 }
 
-/** Monthly CPF ordinary wage: Basic x (working days / 30). Full basic if days not set. */
+/** Monthly CPF ordinary wage.
+ * Full month (30 or 31 working days) → full basic salary (no uplift).
+ * Partial month (< 30) → basic × days / 30.
+ */
 const CPF_STANDARD_MONTH_DAYS = 30;
 
 function calcBasicSalaryForCpf(
@@ -150,8 +149,9 @@ function calcBasicSalaryForCpf(
   if (base <= 0) return 0;
   const days = Number(workingDays);
   if (!Number.isFinite(days) || days <= 0) return Math.round(base * 100) / 100;
-  const prorated =
-    (base * Math.min(days, CPF_STANDARD_MONTH_DAYS)) / CPF_STANDARD_MONTH_DAYS;
+  // Cap at 30 so 31-day months do not pay more than basic
+  const effectiveDays = Math.min(days, CPF_STANDARD_MONTH_DAYS);
+  const prorated = (base * effectiveDays) / CPF_STANDARD_MONTH_DAYS;
   return Math.round(prorated * 100) / 100;
 }
 
@@ -160,6 +160,7 @@ function formatRatePercent(rate: number): string {
 }
 
 const formLabelClass = "text-sm font-medium text-[#111827]";
+const payheadLabelClass = "text-base font-medium text-[#111827]";
 const readOnlyInputClass = "bg-[#F9FAFB] text-[#111827]";
 
 function OptionalAmountInput({
@@ -251,6 +252,10 @@ function buildPayrollConfigPayload(
     meal: allowanceMeal || 0,
     phone: allowancePhone || 0,
     others: allowanceOthers || 0,
+    // Overtime Hours × For Hours in SGD — counted with allowances
+    overtime: Math.round(
+      (Number(payrollData.overtimeRate) || 0) * (Number(payrollData.hourlyRate) || 0) * 100
+    ) / 100,
   };
 
   const deductions = {
@@ -258,6 +263,8 @@ function buildPayrollConfigPayload(
     advance: deductionAdvance || 0,
     others: deductionOthers || 0,
   };
+
+  const overtimePay = Number(allowances.overtime) || 0;
 
   const calculation = calculateSyncBridgePayrollPreview({
     monthlySalary: calcBasicSalaryForCpf(
@@ -267,7 +274,13 @@ function buildPayrollConfigPayload(
     age,
     citizenshipStatus: citizenshipStatus as "citizen" | "pr" | "foreigner",
     prStatus: selectedEmployee?.prStatus,
-    allowances,
+    overtimePay,
+    allowances: {
+      transport: allowances.transport,
+      meal: allowances.meal,
+      phone: allowances.phone,
+      others: allowances.others,
+    },
     deductions,
   });
 
@@ -359,6 +372,9 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   const basicSalaryForCpf = calcBasicSalaryForCpf(baseSalary, workingDaysRaw);
   const age = Number(form.watch("age") || 0);
   const citizenshipStatus = form.watch("citizenshipStatus");
+  const overtimeHours = Number(form.watch("overtimeRate") || 0); // field labeled Overtime Hours
+  const forHoursInSgd = Number(form.watch("hourlyRate") || 0); // field labeled For Hours in SGD
+  const overtimePay = Math.round(overtimeHours * forHoursInSgd * 100) / 100;
   const allowanceTransport = Number(form.watch("allowanceTransport") || 0);
   const allowanceMeal = Number(form.watch("allowanceMeal") || 0);
   const allowancePhone = Number(form.watch("allowancePhone") || 0);
@@ -375,6 +391,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
       age,
       citizenshipStatus,
       prStatus: selectedEmployee?.prStatus,
+      overtimePay,
       allowances: {
         transport: allowanceTransport,
         meal: allowanceMeal,
@@ -393,6 +410,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     age,
     citizenshipStatus,
     selectedEmployee?.prStatus,
+    overtimePay,
     allowanceTransport,
     allowanceMeal,
     allowancePhone,
@@ -496,11 +514,14 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   const hasPayrollPreview = Boolean(baseSalary && age);
 
-  const allowancesTotal = calculationPreview?.allowancesTotal ?? 0;
+  const allowancesOnly =
+    allowanceTransport + allowanceMeal + allowancePhone + allowanceOthers;
+  const allowancesTotal =
+    (calculationPreview?.allowancesTotal ?? allowancesOnly) + overtimePay;
   const deductionsTotal = calculationPreview?.deductionsTotal ?? 0;
   const grossSalary =
     calculationPreview?.grossPay ??
-    (hasPayrollPreview ? baseSalary + allowancesTotal : 0);
+    (hasPayrollPreview ? basicSalaryForCpf + allowancesTotal : 0);
   const employeeCpf = calculationPreview?.employeeCpf ?? 0;
   const employerCpf = calculationPreview?.employerCpf ?? 0;
   const totalCpf = calculationPreview?.totalCpf ?? 0;
@@ -645,10 +666,12 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
             </section>
 
             <section className="space-y-4">
-              <ModalSectionHeader title="Payheads" />
+              <div className="mb-1">
+                <h3 className="text-lg font-semibold text-[#111827]">Payheads</h3>
+              </div>
 
               <div className="space-y-4">
-                <h4 className="inline-flex items-center rounded-md bg-[#EFF6FF] px-3 py-1.5 text-sm font-bold tracking-wide text-[#1D4ED8]">
+                <h4 className="inline-flex items-center rounded-md bg-[#EFF6FF] px-3 py-1.5 text-lg font-bold tracking-wide text-[#1D4ED8]">
                   Earnings
                 </h4>
                 <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -657,7 +680,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="baseSalary"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Basic Salary *</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Basic Salary *</FormLabel>
                         <FormControl>
                           <div className="relative">
                             {selectedEmployee && (
@@ -691,7 +714,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="payrollPeriod"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Payroll Period *</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Payroll Period *</FormLabel>
                         <Select value={field.value} onValueChange={field.onChange}>
                           <FormControl>
                             <SelectTrigger>
@@ -713,12 +736,12 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="workingDays"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>No of Working Days</FormLabel>
+                        <FormLabel className={payheadLabelClass}>No of Working Days</FormLabel>
                         <FormControl>
                           <Input
                             type="text"
                             inputMode="numeric"
-                            placeholder=""
+                            placeholder="30 or 31"
                             value={field.value ?? ""}
                             onChange={(e) => {
                               const v = e.target.value.replace(/\D/g, "");
@@ -738,7 +761,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="overtimeRate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Overtime (hr)</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Overtime Hours</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -751,7 +774,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="hourlyRate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>For hr SGD</FormLabel>
+                        <FormLabel className={payheadLabelClass}>For Hours in SGD</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -764,7 +787,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="allowanceTransport"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Travelling Allowance</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Travelling Allowance</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -777,7 +800,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="allowanceMeal"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Food Allowance</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Food Allowance</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -790,7 +813,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="allowancePhone"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Mobile Allowance</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Mobile Allowance</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -803,7 +826,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="allowanceOthers"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Other Allowance</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Other Allowance</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -815,8 +838,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
               </div>
 
               <div className="space-y-4">
-                <h4 className="inline-flex items-center rounded-md bg-[#FEF2F2] px-3 py-1.5 text-sm font-bold tracking-wide text-[#B91C1C]">
-                  Deduction
+                <h4 className="inline-flex items-center rounded-md bg-[#FEF2F2] px-3 py-1.5 text-lg font-bold tracking-wide text-[#B91C1C]">
+                  Deductions
                 </h4>
                 <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField
@@ -824,7 +847,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="deductionMedical"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Medical Deduction</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Medical Insurance</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -837,7 +860,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="deductionAdvance"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Advanced / Loan Recovery</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Advanced / Loan Recovery</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>
@@ -850,7 +873,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="deductionOthers"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={formLabelClass}>Other Deductions</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Other Deductions</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>

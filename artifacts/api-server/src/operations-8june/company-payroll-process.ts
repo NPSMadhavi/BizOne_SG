@@ -520,7 +520,7 @@ export async function processIndividualPayrollCompany(
       return;
     }
 
-    const { config, employee, company } = ctx;
+    const { config, employee } = ctx;
     const forceOverwriteFlag = parseForceOverwriteFlag(forceOverwrite);
 
     const result = await upsertPayrollRecord(
@@ -551,34 +551,15 @@ export async function processIndividualPayrollCompany(
       return;
     }
 
-    const baseSalary = Number(config.base_salary) || 0;
-    const allowances = parsePayrollComponents(config.allowances);
-    const deductions = parsePayrollComponents(config.deductions);
-    const overtimeRate = resolveOvertimeRate(baseSalary);
-    const amounts = calculatePayrollAmounts({
-      baseSalary,
-      overtimeHours: Number(overtimeHours) || 0,
-      overtimeRate,
-      allowances,
-      deductions,
-      age: calculateAgeFromDob(employee.date_of_birth),
-      nationality: employee.nationality,
-      prStatus: employee.pr_status,
+    // Persist payroll only — payslips are generated on demand via download/view.
+    res.json({
+      ok: true,
+      action: result.action,
+      message:
+        result.action === "updated"
+          ? "Payroll updated successfully. Download the payslip from Payroll when needed."
+          : "Payroll processed successfully. Download the payslip from Payroll when needed.",
     });
-
-    const payslipData = buildPayslipData(
-      employee,
-      company,
-      amounts,
-      baseSalary,
-      normalizedPayPeriodStart,
-      normalizedPayPeriodEnd,
-    );
-
-    const pdfBuffer = await generatePayslipPdf(payslipData);
-    const { month, year } = derivePayrollMonthYear(normalizedPayPeriodStart);
-    const downloadFilename = getPayslipDownloadFileName(employee.name, month, year);
-    sendPdfBuffer(res, pdfBuffer, downloadFilename, { action: result.action });
   } catch (error) {
     console.error("Error processing individual payroll:", error);
     const message = error instanceof Error ? error.message : "Failed to process payroll";
@@ -707,7 +688,7 @@ export async function batchProcessPayrollCompany(
           scenario: "values-changed",
           alreadyProcessed: true,
           message:
-            "Payroll for the selected period has already been processed. Payroll values have been modified for one or more employees. Do you want to overwrite the existing payslips and regenerate them?",
+            "Payroll for the selected period has already been processed. Payroll values have been modified for one or more employees. Do you want to overwrite the existing payroll for those employees?",
           summary: buildStatusSummary(),
         });
         return;
@@ -759,13 +740,6 @@ export async function batchProcessPayrollCompany(
       failures: [],
     };
 
-    const companyResult = await pool.query<{ name: string; address: string | null }>(
-      `SELECT name, address FROM companies WHERE id = $1`,
-      [companyId],
-    );
-    const company = companyResult.rows[0] ?? { name: "", address: "" };
-    const zipFiles: { filename: string; buffer: Buffer }[] = [];
-
     for (const config of configsToProcess) {
       const employeeResult = await pool.query<DbEmployee>(
         `SELECT * FROM employees WHERE id = $1 AND company_id = $2`,
@@ -799,38 +773,6 @@ export async function batchProcessPayrollCompany(
           continue;
         }
 
-        const activeConfig = await getActivePayrollConfig(pool, companyId, config, employee);
-        const baseSalary = Number(activeConfig.base_salary) || 0;
-        const allowances = parsePayrollComponents(activeConfig.allowances);
-        const deductions = parsePayrollComponents(activeConfig.deductions);
-        const overtimeRate = resolveOvertimeRate(baseSalary);
-        const amounts = calculatePayrollAmounts({
-          baseSalary,
-          overtimeHours: 0,
-          overtimeRate,
-          allowances,
-          deductions,
-          age: calculateAgeFromDob(employee.date_of_birth),
-          nationality: employee.nationality,
-          prStatus: employee.pr_status,
-        });
-
-        const payslipData = buildPayslipData(
-          employee,
-          company,
-          amounts,
-          baseSalary,
-          resolvedPayPeriodStart,
-          resolvedPayPeriodEnd,
-        );
-
-        const pdfBuffer = await generatePayslipPdf(payslipData);
-        const { month: m, year: y } = derivePayrollMonthYear(resolvedPayPeriodStart);
-        zipFiles.push({
-          filename: getPayslipDownloadFileName(employee.name, m, y),
-          buffer: pdfBuffer,
-        });
-
         if (result.action === "created") summary.processedNew++;
         else if (result.action === "updated") summary.updated++;
       } catch (error) {
@@ -841,23 +783,21 @@ export async function batchProcessPayrollCompany(
       }
     }
 
-    if (zipFiles.length === 0) {
+    if (summary.processedNew === 0 && summary.updated === 0) {
       res.status(409).json({
-        message: `No payslips generated. ${summary.skipped} employee(s) skipped.`,
+        message: `No payroll processed. ${summary.skipped} employee(s) skipped.`,
         summary,
       });
       return;
     }
 
-    const zipFilename = getBatchZipNameFromPeriod(resolvedPayPeriodStart);
-    const zipPath = await createPayslipZipArchive(zipFiles);
-    const sessionId = req.session?.id as string | undefined;
-    if (sessionId) {
-      registerSessionPayslipZip(sessionId, zipPath);
-    }
-
-    res.setHeader("X-Payroll-Summary", JSON.stringify(summary));
-    sendPayslipZipFile(res, zipPath, zipFilename, sessionId);
+    // Persist payroll only — payslips are generated on demand via download/view.
+    res.json({
+      ok: true,
+      summary,
+      message:
+        "Payroll processed successfully. Download payslips from Payroll when needed.",
+    });
   } catch (error) {
     console.error("Error in batch payroll processing:", error);
     const message = error instanceof Error ? error.message : "Failed to batch process payroll";

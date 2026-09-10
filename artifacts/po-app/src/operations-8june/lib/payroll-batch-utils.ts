@@ -414,11 +414,26 @@ export async function processIndividualPayrollForConfig(
     };
   }
 
-  const month = parseInt(payPeriodStart.slice(5, 7), 10);
-  const year = parseInt(payPeriodStart.slice(0, 4), 10);
-  const fallbackFilename = `Payslip_${config.employeeName?.replace(/[^a-zA-Z0-9]+/g, "_") || "Employee"}_${formatPayrollMonthLabel(year, month).replace(" ", "_")}.pdf`;
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false as const, message: data.message || "Processing failed" };
+    }
+    return {
+      ok: true as const,
+      action: (data.action as string | undefined) || undefined,
+      message: data.message as string | undefined,
+    };
+  }
 
-  return downloadPayrollFileResponse(res, fallbackFilename);
+  // Legacy PDF response — do not auto-download; treat as success if HTTP OK.
+  if (res.ok) {
+    await res.arrayBuffer().catch(() => undefined);
+    return { ok: true as const, action: res.headers.get("X-Payroll-Action") || undefined };
+  }
+
+  return downloadPayrollFileResponse(res, "payslip.pdf");
 }
 
 export async function batchProcessPayrollForPeriod(
@@ -471,6 +486,14 @@ export async function batchProcessPayrollForPeriod(
         summary: data.summary as BatchPayrollSummary | undefined,
       };
     }
+    if (res.ok && data.ok !== false) {
+      return {
+        ok: true as const,
+        summary: data.summary as BatchPayrollSummary | undefined,
+        message: (data.message as string | undefined) || "Payroll processed successfully.",
+      };
+    }
+
     return {
       ok: false as const,
       message: data.message || "Processing failed",
@@ -479,11 +502,16 @@ export async function batchProcessPayrollForPeriod(
     };
   }
 
+  // Legacy zip response — do not auto-download; treat as success if HTTP OK.
   const summaryHeader = res.headers.get("X-Payroll-Summary");
   const summary = summaryHeader ? (JSON.parse(summaryHeader) as BatchPayrollSummary) : undefined;
+  if (res.ok) {
+    await res.arrayBuffer().catch(() => undefined);
+    return { ok: true as const, summary };
+  }
+
   const { monthLabel } = derivePayrollMonthYear(payPeriodStart);
   const fallbackFilename = `Payslips_${monthLabel.replace(" ", "_")}.zip`;
-
   const result = await downloadPayrollFileResponse(res, fallbackFilename);
   return { ...result, summary };
 }

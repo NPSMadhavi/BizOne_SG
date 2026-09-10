@@ -291,8 +291,16 @@ function mapPayrollConfigRow(row: Record<string, unknown>, emp?: Record<string, 
     (camel.deductions as Record<string, number>) ?? {};
 
   const baseSalary = Number(camel.baseSalary ?? 0);
-  const overtimeRate =
-    baseSalary > 0 ? String(Math.round((baseSalary / 176) * 100) / 100) : "0";
+  const storedOvertimeRate = camel.overtimeRate != null ? Number(camel.overtimeRate) : NaN;
+  const overtimeRate = Number.isFinite(storedOvertimeRate) && storedOvertimeRate > 0
+    ? String(storedOvertimeRate)
+    : baseSalary > 0
+      ? String(Math.round((baseSalary / 176) * 100) / 100)
+      : "0";
+
+  const effectiveFromRaw = camel.effectiveFrom ?? camel.createdAt;
+  const effectiveFrom =
+    effectiveFromRaw != null ? String(effectiveFromRaw).slice(0, 10) : undefined;
 
   return {
     id: camel.id,
@@ -304,19 +312,21 @@ function mapPayrollConfigRow(row: Record<string, unknown>, emp?: Record<string, 
     nationality: emp?.nationality,
     baseSalary: String(camel.baseSalary ?? "0"),
     payrollPeriod: camel.payrollPeriod ?? "monthly",
-    hourlyRate: undefined,
+    hourlyRate: camel.hourlyRate != null ? String(camel.hourlyRate) : undefined,
     overtimeRate,
     allowances,
     deductions,
-    taxRate: "0.00",
-    cpfRate: String(camel.cpfEmployeeRate ?? "20"),
-    cpfAmount: undefined,
-    employerCpfRate: String(camel.cpfEmployerRate ?? "17"),
-    employerCpfAmount: undefined,
-    netSalary: undefined,
+    taxRate: camel.taxRate != null ? String(camel.taxRate) : "0.00",
+    cpfRate: String(camel.cpfEmployeeRate ?? camel.cpfRate ?? "20"),
+    cpfAmount: camel.cpfAmount != null ? String(camel.cpfAmount) : undefined,
+    employerCpfRate: String(camel.cpfEmployerRate ?? camel.employerCpfRate ?? "17"),
+    employerCpfAmount:
+      camel.employerCpfAmount != null ? String(camel.employerCpfAmount) : undefined,
+    netSalary: camel.netSalary != null ? String(camel.netSalary) : undefined,
+    noOfWorkingDays: camel.noOfWorkingDays != null ? Number(camel.noOfWorkingDays) : undefined,
     isActive: camel.isActive ?? true,
-    effectiveFrom: camel.createdAt,
-    effectiveTo: undefined,
+    effectiveFrom,
+    effectiveTo: camel.effectiveTo != null ? String(camel.effectiveTo).slice(0, 10) : undefined,
     createdAt: camel.createdAt,
     updatedAt: camel.updatedAt,
   };
@@ -375,18 +385,17 @@ async function fetchEmployeeMap(companyId: number): Promise<Map<number, Record<s
 
 function mapPayrollBody(body: Record<string, unknown>): Record<string, unknown> {
   const mapped = { ...body };
-  if (mapped.cpfRate != null) mapped.cpfEmployeeRate = mapped.cpfRate;
-  if (mapped.employerCpfRate != null) mapped.cpfEmployerRate = mapped.employerCpfRate;
-  delete mapped.cpfRate;
-  delete mapped.cpfAmount;
-  delete mapped.employerCpfAmount;
-  delete mapped.netSalary;
-  delete mapped.taxRate;
-  delete mapped.hourlyRate;
-  delete mapped.overtimeRate;
-  delete mapped.effectiveFrom;
-  delete mapped.effectiveTo;
-  delete mapped.noOfWorkingDays;
+  // Frontend sends cpfRate / employerCpfRate — persist as company columns too.
+  if (mapped.cpfRate != null && mapped.cpfEmployeeRate == null) {
+    mapped.cpfEmployeeRate = mapped.cpfRate;
+  }
+  if (mapped.employerCpfRate != null && mapped.cpfEmployerRate == null) {
+    mapped.cpfEmployerRate = mapped.employerCpfRate;
+  }
+  if (mapped.workingDays != null && mapped.noOfWorkingDays == null) {
+    mapped.noOfWorkingDays = mapped.workingDays;
+  }
+  // UI-only fields — never persist
   delete mapped.workingDays;
   delete mapped.citizenshipStatus;
   delete mapped.citizenshipDisplay;
@@ -427,8 +436,12 @@ const MAINTENANCE_COLUMNS = [
 ];
 
 const PAYROLL_CONFIG_COLUMNS = [
-  "employee_id", "base_salary", "payroll_period", "cpf_employee_rate", "cpf_employer_rate",
+  "employee_id", "base_salary", "payroll_period",
+  "hourly_rate", "overtime_rate", "no_of_working_days",
+  "cpf_employee_rate", "cpf_employer_rate",
+  "tax_rate", "cpf_rate", "cpf_amount", "employer_cpf_rate", "employer_cpf_amount", "net_salary",
   "allowances", "deductions", "bank_name", "bank_account", "is_active",
+  "effective_from", "effective_to",
 ];
 
 const PAYROLL_RECORD_COLUMNS = [

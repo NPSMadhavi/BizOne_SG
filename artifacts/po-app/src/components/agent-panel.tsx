@@ -101,6 +101,14 @@ const TOOL_LABELS: Record<string, string> = {
   downloadCurrentDocument: "Downloading PDF",
   updateDocumentFields: "Updating document",
   navigateTo: "Navigating",
+  openDirectoryForm: "Opening form",
+  searchEmployees: "Searching employees",
+  createEmployee: "Creating employee",
+  updateEmployee: "Updating employee",
+  createCustomer: "Creating customer",
+  updateCustomer: "Updating customer",
+  createVendor: "Creating vendor",
+  updateVendor: "Updating vendor",
   createInvoice: "Creating invoice",
   createQuotation: "Creating quotation",
   createPurchaseOrder: "Creating purchase order",
@@ -137,41 +145,96 @@ function normalizeNavPath(path: string): string {
   return p;
 }
 
-/** Instant client-side navigate for clear "go to / open …" phrases (no LLM wait). */
-function matchQuickNavigate(command: string): string | null {
-  const t = String(command || "").toLowerCase().replace(/\s+/g, " ").trim();
+type QuickNavResult = { path: string; prefill?: Record<string, string>; spokenParty?: string };
+
+/** Pull party name from "for Acme" / "to SP Systems" — ignore "for me/us". */
+function extractPartyFromCommand(command: string): string | null {
+  const t = String(command || "").replace(/\s+/g, " ").trim();
+  // Prefer explicit "customer/vendor X"
+  const labeled = t.match(
+    /\b(?:customer|vendor|supplier|client)\s+(?:name\s+)?(?:is\s+|as\s+)?(.+?)(?:\s+(?:please|now|today)\s*[.!]?\s*$|[.!?]?\s*$)/i,
+  );
+  const m = labeled || t.match(
+    /\b(?:for|to|under|named|called)\s+(.+?)(?:\s+(?:please|now|today|thanks|thank\s*you)\s*[.!]?\s*$|[.!?]?\s*$)/i,
+  );
+  if (!m) return null;
+  let name = m[1]
+    .replace(/\b(a|an|the)\s+(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|form)\b/gi, "")
+    .replace(/\b(customer|vendor|supplier|client)\b/gi, "")
+    .replace(/[.,!?]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!name) return null;
+  if (/^(me|us|myself|yourself|them|him|her|it|a|an|the|new|form|this|that|quotation|invoice|order)$/i.test(name)) return null;
+  // Reject tiny STT fragments
+  if (name.length < 2) return null;
+  if (name.split(/\s+/).length > 6) name = name.split(/\s+/).slice(0, 6).join(" ");
+  return name;
+}
+
+/** Instant client-side navigate for clear "go to / open / create …" phrases (no LLM wait). */
+function matchQuickNavigate(command: string): QuickNavResult | null {
+  const t = normalizeVoiceTranscript(String(command || "")).toLowerCase().replace(/\s+/g, " ").trim();
   if (!t) return null;
-  const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit|create|make|add)\b/.test(t)
+
+  // Search / analytics / specific-record phrases must reach the agent — never short-circuit.
+  if (/\b(find|search|look\s*up|latest|last|previous|recent|paid|confirmed|draft|void|revenue|total|amount|balance|how\s+many|what(?:'s|\s+is)|which|when|whose)\b/.test(t)) {
+    return null;
+  }
+  if (/\b(inv-|qt-|po-|do-|pi-)\w*\d+/i.test(t)) return null;
+
+  const wantsCreate =
+    /\b(create|new|add|make)\b/.test(t)
+    || /\b(open|show|launch)\b.+\b(new\s+)?(form|page)\b/.test(t)
+    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|employee|customer|vendor)\b/.test(t);
+
+  const party = extractPartyFromCommand(normalizeVoiceTranscript(command));
+
+  // Create / open new form — always /new (not the list), even with "for me" or "for Acme"
+  // Do not client-prefill guessed spelling — agent will search directory for accuracy.
+  if (wantsCreate) {
+    const openNew = (path: string): QuickNavResult => ({
+      path,
+      spokenParty: party || undefined,
+    });
+    if (/\binvoices?\b/.test(t)) return openNew("/invoices/new");
+    if (/\bquotations?\b|\bquotes?\b/.test(t)) return openNew("/quotations/new");
+    if (/\bpurchase\s*orders?\b/.test(t)) return openNew("/purchase-orders/new");
+    if (/\bdelivery\s*orders?\b/.test(t)) return openNew("/delivery-orders/new");
+    if (/\bemployees?\b|\bstaff\b|\bperson\b/.test(t)) return openNew("/employees/new");
+    if (/\bcustomers?\b/.test(t)) return openNew("/customers?vedaNew=1");
+    if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return openNew("/vendors?vedaNew=1");
+  }
+
+  // Plain list / module navigation (no create intent)
+  if (t.split(/\s+/).length > 10) return null;
+
+  const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/.test(t)
     || /\b(page|module|screen|list)\b/.test(t)
-    || /^(invoices?|quotations?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|stock|grn|dashboard|settings|point\s*of\s*sale|pos)$/.test(t);
+    || /^(invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|employees?|staff|stock|grn|dashboard|settings|point\s*of\s*sale|pos)$/.test(t);
   if (!wantsNav) return null;
 
-  // Create / new forms
-  if (/\b(create|new|add|make)\b/.test(t) && /\binvoices?\b/.test(t)) return "/invoices/new";
-  if (/\b(create|new|add|make)\b/.test(t) && /\bquotations?\b|\bquotes?\b/.test(t)) return "/quotations/new";
-  if (/\b(create|new|add|make)\b/.test(t) && /\bpurchase\s*orders?\b/.test(t)) return "/purchase-orders/new";
-  if (/\b(create|new|add|make)\b/.test(t) && /\bdelivery\s*orders?\b/.test(t)) return "/delivery-orders/new";
+  // "show/open X for Y" without create → let agent search (unless it's clearly a page jump)
+  if (/\b(show|open|display|get)\b.+\b(for|of|from|about|with)\b/.test(t) && !/\b(page|list|module|screen|form)\b/.test(t)) {
+    return null;
+  }
 
-  if (/\bnew\b/.test(t) && /\binvoices?\b/.test(t)) return "/invoices/new";
-  if (/\bnew\b/.test(t) && /\bquotations?\b/.test(t)) return "/quotations/new";
-  if (/\bnew\b/.test(t) && /\bpurchase\s*orders?\b/.test(t)) return "/purchase-orders/new";
-  if (/\bnew\b/.test(t) && /\bdelivery\s*orders?\b/.test(t)) return "/delivery-orders/new";
-
-  if (/\bpurchase\s*orders?\b/.test(t)) return "/purchase-orders";
-  if (/\bpoint\s*of\s*sale\b/.test(t)) return "/point-of-sale";
-  if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return "/vendor-invoices";
-  if (/\binvoices?\b/.test(t)) return "/invoices";
-  if (/\bquotations?\b|\bquotes?\b/.test(t)) return "/quotations";
-  if (/\bdelivery\s*orders?\b/.test(t)) return "/delivery-orders";
-  if (/\bsales\s*orders?\b/.test(t)) return "/sales-orders";
-  if (/\bcustomers?\b/.test(t)) return "/customers";
-  if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return "/vendors";
-  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b/.test(t)) return "/stock";
-  if (/\bgrn\b|\bgoods\s*received\b/.test(t)) return "/grn";
-  if (/\bdashboard\b|\bhome\b/.test(t)) return "/dashboard";
-  if (/\bsettings?\b/.test(t)) return "/settings";
-  if (/\bexpenses?\b/.test(t)) return "/accounting/expenses";
-  if (/\baccounting\b/.test(t)) return "/accounting/chart-of-accounts";
+  if (/\bpurchase\s*orders?\b/.test(t)) return { path: "/purchase-orders" };
+  if (/\bpoint\s*of\s*sale\b/.test(t)) return { path: "/point-of-sale" };
+  if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return { path: "/vendor-invoices" };
+  if (/\binvoices?\b/.test(t)) return { path: "/invoices" };
+  if (/\bquotations?\b|\bquotes?\b/.test(t)) return { path: "/quotations" };
+  if (/\bdelivery\s*orders?\b/.test(t)) return { path: "/delivery-orders" };
+  if (/\bsales\s*orders?\b/.test(t)) return { path: "/sales-orders" };
+  if (/\bemployees?\b|\bstaff\b|\bpayroll\b/.test(t)) return { path: "/employees" };
+  if (/\bcustomers?\b/.test(t)) return { path: "/customers" };
+  if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return { path: "/vendors" };
+  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b/.test(t)) return { path: "/stock" };
+  if (/\bgrn\b|\bgoods\s*received\b/.test(t)) return { path: "/grn" };
+  if (/\bdashboard\b|\bhome\b/.test(t)) return { path: "/dashboard" };
+  if (/\bsettings?\b/.test(t)) return { path: "/settings" };
+  if (/\bexpenses?\b/.test(t)) return { path: "/accounting/expenses" };
+  if (/\baccounting\b/.test(t)) return { path: "/accounting/chart-of-accounts" };
   return null;
 }
 
@@ -185,12 +248,16 @@ const PATH_LABELS: Record<string, string> = {
   "/purchase-orders/new": "New Purchase Order",
   "/delivery-orders": "Delivery Orders",
   "/delivery-orders/new": "New Delivery Order",
+  "/employees": "Employees",
+  "/employees/new": "New Employee",
   "/stock": "Stock Items",
   "/grn": "GRN",
   "/settings": "Settings",
   "/vendor-invoices": "Vendor Invoices",
   "/customers": "Customers",
+  "/customers?vedaNew=1": "New Customer",
   "/vendors": "Vendors",
+  "/vendors?vedaNew=1": "New Vendor",
   "/accounting": "Accounting",
   "/accounting/gst-f5": "GST F5",
   "/expenses": "Expenses",
@@ -375,6 +442,58 @@ function claimSpeechMic(rec: any) {
   _activeSpeechRec = rec;
 }
 
+/** Fix common Web Speech mishears for BizOne / Singapore ERP phrases. */
+function normalizeVoiceTranscript(raw: string): string {
+  let t = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+
+  t = t
+    .replace(/\bcotations?\b/gi, (m) => (/s$/i.test(m) ? "quotations" : "quotation"))
+    .replace(/\bkotations?\b/gi, (m) => (/s$/i.test(m) ? "quotations" : "quotation"))
+    .replace(/\bkotat(ion|ions)\b/gi, (_m, g1) => (g1 === "ions" ? "quotations" : "quotation"))
+    .replace(/\bquote\s*a\s*tions?\b/gi, (m) => (/s$/i.test(m) ? "quotations" : "quotation"))
+    .replace(/\bquote\s*form\b/gi, "quotation form")
+    .replace(/\bopen\s+a\s+quote\b/gi, "open a quotation")
+    .replace(/\bcreate\s+a\s+quote\b/gi, "create a quotation")
+    .replace(/\bmake\s+a\s+quote\b/gi, "create a quotation")
+    .replace(/\bin\s*voices?\b/gi, (m) => (/s$/i.test(m) ? "invoices" : "invoice"))
+    .replace(/\bgo\s+to\s+the\b/gi, "go to")
+    .replace(/\bplease\s*$/i, "")
+    .replace(/\bfor\s+me\s+please\b/gi, "for me");
+
+  return t.replace(/\s+/g, " ").trim();
+}
+
+const ERP_SCORE_WORDS = [
+  "quotation", "quotations", "quote", "invoice", "invoices", "purchase", "order", "orders",
+  "delivery", "customer", "vendor", "supplier", "employee", "create", "open", "form",
+  "save", "preview", "download", "veda", "new", "edit",
+];
+
+/** Prefer the SpeechRecognition alternative that best matches ERP vocabulary. */
+function pickBestSpeechAlternative(result: SpeechRecognitionResult | any): { text: string; conf: number } {
+  const alts: Array<{ text: string; conf: number; score: number }> = [];
+  const n = result?.length ?? 0;
+  for (let j = 0; j < n; j++) {
+    const raw = String(result[j]?.transcript || "").trim();
+    if (!raw) continue;
+    const text = normalizeVoiceTranscript(raw);
+    const conf = typeof result[j]?.confidence === "number" ? result[j].confidence : 0;
+    const lower = text.toLowerCase();
+    let score = conf * 10;
+    for (const w of ERP_SCORE_WORDS) {
+      if (lower.includes(w)) score += 1.5;
+    }
+    // Prefer phrases that look like create/open commands
+    if (/\b(create|open|new|add|make|go to|show)\b/i.test(text)) score += 2;
+    if (/\b(quotation|invoice|purchase order|delivery order|employee|customer|vendor)\b/i.test(text)) score += 2;
+    alts.push({ text, conf, score });
+  }
+  if (!alts.length) return { text: "", conf: 0 };
+  alts.sort((a, b) => b.score - a.score || b.conf - a.conf);
+  return { text: alts[0].text, conf: alts[0].conf };
+}
+
 // Only clear stop intents — do NOT match "thank you" / "done" / "close" (causes false auto-stop)
 const HARD_STOP_RE =
   /\b(stop\s+it|stop\s+veda|stop\s+talking|shut\s*up|be\s*quiet|cancel\s+that|never\s*mind|that'?s\s+all|goodbye|good\s*bye)\b/i;
@@ -387,19 +506,18 @@ function isStopCommand(text: string) {
   return HARD_STOP_ONLY_RE.test(t) || HARD_STOP_RE.test(t);
 }
 
-/** Ignore room chatter / noise fragments — only accept clear addressed speech. */
+/** Ignore empty / filler only — never drop real short answers (names, IT, HR, phones). */
 function isLikelyNoise(text: string): boolean {
   const t = String(text || "").trim().toLowerCase();
   if (!t) return true;
   if (isStopCommand(t)) return false;
-  // Short yes/no / numbers are valid field answers
-  if (/^(yes|yeah|yep|yup|ok|okay|sure|no|nope|nah|sgd|usd|eur|inr|myr|gbp|\d+([.,]\d+)?)$/i.test(t)) return false;
+  // Digits, emails, yes/no, currencies, common form answers are always real
+  if (/\d/.test(t) || /@/.test(t)) return false;
+  if (/^(yes|yeah|yep|yup|ok|okay|sure|no|nope|nah|skip|later|none|sgd|usd|eur|inr|myr|gbp|active|singapore|foreigner|pr)$/i.test(t)) return false;
   const words = t.split(/\s+/).filter(Boolean);
-  // Single tiny word from background (hmm, the, a, uh) — ignore
-  if (words.length === 1 && words[0].length < 3) return true;
-  if (words.length === 1 && /^(the|a|an|and|or|to|of|is|it|um|uh|ah|oh|hmm|ha|la|na|aa|ee)$/i.test(words[0])) return true;
-  // Very short mumbled fragment without intent words
-  if (t.replace(/\s+/g, "").length < 3) return true;
+  // Pure filler tokens only
+  if (words.length === 1 && /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an)$/i.test(words[0])) return true;
+  if (t.replace(/\s+/g, "").length < 2) return true;
   return false;
 }
 
@@ -506,6 +624,11 @@ async function streamChat(
         if (ev.type === "tool_call" && ev.name) onTool(ev.name);
         if (ev.type === "navigate") onNav(ev.path, ev.prefill, ev.reason || "");
         if (ev.type === "fill_form" && ev.fields) onFill?.(ev.fields);
+        if (ev.type === "open_directory_form") {
+          window.dispatchEvent(new CustomEvent("veda:open-directory-form", {
+            detail: { type: ev.formType, mode: ev.mode, id: ev.id },
+          }));
+        }
         if (ev.type === "form_action" && ev.action) onFormAction?.(ev.action);
         if (ev.type === "document_updated") {
           onDocumentUpdated?.({
@@ -582,7 +705,7 @@ function useVoice() {
 // Keep as a plain variable (not const) so HMR always refreshes it in place.
 // The hook reads it via a ref so stale useCallback closures always see the latest value.
 // Phonetic / STT variants of "Veda" only — avoid common English words that false-trigger.
-let WAKE_WORDS = /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedaah|vedha|veyda|veida|beeda|bheda)\b/i;
+let WAKE_WORDS = /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedaah|vedha|veyda|veida|beeda|bheda|veda\s*ji|hey\s*veda)\b/i;
 const WAKE_WORDS_REF = { current: WAKE_WORDS };
 WAKE_WORDS_REF.current = WAKE_WORDS;
 
@@ -612,10 +735,10 @@ function matchWakeUtterance(raw: string): { hit: boolean; followOn?: string } {
   }
 
   // Single-token fuzzy: STT often mangles short "Veda" (e.g. "ved", "veda.", "v eda")
-  const one = strippedLead.replace(/\s+/g, "");
-  if (one.length >= 3 && one.length <= 8) {
+  const tokens = [strippedLead.replace(/\s+/g, ""), ...strippedLead.split(/\s+/).filter(Boolean)];
+  for (const one of tokens) {
+    if (one.length < 3 || one.length > 8) continue;
     const target = "veda";
-    let dist = 0;
     const a = one.slice(0, 8);
     const b = target;
     const m = a.length;
@@ -630,8 +753,15 @@ function matchWakeUtterance(raw: string): { hit: boolean; followOn?: string } {
           : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
       }
     }
-    dist = dp[m][n];
-    if (dist <= 1) return { hit: true };
+    if (dp[m][n] <= 1) {
+      const followOn = strippedLead
+        .split(/\s+/)
+        .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
+        .join(" ")
+        .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|yo|oye|hello)\s+/i, "")
+        .trim();
+      return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
+    }
   }
 
   return { hit: false };
@@ -683,16 +813,17 @@ function useWakeWord(
       // Single-shot sessions are more reliable than continuous for short wake words
       rec.continuous      = false;
       rec.interimResults  = true;
-      rec.lang            = "en-IN";
-      rec.maxAlternatives = 5;
+      rec.lang            = "en-SG";
+      rec.maxAlternatives = 8;
       claimSpeechMic(rec);
       recRef.current = rec;
 
       clearWatchdog();
+      // Chrome can hang a single-shot session with no onend — restart before mic goes stale
       watchdogRef.current = setTimeout(() => {
         stopListening();
-        if (enabledRef.current) timerRef.current = setTimeout(startListening, 100);
-      }, 10_000);
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, 180);
+      }, 14_000);
 
       let fired = false;
       const tryWake = (text: string) => {
@@ -708,7 +839,7 @@ function useWakeWord(
       rec.onresult = (evt: any) => {
         for (let i = 0; i < evt.results.length; i++) {
           for (let j = 0; j < evt.results[i].length; j++) {
-            const t = (evt.results[i][j].transcript || "").toLowerCase().trim();
+            const t = normalizeVoiceTranscript(evt.results[i][j].transcript || "").toLowerCase().trim();
             if (t) tryWake(t);
             if (fired) return;
           }
@@ -723,7 +854,7 @@ function useWakeWord(
           onMicErrRef.current?.(e.error);
           return;
         }
-        const delay = e.error === "no-speech" ? 60 : 350;
+        const delay = e.error === "no-speech" ? 120 : 400;
         if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, delay);
       };
 
@@ -731,20 +862,20 @@ function useWakeWord(
         clearWatchdog();
         if (_activeSpeechRec === rec) _activeSpeechRec = null;
         recRef.current = null;
-        if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, 100);
+        if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, 180);
       };
 
       rec.start();
     } catch {
       clearWatchdog();
       recRef.current = null;
-      if (enabledRef.current) timerRef.current = setTimeout(startListening, 350);
+      if (enabledRef.current) timerRef.current = setTimeout(startListening, 400);
     }
   }, [clearWatchdog, stopListening]);
 
   useEffect(() => {
     if (enabled) {
-      timerRef.current = setTimeout(startListening, 100);
+      timerRef.current = setTimeout(startListening, 180);
     } else {
       stopListening();
     }
@@ -765,6 +896,7 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
 
     let resolved = false;
     let finalText = "";
+    let interimText = "";
     let silenceTimer: ReturnType<typeof setTimeout> | null = null;
     let maxTimer: ReturnType<typeof setTimeout> | null = null;
     let rec: any = null;
@@ -792,56 +924,49 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
       if (resolved) return;
       try {
         rec = new SR();
-        rec.continuous = false;
+        // continuous helps capture full "create quotation for Acme Systems" phrases
+        rec.continuous = true;
         rec.interimResults = true;
-        rec.lang = "en-IN";
-        rec.maxAlternatives = 3;
+        rec.lang = "en-SG";
+        rec.maxAlternatives = 8;
         claimSpeechMic(rec);
 
         rec.onresult = (evt: any) => {
           for (let i = evt.resultIndex; i < evt.results.length; i++) {
-            let best = evt.results[i][0]?.transcript || "";
-            let bestConf = evt.results[i][0]?.confidence ?? 0;
-            for (let j = 1; j < evt.results[i].length; j++) {
-              const alt = evt.results[i][j];
-              const c = alt?.confidence ?? 0;
-              if (c > bestConf) {
-                best = alt.transcript;
-                bestConf = c;
-              }
-            }
-            const t = String(best || "").trim();
+            const picked = pickBestSpeechAlternative(evt.results[i]);
+            const t = picked.text;
+            const bestConf = picked.conf;
             if (!t) continue;
-            // Drop low-confidence room noise (0 means unknown — allow; <0.35 discard)
-            if (bestConf > 0 && bestConf < 0.35) continue;
+            // Only drop near-zero junk; accents often score low
+            if (bestConf > 0 && bestConf < 0.08) continue;
 
             if (evt.results[i].isFinal) {
               if (isLikelyNoise(t) && !finalText) {
-                // Ignore stray single-word background hits; keep listening
                 continue;
               }
               finalText = (finalText ? `${finalText} ${t}` : t).trim();
+              interimText = "";
               onInterim(finalText);
               if (silenceTimer) clearTimeout(silenceTimer);
               if (isStopCommand(finalText)) {
                 done(finalText);
                 return;
               }
-              // Longer pause so background chatter doesn't cut the user's answer short
+              // Longer pause so company names aren't cut mid-phrase
               silenceTimer = setTimeout(() => {
                 if (isLikelyNoise(finalText)) {
                   finalText = "";
                   onInterim("");
                   return;
                 }
-                done(finalText);
-              }, 900);
+                done(normalizeVoiceTranscript(finalText));
+              }, 850);
             } else {
-              // Don't end utterance on interim alone — wait for final (reduces room pickup)
+              interimText = t;
               onInterim(t);
               if (silenceTimer) clearTimeout(silenceTimer);
               if (isStopCommand(t)) {
-                done(t);
+                done(normalizeVoiceTranscript(t));
                 return;
               }
             }
@@ -852,7 +977,7 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
           if (_activeSpeechRec === rec) _activeSpeechRec = null;
           rec = null;
           if (e.error === "no-speech") {
-            if (!resolved) restartTimer = setTimeout(startRec, 50);
+            if (!resolved) restartTimer = setTimeout(startRec, 80);
           } else if (e.error === "not-allowed" || e.error === "service-not-allowed") {
             done("");
           } else {
@@ -864,7 +989,16 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
           if (_activeSpeechRec === rec) _activeSpeechRec = null;
           rec = null;
           if (resolved) return;
-          if (!finalText) restartTimer = setTimeout(startRec, 70);
+          // Prefer final; if Chrome never finalized, keep interim so speech isn't lost
+          if (finalText) {
+            if (!silenceTimer) done(finalText);
+            return;
+          }
+          if (interimText && !isLikelyNoise(interimText)) {
+            done(normalizeVoiceTranscript(interimText));
+            return;
+          }
+          restartTimer = setTimeout(startRec, 80);
         };
 
         rec.start();
@@ -988,10 +1122,15 @@ export function AgentPanel() {
 
       const isEcho = (cmd: string) => {
         if (lastSpokenWords.length === 0) return false;
-        const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        // Ignore common ERP words that legitimately repeat after Veda speaks
+        const skip = new Set(["invoice", "invoices", "quotation", "quotations", "purchase", "order", "orders", "customer", "customers", "vendor", "vendors", "please", "veda", "opening", "create", "created"]);
+        const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !skip.has(w));
         if (cmdWords.length === 0) return false;
-        const matches = cmdWords.filter(w => lastSpokenWords.includes(w)).length;
-        return matches / cmdWords.length > 0.45;
+        const spoken = lastSpokenWords.filter(w => !skip.has(w));
+        if (spoken.length === 0) return false;
+        const matches = cmdWords.filter(w => spoken.includes(w)).length;
+        // Only treat as echo when almost the whole command matches TTS
+        return matches / cmdWords.length > 0.75;
       };
 
       while (convActiveRef.current) {
@@ -1007,6 +1146,8 @@ export function AgentPanel() {
           command = await listenForCommand(t => setConvText(t), ctrl.signal);
         }
         if (ctrl.signal.aborted || !convActiveRef.current) break;
+
+        command = normalizeVoiceTranscript(command);
 
         if (!command.trim() || isLikelyNoise(command)) {
           // Keep listening — ignore empty / room noise (do NOT auto-stop)
@@ -1037,27 +1178,39 @@ export function AgentPanel() {
         }
 
         // Instant navigate for clear "go to / open / create …"
-        const quickPath = matchQuickNavigate(command);
-        if (quickPath) {
+        const quick = matchQuickNavigate(command);
+        if (quick) {
+          const quickPath = quick.path;
           unlockVedaModules();
+          if (quick.prefill) storeVedaPrefill(quick.prefill);
           navigate(normalizeNavPath(quickPath));
           setConvState("speaking");
           const label = PATH_LABELS[quickPath] || quickPath;
-          setConvText(`Opening ${label}`);
-          void speak(`Opening ${label}`);
+          const partyHint = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
+          setConvText(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
+          void speak(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
           await new Promise(r => setTimeout(r, 450));
 
-          // New form → start guided field-by-field (ask first field)
-          if (quickPath.endsWith("/new")) {
+          // Prefill only when we have trusted form keys (rare)
+          if (quick.prefill) {
+            await new Promise(r => setTimeout(r, 350));
+            window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: quick.prefill }));
+          }
+
+          // New form / directory create → start guided field-by-field
+          if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
             setConvState("processing");
             let response = "";
             try {
+              const known = partyHint
+                ? `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the customer/vendor name again.`
+                : `Start guided create: ask ONLY the first field now (customer/vendor name).`;
               await streamChat(
                 [
                   ...ambientHistoryRef.current,
                   {
                     role: "user",
-                    content: `${command}\n\n[The ${label} form is now open at ${quickPath}. Start guided create: ask ONLY the first field now.]`,
+                    content: `${normalizeVoiceTranscript(command)}\n\n[The ${label} form is now open at ${quickPath}. ${known}]`,
                   },
                 ],
                 memory,
@@ -1154,10 +1307,20 @@ export function AgentPanel() {
               }
               await new Promise(r => setTimeout(r, 250));
             }
+          } else {
+            // Empty agent reply — still acknowledge so user knows mic worked
+            const fallback = "I didn't catch a clear answer. Please say that again.";
+            setConvState("speaking");
+            setConvText(fallback);
+            await speak(fallback);
           }
         } catch (e: any) {
           if (e.name === "AbortError" || ctrl.signal.aborted) break;
-          await speak("I ran into an issue. Please try again.");
+          const msg = /company/i.test(String(e?.message || ""))
+            ? "Please select a company first, then try again."
+            : "I ran into an issue. Please try again.";
+          setConvText(msg);
+          await speak(msg);
           break;
         }
       }
@@ -1197,7 +1360,8 @@ export function AgentPanel() {
   const [wakeError, setWakeError] = useState<string | null>(null);
 
   // Wake ONLY when idle — never alongside command listen or barge-in (mic conflict)
-  const wakeEnabled = handsFree && !open && !panelListening && convState === "idle";
+  // Wake with panel open too — users often open chat then say "Veda"
+  const wakeEnabled = handsFree && !panelListening && convState === "idle";
 
   const { supported: wakeSupported } = useWakeWord(
     handleWakeWord,
@@ -1289,19 +1453,67 @@ export function AgentPanel() {
 
   const send = useCallback(async (text: string, fromVoice = false) => {
     if (!text.trim() || thinking) return;
-    const quickPath = matchQuickNavigate(text.trim());
-    if (quickPath) {
+    text = normalizeVoiceTranscript(text);
+    // Guided kickoff from quick-nav — skip another navigate short-circuit
+    const isGuidedKickoff = /\[The .+ form is now open at /.test(text);
+    const quick = isGuidedKickoff ? null : matchQuickNavigate(text.trim());
+    if (quick) {
       unlockVedaModules();
+      const quickPath = quick.path;
       const label = PATH_LABELS[quickPath] || quickPath;
+      const partyHint = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
       const uid = Date.now().toString();
       const aid = `asst-${uid}`;
+      const msg = partyHint ? `Opening ${label} for ${partyHint}.` : `Opening ${label}.`;
       setMessages(p => [...p,
         { id: uid, role: "user", content: text.trim(), fromVoice },
-        { id: aid, role: "assistant", content: `Opening ${label}.`, complete: true, navigated: { path: quickPath, label }, toolCalls: ["navigateTo"] },
+        { id: aid, role: "assistant", content: msg, complete: true, navigated: { path: quickPath, label }, toolCalls: ["navigateTo"] },
       ]);
       setInput("");
+      if (quick.prefill) storeVedaPrefill(quick.prefill);
       navigate(normalizeNavPath(quickPath));
-      if (fromVoice) void speak(`Opening ${label}`);
+      if (quick.prefill) {
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: quick.prefill }));
+        }, 500);
+      }
+      if (fromVoice) void speak(msg);
+
+      // Continue into agent guided create (same turn) without re-matching quick-nav
+      if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
+        const known = partyHint
+          ? `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the name again.`
+          : `Start guided create: ask ONLY the first field now.`;
+        const kickoff = `${normalizeVoiceTranscript(text.trim())}\n\n[The ${label} form is now open at ${quickPath}. ${known}]`;
+        const gid = `asst-guide-${uid}`;
+        setMessages(p => [...p, { id: gid, role: "assistant", content: "", toolCalls: [] }]);
+        setThinking(true);
+        abortRef.current = new AbortController();
+        let full = "";
+        try {
+          await streamChat(
+            [...history, { role: "user", content: text.trim() }, { role: "user", content: kickoff }],
+            memory,
+            chunk => { full += chunk; setMessages(p => p.map(m => m.id === gid ? { ...m, content: full } : m)); },
+            tool => setMessages(p => p.map(m => m.id === gid ? { ...m, toolCalls: [...(m.toolCalls ?? []), tool] } : m)),
+            (path, prefill, reason) => handleNavigate(path, prefill, reason),
+            abortRef.current.signal,
+            (fields) => window.dispatchEvent(new CustomEvent("veda:fill-form", { detail: fields })),
+            (action) => queueVedaFormAction(action),
+            handleDocumentUpdated,
+            (dt, id, recipients, docNumber) => { void handleVedaEmail(dt, id, recipients, docNumber); },
+            quickPath,
+            selectedCompany?.id,
+          );
+          setMessages(p => p.map(m => m.id === gid ? { ...m, complete: true } : m));
+          if (fromVoice && full) await speak(full.slice(0, 600));
+        } catch (e: any) {
+          if (e.name !== "AbortError") setMessages(p => p.map(m => m.id === gid ? { ...m, complete: true, content: "Something went wrong — please try again." } : m));
+        } finally {
+          setThinking(false);
+          abortRef.current = null;
+        }
+      }
       return;
     }
     const uid = Date.now().toString();

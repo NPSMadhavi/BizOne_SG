@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,6 +141,66 @@ export default function VendorsPage() {
   const openNew = () => { setEditing(null); setForm(blank()); setDialogOpen(true); };
   const openEdit = (v: Vendor) => { setEditing(v); setForm({ ...v }); setDialogOpen(true); };
   const setField = (k: keyof Vendor, val: any) => setForm(p => ({ ...p, [k]: val }));
+
+  const mutationRef = useRef(mutation);
+  mutationRef.current = mutation;
+  const formRef = useRef(form);
+  formRef.current = form;
+  const vendorsRef = useRef(vendors);
+  vendorsRef.current = vendors;
+
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<{ type?: string; mode?: string; id?: number }>).detail || {};
+      if (detail.type && detail.type !== "vendor") return;
+      if (detail.mode === "edit" && detail.id) {
+        const v = vendorsRef.current.find((x) => x.id === detail.id);
+        if (v) openEdit(v);
+        else openNew();
+      } else {
+        openNew();
+      }
+    };
+    const onFill = (e: Event) => {
+      const fields = (e as CustomEvent<Record<string, unknown>>).detail;
+      if (!fields || typeof fields !== "object") return;
+      setDialogOpen(true);
+      setForm((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(fields)) {
+          const key = (k === "vendorName" || k === "vendor_name" || k === "supplierName" ? "name" : k) as keyof Vendor;
+          (next as any)[key] = v;
+        }
+        return next;
+      });
+    };
+    const onAction = (e: Event) => {
+      const action = (e as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === "save") {
+        setDialogOpen(true);
+        mutationRef.current.mutate(formRef.current);
+      }
+    };
+    window.addEventListener("veda:open-directory-form", onOpen as EventListener);
+    window.addEventListener("veda:fill-form", onFill as EventListener);
+    window.addEventListener("veda:form-action", onAction as EventListener);
+    return () => {
+      window.removeEventListener("veda:open-directory-form", onOpen as EventListener);
+      window.removeEventListener("veda:fill-form", onFill as EventListener);
+      window.removeEventListener("veda:form-action", onAction as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("vedaNew") === "1") {
+      openNew();
+      params.delete("vedaNew");
+      const qs = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    }
+  }, []);
 
   const filtered = useMemo(() => vendors.filter(v =>
     v.name.toLowerCase().includes(search.toLowerCase()) ||
