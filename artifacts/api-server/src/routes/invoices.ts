@@ -24,6 +24,7 @@ import {
   loadInvoiceNetDeducted,
   alignInvoiceItemsToIssuedWarehouse,
 } from "../lib/invoice-stock.js";
+import { resolveWarehouseId } from "../lib/inventory-service.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -37,10 +38,15 @@ declare module "express-session" {
 
 const router: IRouter = Router();
 
+function isInventoriableItemType(type?: string | null): boolean {
+  const t = String(type || "").toLowerCase();
+  return t !== "service" && t !== "service_item";
+}
+
 /**
- * Preserve stockItemId when the client omits it on resave.
- * Warehouse MUST come from the client (cube picker) for that same stock item.
- * Part-number text matching stock codes does NOT auto-bind inventory — use the cube icon.
+ * Bind invoice lines to catalogue stock for outward deduction.
+ * Accepts cube-picked stockItemId/warehouseId, or resolves partNumber → item code
+ * with the company default warehouse when warehouse is omitted.
  */
 export async function mergeInvoiceStockMeta(
   companyId: number,
@@ -52,14 +58,20 @@ export async function mergeInvoiceStockMeta(
   const prev = Array.isArray(previous) ? previous : [];
 
   const allStockItems = await db
-    .select({ id: stockItemsTable.id })
+    .select({ id: stockItemsTable.id, code: stockItemsTable.code, type: stockItemsTable.type })
     .from(stockItemsTable)
-    .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.type, "product")));
+    .where(eq(stockItemsTable.companyId, companyId));
 
   const validStockIds = new Set<number>();
+  const codeToId = new Map<string, number>();
   for (const s of allStockItems) {
+    if (!isInventoriableItemType(s.type)) continue;
     validStockIds.add(s.id);
+    const code = String(s.code || "").trim().toLowerCase();
+    if (code && !codeToId.has(code)) codeToId.set(code, s.id);
   }
+
+  const defaultWarehouseId = await resolveWarehouseId(companyId);
 
   const netQtyByStockItem = new Map<number, number>();
   if (invoiceId) {
@@ -83,7 +95,8 @@ export async function mergeInvoiceStockMeta(
     if (!item || item.type === "section") return item;
 
     const qty = Number(item.qty) || 0;
-    const cleanPart = String(item.partNumber || "").replace(/<[^>]*>/g, "").trim().toLowerCase();
+    const cleanPart = String(item.partNumber || "").replace(/<[^>]*>/g, "").trim();
+    const cleanPartKey = cleanPart.toLowerCase();
 
     const rawIncomingStockId = Number(item.stockItemId) > 0 ? Number(item.stockItemId) : undefined;
     const incomingStockId = rawIncomingStockId && validStockIds.has(rawIncomingStockId)
@@ -94,18 +107,17 @@ export async function mergeInvoiceStockMeta(
       (rawIncomingStockId
         ? prev.find((p) => p && p.type !== "section" && Number(p.stockItemId) === rawIncomingStockId)
         : undefined)
-      ?? (cleanPart
+      ?? (cleanPartKey
         ? prev.find((p) =>
           p && p.type !== "section"
-          && String(p.partNumber || "").replace(/<[^>]*>/g, "").trim().toLowerCase() === cleanPart
+          && String(p.partNumber || "").replace(/<[^>]*>/g, "").trim().toLowerCase() === cleanPartKey
         )
         : undefined);
 
     const prevStockId = Number(prevLine?.stockItemId) > 0 ? Number(prevLine.stockItemId) : undefined;
+    const codeMatchedId = cleanPartKey ? codeToId.get(cleanPartKey) : undefined;
 
-    // Only bind stock when the client explicitly picked via cube (incomingStockId)
-    // or stock was already issued on this invoice. Do NOT auto-link by part-number code match.
-    let stockItemId = pickValidStockId(incomingStockId);
+    let stockItemId = pickValidStockId(incomingStockId, codeMatchedId);
 
     if (!stockItemId && prevStockId && validStockIds.has(prevStockId) && Number(prevLine?.warehouseId) > 0) {
       const issuedQty = netQtyByStockItem.get(prevStockId) ?? 0;
@@ -124,12 +136,11 @@ export async function mergeInvoiceStockMeta(
     }
 
     const incomingWh = Number(item.warehouseId) > 0 ? Number(item.warehouseId) : undefined;
-    // Only reuse previous warehouse when it belongs to the SAME stock item.
     const prevSameItem = prevStockId === stockItemId;
     const prevWh = prevSameItem && Number(prevLine?.warehouseId) > 0
       ? Number(prevLine.warehouseId)
       : undefined;
-    const warehouseId = incomingWh ?? prevWh;
+    const warehouseId = incomingWh ?? prevWh ?? (defaultWarehouseId || undefined);
 
     if (qty > 0 && !warehouseId) {
       throw new Error(
@@ -483,6 +494,21 @@ async function recomputeInvoiceStatus(invoiceId: number): Promise<void> {
   if (newStatus !== inv.status) {
     await db.update(invoicesTable).set({ status: newStatus }).where(eq(invoicesTable.id, invoiceId));
   }
+}
+
+async function getInvoicePaymentSnapshot(invoiceId: number) {
+  const [doc] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invoiceId));
+  if (!doc) return null;
+  const payments = await getPaymentsForInvoice(invoiceId);
+  const paidAmount = payments.reduce((s, p) => s + parseFloat(p.amount ?? "0"), 0);
+  const totalAmount = parseFloat(doc.totalAmount ?? "0");
+  const balance = Math.max(0, totalAmount - paidAmount);
+  return {
+    ...parseDoc(doc),
+    payments: payments.map(parsePayment),
+    paidAmount,
+    balance,
+  };
 }
 
 router.get("/invoices/:id", async (req, res): Promise<void> => {
@@ -852,7 +878,8 @@ router.post("/invoices/:id/payments", async (req, res): Promise<void> => {
   await recomputeInvoiceStatus(id);
 
   logAudit({ req, action: "payment:add", entityType: "invoice", entityId: id, entityLabel: inv.invNumber, details: { amount: payment.amount, reference: payment.reference } });
-  res.status(201).json({ payment: parsePayment(payment) });
+  const snapshot = await getInvoicePaymentSnapshot(id);
+  res.status(201).json({ payment: parsePayment(payment), invoice: snapshot });
 });
 
 router.put("/invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
@@ -872,7 +899,8 @@ router.put("/invoices/:id/payments/:paymentId", async (req, res): Promise<void> 
   await db.update(invoicePaymentsTable).set(updates).where(eq(invoicePaymentsTable.id, paymentId));
   await recomputeInvoiceStatus(id);
 
-  res.json({ success: true });
+  const snapshot = await getInvoicePaymentSnapshot(id);
+  res.json({ success: true, invoice: snapshot });
 });
 
 router.delete("/invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
@@ -889,7 +917,8 @@ router.delete("/invoices/:id/payments/:paymentId", async (req, res): Promise<voi
   await recomputeInvoiceStatus(id);
 
   logAudit({ req, action: "payment:delete", entityType: "invoice", entityId: id, entityLabel: inv.invNumber });
-  res.json({ success: true });
+  const snapshot = await getInvoicePaymentSnapshot(id);
+  res.json({ success: true, invoice: snapshot });
 });
 
 router.delete("/invoices/:id", async (req, res): Promise<void> => {

@@ -327,6 +327,7 @@ router.post("/sales-orders/:id/convert", async (req, res): Promise<void> => {
         await db.update(salesOrdersTable).set({
           invId: doc.id,
           invNumber: doc.invNumber,
+          status: (so as any).doId ? "converted" : "converted_to_invoice",
         } as any).where(eq(salesOrdersTable.id, id));
       } catch (linkErr: any) {
         req.log?.warn?.({ err: linkErr }, "SO convert: failed to store inv link (columns may be missing)");
@@ -402,6 +403,7 @@ router.post("/sales-orders/:id/convert", async (req, res): Promise<void> => {
       await db.update(salesOrdersTable).set({
         doId: doc.id,
         doNumber: doc.doNumber,
+        status: (so as any).invId ? "converted" : "converted_to_do",
       } as any).where(eq(salesOrdersTable.id, id));
     } catch (linkErr: any) {
       req.log?.warn?.({ err: linkErr }, "SO convert: failed to store do link (columns may be missing)");

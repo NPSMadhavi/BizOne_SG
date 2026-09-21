@@ -10,6 +10,11 @@ import {
 } from "../lib/vendor-invoice-auto-post.js";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { assertPeriodWritable } from "../lib/financial-year.js";
+import {
+  reverseVendorInvoiceStock,
+  syncVendorInvoiceStock,
+} from "../lib/vendor-invoice-stock.js";
+import { syncVendorInvoicePurchasePrices, recomputePriceLotsAfterVendorInvoiceRemoved } from "../lib/stock-purchase-price.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -49,17 +54,28 @@ function calcViLineAmount(qty: number, unitPrice: number, discount: number): num
 }
 
 function normalizeViItems(items: any[]) {
-  return (items || []).map((it) => ({
-    type: it.type || "item",
-    sectionLabel: it.sectionLabel || "",
-    partNumber: String(it.partNumber || "").trim(),
-    description: String(it.description || "").trim(),
-    qty: Number(it.qty) || 0,
-    unitPrice: Number(it.unitPrice) || 0,
-    discount: Number(it.discount) || 0,
-    uom: it.uom || "",
-    amount: it.type === "section" ? 0 : calcViLineAmount(Number(it.qty) || 0, Number(it.unitPrice) || 0, Number(it.discount) || 0),
-  }));
+  return (items || []).map((it) => {
+    const stockItemId = Number(it.stockItemId);
+    const warehouseId = Number(it.warehouseId);
+    const hasStock =
+      Number.isFinite(stockItemId) && stockItemId > 0
+      && (Number.isFinite(warehouseId) && warehouseId > 0 || !!String(it.partNumber || "").trim());
+    return {
+      type: it.type || "item",
+      sectionLabel: it.sectionLabel || "",
+      partNumber: String(it.partNumber || "").trim(),
+      description: String(it.description || "").trim(),
+      qty: Number(it.qty) || 0,
+      unitPrice: Number(it.unitPrice) || 0,
+      discount: Number(it.discount) || 0,
+      uom: it.uom || "",
+      amount: it.type === "section" ? 0 : calcViLineAmount(Number(it.qty) || 0, Number(it.unitPrice) || 0, Number(it.discount) || 0),
+      isStockItem: hasStock || !!it.isStockItem,
+      stockItemId: Number.isFinite(stockItemId) && stockItemId > 0 ? stockItemId : undefined,
+      warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
+      warehouseName: typeof it.warehouseName === "string" ? it.warehouseName : undefined,
+    };
+  });
 }
 
 async function recalcPI(piId: number, companyId: number): Promise<void> {
@@ -185,7 +201,41 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       req.log,
     );
 
-    res.status(201).json(parsePI(doc));
+    try {
+      await syncVendorInvoiceStock({
+        companyId,
+        vendorInvoiceId: doc.id,
+        piNumber: doc.piNumber,
+        items: normalizedItems,
+        // Always post VI qty into warehouse / Item Master (never skip).
+        skipBecauseOfPo: false,
+        userId,
+      });
+    } catch (stockErr: any) {
+      req.log?.warn?.({ err: stockErr }, "Vendor invoice stock sync failed on create");
+      res.status(400).json({
+        error: stockErr?.message || "Failed to update stock for vendor invoice",
+        id: doc.id,
+        number: doc.piNumber,
+      });
+      return;
+    }
+
+    try {
+      await syncVendorInvoicePurchasePrices({
+        companyId,
+        vendorInvoiceId: doc.id,
+        piNumber: doc.piNumber,
+        piDate: doc.piDate,
+        items: normalizedItems,
+        userId,
+      });
+    } catch (priceErr: any) {
+      req.log?.warn?.({ err: priceErr }, "Vendor invoice purchase-price sync failed on create");
+    }
+
+    const [withStock] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, doc.id));
+    res.status(201).json(parsePI(withStock ?? doc));
   } catch (err: any) {
     const message = err?.cause?.message || err?.message || "Failed to create vendor invoice";
     res.status(500).json({ error: message });
@@ -266,6 +316,40 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
   await recalcPI(id, existing.companyId);
   const [updated] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+
+  if (items !== undefined && updated) {
+    try {
+      await syncVendorInvoiceStock({
+        companyId: existing.companyId,
+        vendorInvoiceId: id,
+        piNumber: updated.piNumber,
+        items: (updated.items as any[]) || [],
+        // Always post VI qty into warehouse / Item Master (never skip).
+        skipBecauseOfPo: false,
+        userId: req.session.userId,
+      });
+    } catch (stockErr: any) {
+      req.log?.warn?.({ err: stockErr }, "Vendor invoice stock sync failed on update");
+      res.status(400).json({ error: stockErr?.message || "Failed to update stock for vendor invoice" });
+      return;
+    }
+  }
+
+  if (updated && (items !== undefined || piDate !== undefined)) {
+    try {
+      await syncVendorInvoicePurchasePrices({
+        companyId: existing.companyId,
+        vendorInvoiceId: id,
+        piNumber: updated.piNumber,
+        piDate: updated.piDate,
+        items: (updated.items as any[]) || [],
+        userId: req.session.userId,
+      });
+    } catch (priceErr: any) {
+      req.log?.warn?.({ err: priceErr }, "Vendor invoice purchase-price sync failed on update");
+    }
+  }
+
   logAudit({ req, action: "update", entityType: "vendor_invoice", entityId: id, entityLabel: updated?.piNumber });
   res.json(parsePI(updated));
 });
@@ -282,7 +366,40 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
 
   await reverseVendorInvoiceJE(id, toDelete.companyId, toDelete.piNumber, toDelete.vendorName, userId, req.log);
 
+  try {
+    await reverseVendorInvoiceStock({
+      companyId: toDelete.companyId,
+      vendorInvoiceId: id,
+      piNumber: toDelete.piNumber,
+      userId,
+    });
+  } catch (stockErr: any) {
+    req.log?.warn?.({ err: stockErr }, "Vendor invoice stock reverse failed on delete");
+    res.status(400).json({ error: stockErr?.message || "Failed to reverse stock for vendor invoice" });
+    return;
+  }
+
+  const affectedStockIds = [
+    ...new Set(
+      ((toDelete.items as any[]) || [])
+        .map((it) => Number(it.stockItemId))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  ];
+
   const [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
+
+  try {
+    await recomputePriceLotsAfterVendorInvoiceRemoved({
+      companyId: toDelete.companyId,
+      vendorInvoiceId: id,
+      stockItemIds: affectedStockIds,
+      userId,
+    });
+  } catch (priceErr: any) {
+    req.log?.warn?.({ err: priceErr }, "Vendor invoice purchase-price recompute failed on delete");
+  }
+
   logAudit({ req, action: "delete", entityType: "vendor_invoice", entityId: id, entityLabel: deleted?.piNumber });
   res.json({ success: true });
 });

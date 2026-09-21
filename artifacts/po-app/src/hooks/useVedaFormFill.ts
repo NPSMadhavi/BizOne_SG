@@ -43,11 +43,17 @@ const FIELD_ALIASES: Record<string, string> = {
   annual_salary: "annualSalary",
   monthlySalary: "salary",
   monthly_salary: "salary",
-  customer_name: "name",
-  vendor_name: "name",
+  customer_name: "customerName",
+  vendor_name: "vendorName",
   contact: "contactPerson",
   contact_person: "contactPerson",
   contact_email: "contactEmail",
+  customer_address: "customerAddress",
+  customer_contact: "customerContact",
+  customer_contact_email: "customerContactEmail",
+  payment_terms: "paymentTerms",
+  delivery_date: "deliveryDate",
+  unit_price: "unitPrice",
   postal_code: "postalCode",
   gst_registered: "gstRegistered",
   gst_no: "gstNo",
@@ -74,8 +80,15 @@ function coerceValue(key: string, value: unknown): unknown {
   if (DATE_KEYS.has(key) || /(?:Date|Expiry)$/.test(key)) {
     if (value instanceof Date) return value;
     if (typeof value === "string") {
+      // Keep ISO date strings for native date / delivery fields (not Date objects)
+      if (/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return value.trim().slice(0, 10);
       const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? value : d;
+      if (Number.isNaN(d.getTime())) return value;
+      // Employee form date pickers expect Date; document forms prefer ISO string
+      if (key === "deliveryDate" || key === "issueDate" || key === "validUntil") {
+        return d.toISOString().slice(0, 10);
+      }
+      return d;
     }
   }
   if (key === "phone" && typeof value === "string") {
@@ -151,8 +164,7 @@ function takePending(): Record<string, unknown> | null {
 
 export function useVedaFormFill(form: UseFormReturn<any>) {
   useEffect(() => {
-    const handler = (e: Event) => {
-      const fields = (e as CustomEvent<Record<string, unknown>>).detail;
+    const apply = (fields: Record<string, unknown>) => {
       if (!fields || typeof fields !== "object") return;
       try {
         applyFields(form, fields);
@@ -160,19 +172,32 @@ export function useVedaFormFill(form: UseFormReturn<any>) {
         queuePending(fields);
       }
     };
+
+    const handler = (e: Event) => {
+      const fields = (e as CustomEvent<Record<string, unknown>>).detail;
+      apply(fields);
+    };
+
+    const flush = () => {
+      const pending = takePending();
+      if (pending) apply(pending);
+    };
+
     window.addEventListener("veda:fill-form", handler);
+    window.addEventListener("veda:fill-form-flush", flush);
 
     // Flush anything that arrived before this form mounted (navigate race)
-    const pending = takePending();
-    if (pending) {
-      try {
-        applyFields(form, pending);
-      } catch {
-        queuePending(pending);
-      }
-    }
+    flush();
+    // Retry shortly — form reset / Strict Mode remount often races the first fill
+    const t1 = window.setTimeout(flush, 100);
+    const t2 = window.setTimeout(flush, 400);
 
-    return () => window.removeEventListener("veda:fill-form", handler);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.removeEventListener("veda:fill-form", handler);
+      window.removeEventListener("veda:fill-form-flush", flush);
+    };
   }, [form]);
 }
 

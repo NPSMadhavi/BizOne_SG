@@ -100,13 +100,17 @@ export function VendorInvoiceLineItems({
 
   const handleStockSelect = (selection: StockItemSelection) => {
     if (stockPickerIndex == null) return;
-    const { item, qty } = selection;
+    const { item, qty, warehouseId, warehouseName } = selection;
     updateItem(stockPickerIndex, {
       partNumber: item.code || "",
       description: item.name ? `<p>${item.name}</p>` : "",
       qty: qty || 1,
-      unitPrice: parseFloat(item.unitPrice) || 0,
+      unitPrice: parseFloat(String(item.purchasePrice ?? item.unitPrice ?? 0)) || 0,
       uom: item.uom || "",
+      isStockItem: true,
+      stockItemId: item.id,
+      warehouseId: warehouseId || undefined,
+      warehouseName: warehouseName || undefined,
     });
     setStockPickerIndex(null);
   };
@@ -271,9 +275,19 @@ export function VendorInvoiceLineItems({
                                 className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"
                                 placeholder="Item"
                                 value={item.partNumber}
-                                onChange={(e) => updateItem(idx, { partNumber: e.target.value })}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const patch: Partial<VendorInvoiceLineItem> = { partNumber: v };
+                                  if (item.stockItemId) {
+                                    patch.stockItemId = undefined;
+                                    patch.warehouseId = undefined;
+                                    patch.warehouseName = undefined;
+                                    patch.isStockItem = false;
+                                  }
+                                  updateItem(idx, patch);
+                                }}
                               />
-                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(idx)} title="Pick from stock">
+                              <Button type="button" variant="ghost" size="icon" className={cn("h-7 w-7 shrink-0 hover:text-primary", item.stockItemId ? "text-primary" : "text-muted-foreground")} onClick={() => setStockPickerIndex(idx)} title={item.stockItemId ? `Stock linked${item.warehouseName ? ` @ ${item.warehouseName}` : ""}` : "Pick from stock"}>
                                 <Package className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -427,6 +441,7 @@ export function VendorInvoiceLineItems({
         onSelect={handleStockSelect}
         mode="receive"
         ignoreStockLimit
+        requireWarehouse={false}
       />
     </>
   );

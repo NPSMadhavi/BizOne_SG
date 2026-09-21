@@ -77,7 +77,7 @@ async function assertStockItem(
     .select({ id: stockItemsTable.id, type: stockItemsTable.type })
     .from(stockItemsTable)
     .where(and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.id, stockItemId)));
-  if (!row || row.type === "service") {
+  if (!row || row.type === "service" || row.type === "service_item") {
     throw new Error(
       `Stock item #${stockItemId} not found. Pick the item again using the cube icon.`,
     );

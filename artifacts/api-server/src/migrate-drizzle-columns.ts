@@ -368,6 +368,37 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS gst_reg_no text`,
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text`,
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain text`,
+
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS category text`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sub_category text`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand text`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS barcode text`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sales_person text`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS item_image text`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS purchase_price numeric(15,2) DEFAULT 0`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS track_inventory boolean NOT NULL DEFAULT true`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS show_in_pos boolean NOT NULL DEFAULT true`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS pricing_method text DEFAULT 'fixed'`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS tax_percent numeric(5,2) DEFAULT 9`,
+
+  // Dated purchase-cost history (Vendor Invoice + Item Master)
+  `CREATE TABLE IF NOT EXISTS stock_item_purchase_prices (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    stock_item_id integer NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+    purchase_price numeric(15,2) NOT NULL DEFAULT 0,
+    quantity numeric(15,3) NOT NULL DEFAULT 0,
+    effective_date text NOT NULL,
+    source_type text NOT NULL DEFAULT 'item_master',
+    source_id integer,
+    source_ref text,
+    notes text,
+    created_by integer,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `ALTER TABLE stock_item_purchase_prices ADD COLUMN IF NOT EXISTS quantity numeric(15,3) NOT NULL DEFAULT 0`,
+  `CREATE INDEX IF NOT EXISTS stock_item_purchase_prices_item_idx
+    ON stock_item_purchase_prices (stock_item_id, effective_date DESC, id DESC)`,
 ];
 
 /** Columns that MUST exist after migration or startup must fail. */

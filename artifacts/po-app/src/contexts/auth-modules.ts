@@ -49,7 +49,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   bill_of_materials: "Bill of Materials",
   multi_price_level: "Multi Price Level",
   grn: "Goods Receipt Note",
-  stock_items: "Stock Items",
+  stock_items: "Item Master",
   warehouses: "Warehouses",
   stock_transfer: "Stock Transfer",
   inventory_reports: "Stock Reports",

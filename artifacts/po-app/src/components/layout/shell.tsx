@@ -609,14 +609,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Tax Invoices
           </NavItem>
         )}
-        {hasModuleAccess("credit_notes") && (
-          <NavItem href="/credit-notes" icon={FileMinus} active={location.startsWith("/credit-notes")} inGroup>
-            Credit Notes
-          </NavItem>
-        )}
         {hasModuleAccess("delivery_orders") && (
           <NavItem href="/delivery-orders" icon={Truck} active={location.startsWith("/delivery-orders")} inGroup>
             Delivery Orders
+          </NavItem>
+        )}
+        {hasModuleAccess("credit_notes") && (
+          <NavItem href="/credit-notes" icon={FileMinus} active={location.startsWith("/credit-notes")} inGroup>
+            Credit Notes
           </NavItem>
         )}
         {hasModuleAccess("point_of_sale") && (
@@ -652,7 +652,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
         {hasModuleAccess("stock_items") && (
           <NavItem href="/stock" icon={Package} active={location.startsWith("/stock")} inGroup>
-            Stock Items
+            Item Master
           </NavItem>
         )}
         {hasModuleAccess("stock_transfer") && (

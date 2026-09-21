@@ -35,7 +35,7 @@ interface Vendor {
 
 const blank = () => ({
   name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
-  contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "", isActive: true,
+  contactEmail: "", phone: "", currency: "SGD", gstRegistered: false, gstNo: "", isActive: true,
 });
 
 interface Props {

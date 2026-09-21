@@ -4,9 +4,13 @@ import { Calendar } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, autoComplete, ...props }, ref) => {
     const innerRef = React.useRef<HTMLInputElement>(null)
     React.useImperativeHandle(ref, () => innerRef.current as HTMLInputElement)
+
+    // Default off so browsers don't show previous-input / autofill history.
+    // Call sites (login/register) can still pass autoComplete explicitly.
+    const resolvedAutoComplete = autoComplete ?? "off"
 
     const openDatePicker = () => {
       const el = innerRef.current
@@ -23,6 +27,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
         <div className="relative w-full">
           <input
             type="date"
+            autoComplete={resolvedAutoComplete}
             className={cn(
               "flex h-9 w-full rounded-md border border-input bg-transparent py-1 pl-3 pr-9 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
               "[&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer",
@@ -47,6 +52,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
     return (
       <input
         type={type}
+        autoComplete={resolvedAutoComplete}
         className={cn(
           "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
           type === "number" && "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",

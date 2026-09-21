@@ -28,6 +28,11 @@ import { Link } from "wouter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const CURRENCIES = ["SGD", "USD", "EUR", "GBP", "MYR", "INR"];
 
@@ -112,6 +117,7 @@ export default function CreditNoteEdit() {
   const [showPreview, setShowPreview] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [ready, setReady] = useState(false);
   const [importExcelOpen, setImportExcelOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
@@ -277,6 +283,25 @@ export default function CreditNoteEdit() {
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally { setSubmitting(false); }
+  }
+
+  async function handleDelete() {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      const r = await fetch(`/api/credit-notes/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to delete credit note");
+      }
+      await invalidateDocumentList(qc, "credit-notes");
+      toast({ title: "Deleted", description: `${doc?.cnNumber || "Credit note"} deleted.` });
+      setLocation("/credit-notes");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const currency = form.watch("currency");
@@ -539,16 +564,55 @@ export default function CreditNoteEdit() {
             </CardContent>
           </Card>
 
-          <FormStickyActions>
-            <Button type="button" variant="outline" onClick={() => setLocation(`/credit-notes/${id}`)}>Cancel</Button>
-            <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
-              <Save className="h-4 w-4" />
-              {submitting ? "Saving..." : "Save Draft"}
-            </Button>
-            <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
-              <Eye className="h-4 w-4" />
-              {submitting ? "Saving..." : "Save & Preview"}
-            </Button>
+          <FormStickyActions className="justify-between">
+            <div>
+              {doc?.status !== "void" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      disabled={deleting || submitting}
+                      title="Delete"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Credit Note?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete {doc?.cnNumber || "this credit note"}
+                        {doc?.status === "confirmed" ? " (confirmed)" : ""}. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={deleting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {deleting ? "Deleting..." : "Delete"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" onClick={() => setLocation(`/credit-notes/${id}`)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => doSubmit("draft")} disabled={submitting} className="gap-2">
+                <Save className="h-4 w-4" />
+                {submitting ? "Saving..." : "Save Draft"}
+              </Button>
+              <Button type="button" onClick={() => doSubmit("confirmed")} disabled={submitting} className="gap-2">
+                <Eye className="h-4 w-4" />
+                {submitting ? "Saving..." : "Save & Preview"}
+              </Button>
+            </div>
           </FormStickyActions>
         </form>
       </Form>

@@ -81,19 +81,39 @@ export default function EmployeesPage() {
     setIsDocumentFormOpen(true);
   };
 
-  const filteredEmployees = useMemo(() => employees.filter((employee) => {
+  const filteredEmployees = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return true;
-    return [
-      employee.employeeId,
-      employee.name,
-      employee.department,
-      employee.designation,
-      employee.passportNumber,
-      employee.visaNumber,
-      employee.status,
-    ].some((value) => String(value ?? "").toLowerCase().includes(q));
-  }), [employees, searchTerm]);
+    const filtered = employees.filter((employee) => {
+      if (!q) return true;
+      return [
+        employee.employeeId,
+        employee.name,
+        employee.department,
+        employee.designation,
+        employee.passportNumber,
+        employee.visaNumber,
+        employee.status,
+      ].some((value) => String(value ?? "").toLowerCase().includes(q));
+    });
+
+    // Recent first (created/join), then natural Employee ID order as tiebreaker
+    const ts = (e: Employee) => {
+      const raw = (e as any).createdAt || e.joinDate;
+      const t = raw ? new Date(raw).getTime() : 0;
+      return Number.isFinite(t) ? t : 0;
+    };
+    const naturalId = (id: string | null | undefined) => {
+      const s = String(id ?? "");
+      return s.replace(/(\d+)/g, (n) => n.padStart(12, "0"));
+    };
+
+    return [...filtered].sort((a, b) => {
+      const tb = ts(b) - ts(a);
+      if (tb !== 0) return tb;
+      if (b.id !== a.id) return b.id - a.id;
+      return naturalId(a.employeeId).localeCompare(naturalId(b.employeeId));
+    });
+  }, [employees, searchTerm]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filteredEmployees);
 

@@ -6,8 +6,23 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Search, Package, ArrowLeft, Loader2, Lock, MoreVertical } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+interface PurchasePriceHistoryRow {
+  id: number;
+  purchasePrice: string;
+  effectiveDate: string;
+  sourceType: string;
+  sourceRef?: string | null;
+  quantity?: string | number | null;
+}
 
 interface StockItem {
   id: number;
@@ -16,7 +31,115 @@ interface StockItem {
   description?: string;
   uom: string;
   unitPrice: string;
+  purchasePrice?: string;
   stockQty: string;
+  purchasePriceHistory?: PurchasePriceHistoryRow[];
+  /** Set on expanded picker rows */
+  priceDate?: string | null;
+  priceSource?: string;
+  priceSourceRef?: string | null;
+  isHistoryRow?: boolean;
+  rowKey?: string;
+  displayStockQty?: number;
+}
+
+function sellFromCatalogueMarkup(oldCost: number, oldSell: number, newCost: number): number | null {
+  if (!(oldCost > 0) || !(newCost >= 0) || !Number.isFinite(oldSell)) return null;
+  const markupPct = ((oldSell - oldCost) / oldCost) * 100;
+  return Math.round(newCost * (1 + markupPct / 100) * 100) / 100;
+}
+
+function formatPriceDate(ymd?: string | null) {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Picker: price rows from VI / Item Master when purchase price differs;
+ * Avail. Qty = lot qty on price rows, remaining on Active/catalogue.
+ */
+function expandPickerPriceRows(items: StockItem[]): StockItem[] {
+  const out: StockItem[] = [];
+  for (const item of items) {
+    const history = Array.isArray(item.purchasePriceHistory) ? [...item.purchasePriceHistory] : [];
+    const baseCost = parseFloat(String(item.purchasePrice ?? 0)) || 0;
+    const baseSell = parseFloat(String(item.unitPrice ?? 0)) || 0;
+    const baseCents = Math.round(baseCost * 100);
+    const totalQty = parseFloat(String(item.stockQty ?? 0)) || 0;
+
+    const byPrice = new Map<number, {
+      id: number;
+      purchasePrice: string;
+      quantity: number;
+      effectiveDate: string;
+      sourceType: string;
+      sourceRef: string | null;
+    }>();
+    for (const h of history) {
+      const cents = Math.round((parseFloat(String(h.purchasePrice ?? 0)) || 0) * 100);
+      const histQty = Math.max(0, parseFloat(String(h.quantity ?? 0)) || 0);
+      if (cents === baseCents && histQty <= 0) continue;
+      const existing = byPrice.get(cents);
+      if (existing) {
+        existing.quantity += histQty;
+        if (String(h.effectiveDate || "") >= existing.effectiveDate) {
+          existing.effectiveDate = String(h.effectiveDate || "");
+          existing.sourceRef = h.sourceRef ?? existing.sourceRef;
+          existing.id = h.id;
+          existing.sourceType = h.sourceType;
+        }
+      } else {
+        byPrice.set(cents, {
+          id: h.id,
+          purchasePrice: Number(h.purchasePrice).toFixed(2),
+          quantity: histQty,
+          effectiveDate: String(h.effectiveDate || ""),
+          sourceType: h.sourceType,
+          sourceRef: h.sourceRef ?? null,
+        });
+      }
+    }
+
+    const priceRows = Array.from(byPrice.values()).sort((a, b) =>
+      b.effectiveDate.localeCompare(a.effectiveDate) || b.id - a.id,
+    );
+
+    let historyQtySum = 0;
+    const group: StockItem[] = [];
+    for (const h of priceRows) {
+      historyQtySum += h.quantity;
+      const newCost = parseFloat(h.purchasePrice) || 0;
+      const computedSell = sellFromCatalogueMarkup(baseCost, baseSell, newCost);
+      group.push({
+        ...item,
+        rowKey: `${item.id}-p-${h.purchasePrice}`,
+        purchasePrice: h.purchasePrice,
+        unitPrice: computedSell != null ? String(computedSell) : item.unitPrice,
+        stockQty: String(h.quantity),
+        displayStockQty: h.quantity,
+        priceDate: h.effectiveDate || null,
+        isHistoryRow: true,
+        priceSource: h.sourceType,
+        priceSourceRef: h.sourceRef,
+      });
+    }
+
+    const baseStockQty = Math.max(0, Math.round((totalQty - historyQtySum) * 1000) / 1000);
+    group.push({
+      ...item,
+      rowKey: `${item.id}-base`,
+      purchasePrice: item.purchasePrice ?? "0",
+      unitPrice: item.unitPrice,
+      stockQty: String(baseStockQty),
+      displayStockQty: baseStockQty,
+      priceDate: null,
+      isHistoryRow: false,
+    });
+
+    for (const row of group) out.push(row);
+  }
+  return out;
 }
 
 interface Serial {
@@ -56,7 +179,9 @@ interface StockItemPickerDialogProps {
   mode?: string;
   /** Skip available-stock cap (quotations, orders, etc. that do not issue stock). */
   ignoreStockLimit?: boolean;
-  /** Require warehouse before import (invoices, delivery orders, PO receive). */
+  /** Show warehouse dropdown on qty step (default true). */
+  showWarehouse?: boolean;
+  /** Require warehouse before import (invoices, delivery orders, GRN). */
   requireWarehouse?: boolean;
   skipSerialSelection?: boolean;
 }
@@ -67,11 +192,14 @@ export function StockItemPickerDialog({
   onSelect,
   mode,
   ignoreStockLimit: ignoreStockLimitProp,
+  showWarehouse: showWarehouseProp,
   requireWarehouse: requireWarehouseProp,
   skipSerialSelection = false,
 }: StockItemPickerDialogProps) {
   const ignoreStockLimit = ignoreStockLimitProp ?? mode === "receive";
-  const requireWarehouse = requireWarehouseProp ?? (!ignoreStockLimit || mode === "receive");
+  const showWarehouse = showWarehouseProp ?? true;
+  const requireWarehouse =
+    showWarehouse && (requireWarehouseProp ?? (!ignoreStockLimit || mode === "receive"));
   const [step, setStep] = useState<"items" | "qty" | "serials">("items");
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
@@ -111,10 +239,15 @@ export function StockItemPickerDialog({
   }, [open, queryClient]);
 
   useEffect(() => {
-    if (step === "qty") {
-      setTimeout(() => warehouseTriggerRef.current?.focus(), 50);
-    }
-  }, [step]);
+    if (step !== "qty") return;
+    setTimeout(() => {
+      if (showWarehouse) warehouseTriggerRef.current?.focus();
+      else {
+        qtyInputRef.current?.focus();
+        qtyInputRef.current?.select();
+      }
+    }, 50);
+  }, [step, showWarehouse]);
 
   const { data: items = [], isLoading } = useQuery<StockItem[]>({
     queryKey: ["stock-items-picker", search],
@@ -130,6 +263,8 @@ export function StockItemPickerDialog({
     staleTime: 0,
     refetchOnMount: "always",
   });
+
+  const displayItems = useMemo(() => expandPickerPriceRows(items), [items]);
 
   const { data: warehouses = [], isFetching: warehousesFetching } = useQuery<Warehouse[]>({
     queryKey: ["invoice-warehouses"],
@@ -163,13 +298,26 @@ export function StockItemPickerDialog({
     refetchOnMount: "always",
   });
 
-  const warehouseOptions = useMemo(
-    () => warehouses.map((warehouse) => ({
-      ...warehouse,
-      quantity: warehouseStock.find((stock) => stock.id === warehouse.id)?.quantity ?? 0,
-    })),
-    [warehouses, warehouseStock],
-  );
+  // Cap warehouse Avail by the selected price-lot qty (same as Item Master / picker list).
+  // Catalogue row with 0 must not show Main Warehouse (12) on the next step.
+  const lotAvailQty = selectedItem
+    ? Math.max(0, Number(selectedItem.displayStockQty ?? selectedItem.stockQty) || 0)
+    : null;
+
+  const warehouseOptions = useMemo(() => {
+    let remaining = lotAvailQty;
+    return warehouses.map((warehouse) => {
+      const physical = Number(
+        warehouseStock.find((stock) => stock.id === warehouse.id)?.quantity ?? 0,
+      ) || 0;
+      if (remaining == null) {
+        return { ...warehouse, quantity: physical };
+      }
+      const take = Math.min(physical, remaining);
+      remaining = Math.round((remaining - take) * 1000) / 1000;
+      return { ...warehouse, quantity: take };
+    });
+  }, [warehouses, warehouseStock, lotAvailQty]);
 
   // Warehouse is NEVER auto-selected (highest qty / default caused wrong-WH Tax Invoice OUTs).
   // User must pick the warehouse explicitly before confirming.
@@ -240,8 +388,10 @@ export function StockItemPickerDialog({
     const qty = Number(qtyInput);
     if (!Number.isFinite(qty) || qty <= 0) return;
     const warehouse = warehouseOptions.find((item) => item.id === selectedWarehouseId);
-    const maxQty = Number(warehouse?.quantity) || 0;
-    if (!ignoreStockLimit && qty > maxQty) return;
+    const maxAllowed = selectedWarehouseId
+      ? Number(warehouse?.quantity) || 0
+      : Number(selectedItem.stockQty) || 0;
+    if (!ignoreStockLimit && qty > maxAllowed) return;
 
     const availableSerials = serials.filter((s) => s.status === "available");
     // Optional serial tracking: only prompt when serials exist. Qty stays authoritative.
@@ -281,16 +431,20 @@ export function StockItemPickerDialog({
 
   const selectedWarehouse = warehouseOptions.find((warehouse) => warehouse.id === selectedWarehouseId);
   const stockLoading = warehousesFetching || warehouseStockFetching;
-  const maxQty = selectedItem ? Number(selectedWarehouse?.quantity) || 0 : 0;
+  const maxQty = selectedItem
+    ? (selectedWarehouseId
+      ? Number(selectedWarehouse?.quantity) || 0
+      : Number(selectedItem.stockQty) || 0)
+    : 0;
   const parsedQty = Number(qtyInput);
   const qtyWithinStock = ignoreStockLimit || parsedQty <= maxQty;
-  const qtyIsValid = !stockLoading && Number.isFinite(parsedQty) && parsedQty > 0 && qtyWithinStock;
+  const qtyIsValid = (!showWarehouse || !stockLoading) && Number.isFinite(parsedQty) && parsedQty > 0 && qtyWithinStock;
   const warehouseOk = !requireWarehouse || !!selectedWarehouseId;
   const serialSelectionOk = chosen.size === 0 || (confirmedQty != null && chosen.size === confirmedQty);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl">
 
         {step === "items" && (
           <>
@@ -319,41 +473,53 @@ export function StockItemPickerDialog({
                     <TableHead className="w-28">Code</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead className="w-32 min-w-[7.5rem] text-right whitespace-nowrap">Avail. Qty</TableHead>
-                    <TableHead className="w-28 text-right whitespace-nowrap">Unit Price</TableHead>
+                    <TableHead className="w-28 text-right whitespace-nowrap">Purchase Price</TableHead>
+                    <TableHead className="w-28 text-right whitespace-nowrap">Selling Price</TableHead>
+                    <TableHead className="w-20 text-center whitespace-nowrap">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         <Loader2 className="h-5 w-5 animate-spin mx-auto mb-1" />
                         Loading...
                       </TableCell>
                     </TableRow>
                   )}
-                  {!isLoading && items.length === 0 && (
+                  {!isLoading && displayItems.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No stock items found.</TableCell>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No stock items found.</TableCell>
                     </TableRow>
                   )}
-                  {!isLoading && items.map((item) => {
-                    const qty = Number(item.stockQty);
+                  {!isLoading && displayItems.map((item) => {
+                    const qty = Number(item.displayStockQty ?? item.stockQty);
                     const avail = Number.isFinite(qty) ? qty : 0;
                     const availLabel = Number.isInteger(avail)
                       ? String(avail)
                       : avail.toFixed(3).replace(/\.?0+$/, "");
+                    const purchase = Number(item.purchasePrice ?? 0);
+                    const unit = Number(item.unitPrice || 0);
+                    const dateLabel = formatPriceDate(item.priceDate);
                     return (
                       <TableRow
-                        key={item.id}
+                        key={item.rowKey || String(item.id)}
                         className="cursor-pointer hover:bg-muted/50 transition-colors"
                         onClick={() => handleItemClick(item)}
                       >
                         <TableCell className="font-mono text-xs">{item.code}</TableCell>
                         <TableCell>
                           <div className="font-medium text-sm">{item.name}</div>
-                          {item.description && (
+                          {item.isHistoryRow ? (
+                            <div className="text-xs text-muted-foreground">
+                              {item.priceSource === "vendor_invoice"
+                                ? (item.priceSourceRef ? `Vendor Invoice ${item.priceSourceRef}` : "Vendor Invoice price")
+                                : "Price change"}
+                              {dateLabel ? ` · ${dateLabel}` : ""}
+                            </div>
+                          ) : item.description ? (
                             <div className="text-xs text-muted-foreground">{item.description}</div>
-                          )}
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right">
                           <Badge
@@ -363,9 +529,28 @@ export function StockItemPickerDialog({
                             {availLabel} {item.uom || ""}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right text-sm font-medium">
-                          {Number(item.unitPrice || 0).toFixed(2)}
+                        <TableCell className="text-right text-sm font-medium tabular-nums">
+                          {purchase.toFixed(2)}
                           <span className="text-xs text-muted-foreground ml-1">/{item.uom || "—"}</span>
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium tabular-nums">
+                          {unit.toFixed(2)}
+                          <span className="text-xs text-muted-foreground ml-1">/{item.uom || "—"}</span>
+                        </TableCell>
+                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreVertical className="h-4 w-4" />
+                                <span className="sr-only">Actions</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleItemClick(item)}>
+                                Select
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
@@ -395,42 +580,48 @@ export function StockItemPickerDialog({
             </DialogHeader>
 
             <div className="py-4 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Warehouse</label>
-                <Select
-                  value={selectedWarehouseId != null ? String(selectedWarehouseId) : ""}
-                  onValueChange={(value) => {
-                    if (!value) return;
-                    setSelectedWarehouseId(Number(value));
-                    setWarehouseLockedByUser(true);
-                    setQtyInput("1");
-                    setTimeout(() => {
-                      qtyInputRef.current?.focus();
-                      qtyInputRef.current?.select();
-                    }, 0);
-                  }}
-                >
-                  <SelectTrigger ref={warehouseTriggerRef} className="w-full">
-                    <SelectValue placeholder="Select warehouse" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {warehouseOptions.map((warehouse) => (
-                      <SelectItem key={warehouse.id} value={String(warehouse.id)}>
-                        {warehouse.name} ({stockLoading ? "…" : `${Number(warehouse.quantity) || 0} ${selectedItem.uom}`})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {showWarehouse ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Warehouse{requireWarehouse ? <span className="text-destructive"> *</span> : " (optional)"}
+                  </label>
+                  <Select
+                    value={selectedWarehouseId != null ? String(selectedWarehouseId) : ""}
+                    onValueChange={(value) => {
+                      if (!value) return;
+                      setSelectedWarehouseId(Number(value));
+                      setWarehouseLockedByUser(true);
+                      setQtyInput("1");
+                      setTimeout(() => {
+                        qtyInputRef.current?.focus();
+                        qtyInputRef.current?.select();
+                      }, 0);
+                    }}
+                  >
+                    <SelectTrigger ref={warehouseTriggerRef} className="w-full">
+                      <SelectValue placeholder="Select warehouse" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warehouseOptions.map((warehouse) => (
+                        <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                          {warehouse.name} ({stockLoading ? "…" : `${Number(warehouse.quantity) || 0} ${selectedItem.uom}`})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
 
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
                   QTY / <span className="text-foreground">
-                    {stockLoading
-                      ? "Checking availability…"
-                      : selectedWarehouseId
-                        ? `${maxQty} ${selectedItem.uom} available in warehouse`
-                        : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available (select warehouse)`}
+                    {showWarehouse
+                      ? (stockLoading
+                        ? "Checking availability…"
+                        : selectedWarehouseId
+                          ? `${maxQty} ${selectedItem.uom} available in warehouse`
+                          : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available${requireWarehouse ? " (select warehouse)" : ""}`)
+                      : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available`}
                   </span>
                 </span>
               </div>

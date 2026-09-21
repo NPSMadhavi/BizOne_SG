@@ -31,6 +31,7 @@ import {
   normalizeViItemsForApi,
   type VendorInvoiceLineItem,
 } from "@/lib/vendor-invoice-items";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 
 function dueDateFromTerms(date: string, terms: string) {
   const match = terms.match(/(\d+)\s+Days?\s+Net/i);
@@ -386,6 +387,7 @@ export default function VendorInvoiceEdit() {
       qc.setQueryData(["vendor-invoice", String(id)], updated);
       await qc.invalidateQueries({ queryKey: ["vendor-invoices"] });
       await qc.invalidateQueries({ queryKey: ["vendor-invoice", id] });
+      await invalidateInventoryQueries(qc);
       setSavedDoc(updated);
       setShowPreview(true);
     } catch (e: any) {
@@ -447,7 +449,7 @@ export default function VendorInvoiceEdit() {
             </div>
             <div className="rounded-md border bg-background p-3 space-y-3">
               <div className="flex items-center justify-between"><div><Label>Payment reminders</Label><p className="text-xs text-muted-foreground">Daily reminders begin after the selected day.</p></div><Switch checked={remindersEnabled} onCheckedChange={setRemindersEnabled} /></div>
-              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Start after day</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(e.target.value)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="name@example.com" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
+              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Remaind after (days)</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(e.target.value)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="name@example.com" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
             </div>
           </div>
 

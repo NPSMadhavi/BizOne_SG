@@ -83,7 +83,15 @@ import {
   Eye,
   Download,
   Trash2,
+  Printer,
+  ChevronDown,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const PAYSLIP_MONTHS_LEFT = [
   { value: 1, label: "January" },
@@ -714,6 +722,198 @@ export default function PayrollPage() {
     void handleQuickPayslipDownload(config);
   };
 
+  /** Bulk print: ZIP of payslips for selected rows (or all with processed payroll). */
+  const handleBulkPrint = async () => {
+    const targets =
+      selectedIds.length > 0
+        ? configs.filter((c) => selectedIds.includes(c.id))
+        : configs.filter((c) =>
+            hasProcessedPayrollForEmployee(c.employeeId, payrollRecords)
+          );
+
+    if (targets.length === 0) {
+      toast({
+        title: "Nothing to print",
+        description: selectedIds.length
+          ? "Selected employees have no processed payslips. Process payroll first."
+          : "Select one or more employees, or process payroll first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const eligible = targets.filter((c) =>
+      hasProcessedPayrollForEmployee(c.employeeId, payrollRecords)
+    );
+    if (eligible.length === 0) {
+      toast({
+        title: "Payslips unavailable",
+        description: "Process payroll first, then try bulk print.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const period = getLastCompletedPayPeriod();
+    setIsPayslipDownloading(true);
+    try {
+      const zipResult = await downloadBatchPayslipsZip(
+        eligible,
+        period.payPeriodStart,
+        period.payPeriodEnd
+      );
+      if (zipResult.ok) {
+        toast({
+          title: "Bulk print ready",
+          description: `Downloaded ${eligible.length} payslip(s). Open the ZIP file to print.`,
+        });
+        return;
+      }
+
+      // Client-side ZIP fallback
+      const zipEntries: Array<{ filename: string; data: Uint8Array }> = [];
+      for (const config of eligible) {
+        const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
+        if (!latest) continue;
+        const resolved = await resolvePayslipPdfForMonth({
+          config,
+          month: latest.month,
+          year: latest.year,
+          employees,
+          payrollRecords,
+          company: selectedCompany,
+        });
+        if (!resolved) continue;
+        const blob = await generatePayslip_PDF(resolved.data, {
+          filename: resolved.filename,
+          returnBlob: true,
+        });
+        if (blob instanceof Blob) {
+          const buf = new Uint8Array(await blob.arrayBuffer());
+          zipEntries.push({ filename: resolved.filename, data: buf });
+        }
+      }
+
+      if (zipEntries.length === 0) {
+        toast({
+          title: "Bulk print failed",
+          description: zipResult.message || "Could not build payslip files for printing.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const zipBlob = createPayslipZipBlob(zipEntries);
+      const { monthLabel } = derivePayrollMonthYear(period.payPeriodStart);
+      const url = window.URL.createObjectURL(zipBlob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `Payslips_${(monthLabel || "batch").replace(/\s+/g, "_")}.zip`;
+      anchor.rel = "noopener";
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+
+      toast({
+        title: "Bulk print ready",
+        description: `Downloaded ${zipEntries.length} payslip(s). Open the ZIP file to print.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk print failed",
+        description: error instanceof Error ? error.message : "Failed to prepare payslips.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPayslipDownloading(false);
+    }
+  };
+
+  /** Individual print: one selected employee → payslip picker / preview (with Print). */
+  const handleIndividualPrint = async () => {
+    if (selectedIds.length !== 1) {
+      toast({
+        title: "Select one employee",
+        description: "Check exactly one employee row for individual print.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const config = configs.find((c) => c.id === selectedIds[0]);
+    if (!config) return;
+
+    if (!hasProcessedPayrollForEmployee(config.employeeId, payrollRecords)) {
+      toast({
+        title: "Payslip unavailable",
+        description: "Process payroll first, then print the payslip.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
+    if (!latest) {
+      toast({
+        title: "Payslip unavailable",
+        description: "No processed payslip found for this employee.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Multiple months → picker; single month → open preview ready to Print
+    let availableCount = 0;
+    const currentYear = new Date().getFullYear();
+    for (let year = currentYear; year >= currentYear - 5; year -= 1) {
+      availableCount += getAvailablePayslipMonthsForEmployee(
+        config.employeeId,
+        year,
+        payrollRecords
+      ).length;
+      if (availableCount > 1) break;
+    }
+
+    if (availableCount > 1) {
+      openPayslipModal(config);
+      return;
+    }
+
+    setIsPayslipViewing(true);
+    try {
+      const resolved = await resolvePayslipPdfForMonth({
+        config,
+        month: latest.month,
+        year: latest.year,
+        employees,
+        payrollRecords,
+        company: selectedCompany,
+      });
+      if (!resolved) {
+        toast({
+          title: "Print failed",
+          description: "Could not load payslip for printing.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setPayslipViewerData(resolved.data);
+      setPayslipViewerTitle(resolved.title);
+      setPayslipViewerFilename(resolved.filename);
+      setPayslipViewerOpen(true);
+    } catch (error) {
+      toast({
+        title: "Print failed",
+        description: error instanceof Error ? error.message : "Failed to open payslip.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPayslipViewing(false);
+    }
+  };
+
   const handleQuickPayslipDownload = async (config: PayrollConfig) => {
     const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
     if (!latest) {
@@ -1083,13 +1283,32 @@ export default function PayrollPage() {
       <ManagementToolbarRow className="justify-between">
         <h3 className="text-lg font-semibold text-[#111827]">Employee Payroll</h3>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            className="border-[#E5E7EB]"
-            onClick={handleBatchProcessOpen}
-          >
-            <Calculator className="mr-2 h-4 w-4" /> Batch Process
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="border-[#E5E7EB]"
+                disabled={isPayslipDownloading || isPayslipViewing}
+              >
+                <Printer className="mr-2 h-4 w-4" /> Print
+                <ChevronDown className="ml-2 h-4 w-4 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={isPayslipDownloading}
+                onClick={() => void handleBulkPrint()}
+              >
+                Bulk print
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={isPayslipViewing || isPayslipDownloading}
+                onClick={() => void handleIndividualPrint()}
+              >
+                Individual print
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="outline" className="border-[#E5E7EB]" onClick={exportConfigs}>
             <Download className="mr-2 h-4 w-4" /> Export
           </Button>

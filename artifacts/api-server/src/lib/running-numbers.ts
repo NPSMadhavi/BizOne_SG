@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 
 export type DocType =
   | "po" | "pq" | "inv" | "qt" | "so" | "do" | "grn" | "cn" | "dn" | "pi" | "pv"
-  | "igr" | "gin" | "st" | "sa" | "si" | "fa";
+  | "igr" | "gin" | "st" | "sa" | "si" | "fa" | "bc";
 
 type TableCol = { table: string; col: string };
 
@@ -28,6 +28,7 @@ const TABLE_MAP: Record<DocType, TableCol[]> = {
   st:  [{ table: "stock_transfers",   col: "transfer_number" }],
   sa:  [{ table: "stock_adjustments", col: "adjustment_number" }],
   si:  [{ table: "stock_items",       col: "code" }],
+  bc:  [{ table: "stock_items",       col: "barcode" }],
   fa:  [
     { table: "ops_assets", col: "tag" },
     { table: "assets",     col: "tag" },
@@ -51,6 +52,7 @@ const COL_MAP: Record<DocType, { prefix: string; counter: string; suffix: string
   st:  { prefix: "st_prefix",  counter: "st_counter",  suffix: "st_suffix",  fallbackPrefix: "ST" },
   sa:  { prefix: "sa_prefix",  counter: "sa_counter",  suffix: "sa_suffix",  fallbackPrefix: "SA" },
   si:  { prefix: "si_prefix",  counter: "si_counter",  suffix: "si_suffix",  fallbackPrefix: "STK" },
+  bc:  { prefix: "bc_prefix",  counter: "bc_counter",  suffix: "bc_suffix",  fallbackPrefix: "BC" },
   fa:  { prefix: "fa_prefix",  counter: "fa_counter",  suffix: "fa_suffix",  fallbackPrefix: "FA" },
 };
 

@@ -343,26 +343,14 @@ export default function PurchaseOrderEdit() {
       toast({ title: "Error", description: "At least one line item is required.", variant: "destructive" });
       return;
     }
-    for (const item of filledItems) {
-      if ((item as any).type === "section") continue;
-      const hasStock = item.isStockItem === true || Number((item as any).stockItemId) > 0;
-      if (hasStock && !(Number((item as any).warehouseId) > 0)) {
-        toast({
-          title: "Warehouse required",
-          description: `Select a warehouse for "${plainText(item.partNumber) || "stock item"}" using the cube icon before saving.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
     const itemsWithAmount = filledItems.map((i) => ({
       ...i,
       partNumber: plainText(i.partNumber),
       amount: (i as any).type === "section" ? 0 : i.qty * i.unitPrice,
       isStockItem: i.isStockItem === true || Number((i as any).stockItemId) > 0,
       stockItemId: Number((i as any).stockItemId) > 0 ? Number((i as any).stockItemId) : undefined,
-      warehouseId: Number((i as any).warehouseId) > 0 ? Number((i as any).warehouseId) : undefined,
-      warehouseName: (i as any).warehouseName || undefined,
+      warehouseId: undefined,
+      warehouseName: undefined,
     }));
     updateMutation.mutate(
       { id, data: { ...values, status: "confirmed", items: itemsWithAmount, customerId: values.customerId ?? undefined } },
@@ -811,11 +799,6 @@ export default function PurchaseOrderEdit() {
                                       <Package className="h-3.5 w-3.5" />
                                     </Button>
                                   </div>
-                                  {items[index]?.warehouseName ? (
-                                    <span className="text-[10px] text-muted-foreground pl-1 truncate" title={items[index].warehouseName}>
-                                      → {items[index].warehouseName}
-                                    </span>
-                                  ) : null}
                                 </div>
                               </FormControl></FormItem>
                             )} />
@@ -995,24 +978,17 @@ export default function PurchaseOrderEdit() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
  mode="receive"
- onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
+        showWarehouse={false}
+ onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
-          if (!warehouseId) {
-            toast({
-              title: "Warehouse required",
-              description: "Select a warehouse before adding the stock item.",
-              variant: "destructive",
-            });
-            return;
-          }
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
           form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
-          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
-          form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, undefined as any);
+          form.setValue(`items.${stockPickerIndex}.warehouseName`, "");
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}

@@ -738,33 +738,74 @@ router.get("/inventory/stock-adjustments", async (req, res) => {
 
 router.post("/inventory/stock-adjustments", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
-  const { warehouseId, stockItemId, actualQuantity, reason, adjustmentType, remarks, adjustmentDate } = req.body;
-  if (!warehouseId || !stockItemId || actualQuantity == null) {
-    res.status(400).json({ error: "Warehouse, item and actual quantity are required" });
+  const {
+    warehouseId,
+    stockItemId,
+    actualQuantity,
+    adjustmentQty,
+    reason,
+    adjustmentType,
+    remarks,
+    adjustmentDate,
+    reference,
+    referenceDocument,
+    authorisedBy,
+  } = req.body;
+  if (!warehouseId || !stockItemId) {
+    res.status(400).json({ error: "Warehouse and item are required" });
     return;
   }
 
   try {
     const doc = await db.transaction(async (tx) => {
       const currentQty = await getWarehouseBalance(tx, warehouseId, stockItemId);
-      const actual = Number(actualQuantity);
+      let actual: number;
+      const typeKey = String(adjustmentType || "").toLowerCase();
+      const qtyDelta = Number(adjustmentQty);
+
+      if (Number.isFinite(qtyDelta) && adjustmentQty != null && adjustmentQty !== "") {
+        if (typeKey === "decrease" || typeKey === "stock_decrease") {
+          actual = currentQty - Math.abs(qtyDelta);
+        } else if (typeKey === "opening_balance" || typeKey === "stock_opening_balance") {
+          actual = Math.max(0, qtyDelta);
+        } else {
+          // increase (default)
+          actual = currentQty + Math.abs(qtyDelta);
+        }
+      } else if (actualQuantity != null && actualQuantity !== "") {
+        actual = Number(actualQuantity);
+      } else {
+        throw new Error("Adjustment quantity is required");
+      }
+
+      if (!Number.isFinite(actual) || actual < 0) {
+        throw new Error("Resulting stock quantity cannot be negative");
+      }
+
       const diff = actual - currentQty;
-      if (diff === 0) throw new Error("No adjustment needed — actual equals current stock");
+      if (diff === 0) throw new Error("No adjustment needed — quantity is unchanged");
 
       const adjustmentNumber = await nextDocNumber("sa", ctx.companyId);
-      const type = diff > 0 ? "increase" : "decrease";
+      const type = typeKey || (diff > 0 ? "increase" : "decrease");
+
+      const remarkParts = [
+        remarks ? String(remarks).trim() : "",
+        reference ? `Reference: ${String(reference).trim()}` : "",
+        referenceDocument ? `Reference document: ${String(referenceDocument).trim()}` : "",
+        authorisedBy ? `Authorised by: ${String(authorisedBy).trim()}` : "",
+      ].filter(Boolean);
 
       const [header] = await tx.insert(stockAdjustmentsTable).values({
         companyId: ctx.companyId,
         adjustmentNumber,
         warehouseId,
         stockItemId,
-        adjustmentType: adjustmentType || type,
+        adjustmentType: type,
         reason: reason || null,
         currentQuantity: String(currentQty),
         actualQuantity: String(actual),
         difference: String(diff),
-        remarks: remarks || null,
+        remarks: remarkParts.length ? remarkParts.join(" | ") : null,
         adjustmentDate: adjustmentDate || new Date().toISOString().slice(0, 10),
         createdBy: ctx.userId,
         updatedBy: ctx.userId,

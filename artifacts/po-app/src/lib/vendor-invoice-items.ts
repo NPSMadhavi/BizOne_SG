@@ -11,6 +11,10 @@ export type VendorInvoiceLineItem = {
   uom?: string;
   isFoc?: boolean;
   amount?: number;
+  isStockItem?: boolean;
+  stockItemId?: number;
+  warehouseId?: number;
+  warehouseName?: string;
 };
 
 const UOM_OPTIONS = ["Nos", "Pcs", "Set", "Lot", "Hr", "Day", "Month", "Yr", "Job", "kg", "m", "L", "Box", "Roll", "Pair", "Unit", "ls"];
@@ -92,6 +96,9 @@ export function mapDocItemToViLine(it: any): VendorInvoiceLineItem {
   const unitPrice = Number(it.unitPrice) || 0;
   const discount = Number(it.discount) || 0;
   const isFoc = !!it.isFoc;
+  const stockItemId = Number(it.stockItemId);
+  const warehouseId = Number(it.warehouseId);
+  const hasStock = Number.isFinite(stockItemId) && stockItemId > 0;
   return {
     lineId: it.lineId || newViLineId(),
     type: "item",
@@ -105,6 +112,10 @@ export function mapDocItemToViLine(it: any): VendorInvoiceLineItem {
     uom: it.uom || "",
     isFoc,
     amount: calcViLineAmount(qty, unitPrice, discount, isFoc),
+    isStockItem: hasStock || !!it.isStockItem,
+    stockItemId: hasStock ? stockItemId : undefined,
+    warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
+    warehouseName: typeof it.warehouseName === "string" ? it.warehouseName : undefined,
   };
 }
 
@@ -114,19 +125,28 @@ export function mapDocItemsToViLines(items: any[]): VendorInvoiceLineItem[] {
 }
 
 export function normalizeViItemsForApi(items: VendorInvoiceLineItem[]) {
-  return (items || []).map((it) => ({
-    type: it.type || "item",
-    sectionLabel: it.sectionLabel || "",
-    sectionAlign: it.sectionAlign || "left",
-    partNumber: String(it.partNumber || "").trim(),
-    description: String(it.description || "").trim(),
-    qty: Number(it.qty) || 0,
-    unitPrice: Number(it.unitPrice) || 0,
-    discount: Number(it.discount) || 0,
-    uom: it.uom || "",
-    isFoc: !!it.isFoc,
-    amount: it.type === "section" ? 0 : calcViLineAmount(it.qty, it.unitPrice, it.discount, it.isFoc),
-  }));
+  return (items || []).map((it) => {
+    const stockItemId = Number(it.stockItemId);
+    const warehouseId = Number(it.warehouseId);
+    const hasStock = Number.isFinite(stockItemId) && stockItemId > 0;
+    return {
+      type: it.type || "item",
+      sectionLabel: it.sectionLabel || "",
+      sectionAlign: it.sectionAlign || "left",
+      partNumber: String(it.partNumber || "").trim(),
+      description: String(it.description || "").trim(),
+      qty: Number(it.qty) || 0,
+      unitPrice: Number(it.unitPrice) || 0,
+      discount: Number(it.discount) || 0,
+      uom: it.uom || "",
+      isFoc: !!it.isFoc,
+      amount: it.type === "section" ? 0 : calcViLineAmount(it.qty, it.unitPrice, it.discount, it.isFoc),
+      isStockItem: hasStock || !!it.isStockItem,
+      stockItemId: hasStock ? stockItemId : undefined,
+      warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
+      warehouseName: it.warehouseName || undefined,
+    };
+  });
 }
 
 export function computeViGstTotals(

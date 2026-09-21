@@ -661,6 +661,7 @@ export default function PurchaseQuotationEdit() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
+        showWarehouse={false}
  onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);

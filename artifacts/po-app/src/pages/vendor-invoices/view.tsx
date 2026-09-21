@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { BankAccountField } from "@/components/bank-account-field";
 import { calcViLineAmount } from "@/lib/vendor-invoice-items";
+import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -179,6 +180,7 @@ export default function VendorInvoiceView() {
       if (!res.ok) throw new Error("Failed to delete");
       toast({ title: "Vendor PI Deleted" });
       queryClient.invalidateQueries({ queryKey: ["vendor-invoices"] });
+      await invalidateInventoryQueries(queryClient);
       setLocation("/vendor-invoices");
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });

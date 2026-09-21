@@ -177,10 +177,13 @@ export default function InvoiceView() {
 
   const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: (doc as any)?.currency || "SGD" }).format(v);
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+  const invalidate = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) }),
+      qc.invalidateQueries({ queryKey: getListInvoicesQueryKey() }),
+    ]);
     void invalidateInventoryQueries(qc);
-    refetch();
+    await refetch();
   };
 
   const getStatusBadge = (s: string) => {
@@ -237,9 +240,13 @@ export default function InvoiceView() {
         body: JSON.stringify({ paymentDate: payDate, amount: amtNum, reference: payRef || null, paymentMethod: payMethod, notes: payNotes || null }),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      const data = await res.json().catch(() => ({}));
+      if (data?.invoice) {
+        qc.setQueryData(getGetInvoiceQueryKey(id), data.invoice);
+      }
       toast({ title: "Payment Recorded", description: `${fmt(amtNum)} recorded.` });
       setPaymentOpen(false);
-      invalidate();
+      await invalidate();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -267,9 +274,13 @@ export default function InvoiceView() {
         body: JSON.stringify({ paymentDate: epDate, amount: parseFloat(epAmount), reference: epRef || null, paymentMethod: epMethod, notes: epNotes || null }),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      const data = await res.json().catch(() => ({}));
+      if (data?.invoice) {
+        qc.setQueryData(getGetInvoiceQueryKey(id), data.invoice);
+      }
       toast({ title: "Payment Updated" });
       setEditPaymentOpen(false);
-      invalidate();
+      await invalidate();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -281,8 +292,12 @@ export default function InvoiceView() {
     try {
       const res = await fetch(`/api/invoices/${id}/payments/${paymentId}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) throw new Error("Failed to delete payment");
+      const data = await res.json().catch(() => ({}));
+      if (data?.invoice) {
+        qc.setQueryData(getGetInvoiceQueryKey(id), data.invoice);
+      }
       toast({ title: "Payment Deleted" });
-      invalidate();
+      await invalidate();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }

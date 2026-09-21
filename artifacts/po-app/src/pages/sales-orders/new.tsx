@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package, ArrowLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateSalesOrder_PDF } from "@/lib/pdf";
@@ -418,6 +419,11 @@ export default function SalesOrderNew() {
       setIsSubmitting(false);
     }
   }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => doSubmit(v, false))(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true))(); },
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
@@ -887,6 +893,7 @@ export default function SalesOrderNew() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
+        showWarehouse={false}
  onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);

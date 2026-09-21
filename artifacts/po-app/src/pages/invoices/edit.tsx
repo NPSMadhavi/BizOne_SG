@@ -9,6 +9,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ItemImageField } from "@/components/item-image-field";
@@ -101,9 +105,10 @@ export default function InvoiceEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { salesPersons } = useSalesPersons();
-  const { selectedCompany, user } = useAuth();
+  const { selectedCompany, user, canManage } = useAuth();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isOverseas, setIsOverseas] = useState(false);
   const initialized = useRef(false);
@@ -381,15 +386,6 @@ export default function InvoiceEdit() {
         toast({
           title: "Serial count must match quantity",
           description: `${item.partNumber || "Item"}: qty ${item.qty} but ${serials.length} serials selected.`,
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-      if ((item as any).stockItemId && !(item as any).warehouseId) {
-        toast({
-          title: "Warehouse required",
-          description: `${item.partNumber || "Item"}: pick the item again with the cube icon and select the warehouse to reduce.`,
           variant: "destructive",
         });
         setIsSubmitting(false);
@@ -1094,8 +1090,68 @@ export default function InvoiceEdit() {
             </CardContent>
           </Card>
 
-          <FormStickyActions className="flex-col items-end">
-            <div className="flex justify-end">
+          <FormStickyActions className="justify-between items-end">
+            <div>
+              {canManage && doc?.status === "draft" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      disabled={deleting || isSubmitting}
+                      title="Delete"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this draft invoice?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete draft invoice <strong>{doc.invNumber}</strong>. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-red-600 hover:bg-red-700"
+                        disabled={deleting}
+                        onClick={async () => {
+                          setDeleting(true);
+                          try {
+                            const res = await fetch(`/api/invoices/${id}`, { method: "DELETE", credentials: "include" });
+                            const raw = await res.text();
+                            let e: any = null;
+                            try { e = raw ? JSON.parse(raw) : null; } catch { /* ignore */ }
+                            if (!res.ok) {
+                              if (res.status === 404) {
+                                toast({ title: "Invoice already deleted." });
+                                setLocation("/invoices");
+                                return;
+                              }
+                              throw new Error(e?.error || "Failed");
+                            }
+                            toast({ title: "Invoice deleted." });
+                            queryClient.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
+                            await invalidateDocumentList(queryClient, "invoices");
+                            setLocation("/invoices");
+                          } catch (err: any) {
+                            toast({ title: "Error", description: err.message, variant: "destructive" });
+                          } finally {
+                            setDeleting(false);
+                          }
+                        }}
+                      >
+                        {deleting ? "Deleting..." : "Delete"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-2">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
                 <Checkbox
  checked={createDeliveryOrder}
@@ -1103,28 +1159,28 @@ export default function InvoiceEdit() {
                 />
                 Converted into Delivery Order
               </label>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={() => setLocation(`/invoices/${id}`)}>Cancel</Button>
-              <Button
+              <div className="flex justify-end gap-3">
+                <Button type="button" variant="outline" onClick={() => setLocation(`/invoices/${id}`)}>Cancel</Button>
+                <Button
  type="button"
  variant="outline"
  disabled={isSubmitting}
  className="gap-2 min-w-32"
  onClick={form.handleSubmit(v => doSubmit(v, false), onFormInvalid)}
-              >
-                <Save className="h-4 w-4" />
-                {isSubmitting ? "Saving..." : "Save Changes"}
-              </Button>
-              <Button
+                >
+                  <Save className="h-4 w-4" />
+                  {isSubmitting ? "Saving..." : "Save Changes"}
+                </Button>
+                <Button
  type="button"
  disabled={isSubmitting}
  className="gap-2"
  onClick={form.handleSubmit(v => doSubmit(v, true), onFormInvalid)}
-              >
-                <Eye className="h-4 w-4" />
-                Save & Preview
-              </Button>
+                >
+                  <Eye className="h-4 w-4" />
+                  Save & Preview
+                </Button>
+              </div>
             </div>
           </FormStickyActions>
         </form>
@@ -1157,9 +1213,9 @@ export default function InvoiceEdit() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
  currentInvoiceId={id}
+        requireWarehouse={false}
  onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
-          if (!warehouseId) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
           const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
           toRelease.forEach(id => newlyReservedIds.current.delete(id));
@@ -1184,7 +1240,7 @@ export default function InvoiceEdit() {
           form.setValue(`items.${stockPickerIndex}.qty`, importQty);
           form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
           form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
-          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId || undefined);
           form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
           setStockPickerIndex(null);
         }}

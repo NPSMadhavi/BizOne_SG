@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent } from "react";
 import { useListStockItems, getListStockItemsQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
@@ -30,6 +30,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Pencil,
+  Package,
+  Barcode,
+  LogIn,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
@@ -79,14 +83,38 @@ const STANDARD_PAYMENT_METHODS: {
 ];
 
 import { useAuth } from "@/contexts/auth-context";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
+import {
+  useSalesPersons,
+  loginOrCreateSalesPerson,
+  loadPosEmployeeSession,
+  savePosEmployeeSession,
+  clearPosEmployeeSession,
+  type PosEmployeeSession,
+} from "@/hooks/use-sales-persons";
 
 type CartLine = {
+  /** Unique per stock item + purchase-price lot (cart merge key). */
+  key: string;
+  /** Stock item id */
   id: number;
   code: string;
   name: string;
   unitPrice: number;
+  purchasePrice?: number;
   qty: number;
+};
+
+type PosProduct = {
+  key: string;
+  stockItemId: number;
+  code: string;
+  name: string;
+  barcode: string;
+  unitPrice: number;
+  purchasePrice: number;
+  stockQty: number;
+  uom: string;
+  imageUrl?: string | null;
 };
 
 type PaymentTender = {
@@ -235,6 +263,21 @@ export default function PointOfSalePage() {
   const [pendingPayByMethod, setPendingPayByMethod] = useState<Partial<Record<PaymentMethod, number>>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSale, setPreviewSale] = useState<PosSaleRecord | null>(null);
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [employeeLoginOpen, setEmployeeLoginOpen] = useState(false);
+  const [employeeIdInput, setEmployeeIdInput] = useState("");
+  const [employeePassword, setEmployeePassword] = useState("");
+  const [employeeLoginError, setEmployeeLoginError] = useState("");
+  const [employeeLoggingIn, setEmployeeLoggingIn] = useState(false);
+  const employeeIdRef = useRef<HTMLInputElement>(null);
+  const [posEmployee, setPosEmployee] = useState<PosEmployeeSession | null>(() => loadPosEmployeeSession());
+
+  useEffect(() => {
+    const sync = () => setPosEmployee(loadPosEmployeeSession());
+    window.addEventListener("pos-employee-session-updated", sync);
+    return () => window.removeEventListener("pos-employee-session-updated", sync);
+  }, []);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const gstRate = Number((settings as any)?.gstRate ?? GST_FALLBACK) || GST_FALLBACK;
@@ -244,25 +287,91 @@ export default function PointOfSalePage() {
     query: { queryKey: getListStockItemsQueryKey(stockParams), refetchOnWindowFocus: false },
   });
 
-  const products = useMemo(() => {
-    return (stockItems as any[])
-      .filter((i) => i.isActive !== false)
-      .map((i) => ({
-        id: i.id as number,
+  const products = useMemo((): PosProduct[] => {
+    const out: PosProduct[] = [];
+    for (const i of stockItems as any[]) {
+      if (i.isActive === false || i.showInPos === false) continue;
+
+      const baseCost = parseFloat(String(i.purchasePrice ?? 0)) || 0;
+      const baseSell = parseFloat(String(i.unitPrice ?? 0)) || 0;
+      const basePriceCents = Math.round(baseCost * 100);
+      const totalQty = parseFloat(String(i.stockQty ?? 0)) || 0;
+      const history: any[] = Array.isArray(i.purchasePriceHistory) ? i.purchasePriceHistory : [];
+
+      const byPrice = new Map<number, { purchasePrice: number; quantity: number; historyId: number }>();
+      for (const h of history) {
+        const cost = parseFloat(String(h.purchasePrice ?? 0)) || 0;
+        const cents = Math.round(cost * 100);
+        const histQty = Math.max(0, parseFloat(String(h.quantity ?? 0)) || 0);
+        if (cents === basePriceCents && histQty <= 0) continue;
+        const existing = byPrice.get(cents);
+        if (existing) {
+          existing.quantity += histQty;
+          existing.historyId = h.id ?? existing.historyId;
+        } else {
+          byPrice.set(cents, { purchasePrice: cost, quantity: histQty, historyId: Number(h.id) || 0 });
+        }
+      }
+
+      const imageUrl =
+        typeof i.itemImage === "string" && i.itemImage.trim()
+          ? i.itemImage.trim()
+          : typeof i.item_image === "string" && i.item_image.trim()
+            ? i.item_image.trim()
+            : null;
+      const barcode = String(i.barcode || "").trim();
+
+      let historyQtySum = 0;
+      const priceLots = Array.from(byPrice.entries()).sort((a, b) => b[0] - a[0]);
+      for (const [cents, lot] of priceLots) {
+        historyQtySum += lot.quantity;
+        const sell =
+          baseCost > 0
+            ? Math.round(lot.purchasePrice * (1 + (baseSell - baseCost) / baseCost) * 100) / 100
+            : baseSell;
+        out.push({
+          key: `${i.id}-p-${cents}`,
+          stockItemId: i.id as number,
+          code: String(i.code || `ITEM${i.id}`),
+          name: String(i.name || "Item"),
+          barcode,
+          unitPrice: Number.isFinite(sell) ? sell : baseSell,
+          purchasePrice: lot.purchasePrice,
+          stockQty: lot.quantity,
+          uom: String(i.uom || "Pcs"),
+          imageUrl,
+        });
+      }
+
+      const baseStockQty = Math.max(0, Math.round((totalQty - historyQtySum) * 1000) / 1000);
+      out.push({
+        key: `${i.id}-base`,
+        stockItemId: i.id as number,
         code: String(i.code || `ITEM${i.id}`),
         name: String(i.name || "Item"),
-        unitPrice: Number(i.unitPrice) || 0,
+        barcode,
+        unitPrice: baseSell,
+        purchasePrice: baseCost,
+        stockQty: baseStockQty,
         uom: String(i.uom || "Pcs"),
-      }));
+        imageUrl,
+      });
+    }
+    return out;
   }, [stockItems]);
 
   const filtered = useMemo(() => {
     let rows = products;
-    if (tab === "favourites") rows = rows.filter((p) => favourites.includes(p.id));
+    if (tab === "favourites") rows = rows.filter((p) => favourites.includes(p.stockItemId));
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter(
-        (p) => p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q),
+        (p) =>
+          p.code.toLowerCase().includes(q) ||
+          p.name.toLowerCase().includes(q) ||
+          p.barcode.toLowerCase().includes(q) ||
+          String(p.purchasePrice).includes(q) ||
+          String(p.unitPrice).includes(q),
       );
     }
     return rows;
@@ -308,40 +417,120 @@ export default function PointOfSalePage() {
     return { sales, transactions, itemsSold, avgSale };
   }, [salesList]);
 
-  function addToCart(product: { id: number; code: string; name: string; unitPrice: number }) {
+  function addToCart(product: PosProduct) {
     setCart((prev) => {
-      const existing = prev.find((l) => l.id === product.id);
+      const existing = prev.find((l) => l.key === product.key);
+      const nextQty = (existing?.qty || 0) + 1;
+      if (product.stockQty > 0 && nextQty > product.stockQty) {
+        toast({
+          title: "Stock limit",
+          description: `Only ${product.stockQty} ${product.uom} available for this price lot.`,
+          variant: "destructive",
+        });
+        return prev;
+      }
       if (existing) {
-        return prev.map((l) => (l.id === product.id ? { ...l, qty: l.qty + 1 } : l));
+        return prev.map((l) => (l.key === product.key ? { ...l, qty: l.qty + 1 } : l));
       }
       return [
         ...prev,
         {
-          id: product.id,
+          key: product.key,
+          id: product.stockItemId,
           code: product.code,
           name: product.name,
-          unitPrice: 0,
+          unitPrice: product.unitPrice > 0 ? product.unitPrice : 0,
+          purchasePrice: product.purchasePrice,
           qty: 1,
         },
       ];
     });
   }
 
-  function updateUnitPrice(id: number, unitPrice: number) {
+  function findProductByBarcode(raw: string): PosProduct | null {
+    const code = raw.trim().toLowerCase();
+    if (!code) return null;
+    const matches = products.filter((p) => p.barcode.toLowerCase() === code);
+    if (matches.length === 0) return null;
+    const withStock = matches.filter((p) => p.stockQty > 0).sort((a, b) => b.stockQty - a.stockQty);
+    return withStock[0] || matches[0];
+  }
+
+  function handleBarcodeSubmit(e?: FormEvent) {
+    e?.preventDefault();
+    const raw = barcodeInput.trim();
+    if (!raw) return;
+
+    const product = findProductByBarcode(raw);
+    if (!product) {
+      toast({
+        title: "Barcode not found",
+        description: `No item with barcode "${raw}".`,
+        variant: "destructive",
+      });
+      setBarcodeInput("");
+      barcodeInputRef.current?.focus();
+      return;
+    }
+
+    if (product.stockQty <= 0) {
+      toast({
+        title: "Out of stock",
+        description: `"${product.name}" has no available qty for this barcode.`,
+        variant: "destructive",
+      });
+      setBarcodeInput("");
+      barcodeInputRef.current?.focus();
+      return;
+    }
+
+    addToCart(product);
+    toast({ title: "Added", description: `${product.name} · ${money(product.unitPrice)}` });
+    setBarcodeInput("");
+    requestAnimationFrame(() => barcodeInputRef.current?.focus());
+  }
+
+  useEffect(() => {
+    if (mode !== "pos") return;
+    const t = window.setTimeout(() => barcodeInputRef.current?.focus(), 80);
+    return () => window.clearTimeout(t);
+  }, [mode]);
+
+  // USB scanners type into the focused field and send Enter. Keep barcode field ready.
+  useEffect(() => {
+    if (mode !== "pos") return;
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const editable =
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        target?.isContentEditable;
+      if (editable) return;
+      if (e.key.length === 1 || e.key === "Enter") {
+        barcodeInputRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mode]);
+
+  function updateUnitPrice(key: string, unitPrice: number) {
     setCart((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, unitPrice: Math.max(0, unitPrice) } : l)),
+      prev.map((l) => (l.key === key ? { ...l, unitPrice: Math.max(0, unitPrice) } : l)),
     );
   }
 
-  function updateQty(id: number, qty: number, removeIfZero = false) {
+  function updateQty(key: string, qty: number, removeIfZero = false) {
     setCart((prev) => {
-      const next = prev.map((l) => (l.id === id ? { ...l, qty: Math.max(0, qty) } : l));
+      const next = prev.map((l) => (l.key === key ? { ...l, qty: Math.max(0, qty) } : l));
       return removeIfZero ? next.filter((l) => l.qty > 0) : next;
     });
   }
 
-  function removeLine(id: number) {
-    setCart((prev) => prev.filter((l) => l.id !== id));
+  function removeLine(key: string) {
+    setCart((prev) => prev.filter((l) => l.key !== key));
   }
 
   function clearCart() {
@@ -356,14 +545,71 @@ export default function PointOfSalePage() {
   }
 
   function startNewPos() {
+    if (!posEmployee) {
+      toast({
+        title: "Employee login required",
+        description: "Please login with Employee ID first.",
+        variant: "destructive",
+      });
+      return;
+    }
     setEditingSale(null);
     clearCart();
+    setSalesPerson(posEmployee.name);
     setMode("pos");
+  }
+
+  function openEmployeeLogin() {
+    if (posEmployee) return;
+    setEmployeeIdInput("");
+    setEmployeePassword("");
+    setEmployeeLoginError("");
+    setEmployeeLoginOpen(true);
+    requestAnimationFrame(() => employeeIdRef.current?.focus());
+  }
+
+  function handleEmployeeLogout() {
+    clearPosEmployeeSession();
+    setPosEmployee(null);
+    toast({ title: "Employee logged out" });
+  }
+
+  function handleEmployeeLogin(e?: FormEvent) {
+    e?.preventDefault();
+    setEmployeeLoggingIn(true);
+    setEmployeeLoginError("");
+    try {
+      const result = loginOrCreateSalesPerson(employeeIdInput, employeePassword);
+      if (!result.ok) {
+        setEmployeeLoginError(result.error);
+        return;
+      }
+      const session: PosEmployeeSession = {
+        id: result.person.id,
+        name: result.person.name,
+        employmentCode: result.person.employmentCode,
+      };
+      savePosEmployeeSession(session);
+      setPosEmployee(session);
+      setEmployeeLoginOpen(false);
+      toast({
+        title: result.created ? "Employee created & logged in" : "Logged in",
+        description: `${result.person.name} — session active until you close the app.`,
+      });
+      // Stay on list; Create New POS becomes available for this session
+    } finally {
+      setEmployeeLoggingIn(false);
+    }
   }
 
   function loadSaleForEdit(sale: PosSaleRecord) {
     setEditingSale(sale);
-    setCart(sale.items.map((i) => ({ ...i })));
+    setCart(
+      sale.items.map((i) => ({
+        ...i,
+        key: (i as CartLine).key || `${i.id}-${i.unitPrice}-${i.code}`,
+      })),
+    );
     setSalesPerson(sale.salesPerson || "");
     setDiscount(sale.discount || 0);
     setDiscountType("manual");
@@ -673,13 +919,49 @@ export default function PointOfSalePage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Point of Sale</h1>
           </div>
-          <Button
-            type="button"
-            className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"
-            onClick={startNewPos}
-          >
-            <Plus className="h-4 w-4" /> Create New POS
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {posEmployee ? (
+              <>
+                <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800">
+                  {posEmployee.employmentCode} · {posEmployee.name}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleEmployeeLogout}
+                >
+                  <LogOut className="h-4 w-4" /> Logout
+                </Button>
+                <Button
+                  type="button"
+                  className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"
+                  onClick={startNewPos}
+                >
+                  <Plus className="h-4 w-4" /> Create New POS
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2 border-[#2563EB] text-[#2563EB] hover:bg-[#EFF6FF]"
+                  onClick={openEmployeeLogin}
+                >
+                  <LogIn className="h-4 w-4" /> Employee Login
+                </Button>
+                <Button
+                  type="button"
+                  className="gap-2 bg-[#2563EB]/50 text-white cursor-not-allowed"
+                  disabled
+                  title="Login as employee first"
+                >
+                  <Plus className="h-4 w-4" /> Create New POS
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -776,6 +1058,80 @@ export default function PointOfSalePage() {
             <ListPagination page={salesPage} totalPages={salesTotalPages} onPageChange={setSalesPage} />
           </div>
         </div>
+
+        <Dialog
+          open={employeeLoginOpen}
+          onOpenChange={(open) => {
+            setEmployeeLoginOpen(open);
+            if (open) {
+              setEmployeeIdInput("");
+              setEmployeePassword("");
+              setEmployeeLoginError("");
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg gap-5 p-8">
+            <DialogHeader className="space-y-2">
+              <DialogTitle className="text-xl">Employee Login</DialogTitle>
+              <DialogDescription className="text-sm">
+                Enter Employee ID and password. New IDs are saved automatically. Session stays active until you close the app.
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              onSubmit={handleEmployeeLogin}
+              className="space-y-5"
+              autoComplete="off"
+            >
+              {/* Decoy fields so browser autofill targets these instead of the real inputs */}
+              <input type="text" name="prevent_autofill_user" autoComplete="username" className="hidden" tabIndex={-1} readOnly aria-hidden="true" />
+              <input type="password" name="prevent_autofill_pass" autoComplete="current-password" className="hidden" tabIndex={-1} readOnly aria-hidden="true" />
+
+              <div className="space-y-2">
+                <Label htmlFor="pos-emp-code">Employee ID</Label>
+                <Input
+                  id="pos-emp-code"
+                  name="pos_emp_code"
+                  ref={employeeIdRef}
+                  value={employeeIdInput}
+                  onChange={(e) => setEmployeeIdInput(e.target.value)}
+                  placeholder="Employment code (e.g. EMP-1001)"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="h-11 font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pos-emp-pin">Password</Label>
+                <Input
+                  id="pos-emp-pin"
+                  name="pos_emp_pin"
+                  type="password"
+                  value={employeePassword}
+                  onChange={(e) => setEmployeePassword(e.target.value)}
+                  placeholder="Enter password"
+                  autoComplete="new-password"
+                  className="h-11 text-sm"
+                />
+              </div>
+              {employeeLoginError ? (
+                <p className="text-sm text-red-600">{employeeLoginError}</p>
+              ) : null}
+              <DialogFooter className="gap-2 pt-2 sm:gap-2">
+                <Button type="button" variant="outline" className="h-10 px-5" onClick={() => setEmployeeLoginOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="h-10 bg-[#2563EB] px-6 hover:bg-[#1D4ED8]"
+                  disabled={employeeLoggingIn || !employeeIdInput.trim() || !employeePassword.trim()}
+                >
+                  {employeeLoggingIn ? "Logging in..." : "Login"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -783,13 +1139,13 @@ export default function PointOfSalePage() {
   return (
     <div className="-mx-4 -mb-6 flex min-h-[calc(100vh-4rem)] flex-col bg-[#F3F4F6] px-4 pb-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       <div className="flex-1 space-y-4 py-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 min-w-0">
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="mt-1 h-9 w-9 shrink-0"
+              className="h-9 w-9 shrink-0"
               onClick={() => {
                 setEditingSale(null);
                 clearCart();
@@ -798,38 +1154,62 @@ export default function PointOfSalePage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
-                {editingSale ? `Edit ${editingSale.posNumber}` : "Create New POS"}
-              </h1>
-            </div>
+            <h1 className="truncate text-2xl font-bold tracking-tight text-[#2563EB] sm:text-3xl">
+              {editingSale ? `Edit ${editingSale.posNumber}` : "Create New POS"}
+            </h1>
           </div>
-          {editingSale && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button type="button" variant="destructive" size="icon" className="shrink-0" title="Delete">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this POS sale?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete <strong>{editingSale.posNumber}</strong>. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-red-600 hover:bg-red-700"
-                    onClick={deleteEditingSale}
-                  >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            {editingSale && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" variant="destructive" size="icon" className="shrink-0" title="Delete">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this POS sale?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete <strong>{editingSale.posNumber}</strong>. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={deleteEditingSale}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+
+            <form
+              onSubmit={handleBarcodeSubmit}
+              className="flex h-9 w-full max-w-[360px] items-center gap-1.5 rounded-lg border border-[#2563EB] bg-white px-2 shadow-sm sm:w-[340px]"
+            >
+              <Barcode className="h-4 w-4 shrink-0 text-[#2563EB]" />
+              <input
+                ref={barcodeInputRef}
+                type="text"
+                value={barcodeInput}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+                placeholder="Scan barcode"
+                autoComplete="off"
+                className="h-full min-w-0 flex-1 border-0 bg-transparent font-mono text-xs text-[#111827] outline-none placeholder:text-[#9CA3AF] focus:ring-0"
+              />
+              <button
+                type="submit"
+                disabled={!barcodeInput.trim()}
+                className="h-7 shrink-0 rounded-md bg-[#2563EB] px-2.5 text-[11px] font-semibold leading-none text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:bg-[#93C5FD] disabled:text-white/80"
+              >
+                Scan / Add
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)]">
@@ -880,15 +1260,15 @@ export default function PointOfSalePage() {
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {pageRows.map((p) => (
                     <button
-                      key={p.id}
+                      key={p.key}
                       type="button"
                       onClick={() => addToCart(p)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setFavourites((prev) => {
-                          const next = prev.includes(p.id)
-                            ? prev.filter((x) => x !== p.id)
-                            : [...prev, p.id];
+                          const next = prev.includes(p.stockItemId)
+                            ? prev.filter((x) => x !== p.stockItemId)
+                            : [...prev, p.stockItemId];
                           try {
                             localStorage.setItem("pos-favourites", JSON.stringify(next));
                           } catch {
@@ -897,13 +1277,31 @@ export default function PointOfSalePage() {
                           return next;
                         });
                       }}
-                      className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-left transition hover:border-[#93C5FD] hover:shadow-sm"
+                      className="overflow-hidden rounded-lg border border-[#E5E7EB] bg-white text-left transition hover:border-[#93C5FD] hover:shadow-sm"
                     >
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#2563EB]">
-                        {p.code}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-sm font-medium text-[#111827]">{p.name}</p>
-                      <p className="mt-2 text-sm font-bold text-[#111827]">{money(p.unitPrice)}</p>
+                      <div className="flex h-28 w-full items-center justify-center bg-[#F8FAFC]">
+                        {p.imageUrl ? (
+                          <img
+                            src={p.imageUrl}
+                            alt={p.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Package className="h-10 w-10 text-[#CBD5E1]" />
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-[#2563EB]">
+                          {p.code}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-sm font-medium text-[#111827]">{p.name}</p>
+                        <p className="mt-1.5 text-[11px] text-[#6B7280]">
+                          Cost {money(p.purchasePrice)}
+                          <span className="mx-1 text-[#D1D5DB]">·</span>
+                          Qty {p.stockQty.toLocaleString("en-SG", { maximumFractionDigits: 3 })} {p.uom}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-[#111827]">{money(p.unitPrice)}</p>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -979,19 +1377,24 @@ export default function PointOfSalePage() {
               ) : (
                 cart.map((line) => (
                   <div
-                    key={line.id}
+                    key={line.key}
                     className="grid grid-cols-[1fr_minmax(96px,auto)_64px_64px_28px] items-center gap-2 rounded-md px-2 py-2 hover:bg-[#F9FAFB]"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium text-[#111827]">
                         {line.code} / {line.name}
                       </p>
+                      {line.purchasePrice != null ? (
+                        <p className="truncate text-[10px] text-[#9CA3AF]">
+                          Cost {money(line.purchasePrice)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 items-center justify-center gap-0.5">
                       <button
                         type="button"
                         className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
-                        onClick={() => updateQty(line.id, line.qty - 1, true)}
+                        onClick={() => updateQty(line.key, line.qty - 1, true)}
                       >
                         <Minus className="h-3 w-3" />
                       </button>
@@ -1001,22 +1404,22 @@ export default function PointOfSalePage() {
                         onChange={(e) => {
                           const raw = e.target.value;
                           if (raw === "") {
-                            updateQty(line.id, 0);
+                            updateQty(line.key, 0);
                             return;
                           }
                           const n = parseInt(raw, 10);
-                          if (!Number.isNaN(n)) updateQty(line.id, n);
+                          if (!Number.isNaN(n)) updateQty(line.key, n);
                         }}
                         onBlur={() => {
                           setCart((prev) =>
-                            prev.map((l) => (l.id === line.id && l.qty <= 0 ? { ...l, qty: 1 } : l)),
+                            prev.map((l) => (l.key === line.key && l.qty <= 0 ? { ...l, qty: 1 } : l)),
                           );
                         }}
                       />
                       <button
                         type="button"
                         className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
-                        onClick={() => updateQty(line.id, line.qty + 1)}
+                        onClick={() => updateQty(line.key, line.qty + 1)}
                       >
                         <Plus className="h-3 w-3" />
                       </button>
@@ -1030,7 +1433,7 @@ export default function PointOfSalePage() {
                       placeholder=""
                       onChange={(e) => {
                         const raw = e.target.value;
-                        updateUnitPrice(line.id, raw === "" ? 0 : parseFloat(raw) || 0);
+                        updateUnitPrice(line.key, raw === "" ? 0 : parseFloat(raw) || 0);
                       }}
                     />
                     <p className="text-right text-xs font-semibold text-[#111827]">
@@ -1039,7 +1442,7 @@ export default function PointOfSalePage() {
                     <button
                       type="button"
                       className="justify-self-end text-[#EF4444] hover:text-[#DC2626]"
-                      onClick={() => removeLine(line.id)}
+                      onClick={() => removeLine(line.key)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

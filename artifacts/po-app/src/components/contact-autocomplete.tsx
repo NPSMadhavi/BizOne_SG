@@ -65,6 +65,19 @@ export function ContactAutocomplete({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Veda guided fill: pick directory match so the field shows the official name
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ type?: string; contact?: Contact }>).detail;
+      if (!detail?.contact || (detail.type && detail.type !== type)) return;
+      onChange(detail.contact.name);
+      onSelect(detail.contact);
+      setOpen(false);
+    };
+    window.addEventListener("veda:select-contact", handler);
+    return () => window.removeEventListener("veda:select-contact", handler);
+  }, [type, onChange, onSelect]);
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (!open || filtered.length === 0) return;
     if (e.key === "ArrowDown") {

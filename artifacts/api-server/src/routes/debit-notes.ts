@@ -256,18 +256,16 @@ router.post("/debit-notes/:id/void", async (req, res): Promise<void> => {
   res.json(parseDoc(doc));
 });
 
-// ── DELETE /debit-notes/:id (admin + draft only) ─────────────────────────────
+// ── DELETE /debit-notes/:id (draft only) ─────────────────────────────────────
 router.delete("/debit-notes/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const isAdmin = req.session.isAdmin ?? false;
-  if (!isAdmin) { res.status(403).json({ error: "Only admins can delete debit notes" }); return; }
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
   const [existing] = await db.select().from(debitNotesTable).where(eq(debitNotesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Debit note not found" }); return; }
-  if (existing.status === "confirmed") { res.status(400).json({ error: "Cannot delete a confirmed debit note. Void it instead." }); return; }
+  if (existing.status === "void") { res.status(400).json({ error: "Cannot delete a voided debit note." }); return; }
 
   await db.delete(debitNotesTable).where(eq(debitNotesTable.id, id));
   logAudit({ req, action: "delete", entityType: "debit_note", entityId: id, entityLabel: existing.dnNumber });

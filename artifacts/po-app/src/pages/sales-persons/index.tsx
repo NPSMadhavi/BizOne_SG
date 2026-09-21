@@ -45,6 +45,7 @@ import { usePagination } from "@/hooks/use-pagination";
 const blankForm = (): Omit<SalesPerson, "id" | "createdAt"> => ({
   name: "",
   employmentCode: "",
+  password: "",
   department: "",
   phone: "",
   country: "Singapore",
@@ -87,6 +88,7 @@ export default function SalesPersonsPage() {
     setForm({
       name: person.name,
       employmentCode: person.employmentCode,
+      password: "",
       department: person.department,
       phone: person.phone,
       country: person.country,
@@ -101,6 +103,22 @@ export default function SalesPersonsPage() {
       toast({
         title: "Validation Error",
         description: "Sales Person Name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!form.employmentCode.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Employment Code is required for POS Employee Login.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!editingId && !form.password.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Password is required for POS Employee Login.",
         variant: "destructive",
       });
       return;
@@ -247,11 +265,14 @@ export default function SalesPersonsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Employment Code</Label>
+                <Label>
+                  Employment Code <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   placeholder="e.g. EMP-1001"
                   value={form.employmentCode}
                   onChange={(e) => setForm({ ...form, employmentCode: e.target.value })}
+                  required
                 />
               </div>
               <div className="space-y-1.5">
@@ -262,6 +283,20 @@ export default function SalesPersonsPage() {
                   onChange={(e) => setForm({ ...form, department: e.target.value })}
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>
+                POS Login Password {!editingId && <span className="text-red-500">*</span>}
+              </Label>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                placeholder={editingId ? "Leave blank to keep current password" : "Set login password"}
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                required={!editingId}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

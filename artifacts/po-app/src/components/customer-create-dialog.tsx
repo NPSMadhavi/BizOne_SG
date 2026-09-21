@@ -38,7 +38,7 @@ interface Customer {
 
 const blank = () => ({
   name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
-  contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "",
+  contactEmail: "", phone: "", currency: "SGD", gstRegistered: false, gstNo: "",
   shipToAddress: "", quotationTerms: "", isActive: true,
 });
 

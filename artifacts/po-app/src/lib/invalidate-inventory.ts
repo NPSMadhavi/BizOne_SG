@@ -12,7 +12,7 @@ export const inventoryQueryKeys = {
     ["invoice-warehouse-stock", stockItemId] as const,
 };
 
-/** Call after Tax Invoice / GRN / Opening Stock / Stock Transfer changes qty. */
+/** Call after Tax Invoice / GRN / Opening Stock / Stock Transfer / Vendor Invoice changes qty. */
 export async function invalidateInventoryQueries(queryClient: QueryClient): Promise<void> {
   queryClient.removeQueries({ queryKey: inventoryQueryKeys.currentStock });
   queryClient.removeQueries({ queryKey: inventoryQueryKeys.dashboard });
@@ -21,6 +21,8 @@ export async function invalidateInventoryQueries(queryClient: QueryClient): Prom
   queryClient.removeQueries({ queryKey: ["invoice-warehouse-stock"] });
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.all, refetchType: "all" }),
+    // orval list key is ["/api/stock-items", ...] — must invalidate this prefix for Item Master.
+    queryClient.invalidateQueries({ queryKey: ["/api/stock-items"], refetchType: "all" }),
     queryClient.invalidateQueries({ queryKey: ["stock-items"], refetchType: "all" }),
     queryClient.invalidateQueries({ queryKey: ["stock-items-picker"], refetchType: "all" }),
     queryClient.invalidateQueries({ queryKey: ["invoice-warehouses"], refetchType: "all" }),

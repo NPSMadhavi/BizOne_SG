@@ -68,7 +68,7 @@ const schema = z.object({
   customerContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   deliveryAddress: z.string().optional(),
   issueDate: z.string().optional(),
-  validUntil: z.string().optional(),
+  validUntil: z.string().min(1, "Quotation Valid Upto is required"),
   deliveryDate: z.string().optional(),
   salesPerson: z.string().optional(),
   paymentTerms: z.string().optional(),
@@ -469,7 +469,7 @@ export default function QuotationEdit() {
                   )} />
                   <FormField control={form.control} name="validUntil" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quotation Valid Upto</FormLabel>
+                      <FormLabel>Quotation Valid Upto <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
                         <Input
  type="date"
@@ -818,6 +818,7 @@ export default function QuotationEdit() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
+        showWarehouse={false}
  onSelect={({ item, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);

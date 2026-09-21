@@ -7,10 +7,36 @@ export function isGuidedCreatePath(path: string | undefined | null): boolean {
   return path.includes("/new") || /vedaNew=1/.test(path) || /\/employees\/\d+\/edit/.test(path);
 }
 
+const WAKE_TOKEN_RE =
+  /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedaah|vedha|veyda|veida|beeda|bheda|hey\s*veda|veda\s*ji)\b/gi;
+const LEAD_FILLER_RE = /^(hey|hi|ok|okay|please|um|uh|ah|oh|hmm|so|say|call|yo|oye|hello|and|then)\s+/i;
+const ONLY_FILLER_RE =
+  /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an|so|yes|yeah|yep|ok|okay|please|hey|hi|veda|veeda|vida|vita|veta)+[.!?]?$/i;
+
+/**
+ * Strip wake-word / filler from a spoken field answer.
+ * Returns "" when nothing usable remains (e.g. bare "Veda" / "so").
+ */
+export function sanitizeGuidedAnswer(raw: string): string {
+  let t = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  // Remove every wake-token occurrence ("veda veda EMP01" → "EMP01")
+  t = t.replace(WAKE_TOKEN_RE, " ").replace(/\s+/g, " ").trim();
+  // Drop leading fillers repeatedly ("so um Madhavi" → "Madhavi")
+  for (let i = 0; i < 4; i++) {
+    const next = t.replace(LEAD_FILLER_RE, "").trim();
+    if (next === t) break;
+    t = next;
+  }
+  t = t.replace(/[.,!?]+$/g, "").replace(/\s+/g, " ").trim();
+  if (!t || ONLY_FILLER_RE.test(t)) return "";
+  return t;
+}
+
 type FieldGuess = { key: string; transform?: (answer: string) => unknown };
 
 const ASK_PATTERNS: Array<{ re: RegExp; field: FieldGuess }> = [
-  { re: /employee\s*id|emp(?:loyee)?\s*code|#?\s*id\b/i, field: { key: "employeeId" } },
+  { re: /employee\s*id|emp(?:loyee)?\s*code/i, field: { key: "employeeId" } },
   { re: /customer\s*name/i, field: { key: "customerName" } },
   { re: /vendor\s*name/i, field: { key: "vendorName" } },
   { re: /employee\s*name|full\s*name/i, field: { key: "name" } },
@@ -45,7 +71,7 @@ const ASK_PATTERNS: Array<{ re: RegExp; field: FieldGuess }> = [
   { re: /\bnric|\bic\s*number/i, field: { key: "nricNumber" } },
   { re: /\bnric\s*expir/i, field: { key: "nricExpiry" } },
   {
-    re: /\bstatus\b/i,
+    re: /\b(?:employee\s*)?status\b|\bactive\b|\bresigned\b|\bon\s*hold\b/i,
     field: {
       key: "status",
       transform: (a) => {
@@ -70,6 +96,11 @@ const ASK_PATTERNS: Array<{ re: RegExp; field: FieldGuess }> = [
 export function guessFieldFromAssistantQuestion(assistantText: string): FieldGuess | null {
   const text = (assistantText || "").trim();
   if (!text) return null;
+  // Never map from navigation / opening chatter — only real field questions
+  if (/^opening\b/i.test(text) || /\bform is now open\b/i.test(text)) return null;
+  if (!/[?]/.test(text) && !/\b(id|name|email|phone|address|department|salary|designation|nationality|date|passport|visa|nric|status|currency|payment|contact)\b/i.test(text)) {
+    return null;
+  }
   // Prefer the last sentence / question fragment
   const parts = text.split(/(?<=[?.!])\s+/);
   const focus = parts[parts.length - 1] || text;
@@ -89,10 +120,13 @@ export function dispatchOptimisticGuidedFill(
   path?: string | null,
 ): Record<string, unknown> | null {
   if (!isGuidedCreatePath(path)) return null;
-  const answer = (userAnswer || "").trim();
+  const answer = sanitizeGuidedAnswer(userAnswer);
   if (!answer || answer.length > 200) return null;
-  // Skip confirmations / meta answers
-  if (/^(yes|yeah|yep|ok|okay|sure|no|nope|cancel|stop|save|submit)[.!]?$/i.test(answer)) return null;
+  // Skip confirmations / meta answers / create-nav commands
+  if (/^(yes|yeah|yep|ok|okay|sure|no|nope|cancel|stop|save|submit|skip)[.!]?$/i.test(answer)) return null;
+  if (/\b(create|open|go\s*to|navigate|new\s+employee|employee\s+form)\b/i.test(answer) && answer.split(/\s+/).length > 3) {
+    return null;
+  }
 
   const guess = guessFieldFromAssistantQuestion(assistantText);
   if (!guess) return null;
@@ -122,16 +156,17 @@ export function guidedAnswerHint(path: string | undefined | null): string {
   if (path?.includes("/employees")) {
     return (
       "\n\n[GUIDED EMPLOYEE CREATE — SPEED CRITICAL] " +
-      "In this SAME turn: (1) FIRST call fillCurrentForm with ONLY the field just answered " +
+      "In this SAME turn: (1) FIRST call fillCurrentForm with ONLY the field just answered — use the user's exact words/numbers, never invent. " +
       "(keys: employeeId, name, email, phone as 8 local digits no +65, address, department, " +
-      "salary, designation, nationality Singapore|PR|Foreigner, joinDate YYYY-MM-DD, dateOfBirth, status). " +
-      "(2) Then reply with ONLY the next question (≤6 words). " +
-      "Do NOT confirm. Do NOT narrate. Do NOT wait."
+      "salary, designation, nationality Singapore|PR|Foreigner, prStatus, joinDate YYYY-MM-DD, dateOfBirth, " +
+      "passportNumber, passportExpiry, visaType, visaNumber, visaExpiry, nricNumber, nricExpiry, status). " +
+      "(2) Then reply with ONLY the next unanswered field question (≤6 words). " +
+      "Ask every field one by one — do not skip. Do NOT confirm. Do NOT narrate. Do NOT wait."
     );
   }
   return (
     "\n\n[GUIDED CREATE — SPEED CRITICAL] " +
-    "In this SAME turn: FIRST call fillCurrentForm with the answered field, " +
-    "then ask ONLY the next field in ≤6 words. No confirmation, no narration."
+    "In this SAME turn: FIRST call fillCurrentForm with the answered field using the user's exact answer, " +
+    "then ask ONLY the next field in ≤6 words. No confirmation, no narration, no invented values."
   );
 }

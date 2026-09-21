@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -282,7 +282,7 @@ function buildPayrollConfigPayload(
     meal: allowanceMeal || 0,
     phone: allowancePhone || 0,
     others: allowanceOthers || 0,
-    // Overtime Hours × For Hours in SGD — counted with allowances
+    // Overtime Hours × Overtime pay (SGD) — counted with allowances
     overtime: Math.round(
       (Number(payrollData.overtimeRate) || 0) * (Number(payrollData.hourlyRate) || 0) * 100
     ) / 100,
@@ -411,7 +411,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   const age = Number(form.watch("age") || 0);
   const citizenshipStatus = form.watch("citizenshipStatus");
   const overtimeHours = Number(form.watch("overtimeRate") || 0); // field labeled Overtime Hours
-  const forHoursInSgd = Number(form.watch("hourlyRate") || 0); // field labeled For Hours in SGD
+  const forHoursInSgd = Number(form.watch("hourlyRate") || 0); // field labeled Overtime pay (SGD)
   const overtimePay = Math.round(overtimeHours * forHoursInSgd * 100) / 100;
   const allowanceTransport = Number(form.watch("allowanceTransport") || 0);
   const allowanceMeal = Number(form.watch("allowanceMeal") || 0);
@@ -841,7 +841,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     name="hourlyRate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className={payheadLabelClass}>For Hours in SGD</FormLabel>
+                        <FormLabel className={payheadLabelClass}>Overtime pay (SGD)</FormLabel>
                         <FormControl>
                           <OptionalAmountInput field={field} />
                         </FormControl>

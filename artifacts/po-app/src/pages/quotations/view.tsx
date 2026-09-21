@@ -147,7 +147,7 @@ export default function QuotationView() {
       ]);
 
       toast({ title: "Tax Invoice Created", description: `${result.number} created successfully` });
-      setLocation(`/invoices/${result.id}`);
+      setLocation(`/invoices/${result.id}/edit`);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {

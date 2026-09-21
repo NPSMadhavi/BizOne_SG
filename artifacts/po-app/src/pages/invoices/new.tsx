@@ -499,15 +499,6 @@ export default function InvoiceNew() {
         setIsSubmitting(false);
         return;
       }
-      if ((item as any).stockItemId && !(item as any).warehouseId) {
-        toast({
-          title: "Warehouse required",
-          description: `${item.partNumber || "Item"}: pick the item again with the cube icon and select the warehouse to reduce.`,
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
     }
     const cleanAddress = (values.deliveryAddress || "")
       .split("\n\n")
@@ -1325,9 +1316,9 @@ export default function InvoiceNew() {
       <StockItemPickerDialog
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        requireWarehouse={false}
  onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
-          if (!warehouseId) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
           const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
           toRelease.forEach(id => allReservedIds.current.delete(id));
@@ -1352,7 +1343,7 @@ export default function InvoiceNew() {
           form.setValue(`items.${stockPickerIndex}.qty`, importQty);
           form.setValue(`items.${stockPickerIndex}.selectedSerials`, selectedSerials);
           form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
-          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId);
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId || undefined);
           form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
           setStockPickerIndex(null);
         }}

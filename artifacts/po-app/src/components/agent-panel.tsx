@@ -6,13 +6,26 @@ import {
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/auth-context";
-import { queueVedaFormAction } from "@/hooks/useVedaFormActions";
 import { queueVedaFormFill } from "@/hooks/useVedaFormFill";
+import { queueVedaFormAction } from "@/hooks/useVedaFormActions";
 import {
   dispatchOptimisticGuidedFill,
   guidedAnswerHint,
   isGuidedCreatePath,
+  sanitizeGuidedAnswer,
 } from "@/lib/veda-optimistic-fill";
+import {
+  applyGuidedEmployeeAnswer,
+  createGuidedEmployeeSession,
+  currentEmployeeQuestion,
+  type GuidedEmployeeSession,
+} from "@/lib/veda-guided-employee";
+import {
+  applyGuidedSalesOrderAnswer,
+  createGuidedSalesOrderSession,
+  currentSoQuestion,
+  type GuidedSalesOrderSession,
+} from "@/lib/veda-guided-sales-order";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetPurchaseOrderQueryKey,
@@ -153,29 +166,70 @@ function normalizeNavPath(path: string): string {
 
 type QuickNavResult = { path: string; prefill?: Record<string, string>; spokenParty?: string };
 
-/** Pull party name from "for Acme" / "to SP Systems" — ignore "for me/us". */
+/** True when text is a create/open navigation phrase, not a person/company name. */
+function looksLikeCreateOrNavPhrase(text: string): boolean {
+  const t = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/\b(create|open|show|launch|add|make|go\s*to|goto|navigate|please\s*go|form|page|module)\b/.test(t)) return true;
+  if (/\b(new\s+)?(employee|staff|invoice|quotation|quote|purchase\s*order|delivery\s*order|customer|vendor)\b/.test(t)) return true;
+  return false;
+}
+
+/** Pull party name from "for Acme" / "named John" — never from "go to create employee". */
 function extractPartyFromCommand(command: string): string | null {
-  const t = String(command || "").replace(/\s+/g, " ").trim();
-  // Prefer explicit "customer/vendor X"
+  const raw = String(command || "").replace(/\s+/g, " ").trim();
+  // Strip navigation "go/navigate/take me to …" so "to" is not treated as a party delimiter
+  const t = raw.replace(
+    /\b(?:go|goto|navigate|take\s+me|switch|bring\s+(?:me\s+)?(?:up\s+)?)(?:\s+to)?\b/gi,
+    " ",
+  ).replace(/\s+/g, " ").trim();
+
+  // Prefer explicit "customer/vendor X" or "named/called X"
   const labeled = t.match(
     /\b(?:customer|vendor|supplier|client)\s+(?:name\s+)?(?:is\s+|as\s+)?(.+?)(?:\s+(?:please|now|today)\s*[.!]?\s*$|[.!?]?\s*$)/i,
   );
-  const m = labeled || t.match(
-    /\b(?:for|to|under|named|called)\s+(.+?)(?:\s+(?:please|now|today|thanks|thank\s*you)\s*[.!]?\s*$|[.!?]?\s*$)/i,
+  const named = t.match(
+    /\b(?:named|called)\s+(.+?)(?:\s+(?:please|now|today|thanks|thank\s*you)\s*[.!]?\s*$|[.!?]?\s*$)/i,
   );
+  // "for Acme" / "to SP Systems" — safe after stripping "go to …"
+  const forTo = t.match(
+    /\b(?:for|to|under)\s+(.+?)(?:\s+(?:please|now|today|thanks|thank\s*you)\s*[.!]?\s*$|[.!?]?\s*$)/i,
+  );
+  const m = labeled || named || forTo;
   if (!m) return null;
   let name = m[1]
-    .replace(/\b(a|an|the)\s+(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|form)\b/gi, "")
-    .replace(/\b(customer|vendor|supplier|client)\b/gi, "")
+    .replace(/\b(a|an|the)\s+(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|employee|staff|form)\b/gi, "")
+    .replace(/\b(customer|vendor|supplier|client|employee|staff|create|new|open|add|form|page|please|go)\b/gi, "")
     .replace(/[.,!?]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!name) return null;
-  if (/^(me|us|myself|yourself|them|him|her|it|a|an|the|new|form|this|that|quotation|invoice|order)$/i.test(name)) return null;
+  if (/^(me|us|myself|yourself|them|him|her|it|a|an|the|new|form|this|that|quotation|invoice|order|employee|staff)$/i.test(name)) return null;
+  if (looksLikeCreateOrNavPhrase(name)) return null;
   // Reject tiny STT fragments
   if (name.length < 2) return null;
   if (name.split(/\s+/).length > 6) name = name.split(/\s+/).slice(0, 6).join(" ");
   return name;
+}
+
+/** Guided kickoff instructions after the create form is already open. */
+function guidedCreateKickoffHint(path: string, partyHint?: string): string {
+  const isEmployee = /\/employees\//.test(path);
+  const navOnly =
+    "NAVIGATION ONLY — do NOT fill any field from the open/create command. Do NOT invent values. Use ONLY later spoken answers.";
+  if (isEmployee) {
+    // Never prefill employee name from a create/nav utterance (false party hints)
+    const safeName =
+      partyHint && !looksLikeCreateOrNavPhrase(partyHint) ? partyHint.trim() : null;
+    if (safeName) {
+      return `${navOnly} User already gave employee name "${safeName}". Immediately fillCurrentForm with name only. Then ask ONLY "Employee ID?" in ≤6 words. After each answer: fill that field, then ask the next. Ask ALL fields one by one: employeeId → name → email → phone → address → department → salary → designation → nationality → prStatus (if PR) → dateOfBirth → joinDate → passportNumber → passportExpiry → visaType → visaNumber → visaExpiry → nricNumber → nricExpiry → status. Never skip. Never invent.`;
+    }
+    return `${navOnly} Start guided employee create: ask ONLY "Employee ID?" now. After each answer: fillCurrentForm with ONLY that field, then ask the next in ≤6 words. Ask ALL fields one by one: employeeId → name → email → phone → address → department → salary → designation → nationality → prStatus (if PR) → dateOfBirth → joinDate → passportNumber → passportExpiry → visaType → visaNumber → visaExpiry → nricNumber → nricExpiry → status. Never skip. Never invent. Never fill from the open command.`;
+  }
+  if (partyHint && !looksLikeCreateOrNavPhrase(partyHint)) {
+    return `${navOnly} User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the name again.`;
+  }
+  return `${navOnly} Start guided create: ask ONLY the first field now.`;
 }
 
 /** Instant client-side navigate for clear "go to / open / create …" phrases (no LLM wait). */
@@ -192,7 +246,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
   const wantsCreate =
     /\b(create|new|add|make)\b/.test(t)
     || /\b(open|show|launch)\b.+\b(new\s+)?(form|page)\b/.test(t)
-    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|employee|customer|vendor)\b/.test(t);
+    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor)\b/.test(t);
 
   const party = extractPartyFromCommand(normalizeVoiceTranscript(command));
 
@@ -207,6 +261,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     if (/\bquotations?\b|\bquotes?\b/.test(t)) return openNew("/quotations/new");
     if (/\bpurchase\s*orders?\b/.test(t)) return openNew("/purchase-orders/new");
     if (/\bdelivery\s*orders?\b/.test(t)) return openNew("/delivery-orders/new");
+    if (/\bsales\s*orders?\b/.test(t)) return openNew("/sales-orders/new");
     if (/\bemployees?\b|\bstaff\b|\bperson\b/.test(t)) return openNew("/employees/new");
     if (/\bcustomers?\b/.test(t)) return openNew("/customers?vedaNew=1");
     if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return openNew("/vendors?vedaNew=1");
@@ -254,9 +309,11 @@ const PATH_LABELS: Record<string, string> = {
   "/purchase-orders/new": "New Purchase Order",
   "/delivery-orders": "Delivery Orders",
   "/delivery-orders/new": "New Delivery Order",
+  "/sales-orders": "Sales Orders",
+  "/sales-orders/new": "New Sales Order",
   "/employees": "Employees",
   "/employees/new": "New Employee",
-  "/stock": "Stock Items",
+  "/stock": "Item Master",
   "/grn": "GRN",
   "/settings": "Settings",
   "/vendor-invoices": "Vendor Invoices",
@@ -377,7 +434,7 @@ if (typeof window !== "undefined" && window.speechSynthesis) {
 
 let _browserTtsResolve: (() => void) | null = null;
 let _browserTtsTimeout: ReturnType<typeof setTimeout> | null = null;
-function speakBrowser(text: string): Promise<void> {
+function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }): Promise<void> {
   return new Promise((resolve) => {
     if (!window.speechSynthesis) { resolve(); return; }
 
@@ -395,16 +452,16 @@ function speakBrowser(text: string): Promise<void> {
       if (_browserTtsResolve === resolve) { _browserTtsResolve = null; resolve(); }
     };
 
-    // Chrome bug: after cancel(), speak() must be deferred or the utterance is silently dropped.
-    // Also set a hard timeout (words * ~80ms + 3s buffer) so the loop never hangs if onend
-    // never fires (another known Chrome SpeechSynthesis bug).
-    const estimatedMs = Math.max(3000, clean.split(/\s+/).length * 400 + 2000);
+    const rate = opts?.rate ?? 0.95;
+    const deferMs = opts?.deferMs ?? 80;
+    // Slower rate → longer hard timeout so speech isn't cut off early
+    const estimatedMs = Math.max(1600, Math.round(clean.split(/\s+/).length * (420 / rate) + 900));
     _browserTtsTimeout = setTimeout(done, estimatedMs);
 
     setTimeout(() => {
       if (_browserTtsResolve !== resolve) return; // already cancelled by a newer call
       const utt = new SpeechSynthesisUtterance(clean);
-      utt.rate = 1.12;
+      utt.rate = rate;
       utt.pitch = 1.05;
       utt.volume = 1.0;
       const voice = _cachedVoice ?? pickBestVoice(window.speechSynthesis.getVoices());
@@ -412,7 +469,7 @@ function speakBrowser(text: string): Promise<void> {
       utt.onend = done;
       utt.onerror = done;
       window.speechSynthesis.speak(utt);
-    }, 80); // 80 ms gap after cancel() before next speak()
+    }, deferMs);
   });
 }
 
@@ -420,6 +477,13 @@ async function speak(text: string): Promise<void> {
   const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim().slice(0, 600);
   if (!clean) return;
   await speakBrowser(clean);
+}
+
+/** Guided prompts — clear pace (not rushed). */
+async function speakGuidedFast(text: string): Promise<void> {
+  const clean = String(text || "").trim().slice(0, 80);
+  if (!clean) return;
+  await speakBrowser(clean, { rate: 1.0, deferMs: 40 });
 }
 
 function cancelSpeech() {
@@ -512,7 +576,7 @@ function isStopCommand(text: string) {
   return HARD_STOP_ONLY_RE.test(t) || HARD_STOP_RE.test(t);
 }
 
-/** Ignore empty / filler only — never drop real short answers (names, IT, HR, phones). */
+/** Ignore empty / filler / wake-only — never drop real short answers (names, IT, HR, phones). */
 function isLikelyNoise(text: string): boolean {
   const t = String(text || "").trim().toLowerCase();
   if (!t) return true;
@@ -521,9 +585,15 @@ function isLikelyNoise(text: string): boolean {
   if (/\d/.test(t) || /@/.test(t)) return false;
   if (/^(yes|yeah|yep|yup|ok|okay|sure|no|nope|nah|skip|later|none|sgd|usd|eur|inr|myr|gbp|active|singapore|foreigner|pr)$/i.test(t)) return false;
   const words = t.split(/\s+/).filter(Boolean);
+  // Wake word alone (or repeated) is never a field answer
+  if (words.every(w => /^(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedha|veyda|veida|beeda|bheda|hey)$/i.test(w))) {
+    return true;
+  }
   // Pure filler tokens only
-  if (words.length === 1 && /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an)$/i.test(words[0])) return true;
+  if (words.length === 1 && /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an|so|and|then|please|hey|hi)$/i.test(words[0])) return true;
   if (t.replace(/\s+/g, "").length < 2) return true;
+  // After stripping wake/filler, nothing left → noise
+  if (!sanitizeGuidedAnswer(t)) return true;
   return false;
 }
 
@@ -532,16 +602,60 @@ function speakWithHardStopOnly(
   text: string,
   opts?: { signal?: AbortSignal },
 ): Promise<{ interrupted: boolean; stop?: boolean }> {
+  return speakAndMaybeCapture(text, { ...opts, captureAnswer: false }).then(r => ({
+    interrupted: r.interrupted,
+    stop: r.stop,
+  }));
+}
+
+/** True when STT likely heard Veda's own question (TTS echo), not a user answer. */
+function looksLikeEchoOfQuestion(answer: string, question: string): boolean {
+  const a = String(answer || "").toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+  const q = String(question || "").toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+  if (!a || !q) return false;
+  if (a === q || a === q.replace(/\s+/g, "")) return true;
+  const qCore = q.replace(/\b(please|what|is|the|your|a|an)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (qCore && (a === qCore || a.includes(qCore) || qCore.includes(a))) return true;
+  const qWords = qCore.split(/\s+/).filter(w => w.length > 1);
+  const aWords = new Set(a.split(/\s+/).filter(Boolean));
+  if (qWords.length >= 2 && qWords.every(w => aWords.has(w))) return true;
+  // Single-word questions like "Email?" — ignore if answer is just that label
+  if (qWords.length === 1 && a === qWords[0]) return true;
+  return false;
+}
+
+/**
+ * Speak a short guided question while listening for the user's answer.
+ * fast=true: snappy TTS + accept solid interim answers (don't wait for isFinal).
+ */
+function speakAndMaybeCapture(
+  text: string,
+  opts?: { signal?: AbortSignal; captureAnswer?: boolean; fast?: boolean },
+): Promise<{ interrupted: boolean; stop?: boolean; answer?: string }> {
   return new Promise((resolve) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     let settled = false;
     let bargeRec: any = null;
     let startRecTimer: ReturnType<typeof setTimeout> | null = null;
+    let interimTimer: ReturnType<typeof setTimeout> | null = null;
+    let heardFinal = "";
+    let lastInterim = "";
+    const capture = !!opts?.captureAnswer;
+    const fast = !!opts?.fast;
+    const question = String(text || "");
 
-    const finish = (result: { interrupted: boolean; stop?: boolean }) => {
+    const usableAnswer = (raw: string): string | undefined => {
+      const cleaned = sanitizeGuidedAnswer(raw);
+      if (!cleaned || isLikelyNoise(cleaned)) return undefined;
+      if (looksLikeEchoOfQuestion(cleaned, question)) return undefined;
+      return cleaned;
+    };
+
+    const finish = (result: { interrupted: boolean; stop?: boolean; answer?: string }) => {
       if (settled) return;
       settled = true;
       if (startRecTimer) clearTimeout(startRecTimer);
+      if (interimTimer) clearTimeout(interimTimer);
       if (_activeSpeechRec === bargeRec) _activeSpeechRec = null;
       try {
         if (bargeRec) {
@@ -552,30 +666,61 @@ function speakWithHardStopOnly(
         }
       } catch {}
       bargeRec = null;
-      if (result.stop) cancelSpeech();
+      if (result.stop || result.answer) cancelSpeech();
       resolve(result);
     };
 
     opts?.signal?.addEventListener("abort", () => finish({ interrupted: false }));
 
-    // Only listen for hard stop while speaking — ignore other voices in the room
+    // Mic ASAP in fast mode so answers aren't lost under TTS
     startRecTimer = setTimeout(() => {
       if (settled || !SR) return;
       try {
         bargeRec = new SR();
         bargeRec.continuous = true;
         bargeRec.interimResults = true;
-        bargeRec.lang = "en-IN";
+        bargeRec.lang = "en-SG";
+        bargeRec.maxAlternatives = 5;
         claimSpeechMic(bargeRec);
         bargeRec.onresult = (evt: any) => {
           if (settled) return;
           let heard = "";
           for (let i = evt.resultIndex; i < evt.results.length; i++) {
-            heard += evt.results[i][0]?.transcript || "";
+            const picked = pickBestSpeechAlternative(evt.results[i]);
+            if (!picked.text) continue;
+            heard += (heard ? " " : "") + picked.text;
+            if (evt.results[i].isFinal) {
+              heardFinal = (heardFinal ? `${heardFinal} ${picked.text}` : picked.text).trim();
+            } else {
+              lastInterim = picked.text.trim();
+            }
           }
           heard = heard.trim();
-          if (isStopCommand(heard)) {
+          if (isStopCommand(heard) || isStopCommand(heardFinal)) {
             finish({ interrupted: true, stop: true });
+            return;
+          }
+          if (!capture) return;
+
+          const finalAns = usableAnswer(heardFinal);
+          if (finalAns) {
+            finish({ interrupted: true, answer: finalAns });
+            return;
+          }
+
+          // Fast path: commit stable interim — short delay for IDs/emails/phones, longer for names
+          if (fast && lastInterim) {
+            if (interimTimer) clearTimeout(interimTimer);
+            const snap = lastInterim;
+            const looksComplete =
+              /@/.test(snap)
+              || /[\d]/.test(snap)
+              || /^(singapore|pr|foreigner|active|skip|none)$/i.test(snap.trim());
+            interimTimer = setTimeout(() => {
+              if (settled) return;
+              const ans = usableAnswer(snap);
+              if (ans) finish({ interrupted: true, answer: ans });
+            }, looksComplete ? 160 : 380);
           }
         };
         bargeRec.onerror = () => {};
@@ -586,12 +731,47 @@ function speakWithHardStopOnly(
         };
         bargeRec.start();
       } catch {}
-    }, 600);
+    }, fast ? 40 : 180);
 
-    speak(text)
-      .then(() => finish({ interrupted: false }))
+    const speakP = fast ? speakGuidedFast(text) : speak(text);
+    speakP
+      .then(() => {
+        if (settled) return;
+        finish({
+          interrupted: false,
+          answer: capture ? usableAnswer(heardFinal || lastInterim) : undefined,
+        });
+      })
       .catch(() => finish({ interrupted: false }));
   });
+}
+
+/**
+ * Guided employee turn: ask next ASAP and listen.
+ * Returns the spoken answer (or "" if none / stop).
+ */
+async function guidedAskNext(
+  question: string,
+  signal: AbortSignal,
+  onInterim?: (t: string) => void,
+): Promise<{ answer?: string; stop?: boolean }> {
+  const spoken = await speakAndMaybeCapture(question, {
+    signal,
+    captureAnswer: true,
+    fast: true,
+  });
+  if (spoken.stop) return { stop: true };
+  if (spoken.answer) return { answer: spoken.answer };
+  // TTS ended with no answer — quick follow-up listen (short silence)
+  if (signal.aborted) return {};
+  const text = await listenForCommand(onInterim || (() => {}), signal, { silenceMs: 180 });
+  if (signal.aborted) return {};
+  if (isStopCommand(text)) return { stop: true };
+  const cleaned = sanitizeGuidedAnswer(text);
+  if (!cleaned || isLikelyNoise(cleaned) || looksLikeEchoOfQuestion(cleaned, question)) {
+    return {};
+  }
+  return { answer: cleaned };
 }
 
 // ── SSE stream ────────────────────────────────────────────────────────────────
@@ -895,7 +1075,11 @@ function useWakeWord(
 }
 
 // ── Command capture — exclusive mic, pause ends the utterance ──
-function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal): Promise<string> {
+function listenForCommand(
+  onInterim: (t: string) => void,
+  signal?: AbortSignal,
+  opts?: { silenceMs?: number },
+): Promise<string> {
   return new Promise((resolve) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { resolve(""); return; }
@@ -907,6 +1091,7 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
     let maxTimer: ReturnType<typeof setTimeout> | null = null;
     let rec: any = null;
     let restartTimer: ReturnType<typeof setTimeout> | null = null;
+    const silenceMs = opts?.silenceMs ?? 850;
 
     const done = (text: string) => {
       if (resolved) return;
@@ -958,7 +1143,7 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
                 done(finalText);
                 return;
               }
-              // Longer pause so company names aren't cut mid-phrase
+              // Guided create uses a shorter pause for snappy field turns
               silenceTimer = setTimeout(() => {
                 if (isLikelyNoise(finalText)) {
                   finalText = "";
@@ -966,7 +1151,7 @@ function listenForCommand(onInterim: (t: string) => void, signal?: AbortSignal):
                   return;
                 }
                 done(normalizeVoiceTranscript(finalText));
-              }, 850);
+              }, silenceMs);
             } else {
               interimText = t;
               onInterim(t);
@@ -1054,6 +1239,9 @@ export function AgentPanel() {
   locationRef.current = location;
   /** Sticky path for guided create while ambient loop is open (avoids stale location closure). */
   const guidedFormPathRef = useRef<string | null>(null);
+  /** Local employee field-by-field session — fills instantly without LLM. */
+  const guidedEmployeeRef = useRef<GuidedEmployeeSession | null>(null);
+  const guidedSalesOrderRef = useRef<GuidedSalesOrderSession | null>(null);
   const [memory] = useState(() => loadMemory());
   const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
@@ -1126,6 +1314,8 @@ export function AgentPanel() {
     const ctrl = new AbortController();
     ambientAbortRef.current = ctrl;
     ambientHistoryRef.current = [];
+    guidedEmployeeRef.current = null;
+    guidedSalesOrderRef.current = null;
 
     try {
       setConvState("greeting");
@@ -1153,6 +1343,7 @@ export function AgentPanel() {
 
       while (convActiveRef.current) {
         let command = "";
+        const guidedNow = isGuidedCreatePath(resolveAgentPath());
         if (pendingFirst) {
           command = pendingFirst;
           pendingFirst = "";
@@ -1161,14 +1352,19 @@ export function AgentPanel() {
         } else {
           setConvState("listening");
           setConvText("");
-          command = await listenForCommand(t => setConvText(t), ctrl.signal);
+          // Guided field answers: shorter silence so turns feel instant
+          command = await listenForCommand(
+            t => setConvText(t),
+            ctrl.signal,
+            { silenceMs: guidedNow || guidedEmployeeRef.current || guidedSalesOrderRef.current ? 180 : 850 },
+          );
         }
         if (ctrl.signal.aborted || !convActiveRef.current) break;
 
         command = normalizeVoiceTranscript(command);
 
         if (!command.trim() || isLikelyNoise(command)) {
-          // Keep listening — ignore empty / room noise (do NOT auto-stop)
+          // Keep listening — ignore empty / room noise / wake-only (do NOT auto-stop)
           continue;
         }
 
@@ -1179,11 +1375,21 @@ export function AgentPanel() {
         lastSpokenWords = [];
 
         const wakeAgain = matchWakeUtterance(command);
-        if (wakeAgain.hit && wakeAgain.followOn) command = wakeAgain.followOn;
-        else if (wakeAgain.hit && !wakeAgain.followOn) {
+        if (wakeAgain.hit && wakeAgain.followOn) {
+          command = wakeAgain.followOn;
+        } else if (wakeAgain.hit && !wakeAgain.followOn) {
+          // Bare "Veda" during guided create: stay listening — never fill a field
+          if (guidedNow) continue;
           cancelSpeech();
           void speak("Yes?");
           continue;
+        }
+
+        // Strip wake/filler before any form fill ("veda EMP01" → "EMP01")
+        const cleanedAnswer = sanitizeGuidedAnswer(command);
+        if (guidedEmployeeRef.current || guidedSalesOrderRef.current || guidedNow) {
+          if (!cleanedAnswer) continue;
+          command = cleanedAnswer;
         }
 
         if (isStopCommand(command)) {
@@ -1193,6 +1399,71 @@ export function AgentPanel() {
           setConvText("Okay, stopped.");
           await speak("Okay, stopped.");
           break;
+        }
+
+        // ── Local guided employee: fill live instantly, ask next ASAP ──
+        if (guidedEmployeeRef.current && /\/employees\/new/.test(resolveAgentPath())) {
+          const session = guidedEmployeeRef.current;
+          const result = applyGuidedEmployeeAnswer(session, command);
+          // One quick re-fire if form listener raced mount
+          if (result.filled) {
+            window.setTimeout(() => queueVedaFormFill(result.filled!), 40);
+          }
+          ambientHistoryRef.current = [
+            ...ambientHistoryRef.current,
+            { role: "user", content: command },
+            { role: "assistant", content: result.nextAsk },
+          ].slice(-16);
+          setConvText(result.nextAsk);
+
+          if (result.done) {
+            queueVedaFormAction("save");
+            setConvState("speaking");
+            void speakGuidedFast("Saving.");
+            guidedEmployeeRef.current = null;
+            continue;
+          }
+
+          setConvState("speaking");
+          const asked = await guidedAskNext(result.nextAsk, ctrl.signal, t => setConvText(t));
+          if (asked.stop) {
+            await speak("Okay, stopped.");
+            break;
+          }
+          if (asked.answer) pendingFirst = asked.answer;
+          continue;
+        }
+
+        // ── Local guided sales order: continuous fields + live fill ──
+        if (guidedSalesOrderRef.current && /\/sales-orders\/new/.test(resolveAgentPath())) {
+          const session = guidedSalesOrderRef.current;
+          const result = await applyGuidedSalesOrderAnswer(session, command);
+          if (result.filled) {
+            window.setTimeout(() => queueVedaFormFill(result.filled!), 40);
+          }
+          ambientHistoryRef.current = [
+            ...ambientHistoryRef.current,
+            { role: "user", content: command },
+            { role: "assistant", content: result.nextAsk },
+          ].slice(-16);
+          setConvText(result.nextAsk);
+
+          if (result.done) {
+            queueVedaFormAction("preview");
+            setConvState("speaking");
+            void speakGuidedFast("Saving and preview.");
+            guidedSalesOrderRef.current = null;
+            continue;
+          }
+
+          setConvState("speaking");
+          const asked = await guidedAskNext(result.nextAsk, ctrl.signal, t => setConvText(t));
+          if (asked.stop) {
+            await speak("Okay, stopped.");
+            break;
+          }
+          if (asked.answer) pendingFirst = asked.answer;
+          continue;
         }
 
         // Instant navigate for clear "go to / open / create …"
@@ -1205,36 +1476,80 @@ export function AgentPanel() {
           if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
           setConvState("speaking");
           const label = PATH_LABELS[quickPath] || quickPath;
-          const partyHint = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
-          setConvText(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
-          void speak(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
-          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 200 : 450));
+          const rawParty = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
+          const partyHint = rawParty && !looksLikeCreateOrNavPhrase(rawParty) ? rawParty : undefined;
+          const isEmployeeCreate = /\/employees\/new/.test(quickPath);
+          const isSalesOrderCreate = /\/sales-orders\/new/.test(quickPath);
 
           // Prefill only when we have trusted form keys (rare)
           if (quick.prefill) {
-            await new Promise(r => setTimeout(r, 100));
+            await new Promise(r => setTimeout(r, 80));
             dispatchFill(quick.prefill);
           }
+
+          // Employee create: local guided session — ask + fill instantly (no LLM)
+          if (isEmployeeCreate) {
+            const session = createGuidedEmployeeSession();
+            guidedEmployeeRef.current = session;
+            const q = currentEmployeeQuestion(session);
+            ambientHistoryRef.current = [
+              { role: "user", content: "[guided employee create started]" },
+              { role: "assistant", content: q },
+            ];
+            setConvText(q);
+            setConvState("speaking");
+            const asked = await guidedAskNext(q, ctrl.signal, t => setConvText(t));
+            if (asked.stop) {
+              await speak("Okay, stopped.");
+              break;
+            }
+            if (asked.answer) pendingFirst = asked.answer;
+            continue;
+          }
+
+          // Sales order create: local continuous guided fill (no LLM lag)
+          if (isSalesOrderCreate) {
+            const session = createGuidedSalesOrderSession();
+            guidedSalesOrderRef.current = session;
+            // If user already said a customer in the create command, apply it first
+            if (partyHint) {
+              const seeded = await applyGuidedSalesOrderAnswer(session, partyHint);
+              if (seeded.filled) {
+                window.setTimeout(() => queueVedaFormFill(seeded.filled!), 40);
+              }
+            }
+            const q = currentSoQuestion(session);
+            ambientHistoryRef.current = [
+              { role: "user", content: "[guided sales order create started]" },
+              { role: "assistant", content: q },
+            ];
+            setConvText(q);
+            setConvState("speaking");
+            const asked = await guidedAskNext(q, ctrl.signal, t => setConvText(t));
+            if (asked.stop) {
+              await speak("Okay, stopped.");
+              break;
+            }
+            if (asked.answer) pendingFirst = asked.answer;
+            continue;
+          }
+
+          setConvText(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
+          void speak(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
+          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 120 : 450));
 
           // New form / directory create → start guided field-by-field
           if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
             setConvState("processing");
             let response = "";
             try {
-              const isEmployee = /\/employees\//.test(quickPath);
-              const known = partyHint
-                ? (isEmployee
-                  ? `User already gave a name hint "${partyHint}". Immediately fillCurrentForm with name (and employeeId if they said one). Then ask ONLY the next required field in ≤6 words.`
-                  : `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the customer/vendor name again.`)
-                : (isEmployee
-                  ? `Start guided employee create: ask ONLY "Employee ID?" now. After each answer: fillCurrentForm first, then next short question. Order: employeeId → name → email → phone → address → department → salary → designation → nationality → dateOfBirth → joinDate (skip if today ok) → status.`
-                  : `Start guided create: ask ONLY the first field now.`);
+              const known = guidedCreateKickoffHint(quickPath, partyHint);
               await streamChat(
                 [
                   ...ambientHistoryRef.current,
                   {
                     role: "user",
-                    content: `${normalizeVoiceTranscript(command)}\n\n[The ${label} form is now open at ${quickPath}. ${known}]`,
+                    content: `[The ${label} form is now open at ${quickPath}. ${known}]`,
                   },
                 ],
                 memory,
@@ -1257,18 +1572,21 @@ export function AgentPanel() {
               if (response) {
                 ambientHistoryRef.current = [
                   ...ambientHistoryRef.current,
-                  { role: "user", content: command },
+                  { role: "user", content: `[guided create started at ${quickPath}]` },
                   { role: "assistant", content: response },
                 ].slice(-16);
                 setConvState("speaking");
                 setConvText(response.slice(0, 240));
-                // Guided: speak only the short question — long TTS delays the next field
                 const speakLimit = isGuidedCreatePath(quickPath) ? 120 : 600;
-                const spoken = await speakWithHardStopOnly(response.slice(0, speakLimit), { signal: ctrl.signal });
+                const spoken = await speakAndMaybeCapture(response.slice(0, speakLimit), {
+                  signal: ctrl.signal,
+                  captureAnswer: isGuidedCreatePath(quickPath),
+                });
                 if (spoken.stop) {
                   await speak("Okay, stopped.");
                   break;
                 }
+                if (spoken.answer) pendingFirst = spoken.answer;
               }
             } catch (e: any) {
               if (e.name === "AbortError" || ctrl.signal.aborted) break;
@@ -1283,7 +1601,7 @@ export function AgentPanel() {
 
         const agentPath = resolveAgentPath();
         const lastAsst = [...ambientHistoryRef.current].reverse().find(m => m.role === "assistant")?.content || "";
-        // Live form fill BEFORE waiting on the LLM (~instant UI)
+        // Live form fill BEFORE waiting on the LLM (~instant UI) — exact user words only
         dispatchOptimisticGuidedFill(lastAsst, command, agentPath);
 
         let response = "";
@@ -1329,8 +1647,9 @@ export function AgentPanel() {
             setConvText((response || (didNavigate ? "Done." : "")).slice(0, 240));
 
             if (speakText) {
-              const spoken = await speakWithHardStopOnly(speakText, {
+              const spoken = await speakAndMaybeCapture(speakText, {
                 signal: ctrl.signal,
+                captureAnswer: isGuidedCreatePath(agentPath),
               });
               if (ctrl.signal.aborted || !convActiveRef.current) break;
 
@@ -1340,7 +1659,11 @@ export function AgentPanel() {
                 await speak("Okay, stopped.");
                 break;
               }
-              await new Promise(r => setTimeout(r, isGuidedCreatePath(agentPath) ? 80 : 250));
+              if (spoken.answer) {
+                pendingFirst = spoken.answer;
+              } else {
+                await new Promise(r => setTimeout(r, isGuidedCreatePath(agentPath) ? 40 : 250));
+              }
             }
           } else {
             // Empty agent reply — still acknowledge so user knows mic worked
@@ -1363,6 +1686,8 @@ export function AgentPanel() {
       convActiveRef.current = false;
       ambientAbortRef.current = null;
       guidedFormPathRef.current = null;
+      guidedEmployeeRef.current = null;
+      guidedSalesOrderRef.current = null;
       cancelSpeech();
       killSpeechMic();
       await new Promise(r => setTimeout(r, 200));
@@ -1498,7 +1823,8 @@ export function AgentPanel() {
       unlockVedaModules();
       const quickPath = quick.path;
       const label = PATH_LABELS[quickPath] || quickPath;
-      const partyHint = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
+      const rawParty = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
+      const partyHint = rawParty && !looksLikeCreateOrNavPhrase(rawParty) ? rawParty : undefined;
       const uid = Date.now().toString();
       const aid = `asst-${uid}`;
       const msg = partyHint ? `Opening ${label} for ${partyHint}.` : `Opening ${label}.`;
@@ -1520,14 +1846,39 @@ export function AgentPanel() {
       // Continue into agent guided create (same turn) without re-matching quick-nav
       if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
         const isEmployee = /\/employees\//.test(quickPath);
-        const known = partyHint
-          ? (isEmployee
-            ? `User already gave a name hint "${partyHint}". Immediately fillCurrentForm with name. Then ask ONLY the next required field in ≤6 words.`
-            : `User already named the party as "${partyHint}". FIRST call searchCustomers or searchVendors with that exact text. Then fillCurrentForm with customerName/vendorName using the BEST directory match (or the spoken text if no match). Confirm what you filled, then ask ONLY the next required field. Do NOT ask for the name again.`)
-          : (isEmployee
-            ? `Start guided employee create: ask ONLY "Employee ID?" now. After each answer fillCurrentForm first then next short question. Order: employeeId → name → email → phone → address → department → salary → designation → nationality → dateOfBirth → joinDate → status.`
-            : `Start guided create: ask ONLY the first field now.`);
-        const kickoff = `${normalizeVoiceTranscript(text.trim())}\n\n[The ${label} form is now open at ${quickPath}. ${known}]`;
+        const isSalesOrder = /\/sales-orders\//.test(quickPath);
+        // Employee: local guided — ask first field instantly (voice ambient owns live fills)
+        if (isEmployee) {
+          const session = createGuidedEmployeeSession();
+          guidedEmployeeRef.current = session;
+          const q = currentEmployeeQuestion(session);
+          const gid = `asst-guide-${uid}`;
+          setMessages(p => [...p, { id: gid, role: "assistant", content: q, complete: true, toolCalls: [] }]);
+          if (fromVoice) void speak(q);
+          return;
+        }
+        if (isSalesOrder) {
+          const session = createGuidedSalesOrderSession();
+          guidedSalesOrderRef.current = session;
+          if (partyHint) {
+            void applyGuidedSalesOrderAnswer(session, partyHint).then((seeded) => {
+              if (seeded.filled) window.setTimeout(() => queueVedaFormFill(seeded.filled!), 40);
+              const q = currentSoQuestion(session);
+              const gid = `asst-guide-${uid}`;
+              setMessages(p => [...p, { id: gid, role: "assistant", content: q, complete: true, toolCalls: seeded.filled ? ["fillCurrentForm"] : [] }]);
+              if (fromVoice) void speak(q);
+            });
+            return;
+          }
+          const q = currentSoQuestion(session);
+          const gid = `asst-guide-${uid}`;
+          setMessages(p => [...p, { id: gid, role: "assistant", content: q, complete: true, toolCalls: [] }]);
+          if (fromVoice) void speak(q);
+          return;
+        }
+        const known = guidedCreateKickoffHint(quickPath, partyHint);
+        // Do not send the open/create utterance as fillable content — only the kickoff brief
+        const kickoff = `[The ${label} form is now open at ${quickPath}. ${known}]`;
         const gid = `asst-guide-${uid}`;
         setMessages(p => [...p, { id: gid, role: "assistant", content: "", toolCalls: [] }]);
         setThinking(true);
@@ -1563,16 +1914,64 @@ export function AgentPanel() {
     const aid = `asst-${uid}`;
     const agentPath = resolveAgentPath();
     const lastAsst = [...messages].reverse().find(m => m.role === "assistant" && m.content)?.content || "";
-    dispatchOptimisticGuidedFill(lastAsst, text.trim(), agentPath);
+    // Guided: never send wake/filler into fields — use exact cleaned user words only
+    let answerText = text.trim();
+    if (isGuidedCreatePath(agentPath) || guidedEmployeeRef.current || guidedSalesOrderRef.current) {
+      const cleaned = sanitizeGuidedAnswer(answerText);
+      if (!cleaned) return;
+      answerText = cleaned;
+    }
+
+    // Local employee guided session — instant fill, no LLM
+    if (guidedEmployeeRef.current && /\/employees/.test(agentPath)) {
+      const session = guidedEmployeeRef.current;
+      const result = applyGuidedEmployeeAnswer(session, answerText);
+      if (result.filled) {
+        window.setTimeout(() => queueVedaFormFill(result.filled!), 40);
+      }
+      setMessages(p => [...p,
+        { id: uid, role: "user", content: answerText, fromVoice },
+        { id: aid, role: "assistant", content: result.nextAsk, complete: true, toolCalls: result.filled ? ["fillCurrentForm"] : [] },
+      ]);
+      setInput("");
+      if (result.done) {
+        queueVedaFormAction("save");
+        guidedEmployeeRef.current = null;
+      }
+      if (fromVoice) void speak(result.nextAsk);
+      return;
+    }
+
+    // Local sales-order guided session — continuous ask + live fill, then preview
+    if (guidedSalesOrderRef.current && /\/sales-orders/.test(agentPath)) {
+      const session = guidedSalesOrderRef.current;
+      setInput("");
+      const result = await applyGuidedSalesOrderAnswer(session, answerText);
+      if (result.filled) {
+        window.setTimeout(() => queueVedaFormFill(result.filled!), 40);
+      }
+      setMessages(p => [...p,
+        { id: uid, role: "user", content: answerText, fromVoice },
+        { id: aid, role: "assistant", content: result.nextAsk, complete: true, toolCalls: result.filled ? ["fillCurrentForm"] : [] },
+      ]);
+      if (result.done) {
+        queueVedaFormAction("preview");
+        guidedSalesOrderRef.current = null;
+      }
+      if (fromVoice) void speak(result.nextAsk);
+      return;
+    }
+
+    dispatchOptimisticGuidedFill(lastAsst, answerText, agentPath);
     setMessages(p => [...p,
-      { id: uid, role: "user", content: text.trim(), fromVoice },
+      { id: uid, role: "user", content: answerText, fromVoice },
       { id: aid, role: "assistant", content: "", toolCalls: [] },
     ]);
     setInput(""); setThinking(true);
     abortRef.current = new AbortController();
     let full = "";
     try {
-      const userContent = `${text.trim()}${guidedAnswerHint(agentPath)}`;
+      const userContent = `${answerText}${guidedAnswerHint(agentPath)}`;
       await streamChat(
         [...history, { role: "user", content: userContent }],
         memory,

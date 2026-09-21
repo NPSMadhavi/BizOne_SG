@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2, Users } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2, Users, Barcode } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Switch } from "@/components/ui/switch";
@@ -158,7 +158,9 @@ export default function Settings() {
   const [rnSA, setRnSA] = useState<RunningNumberConfig>({ prefix: "SA", counter: "0", suffix: "" });
   const [rnSI, setRnSI] = useState<RunningNumberConfig>({ prefix: "STK", counter: "0", suffix: "" });
   const [rnFA, setRnFA] = useState<RunningNumberConfig>({ prefix: "FA", counter: "0", suffix: "" });
+  const [rnBC, setRnBC] = useState<RunningNumberConfig>({ prefix: "BC", counter: "0", suffix: "" });
   const [rnEditing, setRnEditing] = useState(false);
+  const [bcEditing, setBcEditing] = useState(false);
 
   const [maintEnabled, setMaintEnabled] = useState(false);
   const [maintStart, setMaintStart] = useState("");
@@ -245,6 +247,9 @@ export default function Settings() {
       setRnSA({ prefix: (settings as any).saPrefix ?? "SA", counter: String((settings as any).saCounter ?? 0), suffix: (settings as any).saSuffix ?? "" });
       setRnSI({ prefix: (settings as any).siPrefix ?? "STK", counter: String((settings as any).siCounter ?? 0), suffix: (settings as any).siSuffix ?? "" });
       setRnFA({ prefix: (settings as any).faPrefix ?? "FA", counter: String((settings as any).faCounter ?? 0), suffix: (settings as any).faSuffix ?? "" });
+    }
+    if (settings && !bcEditing) {
+      setRnBC({ prefix: (settings as any).bcPrefix ?? "BC", counter: String((settings as any).bcCounter ?? 0), suffix: (settings as any).bcSuffix ?? "" });
     }
     if (settings && !docsEditing) {
       setBankDetails((settings as any).bankDetails ?? "");
@@ -343,6 +348,28 @@ export default function Settings() {
         },
         onError: () => {
           toast({ title: "Error", description: "Failed to update running numbers.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const handleSaveBarcodeNumber = () => {
+    updateSettings.mutate(
+      {
+        data: {
+          bcPrefix: rnBC.prefix,
+          bcCounter: parseInt(rnBC.counter) || 0,
+          bcSuffix: rnBC.suffix,
+        } as any,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+          setBcEditing(false);
+          toast({ title: "Saved", description: "Barcode number updated successfully." });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to update barcode number.", variant: "destructive" });
         },
       }
     );
@@ -504,6 +531,13 @@ export default function Settings() {
               Maintenance
             </TabsTrigger>
           )}
+          <TabsTrigger
+            value="barcode-number"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
+          >
+            <Barcode className="h-4 w-4" />
+            Barcode Number
+          </TabsTrigger>
         </TabsList>
 
         {/* TAX */}
@@ -1408,6 +1442,83 @@ export default function Settings() {
             </div>
           </TabsContent>
         )}
+
+        {/* BARCODE NUMBER */}
+        <TabsContent value="barcode-number">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Barcode className="h-5 w-5 text-primary" />
+                Barcode Number
+              </CardTitle>
+              <CardDescription>
+                Configure the prefix, last-used counter, and suffix for Item Master barcodes. Next barcode = PREFIX + (counter + 1) + SUFFIX. New stock items get this number automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {settingsLoading ? (
+                <div className="h-24 bg-muted animate-pulse rounded-md" />
+              ) : (
+                <>
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm">Item Master Barcode</span>
+                      <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded font-mono">
+                        Next: <strong>{nextPreview(rnBC)}</strong>
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Prefix</Label>
+                        <Input
+                          value={rnBC.prefix}
+                          onChange={e => { setRnBC({ ...rnBC, prefix: e.target.value }); setBcEditing(true); }}
+                          disabled={!isAdmin}
+                          placeholder="e.g. BC"
+                          className="font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Last Counter</Label>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={rnBC.counter}
+                          onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ""); setRnBC({ ...rnBC, counter: v }); setBcEditing(true); }}
+                          disabled={!isAdmin}
+                          placeholder="e.g. 0"
+                          className="font-mono w-full"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Suffix</Label>
+                        <Input
+                          value={rnBC.suffix}
+                          onChange={e => { setRnBC({ ...rnBC, suffix: e.target.value }); setBcEditing(true); }}
+                          disabled={!isAdmin}
+                          placeholder="optional"
+                          className="font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {isAdmin && (
+                      <Button onClick={handleSaveBarcodeNumber} disabled={updateSettings.isPending} className="gap-2">
+                        <Save className="h-4 w-4" />
+                        {updateSettings.isPending ? "Saving..." : "Save Barcode Number"}
+                      </Button>
+                    )}
+                    {!isAdmin && (
+                      <p className="text-xs text-muted-foreground">Only administrators can change barcode numbers.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* ACCOUNT */}
         <TabsContent value="account">

@@ -660,13 +660,12 @@ export default function LicenseForm({
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Vendor</FormLabel>
-                            <div className="flex gap-2">
                               <Select
                                 onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))}
                                 value={field.value?.toString() || "none"}
                               >
                                 <FormControl>
-                                  <SelectTrigger className="flex-1">
+                                  <SelectTrigger>
                                     <SelectValue placeholder="Select vendor (optional)" />
                                   </SelectTrigger>
                                 </FormControl>
@@ -692,24 +691,13 @@ export default function LicenseForm({
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="icon"
-                                onClick={() => setIsVendorFormOpen(true)}
-                                className="shrink-0"
-                                data-testid="button-add-vendor"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
-                            </div>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
 
-                      {/* Renewal Cycle */}
-                      <div className="md:col-span-2 space-y-3">
+                      {/* Renewal Cycle — half width like other purchase fields */}
+                      <div className="space-y-3">
                         <FormField
                           control={form.control}
                           name="renewalCycle"

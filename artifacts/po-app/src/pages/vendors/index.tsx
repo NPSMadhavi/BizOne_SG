@@ -63,7 +63,7 @@ interface Vendor {
 
 const blank = (): Partial<Vendor> => ({
   name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
-  contactEmail: "", phone: "", currency: "", gstRegistered: false, gstNo: "", isActive: true,
+  contactEmail: "", phone: "", currency: "SGD", gstRegistered: false, gstNo: "", isActive: true,
 });
 
 async function fetchVendors(): Promise<Vendor[]> {

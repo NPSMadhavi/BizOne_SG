@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +58,7 @@ export default function CreditNoteList() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const qc = useQueryClient();
+  const [, setLocation] = useLocation();
   const { selectedCompany } = useAuth();
   const currentYear = new Date().getFullYear();
 
@@ -195,7 +196,14 @@ export default function CreditNoteList() {
                 </tr>
               )}
               {paginatedItems.map(note => (
-                <tr key={note.id} className={cn("border-b border-gray-100 hover:bg-gray-50/50 transition-colors", note.status === "void" ? "opacity-60" : "")}>
+                <tr
+                  key={note.id}
+                  className={cn(
+                    "border-b border-gray-100 hover:bg-gray-50/50 transition-colors cursor-pointer",
+                    note.status === "void" ? "opacity-60" : "",
+                  )}
+                  onClick={() => setLocation(`/credit-notes/${note.id}/edit`)}
+                >
                   <BulkSelectCell checked={bulk.selectedIds.has(note.id)} disabled={!bulk.isSendable(note)} onToggle={(checked) => bulk.toggleRow(note.id, checked)} label={`Select ${note.cnNumber}`} />
                   <td className="px-4 py-3 font-mono font-semibold text-gray-800">{note.cnNumber}</td>
                   <td className="px-4 py-3 text-gray-700">{note.customerName}</td>
@@ -206,7 +214,7 @@ export default function CreditNoteList() {
                   </td>
                   <td className="px-4 py-3">{statusBadge(note.status)}</td>
                   <td className="px-4 py-3"><SentToCell emailSentTo={note.emailSentTo} /></td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/credit-notes/${note.id}`}>
                         <Button size="icon" variant="ghost" className="h-8 w-8" title="View">

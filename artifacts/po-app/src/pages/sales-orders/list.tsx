@@ -57,12 +57,24 @@ export default function SalesOrderList() {
   const { sendable, allSelected, someSelected } = bulk.selectionState(filteredOrders);
   const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
+  const resolveSoStatus = (doc: any) => {
+    const hasInv = !!doc?.invId;
+    const hasDo = !!doc?.doId;
+    if (hasInv && hasDo) return "converted";
+    if (hasInv) return "converted_to_invoice";
+    if (hasDo) return "converted_to_do";
+    return doc?.status || "draft";
+  };
+
   const getSoStatusBadge = (status: string) => {
     switch (status) {
       case "confirmed": return <Badge className="bg-emerald-600 hover:bg-emerald-700">Confirmed</Badge>;
       case "sent": return <Badge className="bg-violet-600 hover:bg-violet-700">Sent</Badge>;
       case "draft": return <Badge variant="secondary">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive">Cancelled</Badge>;
+      case "converted_to_invoice": return <Badge className="bg-emerald-600 hover:bg-emerald-700">Invoiced</Badge>;
+      case "converted_to_do": return <Badge className="bg-sky-600 hover:bg-sky-700">Converted to DO</Badge>;
+      case "converted": return <Badge className="bg-indigo-600 hover:bg-indigo-700">Converted</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
@@ -146,7 +158,7 @@ export default function SalesOrderList() {
                       <td className="px-6 py-4 font-mono text-muted-foreground">{(doc as any).qtNumber || "—"}</td>
                       <td className="px-6 py-4">{doc.customerName}</td>
                       <td className="px-6 py-4 font-medium">{fmt(doc.totalAmount, (doc as any).currency || "SGD")}</td>
-                      <td className="px-6 py-4">{getSoStatusBadge(doc.status)}</td>
+                      <td className="px-6 py-4">{getSoStatusBadge(resolveSoStatus(doc))}</td>
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-start gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setLocation(`/sales-orders/${doc.id}`)}>

@@ -739,7 +739,9 @@ router.get("/employees", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     const result = await pool.query(
-      `SELECT * FROM employees WHERE company_id = $1 ORDER BY name`,
+      `SELECT * FROM employees
+       WHERE company_id = $1
+       ORDER BY COALESCE(created_at, join_date) DESC NULLS LAST, id DESC`,
       [req.session.companyId],
     );
     res.json(formatRows(result.rows));

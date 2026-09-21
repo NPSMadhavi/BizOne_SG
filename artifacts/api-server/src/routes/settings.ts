@@ -45,6 +45,7 @@ async function ensureSettings(companyId: number) {
     stPrefix: "ST",  stCounter: 0,  stSuffix: "",
     saPrefix: "SA",  saCounter: 0,  saSuffix: "",
     faPrefix: "FA",  faCounter: 0,  faSuffix: "",
+    bcPrefix: "BC",  bcCounter: 0,  bcSuffix: "",
   }).returning();
   return created;
 }
@@ -111,6 +112,9 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     faPrefix: s.faPrefix ?? "FA",
     faCounter: s.faCounter ?? 0,
     faSuffix: s.faSuffix ?? "",
+    bcPrefix: s.bcPrefix ?? "BC",
+    bcCounter: s.bcCounter ?? 0,
+    bcSuffix: s.bcSuffix ?? "",
     allowNegativeStock: s.allowNegativeStock ?? false,
     autoDeductOnDo: s.autoDeductOnDo ?? false,
     lowStockWarning: parseFloat(s.lowStockWarning ?? "0"),
@@ -160,6 +164,7 @@ router.put("/", async (req, res) => {
     stPrefix, stCounter, stSuffix,
     saPrefix, saCounter, saSuffix,
     faPrefix, faCounter, faSuffix,
+    bcPrefix, bcCounter, bcSuffix,
     allowNegativeStock, autoDeductOnDo, lowStockWarning, defaultUom,
     bankDetails, termsAndConditions, quotationTerms,
     defaultVerifierId, defaultApproverId, defaultPaidById,
@@ -224,6 +229,9 @@ router.put("/", async (req, res) => {
   if (faPrefix !== undefined) updateData.faPrefix = faPrefix;
   if (faCounter !== undefined) updateData.faCounter = Number(faCounter);
   if (faSuffix !== undefined) updateData.faSuffix = faSuffix;
+  if (bcPrefix !== undefined) updateData.bcPrefix = bcPrefix;
+  if (bcCounter !== undefined) updateData.bcCounter = Number(bcCounter);
+  if (bcSuffix !== undefined) updateData.bcSuffix = bcSuffix;
   if (allowNegativeStock !== undefined) updateData.allowNegativeStock = Boolean(allowNegativeStock);
   if (autoDeductOnDo !== undefined) updateData.autoDeductOnDo = Boolean(autoDeductOnDo);
   if (lowStockWarning !== undefined) updateData.lowStockWarning = String(lowStockWarning);

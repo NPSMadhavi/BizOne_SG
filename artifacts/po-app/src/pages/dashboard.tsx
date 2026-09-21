@@ -212,6 +212,9 @@ export default function Dashboard() {
     const monthExpenses = expList.filter((e) =>
       inRange(e.expenseDate || e.createdAt, new Date(rangeFrom), new Date(rangeTo)),
     );
+    const monthVendorInvoices = viList.filter((vi) =>
+      inRange(vi.piDate || vi.createdAt, new Date(rangeFrom), new Date(rangeTo)),
+    );
     const monthIncomeExtra = incomeList.filter((r) =>
       inRange(r.incomeDate || r.createdAt, new Date(rangeFrom), new Date(rangeTo)),
     );
@@ -224,9 +227,13 @@ export default function Dashboard() {
       .reduce((s, r) => s + (parseFloat(r.amount ?? r.totalAmount) || 0), 0);
     const totalIncome = invoiceIncome + otherIncome;
 
-    const totalExpenses = monthExpenses
-      .filter((e) => e.status !== "void")
-      .reduce((s, e) => s + (parseFloat(e.amount ?? e.totalAmount) || 0), 0);
+    const totalExpenses =
+      monthExpenses
+        .filter((e) => e.status !== "void")
+        .reduce((s, e) => s + (parseFloat(e.amount ?? e.totalAmount) || 0), 0)
+      + monthVendorInvoices
+        .filter((vi) => vi.status !== "void" && vi.status !== "cancelled" && vi.status !== "draft")
+        .reduce((s, vi) => s + (parseFloat(String(vi.totalAmount)) || 0), 0);
 
     const netProfit = totalIncome - totalExpenses;
 
@@ -257,10 +264,15 @@ export default function Dashboard() {
         .filter((i) => inRange(i.issueDate || i.createdAt, start, end))
         .filter((i) => i.status !== "void" && i.status !== "cancelled" && i.status !== "draft")
         .reduce((s, i) => s + (parseFloat(i.totalAmount) || 0), 0);
-      const exp = expList
-        .filter((e) => inRange(e.expenseDate || e.createdAt, start, end))
-        .filter((e) => e.status !== "void")
-        .reduce((s, e) => s + (parseFloat(e.amount ?? e.totalAmount) || 0), 0);
+      const exp =
+        expList
+          .filter((e) => inRange(e.expenseDate || e.createdAt, start, end))
+          .filter((e) => e.status !== "void")
+          .reduce((s, e) => s + (parseFloat(e.amount ?? e.totalAmount) || 0), 0)
+        + viList
+          .filter((vi) => inRange(vi.piDate || vi.createdAt, start, end))
+          .filter((vi) => vi.status !== "void" && vi.status !== "cancelled" && vi.status !== "draft")
+          .reduce((s, vi) => s + (parseFloat(String(vi.totalAmount)) || 0), 0);
       return { inc, exp, start, end };
     });
 

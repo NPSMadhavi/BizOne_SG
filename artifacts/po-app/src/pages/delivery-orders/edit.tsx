@@ -409,6 +409,7 @@ export default function DeliveryOrderEdit() {
       <StockItemPickerDialog
  open={stockPickerIndex !== null}
  onOpenChange={(v) => { if (!v) setStockPickerIndex(null); }}
+        requireWarehouse
  onSelect={({ item, selectedSerials, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           const desc = [item.name, item.description].filter(Boolean).join(" — ");

@@ -622,6 +622,7 @@ export default function GrnView() {
         open={stockPickerIndex !== null}
         onOpenChange={(open) => !open && setStockPickerIndex(null)}
         mode="receive"
+        requireWarehouse
         onSelect={handleStockPickerSelect}
       />
     </div>

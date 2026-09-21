@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +59,7 @@ export default function DebitNoteList() {
   const [customTo, setCustomTo] = useState("");
   const qc = useQueryClient();
   const { selectedCompany } = useAuth();
+  const [, setLocation] = useLocation();
   const currentYear = new Date().getFullYear();
 
   const { data = [], isLoading } = useQuery<DebitNote[]>({
@@ -197,8 +198,20 @@ export default function DebitNoteList() {
                 </tr>
               )}
               {paginatedItems.map(note => (
-                <tr key={note.id} className={cn("border-b border-gray-100 hover:bg-gray-50/50 transition-colors", note.status === "void" ? "opacity-60" : "")}>
-                  <BulkSelectCell checked={bulk.selectedIds.has(note.id)} disabled={!bulk.isSendable(note)} onToggle={(checked) => bulk.toggleRow(note.id, checked)} label={`Select ${note.dnNumber}`} />
+                <tr
+                  key={note.id}
+                  className={cn(
+                    "border-b border-gray-100 hover:bg-gray-50/50 transition-colors cursor-pointer",
+                    note.status === "void" ? "opacity-60" : "",
+                  )}
+                  onClick={() => setLocation(`/debit-notes/${note.id}/edit`)}
+                >
+                  <BulkSelectCell
+                    checked={bulk.selectedIds.has(note.id)}
+                    disabled={!bulk.isSendable(note)}
+                    onToggle={(checked) => bulk.toggleRow(note.id, checked)}
+                    label={`Select ${note.dnNumber}`}
+                  />
                   <td className="px-4 py-3 font-mono font-semibold text-gray-800">{note.dnNumber}</td>
                   <td className="px-4 py-3 text-gray-700">{note.customerName}</td>
                   <td className="px-4 py-3 font-mono text-gray-500">{note.refInvNumber || "—"}</td>
@@ -208,7 +221,7 @@ export default function DebitNoteList() {
                   </td>
                   <td className="px-4 py-3">{statusBadge(note.status)}</td>
                   <td className="px-4 py-3"><SentToCell emailSentTo={note.emailSentTo} /></td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <Link href={`/debit-notes/${note.id}`}>
                         <Button size="icon" variant="ghost" className="h-8 w-8" title="View">

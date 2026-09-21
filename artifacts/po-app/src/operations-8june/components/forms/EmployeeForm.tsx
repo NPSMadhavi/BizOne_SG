@@ -192,6 +192,10 @@ export default function EmployeeForm({
     } else if (isOpen && !employee && !formInitialized) {
       form.reset(getDefaultValues());
       setFormInitialized(true);
+      // Re-apply any Veda fills that arrived during navigate/mount race
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("veda:fill-form-flush"));
+      }, 50);
     }
     if (!isOpen) {
       setFormInitialized(false);

@@ -112,7 +112,7 @@ export default function DebitNoteEdit() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { selectedCompany, isAdmin } = useAuth();
+  const { selectedCompany } = useAuth();
   const qc = useQueryClient();
   const [showPreview, setShowPreview] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
@@ -554,7 +554,7 @@ export default function DebitNoteEdit() {
 
           <FormStickyActions className="justify-between">
             <div>
-              {isAdmin && doc?.status !== "confirmed" && (
+              {doc?.status !== "void" && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
@@ -562,7 +562,8 @@ export default function DebitNoteEdit() {
                       variant="destructive"
                       size="icon"
                       disabled={deleting || submitting}
-                      title="Delete debit note"
+                      title="Delete"
+                      aria-label="Delete"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -571,7 +572,8 @@ export default function DebitNoteEdit() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete Debit Note?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently delete {doc?.dnNumber || "this debit note"}. This cannot be undone.
+                        This will permanently delete {doc?.dnNumber || "this debit note"}
+                        {doc?.status === "confirmed" ? " (confirmed)" : ""}. This cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
