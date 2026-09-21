@@ -88,6 +88,7 @@ const StockItemForm = lazy(() => import("@/pages/stock/form"));
 const WarehousesPage = lazy(() => import("@/pages/inventory/warehouses"));
 const StockTransferPage = lazy(() => import("@/pages/inventory/stock-transfer"));
 const InventoryReportsPage = lazy(() => import("@/pages/inventory/reports"));
+const SalesPersonWiseReportPage = lazy(() => import("@/pages/inventory/sales-person-wise-report"));
 const BatchExpiryPage = lazy(() => import("@/pages/inventory/batch-expiry"));
 
 const VendorsPage    = lazy(() => import("@/pages/vendors/index"));
@@ -178,6 +179,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/inventory/warehouses": "Warehouses",
   "/inventory/stock-transfer": "Stock Transfer",
   "/inventory/reports": "Stock Reports",
+  "/inventory/sales-person-wise-report": "Sales Person Wise Report",
   "/inventory/batch-expiry": "Batch & Expiry",
   "/vendor-invoices": "Vendor Invoices",
   "/vendor-invoices/new": "New Vendor Invoice",
@@ -425,6 +427,7 @@ function Router() {
           <Route path="/inventory/warehouses">{() => <ProtectedRoute component={WarehousesPage} module="warehouses" />}</Route>
           <Route path="/inventory/stock-transfer">{() => <ProtectedRoute component={StockTransferPage} module="stock_transfer" />}</Route>
           <Route path="/inventory/reports">{() => <ProtectedRoute component={InventoryReportsPage} module="inventory_reports" />}</Route>
+          <Route path="/inventory/sales-person-wise-report">{() => <ProtectedRoute component={SalesPersonWiseReportPage} module="sales_person_wise_report" />}</Route>
           <Route path="/inventory/batch-expiry">{() => <ProtectedRoute component={BatchExpiryPage} module="batch_expiry" />}</Route>
 
           {/* Vendor Invoices */}

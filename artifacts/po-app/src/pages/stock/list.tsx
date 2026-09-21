@@ -46,9 +46,11 @@ import {
   SlidersHorizontal,
   ArrowUpDown,
   Barcode,
+  Printer,
 } from "lucide-react";
 import { AdjustStockDialog } from "@/components/adjust-stock-dialog";
 import { BarcodePreviewDialog, type BarcodePreviewItem } from "@/components/barcode-preview-dialog";
+import { BarcodePrintDialog, type BarcodePrintSource } from "@/components/barcode-print-dialog";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { cn } from "@/lib/utils";
@@ -221,6 +223,7 @@ export default function StockList() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [barcodePreview, setBarcodePreview] = useState<BarcodePreviewItem | null>(null);
+  const [barcodePrint, setBarcodePrint] = useState<BarcodePrintSource | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<null | {
     kind: "item" | "history";
     stockItemId: number;
@@ -392,6 +395,13 @@ export default function StockList() {
         open={!!barcodePreview}
         onOpenChange={(open) => {
           if (!open) setBarcodePreview(null);
+        }}
+      />
+      <BarcodePrintDialog
+        item={barcodePrint}
+        open={!!barcodePrint}
+        onOpenChange={(open) => {
+          if (!open) setBarcodePrint(null);
         }}
       />
 
@@ -612,6 +622,27 @@ export default function StockList() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {item.barcode ? (
+                              <DropdownMenuItem
+                                className="gap-2"
+                                onClick={() =>
+                                  setBarcodePrint({
+                                    name: item.name,
+                                    code: item.code,
+                                    barcode: String(item.barcode),
+                                    brand: item.brand,
+                                    uom: item.uom,
+                                    alternateUom: item.alternateUom,
+                                    isWeightBased: Boolean(item.isWeightBased),
+                                    stockQty: item.displayStockQty ?? item.stockQty,
+                                    unitPrice: item.displaySellingPrice ?? item.unitPrice,
+                                    mrpPrice: item.mrpPrice,
+                                  })
+                                }
+                              >
+                                <Printer className="h-3.5 w-3.5" /> Print
+                              </DropdownMenuItem>
+                            ) : null}
                             {item.barcode ? (
                               <DropdownMenuItem
                                 className="gap-2"

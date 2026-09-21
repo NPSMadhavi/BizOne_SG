@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generatePOS_PDF } from "@/lib/pdf";
+import { amountFromWeight, getScaleService, parseSubUomFactor, parseWeightInputToKg, roundMoney } from "@/lib/pos-scale-service";
 import {
   Dialog,
   DialogContent,
@@ -99,9 +100,14 @@ type CartLine = {
   id: number;
   code: string;
   name: string;
+  barcode?: string;
   unitPrice: number;
   purchasePrice?: number;
   qty: number;
+  /** Weight in KG when isWeightBased. */
+  weight?: number;
+  unit?: string;
+  isWeightBased?: boolean;
 };
 
 type PosProduct = {
@@ -114,8 +120,22 @@ type PosProduct = {
   purchasePrice: number;
   stockQty: number;
   uom: string;
+  /** Pack / weight Sub UOMs from Item Master (not shown in stock table). */
+  subUoms?: string[];
+  /** When this card is a Sub UOM pack. */
+  subUomLabel?: string;
+  /** Portion of parent UOM (e.g. 0.25 for 250g). */
+  packFactor?: number;
   imageUrl?: string | null;
+  isWeightBased?: boolean;
 };
+
+function lineAmount(line: CartLine): number {
+  if (line.isWeightBased) {
+    return amountFromWeight(Number(line.weight) || 0, Number(line.unitPrice) || 0);
+  }
+  return roundMoney((Number(line.unitPrice) || 0) * (Number(line.qty) || 0));
+}
 
 type PaymentTender = {
   method: PaymentMethod;
@@ -289,6 +309,40 @@ export default function PointOfSalePage() {
 
   const products = useMemo((): PosProduct[] => {
     const out: PosProduct[] = [];
+
+    function pushWithSubUoms(base: PosProduct, subUoms: string[]) {
+      out.push({ ...base, subUoms: [] });
+      for (const su of subUoms) {
+        const factor = parseSubUomFactor(su, base.uom);
+        if (factor == null || !(factor > 0)) continue;
+        const slug = su.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        if (base.isWeightBased) {
+          out.push({
+            ...base,
+            key: `${base.key}-su-${slug}`,
+            subUoms: [],
+            subUomLabel: su,
+            packFactor: factor,
+            // unitPrice stays price-per-KG; packFactor is weight added to cart.
+            stockQty: base.stockQty,
+          });
+        } else {
+          out.push({
+            ...base,
+            key: `${base.key}-su-${slug}`,
+            subUoms: [],
+            subUomLabel: su,
+            packFactor: factor,
+            unitPrice: roundMoney(base.unitPrice * factor),
+            purchasePrice: roundMoney(base.purchasePrice * factor),
+            stockQty: Math.max(0, Math.floor(base.stockQty / factor)),
+            uom: su,
+            isWeightBased: false,
+          });
+        }
+      }
+    }
+
     for (const i of stockItems as any[]) {
       if (i.isActive === false || i.showInPos === false) continue;
 
@@ -320,6 +374,12 @@ export default function PointOfSalePage() {
             ? i.item_image.trim()
             : null;
       const barcode = String(i.barcode || "").trim();
+      const isWeightBased = Boolean(i.isWeightBased);
+      const subUoms = String(i.alternateUom || "")
+        .split(",")
+        .map((s: string) => s.trim())
+        .filter(Boolean);
+      const uom = String(i.uom || "Pcs");
 
       let historyQtySum = 0;
       const priceLots = Array.from(byPrice.entries()).sort((a, b) => b[0] - a[0]);
@@ -329,33 +389,41 @@ export default function PointOfSalePage() {
           baseCost > 0
             ? Math.round(lot.purchasePrice * (1 + (baseSell - baseCost) / baseCost) * 100) / 100
             : baseSell;
-        out.push({
-          key: `${i.id}-p-${cents}`,
+        pushWithSubUoms(
+          {
+            key: `${i.id}-p-${cents}`,
+            stockItemId: i.id as number,
+            code: String(i.code || `ITEM${i.id}`),
+            name: String(i.name || "Item"),
+            barcode,
+            unitPrice: Number.isFinite(sell) ? sell : baseSell,
+            purchasePrice: lot.purchasePrice,
+            stockQty: lot.quantity,
+            uom,
+            imageUrl,
+            isWeightBased,
+          },
+          subUoms,
+        );
+      }
+
+      const baseStockQty = Math.max(0, Math.round((totalQty - historyQtySum) * 1000) / 1000);
+      pushWithSubUoms(
+        {
+          key: `${i.id}-base`,
           stockItemId: i.id as number,
           code: String(i.code || `ITEM${i.id}`),
           name: String(i.name || "Item"),
           barcode,
-          unitPrice: Number.isFinite(sell) ? sell : baseSell,
-          purchasePrice: lot.purchasePrice,
-          stockQty: lot.quantity,
-          uom: String(i.uom || "Pcs"),
+          unitPrice: baseSell,
+          purchasePrice: baseCost,
+          stockQty: baseStockQty,
+          uom,
           imageUrl,
-        });
-      }
-
-      const baseStockQty = Math.max(0, Math.round((totalQty - historyQtySum) * 1000) / 1000);
-      out.push({
-        key: `${i.id}-base`,
-        stockItemId: i.id as number,
-        code: String(i.code || `ITEM${i.id}`),
-        name: String(i.name || "Item"),
-        barcode,
-        unitPrice: baseSell,
-        purchasePrice: baseCost,
-        stockQty: baseStockQty,
-        uom: String(i.uom || "Pcs"),
-        imageUrl,
-      });
+          isWeightBased,
+        },
+        subUoms,
+      );
     }
     return out;
   }, [stockItems]);
@@ -370,6 +438,7 @@ export default function PointOfSalePage() {
           p.code.toLowerCase().includes(q) ||
           p.name.toLowerCase().includes(q) ||
           p.barcode.toLowerCase().includes(q) ||
+          (p.subUomLabel || "").toLowerCase().includes(q) ||
           String(p.purchasePrice).includes(q) ||
           String(p.unitPrice).includes(q),
       );
@@ -387,7 +456,7 @@ export default function PointOfSalePage() {
     setPage(1);
   }, [tab, search]);
 
-  const subtotal = cart.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
+  const subtotal = cart.reduce((sum, line) => sum + lineAmount(line), 0);
   // Manual = flat SGD amount; Percent = % of subtotal
   const rawDiscount = Math.max(0, Number(discount) || 0);
   const discountAmt =
@@ -417,6 +486,85 @@ export default function PointOfSalePage() {
     return { sales, transactions, itemsSold, avgSale };
   }, [salesList]);
 
+  function addWeightBasedToCart(product: PosProduct, weightKg: number) {
+    const weight = Math.round(weightKg * 1000) / 1000;
+    if (!(weight > 0)) {
+      toast({ title: "Invalid weight", description: "Weight must be greater than 0.", variant: "destructive" });
+      return;
+    }
+    if (product.stockQty > 0 && weight > product.stockQty) {
+      toast({
+        title: "Stock limit",
+        description: `Only ${product.stockQty} ${product.uom} available.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const displayName = product.subUomLabel
+      ? `${product.name} (${product.subUomLabel})`
+      : product.name;
+    setCart((prev) => {
+      const existing = prev.find((l) => l.key === product.key && l.isWeightBased);
+      if (existing) {
+        const nextWeight = Math.round(((existing.weight || 0) + weight) * 1000) / 1000;
+        if (product.stockQty > 0 && nextWeight > product.stockQty) {
+          toast({
+            title: "Stock limit",
+            description: `Only ${product.stockQty} ${product.uom} available.`,
+            variant: "destructive",
+          });
+          return prev;
+        }
+        return prev.map((l) =>
+          l.key === product.key && l.isWeightBased
+            ? { ...l, weight: nextWeight, qty: 1, unit: product.uom || "Kg", name: displayName }
+            : l,
+        );
+      }
+      return [
+        ...prev,
+        {
+          key: product.key,
+          id: product.stockItemId,
+          code: product.code,
+          name: displayName,
+          barcode: product.barcode,
+          unitPrice: product.unitPrice > 0 ? product.unitPrice : 0,
+          purchasePrice: product.purchasePrice,
+          qty: 1,
+          weight,
+          unit: product.uom || "Kg",
+          isWeightBased: true,
+        },
+      ];
+    });
+    toast({
+      title: "Added",
+      description: `${displayName} · ${weight.toFixed(3)} KG · ${money(amountFromWeight(weight, product.unitPrice))}`,
+    });
+  }
+
+  function defaultWeightKg(product: PosProduct): number {
+    if (product.packFactor != null && product.packFactor > 0) return product.packFactor;
+    for (const raw of product.subUoms || []) {
+      const kg = parseWeightInputToKg(raw);
+      if (kg != null && kg > 0) return kg;
+    }
+    return 1;
+  }
+
+  function requestAddProduct(product: PosProduct) {
+    if (product.isWeightBased) {
+      if (product.unitPrice < 0) {
+        toast({ title: "Invalid price", description: "Price per KG cannot be negative.", variant: "destructive" });
+        return;
+      }
+      addWeightBasedToCart(product, defaultWeightKg(product));
+      return;
+    }
+    addToCart(product);
+  }
+
   function addToCart(product: PosProduct) {
     setCart((prev) => {
       const existing = prev.find((l) => l.key === product.key);
@@ -438,10 +586,13 @@ export default function PointOfSalePage() {
           key: product.key,
           id: product.stockItemId,
           code: product.code,
-          name: product.name,
+          name: product.subUomLabel ? `${product.name} (${product.subUomLabel})` : product.name,
+          barcode: product.barcode,
           unitPrice: product.unitPrice > 0 ? product.unitPrice : 0,
           purchasePrice: product.purchasePrice,
           qty: 1,
+          unit: product.uom,
+          isWeightBased: false,
         },
       ];
     });
@@ -453,10 +604,38 @@ export default function PointOfSalePage() {
     const matches = products.filter((p) => p.barcode.toLowerCase() === code);
     if (matches.length === 0) return null;
     const withStock = matches.filter((p) => p.stockQty > 0).sort((a, b) => b.stockQty - a.stockQty);
-    return withStock[0] || matches[0];
+    const pool = withStock.length > 0 ? withStock : matches;
+    // Prefer base lot (no pack) — weight / Sub UOM applied on scan
+    return pool.find((p) => !p.packFactor) || pool[0];
   }
 
-  function handleBarcodeSubmit(e?: FormEvent) {
+  function findSubUomPacksFor(base: PosProduct): PosProduct[] {
+    return products.filter(
+      (p) =>
+        p.stockItemId === base.stockItemId &&
+        p.packFactor != null &&
+        p.packFactor > 0 &&
+        p.key.startsWith(`${base.key}-su-`),
+    );
+  }
+
+  function pickPackForWeight(packs: PosProduct[], weightKg: number): PosProduct | null {
+    if (!packs.length) return null;
+    let best: PosProduct | null = null;
+    let bestDiff = Infinity;
+    for (const p of packs) {
+      const diff = Math.abs((p.packFactor || 0) - weightKg);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = p;
+      }
+    }
+    // Use pack label only when close (within 20g)
+    if (best && bestDiff <= 0.02) return best;
+    return null;
+  }
+
+  async function handleBarcodeSubmit(e?: FormEvent) {
     e?.preventDefault();
     const raw = barcodeInput.trim();
     if (!raw) return;
@@ -484,8 +663,55 @@ export default function PointOfSalePage() {
       return;
     }
 
-    addToCart(product);
-    toast({ title: "Added", description: `${product.name} · ${money(product.unitPrice)}` });
+    // Show matching Sub UOM / item cards in the grid
+    setSearch(product.barcode || product.code || product.name);
+    setTab("all");
+    setPage(1);
+
+    if (product.isWeightBased) {
+      if (product.unitPrice < 0) {
+        toast({ title: "Invalid price", description: "Price per KG cannot be negative.", variant: "destructive" });
+        setBarcodeInput("");
+        barcodeInputRef.current?.focus();
+        return;
+      }
+
+      const packs = findSubUomPacksFor(product);
+      let scaleWeight: number | null = null;
+      try {
+        const reading = await getScaleService().getReading();
+        if (reading.status === "connected" && reading.weightKg != null && reading.weightKg > 0) {
+          scaleWeight = reading.weightKg;
+        }
+      } catch {
+        // scale optional
+      }
+
+      if (scaleWeight != null) {
+        const matchedPack = pickPackForWeight(packs, scaleWeight);
+        addWeightBasedToCart(
+          matchedPack
+            ? { ...product, key: matchedPack.key, subUomLabel: matchedPack.subUomLabel, packFactor: matchedPack.packFactor }
+            : product,
+          scaleWeight,
+        );
+      } else if (packs.length > 0) {
+        // No live scale — add using Sub UOM pack weight (same as tapping the pack card)
+        requestAddProduct(packs[0]);
+        if (packs.length > 1) {
+          toast({
+            title: "Sub UOM packs",
+            description: `${packs.length} packs shown for ${product.name}. Tap another pack to add.`,
+          });
+        }
+      } else {
+        addWeightBasedToCart(product, 1);
+      }
+    } else {
+      requestAddProduct(product);
+      toast({ title: "Added", description: `${product.name} · ${money(product.unitPrice)}` });
+    }
+
     setBarcodeInput("");
     requestAnimationFrame(() => barcodeInputRef.current?.focus());
   }
@@ -524,8 +750,18 @@ export default function PointOfSalePage() {
 
   function updateQty(key: string, qty: number, removeIfZero = false) {
     setCart((prev) => {
-      const next = prev.map((l) => (l.key === key ? { ...l, qty: Math.max(0, qty) } : l));
-      return removeIfZero ? next.filter((l) => l.qty > 0) : next;
+      const next = prev.map((l) => {
+        if (l.key !== key) return l;
+        if (l.isWeightBased) {
+          // Qty steppers adjust weight by 0.05 KG for weight-based lines
+          const step = qty > (l.qty || 0) ? 0.05 : -0.05;
+          const nextWeight = Math.round(((l.weight || 0) + step) * 1000) / 1000;
+          if (nextWeight <= 0 && removeIfZero) return { ...l, weight: 0, qty: 0 };
+          return { ...l, weight: Math.max(0.001, nextWeight), qty: 1 };
+        }
+        return { ...l, qty: Math.max(0, qty) };
+      });
+      return removeIfZero ? next.filter((l) => (l.isWeightBased ? (l.weight || 0) > 0 : l.qty > 0)) : next;
     });
   }
 
@@ -662,8 +898,16 @@ export default function PointOfSalePage() {
       toast({ title: "Cart is empty", description: "Add items before taking payment." });
       return;
     }
-    if (cart.some((l) => !l.unitPrice || l.unitPrice <= 0)) {
+    if (cart.some((l) => (l.isWeightBased ? l.unitPrice < 0 : !l.unitPrice || l.unitPrice <= 0))) {
       toast({ title: "Enter price", description: "Set a price for each line item before payment." });
+      return;
+    }
+    if (cart.some((l) => l.isWeightBased && !(Number(l.weight) > 0))) {
+      toast({
+        title: "Weight required",
+        description: "Weight-based items need a weight greater than 0.",
+        variant: "destructive",
+      });
       return;
     }
     if (balanceDue <= 0 && !options?.allowZeroBalance) {
@@ -681,7 +925,7 @@ export default function PointOfSalePage() {
   }
 
   function buildSaleRecord(allTenders: PaymentTender[], existing?: PosSaleRecord | null): PosSaleRecord {
-    const itemsSold = cart.reduce((s, l) => s + l.qty, 0);
+    const itemsSold = cart.reduce((s, l) => s + (l.isWeightBased ? 1 : l.qty), 0);
     return {
       id: existing?.id || `pos-${Date.now()}`,
       posNumber: existing?.posNumber || `POS-${String(salesList.length + 1).padStart(4, "0")}`,
@@ -773,8 +1017,16 @@ export default function PointOfSalePage() {
       toast({ title: "Cart is empty", description: "Add at least one item." });
       return;
     }
-    if (cart.some((l) => !l.unitPrice || l.unitPrice <= 0)) {
+    if (cart.some((l) => (l.isWeightBased ? l.unitPrice < 0 : !l.unitPrice || l.unitPrice <= 0))) {
       toast({ title: "Enter price", description: "Set a price for each line item before saving." });
+      return;
+    }
+    if (cart.some((l) => l.isWeightBased && !(Number(l.weight) > 0))) {
+      toast({
+        title: "Weight required",
+        description: "Weight-based items need a weight greater than 0.",
+        variant: "destructive",
+      });
       return;
     }
     openPayment("Cash", { allowZeroBalance: true });
@@ -1262,7 +1514,7 @@ export default function PointOfSalePage() {
                     <button
                       key={p.key}
                       type="button"
-                      onClick={() => addToCart(p)}
+                      onClick={() => requestAddProduct(p)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setFavourites((prev) => {
@@ -1295,12 +1547,34 @@ export default function PointOfSalePage() {
                           {p.code}
                         </p>
                         <p className="mt-1 line-clamp-2 text-sm font-medium text-[#111827]">{p.name}</p>
+                        {p.subUomLabel ? (
+                          <p className="mt-0.5 text-[11px] font-semibold text-[#2563EB]">{p.subUomLabel}</p>
+                        ) : null}
                         <p className="mt-1.5 text-[11px] text-[#6B7280]">
-                          Cost {money(p.purchasePrice)}
+                          Cost{" "}
+                          {money(
+                            p.isWeightBased && p.packFactor
+                              ? roundMoney(p.purchasePrice * p.packFactor)
+                              : p.purchasePrice,
+                          )}
                           <span className="mx-1 text-[#D1D5DB]">·</span>
                           Qty {p.stockQty.toLocaleString("en-SG", { maximumFractionDigits: 3 })} {p.uom}
                         </p>
-                        <p className="mt-1 text-sm font-bold text-[#111827]">{money(p.unitPrice)}</p>
+                        <p className="mt-1 text-sm font-bold text-[#111827]">
+                          {p.isWeightBased && p.packFactor
+                            ? money(amountFromWeight(p.packFactor, p.unitPrice))
+                            : money(p.unitPrice)}
+                          {p.isWeightBased && !p.packFactor ? (
+                            <span className="text-xs font-medium text-[#6B7280]"> /KG</span>
+                          ) : null}
+                        </p>
+                        {p.isWeightBased && p.packFactor ? (
+                          <p className="mt-0.5 text-[10px] text-[#6B7280]">
+                            {p.packFactor.toFixed(3)} KG × {money(p.unitPrice)}/KG
+                          </p>
+                        ) : p.isWeightBased ? (
+                          <p className="mt-0.5 text-[10px] font-medium text-[#2563EB]">Weight based</p>
+                        ) : null}
                       </div>
                     </button>
                   ))}
@@ -1362,7 +1636,7 @@ export default function PointOfSalePage() {
 
             <div className="grid grid-cols-[1fr_minmax(96px,auto)_64px_64px_28px] gap-2 border-b border-[#E5E7EB] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
               <span>Item</span>
-              <span className="text-center">Qty</span>
+              <span className="text-center">Qty / Wt</span>
               <span className="text-right">Price</span>
               <span className="text-right">Total</span>
               <span />
@@ -1384,46 +1658,75 @@ export default function PointOfSalePage() {
                       <p className="truncate text-xs font-medium text-[#111827]">
                         {line.code} / {line.name}
                       </p>
-                      {line.purchasePrice != null ? (
+                      {line.isWeightBased ? (
+                        <p className="truncate text-[10px] text-[#2563EB]">
+                          {(line.weight || 0).toFixed(3)} {line.unit || "Kg"} · {money(line.unitPrice)}/KG
+                        </p>
+                      ) : line.purchasePrice != null ? (
                         <p className="truncate text-[10px] text-[#9CA3AF]">
                           Cost {money(line.purchasePrice)}
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex shrink-0 items-center justify-center gap-0.5">
-                      <button
-                        type="button"
-                        className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
-                        onClick={() => updateQty(line.key, line.qty - 1, true)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </button>
+                    {line.isWeightBased ? (
                       <input
-                        className="h-7 w-11 min-w-[2.75rem] shrink-0 rounded border border-[#E5E7EB] px-1 text-center text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                        value={line.qty > 0 ? line.qty : ""}
+                        type="number"
+                        min={0.001}
+                        step="0.001"
+                        className="h-7 w-[5.5rem] shrink-0 rounded border border-[#E5E7EB] px-1 text-center text-xs"
+                        value={line.weight != null && line.weight > 0 ? line.weight : ""}
+                        title="Weight in KG"
                         onChange={(e) => {
                           const raw = e.target.value;
-                          if (raw === "") {
-                            updateQty(line.key, 0);
-                            return;
-                          }
-                          const n = parseInt(raw, 10);
-                          if (!Number.isNaN(n)) updateQty(line.key, n);
-                        }}
-                        onBlur={() => {
+                          const w = raw === "" ? 0 : parseFloat(raw);
                           setCart((prev) =>
-                            prev.map((l) => (l.key === line.key && l.qty <= 0 ? { ...l, qty: 1 } : l)),
+                            prev.map((l) =>
+                              l.key === line.key
+                                ? { ...l, weight: Number.isFinite(w) ? Math.max(0, Math.round(w * 1000) / 1000) : 0, qty: 1 }
+                                : l,
+                            ),
                           );
                         }}
+                        onBlur={() => {
+                          setCart((prev) => prev.filter((l) => !(l.key === line.key && l.isWeightBased && !(Number(l.weight) > 0))));
+                        }}
                       />
-                      <button
-                        type="button"
-                        className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
-                        onClick={() => updateQty(line.key, line.qty + 1)}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="flex shrink-0 items-center justify-center gap-0.5">
+                        <button
+                          type="button"
+                          className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
+                          onClick={() => updateQty(line.key, line.qty - 1, true)}
+                        >
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <input
+                          className="h-7 w-11 min-w-[2.75rem] shrink-0 rounded border border-[#E5E7EB] px-1 text-center text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          value={line.qty > 0 ? line.qty : ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === "") {
+                              updateQty(line.key, 0);
+                              return;
+                            }
+                            const n = parseInt(raw, 10);
+                            if (!Number.isNaN(n)) updateQty(line.key, n);
+                          }}
+                          onBlur={() => {
+                            setCart((prev) =>
+                              prev.map((l) => (l.key === line.key && l.qty <= 0 ? { ...l, qty: 1 } : l)),
+                            );
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="shrink-0 rounded border border-[#E5E7EB] p-0.5 text-[#6B7280] hover:bg-white"
+                          onClick={() => updateQty(line.key, line.qty + 1)}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
                     <input
                       type="number"
                       min={0}
@@ -1437,7 +1740,7 @@ export default function PointOfSalePage() {
                       }}
                     />
                     <p className="text-right text-xs font-semibold text-[#111827]">
-                      {money(line.unitPrice * line.qty)}
+                      {money(lineAmount(line))}
                     </p>
                     <button
                       type="button"

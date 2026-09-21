@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, stockItemsTable, warehouseStockTable, vendorInvoicesTable } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { adjustItemStockInWarehouse, deleteStockItem, resolveWarehouseId } from "../lib/inventory-service.js";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import {
@@ -149,7 +149,7 @@ router.post("/stock-items", async (req, res): Promise<void> => {
     code, name, description, uom, type, unitPrice, mrpPrice, purchasePrice, stockQty, warehouseId,
     batchNo, isActive, alternateUom, alternateQty, mainQty,
     category, brand, barcode, salesPerson, itemImage,
-    trackInventory, showInPos, pricingMethod,
+    trackInventory, showInPos, pricingMethod, isWeightBased,
     minStockLevel, reorderLevel, maxStockLevel,
     purchasePriceDate,
   } = req.body;
@@ -182,6 +182,20 @@ router.post("/stock-items", async (req, res): Promise<void> => {
       res.status(500).json({
         error: err instanceof Error ? err.message : "Failed to generate barcode",
       });
+      return;
+    }
+  }
+
+  if (resolvedBarcode) {
+    const [dup] = await db.select({ id: stockItemsTable.id })
+      .from(stockItemsTable)
+      .where(and(
+        eq(stockItemsTable.companyId, companyId),
+        eq(stockItemsTable.barcode, resolvedBarcode),
+      ))
+      .limit(1);
+    if (dup) {
+      res.status(409).json({ error: `Barcode "${resolvedBarcode}" is already used by another item.` });
       return;
     }
   }
@@ -219,6 +233,7 @@ router.post("/stock-items", async (req, res): Promise<void> => {
       mainQty: alt.mainQty,
       trackInventory: trackInventory === undefined ? true : Boolean(trackInventory),
       showInPos: showInPos === undefined ? true : Boolean(showInPos),
+      isWeightBased: Boolean(isWeightBased),
       pricingMethod: typeof pricingMethod === "string" ? pricingMethod : "fixed",
       isActive: isActive === undefined ? true : Boolean(isActive),
     }).returning();
@@ -341,7 +356,7 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
     code, name, description, uom, type, unitPrice, mrpPrice, purchasePrice, stockQty, isActive, warehouseId,
     batchNo, alternateUom, alternateQty, mainQty,
     category, brand, barcode, salesPerson, itemImage,
-    trackInventory, showInPos, pricingMethod,
+    trackInventory, showInPos, pricingMethod, isWeightBased,
     minStockLevel, reorderLevel, maxStockLevel,
     purchasePriceDate,
   } = req.body;
@@ -365,6 +380,7 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   if (itemImage !== undefined) update.itemImage = typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null;
   if (trackInventory !== undefined) update.trackInventory = Boolean(trackInventory);
   if (showInPos !== undefined) update.showInPos = Boolean(showInPos);
+  if (isWeightBased !== undefined) update.isWeightBased = Boolean(isWeightBased);
   if (pricingMethod !== undefined) update.pricingMethod = pricingMethod || "fixed";
   if (minStockLevel !== undefined) update.minStockLevel = String(minStockLevel);
   if (reorderLevel !== undefined) update.reorderLevel = String(reorderLevel);
@@ -384,6 +400,21 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
     } else {
       update.alternateQty = String(Math.max(0, Number(alternateQty) || 0));
       update.mainQty = String(Math.max(0, Number(mainQty) || 0));
+    }
+  }
+
+  if (update.barcode) {
+    const [dup] = await db.select({ id: stockItemsTable.id })
+      .from(stockItemsTable)
+      .where(and(
+        eq(stockItemsTable.companyId, before.companyId),
+        eq(stockItemsTable.barcode, update.barcode),
+        ne(stockItemsTable.id, id),
+      ))
+      .limit(1);
+    if (dup) {
+      res.status(409).json({ error: `Barcode "${update.barcode}" is already used by another item.` });
+      return;
     }
   }
 

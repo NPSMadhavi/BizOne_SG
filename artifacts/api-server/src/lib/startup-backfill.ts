@@ -359,6 +359,10 @@ export async function runStartupMigrations(): Promise<void> {
       `,
     },
     {
+      name: "stock_items.is_weight_based",
+      sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS is_weight_based boolean NOT NULL DEFAULT false`,
+    },
+    {
       name: "customers.quotation_terms",
       sql: sql`ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
     },

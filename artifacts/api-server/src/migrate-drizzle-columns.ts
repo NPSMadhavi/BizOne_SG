@@ -378,6 +378,7 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS purchase_price numeric(15,2) DEFAULT 0`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS track_inventory boolean NOT NULL DEFAULT true`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS show_in_pos boolean NOT NULL DEFAULT true`,
+  `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS is_weight_based boolean NOT NULL DEFAULT false`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS pricing_method text DEFAULT 'fixed'`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS tax_percent numeric(5,2) DEFAULT 9`,
 

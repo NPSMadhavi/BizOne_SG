@@ -469,7 +469,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     hasModuleAccess("licenses") ||
     hasModuleAccess("employees") ||
     hasModuleAccess("payroll");
-  const inventoryModules = ["warehouses", "stock_items", "stock_transfer", "inventory_reports", "batch_expiry"] as const;
+  const inventoryModules = ["warehouses", "stock_items", "stock_transfer", "inventory_reports", "sales_person_wise_report", "batch_expiry"] as const;
   // Inventory ONLY when one of these is explicitly assigned — never via Documents / GRN / defaults
   const hasInventory =
     isAdmin || inventoryModules.some((m) => hasModuleAccess(m as AppModule));
@@ -663,6 +663,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("inventory_reports") && (
           <NavItem href="/inventory/reports" icon={BarChart3} active={location.startsWith("/inventory/reports")} inGroup>
             Stock Reports
+          </NavItem>
+        )}
+        {hasModuleAccess("sales_person_wise_report") && (
+          <NavItem
+            href="/inventory/sales-person-wise-report"
+            icon={UserCheck}
+            active={location.startsWith("/inventory/sales-person-wise-report")}
+            inGroup
+          >
+            Sales Person Wise Report
           </NavItem>
         )}
         {hasModuleAccess("batch_expiry") && (

@@ -65,7 +65,6 @@ import {
   FileText,
   FileSpreadsheet,
   X,
-  UserCheck,
 } from "lucide-react";
 import { useSalesPersons } from "@/hooks/use-sales-persons";
 
@@ -83,8 +82,7 @@ type ReportId =
   | "physical_verification"
   | "purchase_vs_sales"
   | "daily_stock"
-  | "monthly_stock"
-  | "sales_person_stock";
+  | "monthly_stock";
 
 type ReportDef = {
   id: ReportId;
@@ -233,14 +231,6 @@ const REPORTS: ReportDef[] = [
     icon: CalendarDays,
     iconBg: "bg-[#DCFCE7]",
     iconColor: "text-[#16A34A]",
-  },
-  {
-    id: "sales_person_stock",
-    title: "Sales Person Wise Report",
-    description: "Stock movement, sales, and inventory distribution by sales person",
-    icon: UserCheck,
-    iconBg: "bg-[#DBEAFE]",
-    iconColor: "text-[#2563EB]",
   },
 ];
 

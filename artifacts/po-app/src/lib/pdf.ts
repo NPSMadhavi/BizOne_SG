@@ -3657,7 +3657,16 @@ export async function generateGRN_PDF(grn: any, company?: Company | null, option
 export type PosSalePdfInput = {
   posNumber: string;
   createdAt: string;
-  items: Array<{ code: string; name: string; qty: number; unitPrice: number }>;
+  items: Array<{
+    code: string;
+    name: string;
+    qty: number;
+    unitPrice: number;
+    weight?: number;
+    unit?: string;
+    isWeightBased?: boolean;
+    barcode?: string;
+  }>;
   subtotal: number;
   discount: number;
   tax: number;
@@ -3691,18 +3700,28 @@ export async function generatePOS_PDF(
     y += 6;
   }
 
-  const body = sale.items.map((item, idx) => [
-    idx + 1,
-    item.code,
-    item.name,
-    item.qty,
-    fmtNum(item.unitPrice),
-    fmtNum(item.unitPrice * item.qty),
-  ]);
+  const hasWeight = sale.items.some((i) => i.isWeightBased);
+  const body = sale.items.map((item, idx) => {
+    const amount = item.isWeightBased
+      ? Math.round((Number(item.weight) || 0) * item.unitPrice * 100) / 100
+      : Math.round(item.unitPrice * item.qty * 100) / 100;
+    if (hasWeight) {
+      const qtyOrWt = item.isWeightBased
+        ? `${(Number(item.weight) || 0).toFixed(3)} ${item.unit || "Kg"}`
+        : String(item.qty);
+      const rate = item.isWeightBased
+        ? `${fmtNum(item.unitPrice)}/KG`
+        : fmtNum(item.unitPrice);
+      return [idx + 1, item.code, item.name, qtyOrWt, rate, fmtNum(amount)];
+    }
+    return [idx + 1, item.code, item.name, item.qty, fmtNum(item.unitPrice), fmtNum(amount)];
+  });
 
   (doc as any).autoTable({
     startY: y,
-    head: [["#", "Code", "Item", "Qty", "Price (S$)", "Amount (S$)"]],
+    head: [hasWeight
+      ? ["#", "Code", "Item", "Qty / Weight", "Rate (S$)", "Amount (S$)"]
+      : ["#", "Code", "Item", "Qty", "Price (S$)", "Amount (S$)"]],
     body,
     styles: { font: PDF_FONT, fontSize: 8.5, cellPadding: 2.5 },
     headStyles: { fillColor: [37, 99, 235], textColor: 255 },

@@ -25,6 +25,7 @@ export const APP_ALL_MODULES = [
   "warehouses",
   "stock_transfer",
   "inventory_reports",
+  "sales_person_wise_report",
   "batch_expiry",
   "vendors",
   "customers",

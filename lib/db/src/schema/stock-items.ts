@@ -27,6 +27,8 @@ export const stockItemsTable = pgTable("stock_items", {
   mainQty: decimal("main_qty", { precision: 15, scale: 4 }).default("0"),
   trackInventory: boolean("track_inventory").default(true).notNull(),
   showInPos: boolean("show_in_pos").default(true).notNull(),
+  /** When true, unitPrice is price per KG and POS uses scale/manual weight. */
+  isWeightBased: boolean("is_weight_based").default(false).notNull(),
   pricingMethod: text("pricing_method").default("fixed"),
   isActive: boolean("is_active").default(true).notNull(),
   createdBy: integer("created_by"),

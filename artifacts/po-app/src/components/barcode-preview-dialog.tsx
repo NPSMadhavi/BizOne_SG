@@ -14,6 +14,8 @@ export type BarcodePreviewItem = {
   barcode: string;
   brand?: string | null;
   uom?: string | null;
+  /** Selected Sub UOM / net weight shown on the label (barcode stays the same). */
+  weightLabel?: string | null;
   stockQty?: string | number | null;
   unitPrice?: string | number | null;
   mrpPrice?: string | number | null;
@@ -113,6 +115,12 @@ export function printBarcodeLabel(item: BarcodePreviewItem, barcodeDataUrl: stri
             line-height: 1.25;
             margin-bottom: 4px;
           }
+          .weight {
+            font-size: 13px;
+            font-weight: 700;
+            color: #2563eb;
+            margin-bottom: 6px;
+          }
           .sku {
             font-size: 12px;
             font-family: monospace;
@@ -157,6 +165,7 @@ export function printBarcodeLabel(item: BarcodePreviewItem, barcodeDataUrl: stri
         <div class="label-box">
           ${item.brand ? `<div class="brand">${escapeHtml(item.brand)}</div>` : ""}
           <div class="title">${escapeHtml(item.name)}</div>
+          ${item.weightLabel ? `<div class="weight">${escapeHtml(item.weightLabel)}</div>` : ""}
           <div class="sku">SKU: ${escapeHtml(item.code)}</div>
           <img class="barcode-img" src="${barcodeDataUrl}" alt="${escapeHtml(item.barcode)}" />
           <div class="barcode-text">${escapeHtml(item.barcode)}</div>
@@ -268,10 +277,12 @@ export function BarcodePreviewDialog({ item, open, onOpenChange }: Props) {
           <div className="mt-5 flex w-full items-center justify-between border-t border-slate-200/80 px-1 pt-4 text-xs">
             <div className="text-left">
               <span className="block font-sans text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                Quantity
+                {item?.weightLabel ? "Net Wt / UOM" : "Quantity"}
               </span>
               <span className="font-mono text-sm font-bold text-slate-800">
-                {fmtQty(item?.stockQty, item?.uom)}
+                {item?.weightLabel
+                  ? item.weightLabel
+                  : fmtQty(item?.stockQty, item?.uom)}
               </span>
             </div>
             <div className="text-right">

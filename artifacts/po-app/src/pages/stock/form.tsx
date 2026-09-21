@@ -45,7 +45,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Camera, Info, Package, Plus, ScanLine, Trash2 } from "lucide-react";
+import { Camera, Info, Package, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useQuery } from "@tanstack/react-query";
 
@@ -74,10 +74,70 @@ const UOM_OPTIONS = [
   { value: "Roll", label: "Roll" },
   { value: "Carton", label: "Carton" },
   { value: "Case", label: "Case" },
+  { value: "Sack", label: "Sack" },
   { value: "Strip", label: "Strip" },
   { value: "Kg", label: "Kg" },
   { value: "Litre", label: "Litre" },
 ];
+
+type UomOption = { value: string; label: string };
+
+function packSubUoms(unit: string): UomOption[] {
+  return [
+    { value: `1/4 ${unit}`, label: `1/4 ${unit}` },
+    { value: `1/2 ${unit}`, label: `1/2 ${unit}` },
+    { value: `1 ${unit}`, label: `1 ${unit}` },
+  ];
+}
+
+/** Sub UOM list for each main UOM — shown when that UOM is selected. */
+const SUB_UOM_BY_UOM: Record<string, UomOption[]> = {
+  Nos: packSubUoms("Nos"),
+  Pcs: packSubUoms("Pcs"),
+  Unit: packSubUoms("Unit"),
+  Pair: [
+    { value: "1/2 Pair", label: "1/2 Pair" },
+    { value: "1 Pair", label: "1 Pair" },
+  ],
+  Set: packSubUoms("Set"),
+  Dozen: [
+    { value: "1/4 Dozen", label: "1/4 Dozen" },
+    { value: "1/2 Dozen", label: "1/2 Dozen" },
+    { value: "1 Dozen", label: "1 Dozen" },
+  ],
+  Box: packSubUoms("Box"),
+  Pack: packSubUoms("Pack"),
+  Packet: packSubUoms("Packet"),
+  Bundle: packSubUoms("Bundle"),
+  Roll: packSubUoms("Roll"),
+  Carton: packSubUoms("Carton"),
+  Case: packSubUoms("Case"),
+  Sack: packSubUoms("Sack"),
+  Strip: packSubUoms("Strip"),
+  Kg: [
+    { value: "100 grams", label: "100 grams" },
+    { value: "250 grams", label: "250 grams" },
+    { value: "500 grams", label: "500 grams" },
+    { value: "1000 grams", label: "1000 grams" },
+  ],
+  Litre: [
+    { value: "100 ml", label: "100 ml" },
+    { value: "250 ml", label: "250 ml" },
+    { value: "500 ml", label: "500 ml" },
+    { value: "1 Litre", label: "1 Litre" },
+  ],
+};
+
+function uomKey(raw?: string | null) {
+  return String(raw || "").trim().toLowerCase();
+}
+
+function defaultSubUomsFor(uom: string): UomOption[] {
+  const value = String(uom || "").trim() || "Pcs";
+  const hit = Object.entries(SUB_UOM_BY_UOM).find(([k]) => k.toLowerCase() === value.toLowerCase());
+  if (hit) return hit[1];
+  return packSubUoms(value);
+}
 
 const ITEM_TYPE_OPTIONS = [
   { value: "stock_item", label: "Stock Item" },
@@ -91,6 +151,7 @@ const ITEM_TYPE_OPTIONS = [
 ];
 
 const CUSTOM_UOM_STORAGE_KEY = "stock-custom-uoms";
+const CUSTOM_SUB_UOM_STORAGE_KEY = "stock-custom-sub-uoms";
 const CUSTOM_ITEM_TYPE_STORAGE_KEY = "stock-custom-item-types";
 const PRICE_LEVELS_STORAGE_KEY = "multi-price-levels-v1";
 const PRICE_MAP_STORAGE_KEY = "multi-price-prices-v1";
@@ -166,6 +227,61 @@ function saveCustomUoms(values: string[]) {
   }
 }
 
+function loadCustomSubUoms(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(CUSTOM_SUB_UOM_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // legacy flat list → attach under "*"
+      const list = parsed.map((v) => String(v).trim()).filter(Boolean);
+      return list.length ? { "*": list } : {};
+    }
+    if (parsed && typeof parsed === "object") {
+      const out: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (!Array.isArray(v)) continue;
+        out[uomKey(k) || "*"] = v.map((x) => String(x).trim()).filter(Boolean);
+      }
+      return out;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCustomSubUoms(map: Record<string, string[]>) {
+  try {
+    localStorage.setItem(CUSTOM_SUB_UOM_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+/** Sub UOMs stored in alternateUom as comma-separated values. */
+function parseSubUoms(raw?: string | null): string[] {
+  if (!raw || !String(raw).trim()) return [];
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function serializeSubUoms(values: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const name = String(v || "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out.join(", ");
+}
+
 function loadCustomItemTypes(): { value: string; label: string }[] {
   try {
     const raw = localStorage.getItem(CUSTOM_ITEM_TYPE_STORAGE_KEY);
@@ -232,6 +348,7 @@ const EMPTY_FORM = {
   isActive: true,
   trackInventory: true,
   showInPos: true,
+  isWeightBased: false,
   pricingMethod: "fixed",
   autoUpdateSelling: true,
   alternateUom: "",
@@ -280,6 +397,7 @@ export default function StockItemFormPage() {
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
+  const [customSubUoms, setCustomSubUoms] = useState<Record<string, string[]>>(() => loadCustomSubUoms());
   const [customItemTypes, setCustomItemTypes] = useState<{ value: string; label: string }[]>(() => loadCustomItemTypes());
   const [priceLevels] = useState<PriceLevelOption[]>(() => {
     purgeExtraPriceLevels();
@@ -287,12 +405,13 @@ export default function StockItemFormPage() {
   });
   const [createUomOpen, setCreateUomOpen] = useState(false);
   const [newUomName, setNewUomName] = useState("");
+  const [createSubUomOpen, setCreateSubUomOpen] = useState(false);
+  const [newSubUomName, setNewSubUomName] = useState("");
+  const [subUomSelectKey, setSubUomSelectKey] = useState(0);
   const [createItemTypeOpen, setCreateItemTypeOpen] = useState(false);
   const [newItemTypeName, setNewItemTypeName] = useState("");
   const [createPriceLevelOpen, setCreatePriceLevelOpen] = useState(false);
   const [newPriceLevelName, setNewPriceLevelName] = useState("");
-  const [altUnitsOpen, setAltUnitsOpen] = useState(false);
-  const [altDraft, setAltDraft] = useState({ alternateUom: "", alternateQty: "", mainQty: "" });
   const [loaded, setLoaded] = useState(!isEdit);
 
   const createMutation = useCreateStockItem();
@@ -374,6 +493,7 @@ export default function StockItemFormPage() {
       isActive: item.isActive ?? true,
       trackInventory: item.trackInventory ?? true,
       showInPos: item.showInPos ?? true,
+      isWeightBased: item.isWeightBased ?? false,
       pricingMethod: item.pricingMethod || "fixed",
       autoUpdateSelling: true,
       alternateUom: item.alternateUom || "",
@@ -428,12 +548,28 @@ export default function StockItemFormPage() {
     for (const uom of customUoms) addExtra(uom);
     for (const item of items as any[]) {
       addExtra(item?.uom);
-      addExtra(item?.alternateUom);
     }
     addExtra(form.uom);
-    addExtra(form.alternateUom);
     return [...UOM_OPTIONS, ...extras];
-  }, [customUoms, form.uom, form.alternateUom, items]);
+  }, [customUoms, form.uom, items]);
+
+  const subUomOptions = useMemo(() => {
+    const base = defaultSubUomsFor(form.uom);
+    const seen = new Set(base.map((o) => o.value.toLowerCase()));
+    const extras: UomOption[] = [];
+    const addExtra = (raw?: string | null) => {
+      const value = (raw || "").trim();
+      if (!value) return;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      extras.push({ value, label: value });
+    };
+    const parentKey = uomKey(form.uom);
+    for (const name of customSubUoms[parentKey] || []) addExtra(name);
+    for (const name of customSubUoms["*"] || []) addExtra(name);
+    return [...base, ...extras];
+  }, [customSubUoms, form.uom]);
 
   const itemTypeOptions = useMemo(() => {
     const seen = new Set(ITEM_TYPE_OPTIONS.map((o) => o.value.toLowerCase()));
@@ -509,8 +645,55 @@ export default function StockItemFormPage() {
       });
     }
     setField("uom", selected);
+    setSubUomSelectKey((k) => k + 1);
     setCreateUomOpen(false);
     setNewUomName("");
+  }
+
+  function handleCreateSubUom() {
+    const name = newSubUomName.trim();
+    if (!name) {
+      toast({ title: "Name required", description: "Enter a Sub UOM name.", variant: "destructive" });
+      return;
+    }
+    const existing = subUomOptions.find((o) => o.value.toLowerCase() === name.toLowerCase());
+    const selected = existing?.value ?? name;
+    if (!existing) {
+      const parentKey = uomKey(form.uom) || "pcs";
+      setCustomSubUoms((current) => {
+        const list = [...(current[parentKey] || [])];
+        if (!list.some((x) => x.toLowerCase() === name.toLowerCase())) list.push(name);
+        const next = { ...current, [parentKey]: list };
+        saveCustomSubUoms(next);
+        return next;
+      });
+    }
+    addSubUom(selected);
+    setCreateSubUomOpen(false);
+    setNewSubUomName("");
+  }
+
+  /** One Sub UOM per edit pick — appends to saved list (does not replace). */
+  function addSubUom(value: string) {
+    const selected = String(value || "").trim();
+    if (!selected) return;
+    setForm((f) => {
+      const list = parseSubUoms(f.alternateUom);
+      if (list.some((x) => x.toLowerCase() === selected.toLowerCase())) {
+        return f;
+      }
+      return { ...f, alternateUom: serializeSubUoms([...list, selected]) };
+    });
+    setSubUomSelectKey((k) => k + 1);
+  }
+
+  function removeSubUom(value: string) {
+    setForm((f) => ({
+      ...f,
+      alternateUom: serializeSubUoms(
+        parseSubUoms(f.alternateUom).filter((x) => x.toLowerCase() !== value.toLowerCase()),
+      ),
+    }));
   }
 
   function handleCreateItemType() {
@@ -602,21 +785,6 @@ export default function StockItemFormPage() {
     setNewPriceLevelName("");
   }
 
-  function saveAdditionalUnits() {
-    const alt = altDraft.alternateUom.trim();
-    if (alt && alt.toLowerCase() === form.uom.toLowerCase()) {
-      toast({ title: "Invalid units", description: "Alternate unit must differ from main UOM.", variant: "destructive" });
-      return;
-    }
-    setForm((f) => ({
-      ...f,
-      alternateUom: alt,
-      alternateQty: alt ? Number(altDraft.alternateQty) || 0 : "",
-      mainQty: alt ? Number(altDraft.mainQty) || 0 : "",
-    }));
-    setAltUnitsOpen(false);
-  }
-
   function invalidateStockViews() {
     void queryClient.invalidateQueries({ queryKey: ["/api/stock-items"] });
     void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
@@ -658,6 +826,7 @@ export default function StockItemFormPage() {
       isActive: form.isActive,
       trackInventory: form.trackInventory,
       showInPos: form.showInPos,
+      isWeightBased: form.isWeightBased,
       pricingMethod: form.pricingMethod,
       alternateUom: form.alternateUom.trim() || null,
       alternateQty: form.alternateUom.trim() ? Number(form.alternateQty) || 0 : 0,
@@ -882,9 +1051,15 @@ export default function StockItemFormPage() {
               </Select>
             </div>
 
-            <div className="space-y-1.5 md:col-span-2">
+            <div className="space-y-1.5 md:col-span-1">
               <Label className="text-sm font-medium text-[#111827]">UOM</Label>
-              <Select value={form.uom} onValueChange={(v) => setField("uom", v)}>
+              <Select
+                value={form.uom}
+                onValueChange={(v) => {
+                  setField("uom", v);
+                  setSubUomSelectKey((k) => k + 1);
+                }}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent className="max-h-48">
                   <div
@@ -897,20 +1072,47 @@ export default function StockItemFormPage() {
                   {uomOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <button
-                type="button"
-                className="text-sm font-medium text-[#2563EB] hover:underline"
-                onClick={() => {
-                  setAltDraft({
-                    alternateUom: form.alternateUom || "",
-                    alternateQty: form.alternateQty !== "" ? String(form.alternateQty) : "0",
-                    mainQty: form.mainQty !== "" ? String(form.mainQty) : "0",
-                  });
-                  setAltUnitsOpen(true);
-                }}
-              >
-                Additional units
-              </button>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-sm font-medium text-[#111827]">Sub UOM</Label>
+              <Select key={`${form.uom}-${subUomSelectKey}`} onValueChange={(v) => addSubUom(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder={`Select Sub UOM for ${form.uom || "UOM"}`} />
+                </SelectTrigger>
+                <SelectContent className="max-h-48">
+                  <div
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                    onClick={(e) => { e.preventDefault(); setNewSubUomName(""); setCreateSubUomOpen(true); }}
+                  >
+                    <Plus className="h-4 w-4" /> Create
+                  </div>
+                  <div className="my-1 border-t" />
+                  {subUomOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {parseSubUoms(form.alternateUom).length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {parseSubUoms(form.alternateUom).map((u) => (
+                    <span
+                      key={u}
+                      className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-2 py-0.5 text-[11px] text-[#374151]"
+                    >
+                      {u}
+                      <button
+                        type="button"
+                        className="rounded p-0.5 text-[#9CA3AF] hover:bg-[#E5E7EB] hover:text-[#111827]"
+                        onClick={() => removeSubUom(u)}
+                        aria-label={`Remove ${u}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-1.5 md:col-span-2">
@@ -977,6 +1179,20 @@ export default function StockItemFormPage() {
               <label className="flex items-center gap-2 text-sm text-[#111827]">
                 <Checkbox checked={form.showInPos} onCheckedChange={(c) => setField("showInPos", c === true)} />
                 Show in POS
+              </label>
+              <label className="flex items-center gap-2 text-sm text-[#111827]">
+                <Checkbox
+                  checked={form.isWeightBased}
+                  onCheckedChange={(c) => {
+                    const on = c === true;
+                    setForm((f) => ({
+                      ...f,
+                      isWeightBased: on,
+                      uom: on ? (f.uom.toLowerCase() === "kg" || f.uom.toLowerCase() === "kilogram" ? f.uom : "Kg") : f.uom,
+                    }));
+                  }}
+                />
+                Weight Based Product
               </label>
               <label className="flex items-center gap-2 text-sm text-[#111827]">
                 <Checkbox checked={form.isActive} onCheckedChange={(c) => setField("isActive", c === true)} />
@@ -1052,9 +1268,14 @@ export default function StockItemFormPage() {
               <Label className="text-sm font-medium text-[#111827]">
                 {form.selectedPriceLevel
                   ? `${priceLevels.find((l) => l.id === form.selectedPriceLevel)?.name || "Level"} Selling Price`
-                  : "Selling Price"}{" "}
+                  : form.isWeightBased
+                    ? "Price per KG"
+                    : "Selling Price"}{" "}
                 <span className="text-destructive">*</span>
               </Label>
+              {form.isWeightBased ? (
+                <p className="text-[11px] text-[#6B7280]">Selling price is treated as rate per kilogram for POS weighing.</p>
+              ) : null}
               <Input
                 type="number"
                 min={0}
@@ -1227,6 +1448,27 @@ export default function StockItemFormPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={createSubUomOpen} onOpenChange={setCreateSubUomOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create Sub UOM</DialogTitle></DialogHeader>
+          <Input
+            value={newSubUomName}
+            onChange={(e) => setNewSubUomName(e.target.value)}
+            placeholder="e.g. 200 grams"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCreateSubUom();
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateSubUomOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateSubUom}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createItemTypeOpen} onOpenChange={setCreateItemTypeOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Create Item Type</DialogTitle></DialogHeader>
@@ -1261,37 +1503,6 @@ export default function StockItemFormPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreatePriceLevelOpen(false)}>Cancel</Button>
             <Button onClick={handleCreatePriceLevel}>Add</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={altUnitsOpen} onOpenChange={setAltUnitsOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Additional Units</DialogTitle></DialogHeader>
-          <div className="grid gap-3">
-            <div className="space-y-1.5">
-              <Label>Alternate UOM</Label>
-              <Input value={altDraft.alternateUom} onChange={(e) => setAltDraft((d) => ({ ...d, alternateUom: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Alternate Qty</Label>
-                <Input type="number" value={altDraft.alternateQty} onChange={(e) => setAltDraft((d) => ({ ...d, alternateQty: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Equals Main Qty ({form.uom})</Label>
-                <Input type="number" value={altDraft.mainQty} onChange={(e) => setAltDraft((d) => ({ ...d, mainQty: e.target.value }))} />
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => {
-              setAltDraft({ alternateUom: "", alternateQty: "0", mainQty: "0" });
-              setForm((f) => ({ ...f, alternateUom: "", alternateQty: "", mainQty: "" }));
-              setAltUnitsOpen(false);
-            }}>Clear</Button>
-            <Button variant="outline" onClick={() => setAltUnitsOpen(false)}>Cancel</Button>
-            <Button onClick={saveAdditionalUnits}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

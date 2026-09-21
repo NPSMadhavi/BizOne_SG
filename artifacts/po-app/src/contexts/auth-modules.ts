@@ -10,7 +10,7 @@ export const ALL_MODULES = [
   "quotations", "sales_orders", "invoices",
   "proforma_invoices", "delivery_orders", "credit_notes",
   "point_of_sale", "bill_of_materials", "multi_price_level",
-  "stock_items", "warehouses", "stock_transfer", "inventory_reports", "batch_expiry",
+  "stock_items", "warehouses", "stock_transfer", "inventory_reports", "sales_person_wise_report", "batch_expiry",
   "vendors", "customers", "address_book",
   "projects",
   "accounting_coa", "accounting_je", "accounting_gl", "accounting_tb", "accounting_bs",
@@ -53,6 +53,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   warehouses: "Warehouses",
   stock_transfer: "Stock Transfer",
   inventory_reports: "Stock Reports",
+  sales_person_wise_report: "Sales Person Wise Report",
   batch_expiry: "Batch & Expiry",
   vendors: "Vendors",
   customers: "Customers",
@@ -119,7 +120,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "inventory",
     label: "Inventory",
-    modules: ["warehouses", "stock_items", "stock_transfer", "inventory_reports", "batch_expiry"],
+    modules: ["warehouses", "stock_items", "stock_transfer", "inventory_reports", "sales_person_wise_report", "batch_expiry"],
   },
   {
     id: "directory",
@@ -159,6 +160,7 @@ const PATH_MODULE_PREFIXES: { prefix: string; module: AppModule }[] = [
   { prefix: "/stock", module: "stock_items" },
   { prefix: "/warehouses", module: "warehouses" },
   { prefix: "/inventory/stock-transfer", module: "stock_transfer" },
+  { prefix: "/inventory/sales-person-wise-report", module: "sales_person_wise_report" },
   { prefix: "/inventory/batch-expiry", module: "batch_expiry" },
   { prefix: "/inventory/reports", module: "inventory_reports" },
   { prefix: "/inventory/warehouses", module: "warehouses" },
