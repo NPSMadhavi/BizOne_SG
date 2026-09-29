@@ -2461,396 +2461,343 @@ export function AgentPanel() {
 
   const panelInner = (
     <div className="flex flex-col h-full w-full overflow-hidden bg-card text-card-foreground">
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
-                  <Sparkles className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-sm font-semibold">Veda</span>
-                <span className="text-xs text-muted-foreground">· AI assistant</span>
-                {handsFree && (
-                  <span className="flex items-center gap-1 text-xs text-primary font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                    hands-free
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                {wakeSupported && (
-                  <button
-                    onClick={toggleHandsFree}
-                    title={
-                      wakeError
-                        ? "Mic blocked by browser — allow microphone, or use Alt+M"
-                        : handsFree
-                        ? "Hands-free ON — Veda stays hidden until you open chat"
-                        : "Turn on hands-free listening"
-                    }
-                    className={cn(
-                      "flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md transition-colors",
-                      wakeError
-                        ? "bg-yellow-500/10 text-yellow-600 font-medium"
-                        : handsFree
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                    )}
-                  >
-                    <Radio className="h-3 w-3" />
-                    {wakeError ? "⚠ Mic blocked" : handsFree ? "Hands-free" : "Hands-free OFF"}
-                  </button>
-                )}
-                {hasMessages && (
-                  <button
-                    onClick={clear}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2.5 py-1.5 rounded-md hover:bg-muted transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    New
-                  </button>
-                )}
-                <button
-                  onClick={toggleDocked}
-                  title={isDocked ? "Float panel over page" : "Dock panel to side (like Gemini)"}
-                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                >
-                  {isDocked ? (
-                    <PanelRightClose className="h-3.5 w-3.5" />
-                  ) : (
-                    <Columns className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                <button
-                  onClick={close}
-                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
+      {/* Header — Clean Gemini-style */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center shadow-xs">
+            <Sparkles className="h-3.5 w-3.5" />
+          </div>
+          <span className="text-sm font-semibold tracking-tight text-foreground">Veda</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {wakeSupported && (
+            <button
+              onClick={toggleHandsFree}
+              title={
+                wakeError
+                  ? "Mic blocked by browser"
+                  : handsFree
+                  ? "Hands-free voice ON (say 'Veda')"
+                  : "Turn on hands-free voice"
+              }
+              className={cn(
+                "relative w-7 h-7 flex items-center justify-center rounded-lg transition-colors",
+                wakeError
+                  ? "text-yellow-600 hover:bg-yellow-500/10"
+                  : handsFree
+                  ? "text-primary hover:bg-primary/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+            >
+              <Radio className="h-3.5 w-3.5" />
+              {handsFree && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-primary" />
+              )}
+            </button>
+          )}
+          {hasMessages && (
+            <button
+              onClick={clear}
+              title="New chat"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            onClick={toggleDocked}
+            title={isDocked ? "Float panel" : "Dock to side"}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            {isDocked ? (
+              <PanelRightClose className="h-3.5 w-3.5" />
+            ) : (
+              <Columns className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <button
+            onClick={close}
+            title="Close"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Active Voice Bar inside open panel */}
+      {convState !== "idle" && (
+        <div className="flex items-center justify-between px-3.5 py-2 bg-primary/10 border-b border-primary/20 text-xs text-primary animate-in fade-in duration-200 shrink-0">
+          <div className="flex items-center gap-2 overflow-hidden min-w-0">
+            {convState === "greeting" && (
+              <>
+                <Sparkles className="h-3.5 w-3.5 animate-pulse text-primary shrink-0" />
+                <span className="font-semibold shrink-0">Ready:</span>
+                <span className="truncate">{convText || "Ready!"}</span>
+              </>
+            )}
+            {convState === "listening" && (
+              <>
+                <Mic className="h-3.5 w-3.5 animate-pulse text-red-500 shrink-0" />
+                <span className="font-semibold text-red-500 shrink-0">Listening…</span>
+                <span className="truncate text-foreground/80">{convText ? `"${convText}"` : "speak now"}</span>
+              </>
+            )}
+            {convState === "processing" && (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                <span className="font-semibold shrink-0">Processing…</span>
+                <span className="truncate text-muted-foreground">{convText}</span>
+              </>
+            )}
+            {convState === "speaking" && (
+              <>
+                <Volume2 className="h-3.5 w-3.5 animate-bounce text-primary shrink-0" />
+                <span className="font-semibold shrink-0">Speaking…</span>
+                <span className="truncate text-muted-foreground">{convText}</span>
+              </>
+            )}
+          </div>
+          <button
+            onClick={stopConversation}
+            className="px-2 py-0.5 rounded bg-background/80 hover:bg-background border border-border text-[11px] text-muted-foreground hover:text-foreground shrink-0 ml-2"
+          >
+            Stop (Esc)
+          </button>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
+        {!hasMessages ? (
+          /* ── Gemini Welcome ── */
+          <div className="flex flex-col items-center justify-center min-h-[320px] py-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center shadow-lg shadow-primary/20 mb-3.5">
+              <Sparkles className="h-6 w-6" />
             </div>
 
-            {/* Active Voice Bar inside open panel */}
-            {convState !== "idle" && (
-              <div className="flex items-center justify-between px-4 py-2 bg-primary/10 border-b border-primary/20 text-xs text-primary animate-in fade-in duration-200 shrink-0">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  {convState === "greeting" && (
-                    <>
-                      <Sparkles className="h-3.5 w-3.5 animate-pulse text-primary shrink-0" />
-                      <span className="font-semibold">Ready:</span>
-                      <span className="truncate">{convText || "Ready!"}</span>
-                    </>
-                  )}
-                  {convState === "listening" && (
-                    <>
-                      <Mic className="h-3.5 w-3.5 animate-pulse text-red-500 shrink-0" />
-                      <span className="font-semibold text-red-500">Listening…</span>
-                      <span className="truncate text-foreground/80">{convText ? `"${convText}"` : "speak now"}</span>
-                    </>
-                  )}
-                  {convState === "processing" && (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-                      <span className="font-semibold">Processing…</span>
-                      <span className="truncate text-muted-foreground">{convText}</span>
-                    </>
-                  )}
-                  {convState === "speaking" && (
-                    <>
-                      <Volume2 className="h-3.5 w-3.5 animate-bounce text-primary shrink-0" />
-                      <span className="font-semibold">Speaking…</span>
-                      <span className="truncate text-muted-foreground">{convText}</span>
-                    </>
-                  )}
-                </div>
-                <button
-                  onClick={stopConversation}
-                  className="px-2 py-0.5 rounded bg-background/80 hover:bg-background border border-border text-[11px] text-muted-foreground hover:text-foreground shrink-0 ml-2"
-                >
-                  Stop (Esc)
-                </button>
-              </div>
+            <h2 className="text-xl font-semibold tracking-tight text-foreground text-center">
+              Where should we start?
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1 text-center max-w-[260px]">
+              Ask questions, run reports, or navigate BizOne
+            </p>
+
+            {voiceError && (
+              <p className="mt-2 text-xs text-red-600 text-center max-w-sm px-2">{voiceError}</p>
             )}
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-              {!hasMessages ? (
-                /* ── Welcome ── */
-                <div className="flex flex-col items-center justify-center h-full px-6 gap-6">
-                  <>
-                    <div className="text-center">
-                      <p className="text-sm text-muted-foreground mb-1">Hi there</p>
-                        <h2 className="text-2xl font-semibold tracking-tight">Where should we start?</h2>
-                        {handsFree && (
-                          <p className="text-xs text-muted-foreground mt-1.5">
-                            Hands-free is on — talk to Veda without opening this chat
-                          </p>
-                        )}
-                      </div>
+            {/* Prompt Starters */}
+            <div className="w-full flex flex-col gap-2 mt-5">
+              {SUGGESTIONS.map(s => (
+                <button
+                  key={s.label}
+                  onClick={() => send(s.label)}
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-border/70 bg-card hover:bg-muted/60 text-left text-xs text-foreground/85 hover:text-foreground transition-all hover:border-primary/40 hover:shadow-xs group cursor-pointer"
+                >
+                  <span className="text-base group-hover:scale-110 transition-transform shrink-0">{s.icon}</span>
+                  <span className="font-medium flex-1 truncate">{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* ── Chat thread ── */
+          <div className="space-y-4">
+            {messages.map(msg => (
+              <div key={msg.id} className={cn(
+                "flex gap-2.5",
+                msg.role === "user" ? "justify-end" : "justify-start",
+              )}>
+                {msg.role === "assistant" && (
+                  <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
+                    <Sparkles className="h-3 w-3" />
+                  </div>
+                )}
 
-                      {/* Speak button — silence ends the utterance */}
-                      <div className="w-full flex flex-col items-center gap-3">
-                        <button
-                          onClick={mic}
-                          disabled={transcribing || thinking}
-                          className={cn(
-                            "relative w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-semibold text-base transition-all duration-200 shadow-md select-none",
-                            micError
-                              ? "bg-red-100 text-red-600 border border-red-200"
-                              : panelListening
-                              ? "bg-red-500 text-white shadow-red-200 shadow-lg scale-[1.02]"
-                              : "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]",
-                          )}
-                        >
-                          {panelListening && (
-                            <span className="absolute inset-0 rounded-2xl animate-ping bg-red-400 opacity-30 pointer-events-none" />
-                          )}
-                          <span className={cn(
-                            "flex items-center justify-center w-9 h-9 rounded-full shrink-0",
-                            panelListening ? "bg-white/20" : "bg-white/15",
+                <div className={cn(
+                  "flex flex-col gap-1.5",
+                  msg.role === "user" ? "items-end max-w-[80%]" : "items-start max-w-[85%]",
+                )}>
+                  {/* Tool badges */}
+                  {msg.toolCalls && msg.toolCalls.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {msg.toolCalls.map((tc, i) => {
+                        const done = !!msg.complete;
+                        const icon = done
+                          ? <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
+                          : tc === "getFinancialStats" ? <BarChart2 className="h-2.5 w-2.5" />
+                          : tc === "navigateTo" ? <Navigation className="h-2.5 w-2.5" />
+                          : <Loader2 className="h-2.5 w-2.5 animate-spin" />;
+                        return (
+                          <span key={i} className={cn(
+                            "text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border",
+                            done
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-400"
+                              : "bg-muted border-border text-muted-foreground",
                           )}>
-                            {panelListening
-                              ? <Mic className="h-5 w-5" />
-                              : <Mic className="h-5 w-5" />}
+                            {icon}
+                            {TOOL_LABELS[tc] || tc}
                           </span>
-                          <span className="flex flex-col items-start leading-tight">
-                            <span className="text-sm font-semibold">
-                              {micError ? "Mic access denied" : panelListening ? "Listening… pause when done" : "Speak to Veda"}
-                            </span>
-                            {!panelListening && !micError && (
-                              <span className="text-xs opacity-70 font-normal">Speak, then pause — no tap to stop</span>
-                            )}
-                            {panelListening && (
-                              <span className="text-xs opacity-70 font-normal">Ends automatically when you pause</span>
-                            )}
-                          </span>
-                          {panelListening && (
-                            <span className="ml-auto flex items-center gap-[3px]">
-                              {[1,2,3,4,3].map((h, i) => (
-                                <span key={i} className="w-[3px] rounded-full bg-white/80 animate-pulse" style={{ height: `${h * 5}px`, animationDelay: `${i * 100}ms` }} />
-                              ))}
-                            </span>
-                          )}
-                        </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                        {voiceError && (
-                          <p className="text-xs text-red-600 text-center max-w-sm px-2">{voiceError}</p>
-                        )}
+                  {/* Navigation chip */}
+                  {msg.navigated && (
+                    <span className="text-xs rounded-full px-2.5 py-1 flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-400">
+                      <Navigation className="h-2.5 w-2.5" />
+                      Opened {msg.navigated.label}
+                    </span>
+                  )}
 
-                        <div className="flex items-center gap-3 w-full">
-                          <div className="flex-1 h-px bg-border" />
-                          <span className="text-xs text-muted-foreground">or type below</span>
-                          <div className="flex-1 h-px bg-border" />
-                        </div>
-                      </div>
-
-                      {/* Text input */}
-                      <div className="w-full">
-                        <div className="flex items-end gap-2 bg-muted/50 border border-border rounded-xl px-4 py-3 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
-                          <textarea
-                            ref={inputRef}
-                            value={input}
-                            onChange={e => setInput(e.target.value)}
-                            onKeyDown={onKey}
-                            placeholder="Ask me anything…"
-                            rows={1}
-                            className="flex-1 resize-none bg-transparent text-sm focus:outline-none min-h-[24px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
-                            onInput={e => {
-                              const el = e.currentTarget;
-                              el.style.height = "auto";
-                              el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
-                            }}
-                          />
-                          <button
-                            onClick={submit}
-                            disabled={!input.trim()}
-                            className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-                          >
-                            <Send className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Chips */}
-                      <div className="flex flex-wrap gap-2 justify-center">
-                        {SUGGESTIONS.map(s => (
-                          <button
-                            key={s.label}
-                            onClick={() => send(s.label)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-background hover:bg-muted text-xs text-foreground/70 hover:text-foreground transition-colors"
-                          >
-                            <span>{s.icon}</span>
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                  </>
-                </div>
-              ) : (
-                /* ── Chat thread ── */
-                <div className="px-4 py-4 space-y-5">
-                  {messages.map(msg => (
-                    <div key={msg.id} className={cn(
-                      "flex gap-2.5",
-                      msg.role === "user" ? "justify-end" : "justify-start",
+                  {/* Bubble */}
+                  {(msg.content || msg.role === "assistant") && (
+                    <div className={cn(
+                      "text-sm leading-relaxed",
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground px-3.5 py-2.5 rounded-2xl rounded-tr-sm"
+                        : "text-foreground bg-muted/30 px-3.5 py-2.5 rounded-2xl rounded-tl-sm border border-border/40",
                     )}>
-                      {msg.role === "assistant" && (
-                        <div className="shrink-0 w-6 h-6 rounded-lg bg-primary text-primary-foreground flex items-center justify-center mt-0.5">
-                          <Sparkles className="h-3 w-3" />
+                      {msg.content ? (
+                        <MarkdownText text={msg.content} />
+                      ) : (
+                        <div className="flex gap-1 items-center h-4">
+                          <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
                         </div>
                       )}
-
-                      <div className={cn(
-                        "flex flex-col gap-1.5",
-                        msg.role === "user" ? "items-end max-w-[75%]" : "items-start max-w-[85%]",
-                      )}>
-                        {/* Tool badges */}
-                        {msg.toolCalls && msg.toolCalls.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {msg.toolCalls.map((tc, i) => {
-                              const done = !!msg.complete;
-                              const icon = done
-                                ? <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
-                                : tc === "getFinancialStats" ? <BarChart2 className="h-2.5 w-2.5" />
-                                : tc === "navigateTo" ? <Navigation className="h-2.5 w-2.5" />
-                                : <Loader2 className="h-2.5 w-2.5 animate-spin" />;
-                              return (
-                                <span key={i} className={cn(
-                                  "text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border",
-                                  done
-                                    ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-400"
-                                    : "bg-muted border-border text-muted-foreground",
-                                )}>
-                                  {icon}
-                                  {TOOL_LABELS[tc] || tc}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Navigation chip */}
-                        {msg.navigated && (
-                          <span className="text-xs rounded-full px-2.5 py-1 flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-400">
-                            <Navigation className="h-2.5 w-2.5" />
-                            Opened {msg.navigated.label}
-                          </span>
-                        )}
-
-                        {/* Bubble */}
-                        {(msg.content || msg.role === "assistant") && (
-                          <div className={cn(
-                            "text-sm leading-relaxed",
-                            msg.role === "user"
-                              ? "bg-primary text-primary-foreground px-3.5 py-2.5 rounded-2xl rounded-tr-sm"
-                              : "text-foreground",
-                          )}>
-                            {msg.content ? (
-                              <MarkdownText text={msg.content} />
-                            ) : (
-                              <div className="flex gap-1 items-center h-4">
-                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
-                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
-                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
-                              </div>
-                            )}
-                            {msg.docRef && canOpenPath(msg.docRef.path) && (
-                              <button
-                                onClick={() => { navigate(msg.docRef!.path); close(); }}
-                                className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                Open {msg.docRef.number}
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {msg.role === "assistant" && msg.content && (
-                          <button
-                            onClick={() => speak(msg.content.slice(0, 600))}
-                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <Volume2 className="h-3 w-3" />
-                            Listen
-                          </button>
-                        )}
-                      </div>
-
-                      {msg.role === "user" && (
-                        <div className="shrink-0 w-6 h-6 rounded-lg bg-muted text-foreground/60 flex items-center justify-center text-xs font-bold mt-0.5">
-                          Y
-                        </div>
+                      {msg.docRef && canOpenPath(msg.docRef.path) && (
+                        <button
+                          onClick={() => { navigate(msg.docRef!.path); close(); }}
+                          className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline underline-offset-2"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open {msg.docRef.number}
+                        </button>
                       )}
                     </div>
-                  ))}
-                  <div ref={endRef} />
+                  )}
+
+                  {msg.role === "assistant" && msg.content && (
+                    <button
+                      onClick={() => speak(msg.content.slice(0, 600))}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Volume2 className="h-3 w-3" />
+                      Listen
+                    </button>
+                  )}
                 </div>
+
+                {msg.role === "user" && (
+                  <div className="shrink-0 w-6 h-6 rounded-lg bg-muted text-foreground/60 flex items-center justify-center text-xs font-bold mt-0.5">
+                    Y
+                  </div>
+                )}
+              </div>
+            ))}
+            <div ref={endRef} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Bottom Input Capsule (Gemini Style — Always Present) ── */}
+      <div className="shrink-0 border-t border-border/70 px-3.5 pt-3 pb-3 bg-card">
+        <div className={cn(
+          "flex flex-col bg-muted/40 border border-border/80 rounded-2xl p-2.5 transition-all shadow-xs",
+          "focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 focus-within:bg-background",
+          panelListening && "ring-2 ring-red-400/50 border-red-400 bg-red-500/5"
+        )}>
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={onKey}
+            placeholder={panelListening ? "Listening… speak then pause" : "Ask Veda anything…"}
+            rows={1}
+            disabled={thinking || panelListening || transcribing}
+            className="w-full resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[32px] max-h-[120px] overflow-y-auto px-1 py-0.5 placeholder:text-muted-foreground/60 leading-relaxed"
+            onInput={e => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+            }}
+          />
+
+          <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-border/30">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {panelListening ? (
+                <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  Listening…
+                </span>
+              ) : thinking ? (
+                <span className="flex items-center gap-1.5 text-primary">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Thinking…
+                </span>
+              ) : (
+                <span className="text-[11px] text-muted-foreground/70">
+                  {handsFree ? 'Say "Veda" or type' : 'Press Enter to send'}
+                </span>
               )}
             </div>
 
-            {/* Bottom input — chat mode */}
-            {hasMessages && (
-              <div className="shrink-0 border-t border-border px-4 py-3">
-                <div className="flex items-end gap-2 bg-muted/40 border border-border rounded-xl px-4 py-2.5 focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 transition-all">
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={onKey}
-                    placeholder={panelListening ? "Listening… pause when done" : "Ask Veda anything…"}
-                    rows={1}
-                    disabled={thinking || panelListening || transcribing}
-                    className="flex-1 resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[22px] max-h-[100px] overflow-y-auto py-0 placeholder:text-muted-foreground/50"
-                    onInput={e => {
-                      const el = e.currentTarget;
-                      el.style.height = "auto";
-                      el.style.height = `${Math.min(el.scrollHeight, 100)}px`;
-                    }}
-                  />
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {thinking && (
-                      <button
-                        onClick={() => abortRef.current?.abort()}
-                        className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                        title="Stop"
-                      >
-                        <Square className="h-3 w-3" />
-                      </button>
-                    )}
-                    <div className="relative">
-                      <button
-                        onClick={mic}
-                        disabled={transcribing || thinking}
-                        title={micError ? "Mic access denied" : panelListening ? "Cancel listening" : "Speak — ends when you pause"}
-                        className={cn(
-                          "w-7 h-7 rounded-full flex items-center justify-center transition-all",
-                          micError ? "bg-red-100 text-red-500 dark:bg-red-950/40"
-                            : panelListening ? "bg-red-500 text-white animate-pulse"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        <Mic className="h-3.5 w-3.5" />
-                      </button>
-                      {micError && (
-                        <div className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap text-xs bg-red-600 text-white px-2 py-0.5 rounded pointer-events-none">
-                          Mic denied
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={submit}
-                      disabled={!input.trim() || thinking || panelListening}
-                      className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                    >
-                      <Send className="h-3 w-3" />
-                    </button>
+            <div className="flex items-center gap-1">
+              {thinking && (
+                <button
+                  onClick={() => abortRef.current?.abort()}
+                  className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="Stop generating"
+                >
+                  <Square className="h-3 w-3" />
+                </button>
+              )}
+              <div className="relative">
+                <button
+                  onClick={mic}
+                  disabled={transcribing || thinking}
+                  title={micError ? "Mic access denied" : panelListening ? "Cancel listening" : "Voice input (ends on pause)"}
+                  className={cn(
+                    "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+                    micError
+                      ? "bg-red-100 text-red-500 dark:bg-red-950/40"
+                      : panelListening
+                      ? "bg-red-500 text-white animate-pulse"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                  )}
+                >
+                  <Mic className="h-3.5 w-3.5" />
+                </button>
+                {micError && (
+                  <div className="absolute bottom-full right-0 mb-1.5 whitespace-nowrap text-[11px] bg-red-600 text-white px-2 py-0.5 rounded pointer-events-none">
+                    Mic denied
                   </div>
-                </div>
-                <p className="text-xs text-muted-foreground text-center mt-1.5">
-                  Enter to send · Esc to close · Speak then pause
-                </p>
+                )}
               </div>
-            )}
+              <button
+                onClick={submit}
+                disabled={!input.trim() || thinking || panelListening}
+                className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center transition-all",
+                  input.trim() && !thinking && !panelListening
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs cursor-pointer"
+                    : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                )}
+                title="Send"
+              >
+                <Send className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground/60 text-center mt-1.5">
+          Veda can make mistakes. Verify important financial info.
+        </p>
+      </div>
     </div>
   );
 
@@ -2901,35 +2848,10 @@ export function AgentPanel() {
 
           {/* Top upside Ask Veda button */}
           <div className="fixed top-3.5 right-6 z-40 flex items-center gap-2">
-            {wakeSupported && (
-              <button
-                onClick={toggleHandsFree}
-                title={
-                  wakeError
-                    ? "Mic blocked — allow microphone, or press Alt+M"
-                    : handsFree
-                    ? "Hands-free ON — say 'Veda' or 'Agent' anytime"
-                    : "Enable hands-free listening"
-                }
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-sm transition-all duration-200 backdrop-blur-sm",
-                  wakeError
-                    ? "bg-yellow-500/10 text-yellow-700 border border-yellow-300"
-                    : handsFree
-                    ? "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
-                    : "bg-background/90 border border-border text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Radio className={cn("h-3 w-3", handsFree && "animate-pulse text-primary")} />
-                {wakeError ? "⚠ Mic blocked" : handsFree ? "Say \"Veda\"" : "Hands-free OFF"}
-              </button>
-            )}
             <button
               onClick={() => setOpen(true)}
-              title="Open Veda AI Assistant"
-              className={cn(
-                "relative flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 via-primary to-indigo-600 text-white rounded-full shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20 select-none cursor-pointer",
-              )}
+              title="Open Veda AI Assistant (Alt+M)"
+              className="relative flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 via-primary to-indigo-600 text-white rounded-full shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20 select-none cursor-pointer"
             >
               {handsFree && (
                 <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
