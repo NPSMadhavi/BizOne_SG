@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Eye } from "lucide-react";
+import { Eye, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,6 +35,30 @@ function fileCaption(value: string, pickedName?: string): string {
   return "File uploaded";
 }
 
+function dataUrlToObjectUrl(dataUrl: string): { url: string; kind: "image" | "pdf" | "other" } {
+  const comma = dataUrl.indexOf(",");
+  const header = comma >= 0 ? dataUrl.slice(0, comma) : dataUrl;
+  const mime = header.match(/data:([^;,]+)/i)?.[1] || "application/octet-stream";
+  const kind: "image" | "pdf" | "other" = mime.startsWith("image/")
+    ? "image"
+    : mime === "application/pdf"
+      ? "pdf"
+      : "other";
+
+  // Images can render from data URLs directly; PDFs are more reliable as blob URLs
+  if (kind === "image") {
+    return { url: dataUrl, kind };
+  }
+
+  const payload = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+  const isBase64 = /;base64/i.test(header);
+  const binary = isBase64 ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+  return { url: URL.createObjectURL(blob), kind };
+}
+
 function FilePreviewDialog({
   source,
   title,
@@ -59,6 +83,17 @@ function FilePreviewDialog({
     let cancelled = false;
     void (async () => {
       try {
+        if (source.startsWith("data:")) {
+          const result = dataUrlToObjectUrl(source);
+          if (cancelled) {
+            if (result.url.startsWith("blob:")) URL.revokeObjectURL(result.url);
+            return;
+          }
+          if (result.url.startsWith("blob:")) objectUrl = result.url;
+          setUrl(result.url);
+          setKind(result.kind);
+          return;
+        }
         const response = await fetch(source, { credentials: "include" });
         if (!response.ok) throw new Error("Could not open file");
         const blob = await response.blob();
@@ -154,10 +189,12 @@ export function EmployeeScanFile({
   value,
   pickedName,
   href,
+  onRemove,
 }: {
   value?: string | null;
   pickedName?: string;
   href?: string;
+  onRemove?: () => void;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   if (!value) return null;
@@ -165,14 +202,29 @@ export function EmployeeScanFile({
   return (
     <div>
       <div className="flex items-center gap-2">
-        <p className="text-xs text-green-600">{fileCaption(value, pickedName)}</p>
+        <p className="min-w-0 flex-1 truncate text-xs text-green-600">
+          {fileCaption(value, pickedName)}
+        </p>
         {source ? (
           <button
             type="button"
-            className="text-xs font-medium text-[#2563EB] underline"
+            title="View"
+            aria-label="View file"
+            className="shrink-0 rounded p-1 text-[#2563EB] transition-colors hover:bg-[#EFF6FF]"
             onClick={() => setPreviewOpen(true)}
           >
-            View
+            <Eye className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onRemove ? (
+          <button
+            type="button"
+            title="Delete"
+            aria-label="Delete file"
+            className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#FEF2F2] hover:text-[#DC2626]"
+            onClick={onRemove}
+          >
+            <Trash2 className="h-4 w-4" />
           </button>
         ) : null}
       </div>

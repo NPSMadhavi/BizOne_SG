@@ -94,9 +94,6 @@ export default function IafPage() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">IRAS Audit File (IAF)</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Pipe-delimited text file for IRAS GST audit — SA (supply) · PA (purchase) · GA (general ledger)
-          </p>
         </div>
         <Button onClick={downloadIaf} disabled={!data || downloading} className="gap-2">
           {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

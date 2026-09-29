@@ -94,9 +94,6 @@ export default function JournalEntriesList() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Journal Entries</h1>
-          <p className="text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `${filtered.length} entr${filtered.length !== 1 ? "ies" : "y"}`}
-          </p>
         </div>
         {!readOnly && (
           <Button className="gap-2" onClick={() => setLocation("/accounting/journal-entries/new")}>

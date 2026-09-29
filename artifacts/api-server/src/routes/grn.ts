@@ -349,6 +349,9 @@ export async function postPurchaseOrderWarehouseStock(params: {
             if (whRow) warehouseId = whRow.id;
           }
         }
+        if (!warehouseId) {
+          warehouseId = (await getDefaultWarehouseId(companyId)) ?? (await ensureDefaultWarehouse(companyId)) ?? undefined;
+        }
 
         const effectiveWarehouseId = requireWarehouseId(
           warehouseId,

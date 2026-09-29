@@ -105,7 +105,6 @@ export default function CashFlowStatement() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Cash Flow Statement</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Indirect method — reconciles net profit to net cash movement</p>
         </div>
         <Button onClick={handleDownload} disabled={!data || downloading} className="gap-2">
           {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

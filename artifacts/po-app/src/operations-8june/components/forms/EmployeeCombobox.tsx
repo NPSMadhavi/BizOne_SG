@@ -81,8 +81,8 @@ export function EmployeeCombobox({
           aria-expanded={open}
           disabled={disabled || loading}
           className={cn(
-            "flex h-10 w-full items-center justify-between rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827] shadow-sm",
-            "hover:bg-white focus:outline-none focus-visible:ring-0",
+            "flex h-10 w-full items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-sm text-[#111827] shadow-none",
+            "hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             "disabled:cursor-not-allowed disabled:opacity-50",
             className
           )}

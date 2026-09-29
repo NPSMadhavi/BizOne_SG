@@ -266,7 +266,7 @@ export default function Register() {
   );
 
   const personalFormMobile = (
-    <form className="flex flex-col gap-4" onSubmit={handleNext}>
+    <form className="flex flex-col gap-4" onSubmit={handleNext} data-allow-autofill="true" autoComplete="on">
       <label className="flex min-w-0 flex-col gap-2">
         <span className={authMobileLabelClass}>Email<RequiredMark /></span>
         <input
@@ -275,7 +275,7 @@ export default function Register() {
           placeholder="Enter company email"
           value={personalForm.email}
           onChange={handlePersonalChange}
-          autoComplete="email"
+          autoComplete="email" data-allow-autofill="true"
           className={registerMobileInputClass}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
@@ -289,7 +289,7 @@ export default function Register() {
           placeholder="Enter your full name"
           value={personalForm.full_name}
           onChange={handlePersonalChange}
-          autoComplete="name"
+          autoComplete="name" data-allow-autofill="true"
           className={registerMobileInputClass}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
@@ -310,7 +310,7 @@ export default function Register() {
             placeholder="9123 4567"
             value={personalForm.phone_number}
             onChange={handlePersonalChange}
-            autoComplete="tel-national"
+            autoComplete="tel-national" data-allow-autofill="true"
             inputMode="numeric"
             maxLength={SG_PHONE_DIGITS}
             className={`${registerMobileInputClass} rounded-l-none`}
@@ -328,7 +328,7 @@ export default function Register() {
             placeholder="Type your password"
             value={personalForm.password}
             onChange={handlePersonalChange}
-            autoComplete="new-password"
+            autoComplete="new-password" data-allow-autofill="true"
             className={registerMobilePasswordInputClass}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />
@@ -352,7 +352,7 @@ export default function Register() {
             placeholder="Confirm your password"
             value={personalForm.confirm_password}
             onChange={handlePersonalChange}
-            autoComplete="new-password"
+            autoComplete="new-password" data-allow-autofill="true"
             className={registerMobilePasswordInputClass}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />
@@ -480,7 +480,7 @@ export default function Register() {
   );
 
   const personalFormDesktop = (
-    <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleNext}>
+    <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleNext} data-allow-autofill="true" autoComplete="on">
       <label className="flex min-w-0 flex-col gap-1">
         <span className="text-[0.82rem] font-semibold text-[#101828]">Email<RequiredMark /></span>
         <input
@@ -489,7 +489,7 @@ export default function Register() {
           placeholder="Enter your email address"
           value={personalForm.email}
           onChange={handlePersonalChange}
-          autoComplete="email"
+          autoComplete="email" data-allow-autofill="true"
           className={desktopInputClassName}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
@@ -504,7 +504,7 @@ export default function Register() {
             placeholder="Enter your full name"
             value={personalForm.full_name}
             onChange={handlePersonalChange}
-            autoComplete="name"
+            autoComplete="name" data-allow-autofill="true"
             className={desktopInputClassName}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />
@@ -525,7 +525,7 @@ export default function Register() {
               placeholder="9123 4567"
               value={personalForm.phone_number}
               onChange={handlePersonalChange}
-              autoComplete="tel-national"
+              autoComplete="tel-national" data-allow-autofill="true"
               inputMode="numeric"
               maxLength={SG_PHONE_DIGITS}
               className={`${desktopInputClassName} rounded-l-none`}
@@ -545,7 +545,7 @@ export default function Register() {
               placeholder="Type your password"
               value={personalForm.password}
               onChange={handlePersonalChange}
-              autoComplete="new-password"
+              autoComplete="new-password" data-allow-autofill="true"
               className={desktopPasswordInputClassName}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
@@ -569,7 +569,7 @@ export default function Register() {
               placeholder="Confirm your password"
               value={personalForm.confirm_password}
               onChange={handlePersonalChange}
-              autoComplete="new-password"
+              autoComplete="new-password" data-allow-autofill="true"
               className={desktopPasswordInputClassName}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />

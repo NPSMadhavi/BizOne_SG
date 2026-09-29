@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateDebitNote_PDF } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
+import { stripHtml } from "@/lib/vendor-invoice-items";
 
 interface DebitNote {
   id: number; dnNumber: string; customerName: string; customerAddress: string | null;
@@ -194,7 +195,7 @@ export default function DebitNoteView() {
                     <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50/40">
                       <td className="px-4 py-2.5 text-gray-400 text-xs">{lineNum}</td>
                       {hasPartNo && <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{item.partNumber || "—"}</td>}
-                      <td className="px-4 py-2.5 text-gray-700">{item.description}</td>
+                      <td className="px-4 py-2.5 text-gray-700">{stripHtml(item.description || "") || "—"}</td>
                       <td className="px-4 py-2.5 text-right font-mono text-gray-600">{item.qty}</td>
                       <td className="px-4 py-2.5 text-right font-mono text-gray-600">{new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2 }).format(Number(item.unitPrice))}</td>
                       <td className="px-4 py-2.5 text-right font-mono text-gray-500">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>

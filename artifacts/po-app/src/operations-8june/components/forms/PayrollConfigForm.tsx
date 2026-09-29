@@ -211,7 +211,7 @@ function formatRatePercent(rate: number): string {
 
 const formLabelClass = "text-sm font-medium text-[#111827]";
 const payheadLabelClass = "text-base font-medium text-[#111827]";
-const readOnlyInputClass = "bg-[#F9FAFB] text-[#111827]";
+const readOnlyInputClass = "bg-[#F8FAFC] text-[#111827]";
 
 type Payhead = { id: string; label: string };
 type PayheadKind = "earning" | "deduction";

@@ -207,7 +207,7 @@ export default function AssetsPage() {
       return `
       <tr style="border-bottom: 1px solid #E5E7EB;">
         <td style="padding: 8px 10px; font-weight: 500; color: #111827;">${asset.tag || "—"}</td>
-        <td style="padding: 8px 10px; color: #111827;">${asset.category || asset.type || "—"}</td>
+        <td style="padding: 8px 10px; color: #111827;">${(asset.category || asset.type || "—").replace(/\b\w/g, (c) => c.toUpperCase())}</td>
         <td style="padding: 8px 10px; font-family: monospace;">${asset.serial || "—"}</td>
         <td style="padding: 8px 10px; text-transform: capitalize;">
           <span style="display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 500; border-radius: 9999px; ${
@@ -219,8 +219,8 @@ export default function AssetsPage() {
             ${asset.status || "—"}
           </span>
         </td>
-        <td style="padding: 8px 10px; color: #4B5563;">${asset.assignedTo || "—"}</td>
-        <td style="padding: 8px 10px; color: #4B5563;">${asset.location || "—"}</td>
+        <td style="padding: 8px 10px; color: #4B5563;">${(asset.assignedTo || "—").replace(/\b\w/g, (c) => c.toUpperCase())}</td>
+        <td style="padding: 8px 10px; color: #4B5563;">${(asset.location || "—").replace(/\b\w/g, (c) => c.toUpperCase())}</td>
         <td style="padding: 8px 10px; color: #4B5563; white-space: nowrap;">${formatAssetDate(asset.purchaseDate)}</td>
         <td style="padding: 8px 10px; color: #4B5563; white-space: nowrap;">${formatAssetDate(asset.warrantyExpiry)}</td>
         <td style="padding: 8px 10px; color: #111827; text-align: right; white-space: nowrap;">${formatAssetCurrency(purchaseValue)}</td>
@@ -389,6 +389,14 @@ export default function AssetsPage() {
         return { background: "#F3F4F6", color: "#6B7280" };
     }
   };
+
+  const formatCapital = (value?: string | null) => {
+    if (!value) return "—";
+    return value
+      .split(/([\s_-]+)/)
+      .map((part) => (/^[\s_-]+$/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+      .join("");
+  };
   
   return (
     <>
@@ -409,7 +417,7 @@ export default function AssetsPage() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="h-9 min-w-[180px] justify-between gap-2 px-3 border-[#E4E4E4]">
                   <span className="truncate">
-                    {selectedLocation === "all" ? "Location Wise Report" : `Location: ${selectedLocation}`}
+                    {selectedLocation === "all" ? "Location Wise Report" : `Location: ${formatCapital(selectedLocation)}`}
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -438,7 +446,7 @@ export default function AssetsPage() {
                     }}
                     className={`cursor-pointer px-2 py-1.5 ${selectedLocation.toLowerCase() === loc.toLowerCase() && locationReportSelected ? "bg-accent font-medium" : ""}`}
                   >
-                    {loc}
+                    {formatCapital(loc)}
                   </DropdownMenuItem>
                 ))}
                 {locations.length === 0 && (
@@ -507,11 +515,9 @@ export default function AssetsPage() {
                     <TableRow key={asset.id}>
                       <TableCell className="font-medium text-[#111827]">{asset.tag}</TableCell>
                       <TableCell className="text-[#111827]">
-                        {asset.type
-                          ? asset.type.charAt(0).toUpperCase() + asset.type.slice(1)
-                          : "—"}
+                        {formatCapital(asset.type)}
                       </TableCell>
-                      <TableCell className="text-[#444651]">{asset.category || "—"}</TableCell>
+                      <TableCell className="text-[#444651]">{formatCapital(asset.category)}</TableCell>
                       <TableCell>
                         <span
                           className="inline-flex items-center rounded-full px-3 py-0.5 text-xs font-medium capitalize"
@@ -520,8 +526,8 @@ export default function AssetsPage() {
                           {asset.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-[#444651]">{asset.assignedTo || "—"}</TableCell>
-                      <TableCell className="text-[#444651]">{asset.location || "—"}</TableCell>
+                      <TableCell className="text-[#444651]">{formatCapital(asset.assignedTo)}</TableCell>
+                      <TableCell className="text-[#444651]">{formatCapital(asset.location)}</TableCell>
                       <TableCell className="whitespace-nowrap text-[#444651]">
                         {asset.warrantyExpiry 
                           ? new Date(asset.warrantyExpiry).toLocaleDateString() 

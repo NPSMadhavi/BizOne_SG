@@ -23,7 +23,7 @@ import { fmtDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { BankAccountField } from "@/components/bank-account-field";
-import { calcViLineAmount } from "@/lib/vendor-invoice-items";
+import { calcViLineAmount, stripHtml } from "@/lib/vendor-invoice-items";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 
 function statusBadge(status: string) {
@@ -373,7 +373,7 @@ export default function VendorInvoiceView() {
                       <tr key={idx} className="bg-card">
                         <td className="px-6 py-4 text-center text-muted-foreground align-top">{lineNum}</td>
                         {hasPartNo && <td className="px-6 py-4 text-muted-foreground align-top font-mono text-xs">{item.partNumber || "—"}</td>}
-                        <td className="px-6 py-4 text-muted-foreground align-top">{item.description}</td>
+                        <td className="px-6 py-4 text-muted-foreground align-top">{stripHtml(item.description || "") || "—"}</td>
                         <td className="px-6 py-4 text-center font-medium align-top">{item.qty}</td>
                         <td className="px-6 py-4 text-right text-muted-foreground align-top">{fmtAmt(Number(item.unitPrice))}</td>
                         <td className="px-6 py-4 text-right text-muted-foreground align-top">{Number(item.discount) > 0 ? `${item.discount}%` : "—"}</td>

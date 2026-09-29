@@ -104,6 +104,12 @@ export default function VendorsPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [currencyOpen, setCurrencyOpen] = useState(false);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setSearch(q);
+  }, []);
+
   const { selectedCompany, canManage } = useAuth();
   const companyCountry = selectedCompany?.country ?? "";
 

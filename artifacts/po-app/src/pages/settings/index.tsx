@@ -838,11 +838,14 @@ export default function Settings() {
                     <Label htmlFor="smtpPass">Password / App Password</Label>
                     <Input
                       id="smtpPass"
-                      type="password"
+                      name="smtp_app_password"
+                      type="text"
+                      autoComplete="nope"
                       placeholder={settings?.smtpConfigured ? "••••••••  (leave blank to keep current)" : "Enter password"}
                       value={smtpPass}
                       onChange={e => { setSmtpEditing(true); setSmtpPass(e.target.value); }}
                       disabled={!isAdmin}
+                      className={smtpPass ? "[-webkit-text-security:disc]" : undefined}
                     />
                   </div>
                   <div className="space-y-1.5">

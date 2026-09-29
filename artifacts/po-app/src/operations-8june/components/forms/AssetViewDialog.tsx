@@ -8,7 +8,8 @@ import {
   formatViewDate,
   formatViewStatus,
 } from "@/operations-8june/components/ui/entity-view-dialog";
-import { formatFileSize, loadAssetAttachments } from "@/operations-8june/lib/asset-attachments";
+import { formatFileSize, loadAssetAttachments, downloadAssetAttachment, viewAssetAttachment } from "@/operations-8june/lib/asset-attachments";
+import { Download } from "lucide-react";
 
 interface AssetViewDialogProps {
   open: boolean;
@@ -99,21 +100,32 @@ export default function AssetViewDialog({ open, onClose, asset }: AssetViewDialo
             label="Attachments"
             fullWidth
             value={
-              <ul className="space-y-1">
+              <ul className="space-y-2">
                 {attachments.map((attachment) => (
-                  <li key={attachment.id} className="flex items-center gap-2">
-                    <a
-                      href={attachment.dataUrl}
-                      download={attachment.name}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="truncate font-medium text-[#2563EB] hover:underline"
+                  <li
+                    key={attachment.id}
+                    className="flex items-center gap-2 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => viewAssetAttachment(attachment)}
+                      className="min-w-0 flex-1 truncate text-left font-medium text-[#2563EB] hover:underline"
+                      title={`View ${attachment.name}`}
                     >
                       {attachment.name}
-                    </a>
+                    </button>
                     <span className="shrink-0 text-xs text-[#6B7280]">
                       {formatFileSize(attachment.size)}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => downloadAssetAttachment(attachment)}
+                      className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#EFF6FF] hover:text-[#2563EB]"
+                      aria-label={`Download ${attachment.name}`}
+                      title="Download"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
                   </li>
                 ))}
               </ul>

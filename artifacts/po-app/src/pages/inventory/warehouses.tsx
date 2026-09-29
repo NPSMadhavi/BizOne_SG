@@ -266,12 +266,13 @@ export default function WarehousesPage() {
             <DialogTitle>{editRow ? "Edit Warehouse" : "Create Warehouse"}</DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2 [&_input]:bg-[#F8FAFC] [&_textarea]:bg-[#F8FAFC] [&_button[role=combobox]]:bg-[#F8FAFC]">
             <div className="space-y-1.5">
               <Label>Warehouse Code <span className="text-red-500">*</span></Label>
               <Input
                 value={form.code}
                 onChange={(e) => updateField("code", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
             <div className="space-y-1.5">
@@ -279,6 +280,7 @@ export default function WarehousesPage() {
               <Input
                 value={form.name}
                 onChange={(e) => updateField("name", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
             <div className="space-y-1.5">
@@ -286,6 +288,7 @@ export default function WarehousesPage() {
               <Input
                 value={form.city}
                 onChange={(e) => updateField("city", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
             <div className="space-y-1.5">
@@ -293,6 +296,7 @@ export default function WarehousesPage() {
               <Input
                 value={form.pinCode}
                 onChange={(e) => updateField("pinCode", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
             <div className="space-y-1.5">
@@ -301,7 +305,7 @@ export default function WarehousesPage() {
                 value={form.country}
                 onChange={(v) => updateField("country", v)}
                 singleChevron
-                className="h-9 shadow-sm"
+                className="h-10"
               />
             </div>
             <div className="space-y-1.5">
@@ -309,6 +313,7 @@ export default function WarehousesPage() {
               <Input
                 value={form.contactPerson}
                 onChange={(e) => updateField("contactPerson", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
             <div className="space-y-1.5">
@@ -325,7 +330,7 @@ export default function WarehousesPage() {
                 value={form.isActive ? "active" : "inactive"}
                 onValueChange={(v) => updateField("isActive", v === "active")}
               >
-                <SelectTrigger>
+                <SelectTrigger className="bg-[#F8FAFC] border-[#E5E7EB]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -340,6 +345,7 @@ export default function WarehousesPage() {
                 rows={2}
                 value={form.address}
                 onChange={(e) => updateField("address", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
             <div className="space-y-1.5">
@@ -348,6 +354,7 @@ export default function WarehousesPage() {
                 rows={2}
                 value={form.description}
                 onChange={(e) => updateField("description", e.target.value)}
+                className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>
           </div>

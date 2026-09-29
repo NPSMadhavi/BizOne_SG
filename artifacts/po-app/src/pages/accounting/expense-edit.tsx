@@ -277,7 +277,7 @@ export default function ExpenseEdit() {
           <Card>
             <CardHeader><CardTitle className="text-base">Expense Details</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="expenseDate">Expense Date <span className="text-destructive">*</span></Label>
                   <Input id="expenseDate" type="date" {...register("expenseDate", { required: true })} />
@@ -289,21 +289,16 @@ export default function ExpenseEdit() {
                     <SelectContent>{CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              <div className="space-y-1.5">
-                <Label>Vendor / Payee Name <span className="text-destructive">*</span></Label>
-                <Input {...register("vendorName", { required: true })} />
-              </div>
+                <div className="space-y-1.5">
+                  <Label>Vendor / Payee Name <span className="text-destructive">*</span></Label>
+                  <Input {...register("vendorName", { required: true })} />
+                </div>
 
-              <div className="space-y-1.5">
-                <Label>Description <span className="text-destructive">*</span></Label>
-                <Input {...register("description", { required: true })} />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Ledger <span className="text-destructive">*</span></Label>
-                <LedgerCombobox accounts={accounts} value={accountId} onChange={onLedgerChange} />
+                <div className="space-y-1.5">
+                  <Label>Ledger <span className="text-destructive">*</span></Label>
+                  <LedgerCombobox accounts={accounts} value={accountId} onChange={onLedgerChange} />
+                </div>
               </div>
 
               <BankAccountField
@@ -313,6 +308,11 @@ export default function ExpenseEdit() {
                 onBankAccountChange={setSelectedBank}
                 paymentMethods={PAYMENT_METHODS}
               />
+
+              <div className="space-y-1.5">
+                <Label>Description <span className="text-destructive">*</span></Label>
+                <Input {...register("description", { required: true })} />
+              </div>
             </CardContent>
           </Card>
 
@@ -348,26 +348,30 @@ export default function ExpenseEdit() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <p className="text-sm font-medium">GST Input Tax Claimable</p>
-                  <p className="text-xs text-muted-foreground">Claim GST back from IRAS if vendor is GST-registered</p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">GST Input Tax Claimable</p>
+                    <p className="text-xs text-muted-foreground">Claim GST back from IRAS if vendor is GST-registered</p>
+                  </div>
+                  <Switch checked={gstClaimable} onCheckedChange={onGstClaimableChange} />
                 </div>
-                <Switch checked={gstClaimable} onCheckedChange={onGstClaimableChange} />
-              </div>
 
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <p className="text-sm font-medium">Tax Deductible</p>
-                  <p className="text-xs text-muted-foreground">Allowable business deduction under IRAS rules</p>
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Tax Deductible</p>
+                    <p className="text-xs text-muted-foreground">Allowable business deduction under IRAS rules</p>
+                  </div>
+                  <Switch checked={isDeductible} onCheckedChange={v => setValue("isDeductible", v)} />
                 </div>
-                <Switch checked={isDeductible} onCheckedChange={v => setValue("isDeductible", v)} />
-              </div>
 
-              {isDeductible && (
                 <div className="space-y-1.5">
                   <Label>Deductible Percentage</Label>
-                  <Select value={String(deductiblePct)} onValueChange={v => setValue("deductiblePct", parseInt(v))}>
+                  <Select
+                    value={String(deductiblePct)}
+                    onValueChange={v => setValue("deductiblePct", parseInt(v))}
+                    disabled={!isDeductible}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="100">100% — Fully deductible</SelectItem>
@@ -376,20 +380,20 @@ export default function ExpenseEdit() {
                     </SelectContent>
                   </Select>
                 </div>
-              )}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader><CardTitle className="text-base">Notes & Receipt</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Internal Notes</Label>
                 <Textarea rows={3} {...register("notes")} />
               </div>
               <div className="space-y-1.5">
                 <Label>Replace Receipt (optional)</Label>
-                <label className="flex items-center gap-2 border-2 border-dashed rounded-lg p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                <label className="flex h-[88px] items-center gap-2 border-2 border-dashed rounded-lg p-4 cursor-pointer hover:bg-muted/30 transition-colors">
                   <Upload className="h-4 w-4 text-muted-foreground shrink-0" />
                   <span className="text-sm text-muted-foreground">{receiptFileName ?? "Click to upload new receipt (PDF, PNG, JPG)"}</span>
                   <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onReceiptChange} />

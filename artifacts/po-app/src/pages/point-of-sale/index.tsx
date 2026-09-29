@@ -1314,67 +1314,55 @@ export default function PointOfSalePage() {
             <DialogHeader className="space-y-2">
               <DialogTitle className="text-xl">Sales Person Login</DialogTitle>
             </DialogHeader>
+            {/* Remount on open so Chrome cannot reuse prior form-history for these fields */}
             <form
+              key={employeeLoginOpen ? "pos-login-open" : "pos-login-closed"}
               onSubmit={handleEmployeeLogin}
               className="space-y-5"
               autoComplete="off"
             >
-              {/* Decoy fields so browser autofill targets these instead of the real inputs */}
-              <input type="text" name="prevent_autofill_user" autoComplete="username" className="hidden" tabIndex={-1} readOnly aria-hidden="true" />
-              <input type="password" name="prevent_autofill_pass" autoComplete="current-password" className="hidden" tabIndex={-1} readOnly aria-hidden="true" />
-
               <div className="space-y-2">
-                <Label htmlFor="pos-emp-code">Sales Person ID</Label>
+                <Label>Sales Person ID</Label>
                 <Input
-                  id="pos-emp-code"
-                  name="pos_emp_code"
                   ref={employeeIdRef}
                   value={employeeIdInput}
                   onChange={(e) => setEmployeeIdInput(e.target.value)}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
+                  aria-label="Sales Person ID"
                   className="h-11 font-mono text-sm"
                 />
               </div>
               {creatingAccount ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="pos-emp-pin">Password</Label>
+                    <Label>Password</Label>
                     <Input
-                      id="pos-emp-pin"
-                      name="pos_emp_pin"
-                      type="password"
+                      type="text"
                       value={employeePassword}
                       onChange={(e) => setEmployeePassword(e.target.value)}
-                      autoComplete="new-password"
-                      className="h-11 text-sm"
+                      aria-label="Password"
+                      className="h-11 text-sm [-webkit-text-security:disc]"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="pos-emp-confirm">Confirm Password</Label>
+                    <Label>Confirm Password</Label>
                     <Input
-                      id="pos-emp-confirm"
-                      name="pos_emp_confirm"
-                      type="password"
+                      type="text"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      autoComplete="new-password"
-                      className="h-11 text-sm"
+                      aria-label="Confirm Password"
+                      className="h-11 text-sm [-webkit-text-security:disc]"
                     />
                   </div>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="pos-emp-pin">Password</Label>
+                  <Label>Password</Label>
                   <Input
-                    id="pos-emp-pin"
-                    name="pos_emp_pin"
-                    type="password"
+                    type="text"
                     value={employeePassword}
                     onChange={(e) => setEmployeePassword(e.target.value)}
-                    autoComplete="new-password"
-                    className="h-11 text-sm"
+                    aria-label="Password"
+                    className="h-11 text-sm [-webkit-text-security:disc]"
                   />
                 </div>
               )}
@@ -1661,7 +1649,7 @@ export default function PointOfSalePage() {
           </div>
 
           {/* Current Sale */}
-          <div className="flex min-h-[560px] flex-col rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+          <div className="flex min-h-0 flex-col self-start rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="flex items-center justify-between gap-2 border-b border-[#E5E7EB] px-4 py-3">
               <h2 className="text-base font-semibold text-[#111827]">Current Sale</h2>
             </div>
@@ -1674,10 +1662,10 @@ export default function PointOfSalePage() {
               <span />
             </div>
 
-            <div className="min-h-[160px] flex-1 overflow-y-auto px-2 py-1">
+            <div className="max-h-[220px] min-h-0 overflow-y-auto px-2 py-1">
               {cart.length === 0 ? (
-                <div className="flex h-40 flex-col items-center justify-center text-sm text-[#9CA3AF]">
-                  <ShoppingCart className="mb-2 h-8 w-8 opacity-40" />
+                <div className="flex h-24 flex-col items-center justify-center text-sm text-[#9CA3AF]">
+                  <ShoppingCart className="mb-2 h-7 w-7 opacity-40" />
                   Tap an item to add it here
                 </div>
               ) : (

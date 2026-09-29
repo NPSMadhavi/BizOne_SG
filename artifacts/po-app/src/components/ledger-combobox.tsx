@@ -170,9 +170,10 @@ interface LedgerComboboxProps {
   accounts: LedgerAccount[];
   value: number | null;
   onChange: (account: LedgerAccount) => void;
+  defaultType?: AccountType;
 }
 
-export function LedgerCombobox({ accounts, value, onChange }: LedgerComboboxProps) {
+export function LedgerCombobox({ accounts, value, onChange, defaultType = "expense" }: LedgerComboboxProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -219,7 +220,7 @@ export function LedgerCombobox({ accounts, value, onChange }: LedgerComboboxProp
           onFocus={() => { setOpen(true); setQuery(""); }}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery(""); } }}
-          autoComplete="off"
+          autoComplete="nope"
         />
         {open && (
           <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-64 overflow-y-auto">
@@ -272,7 +273,7 @@ export function LedgerCombobox({ accounts, value, onChange }: LedgerComboboxProp
       <AccountCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        defaultType="expense"
+        defaultType={defaultType}
         onCreated={(account) => onChange(account)}
       />
     </>

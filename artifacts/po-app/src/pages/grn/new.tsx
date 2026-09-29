@@ -509,7 +509,7 @@ export default function GrnNew() {
                 ref={poInputRef}
                 value={poSearch}
                 disabled={creating || posLoading || !!grn}
-                placeholder={posLoading ? "Loading…" : "Optional — type or select PO…"}
+                placeholder={posLoading ? "Loading…" : ""}
                 className="font-semibold h-9"
                 onFocus={() => setPoPickerOpen(true)}
                 onChange={(e) => {

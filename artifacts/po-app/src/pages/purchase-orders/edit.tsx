@@ -33,9 +33,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload, FileInput } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
-import { ImportFromPurchaseQuotationDialog } from "@/components/import-from-purchase-quotation-dialog";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { cn, plainText } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -112,7 +111,6 @@ export default function PurchaseOrderEdit() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importQuotationOpen, setImportQuotationOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
@@ -349,8 +347,8 @@ export default function PurchaseOrderEdit() {
       amount: (i as any).type === "section" ? 0 : i.qty * i.unitPrice,
       isStockItem: i.isStockItem === true || Number((i as any).stockItemId) > 0,
       stockItemId: Number((i as any).stockItemId) > 0 ? Number((i as any).stockItemId) : undefined,
-      warehouseId: undefined,
-      warehouseName: undefined,
+      warehouseId: Number((i as any).warehouseId) > 0 ? Number((i as any).warehouseId) : undefined,
+      warehouseName: (i as any).warehouseName || undefined,
     }));
     updateMutation.mutate(
       { id, data: { ...values, status: "confirmed", items: itemsWithAmount, customerId: values.customerId ?? undefined } },
@@ -597,7 +595,7 @@ export default function PurchaseOrderEdit() {
  render={({ field }) => (
                     <FormItem>
                       <FormLabel>Customer PO Ref No.</FormLabel>
-                      <FormControl><Input placeholder="CUST-PO-2024-001" {...field} /></FormControl>
+                      <FormControl><Input placeholder="" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -608,7 +606,7 @@ export default function PurchaseOrderEdit() {
  render={({ field }) => (
                     <FormItem>
                       <FormLabel>Sales Quote Reference No.</FormLabel>
-                      <FormControl><Input placeholder="SQ-2024-001" {...field} /></FormControl>
+                      <FormControl><Input placeholder="" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -716,9 +714,6 @@ export default function PurchaseOrderEdit() {
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section", sectionLabel: "", sectionAlign: "left", partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportQuotationOpen(true)}>
-                    <FileInput className="h-3 w-3" /> Import from Quotation
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
                     <Upload className="h-3 w-3" /> Import from PDF/Excel
@@ -915,7 +910,7 @@ export default function PurchaseOrderEdit() {
                       <FormItem>
                         <FormLabel className="text-muted-foreground">Additional Notes</FormLabel>
                         <FormControl>
-                          <RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Any special instructions or terms..." className="min-h-[96px]" />
+                          <RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="" className="min-h-[96px]" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1010,8 +1005,9 @@ export default function PurchaseOrderEdit() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
  mode="receive"
-        showWarehouse={false}
- onSelect={({ item, qty }: StockItemSelection) => {
+        showWarehouse
+        requireWarehouse
+ onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
@@ -1019,33 +1015,10 @@ export default function PurchaseOrderEdit() {
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
           form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
-          form.setValue(`items.${stockPickerIndex}.warehouseId`, undefined as any);
-          form.setValue(`items.${stockPickerIndex}.warehouseName`, "");
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId ?? (undefined as any));
+          form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName || "");
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
-        }}
-      />
-      <ImportFromPurchaseQuotationDialog
-        open={importQuotationOpen}
-        onClose={() => setImportQuotationOpen(false)}
-        onImport={(imported) => {
-          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
-          const newItems = imported
-            .filter((it) => it.type !== "section")
-            .map((it) => ({
-              ...blankItem,
-              partNumber: it.partNumber || "",
-              description: it.description || "",
-              qty: it.qty || 1,
-              uom: it.uom || "",
-              unitPrice: it.unitPrice || 0,
-            }));
-          const current = form.getValues("items");
-          const kept = current.filter((i) => {
-            if (i.type === "section") return !!String(i.sectionLabel || "").trim();
-            return !!(String(i.partNumber || "").trim() || String(i.description || "").trim() || Number(i.unitPrice));
-          });
-          form.setValue("items", [...kept, ...newItems]);
         }}
       />
       <ImportItemsDialog

@@ -45,8 +45,8 @@ export function CountrySelect({ value, onChange, singleChevron = false, hideChev
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
-            "hover:bg-background focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            "flex h-10 w-full items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-sm shadow-none",
+            "hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             "disabled:cursor-not-allowed disabled:opacity-50",
             className
           )}

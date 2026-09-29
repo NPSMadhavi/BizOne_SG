@@ -537,7 +537,8 @@ export function StockItemPickerDialog({
 
   async function handleConfirmSerials() {
     if (!selectedItem || confirmedQty == null) return;
-    if (chosen.size > 0 && chosen.size !== confirmedQty) return;
+    // Serials are optional and may be fewer than qty (not all units need a serial yet).
+    if (chosen.size === 0 || chosen.size > confirmedQty) return;
     const chosenSerials = serials.filter(s => chosen.has(s.id));
     await emitSelection(
       chosenSerials.map(s => s.serialNumber),
@@ -579,7 +580,9 @@ export function StockItemPickerDialog({
     batchOk &&
     !batchSaving;
   const warehouseOk = !requireWarehouse || !!selectedWarehouseId;
-  const serialSelectionOk = chosen.size === 0 || (confirmedQty != null && chosen.size === confirmedQty);
+  // Allow any serial count from 1 up to invoice qty (partial serials OK).
+  const serialSelectionOk =
+    chosen.size > 0 && confirmedQty != null && chosen.size <= confirmedQty;
   const isCreatingBatch = showBatchFields && batchSelectValue === CREATE_BATCH_VALUE;
 
   return (
@@ -926,9 +929,14 @@ export function StockItemPickerDialog({
 
                 <div className="text-xs text-muted-foreground px-1">
                   {chosen.size} selected · {availableCount} available · {serials.length - availableCount} reserved
-                  {chosen.size > 0 && chosen.size !== confirmedQty && (
+                  {chosen.size > confirmedQty && (
                     <span className="text-red-600 ml-2">
-                      Select exactly {confirmedQty} serials, or skip serials.
+                      Select at most {confirmedQty} serials (invoice qty).
+                    </span>
+                  )}
+                  {chosen.size > 0 && chosen.size < confirmedQty && (
+                    <span className="text-muted-foreground ml-2">
+                      Partial serials OK — remaining units import without serials. Or skip serials entirely.
                     </span>
                   )}
                 </div>
@@ -994,9 +1002,11 @@ export function StockItemPickerDialog({
               </Button>
               <Button
                 onClick={() => void handleConfirmSerials()}
-                disabled={serialsLoading || stockLoading || !warehouseOk || !serialSelectionOk || chosen.size === 0 || batchSaving}
+                disabled={serialsLoading || stockLoading || !warehouseOk || !serialSelectionOk || batchSaving}
               >
-                {`Import with serials (${chosen.size}/${confirmedQty})`}
+                {chosen.size > 0 && chosen.size < confirmedQty
+                  ? `Import ${confirmedQty} with ${chosen.size} serial${chosen.size === 1 ? "" : "s"}`
+                  : `Import with serials (${chosen.size}/${confirmedQty})`}
               </Button>
             </DialogFooter>
           </>

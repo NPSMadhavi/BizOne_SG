@@ -590,6 +590,31 @@ export default function StockItemFormPage() {
     return () => window.clearTimeout(t);
   }, [creatingBatch]);
 
+  function commitNewBatch() {
+    const next = form.batchNo.trim();
+    if (!next) {
+      setCreatingBatch(false);
+      setBatchSelectValue("");
+      setField("batchNo", "");
+      return;
+    }
+    setItemBatches((prev) => {
+      if (prev.some((b) => b.batchNo === next)) return prev;
+      return [
+        ...prev,
+        {
+          batchNo: next,
+          expiryDate: form.expiryDate.trim() || null,
+          manufacturingDate: form.manufacturingDate.trim() || null,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    });
+    setBatchSelectValue(next);
+    setField("batchNo", next);
+    setCreatingBatch(false);
+  }
+
   useEffect(() => {
     if (isEdit) return;
     let cancelled = false;
@@ -1066,63 +1091,61 @@ export default function StockItemFormPage() {
         {/* Basic Information (includes pricing — no separate sidebar/tabs) */}
         <section className="space-y-4">
           <ModalSectionHeader icon={Package} title="Basic Information" />
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-4">
-            <div className="md:col-span-4 grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-[#111827]">
-                  Item Code <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={form.code}
-                  readOnly={!isEdit}
-                  className={!isEdit ? "bg-muted/40" : ""}
-                  onChange={(e) => setField("code", e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-[#111827]">
-                  Item Name <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={form.name}
-                  onChange={(e) => setField("name", e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-[#111827]">
-                  Item Type <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.type}
-                  onValueChange={(v) => setField("type", v)}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    <div
-                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                      onClick={(e) => { e.preventDefault(); setNewItemTypeName(""); setCreateItemTypeOpen(true); }}
-                    >
-                      <Plus className="h-4 w-4" /> Create Item Type
-                    </div>
-                    <div className="my-1 border-t" />
-                    {itemTypeOptions.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">
+                Item Code <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={form.code}
+                readOnly={!isEdit}
+                className={!isEdit ? "bg-muted/40" : ""}
+                onChange={(e) => setField("code", e.target.value)}
+              />
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">
+                Item Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setField("name", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">
+                Item Type <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.type}
+                onValueChange={(v) => setField("type", v)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent className="max-h-60">
+                  <div
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                    onClick={(e) => { e.preventDefault(); setNewItemTypeName(""); setCreateItemTypeOpen(true); }}
+                  >
+                    <Plus className="h-4 w-4" /> Create Item Type
+                  </div>
+                  <div className="my-1 border-t" />
+                  {itemTypeOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Stock Group</Label>
               <Select
                 value={form.stockGroup || undefined}
                 onValueChange={(v) => setField("stockGroup", v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select price level" />
+                  <SelectValue placeholder="Select stock group" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   <div
@@ -1143,7 +1166,7 @@ export default function StockItemFormPage() {
               </Select>
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Category</Label>
               <Input
                 value={form.category}
@@ -1151,7 +1174,7 @@ export default function StockItemFormPage() {
               />
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Brand</Label>
               <Input
                 value={form.brand}
@@ -1159,65 +1182,73 @@ export default function StockItemFormPage() {
               />
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Batch wise detail</Label>
-              <Select
-                value={creatingBatch ? CREATE_BATCH_VALUE : (batchSelectValue || undefined)}
-                onValueChange={(value) => {
-                  if (value === CREATE_BATCH_VALUE) {
-                    setCreatingBatch(true);
-                    setBatchSelectValue(CREATE_BATCH_VALUE);
-                    setField("batchNo", "");
-                    setField("expiryDate", "");
-                    setField("manufacturingDate", "");
-                    window.setTimeout(() => {
-                      newBatchInputRef.current?.focus();
-                      newBatchInputRef.current?.select();
-                    }, 50);
-                    return;
-                  }
-                  setCreatingBatch(false);
-                  setBatchSelectValue(value);
-                  const found = itemBatches.find((b) => b.batchNo === value);
-                  setField("batchNo", value);
-                  setField("expiryDate", found?.expiryDate || "");
-                  setField("manufacturingDate", found?.manufacturingDate || "");
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={`Select Sub UOM for ${form.uom || "UOM"}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={CREATE_BATCH_VALUE}>+ Create new batch</SelectItem>
-                  {itemBatches.map((b) => (
-                    <SelectItem
-                      key={b.batchNo}
-                      value={b.batchNo}
-                      textValue={b.batchNo}
-                      className="pr-10 [&>span:last-child]:w-full"
-                    >
-                      <span className="flex w-full items-center justify-between gap-3">
-                        <span className="truncate">{b.batchNo}</span>
-                        <span className="shrink-0 font-medium text-[#16A34A]">
-                          {formatAvailLabel(b.availableQty, form.uom)}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               {creatingBatch ? (
                 <Input
                   ref={newBatchInputRef}
-                  className="mt-1.5"
                   value={form.batchNo}
                   onChange={(e) => setField("batchNo", e.target.value)}
-                  placeholder="e.g. 200 grams"
+                  onBlur={commitNewBatch}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitNewBatch();
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setCreatingBatch(false);
+                      setBatchSelectValue("");
+                      setField("batchNo", "");
+                    }
+                  }}
+                  placeholder="Enter batch no"
                 />
-              ) : null}
+              ) : (
+                <Select
+                  value={batchSelectValue || undefined}
+                  onValueChange={(value) => {
+                    if (value === CREATE_BATCH_VALUE) {
+                      setCreatingBatch(true);
+                      setBatchSelectValue("");
+                      setField("batchNo", "");
+                      setField("expiryDate", "");
+                      setField("manufacturingDate", "");
+                      return;
+                    }
+                    setBatchSelectValue(value);
+                    const found = itemBatches.find((b) => b.batchNo === value);
+                    setField("batchNo", value);
+                    setField("expiryDate", found?.expiryDate || "");
+                    setField("manufacturingDate", found?.manufacturingDate || "");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select batch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={CREATE_BATCH_VALUE}>+ Create new batch</SelectItem>
+                    {itemBatches.map((b) => (
+                      <SelectItem
+                        key={b.batchNo}
+                        value={b.batchNo}
+                        textValue={b.batchNo}
+                        className="pr-10 [&>span:last-child]:w-full"
+                      >
+                        <span className="flex w-full items-center justify-between gap-3">
+                          <span className="truncate">{b.batchNo}</span>
+                          <span className="shrink-0 font-medium text-[#16A34A]">
+                            {formatAvailLabel(b.availableQty, form.uom)}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Expiry date</Label>
               <SyncBridgeDatePicker
                 value={form.expiryDate || ""}
@@ -1225,7 +1256,7 @@ export default function StockItemFormPage() {
               />
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Manufacturing date</Label>
               <SyncBridgeDatePicker
                 value={form.manufacturingDate || ""}
@@ -1233,39 +1264,7 @@ export default function StockItemFormPage() {
               />
             </div>
 
-              <div className="space-y-1.5 md:col-span-1">
-                <Label className="text-sm font-medium text-[#111827]">Price Levels</Label>
-                <Select
-                  value={
-                    FIXED_PRICE_LEVELS.some((l) => l.id === form.selectedPriceLevel)
-                      ? form.selectedPriceLevel
-                      : "retail"
-                  }
-                  onValueChange={(v) => selectPriceLevel(v)}
-                >
-                <SelectTrigger>
-                  <SelectValue placeholder="e.g. Distributor Price" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  <div
-                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setNewPriceLevelName("");
-                      setCreatePriceLevelOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" /> Create
-                  </div>
-                  <div className="my-1 border-t" />
-                  {priceLevels.filter((l) => l.active !== false).map((level) => (
-                    <SelectItem key={level.id} value={level.id}>{level.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">UOM</Label>
               <Select
                 value={form.uom}
@@ -1288,20 +1287,13 @@ export default function StockItemFormPage() {
               </Select>
             </div>
 
-            <div className="space-y-1.5 md:col-span-1">
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Sub UOM</Label>
               <Select key={`${form.uom}-${subUomSelectKey}`} onValueChange={(v) => addSubUom(v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="" />
+                  <SelectValue placeholder={`Select Sub UOM for ${form.uom || "UOM"}`} />
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
-                  <div
-                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                    onClick={(e) => { e.preventDefault(); setNewSubUomName(""); setCreateSubUomOpen(true); }}
-                  >
-                    <Plus className="h-4 w-4" /> Create
-                  </div>
-                  <div className="my-1 border-t" />
                   {subUomOptions.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
@@ -1329,24 +1321,36 @@ export default function StockItemFormPage() {
               ) : null}
             </div>
 
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-sm font-medium text-[#111827]">Barcode</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={form.barcode}
-                  readOnly={!isEdit}
-                  className={!isEdit ? "bg-muted/40" : ""}
-                  onChange={(e) => setField("barcode", e.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="shrink-0 gap-1.5"
-                  onClick={() => toast({ title: "Scan", description: "Type the barcode or use a USB scanner." })}
-                >
-                  <ScanLine className="h-4 w-4" /> Scan
-                </Button>
-              </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">Price Levels</Label>
+              <Select
+                value={
+                  FIXED_PRICE_LEVELS.some((l) => l.id === form.selectedPriceLevel)
+                    ? form.selectedPriceLevel
+                    : "retail"
+                }
+                onValueChange={(v) => selectPriceLevel(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="e.g. Distributor Price" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  <div
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setNewPriceLevelName("");
+                      setCreatePriceLevelOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" /> Create
+                  </div>
+                  <div className="my-1 border-t" />
+                  {priceLevels.filter((l) => l.active !== false).map((level) => (
+                    <SelectItem key={level.id} value={level.id}>{level.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </section>
@@ -1401,7 +1405,7 @@ export default function StockItemFormPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
             <div className="w-[140px] shrink-0 space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Item Image</Label>
               <button
@@ -1436,33 +1440,55 @@ export default function StockItemFormPage() {
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pb-2">
-              <label className="flex items-center gap-2 text-sm text-[#111827]">
-                <Checkbox checked={form.trackInventory} onCheckedChange={(c) => setField("trackInventory", c === true)} />
-                Track Inventory
-              </label>
-              <label className="flex items-center gap-2 text-sm text-[#111827]">
-                <Checkbox checked={form.showInPos} onCheckedChange={(c) => setField("showInPos", c === true)} />
-                Show in POS
-              </label>
-              <label className="flex items-center gap-2 text-sm text-[#111827]">
-                <Checkbox
-                  checked={form.isWeightBased}
-                  onCheckedChange={(c) => {
-                    const on = c === true;
-                    setForm((f) => ({
-                      ...f,
-                      isWeightBased: on,
-                      uom: on ? (f.uom.toLowerCase() === "kg" || f.uom.toLowerCase() === "kilogram" ? f.uom : "Kg") : f.uom,
-                    }));
-                  }}
-                />
-                Weight Based Product
-              </label>
-              <label className="flex items-center gap-2 text-sm text-[#111827]">
-                <Checkbox checked={form.isActive} onCheckedChange={(c) => setField("isActive", c === true)} />
-                Active
-              </label>
+            <div className="flex min-w-0 flex-1 flex-wrap items-end justify-between gap-x-6 gap-y-3 pb-2">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                <label className="flex items-center gap-2 text-sm text-[#111827]">
+                  <Checkbox checked={form.trackInventory} onCheckedChange={(c) => setField("trackInventory", c === true)} />
+                  Track Inventory
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#111827]">
+                  <Checkbox checked={form.showInPos} onCheckedChange={(c) => setField("showInPos", c === true)} />
+                  Show in POS
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#111827]">
+                  <Checkbox
+                    checked={form.isWeightBased}
+                    onCheckedChange={(c) => {
+                      const on = c === true;
+                      setForm((f) => ({
+                        ...f,
+                        isWeightBased: on,
+                        uom: on ? (f.uom.toLowerCase() === "kg" || f.uom.toLowerCase() === "kilogram" ? f.uom : "Kg") : f.uom,
+                      }));
+                    }}
+                  />
+                  Weight Based Product
+                </label>
+                <label className="flex items-center gap-2 text-sm text-[#111827]">
+                  <Checkbox checked={form.isActive} onCheckedChange={(c) => setField("isActive", c === true)} />
+                  Active
+                </label>
+              </div>
+
+              <div className="w-full max-w-sm space-y-1.5 sm:w-[280px]">
+                <Label className="text-sm font-medium text-[#111827]">Barcode</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={form.barcode}
+                    readOnly={!isEdit}
+                    className={!isEdit ? "bg-muted/40" : ""}
+                    onChange={(e) => setField("barcode", e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0 gap-1.5"
+                    onClick={() => toast({ title: "Scan", description: "Type the barcode or use a USB scanner." })}
+                  >
+                    <ScanLine className="h-4 w-4" /> Scan
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </section>

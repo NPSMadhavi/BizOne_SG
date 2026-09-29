@@ -504,18 +504,18 @@ export default function SalesPersonWiseReportPage() {
   function exportExcel() {
     const wb = XLSX.utils.book_new();
     const summaryData = personSummary.map((r, i) => ({
-      "#": i + 1,
-      "Sales Person": r.salesPerson,
-      "No. of Invoices": r.invoiceCount,
-      "Qty Sold": r.qtySold,
-      "Gross Sales": r.grossSales,
-      Discount: r.discount,
+        "#": i + 1,
+        "Sales Person": r.salesPerson,
+        "No. of Invoices": r.invoiceCount,
+        "Qty Sold": r.qtySold,
+        "Gross Sales": r.grossSales,
+        Discount: r.discount,
       GST: r.gst,
       "Invoice Value": r.invoiceValue,
-      "Cost Value": r.costValue,
-      "Gross Profit": r.grossProfit,
-      "Margin %": r.margin,
-    }));
+        "Cost Value": r.costValue,
+        "Gross Profit": r.grossProfit,
+        "Margin %": r.margin,
+      }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryData), "Summary");
 
     if (itemDetails.length > 0) {
@@ -578,25 +578,25 @@ export default function SalesPersonWiseReportPage() {
     doc.setFontSize(9);
     doc.text(`${filters.dateFrom} to ${filters.dateTo}`, 14, 22);
 
-    autoTable(doc, {
-      startY: 28,
+      autoTable(doc, {
+        startY: 28,
       head: [["#", "Sales Person", "Invoices", "Qty Sold", "Gross Sales", "Discount", "GST", "Invoice Value", "Cost Value", "Gross Profit", "Margin %"]],
-      body: personSummary.map((r, i) => [
-        i + 1,
-        r.salesPerson,
-        r.invoiceCount,
-        qtyFmt(r.qtySold),
-        money(r.grossSales),
-        money(r.discount),
+        body: personSummary.map((r, i) => [
+          i + 1,
+          r.salesPerson,
+          r.invoiceCount,
+          qtyFmt(r.qtySold),
+          money(r.grossSales),
+          money(r.discount),
         money(r.gst),
         money(r.invoiceValue),
-        money(r.costValue),
-        money(r.grossProfit),
-        pctFmt(r.margin),
-      ]),
+          money(r.costValue),
+          money(r.grossProfit),
+          pctFmt(r.margin),
+        ]),
       styles: { fontSize: 7 },
-      headStyles: { fillColor: [16, 45, 82] },
-    });
+        headStyles: { fillColor: [16, 45, 82] },
+      });
     doc.save(`sales-person-wise-report-${todayIso()}.pdf`);
   }
 
@@ -836,9 +836,9 @@ ${styles}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="secondary" className="gap-2">
-                  <Printer className="h-4 w-4" /> Print
+              <Printer className="h-4 w-4" /> Print
                   <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-                </Button>
+            </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuItem onClick={() => printReportSection("summary")}>
@@ -852,8 +852,8 @@ ${styles}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        </section>
+        </div>
+      </section>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -867,7 +867,7 @@ ${styles}
 
       {/* Summary table */}
       <div id="sp-summary" className="space-y-2">
-        <h2 className="text-sm font-semibold text-[#111827]">Sales Person Summary</h2>
+            <h2 className="text-sm font-semibold text-[#111827]">Sales Person Summary</h2>
         <ManagementTableCard
           pagination={{
             page: personPager.page,
@@ -875,7 +875,7 @@ ${styles}
             onPageChange: personPager.setPage,
           }}
         >
-          {personPager.paginatedItems.length === 0 ? (
+                {personPager.paginatedItems.length === 0 ? (
             <ManagementEmptyState
               title="No sales data"
               description="No sales data for selected filters."
@@ -917,7 +917,7 @@ ${styles}
                     </TableRow>
                   ))}
                 </TableBody>
-                {personSummary.length > 0 && (
+              {personSummary.length > 0 && (
                   <TableFooter>
                     <TableRow>
                       <TableCell colSpan={2} className="font-semibold">Total</TableCell>
@@ -936,9 +936,9 @@ ${styles}
                         {money(personSummary.reduce((s, r) => s + r.grossProfit, 0))}
                       </TableCell>
                       <TableCell className="text-right font-semibold">
-                        {pctFmt(kpis.netSales > 0
-                          ? (personSummary.reduce((s, r) => s + r.grossProfit, 0) / kpis.netSales) * 100
-                          : 0)}
+                      {pctFmt(kpis.netSales > 0
+                        ? (personSummary.reduce((s, r) => s + r.grossProfit, 0) / kpis.netSales) * 100
+                        : 0)}
                       </TableCell>
                     </TableRow>
                   </TableFooter>
@@ -947,7 +947,7 @@ ${styles}
             </ManagementTableContainer>
           )}
         </ManagementTableCard>
-      </div>
+          </div>
 
       {/* Item details */}
       <div id="sp-items" className="space-y-2">
@@ -959,7 +959,7 @@ ${styles}
             onPageChange: itemPager.setPage,
           }}
         >
-          {itemPager.paginatedItems.length === 0 ? (
+                {itemPager.paginatedItems.length === 0 ? (
             <ManagementEmptyState
               title="No item sales"
               description="No item sales for selected filters."
@@ -1038,7 +1038,7 @@ ${styles}
                     );
                   })}
                 </TableBody>
-                {itemDetails.length > 0 && (
+              {itemDetails.length > 0 && (
                   <TableFooter>
                     <TableRow>
                       <TableCell colSpan={4} className="font-semibold">Total</TableCell>
@@ -1057,7 +1057,7 @@ ${styles}
             </ManagementTableContainer>
           )}
         </ManagementTableCard>
-      </div>
+          </div>
 
       {/* Invoice details */}
       <div id="sp-invoices" className="space-y-2">
@@ -1076,7 +1076,7 @@ ${styles}
             onPageChange: invoicePager.setPage,
           }}
         >
-          {invoicePager.paginatedItems.length === 0 ? (
+                {invoicePager.paginatedItems.length === 0 ? (
             <ManagementEmptyState
               title="No invoices"
               description="No invoices for this item."
@@ -1132,7 +1132,7 @@ ${styles}
             </ManagementTableContainer>
           )}
         </ManagementTableCard>
-      </div>
+          </div>
     </div>
   );
 }

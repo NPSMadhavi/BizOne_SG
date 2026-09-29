@@ -362,10 +362,15 @@ export default function SelectCompany() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="admin-pw">Your Password</Label>
-                  <Input id="admin-pw" type="password" placeholder="Enter your admin password"
+                  <Input
+                    id="admin-pw"
+                    type="password"
+                    placeholder="Enter your admin password"
                     value={adminPassword}
                     onChange={e => { setAdminPassword(e.target.value); setPwError(""); }}
                     onKeyDown={e => e.key === "Enter" && handleCreate()}
+                    autoComplete="current-password"
+                    data-allow-autofill="true"
                     autoFocus
                     className={pwError ? "border-destructive focus-visible:ring-destructive" : ""}
                   />

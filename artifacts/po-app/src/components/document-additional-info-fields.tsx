@@ -24,7 +24,7 @@ export function DocumentAdditionalInfoFields({
             <Textarea
               value={field.value ?? ""}
               onChange={field.onChange}
-              placeholder="Note for the customer..."
+              placeholder=""
               rows={4}
               className="min-h-[96px] resize-y"
             />
@@ -40,7 +40,7 @@ export function DocumentAdditionalInfoFields({
             <Textarea
               value={field.value ?? ""}
               onChange={field.onChange}
-              placeholder="Special instructions for delivery..."
+              placeholder=""
               rows={4}
               className="min-h-[96px] resize-y"
             />
@@ -56,7 +56,7 @@ export function DocumentAdditionalInfoFields({
             <Textarea
               value={field.value ?? ""}
               onChange={field.onChange}
-              placeholder="Terms & conditions..."
+              placeholder=""
               rows={4}
               className="min-h-[96px] resize-y"
             />

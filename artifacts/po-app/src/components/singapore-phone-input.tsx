@@ -29,7 +29,7 @@ export function SingaporePhoneInput({
   return (
     <div
       className={cn(
-        "flex h-9 w-full overflow-hidden rounded-md border border-input bg-background shadow-sm",
+        "flex h-10 w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] shadow-none",
         disabled && "opacity-50",
         className,
       )}
@@ -41,7 +41,7 @@ export function SingaporePhoneInput({
         id={id}
         type="text"
         inputMode="numeric"
-        autoComplete="new-password"
+        autoComplete="nope"
         name="local-digits"
         placeholder={placeholder}
         maxLength={SG_PHONE_DIGITS}

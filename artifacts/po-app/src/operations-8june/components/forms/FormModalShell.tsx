@@ -54,9 +54,9 @@ export function FormModalShell({
       <div
         className={cn(
           "max-h-[75vh] overflow-y-auto px-8 py-6",
-          "[&_input:not([type=checkbox]):not([type=radio])]:h-10 [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-white [&_input:not([type=checkbox]):not([type=radio])]:text-[#111827] [&_input:not([type=checkbox]):not([type=radio])]:shadow-sm [&_input:not([type=checkbox]):not([type=radio])]:placeholder:text-[#9CA3AF]",
-          "[&_textarea]:border-[#E5E7EB] [&_textarea]:bg-white [&_textarea]:text-[#111827] [&_textarea]:placeholder:text-[#9CA3AF]",
-          "[&_[role=combobox]]:h-10 [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-white [&_[role=combobox]]:text-[#111827] [&_[role=combobox]]:shadow-sm [&_[role=combobox][data-placeholder]]:text-[#9CA3AF]",
+          "[&_input:not([type=checkbox]):not([type=radio])]:h-10 [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:text-[#111827] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_input:not([type=checkbox]):not([type=radio])]:placeholder:text-[#9CA3AF]",
+          "[&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:text-[#111827] [&_textarea]:shadow-none [&_textarea]:placeholder:text-[#9CA3AF]",
+          "[&_[role=combobox]]:h-10 [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:text-[#111827] [&_[role=combobox]]:shadow-none [&_[role=combobox][data-placeholder]]:text-[#9CA3AF]",
           bodyClassName,
         )}
       >

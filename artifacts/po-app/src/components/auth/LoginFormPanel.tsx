@@ -46,7 +46,12 @@ export function LoginFormPanel({
           </p>
         </div>
 
-        <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-5">
+        <form
+          onSubmit={loginForm.handleSubmit(onLogin)}
+          className="space-y-5"
+          data-allow-autofill="true"
+          autoComplete="on"
+        >
           <div className="space-y-2">
             <Label htmlFor="login-username" className="text-sm font-medium text-[#374151]">
               Username
@@ -58,6 +63,7 @@ export function LoginFormPanel({
                 {...loginForm.register("username")}
                 type="text"
                 autoComplete="username"
+                data-allow-autofill="true"
                 placeholder="Enter your username"
                 className="h-11 rounded-lg border-[#E5E7EB] bg-white pl-10 text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-[#2563EB]/20"
               />
@@ -78,6 +84,7 @@ export function LoginFormPanel({
                 {...loginForm.register("password")}
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
+                data-allow-autofill="true"
                 placeholder="Type your password"
                 className="h-11 rounded-lg border-[#E5E7EB] bg-white pl-10 pr-10 text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-[#2563EB]/20"
               />

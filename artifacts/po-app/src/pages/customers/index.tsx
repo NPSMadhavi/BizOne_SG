@@ -253,6 +253,14 @@ export default function CustomersPage() {
     };
   }, []);
 
+  // Prefill search from global search ?q=
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    if (q) setSearch(q);
+  }, []);
+
   // Open new customer dialog when agent navigates with ?vedaNew=1
   useEffect(() => {
     if (typeof window === "undefined") return;
