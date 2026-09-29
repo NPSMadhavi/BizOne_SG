@@ -2831,36 +2831,21 @@ export function AgentPanel() {
         </div>
       )}
 
-      {/* ── FAB & Side Tab triggers when closed ── */}
+      {/* ── Trigger button down right side when closed ── */}
       {!open && (
-        <>
-          {/* Gemini-style right edge tab */}
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
           <button
             onClick={() => setOpen(true)}
             title="Ask Veda AI Assistant (Alt+M)"
-            className="hidden lg:flex fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-card border border-r-0 border-border/80 shadow-md rounded-l-xl px-2 py-3.5 items-center gap-1.5 hover:bg-muted text-primary hover:pr-3.5 transition-all group cursor-pointer"
+            className="group relative flex items-center gap-2.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 via-primary to-indigo-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20 select-none cursor-pointer"
           >
-            <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform text-primary animate-pulse" />
-            <span className="text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl] rotate-180 text-foreground/80 group-hover:text-primary">
-              Veda
-            </span>
+            {handsFree && (
+              <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
+            )}
+            <Sparkles className="h-4 w-4 text-amber-300 group-hover:rotate-12 transition-transform" />
+            <span className="text-sm font-semibold tracking-wide">Ask Veda</span>
           </button>
-
-          {/* Top upside Ask Veda button */}
-          <div className="fixed top-3.5 right-6 z-40 flex items-center gap-2">
-            <button
-              onClick={() => setOpen(true)}
-              title="Open Veda AI Assistant (Alt+M)"
-              className="relative flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 via-primary to-indigo-600 text-white rounded-full shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20 select-none cursor-pointer"
-            >
-              {handsFree && (
-                <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
-              )}
-              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-              <span className="text-xs font-semibold tracking-wide">Ask Veda</span>
-            </button>
-          </div>
-        </>
+        </div>
       )}
 
       {/* ── Veda Panel: Docked (Gemini side panel) or Floating ── */}

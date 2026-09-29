@@ -19,7 +19,6 @@ import {
   RotateCcw,
   AlertCircle,
   Clock,
-  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { fmtDate } from "@/lib/utils";
@@ -530,15 +529,6 @@ export default function Dashboard() {
             showCloseFyButton
             onCloseFyClick={(from, to) => setFyRolloverRequest({ from, to })}
           />
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent("open-veda"))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-xs shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-            title="Ask Veda AI Assistant"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-primary animate-pulse" />
-            <span>Ask Veda</span>
-          </button>
         </div>
       </div>
 
