@@ -31,6 +31,8 @@ interface Customer {
   currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
+  creditLimitEnabled: boolean;
+  creditLimit: string | null;
   shipToAddress: string | null;
   quotationTerms: string | null;
   isActive: boolean;
@@ -39,6 +41,7 @@ interface Customer {
 const blank = () => ({
   name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
   contactEmail: "", phone: "", currency: "SGD", gstRegistered: false, gstNo: "",
+  creditLimitEnabled: false, creditLimit: "",
   shipToAddress: "", quotationTerms: "", isActive: true,
 });
 
@@ -268,6 +271,35 @@ export function CustomerCreateDialog({ open, onOpenChange, onSuccess, initialNam
               Select a country to determine if GST applies to this customer.
             </div>
           )}
+
+          <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-semibold">Credit Limit</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Toggle on to set a credit limit. Tax invoices that exceed it will show a warning.
+                </p>
+              </div>
+              <Switch
+                checked={form.creditLimitEnabled}
+                onCheckedChange={v => setField("creditLimitEnabled", v)}
+              />
+            </div>
+            {form.creditLimitEnabled && (
+              <div className="space-y-1.5">
+                <Label>Credit Limit</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder=""
+                  value={form.creditLimit}
+                  onChange={e => setField("creditLimit", e.target.value)}
+                />
+              </div>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

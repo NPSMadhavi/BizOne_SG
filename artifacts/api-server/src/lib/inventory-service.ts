@@ -560,23 +560,36 @@ function classifyMovementQty(
   const t = String(transactionType || "").toLowerCase();
 
   // Purchases / inbound receipts
-  if (t === "goods_receipt" || t === "purchase_order" || t === "grn") {
-    return { ...z, received: qtyIn };
+  if (t === "goods_receipt" || t === "purchase_order" || t === "grn" || t === "vendor_invoice") {
+    return { ...z, received: qtyIn > 0 ? qtyIn : qtyOut };
   }
   // Sales / outbound issues
   if (t === "goods_issue" || t === "tax_invoice") {
-    return { ...z, issued: qtyOut };
+    return { ...z, issued: qtyOut > 0 ? qtyOut : qtyIn };
   }
   // Invoice void / credit put-back → treat as negative sales (stock returns in)
-  if (t === "invoice_void" || t === "invoice_reversal") {
+  if (t === "invoice_void" || t === "invoice_reversal" || t === "vendor_invoice_reversal") {
     if (qtyIn > 0) return { ...z, issued: -qtyIn };
     if (qtyOut > 0) return { ...z, issued: qtyOut };
   }
-  if (t === "transfer_in") return { ...z, transferredIn: qtyIn };
-  if (t === "transfer_out") return { ...z, transferredOut: qtyOut };
-  if (t === "opening_stock") return { ...z, opening: qtyIn };
-  if (t === "adjustment_in") return { ...z, adjustedIn: qtyIn };
-  if (t === "adjustment_out") return { ...z, adjustedOut: qtyOut };
+  // Credit / debit note stock effects → Adjust
+  if (t === "credit_note" || t === "debit_note" || t === "cn" || t === "dn") {
+    if (qtyIn > 0) return { ...z, adjustedIn: qtyIn };
+    if (qtyOut > 0) return { ...z, adjustedOut: qtyOut };
+  }
+  if (t === "transfer_in") return { ...z, transferredIn: qtyIn > 0 ? qtyIn : qtyOut };
+  if (t === "transfer_out") return { ...z, transferredOut: qtyOut > 0 ? qtyOut : qtyIn };
+  if (t === "opening_stock") return { ...z, opening: qtyIn > 0 ? qtyIn : qtyOut };
+  if (t === "adjustment_in" || t === "stock_adjustment_in") {
+    return { ...z, adjustedIn: qtyIn > 0 ? qtyIn : qtyOut };
+  }
+  if (t === "adjustment_out" || t === "stock_adjustment_out") {
+    return { ...z, adjustedOut: qtyOut > 0 ? qtyOut : qtyIn };
+  }
+  if (t === "adjustment" || t === "stock_adjustment") {
+    if (qtyIn > 0) return { ...z, adjustedIn: qtyIn };
+    if (qtyOut > 0) return { ...z, adjustedOut: qtyOut };
+  }
 
   // Unknown types: keep equation balanced via adjust
   if (qtyIn > 0) return { ...z, adjustedIn: qtyIn };

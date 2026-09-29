@@ -8,6 +8,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
+import { Label } from "@/components/ui/label";
+import {
+  CREATE_BATCH_VALUE,
+  collectBatchesFromItem,
+  formatAvailLabel,
+  loadLocalItemBatches,
+  mergeBatchMaps,
+  saveLocalItemBatches,
+  type ItemBatch,
+} from "@/lib/stock-item-batches";
 
 interface PurchasePriceHistoryRow {
   id: number;
@@ -27,6 +38,10 @@ interface StockItem {
   unitPrice: string;
   purchasePrice?: string;
   stockQty: string;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  manufacturingDate?: string | null;
+  batches?: ItemBatch[];
   purchasePriceHistory?: PurchasePriceHistoryRow[];
   /** Set on expanded picker rows */
   priceDate?: string | null;
@@ -162,6 +177,9 @@ export interface StockItemSelection {
   qty: number;
   warehouseId?: number;
   warehouseName?: string;
+  batchNo?: string;
+  expiryDate?: string;
+  manufacturingDate?: string;
 }
 
 interface StockItemPickerDialogProps {
@@ -178,6 +196,8 @@ interface StockItemPickerDialogProps {
   /** Require warehouse before import (invoices, delivery orders, GRN). */
   requireWarehouse?: boolean;
   skipSerialSelection?: boolean;
+  /** Batch / expiry / mfg fields on qty step (Vendor Invoice & Tax Invoice). */
+  showBatchFields?: boolean;
 }
 
 export function StockItemPickerDialog({
@@ -189,6 +209,7 @@ export function StockItemPickerDialog({
   showWarehouse: showWarehouseProp,
   requireWarehouse: requireWarehouseProp,
   skipSerialSelection = false,
+  showBatchFields = false,
 }: StockItemPickerDialogProps) {
   const ignoreStockLimit = ignoreStockLimitProp ?? mode === "receive";
   const showWarehouse = showWarehouseProp ?? true;
@@ -207,6 +228,12 @@ export function StockItemPickerDialog({
   const [warehouseLockedByUser, setWarehouseLockedByUser] = useState(false);
   /** Confirmed invoice qty from the qty step — serial picking must not replace this. */
   const [confirmedQty, setConfirmedQty] = useState<number | null>(null);
+  const [batchSelectValue, setBatchSelectValue] = useState("");
+  const [batchNoInput, setBatchNoInput] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [manufacturingDate, setManufacturingDate] = useState("");
+  const [itemBatches, setItemBatches] = useState<ItemBatch[]>([]);
+  const [batchSaving, setBatchSaving] = useState(false);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const warehouseTriggerRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
@@ -223,6 +250,12 @@ export function StockItemPickerDialog({
       setSelectedWarehouseId(null);
       setWarehouseLockedByUser(false);
       setConfirmedQty(null);
+      setBatchSelectValue("");
+      setBatchNoInput("");
+      setExpiryDate("");
+      setManufacturingDate("");
+      setItemBatches([]);
+      setBatchSaving(false);
       return;
     }
     // Balances move whenever another document is saved, so start each visit
@@ -325,6 +358,23 @@ export function StockItemPickerDialog({
     setChosen(new Set());
     setSerialSearch("");
     setSerials([]);
+    const batches = collectBatchesFromItem(item);
+    if (batches.length > 0) {
+      const merged = mergeBatchMaps(loadLocalItemBatches(item.id), batches);
+      saveLocalItemBatches(item.id, merged);
+      setItemBatches(merged);
+      const latest = merged[0];
+      setBatchSelectValue(latest.batchNo);
+      setBatchNoInput(latest.batchNo);
+      setExpiryDate(latest.expiryDate || "");
+      setManufacturingDate(latest.manufacturingDate || "");
+    } else {
+      setItemBatches([]);
+      setBatchSelectValue("");
+      setBatchNoInput("");
+      setExpiryDate("");
+      setManufacturingDate("");
+    }
     // Always enter quantity first. Serial count must never become the invoice qty.
     setStep("qty");
     setSerialsLoading(true);
@@ -337,6 +387,78 @@ export function StockItemPickerDialog({
       setSerials(data);
     } finally {
       setSerialsLoading(false);
+    }
+  }
+
+  function applyBatchChoice(value: string) {
+    setBatchSelectValue(value);
+    if (value === CREATE_BATCH_VALUE) {
+      setBatchNoInput("");
+      setExpiryDate("");
+      setManufacturingDate("");
+      return;
+    }
+    const found = itemBatches.find((b) => b.batchNo === value);
+    setBatchNoInput(value);
+    setExpiryDate(found?.expiryDate || "");
+    setManufacturingDate(found?.manufacturingDate || "");
+  }
+
+  async function persistBatchToItemMaster(batchNo: string, exp: string, mfg: string) {
+    if (!selectedItem || !batchNo) return;
+    setBatchSaving(true);
+    try {
+      // Always merge against server + local history so old batches are never dropped.
+      let serverBatches: ItemBatch[] = [];
+      try {
+        const getRes = await fetch(`/api/stock-items/${selectedItem.id}`, { credentials: "include" });
+        if (getRes.ok) {
+          const serverItem = await getRes.json();
+          serverBatches = collectBatchesFromItem(serverItem);
+        }
+      } catch {
+        // ignore — local merge still applies
+      }
+      const entry: ItemBatch = {
+        batchNo,
+        expiryDate: exp || null,
+        manufacturingDate: mfg || null,
+        createdAt: new Date().toISOString(),
+        availableQty: Number(qtyInput) || 0,
+      };
+      const batches = mergeBatchMaps(
+        loadLocalItemBatches(selectedItem.id),
+        serverBatches,
+        itemBatches,
+        [entry],
+      );
+      saveLocalItemBatches(selectedItem.id, batches);
+
+      const res = await fetch(`/api/stock-items/${selectedItem.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          batchNo,
+          expiryDate: exp || null,
+          manufacturingDate: mfg || null,
+          batches,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const nextBatches = mergeBatchMaps(batches, collectBatchesFromItem(updated));
+        saveLocalItemBatches(selectedItem.id, nextBatches);
+        setItemBatches(nextBatches);
+        setSelectedItem((prev) => (prev ? { ...prev, ...updated, batches: nextBatches } : prev));
+        queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
+      } else {
+        // API may not have batches_json yet — keep local history so dropdown still shows old + new.
+        setItemBatches(batches);
+        setSelectedItem((prev) => (prev ? { ...prev, batchNo, expiryDate: exp, manufacturingDate: mfg, batches } : prev));
+      }
+    } finally {
+      setBatchSaving(false);
     }
   }
 
@@ -360,12 +482,21 @@ export function StockItemPickerDialog({
     setChosen(new Set());
   }
 
-  function emitSelection(selectedSerials: string[], selectedSerialIds: number[], qty: number) {
+  async function emitSelection(selectedSerials: string[], selectedSerialIds: number[], qty: number) {
     if (!selectedItem) return;
     if (requireWarehouse && !selectedWarehouseId) return;
     const warehouse = selectedWarehouseId
       ? warehouseOptions.find((item) => item.id === selectedWarehouseId)
       : undefined;
+    const resolvedBatch =
+      showBatchFields
+        ? (batchSelectValue === CREATE_BATCH_VALUE ? batchNoInput.trim() : (batchNoInput.trim() || batchSelectValue.trim()))
+        : "";
+    const resolvedExp = showBatchFields ? expiryDate.trim() : "";
+    const resolvedMfg = showBatchFields ? manufacturingDate.trim() : "";
+    if (showBatchFields && resolvedBatch) {
+      await persistBatchToItemMaster(resolvedBatch, resolvedExp, resolvedMfg);
+    }
     onSelect({
       item: selectedItem,
       selectedSerials,
@@ -373,14 +504,18 @@ export function StockItemPickerDialog({
       qty,
       warehouseId: warehouse?.id,
       warehouseName: warehouse?.name,
+      batchNo: resolvedBatch || undefined,
+      expiryDate: resolvedExp || undefined,
+      manufacturingDate: resolvedMfg || undefined,
     });
     onOpenChange(false);
   }
 
-  function handleConfirmQty() {
+  async function handleConfirmQty() {
     if (!selectedItem) return;
     const qty = Number(qtyInput);
     if (!Number.isFinite(qty) || qty <= 0) return;
+    if (showBatchFields && batchSelectValue === CREATE_BATCH_VALUE && !batchNoInput.trim()) return;
     const warehouse = warehouseOptions.find((item) => item.id === selectedWarehouseId);
     const maxAllowed = selectedWarehouseId
       ? Number(warehouse?.quantity) || 0
@@ -397,23 +532,23 @@ export function StockItemPickerDialog({
       return;
     }
 
-    emitSelection([], [], qty);
+    await emitSelection([], [], qty);
   }
 
-  function handleConfirmSerials() {
+  async function handleConfirmSerials() {
     if (!selectedItem || confirmedQty == null) return;
     if (chosen.size > 0 && chosen.size !== confirmedQty) return;
     const chosenSerials = serials.filter(s => chosen.has(s.id));
-    emitSelection(
+    await emitSelection(
       chosenSerials.map(s => s.serialNumber),
       chosenSerials.map(s => s.id),
       confirmedQty,
     );
   }
 
-  function handleSkipSerials() {
+  async function handleSkipSerials() {
     if (confirmedQty == null) return;
-    emitSelection([], [], confirmedQty);
+    await emitSelection([], [], confirmedQty);
   }
 
   const filteredSerials = serials.filter(s =>
@@ -432,15 +567,26 @@ export function StockItemPickerDialog({
     : 0;
   const parsedQty = Number(qtyInput);
   const qtyWithinStock = ignoreStockLimit || parsedQty <= maxQty;
-  const qtyIsValid = (!showWarehouse || !stockLoading) && Number.isFinite(parsedQty) && parsedQty > 0 && qtyWithinStock;
+  const batchOk =
+    !showBatchFields ||
+    batchSelectValue !== CREATE_BATCH_VALUE ||
+    !!batchNoInput.trim();
+  const qtyIsValid =
+    (!showWarehouse || !stockLoading) &&
+    Number.isFinite(parsedQty) &&
+    parsedQty > 0 &&
+    qtyWithinStock &&
+    batchOk &&
+    !batchSaving;
   const warehouseOk = !requireWarehouse || !!selectedWarehouseId;
   const serialSelectionOk = chosen.size === 0 || (confirmedQty != null && chosen.size === confirmedQty);
+  const isCreatingBatch = showBatchFields && batchSelectValue === CREATE_BATCH_VALUE;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
       <DialogContent
         style={{ animation: "none", transition: "none" }}
-        className={step === "qty" ? "max-w-md" : step === "serials" ? "max-w-3xl" : "max-w-xl"}
+        className={step === "qty" ? (showBatchFields ? "max-w-lg" : "max-w-md") : step === "serials" ? "max-w-3xl" : "max-w-xl"}
       >
 
         {step === "items" && (
@@ -551,9 +697,9 @@ export function StockItemPickerDialog({
             <div className="py-4 space-y-4">
               {showWarehouse ? (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">
+                  <Label className="text-sm font-medium">
                     Warehouse{requireWarehouse ? <span className="text-destructive"> *</span> : " (optional)"}
-                  </label>
+                  </Label>
                   <Select
                     value={selectedWarehouseId != null ? String(selectedWarehouseId) : ""}
                     onValueChange={(value) => {
@@ -581,46 +727,147 @@ export function StockItemPickerDialog({
                 </div>
               ) : null}
 
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                  QTY / <span className="text-foreground">
-                    {showWarehouse
-                      ? (stockLoading
-                        ? "Checking availability…"
-                        : selectedWarehouseId
-                          ? `${maxQty} ${selectedItem.uom} available in warehouse`
-                          : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available${requireWarehouse ? " (select warehouse)" : ""}`)
-                      : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available`}
-                  </span>
-                </span>
-              </div>
+              {showBatchFields ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Batch No</Label>
+                      <Select
+                        value={batchSelectValue || undefined}
+                        onValueChange={applyBatchChoice}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Enter qty" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={CREATE_BATCH_VALUE}>+ Create new batch</SelectItem>
+                          {itemBatches.map((b) => (
+                            <SelectItem
+                              key={b.batchNo}
+                              value={b.batchNo}
+                              textValue={b.batchNo}
+                              className="pr-10 [&>span:last-child]:w-full"
+                            >
+                              <span className="flex w-full items-center justify-between gap-3">
+                                <span className="truncate">{b.batchNo}</span>
+                                <span className="shrink-0 font-medium text-[#16A34A]">
+                                  {formatAvailLabel(b.availableQty, selectedItem.uom)}
+                                </span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {isCreatingBatch ? (
+                        <Input
+                          value={batchNoInput}
+                          onChange={(e) => setBatchNoInput(e.target.value)}
+                          placeholder="Search serial numbers..."
+                          className="mt-1"
+                          autoFocus
+                        />
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Exp Date</Label>
+                      <SyncBridgeDatePicker
+                        value={expiryDate || null}
+                        onChange={(v) => setExpiryDate(v || "")}
+                        placeholder=""
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Mfg Date</Label>
+                      <SyncBridgeDatePicker
+                        value={manufacturingDate || null}
+                        onChange={(v) => setManufacturingDate(v || "")}
+                        placeholder=""
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">
+                        Qty
+                        <span className="ml-1 font-normal text-muted-foreground">
+                          / {showWarehouse
+                            ? (stockLoading
+                              ? "…"
+                              : selectedWarehouseId
+                                ? `${maxQty} ${selectedItem.uom} available`
+                                : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available`)
+                            : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available`}
+                        </span>
+                      </Label>
+                      <Input
+                        ref={qtyInputRef}
+                        type="text"
+                        inputMode="decimal"
+                        min={1}
+                        max={ignoreStockLimit ? undefined : maxQty}
+                        value={qtyInput}
+                        onChange={(e) => setQtyInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && qtyIsValid && warehouseOk) void handleConfirmQty();
+                        }}
+                        className="text-lg font-semibold"
+                        placeholder=""
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                      QTY / <span className="text-foreground">
+                        {showWarehouse
+                          ? (stockLoading
+                            ? "Checking availability…"
+                            : selectedWarehouseId
+                              ? `${maxQty} ${selectedItem.uom} available in warehouse`
+                              : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available${requireWarehouse ? " (select warehouse)" : ""}`)
+                          : `${Number(selectedItem.stockQty) || 0} ${selectedItem.uom} available`}
+                      </span>
+                    </span>
+                  </div>
 
-              <div className="space-y-1">
-                <Input
-                  ref={qtyInputRef}
-                  type="text" inputMode="decimal"
-                  min={1}
-                  max={ignoreStockLimit ? undefined : maxQty}
-                  value={qtyInput}
-                  onChange={(e) => setQtyInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && qtyIsValid && warehouseOk) handleConfirmQty();
-                  }}
-                  className="text-lg font-semibold w-36"
-                  placeholder="Enter qty"
-                />
-                {serialsLoading && (
-                  <p className="text-xs text-muted-foreground">Checking serial numbers…</p>
-                )}
-              </div>
+                  <div className="space-y-1">
+                    <Input
+                      ref={qtyInputRef}
+                      type="text" inputMode="decimal"
+                      min={1}
+                      max={ignoreStockLimit ? undefined : maxQty}
+                      value={qtyInput}
+                      onChange={(e) => setQtyInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && qtyIsValid && warehouseOk) void handleConfirmQty();
+                      }}
+                      className="text-lg font-semibold w-36"
+                      placeholder=""
+                    />
+                    {serialsLoading && (
+                      <p className="text-xs text-muted-foreground">Checking serial numbers…</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {showBatchFields && serialsLoading ? (
+                <p className="text-xs text-muted-foreground">Checking serial numbers…</p>
+              ) : null}
             </div>
 
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button onClick={handleConfirmQty} disabled={!qtyIsValid || !warehouseOk || serialsLoading}>
-                {availableCount > 0
-                  ? `Next · Pick serials (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`
-                  : `Import (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`}
+              <Button onClick={() => void handleConfirmQty()} disabled={!qtyIsValid || !warehouseOk || serialsLoading || batchSaving}>
+                {batchSaving
+                  ? "Saving batch…"
+                  : availableCount > 0
+                    ? `Next · Pick serials (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`
+                    : `Import (${qtyIsValid ? parsedQty : "—"} ${selectedItem.uom})`}
               </Button>
             </DialogFooter>
           </>
@@ -660,7 +907,7 @@ export function StockItemPickerDialog({
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       className="pl-9"
-                      placeholder="Search serial numbers..."
+                      placeholder=""
                       value={serialSearch}
                       onChange={(e) => setSerialSearch(e.target.value)}
                       autoFocus
@@ -742,12 +989,12 @@ export function StockItemPickerDialog({
 
             <DialogFooter className="gap-2 sm:gap-2">
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button variant="secondary" onClick={handleSkipSerials} disabled={serialsLoading || stockLoading}>
+              <Button variant="secondary" onClick={() => void handleSkipSerials()} disabled={serialsLoading || stockLoading || batchSaving}>
                 Skip serials · Import {confirmedQty}
               </Button>
               <Button
-                onClick={handleConfirmSerials}
-                disabled={serialsLoading || stockLoading || !warehouseOk || !serialSelectionOk || chosen.size === 0}
+                onClick={() => void handleConfirmSerials()}
+                disabled={serialsLoading || stockLoading || !warehouseOk || !serialSelectionOk || chosen.size === 0 || batchSaving}
               >
                 {`Import with serials (${chosen.size}/${confirmedQty})`}
               </Button>

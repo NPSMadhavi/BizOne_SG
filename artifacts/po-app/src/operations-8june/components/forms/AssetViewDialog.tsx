@@ -63,7 +63,7 @@ export default function AssetViewDialog({ open, onClose, asset }: AssetViewDialo
         <EntityViewField label="Model" value={asset.model || "-"} />
         <EntityViewField label="Manufacturer" value={formatLabel(asset.manufacturer)} />
         <EntityViewField
-          label="Status"
+          label="Assignment Status"
           value={
             <EntityViewStatusBadge
               status={formatViewStatus(asset.status)}

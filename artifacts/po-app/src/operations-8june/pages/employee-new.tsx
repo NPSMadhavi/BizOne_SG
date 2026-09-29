@@ -38,7 +38,6 @@ export default function EmployeeNewPage() {
   return (
     <FormPageShell
       title="Create Employee"
-      description="Add a new employee record."
       backHref={returnTo ?? "/employees"}
       footer={
         <>

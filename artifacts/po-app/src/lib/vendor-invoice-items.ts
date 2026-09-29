@@ -15,6 +15,9 @@ export type VendorInvoiceLineItem = {
   stockItemId?: number;
   warehouseId?: number;
   warehouseName?: string;
+  batchNo?: string;
+  expiryDate?: string;
+  manufacturingDate?: string;
 };
 
 const UOM_OPTIONS = ["Nos", "Pcs", "Set", "Lot", "Hr", "Day", "Month", "Yr", "Job", "kg", "m", "L", "Box", "Roll", "Pair", "Unit", "ls"];
@@ -116,6 +119,9 @@ export function mapDocItemToViLine(it: any): VendorInvoiceLineItem {
     stockItemId: hasStock ? stockItemId : undefined,
     warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
     warehouseName: typeof it.warehouseName === "string" ? it.warehouseName : undefined,
+    batchNo: typeof it.batchNo === "string" && it.batchNo.trim() ? it.batchNo.trim() : undefined,
+    expiryDate: typeof it.expiryDate === "string" && it.expiryDate.trim() ? it.expiryDate.trim() : undefined,
+    manufacturingDate: typeof it.manufacturingDate === "string" && it.manufacturingDate.trim() ? it.manufacturingDate.trim() : undefined,
   };
 }
 
@@ -145,6 +151,9 @@ export function normalizeViItemsForApi(items: VendorInvoiceLineItem[]) {
       stockItemId: hasStock ? stockItemId : undefined,
       warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
       warehouseName: it.warehouseName || undefined,
+      batchNo: it.batchNo || undefined,
+      expiryDate: it.expiryDate || undefined,
+      manufacturingDate: it.manufacturingDate || undefined,
     };
   });
 }

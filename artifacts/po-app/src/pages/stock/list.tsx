@@ -371,7 +371,6 @@ export default function StockList() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Item Master</h1>
-          <p className="mt-1 text-muted-foreground">Manage your products and services.</p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0 sm:justify-end">
           <Button

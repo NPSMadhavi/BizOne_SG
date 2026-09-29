@@ -334,7 +334,7 @@ export default function WarehousesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 md:col-span-2">
+            <div className="space-y-1.5">
               <Label>Address <span className="text-red-500">*</span></Label>
               <Textarea
                 rows={2}
@@ -342,7 +342,7 @@ export default function WarehousesPage() {
                 onChange={(e) => updateField("address", e.target.value)}
               />
             </div>
-            <div className="space-y-1.5 md:col-span-2">
+            <div className="space-y-1.5">
               <Label>Description</Label>
               <Textarea
                 rows={2}

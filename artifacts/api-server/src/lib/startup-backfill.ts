@@ -347,6 +347,21 @@ export async function runStartupMigrations(): Promise<void> {
       sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batch_no text`,
     },
     {
+      name: "stock_items.expiry_manufacturing_dates",
+      sql: sql`
+        ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS expiry_date text;
+        ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS manufacturing_date text;
+      `,
+    },
+    {
+      name: "stock_items.batches_json",
+      sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batches_json text`,
+    },
+    {
+      name: "stock_items.stock_group",
+      sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS stock_group text`,
+    },
+    {
       name: "stock_items.mrp_price",
       sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS mrp_price numeric(15,2) DEFAULT 0`,
     },
@@ -365,6 +380,13 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "customers.quotation_terms",
       sql: sql`ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
+    },
+    {
+      name: "customers.credit_limit",
+      sql: sql`
+        ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit_enabled boolean NOT NULL DEFAULT false;
+        ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit numeric(15,2);
+      `,
     },
     {
       // Schema only — never couple with pi_date UPDATE (pi_date may be absent on older DBs).
@@ -988,6 +1010,10 @@ export async function runStartupMigrations(): Promise<void> {
     {
       name: "expenses.notes",
       sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes text`,
+    },
+    {
+      name: "expenses.account_id",
+      sql: sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS account_id integer`,
     },
     {
       name: "expenses.updated_at",

@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useListStockItems, getListStockItemsQueryKey } from "@workspace/api-client-react";
 import { inventoryApi } from "@/lib/inventory-api";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { useAuth } from "@/contexts/auth-context";
@@ -28,8 +26,6 @@ import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import {
-  Upload,
-  HelpCircle,
   Info,
   Plus,
   Pencil,
@@ -37,12 +33,36 @@ import {
   GripVertical,
   Save,
   Check,
-  ArrowRight,
   ArrowLeft,
   ChevronDown,
 } from "lucide-react";
 
-import { useSalesPersons } from "@/hooks/use-sales-persons";
+type CustomBomCost = {
+  id: string;
+  name: string;
+  amount: number;
+};
+
+type ManagedBomCost = CustomBomCost & {
+  /** Built-in Labour / Machine / Other rows (can still be renamed or removed). */
+  builtin?: boolean;
+};
+
+const DEFAULT_MANAGED_COSTS: ManagedBomCost[] = [
+  { id: "labour", name: "Labour Cost", amount: 0, builtin: true },
+  { id: "machine", name: "Machine Cost", amount: 0, builtin: true },
+  { id: "other", name: "Other Exp", amount: 0, builtin: true },
+];
+
+function splitManagedCosts(costs: ManagedBomCost[]) {
+  const labourCost = costs.find((c) => c.id === "labour")?.amount ?? 0;
+  const machineCost = costs.find((c) => c.id === "machine")?.amount ?? 0;
+  const overhead = costs.find((c) => c.id === "other")?.amount ?? 0;
+  const customCosts = costs
+    .filter((c) => c.id !== "labour" && c.id !== "machine" && c.id !== "other")
+    .map(({ id, name, amount }) => ({ id, name, amount }));
+  return { labourCost, machineCost, overhead, customCosts };
+}
 
 const UOM_OPTIONS = [
   { value: "Nos", label: "Nos (Numbers)" },
@@ -120,6 +140,7 @@ type BomRecord = {
   labourCost: number;
   machineCost: number;
   overhead: number;
+  customCosts?: CustomBomCost[];
   wastagePct: number;
   autoConsume: boolean;
   allowSubstitute: boolean;
@@ -131,6 +152,16 @@ type BomRecord = {
   updatedBy: string;
   updatedAt: string;
 };
+
+function managedCostsFromBom(bom: Pick<BomRecord, "labourCost" | "machineCost" | "overhead" | "customCosts">): ManagedBomCost[] {
+  const customs = Array.isArray(bom.customCosts) ? bom.customCosts : [];
+  return [
+    { id: "labour", name: "Labour Cost", amount: Number(bom.labourCost) || 0, builtin: true },
+    { id: "machine", name: "Machine Cost", amount: Number(bom.machineCost) || 0, builtin: true },
+    { id: "other", name: "Other Exp", amount: Number(bom.overhead) || 0, builtin: true },
+    ...customs.map((c) => ({ id: c.id, name: c.name, amount: Number(c.amount) || 0, builtin: false })),
+  ];
+}
 
 const STORAGE_KEY = "bom-records-v1";
 const DRAFT_KEY = "bom-draft-v1";
@@ -148,21 +179,23 @@ function round2(n: number) {
 }
 
 function lineTotal(c: BomComponent, outputQty = 1) {
-  const factor = Math.max(0, Number(outputQty) || 0) || 1;
+  const factor = Math.max(0, Number(outputQty) || 0);
   const effectiveQty = (Number(c.qty) || 0) * (1 + (Number(c.wastagePct) || 0) / 100) * factor;
   return round2(effectiveQty * (Number(c.unitCost) || 0));
 }
 
-/** Wastage % applies to material only; labour / machine / other are added as-is. */
+/** Wastage % applies to material only; labour / machine / other / custom are added as-is. */
 function computeBomTotal(
   materialCost: number,
   labourCost: number,
   machineCost: number,
   overhead: number,
   wastagePct: number,
+  customCosts: CustomBomCost[] = [],
 ) {
   const wastageAmt = round2(materialCost * ((Number(wastagePct) || 0) / 100));
-  return round2(materialCost + wastageAmt + labourCost + machineCost + overhead);
+  const customSum = customCosts.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  return round2(materialCost + wastageAmt + labourCost + machineCost + overhead + customSum);
 }
 
 function loadList(): BomRecord[] {
@@ -193,6 +226,8 @@ type StockItemOption = {
   unitPrice: number;
   stockQty: number;
   type: string;
+  stockGroup?: string;
+  category?: string;
 };
 
 function parseLinkedStockId(productId: string): number | null {
@@ -212,9 +247,16 @@ function generateStockCode(label: string, taken: Set<string>) {
 }
 
 async function syncFinishedProductStock(record: BomRecord, stockOptions: StockItemOption[]): Promise<string> {
-  const mat = record.components.reduce((s, c) => s + lineTotal(c, record.outputQty), 0);
-  const total = computeBomTotal(mat, record.labourCost, record.machineCost, record.overhead, record.wastagePct);
-  const unitPrice = record.outputQty > 0 ? round2(total / record.outputQty) : round2(total);
+  const qty = Math.max(0, Number(record.outputQty) || 0);
+  const materialCost = round2(record.components.reduce((s, c) => s + lineTotal(c, 1), 0));
+  const managed = round2(
+    (Number(record.labourCost) || 0) +
+      (Number(record.machineCost) || 0) +
+      (Number(record.overhead) || 0) +
+      (record.customCosts || []).reduce((s, c) => s + (Number(c.amount) || 0), 0),
+  );
+  const total = round2(materialCost + managed);
+  const unitPrice = qty > 0 ? round2(total / qty) : 0;
   const label = record.productLabel.trim();
   const taken = new Set(stockOptions.map((o) => o.code.toLowerCase()));
 
@@ -229,6 +271,8 @@ async function syncFinishedProductStock(record: BomRecord, stockOptions: StockIt
     uom: record.outputUom?.trim() || "Pcs",
     type: "product",
     unitPrice,
+    purchasePrice: unitPrice,
+    stockQty: Math.max(0, Number(record.outputQty) || 0),
     isActive: record.status === "active",
   };
 
@@ -251,7 +295,7 @@ async function syncFinishedProductStock(record: BomRecord, stockOptions: StockIt
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, code, stockQty: 0 }),
+    body: JSON.stringify({ ...body, code }),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
@@ -264,31 +308,31 @@ async function syncFinishedProductStock(record: BomRecord, stockOptions: StockIt
 export default function BillOfMaterialsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
-  const [, setLocation] = useLocation();
   const userName = (user as any)?.fullName || user?.username || "User";
 
   const [mode, setMode] = useState<"form" | "list">("list");
-  const [helpOpen, setHelpOpen] = useState(false);
   const [bomList, setBomList] = useState<BomRecord[]>(() => loadList());
   const { page, setPage, totalPages, paginatedItems } = usePagination(bomList);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [productName, setProductName] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
   const [version, setVersion] = useState("V1.0");
-  const [outputQty, setOutputQty] = useState(0);
+  const [outputQty, setOutputQty] = useState(1);
   const [outputUom, setOutputUom] = useState("");
-  const [status, setStatus] = useState<"active" | "draft" | "inactive">("active");
+  const [status] = useState<"active" | "draft" | "inactive">("active");
   const [category, setCategory] = useState("");
   const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [warehouse, setWarehouse] = useState("");
-  const [salesPerson, setSalesPerson] = useState("");
   const [components, setComponents] = useState<BomComponent[]>([]);
-  const [labourCost, setLabourCost] = useState(0);
-  const [machineCost, setMachineCost] = useState(0);
-  const [overhead, setOverhead] = useState(0);
-  const [wastagePct, setWastagePct] = useState(0);
+  const [managedCosts, setManagedCosts] = useState<ManagedBomCost[]>(() =>
+    DEFAULT_MANAGED_COSTS.map((c) => ({ ...c })),
+  );
+  const [costDialog, setCostDialog] = useState<{ mode: "create" | "edit"; id?: string } | null>(null);
+  const [costNameDraft, setCostNameDraft] = useState("");
+  const [costAmountDraft, setCostAmountDraft] = useState("");
+  const [costMenuOpen, setCostMenuOpen] = useState(false);
   const [autoConsume, setAutoConsume] = useState(true);
   const [allowSubstitute, setAllowSubstitute] = useState(true);
   const [approvalRequired, setApprovalRequired] = useState(false);
@@ -303,10 +347,18 @@ export default function BillOfMaterialsPage() {
   const [compDialogOpen, setCompDialogOpen] = useState(false);
   const [stockItemOpen, setStockItemOpen] = useState(false);
   const [stockItemQuery, setStockItemQuery] = useState("");
+  const [compStockGroup, setCompStockGroup] = useState("all");
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
   const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
   const [createUomOpen, setCreateUomOpen] = useState(false);
   const [newUomName, setNewUomName] = useState("");
+  const [createProductOpen, setCreateProductOpen] = useState(false);
+  const [creatingProduct, setCreatingProduct] = useState(false);
+  const [newProductForm, setNewProductForm] = useState({
+    name: "",
+    uom: "Pcs",
+    category: "",
+  });
   const [compForm, setCompForm] = useState({
     stockItemId: "",
     itemCode: "",
@@ -318,10 +370,16 @@ export default function BillOfMaterialsPage() {
     availableQty: 0,
   });
 
-  const { data: stockItems = [] } = useListStockItems(
-    {} as any,
-    { query: { queryKey: getListStockItemsQueryKey({} as any), refetchOnWindowFocus: false } },
-  );
+  const { data: stockItems = [] } = useQuery<any[]>({
+    queryKey: ["bom-stock-items-full"],
+    staleTime: 0,
+    queryFn: async () => {
+      const res = await fetch("/api/stock-items", { credentials: "include" });
+      if (!res.ok) return [];
+      const rows = await res.json();
+      return Array.isArray(rows) ? rows : [];
+    },
+  });
   const { data: warehouses = [] } = useQuery<any[]>({
     queryKey: ["bom-warehouses"],
     queryFn: () => inventoryApi.getWarehouses(),
@@ -340,10 +398,38 @@ export default function BillOfMaterialsPage() {
         unitPrice: Number(i.unitPrice) || 0,
         stockQty: Number(i.stockQty) || 0,
         type: String(i.type || "product"),
+        stockGroup: String(i.stockGroup || "").trim(),
+        category: String(i.category || "").trim(),
       }));
   }, [stockItems]);
 
-  const componentOptions = useMemo(() => allStockOptions, [allStockOptions]);
+  const stockGroupOptions = useMemo(() => {
+    const set = new Set<string>();
+    try {
+      const raw = localStorage.getItem("stock-custom-stock-groups");
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        for (const g of parsed) {
+          const name = String(g || "").trim();
+          if (name) set.add(name);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    for (const i of allStockOptions) {
+      if (i.stockGroup) set.add(i.stockGroup);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allStockOptions]);
+
+  const componentOptions = useMemo(() => {
+    if (compStockGroup === "all") return allStockOptions;
+    return allStockOptions.filter(
+      (p) => String(p.stockGroup || "").toLowerCase() === compStockGroup.toLowerCase(),
+    );
+  }, [allStockOptions, compStockGroup]);
+
   const filteredComponentOptions = useMemo(() => {
     const q = stockItemQuery.trim().toLowerCase();
     if (!q) return componentOptions;
@@ -369,8 +455,9 @@ export default function BillOfMaterialsPage() {
     for (const item of allStockOptions) addExtra(item.uom);
     for (const c of components) addExtra(c.uom);
     addExtra(compForm.uom);
+    addExtra(outputUom);
     return [...UOM_OPTIONS, ...extras];
-  }, [customUoms, allStockOptions, components, compForm.uom]);
+  }, [customUoms, allStockOptions, components, compForm.uom, outputUom]);
 
   function handleCreateUom() {
     const name = newUomName.trim();
@@ -388,8 +475,61 @@ export default function BillOfMaterialsPage() {
       });
     }
     setCompForm((f) => ({ ...f, uom: selected }));
+    setOutputUom(selected);
     setCreateUomOpen(false);
     setNewUomName("");
+  }
+
+  async function handleCreateProduct() {
+    const name = newProductForm.name.trim();
+    if (!name) {
+      toast({ title: "Name required", description: "Enter a product name.", variant: "destructive" });
+      return;
+    }
+    setCreatingProduct(true);
+    try {
+      const res = await fetch("/api/stock-items", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          uom: newProductForm.uom.trim() || "Pcs",
+          type: "product",
+          category: newProductForm.category.trim() || null,
+          unitPrice: 0,
+          purchasePrice: 0,
+          stockQty: 0,
+          isActive: true,
+          trackInventory: true,
+          showInPos: true,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create product");
+      }
+      const created = await res.json();
+      await queryClient.invalidateQueries({ queryKey: ["bom-stock-items-full"] });
+      const id = String(created.id);
+      setSelectedProductId(id);
+      setProductName(String(created.name || name));
+      setOutputUom(normalizeUom(created.uom || newProductForm.uom));
+      if (created.category || newProductForm.category) {
+        setCategory(String(created.category || newProductForm.category));
+      }
+      setCreateProductOpen(false);
+      setNewProductForm({ name: "", uom: "Pcs", category: "" });
+      toast({ title: "Product created", description: `${created.code || ""} ${created.name || name}`.trim() });
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.message || "Failed to create product",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingProduct(false);
+    }
   }
 
   const warehouseOptions = useMemo(
@@ -441,31 +581,46 @@ export default function BillOfMaterialsPage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWarehouseId, stockQtyByCode]);
+  /** Material = component line totals (qty × unit cost). Do NOT multiply by finished BOM Qty again. */
   const materialCost = useMemo(
-    () => round2(components.reduce((s, c) => s + lineTotal(c, outputQty), 0)),
-    [components, outputQty],
+    () => round2(components.reduce((s, c) => s + lineTotal(c, 1), 0)),
+    [components],
   );
+  const outputQtySafe = Math.max(0, Number(outputQty) || 0);
+  const managedCostSum = useMemo(
+    () => round2(managedCosts.reduce((s, c) => s + (Number(c.amount) || 0), 0)),
+    [managedCosts],
+  );
+  const { labourCost, machineCost, overhead, customCosts } = useMemo(
+    () => splitManagedCosts(managedCosts),
+    [managedCosts],
+  );
+  /** Total BOM Cost = Material + Labour + Machine + Other + custom. */
   const totalBomCost = useMemo(
-    () => computeBomTotal(materialCost, labourCost, machineCost, overhead, wastagePct),
-    [materialCost, labourCost, machineCost, overhead, wastagePct],
+    () => round2(materialCost + managedCostSum),
+    [materialCost, managedCostSum],
   );
+  /** Per Item Cost = Total BOM Cost ÷ BOM Qty. */
+  const perItemCost = useMemo(() => {
+    if (outputQtySafe <= 0) return 0;
+    return round2(totalBomCost / outputQtySafe);
+  }, [totalBomCost, outputQtySafe]);
 
   function resetForm() {
     setEditingId(null);
     setProductName("");
+    setSelectedProductId("");
     setVersion("V1.0");
     setOutputQty(1);
     setOutputUom("PCS");
-    setStatus("active");
     setCategory("");
     setEffectiveDate(new Date().toISOString().slice(0, 10));
     setWarehouse(warehouseOptions[0]?.name || "");
-    setSalesPerson("");
     setComponents([]);
-    setLabourCost(0);
-    setMachineCost(0);
-    setOverhead(0);
-    setWastagePct(0);
+    setManagedCosts(DEFAULT_MANAGED_COSTS.map((c) => ({ ...c })));
+    setCostDialog(null);
+    setCostNameDraft("");
+    setCostAmountDraft("");
     setAutoConsume(true);
     setAllowSubstitute(true);
     setApprovalRequired(false);
@@ -481,19 +636,15 @@ export default function BillOfMaterialsPage() {
   function loadBom(bom: BomRecord) {
     setEditingId(bom.id);
     setProductName(bom.productLabel || "");
+    setSelectedProductId(parseLinkedStockId(bom.productId) ? String(parseLinkedStockId(bom.productId)) : "");
     setVersion(bom.version);
     setOutputQty(bom.outputQty);
     setOutputUom(bom.outputUom);
-    setStatus(bom.status);
     setCategory(bom.category || "");
     setEffectiveDate(bom.effectiveDate);
     setWarehouse(bom.warehouse);
-    setSalesPerson(bom.salesPerson || bom.description || "");
     setComponents(bom.components);
-    setLabourCost(bom.labourCost);
-    setMachineCost(bom.machineCost);
-    setOverhead(bom.overhead);
-    setWastagePct(bom.wastagePct);
+    setManagedCosts(managedCostsFromBom(bom));
     setAutoConsume(bom.autoConsume);
     setAllowSubstitute(bom.allowSubstitute);
     setApprovalRequired(bom.approvalRequired);
@@ -511,7 +662,8 @@ export default function BillOfMaterialsPage() {
     const label = productName.trim();
     return {
       id: editingId || `bom-${Date.now()}`,
-      productId: editingId ? (bomList.find((b) => b.id === editingId)?.productId || `manual-${Date.now()}`) : `manual-${Date.now()}`,
+      productId: selectedProductId
+        || (editingId ? (bomList.find((b) => b.id === editingId)?.productId || `manual-${Date.now()}`) : `manual-${Date.now()}`),
       productLabel: label,
       version,
       outputQty,
@@ -520,12 +672,12 @@ export default function BillOfMaterialsPage() {
       category: category.trim(),
       effectiveDate,
       warehouse,
-      salesPerson,
       components,
       labourCost,
       machineCost,
       overhead,
-      wastagePct,
+      customCosts,
+      wastagePct: 0,
       autoConsume,
       allowSubstitute,
       approvalRequired,
@@ -539,8 +691,8 @@ export default function BillOfMaterialsPage() {
   }
 
   async function saveBom(asDraft = false) {
-    if (!productName.trim()) {
-      toast({ title: "Product required", description: "Enter a finished product name." });
+    if (!productName.trim() && !selectedProductId) {
+      toast({ title: "Product required", description: "Select a finished product from Item Master." });
       return;
     }
     if (!components.length) {
@@ -562,19 +714,18 @@ export default function BillOfMaterialsPage() {
       setBomList(next);
       saveList(next);
       setEditingId(record.id);
-      setStatus(record.status);
       setUpdatedBy(record.updatedBy);
       setUpdatedAt(record.updatedAt);
 
       if (!asDraft && record.status !== "draft") {
-        await queryClient.invalidateQueries({ queryKey: getListStockItemsQueryKey({} as any) });
+        await queryClient.invalidateQueries({ queryKey: ["bom-stock-items-full"] });
         await invalidateInventoryQueries(queryClient);
       }
 
       toast({
         title: asDraft ? "Draft saved" : "BOM saved",
         description: !asDraft && record.status !== "draft"
-          ? `${record.productLabel} synced to Stock Items`
+          ? `${record.productLabel}: qty ${record.outputQty} & unit cost synced to Item Master`
           : record.productLabel,
       });
       if (!asDraft) {
@@ -604,6 +755,7 @@ export default function BillOfMaterialsPage() {
       unitCost: 0,
       availableQty: 0,
     });
+    setCompStockGroup("all");
     setStockItemQuery("");
     setStockItemOpen(false);
     setCompDialogOpen(true);
@@ -622,6 +774,7 @@ export default function BillOfMaterialsPage() {
       unitCost: c.unitCost,
       availableQty: getAvailableQty(c.itemCode, c.availableQty),
     });
+    setCompStockGroup(match?.stockGroup || "all");
     setStockItemQuery("");
     setStockItemOpen(false);
     setCompDialogOpen(true);
@@ -681,20 +834,6 @@ export default function BillOfMaterialsPage() {
     setCompDialogOpen(false);
   }
 
-  function formatStamp(iso: string) {
-    try {
-      return new Date(iso).toLocaleString("en-SG", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  }
-
   if (mode === "list") {
     return (
       <div className="space-y-6">
@@ -727,8 +866,14 @@ export default function BillOfMaterialsPage() {
                 </tr>
               ) : (
                 paginatedItems.map((b) => {
-                  const mat = b.components.reduce((s, c) => s + lineTotal(c, b.outputQty), 0);
-                  const total = computeBomTotal(mat, b.labourCost, b.machineCost, b.overhead, b.wastagePct);
+                  const materialCost = round2(b.components.reduce((s, c) => s + lineTotal(c, 1), 0));
+                  const managed = round2(
+                    (Number(b.labourCost) || 0) +
+                      (Number(b.machineCost) || 0) +
+                      (Number(b.overhead) || 0) +
+                      (b.customCosts || []).reduce((s, c) => s + (Number(c.amount) || 0), 0),
+                  );
+                  const total = round2(materialCost + managed);
                   return (
                     <tr key={b.id} className="border-b hover:bg-[#F8FAFC]">
                       <td className="px-4 py-3 font-medium">{b.productLabel}</td>
@@ -779,37 +924,16 @@ export default function BillOfMaterialsPage() {
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
               {editingId ? "Edit BOM" : "New BOM"}
             </h1>
-            <p className="mt-1 text-muted-foreground">
-              Create a BOM to define raw materials and costs required for a finished product.
-            </p>
           </div>
         </div>
         <div className="flex shrink-0 flex-nowrap items-center gap-2">
-          <Button
- type="button"
- variant="outline"
- className="gap-2"
- onClick={() => {
-              try {
-                localStorage.setItem(DRAFT_KEY, JSON.stringify(buildRecord("draft")));
-              } catch {
-                // ignore
-              }
-              toast({ title: "Import ready", description: "Use Add Component to build the BOM." });
-            }}
-          >
-            <Upload className="h-4 w-4" /> Import BOM
-          </Button>
-          <Button type="button" variant="outline" className="gap-2" onClick={() => setHelpOpen(true)}>
-            <HelpCircle className="h-4 w-4" /> How BOM Works?
-          </Button>
           {editingId && (
             <Button
- type="button"
- variant="destructive"
- size="icon"
- title="Delete"
- onClick={() => {
+              type="button"
+              variant="destructive"
+              size="icon"
+              title="Delete"
+              onClick={() => {
                 const next = bomList.filter((x) => x.id !== editingId);
                 setBomList(next);
                 saveList(next);
@@ -833,14 +957,52 @@ export default function BillOfMaterialsPage() {
               <h2 className="text-base font-semibold text-[#111827]">Product Details (Finished Product)</h2>
             </div>
             <div className="space-y-4">
-              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="space-y-1.5 min-w-0">
-                  <Label>Product</Label>
-                  <Input
- value={productName}
- onChange={(e) => setProductName(e.target.value)}
-                    
-                  />
+                  <Label>
+                    Product <span className="text-[#DC2626]">*</span>
+                  </Label>
+                  <Select
+                    value={selectedProductId || undefined}
+                    onValueChange={(id) => {
+                      const item = allStockOptions.find((p) => p.id === id);
+                      if (!item) return;
+                      setSelectedProductId(item.id);
+                      setProductName(item.name);
+                      setOutputUom(normalizeUom(item.uom));
+                      if (item.category) setCategory(item.category);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="PCS" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <div
+                        className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setNewProductForm({
+                            name: "",
+                            uom: outputUom || "Pcs",
+                            category: category || "",
+                          });
+                          setCreateProductOpen(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" /> Create
+                      </div>
+                      <div className="my-1 border-t" />
+                      {allStockOptions.length === 0 ? (
+                        <p className="px-2 py-2 text-sm text-muted-foreground">No items in Item Master</p>
+                      ) : (
+                        allStockOptions.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.label}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label>Qty</Label>
@@ -848,33 +1010,40 @@ export default function BillOfMaterialsPage() {
  type="number"
  min={0}
  step="0.01"
- value={outputQty || ""}
- onChange={(e) => setOutputQty(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
+ value={outputQty === 0 ? "" : outputQty}
+ onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        setOutputQty(0);
+                        return;
+                      }
+                      const n = Number(raw);
+                      setOutputQty(Number.isFinite(n) && n >= 0 ? n : 0);
+                    }}
  className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
                 </div>
                 <div className="space-y-1.5 min-w-0">
                   <Label>UOM</Label>
-                  <Input
- value={outputUom}
- onChange={(e) => setOutputUom(e.target.value)}
- placeholder="PCS"
-                  />
-                </div>
-                <div className="space-y-1.5 min-w-0">
-                  <Label>Status</Label>
-                  <Select value={status} onValueChange={(v) => setStatus(v as any)}>
+                  <Select
+                    value={outputUom || undefined}
+                    onValueChange={setOutputUom}
+                  >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select sales person" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectContent className="max-h-48 overflow-y-auto">
+                      {uomOptions.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5 min-w-0 sm:col-span-2 lg:col-span-1">
+              </div>
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-1.5 min-w-0">
                   <Label>Category</Label>
                   <Input
  value={category}
@@ -882,34 +1051,17 @@ export default function BillOfMaterialsPage() {
                     
                   />
                 </div>
-              </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label>Effective Date</Label>
+                <div className="space-y-1.5 min-w-0">
+                  <Label>Date</Label>
                   <Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 min-w-0">
                   <Label>Warehouse</Label>
                   <Select value={warehouse} onValueChange={setWarehouse} disabled={!warehouseOptions.length}>
                     <SelectTrigger><SelectValue placeholder={warehouseOptions.length ? "Select warehouse" : "No warehouses found"} /></SelectTrigger>
                     <SelectContent>
                       {warehouseOptions.map((w) => (
                         <SelectItem key={w.id} value={w.name}>{w.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Sales Person</Label>
-                  <Select value={salesPerson} onValueChange={setSalesPerson}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select sales person" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {salesPersons.map((sp) => (
-                        <SelectItem key={sp.id} value={sp.name}>
-                          {sp.name}
-                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -941,16 +1093,17 @@ export default function BillOfMaterialsPage() {
                     <th className="px-3 py-2.5">#</th>
                     <th className="px-3 py-2.5">Item Code</th>
                     <th className="px-3 py-2.5">Item Name</th>
-                    <th className="px-3 py-2.5 text-right">Required Qty</th>
+                    <th className="px-3 py-2.5 text-right">Qty / Unit</th>
                     <th className="px-3 py-2.5">UOM</th>
-                    <th className="px-3 py-2.5 text-right">Total Cost (SGD)</th>
+                    <th className="px-3 py-2.5 text-right">Unit Cost</th>
+                    <th className="px-3 py-2.5 text-right">Line Cost</th>
                     <th className="px-3 py-2.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="min-h-[240px]">
                   {components.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-3 py-20 text-center text-sm text-[#6B7280]">
+                      <td colSpan={8} className="px-3 py-20 text-center text-sm text-[#6B7280]">
                         No components added. Click &quot;Add Component&quot; to add raw materials.
                       </td>
                     </tr>
@@ -966,7 +1119,8 @@ export default function BillOfMaterialsPage() {
                       <td className="px-3 py-2.5 text-[#111827]">{c.itemName}</td>
                       <td className="px-3 py-2.5 text-right">{c.qty}</td>
                       <td className="px-3 py-2.5">{c.uom}</td>
-                      <td className="px-3 py-2.5 text-right font-medium">{lineTotal(c, outputQty).toFixed(2)}</td>
+                      <td className="px-3 py-2.5 text-right">{(Number(c.unitCost) || 0).toFixed(2)}</td>
+                      <td className="px-3 py-2.5 text-right font-medium">{lineTotal(c, 1).toFixed(2)}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex justify-end gap-1">
                           <button type="button" className="rounded p-1 text-[#6B7280] hover:bg-[#F3F4F6]" onClick={() => openEditComponent(c)}>
@@ -994,119 +1148,104 @@ export default function BillOfMaterialsPage() {
         {/* Right panel */}
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-            <h3 className="mb-4 text-base font-semibold text-[#111827]">Cost Summary</h3>
+            <div className="mb-4 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-[#111827]">Cost Summary</h3>
+              </div>
+              <Select
+                open={costMenuOpen}
+                onOpenChange={setCostMenuOpen}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Search item" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[14rem]">
+                  <div
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setCostMenuOpen(false);
+                      setCostNameDraft("");
+                      setCostAmountDraft("");
+                      setCostDialog({ mode: "create" });
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create New Cost
+                  </div>
+                  <div className="my-1 border-t" />
+                  {managedCosts.length === 0 ? (
+                    <p className="px-2 py-2 text-sm text-muted-foreground">No costs yet</p>
+                  ) : (
+                    managedCosts.map((c) => (
+                      <div key={c.id} className="relative">
+                        <SelectItem value={c.id} className="pr-16">
+                          {c.name}
+                        </SelectItem>
+                        <button
+                          type="button"
+                          title={`Edit ${c.name}`}
+                          className="absolute right-8 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#6B7280] hover:bg-gray-100 hover:text-[#111827]"
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setCostMenuOpen(false);
+                            setCostNameDraft(c.name);
+                            setCostAmountDraft(c.amount ? String(c.amount) : "");
+                            setCostDialog({ mode: "edit", id: c.id });
+                          }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title={`Delete ${c.name}`}
+                          className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#DC2626] hover:bg-red-50"
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setCostMenuOpen(false);
+                            setManagedCosts((prev) => prev.filter((x) => x.id !== c.id));
+                            toast({ title: `${c.name} removed` });
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-[#6B7280]">Material Cost</span>
                 <span className="font-medium">{moneyOrEmpty(materialCost)}</span>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[#6B7280]">Labour Cost</span>
-                <Input
- type="number"
- className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
- value={labourCost || ""}
- onChange={(e) => setLabourCost(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[#6B7280]">Machine Cost</span>
-                <Input
- type="number"
- className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
- value={machineCost || ""}
- onChange={(e) => setMachineCost(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[#6B7280]">Other Exp</span>
-                <Input
- type="number"
- className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
- value={overhead || ""}
- onChange={(e) => setOverhead(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[#6B7280]">Wastage %</span>
-                <Input
- type="number"
- className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
- value={wastagePct || ""}
- onChange={(e) => setWastagePct(e.target.value === "" ? 0 : Number(e.target.value) || 0)}
-                />
-              </div>
-              {wastagePct > 0 && materialCost > 0 ? (
-                <div className="flex justify-between text-xs text-[#9CA3AF]">
-                  <span>Wastage on material</span>
-                  <span>{moneyOrEmpty(round2(materialCost * (wastagePct / 100)))}</span>
+              {managedCosts.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-3">
+                  <span className="text-[#6B7280]">{c.name}</span>
+                  <Input
+                    type="number"
+                    className="h-8 w-28 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    value={c.amount || ""}
+                    onChange={(e) => {
+                      const amount = e.target.value === "" ? 0 : Number(e.target.value) || 0;
+                      setManagedCosts((prev) =>
+                        prev.map((x) => (x.id === c.id ? { ...x, amount } : x)),
+                      );
+                    }}
+                  />
                 </div>
-              ) : null}
+              ))}
               <div className="flex items-end justify-between border-t border-[#E5E7EB] pt-3">
                 <span className="font-semibold text-[#111827]">Total BOM Cost</span>
                 <span className="text-xl font-bold text-[#16A34A]">{moneyOrEmpty(totalBomCost)}</span>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-            <h3 className="mb-4 text-base font-semibold text-[#111827]">Stock Availability</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-left text-[#6B7280]">
-                    <th className="pb-2 font-semibold">Component</th>
-                    <th className="pb-2 text-right font-semibold">Req.</th>
-                    <th className="pb-2 text-right font-semibold">Avail.</th>
-                    <th className="pb-2 text-right font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {components.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-4 text-center text-[#6B7280]">
-                        Add components to check stock availability.
-                      </td>
-                    </tr>
-                  ) : (
-                    components.map((c) => {
-                    const required = round2(c.qty * (1 + c.wastagePct / 100) * outputQty);
-                    const available = getAvailableQty(c.itemCode, c.availableQty);
-                    const ok = available >= required;
-                    return (
-                      <tr key={c.id} className="border-b last:border-0">
-                        <td className="py-2 pr-2 font-medium text-[#111827]">{c.itemName}</td>
-                        <td className="py-2 text-right">{required}</td>
-                        <td className="py-2 text-right">{available}</td>
-                        <td className="py-2 text-right">
-                          <span className={cn("inline-flex items-center gap-1 font-medium", ok ? "text-[#16A34A]" : "text-[#DC2626]")}>
-                            <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-[#16A34A]" : "bg-[#DC2626]")} />
-                            {ok ? "Available" : "Shortage"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <button
- type="button"
- className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[#2563EB]"
- onClick={() => setLocation("/inventory/reports")}
-            >
-              View Full Stock Report <ArrowRight className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-            <h3 className="mb-4 text-base font-semibold text-[#111827]">BOM Information</h3>
-            <div className="space-y-3 text-sm">
-              <InfoLine label="Created By" value={createdBy} />
-              <InfoLine label="Created Date" value={formatStamp(createdAt)} />
-              <InfoLine label="Last Updated By" value={updatedBy} />
-              <InfoLine label="Last Updated" value={formatStamp(updatedAt)} />
+              <div className="flex items-end justify-between">
+                <span className="font-semibold text-[#111827]">Per Item Cost</span>
+                <span className="text-lg font-bold text-[#111827]">{moneyOrEmpty(perItemCost)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1139,7 +1278,38 @@ export default function BillOfMaterialsPage() {
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>Stock Item *</Label>
+              <Label>Stock Group</Label>
+              <Select
+                value={compStockGroup}
+                onValueChange={(v) => {
+                  setCompStockGroup(v);
+                  setCompForm((f) => ({
+                    ...f,
+                    stockItemId: "",
+                    itemCode: "",
+                    itemName: "",
+                    uom: "Pcs",
+                    unitCost: 0,
+                    availableQty: 0,
+                  }));
+                  setStockItemQuery("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select UOM" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Groups</SelectItem>
+                  {stockGroupOptions.map((g) => (
+                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>
+                Stock Item <span className="text-[#DC2626]">*</span>
+              </Label>
               <Popover open={stockItemOpen} onOpenChange={setStockItemOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -1159,7 +1329,7 @@ export default function BillOfMaterialsPage() {
                     <Input
                       value={stockItemQuery}
                       onChange={(e) => setStockItemQuery(e.target.value)}
-                      placeholder="Search item"
+                      placeholder=""
                       autoFocus
                     />
                   </div>
@@ -1212,7 +1382,7 @@ export default function BillOfMaterialsPage() {
  onValueChange={(v) => setCompForm((f) => ({ ...f, uom: v }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select UOM" />
+                  <SelectValue placeholder="" />
                 </SelectTrigger>
                 <SelectContent className="max-h-48 overflow-y-auto">
                   <div
@@ -1275,31 +1445,128 @@ export default function BillOfMaterialsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+      <Dialog open={createProductOpen} onOpenChange={setCreateProductOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>How BOM Works?</DialogTitle>
+            <DialogTitle>Create Product</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 text-sm text-[#4B5563]">
-            <p>1. Enter the finished product name and output quantity.</p>
-            <p>2. Add raw material components with qty, wastage and unit cost.</p>
-            <p>3. Review cost summary and stock availability.</p>
-            <p>4. Save as Draft or Save BOM to activate.</p>
+          <div className="grid gap-3 py-2">
+            <div className="space-y-1.5">
+              <Label>
+                Product Name <span className="text-[#DC2626]">*</span>
+              </Label>
+              <Input
+                value={newProductForm.name}
+                onChange={(e) => setNewProductForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder=""
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>UOM</Label>
+              <Select
+                value={newProductForm.uom || undefined}
+                onValueChange={(v) => setNewProductForm((f) => ({ ...f, uom: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48 overflow-y-auto">
+                  {uomOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <Input
+                value={newProductForm.category}
+                onChange={(e) => setNewProductForm((f) => ({ ...f, category: e.target.value }))}
+                placeholder=""
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button type="button" onClick={() => setHelpOpen(false)}>Got it</Button>
+            <Button type="button" variant="outline" onClick={() => setCreateProductOpen(false)} disabled={creatingProduct}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleCreateProduct()} disabled={creatingProduct}>
+              {creatingProduct ? "Creating..." : "Create"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
 
-function InfoLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-[#9CA3AF]">{label}</p>
-      <p className="font-medium text-[#111827]">{value}</p>
+      <Dialog open={!!costDialog} onOpenChange={(open) => !open && setCostDialog(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {costDialog?.mode === "edit" ? "Edit Cost" : "Create Cost"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Cost Name</Label>
+              <Input
+                value={costNameDraft}
+                onChange={(e) => setCostNameDraft(e.target.value)}
+                placeholder=""
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Amount (SGD)</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={costAmountDraft}
+                onChange={(e) => setCostAmountDraft(e.target.value)}
+                placeholder=""
+                className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCostDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!costDialog) return;
+                const name = costNameDraft.trim();
+                if (!name) {
+                  toast({ title: "Cost name required", variant: "destructive" });
+                  return;
+                }
+                const amount = Math.max(0, Number(costAmountDraft) || 0);
+                if (costDialog.mode === "create") {
+                  setManagedCosts((prev) => [
+                    ...prev,
+                    { id: `cost-${Date.now()}`, name, amount, builtin: false },
+                  ]);
+                  toast({ title: `${name} added` });
+                } else if (costDialog.id) {
+                  setManagedCosts((prev) =>
+                    prev.map((c) =>
+                      c.id === costDialog.id ? { ...c, name, amount } : c,
+                    ),
+                  );
+                  toast({ title: `${name} updated` });
+                }
+                setCostDialog(null);
+                setCostNameDraft("");
+                setCostAmountDraft("");
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

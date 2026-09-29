@@ -286,43 +286,48 @@ export default function CreditNoteNew() {
       <Form {...form}>
         <form className="space-y-6">
           {/* Header */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Customer</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2 items-end">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Customer Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="customerName" render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input {...field}  /></FormControl>
+                    <FormItem>
+                      <div className="flex h-5 items-center justify-between gap-1.5">
+                        <FormLabel className="leading-none">Customer Name <span className="text-destructive">*</span></FormLabel>
+                        <DirectoryPickerButton type="customer" onSelect={v => {
+                          form.setValue("customerName", v.name);
+                          form.setValue("customerAddress", v.fullAddress || v.address || "");
+                          form.setValue("contactPerson", v.contactPerson || "");
+                          form.setValue("contactEmail", v.contactEmail || "");
+                          if (v.effectiveGstRate !== undefined) form.setValue("taxRate", v.effectiveGstRate);
+                          if (v.currency) form.setValue("currency", v.currency);
+                        }} />
+                      </div>
+                      <FormControl><Input {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <DirectoryPickerButton type="customer" onSelect={v => {
-                    form.setValue("customerName", v.name);
-                    form.setValue("customerAddress", v.address || "");
-                    form.setValue("contactPerson", v.contactPerson || "");
-                    form.setValue("contactEmail", v.contactEmail || "");
-                    if (v.effectiveGstRate !== undefined) form.setValue("taxRate", v.effectiveGstRate);
-                  }} />
-                </div>
-                <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Address</FormLabel>
-                    <FormControl><Textarea {...field} rows={3}  /></FormControl>
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-3">
                   <FormField control={form.control} name="contactPerson" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person</FormLabel>
-                      <FormControl><Input {...field}  /></FormControl>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="contactEmail" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Email</FormLabel>
-                      <FormControl><Input {...field} type="email"  /></FormControl>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                      <FormControl><Input {...field} type="email" /></FormControl>
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField control={form.control} name="customerAddress" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl><Textarea className="resize-none" {...field} rows={3} /></FormControl>
                     </FormItem>
                   )} />
                 </div>
@@ -330,28 +335,31 @@ export default function CreditNoteNew() {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle className="text-sm">Credit Note Details</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Credit Note Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="refInvNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Reference Invoice No.</FormLabel>
                       <FormControl>
                         <InvoiceRefPicker
- value={field.value || ""}
- loading={loadingInvoice}
- onChange={(v) => {
+                          value={field.value || ""}
+                          loading={loadingInvoice}
+                          placeholder=""
+                          onChange={(v) => {
                             field.onChange(v);
                             if (!v) lastLoadedRef.current = "";
                           }}
- onSelectInvoice={(inv) => {
+                          onSelectInvoice={(inv) => {
                             if (Array.isArray(inv.items) && inv.items.length > 0) {
                               applyInvoiceToForm(inv);
                             } else {
                               void loadFromInvoice(inv.invNumber);
                             }
                           }}
- onCommitTyped={(v) => void loadFromInvoice(v)}
+                          onCommitTyped={(v) => void loadFromInvoice(v)}
                         />
                       </FormControl>
                     </FormItem>
@@ -359,15 +367,20 @@ export default function CreditNoteNew() {
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
                     <IssueDateField value={field.value ?? ""} onChange={field.onChange} label="Issue Date" />
                   )} />
+                  <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Private Document</FormLabel>
+                      <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3">
+                        <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <p className="flex-1 text-xs text-muted-foreground">Only you &amp; admins</p>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </div>
+                    </FormItem>
+                  )} />
                 </div>
-                <FormField control={form.control} name="reason" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reason for Return <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Textarea {...field} rows={2} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="currency" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Currency</FormLabel>
@@ -383,19 +396,22 @@ export default function CreditNoteNew() {
                       <FormControl><Input {...field} type="text" inputMode="decimal" min={0} max={100} step={0.1} /></FormControl>
                     </FormItem>
                   )} />
+                  <FormField control={form.control} name="notes" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                    </FormItem>
+                  )} />
                 </div>
-                <FormField control={form.control} name="notes" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes (internal)</FormLabel>
-                    <FormControl><Input {...field}  /></FormControl>
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="isPrivate" render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 pt-1">
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    <span className="text-sm flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" />Private (only you + admin)</span>
-                  </FormItem>
-                )} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="reason" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reason for Return <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </CardContent>
             </Card>
           </div>

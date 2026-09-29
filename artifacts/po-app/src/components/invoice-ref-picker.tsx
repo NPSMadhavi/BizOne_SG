@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -138,12 +137,12 @@ export function InvoiceRefPicker({
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <div className="relative flex items-center">
+      <div className="relative w-full">
         <Input
           value={value}
           disabled={disabled || loading}
           placeholder={placeholder}
-          className="h-9 pr-9 text-sm"
+          className="h-10 w-full pr-10 text-sm"
           autoComplete="off"
           onFocus={() => setOpen(true)}
           onChange={(e) => {
@@ -163,13 +162,11 @@ export function InvoiceRefPicker({
           }}
           onKeyDown={handleKeyDown}
         />
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
           tabIndex={-1}
           disabled={disabled || loading}
-          className="absolute right-0 h-9 w-9 text-muted-foreground hover:text-foreground"
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground disabled:opacity-50"
           onMouseDown={(e) => {
             e.preventDefault();
             setOpen((o) => !o);
@@ -181,7 +178,7 @@ export function InvoiceRefPicker({
           ) : (
             <ChevronsUpDown className="h-4 w-4 opacity-60" />
           )}
-        </Button>
+        </button>
       </div>
 
       {open && (

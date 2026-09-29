@@ -437,7 +437,7 @@ export function SyncBridgeDatePicker({
             type="button"
             disabled={disabled}
             className={cn(
-              "box-border flex h-9 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-transparent px-3 py-1 text-left text-sm shadow-sm transition-colors",
+              "box-border flex h-10 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-1 text-left text-sm shadow-none transition-colors",
               "text-foreground placeholder:text-muted-foreground",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               "disabled:cursor-not-allowed disabled:opacity-50",

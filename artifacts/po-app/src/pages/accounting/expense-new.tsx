@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { useGetSettings } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -12,15 +12,17 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Info, AlertTriangle, Check } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BankAccountField } from "@/components/bank-account-field";
+import { LedgerCombobox, type LedgerAccount } from "@/components/ledger-combobox";
 
 interface ExpenseForm {
   expenseDate: string;
   vendorName: string;
   description: string;
   category: string;
+  accountId: number | null;
   amount: string;
   gstAmount: string;
   gstClaimable: boolean;
@@ -33,32 +35,6 @@ interface ExpenseForm {
   receiptMimeType: string;
   status: string;
 }
-
-interface CategoryConfig {
-  label: string;
-  deductible: boolean;
-  pct: number;
-  gstClaimable: boolean;
-  note: string;
-}
-
-const CATEGORY_CONFIG: Record<string, CategoryConfig> = {
-  staff_costs: { label: "Staff Costs", deductible: true, pct: 100, gstClaimable: false, note: "Salaries, CPF, bonuses — GST not applicable" },
-  rental: { label: "Rental", deductible: true, pct: 100, gstClaimable: true, note: "Office space, equipment rental" },
-  professional_fees: { label: "Professional Fees", deductible: true, pct: 100, gstClaimable: true, note: "Legal, audit, consulting fees" },
-  advertising: { label: "Advertising & Marketing", deductible: true, pct: 100, gstClaimable: true, note: "" },
-  office_supplies: { label: "Office Supplies", deductible: true, pct: 100, gstClaimable: true, note: "Stationery, printing, pantry supplies" },
-  utilities: { label: "Utilities", deductible: true, pct: 100, gstClaimable: true, note: "Electricity, internet, telephone" },
-  travel: { label: "Travel & Transport", deductible: true, pct: 100, gstClaimable: true, note: "Business travel, taxis, public transport" },
-  entertainment: { label: "Entertainment (S14C)", deductible: true, pct: 50, gstClaimable: true, note: "IRAS Section 14C — only 50% is tax-deductible" },
-  motor_vehicle_private: { label: "Motor Vehicle (Private Car)", deductible: false, pct: 0, gstClaimable: false, note: "IRAS: private cars are entirely non-deductible; no GST claim" },
-  motor_vehicle_commercial: { label: "Motor Vehicle (Commercial)", deductible: true, pct: 100, gstClaimable: true, note: "Goods vehicles, vans, lorries — fully deductible" },
-  training: { label: "Training & Development", deductible: true, pct: 100, gstClaimable: true, note: "Staff courses, seminars, certifications" },
-  insurance: { label: "Insurance", deductible: true, pct: 100, gstClaimable: true, note: "Business insurance premiums" },
-  bank_charges: { label: "Bank Charges", deductible: true, pct: 100, gstClaimable: false, note: "Bank charges are exempt from GST" },
-  fixed_assets: { label: "Fixed Assets", deductible: true, pct: 100, gstClaimable: true, note: "Capital expenditure on fixed assets" },
-  other: { label: "Other Expenses", deductible: true, pct: 100, gstClaimable: true, note: "Any other business expense" },
-};
 
 const PAYMENT_METHODS = [
   { value: "bank_transfer", label: "Bank Transfer" },
@@ -82,75 +58,6 @@ function numericOnly(val: string): string {
   return cleaned;
 }
 
-interface CategoryComboboxProps {
-  value: string;
-  onChange: (key: string) => void;
-}
-
-function CategoryCombobox({ value, onChange }: CategoryComboboxProps) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  const selectedLabel = value ? (CATEGORY_CONFIG[value]?.label ?? value) : "";
-  const displayValue = open ? query : selectedLabel;
-
-  const filtered = Object.entries(CATEGORY_CONFIG).filter(([, cfg]) =>
-    cfg.label.toLowerCase().includes(query.toLowerCase())
-  );
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <Input
-        placeholder="Type to search category…"
-        value={displayValue}
-        onFocus={() => { setOpen(true); setQuery(""); }}
-        onChange={e => { setQuery(e.target.value); setOpen(true); }}
-        onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery(""); } }}
-        autoComplete="off"
-      />
-      {open && (
-        <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-56 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">No categories found</div>
-          ) : (
-            filtered.map(([key, cfg]) => (
-              <div
-                key={key}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground",
-                  value === key && "bg-accent/60 font-medium"
-                )}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  onChange(key);
-                  setOpen(false);
-                  setQuery("");
-                }}
-              >
-                {value === key && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                {value !== key && <span className="w-3.5 shrink-0" />}
-                {cfg.label}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function ExpenseNew() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -162,12 +69,22 @@ export default function ExpenseNew() {
   const { data: settings } = useGetSettings({});
   const gstRate = settings?.gstRate ?? 9;
 
+  const { data: accounts = [] } = useQuery<LedgerAccount[]>({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const form = useForm<ExpenseForm>({
     defaultValues: {
       expenseDate: today(),
       vendorName: "",
       description: "",
       category: "",
+      accountId: null,
       amount: "",
       gstAmount: "",
       gstClaimable: false,
@@ -183,15 +100,13 @@ export default function ExpenseNew() {
   });
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = form;
-  const selectedCategory = watch("category");
+  const accountId = watch("accountId");
   const gstClaimable = watch("gstClaimable");
   const isDeductible = watch("isDeductible");
   const deductiblePct = watch("deductiblePct");
   const amount = watch("amount");
   const gstAmount = watch("gstAmount");
   const currency = watch("currency");
-
-  const cfg = selectedCategory ? CATEGORY_CONFIG[selectedCategory] : null;
 
   function autoCalcGst(netAmount: string, claimable: boolean) {
     const net = parseFloat(netAmount);
@@ -203,30 +118,25 @@ export default function ExpenseNew() {
     setValue("gstAmount", gst.toFixed(2));
   }
 
-  function onCategoryChange(key: string) {
-    setValue("category", key);
-    const c = CATEGORY_CONFIG[key];
-    if (c) {
-      setValue("isDeductible", c.deductible);
-      setValue("deductiblePct", c.pct);
-      setValue("gstClaimable", c.gstClaimable);
-      autoCalcGst(amount, c.gstClaimable);
-    }
+  function onLedgerChange(account: LedgerAccount) {
+    setValue("accountId", account.id);
+    setValue("category", account.code);
   }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const category = params.get("category");
-    if (category && CATEGORY_CONFIG[category]) {
-      onCategoryChange(category);
-    }
     const vendor = params.get("vendor");
     if (vendor) setValue("vendorName", vendor);
     const description = params.get("description");
     if (description) setValue("description", description);
     const reference = params.get("reference");
     if (reference) setValue("notes", `Invoice ref: ${reference}`);
-  }, []);
+    const ledgerCode = params.get("ledger") || params.get("category");
+    if (ledgerCode && accounts.length) {
+      const match = accounts.find(a => a.code === ledgerCode || String(a.id) === ledgerCode);
+      if (match) onLedgerChange(match);
+    }
+  }, [accounts]);
 
   function onAmountChange(raw: string) {
     const cleaned = numericOnly(raw);
@@ -263,11 +173,15 @@ export default function ExpenseNew() {
   }
 
   async function onSubmit(data: ExpenseForm, statusOverride?: string) {
-    if (!data.category) { toast({ title: "Please select a category", variant: "destructive" }); return; }
+    if (!data.accountId) { toast({ title: "Please select a ledger", variant: "destructive" }); return; }
     setSaving(true);
     try {
-      // Always create as draft first so that confirmation can be processed cleanly and auto-post the journal entry
-      const payload = { ...data, status: "draft" };
+      const payload = {
+        ...data,
+        accountId: data.accountId,
+        category: data.category || String(data.accountId),
+        status: "draft",
+      };
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -322,24 +236,19 @@ export default function ExpenseNew() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="vendorName">Vendor / Payee Name <span className="text-destructive">*</span></Label>
-                <Input id="vendorName" placeholder="e.g. ACME Pte. Ltd." {...register("vendorName", { required: true })} />
+                <Input id="vendorName" placeholder="Type to search category…" {...register("vendorName", { required: true })} />
                 {errors.vendorName && <p className="text-xs text-destructive">Required</p>}
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="description">Description <span className="text-destructive">*</span></Label>
-                <Input id="description" placeholder="e.g. Office rental for October 2025" {...register("description", { required: true })} />
+                <Input id="description" placeholder="e.g. ACME Pte. Ltd." {...register("description", { required: true })} />
                 {errors.description && <p className="text-xs text-destructive">Required</p>}
               </div>
 
               <div className="space-y-1.5">
-                <Label>IRAS Category <span className="text-destructive">*</span></Label>
-                <CategoryCombobox value={selectedCategory} onChange={onCategoryChange} />
-                {cfg?.note && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3 shrink-0" /> {cfg.note}
-                  </p>
-                )}
+                <Label>Ledger <span className="text-destructive">*</span></Label>
+                <LedgerCombobox accounts={accounts} value={accountId} onChange={onLedgerChange} />
               </div>
 
               <BankAccountField
@@ -361,7 +270,7 @@ export default function ExpenseNew() {
                   <Input
                     id="amount"
                     inputMode="decimal"
-                    placeholder="0.00"
+                    placeholder="e.g. Office rental for October 2025"
                     value={amount}
                     onChange={e => onAmountChange(e.target.value)}
                     className="[appearance:textfield]"
@@ -413,13 +322,6 @@ export default function ExpenseNew() {
                   </Select>
                 </div>
               )}
-
-              {selectedCategory === "motor_vehicle_private" && (
-                <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800">Private car expenses are <strong>non-deductible</strong> and GST input tax cannot be claimed under IRAS rules (Section 14(1)(c)).</p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -428,7 +330,7 @@ export default function ExpenseNew() {
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="notes">Internal Notes</Label>
-                <Textarea id="notes" placeholder="Any additional notes…" rows={3} {...register("notes")} />
+                <Textarea id="notes" placeholder="0.00" rows={3} {...register("notes")} />
               </div>
               <div className="space-y-1.5">
                 <Label>Receipt / Invoice Upload</Label>
@@ -443,7 +345,7 @@ export default function ExpenseNew() {
         </div>
 
         <div className="space-y-4">
-          <Card className={cfg && !cfg.deductible ? "border-red-200 bg-red-50/30" : cfg?.pct === 50 ? "border-amber-200 bg-amber-50/30" : "border-green-200 bg-green-50/30"}>
+          <Card className={!isDeductible ? "border-red-200 bg-red-50/30" : deductiblePct === 50 ? "border-amber-200 bg-amber-50/30" : "border-green-200 bg-green-50/30"}>
             <CardHeader><CardTitle className="text-sm">IRAS Summary</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between">

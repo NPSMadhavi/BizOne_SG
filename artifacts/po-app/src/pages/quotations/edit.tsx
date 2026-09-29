@@ -36,8 +36,6 @@ import { generateQuotation_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
-
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
   sectionLabel: z.string().default(""),
@@ -91,7 +89,6 @@ export default function QuotationEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
-  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -389,82 +386,95 @@ export default function QuotationEdit() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
-                <DirectoryPickerButton
- type="customer"
- onSelect={(c) => {
-                    form.setValue("customerName", c.name);
-                    form.setValue("customerAddress", c.fullAddress);
-                    form.setValue("customerContact", c.contactPerson);
-                    form.setValue("customerContactEmail", c.contactEmail);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
-                    if (c.currency) {
-                      form.setValue("currency", c.currency);
-                      setDirectoryCurrency(c.currency);
-                      setDirectoryCurrencyName(c.name);
-                    }
-                    // Use customer-specific T&C if set; otherwise fall back to settings default
-                    if (c.quotationTerms) {
-                      form.setValue("notes", c.quotationTerms);
-                    } else {
-                      form.setValue("notes", docSettings?.quotationTerms ?? "");
-                    }
-                  }}
-                />
               </CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="customerName" render={({ field }) => (
-                  <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                      <ContactAutocomplete
- type="customer"
- value={field.value}
- onChange={field.onChange}
- onSelect={(c) => {
-                          form.setValue("customerName", c.name);
-                          if (c.address) form.setValue("customerAddress", c.address);
-                          if (c.contact) form.setValue("customerContact", c.contact);
-                          if (c.email) form.setValue("customerContactEmail", c.email);
-                          if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
-                        }}
-                      />
-                    </FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Address</FormLabel>
-                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContact" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="customerName" render={({ field }) => (
+                    <FormItem>
+                      <div className="flex h-5 items-center justify-between gap-1.5">
+                        <FormLabel className="leading-none">Customer Name <span className="text-destructive">*</span></FormLabel>
+                        <DirectoryPickerButton
+                          type="customer"
+                          onSelect={(c) => {
+                            form.setValue("customerName", c.name);
+                            form.setValue("customerAddress", c.fullAddress);
+                            form.setValue("customerContact", c.contactPerson);
+                            form.setValue("customerContactEmail", c.contactEmail);
+                            if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
+                            if (c.currency) {
+                              form.setValue("currency", c.currency);
+                              setDirectoryCurrency(c.currency);
+                              setDirectoryCurrencyName(c.name);
+                            }
+                            // Use customer-specific T&C if set; otherwise fall back to settings default
+                            if (c.quotationTerms) {
+                              form.setValue("notes", c.quotationTerms);
+                            } else {
+                              form.setValue("notes", docSettings?.quotationTerms ?? "");
+                            }
+                          }}
+                        />
+                      </div>
+                      <FormControl>
+                        <ContactAutocomplete
+                          type="customer"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onSelect={(c) => {
+                            form.setValue("customerName", c.name);
+                            if (c.address) form.setValue("customerAddress", c.address);
+                            if (c.contact) form.setValue("customerContact", c.contact);
+                            if (c.email) form.setValue("customerContactEmail", c.email);
+                            if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="customerContact" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                      <FormControl><Input type="email" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField control={form.control} name="customerAddress" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="pb-4"><CardTitle className="text-lg">Quotation Details</CardTitle></CardHeader>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Quotation Details</CardTitle>
+              </CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="status" render={({ field }) => (
-                  <FormItem><FormLabel>Status</FormLabel>
-                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring">
-                      <option value="draft">Draft</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select></FormItem>
-                )} />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
                     <FormItem>
                       <FormControl>
                         <IssueDateField value={field.value || ""} onChange={field.onChange} label="Quotation Date" />
-                      </FormControl><FormMessage />
+                      </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="validUntil" render={({ field }) => (
@@ -472,10 +482,10 @@ export default function QuotationEdit() {
                       <FormLabel>Quotation Valid Upto <span className="text-destructive">*</span></FormLabel>
                       <FormControl>
                         <Input
- type="date"
- value={field.value || ""}
- min={form.watch("issueDate") || undefined}
- onChange={field.onChange}
+                          type="date"
+                          value={field.value || ""}
+                          min={form.watch("issueDate") || undefined}
+                          onChange={field.onChange}
                         />
                       </FormControl>
                       <p className="text-[11px] text-muted-foreground">
@@ -484,47 +494,47 @@ export default function QuotationEdit() {
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                   <FormField control={form.control} name="paymentTerms" render={({ field }) => (
-                    <FormItem><FormLabel>Payment Terms</FormLabel>
-                      <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl></FormItem>
-                  )} />
-                  <FormField control={form.control} name="salesPerson" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Sales Person</FormLabel>
-                      <FormControl>
-                        <Select value={field.value || undefined} onValueChange={field.onChange}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select Sales Person" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {salesPersons.map((sp) => (
-                              <SelectItem key={sp.id} value={sp.name}>
-                                {sp.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormControl>
+                      <FormLabel>Payment Terms</FormLabel>
+                      <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="status" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <select
+                        value={field.value}
+                        onChange={e => field.onChange(e.target.value)}
+                        className="flex h-10 w-full rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-1 text-sm shadow-none focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Private Document</FormLabel>
+                      <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3">
+                        <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <p className="flex-1 text-xs text-muted-foreground">Only you &amp; admins</p>
+                        <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                      </div>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Delivery Date</FormLabel>
+                      <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
                 </div>
-                <FormField control={form.control} name="isPrivate" render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
-                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1"><FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p></div>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    </div>
-                  </FormItem>
-                )} />
               </CardContent>
             </Card>
           </div>
@@ -691,7 +701,7 @@ export default function QuotationEdit() {
                               </FormControl></FormItem>
                             )} /></td>
                             <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
-                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
+                              <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} /></FormControl></FormItem>
                             )} /></td>
                             <td className="px-4 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
                               <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
@@ -726,7 +736,7 @@ export default function QuotationEdit() {
                         <Input
  inputMode="decimal"
  maxLength={3}
- placeholder="0"
+ placeholder="0.00"
  className="h-7 w-14 text-sm text-center pr-5"
  value={discountPct || ""}
  onChange={e => {
@@ -740,7 +750,7 @@ export default function QuotationEdit() {
                       </div>
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
-                          <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
+                          <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder=""
  value={field.value || ""}
  onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />

@@ -11,6 +11,7 @@ export const stockItemsTable = pgTable("stock_items", {
   type: text("type").notNull().default("product"),
   category: text("category"),
   brand: text("brand"),
+  stockGroup: text("stock_group"),
   barcode: text("barcode"),
   salesPerson: text("sales_person"),
   itemImage: text("item_image"),
@@ -22,6 +23,10 @@ export const stockItemsTable = pgTable("stock_items", {
   reorderLevel: decimal("reorder_level", { precision: 15, scale: 3 }).default("0"),
   maxStockLevel: decimal("max_stock_level", { precision: 15, scale: 3 }).default("0"),
   batchNo: text("batch_no"),
+  expiryDate: text("expiry_date"),
+  manufacturingDate: text("manufacturing_date"),
+  /** JSON array of { batchNo, expiryDate?, manufacturingDate?, createdAt? } — all batches for the item. */
+  batchesJson: text("batches_json"),
   alternateUom: text("alternate_uom"),
   alternateQty: decimal("alternate_qty", { precision: 15, scale: 4 }).default("0"),
   mainQty: decimal("main_qty", { precision: 15, scale: 4 }).default("0"),

@@ -22,7 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
-import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft, X } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, Upload, Sparkles, FileInput, ArrowLeft, X, AlertTriangle, RefreshCw } from "lucide-react";
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
 import { cn, plainText } from "@/lib/utils";
@@ -34,12 +34,14 @@ import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
-import { IssueDateField } from "@/components/issue-date-field";
+import { IssueDateField, getToday } from "@/components/issue-date-field";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
 import { useAuth } from "@/contexts/auth-context";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 
@@ -58,6 +60,9 @@ const itemSchema = z.object({
   stockItemId: z.number().nullish(),
   warehouseId: z.number().nullish(),
   warehouseName: z.string().optional(),
+  batchNo: z.string().optional(),
+  expiryDate: z.string().optional(),
+  manufacturingDate: z.string().optional(),
   selectedSerials: z.array(z.string()).default([]),
   selectedSerialIds: z.array(z.number()).default([]),
   itemImage: z.string().default(""),
@@ -71,9 +76,6 @@ const CURRENCIES = [
   { code: "MYR", label: "MYR – RM" },
   { code: "INR", label: "INR – ₹" },
 ];
-
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const schema = z.object({
   customerName: z.string().min(1, "Required"),
@@ -104,8 +106,8 @@ export default function InvoiceEdit() {
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { salesPersons } = useSalesPersons();
   const { selectedCompany, user, canManage } = useAuth();
+  const { salesPersons } = useSalesPersons();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -114,11 +116,15 @@ export default function InvoiceEdit() {
   const initialized = useRef(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
+  const [customerCreditLimit, setCustomerCreditLimit] = useState<number | null>(null);
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [createDeliveryOrder, setCreateDeliveryOrder] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState("1.000000");
+  const [fetchingRate, setFetchingRate] = useState(false);
+  const skipNextRateFetch = useRef(false);
 
   const newlyReservedIds = useRef<Set<number>>(new Set());
 
@@ -237,6 +243,9 @@ export default function InvoiceEdit() {
           stockItemId: i.stockItemId ? Number(i.stockItemId) : undefined,
           warehouseId: i.warehouseId ? Number(i.warehouseId) : undefined,
           warehouseName: i.warehouseName || "",
+          batchNo: i.batchNo || "",
+          expiryDate: i.expiryDate || "",
+          manufacturingDate: i.manufacturingDate || "",
           selectedSerials: i.selectedSerials ?? [],
           selectedSerialIds: i.selectedSerialIds ?? [],
           itemImage: (i as any).itemImage || "",
@@ -251,7 +260,33 @@ export default function InvoiceEdit() {
           .reduce((s: number, i: any) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
         if (subtot > 0) setDiscountPct(parseFloat((docDiscAmt / subtot * 100).toFixed(2)));
       }
+      setExchangeRate(
+        (doc as any).exchangeRate != null && (doc as any).exchangeRate !== ""
+          ? Number((doc as any).exchangeRate).toFixed(6)
+          : "1.000000"
+      );
+      skipNextRateFetch.current = true;
       initialized.current = true;
+      void (async () => {
+        try {
+          const res = await fetch("/api/customers", { credentials: "include" });
+          if (!res.ok) return;
+          const list = await res.json();
+          const match = (list || []).find(
+            (x: any) => (x.name || "").toLowerCase().trim() === (doc.customerName || "").toLowerCase().trim()
+          );
+          if (match?.creditLimitEnabled && match?.creditLimit != null && match.creditLimit !== "") {
+            const n = Number(match.creditLimit);
+            setCustomerCreditLimit(Number.isFinite(n) && n >= 0 ? n : null);
+          } else {
+            setCustomerCreditLimit(null);
+          }
+          if (match?.currency) {
+            setDirectoryCurrency(match.currency);
+            setDirectoryCurrencyName(match.name);
+          }
+        } catch { /* ignore */ }
+      })();
     }
   }, [doc]);
 
@@ -303,6 +338,51 @@ export default function InvoiceEdit() {
   }, [form, append]);
 
   const currency = form.watch("currency") || "SGD";
+  const issueDate = form.watch("issueDate") || getToday();
+
+  const fetchExchangeRate = async (curr: string, date: string) => {
+    if (curr === "SGD") { setExchangeRate("1.000000"); return; }
+    setFetchingRate(true);
+    try {
+      const res = await fetch(`/api/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setExchangeRate(data.rateSGD.toFixed(6));
+      }
+    } catch { /* user can enter manually */ }
+    finally { setFetchingRate(false); }
+  };
+
+  useEffect(() => {
+    if (!initialized.current) return;
+    if (skipNextRateFetch.current) {
+      skipNextRateFetch.current = false;
+      return;
+    }
+    if (currency !== "SGD") fetchExchangeRate(currency, issueDate);
+    if (currency === "SGD") setExchangeRate("1.000000");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, issueDate]);
+
+  async function applyCustomerCurrency(customerName: string) {
+    try {
+      const res = await fetch("/api/customers", { credentials: "include" });
+      if (!res.ok) return;
+      const list = await res.json();
+      const match = (list || []).find((x: any) => (x.name || "").toLowerCase().trim() === customerName.toLowerCase().trim());
+      if (match?.currency) {
+        form.setValue("currency", match.currency);
+        setDirectoryCurrency(match.currency);
+        setDirectoryCurrencyName(match.name);
+      }
+      if (match?.creditLimitEnabled && match?.creditLimit != null && match.creditLimit !== "") {
+        const n = Number(match.creditLimit);
+        setCustomerCreditLimit(Number.isFinite(n) && n >= 0 ? n : null);
+      } else {
+        setCustomerCreditLimit(null);
+      }
+    } catch { /* ignore */ }
+  }
 
   const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
@@ -313,6 +393,7 @@ export default function InvoiceEdit() {
   }, [subtotal]);
   const taxAmount = taxableAmount * (taxPercent / 100);
   const totalAmount = taxableAmount + taxAmount;
+  const creditLimitExceeded = customerCreditLimit != null && totalAmount > customerCreditLimit;
   const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
   const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
 
@@ -406,6 +487,7 @@ export default function InvoiceEdit() {
       poRefNo: values.poRefNo || null,
       items: itemsWithAmount,
       createDeliveryOrder,
+      exchangeRate: currency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1,
     } as any }, {
       onSuccess: async (saved: any) => {
         try {
@@ -484,56 +566,74 @@ export default function InvoiceEdit() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
-                <DirectoryPickerButton
- type="customer"
- onSelect={(c) => {
-                    form.setValue("customerName", c.name);
-                    form.setValue("customerAddress", c.fullAddress);
-                    form.setValue("customerContact", c.contactPerson);
-                    form.setValue("customerContactEmail", c.contactEmail);
-                    if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
-                    if (c.currency) {
-                      form.setValue("currency", c.currency);
-                      setDirectoryCurrency(c.currency);
-                      setDirectoryCurrencyName(c.name);
-                    }
-                  }}
-                />
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
-                  <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
+                  <FormItem>
+                    <div className="flex h-5 items-center justify-between gap-1.5">
+                      <FormLabel className="leading-none">Customer Name <span className="text-destructive">*</span></FormLabel>
+                      <DirectoryPickerButton
+                        type="customer"
+                        onSelect={(c) => {
+                          form.setValue("customerName", c.name);
+                          form.setValue("customerAddress", c.fullAddress);
+                          form.setValue("customerContact", c.contactPerson);
+                          form.setValue("customerContactEmail", c.contactEmail);
+                          if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
+                          if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
+                          if (c.currency) {
+                            form.setValue("currency", c.currency);
+                            setDirectoryCurrency(c.currency);
+                            setDirectoryCurrencyName(c.name);
+                          }
+                          setCustomerCreditLimit(
+                            c.creditLimitEnabled && c.creditLimit != null ? c.creditLimit : null
+                          );
+                        }}
+                      />
+                    </div>
                     <FormControl>
                       <ContactAutocomplete
- type="customer"
- value={field.value}
- onChange={field.onChange}
- onSelect={(c) => {
+                        type="customer"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
                           if (c.email) form.setValue("customerContactEmail", c.email);
                           if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                          void applyCustomerCurrency(c.name);
                         }}
                       />
-                    </FormControl><FormMessage /></FormItem>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )} />
+                <FormField control={form.control} name="customerContact" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                    <FormControl><Input type="email" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Address</FormLabel>
                     <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContact" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
                   const addrs = (field.value || "").split("\n\n");
@@ -592,30 +692,20 @@ export default function InvoiceEdit() {
                     </FormItem>
                   );
                 }} />
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Invoice Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="status" render={({ field }) => (
-                  <FormItem><FormLabel>Status</FormLabel>
-                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring">
-                      <option value="draft">Draft</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select></FormItem>
-                )} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField control={form.control} name="issueDate" render={({ field }) => (
                   <FormItem>
                     <FormControl>
                       <IssueDateField value={field.value || ""} onChange={field.onChange} label="Invoice Date" />
                     </FormControl><FormMessage />
                   </FormItem>
-                )} />
-                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
@@ -625,9 +715,19 @@ export default function InvoiceEdit() {
                   <FormItem><FormLabel>PO Reference No.</FormLabel>
                     <FormControl><PORefSelect value={field.value ?? ""} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem><FormLabel>Status</FormLabel>
+                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className="flex h-10 w-full rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-1 text-sm shadow-none focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="draft">Draft</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select></FormItem>
+                )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <p className="text-sm font-medium mb-1.5">Sales Order</p>
-                  <p className="h-9 flex items-center px-3 rounded-md border bg-muted/40 text-sm font-mono text-muted-foreground">
+                  <p className="h-10 flex items-center px-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] text-sm font-mono text-muted-foreground">
                     {(doc as any)?.soNumber || "—"}
                   </p>
                 </div>
@@ -653,17 +753,58 @@ export default function InvoiceEdit() {
                 )} />
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
-                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
-                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1"><FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p></div>
+                    <FormLabel>Private Document</FormLabel>
+                    <div className="flex h-10 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2.5">
+                      <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">Only you &amp; admins</p>
                       <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                     </div>
                   </FormItem>
                 )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                  <FormItem className="sm:col-span-2 lg:col-span-3">
+                    <FormLabel>Delivery Date</FormLabel>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                </div>
               </CardContent>
             </Card>
           </div>
+
+          {currency !== "SGD" && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-1.5">
+              <p className="text-amber-800 font-medium text-xs flex items-center gap-1.5">
+                <AlertTriangle className="h-3 w-3" />
+                Exchange Rate to SGD <span className="font-normal">(required for IRAS GST reporting)</span>
+              </p>
+              <div className="flex gap-2 items-center">
+                <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
+                  <span className="font-mono">1 {currency} =</span>
+                  <Input
+                    type="text" inputMode="decimal" placeholder="0.00"
+                    value={exchangeRate}
+                    onChange={e => setExchangeRate(e.target.value)}
+                    className="h-7 font-mono text-xs w-32 bg-white"
+                  />
+                  <span className="font-mono">SGD</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchExchangeRate(currency, issueDate)}
+                  disabled={fetchingRate}
+                  className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} />
+                  Fetch Rate
+                </button>
+              </div>
+              <p className="text-[10px] text-amber-600">Rate auto-fetched from public exchange rates for {issueDate}. Verify with MAS (mas.gov.sg) for IRAS compliance.</p>
+            </div>
+          )}
 
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
@@ -857,7 +998,7 @@ export default function InvoiceEdit() {
                             </FormControl></FormItem>
                           )} /></td>
                           <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
-                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
+                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} /></FormControl></FormItem>
                           )} /></td>
                           <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
                             <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
@@ -934,7 +1075,7 @@ export default function InvoiceEdit() {
                         <Input
  inputMode="decimal"
  maxLength={3}
- placeholder="0"
+ placeholder="0.00"
  className="h-7 w-14 text-sm text-center pr-5"
  value={discountPct || ""}
  onChange={e => {
@@ -948,7 +1089,7 @@ export default function InvoiceEdit() {
                       </div>
                       <FormField control={form.control} name="discountAmount" render={({ field }) => (
                         <FormItem className="m-0 p-0"><FormControl>
-                          <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
+                          <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder=""
  value={field.value || ""}
  onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
                           />
@@ -959,6 +1100,15 @@ export default function InvoiceEdit() {
                   {discountAmt > 0 && <div className="flex justify-between text-xs text-muted-foreground"><span>Net Amount</span><span>{fmt(taxableAmount)}</span></div>}
                   <div className="flex justify-between"><span className="text-muted-foreground">GST ({taxPercent}%)</span><span>{fmt(taxAmount)}</span></div>
                   <div className="flex justify-between font-semibold text-base border-t pt-2"><span>Total</span><span>{fmt(totalAmount)}</span></div>
+                  {creditLimitExceeded && customerCreditLimit != null && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-600" />
+                      <span>
+                        Invoice total exceeds this customer&apos;s credit limit of{" "}
+                        <strong>{fmt(customerCreditLimit)}</strong>.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -975,7 +1125,7 @@ export default function InvoiceEdit() {
                 </FormItem>
               )} />
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-stretch">
                 <FormField control={form.control} name="customerNote" render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Customer Note</FormLabel>
@@ -1214,7 +1364,8 @@ export default function InvoiceEdit() {
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
  currentInvoiceId={id}
         requireWarehouse={false}
- onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName }: StockItemSelection) => {
+        showBatchFields
+ onSelect={({ item, selectedSerials, selectedSerialIds, qty, warehouseId, warehouseName, batchNo, expiryDate, manufacturingDate }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           const prevIds: number[] = form.getValues(`items.${stockPickerIndex}.selectedSerialIds`) || [];
           const toRelease = prevIds.filter(id => !selectedSerialIds.includes(id));
@@ -1242,6 +1393,9 @@ export default function InvoiceEdit() {
           form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds);
           form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId || undefined);
           form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName ?? "");
+          form.setValue(`items.${stockPickerIndex}.batchNo`, batchNo || "");
+          form.setValue(`items.${stockPickerIndex}.expiryDate`, expiryDate || "");
+          form.setValue(`items.${stockPickerIndex}.manufacturingDate`, manufacturingDate || "");
           setStockPickerIndex(null);
         }}
       />

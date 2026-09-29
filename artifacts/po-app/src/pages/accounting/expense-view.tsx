@@ -20,6 +20,7 @@ interface Expense {
   vendorName: string;
   description: string;
   category: string;
+  accountId?: number | null;
   amount: string;
   gstAmount: string;
   gstClaimable: boolean;
@@ -36,7 +37,13 @@ interface Expense {
   updatedAt: string;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
+interface Account {
+  id: number;
+  code: string;
+  name: string;
+}
+
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   staff_costs: "Staff Costs",
   rental: "Rental",
   professional_fees: "Professional Fees",
@@ -89,6 +96,25 @@ export default function ExpenseView() {
     refetchOnMount: "always",
   });
 
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  function ledgerLabel(exp: Expense) {
+    if (exp.accountId) {
+      const a = accounts.find(x => x.id === exp.accountId);
+      if (a) return `${a.code} — ${a.name}`;
+    }
+    const byCode = accounts.find(x => x.code === exp.category);
+    if (byCode) return `${byCode.code} — ${byCode.name}`;
+    return LEGACY_CATEGORY_LABELS[exp.category] ?? exp.category;
+  }
+
   const confirmMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/expenses/${id}/confirm`, { method: "POST", credentials: "include" });
@@ -135,7 +161,7 @@ export default function ExpenseView() {
               <ReceiptText className="h-5 w-5" />
               {expense.vendorName}
             </h1>
-            <p className="text-sm text-muted-foreground">{fmtDate(expense.expenseDate)} · {CATEGORY_LABELS[expense.category] ?? expense.category}</p>
+            <p className="text-sm text-muted-foreground">{fmtDate(expense.expenseDate)} · {ledgerLabel(expense)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -200,8 +226,8 @@ export default function ExpenseView() {
                   <p className="font-medium">{expense.description}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs uppercase tracking-wide mb-0.5">Category</p>
-                  <Badge variant="outline">{CATEGORY_LABELS[expense.category] ?? expense.category}</Badge>
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide mb-0.5">Ledger</p>
+                  <Badge variant="outline">{ledgerLabel(expense)}</Badge>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs uppercase tracking-wide mb-0.5">Currency</p>

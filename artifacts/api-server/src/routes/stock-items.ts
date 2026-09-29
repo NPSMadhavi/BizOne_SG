@@ -13,6 +13,95 @@ import {
 
 const router: IRouter = Router();
 
+type ItemBatch = {
+  batchNo: string;
+  expiryDate?: string | null;
+  manufacturingDate?: string | null;
+  createdAt?: string | null;
+};
+
+function parseBatchesJson(raw: unknown): ItemBatch[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((b: any) => ({
+        batchNo: String(b?.batchNo || "").trim(),
+        expiryDate: typeof b?.expiryDate === "string" && b.expiryDate.trim() ? b.expiryDate.trim() : null,
+        manufacturingDate:
+          typeof b?.manufacturingDate === "string" && b.manufacturingDate.trim()
+            ? b.manufacturingDate.trim()
+            : null,
+        createdAt: typeof b?.createdAt === "string" ? b.createdAt : null,
+      }))
+      .filter((b) => b.batchNo);
+  } catch {
+    return [];
+  }
+}
+
+function collectItemBatches(item: {
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  manufacturingDate?: string | null;
+  batchesJson?: string | null;
+}): ItemBatch[] {
+  const map = new Map<string, ItemBatch>();
+  for (const b of parseBatchesJson(item.batchesJson)) {
+    map.set(b.batchNo.toLowerCase(), b);
+  }
+  const primary = typeof item.batchNo === "string" ? item.batchNo.trim() : "";
+  if (primary) {
+    const key = primary.toLowerCase();
+    const existing = map.get(key);
+    map.set(key, {
+      batchNo: primary,
+      expiryDate: (typeof item.expiryDate === "string" && item.expiryDate.trim()
+        ? item.expiryDate.trim()
+        : existing?.expiryDate) || null,
+      manufacturingDate: (typeof item.manufacturingDate === "string" && item.manufacturingDate.trim()
+        ? item.manufacturingDate.trim()
+        : existing?.manufacturingDate) || null,
+      createdAt: existing?.createdAt || null,
+    });
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || "")) ||
+    a.batchNo.localeCompare(b.batchNo, undefined, { numeric: true, sensitivity: "base" }),
+  );
+}
+
+function normalizeBatchesPayload(raw: unknown): ItemBatch[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const map = new Map<string, ItemBatch>();
+  for (const b of raw) {
+    const batchNo = String((b as any)?.batchNo || "").trim();
+    if (!batchNo) continue;
+    map.set(batchNo.toLowerCase(), {
+      batchNo,
+      expiryDate:
+        typeof (b as any)?.expiryDate === "string" && (b as any).expiryDate.trim()
+          ? (b as any).expiryDate.trim()
+          : null,
+      manufacturingDate:
+        typeof (b as any)?.manufacturingDate === "string" && (b as any).manufacturingDate.trim()
+          ? (b as any).manufacturingDate.trim()
+          : null,
+      createdAt:
+        typeof (b as any)?.createdAt === "string" && (b as any).createdAt
+          ? (b as any).createdAt
+          : new Date().toISOString(),
+    });
+  }
+  return Array.from(map.values());
+}
+
+function withBatches<T extends Record<string, any>>(item: T) {
+  const batches = collectItemBatches(item);
+  return { ...item, batches };
+}
+
 function normalizeAlternateFields(body: {
   alternateUom?: unknown;
   alternateQty?: unknown;
@@ -130,13 +219,13 @@ router.get("/stock-items", async (req, res): Promise<void> => {
   res.json(items.map((item) => {
     const history = historyByItem.get(item.id) || [];
     if (item.type === "service") {
-      return { ...item, stockQty: "0", purchasePriceHistory: history };
+      return withBatches({ ...item, stockQty: "0", purchasePriceHistory: history });
     }
     if (totalByItem.has(item.id)) {
-      return { ...item, stockQty: totalByItem.get(item.id)!, purchasePriceHistory: history };
+      return withBatches({ ...item, stockQty: totalByItem.get(item.id)!, purchasePriceHistory: history });
     }
     const legacy = item.stockQty != null && item.stockQty !== "" ? String(item.stockQty) : "0";
-    return { ...item, stockQty: legacy, purchasePriceHistory: history };
+    return withBatches({ ...item, stockQty: legacy, purchasePriceHistory: history });
   }));
 });
 
@@ -147,8 +236,8 @@ router.post("/stock-items", async (req, res): Promise<void> => {
 
   const {
     code, name, description, uom, type, unitPrice, mrpPrice, purchasePrice, stockQty, warehouseId,
-    batchNo, isActive, alternateUom, alternateQty, mainQty,
-    category, brand, barcode, salesPerson, itemImage,
+    batchNo, expiryDate, manufacturingDate, batches, isActive, alternateUom, alternateQty, mainQty,
+    category, brand, barcode, salesPerson, itemImage, stockGroup,
     trackInventory, showInPos, pricingMethod, isWeightBased,
     minStockLevel, reorderLevel, maxStockLevel,
     purchasePriceDate,
@@ -217,6 +306,7 @@ router.post("/stock-items", async (req, res): Promise<void> => {
         : "stock_item",
       category: typeof category === "string" && category.trim() ? category.trim() : null,
       brand: typeof brand === "string" && brand.trim() ? brand.trim() : null,
+      stockGroup: typeof stockGroup === "string" && stockGroup.trim() ? stockGroup.trim() : null,
       barcode: resolvedBarcode,
       salesPerson: typeof salesPerson === "string" && salesPerson.trim() ? salesPerson.trim() : null,
       itemImage: typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null,
@@ -228,6 +318,20 @@ router.post("/stock-items", async (req, res): Promise<void> => {
       reorderLevel: reorderLevel != null ? String(reorderLevel) : "0",
       maxStockLevel: maxStockLevel != null ? String(maxStockLevel) : "0",
       batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
+      expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
+      manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
+      batchesJson: (() => {
+        const normalized = normalizeBatchesPayload(batches);
+        if (normalized) return JSON.stringify(normalized);
+        const primary = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : "";
+        if (!primary) return null;
+        return JSON.stringify([{
+          batchNo: primary,
+          expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
+          manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
+          createdAt: new Date().toISOString(),
+        }]);
+      })(),
       alternateUom: alt.alternateUom,
       alternateQty: alt.alternateQty,
       mainQty: alt.mainQty,
@@ -293,7 +397,7 @@ router.post("/stock-items", async (req, res): Promise<void> => {
   }
 
   const [created] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, item.id));
-  res.status(201).json(created ?? item);
+  res.status(201).json(withBatches(created ?? item));
 });
 
 router.get("/stock-items/:id/purchase-prices", async (req, res): Promise<void> => {
@@ -341,7 +445,7 @@ router.get("/stock-items/:id", async (req, res): Promise<void> => {
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
   const [item] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, id));
   if (!item) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(item);
+  res.json(withBatches(item));
 });
 
 router.put("/stock-items/:id", async (req, res): Promise<void> => {
@@ -354,8 +458,8 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
 
   const {
     code, name, description, uom, type, unitPrice, mrpPrice, purchasePrice, stockQty, isActive, warehouseId,
-    batchNo, alternateUom, alternateQty, mainQty,
-    category, brand, barcode, salesPerson, itemImage,
+    batchNo, expiryDate, manufacturingDate, batches, alternateUom, alternateQty, mainQty,
+    category, brand, barcode, salesPerson, itemImage, stockGroup,
     trackInventory, showInPos, pricingMethod, isWeightBased,
     minStockLevel, reorderLevel, maxStockLevel,
     purchasePriceDate,
@@ -375,6 +479,7 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   if (isActive !== undefined) update.isActive = Boolean(isActive);
   if (category !== undefined) update.category = typeof category === "string" && category.trim() ? category.trim() : null;
   if (brand !== undefined) update.brand = typeof brand === "string" && brand.trim() ? brand.trim() : null;
+  if (stockGroup !== undefined) update.stockGroup = typeof stockGroup === "string" && stockGroup.trim() ? stockGroup.trim() : null;
   if (barcode !== undefined) update.barcode = typeof barcode === "string" && barcode.trim() ? barcode.trim() : null;
   if (salesPerson !== undefined) update.salesPerson = typeof salesPerson === "string" && salesPerson.trim() ? salesPerson.trim() : null;
   if (itemImage !== undefined) update.itemImage = typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null;
@@ -386,6 +491,44 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   if (reorderLevel !== undefined) update.reorderLevel = String(reorderLevel);
   if (maxStockLevel !== undefined) update.maxStockLevel = String(maxStockLevel);
   if (batchNo !== undefined) update.batchNo = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null;
+  if (expiryDate !== undefined) update.expiryDate = typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null;
+  if (manufacturingDate !== undefined) update.manufacturingDate = typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null;
+  if (batches !== undefined) {
+    const normalized = normalizeBatchesPayload(batches);
+    update.batchesJson = normalized && normalized.length > 0 ? JSON.stringify(normalized) : null;
+  } else if (batchNo !== undefined || expiryDate !== undefined || manufacturingDate !== undefined) {
+    // Merge primary batch into history so old + latest stay available in the dropdown.
+    const nextNo =
+      batchNo !== undefined
+        ? (typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : "")
+        : (before.batchNo || "");
+    if (nextNo) {
+      const merged = collectItemBatches({
+        ...before,
+        batchNo: nextNo,
+        expiryDate: expiryDate !== undefined
+          ? (typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null)
+          : before.expiryDate,
+        manufacturingDate: manufacturingDate !== undefined
+          ? (typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null)
+          : before.manufacturingDate,
+      });
+      const key = nextNo.toLowerCase();
+      const existing = merged.find((b) => b.batchNo.toLowerCase() === key);
+      const entry: ItemBatch = {
+        batchNo: nextNo,
+        expiryDate: expiryDate !== undefined
+          ? (typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null)
+          : (existing?.expiryDate ?? before.expiryDate ?? null),
+        manufacturingDate: manufacturingDate !== undefined
+          ? (typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null)
+          : (existing?.manufacturingDate ?? before.manufacturingDate ?? null),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      const without = merged.filter((b) => b.batchNo.toLowerCase() !== key);
+      update.batchesJson = JSON.stringify([entry, ...without]);
+    }
+  }
   if (alternateUom !== undefined || alternateQty !== undefined || mainQty !== undefined) {
     const alt = normalizeAlternateFields({
       alternateUom: alternateUom !== undefined ? alternateUom : undefined,
@@ -488,7 +631,7 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
   }
 
   const [refreshed] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, id));
-  res.json(refreshed ?? updated);
+  res.json(withBatches(refreshed ?? updated));
 });
 
 router.delete("/stock-items/:id", async (req, res): Promise<void> => {

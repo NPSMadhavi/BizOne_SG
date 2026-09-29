@@ -24,6 +24,7 @@ interface Expense {
   vendorName: string;
   description: string;
   category: string;
+  accountId?: number | null;
   amount: string;
   gstAmount: string;
   gstClaimable: boolean;
@@ -36,7 +37,14 @@ interface Expense {
   createdAt: string;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
+interface Account {
+  id: number;
+  code: string;
+  name: string;
+  isActive: boolean;
+}
+
+const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   staff_costs: "Staff Costs",
   rental: "Rental",
   professional_fees: "Professional Fees",
@@ -59,6 +67,12 @@ async function fetchExpenses(): Promise<Expense[]> {
   return res.json();
 }
 
+async function fetchAccounts(): Promise<Account[]> {
+  const res = await fetch("/api/accounts", { credentials: "include" });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 async function deleteExpense(id: number): Promise<void> {
   const res = await fetch(`/api/expenses/${id}`, { method: "DELETE", credentials: "include" });
   if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to delete"); }
@@ -75,7 +89,7 @@ export default function ExpensesList() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [ledgerFilter, setLedgerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
@@ -84,6 +98,35 @@ export default function ExpensesList() {
     queryFn: fetchExpenses,
     refetchOnMount: "always",
   });
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: fetchAccounts,
+  });
+
+  const accountById = useMemo(() => {
+    const map = new Map<number, Account>();
+    for (const a of accounts) map.set(a.id, a);
+    return map;
+  }, [accounts]);
+
+  const accountByCode = useMemo(() => {
+    const map = new Map<string, Account>();
+    for (const a of accounts) map.set(a.code, a);
+    return map;
+  }, [accounts]);
+
+  function ledgerLabel(exp: Expense) {
+    if (exp.accountId && accountById.has(exp.accountId)) {
+      const a = accountById.get(exp.accountId)!;
+      return `${a.code} — ${a.name}`;
+    }
+    if (exp.category && accountByCode.has(exp.category)) {
+      const a = accountByCode.get(exp.category)!;
+      return `${a.code} — ${a.name}`;
+    }
+    return LEGACY_CATEGORY_LABELS[exp.category] ?? exp.category;
+  }
 
   const deleteMutation = useMutation({
     mutationFn: deleteExpense,
@@ -97,13 +140,16 @@ export default function ExpensesList() {
 
   const filtered = useMemo(() => expenses.filter(e => {
     if (statusFilter !== "all" && e.status !== statusFilter) return false;
-    if (categoryFilter !== "all" && e.category !== categoryFilter) return false;
+    if (ledgerFilter !== "all") {
+      const id = Number(ledgerFilter);
+      if (e.accountId !== id && accountByCode.get(e.category)?.id !== id) return false;
+    }
     if (search) {
       const q = search.toLowerCase();
-      return e.vendorName.toLowerCase().includes(q) || e.description.toLowerCase().includes(q);
+      return e.vendorName.toLowerCase().includes(q) || e.description.toLowerCase().includes(q) || ledgerLabel(e).toLowerCase().includes(q);
     }
     return true;
-  }), [expenses, statusFilter, categoryFilter, search]);
+  }), [expenses, statusFilter, ledgerFilter, search, accountById, accountByCode]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
@@ -155,12 +201,12 @@ export default function ExpensesList() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search vendor or description…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[200px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
+        <Select value={ledgerFilter} onValueChange={setLedgerFilter}>
+          <SelectTrigger className="w-[240px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
+            <SelectItem value="all">All Ledgers</SelectItem>
+            {accounts.filter(a => a.isActive).map(a => (
+              <SelectItem key={a.id} value={String(a.id)}>{a.code} — {a.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -191,7 +237,7 @@ export default function ExpensesList() {
                 <tr className="border-b bg-muted/30 text-muted-foreground">
                   <th className="px-4 py-3 text-left font-medium">Date</th>
                   <th className="px-4 py-3 text-left font-medium">Vendor / Payee</th>
-                  <th className="px-4 py-3 text-left font-medium">Category</th>
+                  <th className="px-4 py-3 text-left font-medium">Ledger</th>
                   <th className="px-4 py-3 text-right font-medium">Amount</th>
                   <th className="px-4 py-3 text-right font-medium">GST</th>
                   <th className="px-4 py-3 text-center font-medium">Deductible</th>
@@ -208,7 +254,7 @@ export default function ExpensesList() {
                       <div className="text-xs text-muted-foreground truncate max-w-[220px]">{exp.description}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-xs">{CATEGORY_LABELS[exp.category] ?? exp.category}</Badge>
+                      <Badge variant="outline" className="text-xs">{ledgerLabel(exp)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right font-mono">{fmtMoney(exp.currency, exp.amount)}</td>
                     <td className="px-4 py-3 text-right font-mono text-blue-600">

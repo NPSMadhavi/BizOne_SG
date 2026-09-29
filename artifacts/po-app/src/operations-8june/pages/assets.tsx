@@ -305,7 +305,7 @@ export default function AssetsPage() {
               <th>Asset Tag</th>
               <th>Category</th>
               <th>Serial No</th>
-              <th>Status</th>
+              <th>Assignment Status</th>
               <th>Assigned To</th>
               <th>Location</th>
               <th>Purchase Date</th>
@@ -495,7 +495,7 @@ export default function AssetsPage() {
                     <TableHead>Asset Tag</TableHead>
                     <TableHead>Asset Type</TableHead>
                     <TableHead>Asset Category</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Assignment Status</TableHead>
                     <TableHead>Assigned To</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Warranty Expiry</TableHead>

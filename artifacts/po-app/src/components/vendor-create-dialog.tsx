@@ -98,7 +98,7 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Company Name <span className="text-destructive">*</span></Label>
-            <Input value={form.name} onChange={e => setField("name", e.target.value)} placeholder="Vendor company name" autoFocus />
+            <Input value={form.name} onChange={e => setField("name", e.target.value)} placeholder="" autoFocus />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

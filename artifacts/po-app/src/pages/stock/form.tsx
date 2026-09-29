@@ -8,7 +8,6 @@ import {
   useListStockItems,
   getListStockItemsQueryKey,
 } from "@workspace/api-client-react";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +47,15 @@ import {
 import { Camera, Info, Package, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useQuery } from "@tanstack/react-query";
+import {
+  CREATE_BATCH_VALUE,
+  collectBatchesFromItem,
+  formatAvailLabel,
+  loadLocalItemBatches,
+  mergeBatchMaps,
+  saveLocalItemBatches,
+  type ItemBatch,
+} from "@/lib/stock-item-batches";
 
 function todayYmd() {
   const d = new Date();
@@ -153,6 +161,7 @@ const ITEM_TYPE_OPTIONS = [
 const CUSTOM_UOM_STORAGE_KEY = "stock-custom-uoms";
 const CUSTOM_SUB_UOM_STORAGE_KEY = "stock-custom-sub-uoms";
 const CUSTOM_ITEM_TYPE_STORAGE_KEY = "stock-custom-item-types";
+const STOCK_GROUPS_STORAGE_KEY = "stock-custom-stock-groups";
 const PRICE_LEVELS_STORAGE_KEY = "multi-price-levels-v1";
 const PRICE_MAP_STORAGE_KEY = "multi-price-prices-v1";
 
@@ -315,6 +324,27 @@ function saveCustomItemTypes(values: { value: string; label: string }[]) {
   }
 }
 
+function loadStockGroups(): string[] {
+  try {
+    const raw = localStorage.getItem(STOCK_GROUPS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((v) => String(v).trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStockGroups(values: string[]) {
+  try {
+    localStorage.setItem(STOCK_GROUPS_STORAGE_KEY, JSON.stringify(values));
+  } catch {
+    // ignore
+  }
+}
+
 function normalizeUom(raw?: string | null) {
   const value = (raw || "").trim();
   if (!value) return "Pcs";
@@ -335,8 +365,11 @@ const EMPTY_FORM = {
   type: "stock_item",
   category: "",
   brand: "",
+  stockGroup: "",
   barcode: "",
-  salesPerson: "",
+  batchNo: "",
+  expiryDate: "",
+  manufacturingDate: "",
   selectedPriceLevel: "retail",
   levelPricing: {} as Record<string, LevelPricing>,
   itemImage: "",
@@ -354,6 +387,8 @@ const EMPTY_FORM = {
   alternateUom: "",
   alternateQty: "" as string | number,
   mainQty: "" as string | number,
+  openingQty: "" as string | number,
+  openingUnitPrice: "" as string | number,
 };
 
 function fmtPct(n: number) {
@@ -399,6 +434,7 @@ export default function StockItemFormPage() {
   const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
   const [customSubUoms, setCustomSubUoms] = useState<Record<string, string[]>>(() => loadCustomSubUoms());
   const [customItemTypes, setCustomItemTypes] = useState<{ value: string; label: string }[]>(() => loadCustomItemTypes());
+  const [stockGroups, setStockGroups] = useState<string[]>(() => loadStockGroups());
   const [priceLevels] = useState<PriceLevelOption[]>(() => {
     purgeExtraPriceLevels();
     return loadPriceLevels();
@@ -410,16 +446,21 @@ export default function StockItemFormPage() {
   const [subUomSelectKey, setSubUomSelectKey] = useState(0);
   const [createItemTypeOpen, setCreateItemTypeOpen] = useState(false);
   const [newItemTypeName, setNewItemTypeName] = useState("");
+  const [createStockGroupOpen, setCreateStockGroupOpen] = useState(false);
+  const [newStockGroupName, setNewStockGroupName] = useState("");
   const [createPriceLevelOpen, setCreatePriceLevelOpen] = useState(false);
   const [newPriceLevelName, setNewPriceLevelName] = useState("");
   const [loaded, setLoaded] = useState(!isEdit);
+  const [itemBatches, setItemBatches] = useState<ItemBatch[]>([]);
+  const [batchSelectValue, setBatchSelectValue] = useState("");
+  const [creatingBatch, setCreatingBatch] = useState(false);
+  const newBatchInputRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useCreateStockItem();
   const updateMutation = useUpdateStockItem();
   const deleteMutation = useDeleteStockItem();
   const saving = createMutation.isPending || updateMutation.isPending;
   const deleting = deleteMutation.isPending;
-  const { salesPersons } = useSalesPersons();
 
   const { data: items = [] } = useListStockItems(
     {} as any,
@@ -443,9 +484,20 @@ export default function StockItemFormPage() {
     },
   });
 
+  const { data: editItemDetail } = useQuery({
+    queryKey: ["stock-item-detail", editId],
+    enabled: isEdit,
+    staleTime: 0,
+    queryFn: async () => {
+      const res = await fetch(`/api/stock-items/${editId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
   useEffect(() => {
     if (!isEdit) return;
-    const item = (items as any[]).find((i) => Number(i.id) === editId);
+    const item = editItemDetail || (items as any[]).find((i) => Number(i.id) === editId);
     if (!item) return;
     const cost = parseFloat(String(item.purchasePrice)) || 0;
     const sell = parseFloat(String(item.unitPrice)) || 0;
@@ -473,6 +525,27 @@ export default function StockItemFormPage() {
     }
     const retail = levelPricing.retail || emptyLevelPricing();
     const selectedId = FIXED_PRICE_LEVELS.some((l) => l.id === "retail") ? "retail" : FIXED_PRICE_LEVELS[0].id;
+    const batches = mergeBatchMaps(
+      loadLocalItemBatches(editId),
+      collectBatchesFromItem(item),
+    );
+    if (batches.length > 0) {
+      saveLocalItemBatches(editId, batches);
+    }
+    setItemBatches(batches);
+    const selectedBatch =
+      batches.find((b) => b.batchNo === String(item.batchNo || "").trim()) || batches[0];
+    setBatchSelectValue(selectedBatch?.batchNo || "");
+    setCreatingBatch(false);
+    const sg = String(item.stockGroup || "").trim();
+    if (sg) {
+      setStockGroups((current) => {
+        if (current.some((g) => g.toLowerCase() === sg.toLowerCase())) return current;
+        const next = [...current, sg];
+        saveStockGroups(next);
+        return next;
+      });
+    }
     setForm({
       code: item.code || "",
       name: item.name || "",
@@ -480,8 +553,11 @@ export default function StockItemFormPage() {
       type: normalizeItemType(item.type),
       category: item.category || "",
       brand: item.brand || "",
+      stockGroup: item.stockGroup || "",
       barcode: item.barcode || "",
-      salesPerson: item.salesPerson || "",
+      batchNo: selectedBatch?.batchNo || item.batchNo || "",
+      expiryDate: selectedBatch?.expiryDate || item.expiryDate || "",
+      manufacturingDate: selectedBatch?.manufacturingDate || item.manufacturingDate || "",
       selectedPriceLevel: selectedId,
       levelPricing,
       itemImage: item.itemImage || item.item_image || "",
@@ -499,9 +575,20 @@ export default function StockItemFormPage() {
       alternateUom: item.alternateUom || "",
       alternateQty: item.alternateQty != null && item.alternateQty !== "" ? String(item.alternateQty) : "",
       mainQty: item.mainQty != null && item.mainQty !== "" ? String(item.mainQty) : "",
+      openingQty: item.stockQty != null && Number(item.stockQty) !== 0 ? String(item.stockQty) : "",
+      openingUnitPrice: cost > 0 ? String(item.purchasePrice) : "",
     });
     setLoaded(true);
-  }, [isEdit, editId, items]);
+  }, [isEdit, editId, items, editItemDetail]);
+
+  useEffect(() => {
+    if (!creatingBatch) return;
+    const t = window.setTimeout(() => {
+      newBatchInputRef.current?.focus();
+      newBatchInputRef.current?.select();
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [creatingBatch]);
 
   useEffect(() => {
     if (isEdit) return;
@@ -719,6 +806,23 @@ export default function StockItemFormPage() {
     setNewItemTypeName("");
   }
 
+  function handleCreateStockGroup() {
+    const name = newStockGroupName.trim();
+    if (!name) {
+      toast({ title: "Name required", description: "Enter a stock group name.", variant: "destructive" });
+      return;
+    }
+    setStockGroups((current) => {
+      if (current.some((g) => g.toLowerCase() === name.toLowerCase())) return current;
+      const next = [...current, name];
+      saveStockGroups(next);
+      return next;
+    });
+    setField("stockGroup", name);
+    setCreateStockGroupOpen(false);
+    setNewStockGroupName("");
+  }
+
   function flushActiveLevelPricing(f: typeof form): Record<string, LevelPricing> {
     const levelPricing = { ...f.levelPricing };
     const key = f.selectedPriceLevel || "retail";
@@ -810,6 +914,20 @@ export default function StockItemFormPage() {
         ? Number(retailSell) || 0
         : Number(form.unitPrice) || 0;
 
+    const nextBatchNo = form.batchNo.trim();
+    const nextBatches = mergeBatchMaps(
+      itemBatches,
+      isEdit ? loadLocalItemBatches(editId) : [],
+      nextBatchNo
+        ? [{
+            batchNo: nextBatchNo,
+            expiryDate: form.expiryDate.trim() || null,
+            manufacturingDate: form.manufacturingDate.trim() || null,
+            createdAt: new Date().toISOString(),
+          }]
+        : [],
+    );
+
     const payload = {
       code: form.code.trim(),
       name: form.name.trim(),
@@ -817,10 +935,15 @@ export default function StockItemFormPage() {
       type: form.type,
       category: form.category.trim() || null,
       brand: form.brand.trim() || null,
+      stockGroup: form.stockGroup.trim() || null,
       barcode: form.barcode.trim() || null,
-      salesPerson: form.salesPerson.trim() || null,
+      batchNo: nextBatchNo || null,
+      expiryDate: form.expiryDate.trim() || null,
+      manufacturingDate: form.manufacturingDate.trim() || null,
+      batches: nextBatches,
+      stockQty: Number(form.openingQty) || 0,
       itemImage: form.itemImage || null,
-      purchasePrice: Number(form.purchasePrice) || 0,
+      purchasePrice: Number(form.openingUnitPrice !== "" ? form.openingUnitPrice : form.purchasePrice) || 0,
       purchasePriceDate: form.purchasePriceDate || todayYmd(),
       unitPrice: resolvedUnitPrice,
       isActive: form.isActive,
@@ -836,11 +959,17 @@ export default function StockItemFormPage() {
     const opts = {
       onSuccess: (created?: any) => {
         const itemId = isEdit ? editId : (created?.id ?? created?.data?.id);
-        if (itemId != null) saveItemLevelPrices(itemId, levelPricing);
+        if (itemId != null) {
+          saveItemLevelPrices(itemId, levelPricing);
+          saveLocalItemBatches(itemId, nextBatches);
+          setItemBatches(nextBatches);
+        }
         toast({ title: isEdit ? "Updated" : "Created", description: isEdit ? "Item updated." : "Item created." });
         invalidateStockViews();
         void refetchPriceHistory();
         void queryClient.invalidateQueries({ queryKey: ["stock-item-purchase-prices"] });
+        void queryClient.invalidateQueries({ queryKey: ["stock-item-detail"] });
+        void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
         setLocation("/stock");
       },
       onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -881,7 +1010,6 @@ export default function StockItemFormPage() {
   return (
     <FormPageShell
       title={isEdit ? "Edit Stock Item" : "Create Stock Item"}
-      description={isEdit ? "Update product or service details." : "Add a new product or service to Item Master."}
       backHref="/stock"
       footer={
         <div className="flex w-full items-center justify-between gap-3">
@@ -939,47 +1067,77 @@ export default function StockItemFormPage() {
         <section className="space-y-4">
           <ModalSectionHeader icon={Package} title="Basic Information" />
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-4">
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-sm font-medium text-[#111827]">
-                Item Code <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.code}
-                readOnly={!isEdit}
-                className={!isEdit ? "bg-muted/40" : ""}
-                onChange={(e) => setField("code", e.target.value)}
-              />
+            <div className="md:col-span-4 grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-[#111827]">
+                  Item Code <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={form.code}
+                  readOnly={!isEdit}
+                  className={!isEdit ? "bg-muted/40" : ""}
+                  onChange={(e) => setField("code", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-[#111827]">
+                  Item Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={form.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-[#111827]">
+                  Item Type <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={form.type}
+                  onValueChange={(v) => setField("type", v)}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <div
+                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                      onClick={(e) => { e.preventDefault(); setNewItemTypeName(""); setCreateItemTypeOpen(true); }}
+                    >
+                      <Plus className="h-4 w-4" /> Create Item Type
+                    </div>
+                    <div className="my-1 border-t" />
+                    {itemTypeOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-sm font-medium text-[#111827]">
-                Item Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setField("name", e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-sm font-medium text-[#111827]">
-                Item Type <span className="text-destructive">*</span>
-              </Label>
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-sm font-medium text-[#111827]">Stock Group</Label>
               <Select
-                value={form.type}
-                onValueChange={(v) => setField("type", v)}
+                value={form.stockGroup || undefined}
+                onValueChange={(v) => setField("stockGroup", v)}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select price level" />
+                </SelectTrigger>
                 <SelectContent className="max-h-60">
                   <div
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                    onClick={(e) => { e.preventDefault(); setNewItemTypeName(""); setCreateItemTypeOpen(true); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setNewStockGroupName("");
+                      setCreateStockGroupOpen(true);
+                    }}
                   >
-                    <Plus className="h-4 w-4" /> Create Item Type
+                    <Plus className="h-4 w-4" /> Create
                   </div>
                   <div className="my-1 border-t" />
-                  {itemTypeOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  {stockGroups.map((g) => (
+                    <SelectItem key={g} value={g}>{g}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1001,25 +1159,81 @@ export default function StockItemFormPage() {
               />
             </div>
 
-            <div className="space-y-1.5 md:col-span-2">
-              <Label className="text-sm font-medium text-[#111827]">Sales Person</Label>
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-sm font-medium text-[#111827]">Batch wise detail</Label>
               <Select
-                value={form.salesPerson || "__none"}
-                onValueChange={(v) => setField("salesPerson", v === "__none" ? "" : v)}
+                value={creatingBatch ? CREATE_BATCH_VALUE : (batchSelectValue || undefined)}
+                onValueChange={(value) => {
+                  if (value === CREATE_BATCH_VALUE) {
+                    setCreatingBatch(true);
+                    setBatchSelectValue(CREATE_BATCH_VALUE);
+                    setField("batchNo", "");
+                    setField("expiryDate", "");
+                    setField("manufacturingDate", "");
+                    window.setTimeout(() => {
+                      newBatchInputRef.current?.focus();
+                      newBatchInputRef.current?.select();
+                    }, 50);
+                    return;
+                  }
+                  setCreatingBatch(false);
+                  setBatchSelectValue(value);
+                  const found = itemBatches.find((b) => b.batchNo === value);
+                  setField("batchNo", value);
+                  setField("expiryDate", found?.expiryDate || "");
+                  setField("manufacturingDate", found?.manufacturingDate || "");
+                }}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={`Select Sub UOM for ${form.uom || "UOM"}`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none">— None —</SelectItem>
-                  {salesPersons.map((sp) => (
-                    <SelectItem key={sp.id} value={sp.name}>{sp.name}</SelectItem>
+                  <SelectItem value={CREATE_BATCH_VALUE}>+ Create new batch</SelectItem>
+                  {itemBatches.map((b) => (
+                    <SelectItem
+                      key={b.batchNo}
+                      value={b.batchNo}
+                      textValue={b.batchNo}
+                      className="pr-10 [&>span:last-child]:w-full"
+                    >
+                      <span className="flex w-full items-center justify-between gap-3">
+                        <span className="truncate">{b.batchNo}</span>
+                        <span className="shrink-0 font-medium text-[#16A34A]">
+                          {formatAvailLabel(b.availableQty, form.uom)}
+                        </span>
+                      </span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {creatingBatch ? (
+                <Input
+                  ref={newBatchInputRef}
+                  className="mt-1.5"
+                  value={form.batchNo}
+                  onChange={(e) => setField("batchNo", e.target.value)}
+                  placeholder="e.g. 200 grams"
+                />
+              ) : null}
             </div>
 
-              <div className="space-y-1.5 md:col-span-2">
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-sm font-medium text-[#111827]">Expiry date</Label>
+              <SyncBridgeDatePicker
+                value={form.expiryDate || ""}
+                onChange={(v) => setField("expiryDate", v || "")}
+              />
+            </div>
+
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-sm font-medium text-[#111827]">Manufacturing date</Label>
+              <SyncBridgeDatePicker
+                value={form.manufacturingDate || ""}
+                onChange={(v) => setField("manufacturingDate", v || "")}
+              />
+            </div>
+
+              <div className="space-y-1.5 md:col-span-1">
                 <Label className="text-sm font-medium text-[#111827]">Price Levels</Label>
                 <Select
                   value={
@@ -1030,7 +1244,7 @@ export default function StockItemFormPage() {
                   onValueChange={(v) => selectPriceLevel(v)}
                 >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select price level" />
+                  <SelectValue placeholder="e.g. Distributor Price" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   <div
@@ -1078,7 +1292,7 @@ export default function StockItemFormPage() {
               <Label className="text-sm font-medium text-[#111827]">Sub UOM</Label>
               <Select key={`${form.uom}-${subUomSelectKey}`} onValueChange={(v) => addSubUom(v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder={`Select Sub UOM for ${form.uom || "UOM"}`} />
+                  <SelectValue placeholder="" />
                 </SelectTrigger>
                 <SelectContent className="max-h-48">
                   <div
@@ -1133,6 +1347,57 @@ export default function StockItemFormPage() {
                   <ScanLine className="h-4 w-4" /> Scan
                 </Button>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">Opening Qty</Label>
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                value={form.openingQty}
+                onChange={(e) => setField("openingQty", e.target.value)}
+                placeholder=""
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">Unit Price</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.openingUnitPrice}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    openingUnitPrice: v,
+                    // Keep Purchase Cost in sync when opening unit price is set
+                    purchasePrice: v !== "" ? v : f.purchasePrice,
+                  }));
+                }}
+                placeholder=""
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">Total Value</Label>
+              <Input
+                readOnly
+                value={(() => {
+                  const q = Number(form.openingQty) || 0;
+                  const p = Number(form.openingUnitPrice) || 0;
+                  const total = q * p;
+                  return total > 0 || (form.openingQty !== "" && form.openingUnitPrice !== "")
+                    ? fmtMoney(total)
+                    : "";
+                })()}
+                placeholder=""
+                className="bg-muted/40"
+              />
             </div>
           </div>
 
@@ -1206,14 +1471,6 @@ export default function StockItemFormPage() {
         <section className="space-y-4">
           <div>
             <h3 className="text-base font-semibold text-[#2563EB]">Purchase & Pricing</h3>
-            {form.selectedPriceLevel ? (
-              <p className="mt-1 text-xs text-[#6B7280]">
-                Editing margin / markup for{" "}
-                <span className="font-medium text-[#111827]">
-                  {priceLevels.find((l) => l.id === form.selectedPriceLevel)?.name || form.selectedPriceLevel}
-                </span>
-              </p>
-            ) : null}
           </div>
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
@@ -1366,9 +1623,6 @@ export default function StockItemFormPage() {
                 value={form.purchasePriceDate || todayYmd()}
                 onChange={(v) => setField("purchasePriceDate", v || todayYmd())}
               />
-              <p className="text-xs text-[#6B7280]">
-                Used when you change Purchase Cost here (same history as Vendor Invoice).
-              </p>
             </div>
           </div>
 
@@ -1454,7 +1708,7 @@ export default function StockItemFormPage() {
           <Input
             value={newSubUomName}
             onChange={(e) => setNewSubUomName(e.target.value)}
-            placeholder="e.g. 200 grams"
+            placeholder=""
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -1483,6 +1737,27 @@ export default function StockItemFormPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={createStockGroupOpen} onOpenChange={setCreateStockGroupOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create Stock Group</DialogTitle></DialogHeader>
+          <Input
+            value={newStockGroupName}
+            onChange={(e) => setNewStockGroupName(e.target.value)}
+            placeholder=""
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCreateStockGroup();
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateStockGroupOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateStockGroup}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createPriceLevelOpen} onOpenChange={setCreatePriceLevelOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Create Price Level</DialogTitle></DialogHeader>
@@ -1491,7 +1766,7 @@ export default function StockItemFormPage() {
             <Input
               value={newPriceLevelName}
               onChange={(e) => setNewPriceLevelName(e.target.value)}
-              placeholder="e.g. Distributor Price"
+              placeholder=""
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();

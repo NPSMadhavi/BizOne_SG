@@ -27,6 +27,7 @@ export const expensesTable = pgTable("expenses", {
   vendorName: text("vendor_name").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
+  accountId: integer("account_id"),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   gstAmount: decimal("gst_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   gstClaimable: boolean("gst_claimable").notNull().default(false),

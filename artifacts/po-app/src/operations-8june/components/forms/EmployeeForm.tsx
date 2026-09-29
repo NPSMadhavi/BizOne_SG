@@ -33,6 +33,7 @@ import {
 } from "@/operations-8june/components/employees/EmployeeFiles";
 import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
 import { cn } from "@/lib/utils";
+import { formFieldGridClass, formFieldGrid2Class } from "@/lib/form-ui";
 import {
   Dialog,
 } from "@/components/ui/dialog";
@@ -453,12 +454,10 @@ export default function EmployeeForm({
         >
           <section className="space-y-4">
             <ModalSectionHeader icon={User} title="Personal Information" />
-            <div className="space-y-4">
-              {/* Row 1: Employee ID | Full Name */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
+            <div className={formFieldGridClass}>
                 <FormField control={form.control} name="employeeId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Employee ID <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel className={formLabelClass}>Employee ID <span className="text-[#DC2626]">*</span></FormLabel>
                     <FormControl>
                       <Input
                         placeholder=""
@@ -475,30 +474,27 @@ export default function EmployeeForm({
                 )} />
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Employee Name <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
+                    <FormLabel className={formLabelClass}>Employee Name <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl><Input placeholder="" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-              </div>
-
-              {/* Row 2: Email | Phone + Gender */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="email" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Email <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input type="email" {...field} /></FormControl>
+                    <FormLabel className={formLabelClass}>Email <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl><Input type="email" placeholder="" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="phone" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Phone Number <span className="text-destructive">*</span></FormLabel>
+                      <FormLabel className={formLabelClass}>Phone Number <span className="text-[#DC2626]">*</span></FormLabel>
                       <FormControl>
                         <SingaporePhoneInput
                           value={field.value || ""}
                           onChange={(digits) => field.onChange(digits)}
+                          placeholder=""
+                          className="h-10 rounded-lg border-[#E5E7EB] bg-[#F8FAFC] shadow-none"
                         />
                       </FormControl>
                       <FormMessage />
@@ -506,11 +502,11 @@ export default function EmployeeForm({
                   )} />
                   <FormField control={form.control} name="gender" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Gender <span className="text-destructive">*</span></FormLabel>
+                      <FormLabel className={formLabelClass}>Gender <span className="text-[#DC2626]">*</span></FormLabel>
                       <Select onValueChange={field.onChange} value={field.value || undefined}>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select gender" />
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -521,22 +517,16 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-              </div>
-
-              {/* Row 3: Department | Salary + Annual Salary */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="department" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Department <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
+                    <FormLabel className={formLabelClass}>Department <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl><Input placeholder="" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="salary" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Monthly Salary <span className="text-destructive">*</span></FormLabel>
+                      <FormLabel className={formLabelClass}>Monthly Salary <span className="text-[#DC2626]">*</span></FormLabel>
                       <FormControl>
                         <Input
                           type="text"
@@ -583,22 +573,16 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-              </div>
-
-              {/* Row 4: Designation | Nationality + PR Status */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="designation" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Designation <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
+                    <FormLabel className={formLabelClass}>Designation <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl><Input placeholder="" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="nationality" render={({ field }) => (
                     <FormItem>
-                      <FormLabel className={formLabelClass}>Nationality <span className="text-destructive">*</span></FormLabel>
+                      <FormLabel className={formLabelClass}>Nationality <span className="text-[#DC2626]">*</span></FormLabel>
                       <Select
                         onValueChange={(value) => {
                           field.onChange(value);
@@ -608,7 +592,11 @@ export default function EmployeeForm({
                         }}
                         value={field.value || undefined}
                       >
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select nationality" /></SelectTrigger></FormControl>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="" />
+                          </SelectTrigger>
+                        </FormControl>
                         <SelectContent>
                           <SelectItem value="Singapore">Singaporean</SelectItem>
                           <SelectItem value="PR">PR</SelectItem>
@@ -621,7 +609,7 @@ export default function EmployeeForm({
                   <FormField control={form.control} name="prStatus" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>
-                        PR Status{isPrNationality ? <> <span className="text-destructive">*</span></> : null}
+                        PR Status{isPrNationality ? <> <span className="text-[#DC2626]">*</span></> : null}
                       </FormLabel>
                       <Select
                         onValueChange={field.onChange}
@@ -629,8 +617,8 @@ export default function EmployeeForm({
                         disabled={!isPrNationality}
                       >
                         <FormControl>
-                          <SelectTrigger className={!isPrNationality ? "bg-[#F9FAFB]" : undefined}>
-                            <SelectValue placeholder={isPrNationality ? "Select PR status" : "Only for PR nationality"} />
+                          <SelectTrigger className={cn("w-full", !isPrNationality && "bg-[#F9FAFB]")}>
+                            <SelectValue placeholder="" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -642,51 +630,61 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-              </div>
-
-              {/* Row 5: Join Date | Passport Number + Passport Expiry */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="joinDate" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Joining Date <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select joining date" max={new Date().toISOString().split("T")[0]} min="1900-01-01" /></FormControl>
+                    <FormLabel className={formLabelClass}>Joining Date <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl>
+                      <SimpleDatePicker
+                        date={field.value}
+                        setDate={field.onChange}
+                        placeholder=""
+                        max={new Date().toISOString().split("T")[0]}
+                        min="1900-01-01"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="passportNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Passport Number</FormLabel>
-                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="passportExpiry" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Passport Expiry</FormLabel>
-                      <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select passport expiry" min="1900-01-01" /></FormControl>
+                      <FormControl>
+                        <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-              </div>
-
-              {/* Row 6: Date of Birth | Visa Type + Status */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Date of Birth <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select date of birth" max={new Date().toISOString().split("T")[0]} min="1900-01-01" /></FormControl>
+                    <FormLabel className={formLabelClass}>Date of Birth <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl>
+                      <SimpleDatePicker
+                        date={field.value}
+                        setDate={field.onChange}
+                        placeholder=""
+                        max={new Date().toISOString().split("T")[0]}
+                        min="1900-01-01"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                   <FormField control={form.control} name="visaType" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Visa Type</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value || undefined}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select visa type" /></SelectTrigger></FormControl>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="" />
+                          </SelectTrigger>
+                        </FormControl>
                         <SelectContent>
                           <SelectItem value="s_pass">S Pass</SelectItem>
                           <SelectItem value="work_permit">Work Permit</SelectItem>
@@ -705,7 +703,11 @@ export default function EmployeeForm({
                     <FormItem>
                       <FormLabel className={formLabelClass}>Status</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger></FormControl>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="" />
+                          </SelectTrigger>
+                        </FormControl>
                         <SelectContent>
                           <SelectItem value="active">Active</SelectItem>
                           <SelectItem value="resigned">Resigned</SelectItem>
@@ -716,12 +718,6 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-              </div>
-
-              {/* Row 7: Company + NRIC/IC | Visa Permit + Visa Expiry + NRIC Expiry */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
-                <div className="flex flex-col gap-y-4">
                   <FormField control={form.control} name="companyId" render={() => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Company</FormLabel>
@@ -739,55 +735,51 @@ export default function EmployeeForm({
                   <FormField control={form.control} name="nricNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>NRIC/IC Number</FormLabel>
-                      <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                      <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-                <div className="flex flex-col gap-y-4">
-                  <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
                     <FormField control={form.control} name="visaNumber" render={({ field }) => (
                       <FormItem>
                         <FormLabel className={formLabelClass}>Visa Permit Number</FormLabel>
-                        <FormControl><Input {...field} value={field.value || ""} /></FormControl>
+                        <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
                     <FormField control={form.control} name="visaExpiry" render={({ field }) => (
                       <FormItem>
                         <FormLabel className={formLabelClass}>Visa Expiry</FormLabel>
-                        <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select visa expiry" /></FormControl>
+                        <FormControl>
+                          <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                  </div>
                   <FormField control={form.control} name="nricExpiry" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>NRIC Expiry Date</FormLabel>
-                      <FormControl><SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="Select NRIC expiry date" min="1900-01-01" /></FormControl>
+                      <FormControl>
+                        <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                </div>
-              </div>
-
-              {/* Row 8: Address | Visa Remarks */}
-              <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
+            </div>
+            <div className={formFieldGrid2Class}>
                 <FormField control={form.control} name="address" render={({ field }) => (
                   <FormItem>
-                    <FormLabel className={formLabelClass}>Address <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Textarea className="min-h-[100px]" {...field} /></FormControl>
+                    <FormLabel className={formLabelClass}>Address <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="visaRemarks" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Visa Remarks</FormLabel>
-                    <FormControl><Textarea className="min-h-[100px]" {...field} value={field.value || ""} /></FormControl>
+                    <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} value={field.value || ""} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-              </div>
             </div>
           </section>
 

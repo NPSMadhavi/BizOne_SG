@@ -58,9 +58,14 @@ export type ExpiryWiseRow = {
   mfgDate: string;
   expiryDate: string;
   daysRemaining: number;
+  expiryAlert: string;
   availableQty: number;
   warehouse: string;
   status: "Safe" | "Near Expiry" | "Expired";
+  /** Expired Stock report columns */
+  expiredOn?: string;
+  expiredQty?: number;
+  value?: number;
 };
 
 function money(n: number) {
@@ -186,11 +191,12 @@ export function exportStockWisePdf(meta: ReportMeta, rows: StockWiseRow[]) {
       sales: a.sales + r.salesQty,
       adjust: a.adjust + r.adjustQty,
       closing: a.closing + r.closingQty,
+      unitCost: a.unitCost + r.unitCost,
       value: a.value + r.stockValue,
       gst: a.gst + r.gst,
       total: a.total + r.totalValue,
     }),
-    { opening: 0, purchase: 0, sales: 0, adjust: 0, closing: 0, value: 0, gst: 0, total: 0 },
+    { opening: 0, purchase: 0, sales: 0, adjust: 0, closing: 0, unitCost: 0, value: 0, gst: 0, total: 0 },
   );
 
   (doc as any).autoTable({
@@ -204,7 +210,7 @@ export function exportStockWisePdf(meta: ReportMeta, rows: StockWiseRow[]) {
     foot: [[
       "", "", "GRAND TOTAL", "",
       qty(totals.opening), qty(totals.purchase), qty(totals.sales), qty(totals.adjust), qty(totals.closing),
-      "", money(totals.value), money(totals.gst), money(totals.total),
+      money(totals.unitCost), money(totals.value), money(totals.gst), money(totals.total),
     ]],
     theme: "striped",
     styles: { fontSize: 7, cellPadding: 1.8, lineColor: [229, 231, 235], lineWidth: 0.1 },
@@ -267,18 +273,29 @@ export function exportExpiryWisePdf(meta: ReportMeta, rows: ExpiryWiseRow[]) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   let startY = drawHeader(doc, { ...meta, layout: "expiry_wise" }, pageWidth);
+  const isExpiredStock = /expired\s*stock/i.test(meta.reportTitle || "");
 
-  const body = rows.map((r) => [
-    r.sno, r.itemCode, r.itemName, r.batchNo,
-    fmtDate(r.mfgDate), fmtDate(r.expiryDate),
-    r.daysRemaining, qty(r.availableQty), r.warehouse, r.status,
-  ]);
+  const body = isExpiredStock
+    ? rows.map((r) => [
+        r.sno, r.itemCode, r.itemName, r.batchNo,
+        fmtDate(r.mfgDate), fmtDate(r.expiryDate),
+        fmtDate(r.expiredOn || r.expiryDate), qty(r.expiredQty ?? r.availableQty),
+        money(r.value ?? 0), r.warehouse, r.status,
+      ])
+    : rows.map((r) => [
+        r.sno, r.itemCode, r.itemName, r.batchNo,
+        fmtDate(r.mfgDate), fmtDate(r.expiryDate),
+        r.daysRemaining, r.expiryAlert || "—", qty(r.availableQty), r.warehouse, r.status,
+      ]);
 
   (doc as any).autoTable({
     startY,
     head: [[
       "S.No.", "Item Code", "Item Name", "Batch No.", "Mfg. Date", "Expiry Date",
-      "Days Remaining", "Available Qty", "Warehouse", "Status",
+      ...(isExpiredStock
+        ? ["Expired On", "Expired Qty", "Value"]
+        : ["Days Remaining", "Expiry Alert", "Available Qty"]),
+      "Warehouse", "Status",
     ]],
     body,
     theme: "striped",
@@ -287,7 +304,14 @@ export function exportExpiryWisePdf(meta: ReportMeta, rows: ExpiryWiseRow[]) {
     alternateRowStyles: { fillColor: [249, 250, 251] },
     margin: { left: 14, right: 14, bottom: 16 },
     didParseCell: (data: any) => {
-      if (data.section === "body" && data.column.index === 9) {
+      if (!isExpiredStock && data.section === "body" && data.column.index === 7) {
+        const alert = String(data.cell.raw);
+        if (alert === "Expiring Soon" || alert === "Expired") {
+          data.cell.styles.textColor = [220, 38, 38];
+          data.cell.styles.fontStyle = "bold";
+        }
+      }
+      if (data.section === "body" && data.column.index === 10) {
         const v = String(data.cell.raw);
         if (v === "Safe") {
           data.cell.styles.textColor = [22, 163, 74];
@@ -386,11 +410,12 @@ export function exportStockWiseExcel(meta: ReportMeta, rows: StockWiseRow[]) {
       sales: a.sales + r.salesQty,
       adjust: a.adjust + r.adjustQty,
       closing: a.closing + r.closingQty,
+      unitCost: a.unitCost + r.unitCost,
       value: a.value + r.stockValue,
       gst: a.gst + r.gst,
       total: a.total + r.totalValue,
     }),
-    { opening: 0, purchase: 0, sales: 0, adjust: 0, closing: 0, value: 0, gst: 0, total: 0 },
+    { opening: 0, purchase: 0, sales: 0, adjust: 0, closing: 0, unitCost: 0, value: 0, gst: 0, total: 0 },
   );
 
   const aoa: (string | number)[][] = [
@@ -409,7 +434,7 @@ export function exportStockWiseExcel(meta: ReportMeta, rows: StockWiseRow[]) {
     [
       "", "", "GRAND TOTAL", "",
       totals.opening, totals.purchase, totals.sales, totals.adjust, totals.closing,
-      "", Number(totals.value.toFixed(2)), Number(totals.gst.toFixed(2)), Number(totals.total.toFixed(2)),
+      Number(totals.unitCost.toFixed(2)), Number(totals.value.toFixed(2)), Number(totals.gst.toFixed(2)), Number(totals.total.toFixed(2)),
     ],
   ];
 
@@ -442,17 +467,32 @@ export function exportBatchWiseExcel(meta: ReportMeta, rows: BatchWiseRow[]) {
 }
 
 export function exportExpiryWiseExcel(meta: ReportMeta, rows: ExpiryWiseRow[]) {
+  const isExpiredStock = /expired\s*stock/i.test(meta.reportTitle || "");
   const aoa: (string | number)[][] = [
     ...excelMetaRows(meta),
     [
       "S.No.", "Item Code", "Item Name", "Batch No.", "Mfg. Date", "Expiry Date",
-      "Days Remaining", "Available Qty", "Warehouse", "Status",
+      ...(isExpiredStock
+        ? ["Expired On", "Expired Qty", "Value"]
+        : ["Days Remaining", "Expiry Alert", "Available Qty"]),
+      "Warehouse", "Status",
     ],
-    ...rows.map((r) => [
-      r.sno, r.itemCode, r.itemName, r.batchNo,
-      fmtDate(r.mfgDate), fmtDate(r.expiryDate),
-      r.daysRemaining, r.availableQty, r.warehouse, r.status,
-    ]),
+    ...rows.map((r) =>
+      isExpiredStock
+        ? [
+            r.sno, r.itemCode, r.itemName, r.batchNo,
+            fmtDate(r.mfgDate), fmtDate(r.expiryDate),
+            fmtDate(r.expiredOn || r.expiryDate),
+            r.expiredQty ?? r.availableQty,
+            Number((r.value ?? 0).toFixed(2)),
+            r.warehouse, r.status,
+          ]
+        : [
+            r.sno, r.itemCode, r.itemName, r.batchNo,
+            fmtDate(r.mfgDate), fmtDate(r.expiryDate),
+            r.daysRemaining, r.expiryAlert || "—", r.availableQty, r.warehouse, r.status,
+          ],
+    ),
   ];
 
   const ws = sheetFromAoa(aoa);
@@ -476,7 +516,7 @@ export function exportGenericExcel(meta: ReportMeta, rows: Record<string, string
 
 export function resolveLayout(reportId: string): InventoryReportLayout {
   if (reportId === "batch_report") return "batch_wise";
-  if (reportId === "expiry_report") return "expiry_wise";
+  if (reportId === "expiry_report" || reportId === "expired_stock") return "expiry_wise";
   if (reportId === "stock_summary") return "stock_wise";
   return "generic";
 }

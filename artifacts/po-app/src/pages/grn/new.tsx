@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -31,6 +32,13 @@ interface GrnItem {
   warehouseName?: string;
   warehouseId?: number;
   stockItemId?: number;
+}
+
+interface WarehouseOption {
+  id: number;
+  name: string;
+  isActive?: boolean;
+  isDefault?: boolean;
 }
 
 interface Grn {
@@ -128,6 +136,41 @@ export default function GrnNew() {
       return res.json();
     },
   });
+
+  const { data: warehouses = [] } = useQuery<WarehouseOption[]>({
+    queryKey: ["warehouses"],
+    queryFn: async () => {
+      const res = await fetch("/api/warehouses", { credentials: "include" });
+      if (!res.ok) return [];
+      const rows: WarehouseOption[] = await res.json();
+      return rows
+        .filter((warehouse) => warehouse.isActive !== false)
+        .sort((a, b) => {
+          if (!!a.isDefault !== !!b.isDefault) return a.isDefault ? -1 : 1;
+          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+        });
+    },
+  });
+
+  const defaultWarehouse = warehouses.find((warehouse) => warehouse.isDefault) ?? warehouses[0];
+
+  useEffect(() => {
+    if (!defaultWarehouse) return;
+    setItems((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (Number(item.warehouseId) > 0) return item;
+        changed = true;
+        return {
+          ...item,
+          warehouseId: defaultWarehouse.id,
+          warehouseName: defaultWarehouse.name,
+        };
+      });
+      if (changed) setIsDirty(true);
+      return changed ? next : prev;
+    });
+  }, [defaultWarehouse?.id]);
 
   const grnByPoId = useMemo(() => {
     const map = new Map<number, any>();
@@ -278,6 +321,21 @@ export default function GrnNew() {
     setIsDirty(true);
   };
 
+  const handleWarehouseChange = (index: number, warehouseId: string) => {
+    const warehouse = warehouses.find((row) => row.id === Number(warehouseId));
+    if (!warehouse) return;
+    setItems((prev) => {
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        warehouseId: warehouse.id,
+        warehouseName: warehouse.name,
+      };
+      return next;
+    });
+    setIsDirty(true);
+  };
+
   const handleSerialNumbers = (index: number, value: string) => {
     setItems((prev) => {
       const next = [...prev];
@@ -301,7 +359,15 @@ export default function GrnNew() {
   };
 
   const addItem = () => {
-    setItems((prev) => [...prev, emptyItem()]);
+    setItems((prev) => [
+      ...prev,
+      {
+        ...emptyItem(),
+        ...(defaultWarehouse
+          ? { warehouseId: defaultWarehouse.id, warehouseName: defaultWarehouse.name }
+          : {}),
+      },
+    ]);
     setIsDirty(true);
   };
 
@@ -332,6 +398,17 @@ export default function GrnNew() {
     }
     if (receivedItems.length === 0) {
       toast({ title: "No items selected", description: "Please check at least one item as received.", variant: "destructive" });
+      return;
+    }
+    const missingWarehouse = receivedItems.filter(
+      (item) => !(Number(item.warehouseId) > 0),
+    );
+    if (missingWarehouse.length > 0) {
+      toast({
+        title: "Warehouse required",
+        description: `Select a warehouse for: ${missingWarehouse.map((item) => item.partNumber || stripHtml(item.description) || "item").join(", ")}.`,
+        variant: "destructive",
+      });
       return;
     }
     setConfirmOpen(true);
@@ -405,11 +482,11 @@ export default function GrnNew() {
             </h1>
             {statusBadge}
           </div>
-          <p className="text-muted-foreground mt-1">
-            {grn?.poNumber
-              ? <>Goods Receipt Note for <strong>{grn.poNumber}</strong></>
-              : "Select a PO to load items, or enter vendor and items manually."}
-          </p>
+          {grn?.poNumber ? (
+            <p className="text-muted-foreground mt-1">
+              Goods Receipt Note for <strong>{grn.poNumber}</strong>
+            </p>
+          ) : null}
         </div>
         <Button
           onClick={handleReceiveClick}
@@ -536,10 +613,11 @@ export default function GrnNew() {
               <colgroup>
                 <col className="w-[88px]" />
                 <col className="w-[140px]" />
-                <col />
+                <col className="w-[220px]" />
+                <col className="w-[220px]" />
                 <col className="w-[72px]" />
                 <col className="w-[88px]" />
-                <col className="w-[240px]" />
+                <col className="w-[200px]" />
                 {!linkedFromPo ? <col className="w-[48px]" /> : null}
               </colgroup>
               <thead>
@@ -558,6 +636,9 @@ export default function GrnNew() {
                   </th>
                   <th className="px-3 py-2.5 text-left whitespace-nowrap align-middle">Part No.</th>
                   <th className="px-3 py-2.5 text-left whitespace-nowrap align-middle">Description</th>
+                  <th className="px-3 py-2.5 text-left whitespace-nowrap align-middle">
+                    Warehouse <span className="text-destructive">*</span>
+                  </th>
                   <th className="px-2 py-2.5 text-center whitespace-nowrap align-middle">Qty</th>
                   <th className="px-2 py-2.5 text-center align-middle whitespace-nowrap">
                     <div className="flex flex-row flex-nowrap items-center justify-center gap-1.5 leading-none">
@@ -597,16 +678,9 @@ export default function GrnNew() {
                     </td>
                     <td className="px-3 py-2 text-left align-middle">
                       {linkedFromPo ? (
-                        <div className="min-w-0 flex flex-col justify-center">
-                          <p className="truncate font-mono text-xs text-foreground leading-tight">
-                            {item.partNumber || "—"}
-                          </p>
-                          {item.warehouseName ? (
-                            <p className="truncate text-[10px] text-muted-foreground leading-tight">
-                              → {item.warehouseName}
-                            </p>
-                          ) : null}
-                        </div>
+                        <p className="truncate font-mono text-xs text-foreground leading-tight">
+                          {item.partNumber || "—"}
+                        </p>
                       ) : (
                         <Input
                           value={item.partNumber || ""}
@@ -628,8 +702,35 @@ export default function GrnNew() {
                           value={stripHtml(item.description || "")}
                           onChange={(e) => updateItemField(index, "description", e.target.value)}
                           placeholder="Description"
-                          className="h-8 text-sm"
+                          className="h-9 w-full text-sm"
                         />
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-left align-middle">
+                      {warehouses.length > 0 ? (
+                        <Select
+                          value={item.warehouseId ? String(item.warehouseId) : undefined}
+                          onValueChange={(value) => handleWarehouseChange(index, value)}
+                        >
+                          <SelectTrigger className="h-9 w-full min-w-[200px] border-gray-200 bg-white text-sm">
+                            <SelectValue placeholder="" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {warehouses.map((warehouse) => (
+                              <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                                {warehouse.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : item.warehouseName ? (
+                        <p className="truncate text-sm text-muted-foreground">
+                          → {item.warehouseName}
+                        </p>
+                      ) : (
+                        <p className="text-sm font-medium text-amber-600">
+                          Select warehouse *
+                        </p>
                       )}
                     </td>
                     <td className="px-2 py-2 text-center align-middle">

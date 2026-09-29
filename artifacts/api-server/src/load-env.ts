@@ -80,10 +80,13 @@ export function loadLocalEnv(): void {
   const candidates = [
     path.join(here, ".env"), // next to bundled entry (dist/) or src/
     path.join(cwd, "src", ".env"), // artifacts/api-server/src/.env (dev.mjs cwd)
-    path.join(cwd, ".env"), // app root on Plesk
-    path.resolve(here, "..", ".env"), // artifacts/api-server/.env
+    path.join(cwd, ".env"), // app root / api-server/.env when cwd is api-server
+    path.resolve(here, "..", ".env"), // artifacts/api-server/.env when running from dist/ or src/
     path.resolve(here, "..", "src", ".env"),
     path.resolve(here, "..", "..", "..", ".env"), // repo / Application Root (module-relative)
+    // Also try absolute-ish fallbacks relative to known layout
+    path.resolve(cwd, "artifacts", "api-server", ".env"),
+    path.resolve(cwd, "artifacts", "api-server", "src", ".env"),
   ];
 
   const merged: Record<string, string> = {};

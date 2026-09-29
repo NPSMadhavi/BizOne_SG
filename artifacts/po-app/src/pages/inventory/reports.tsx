@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useListStockItems, getListStockItemsQueryKey } from "@workspace/api-client-react";
 import { inventoryApi } from "@/lib/inventory-api";
@@ -42,8 +42,6 @@ import {
 } from "./inventory-report-export";
 import {
   Bookmark,
-  RotateCcw,
-  Filter,
   LayoutGrid,
   List,
   ChevronRight,
@@ -53,6 +51,7 @@ import {
   CircleDollarSign,
   Grid3X3,
   CalendarClock,
+  AlertTriangle,
   Warehouse,
   Clock3,
   Ban,
@@ -64,9 +63,9 @@ import {
   Printer,
   FileText,
   FileSpreadsheet,
-  X,
 } from "lucide-react";
 import { useSalesPersons } from "@/hooks/use-sales-persons";
+import { collectBatchesFromItem, loadLocalItemBatches, mergeBatchMaps } from "@/lib/stock-item-batches";
 
 type ReportId =
   | "stock_summary"
@@ -75,12 +74,13 @@ type ReportId =
   | "stock_valuation"
   | "batch_report"
   | "expiry_report"
+  | "expired_stock"
   | "warehouse_stock"
   | "slow_moving"
   | "dead_stock"
   | "stock_adjustment"
   | "physical_verification"
-  | "purchase_vs_sales"
+  | "categorised_report"
   | "daily_stock"
   | "monthly_stock";
 
@@ -169,6 +169,14 @@ const REPORTS: ReportDef[] = [
     iconColor: "text-[#DB2777]",
   },
   {
+    id: "expired_stock",
+    title: "Expired Stock",
+    description: "All items that have already expired",
+    icon: AlertTriangle,
+    iconBg: "bg-[#FEE2E2]",
+    iconColor: "text-[#DC2626]",
+  },
+  {
     id: "warehouse_stock",
     title: "Warehouse Stock",
     description: "Stock summary by warehouse",
@@ -209,9 +217,9 @@ const REPORTS: ReportDef[] = [
     iconColor: "text-[#2563EB]",
   },
   {
-    id: "purchase_vs_sales",
-    title: "Purchase vs Sales",
-    description: "Comparison of purchase and sales",
+    id: "categorised_report",
+    title: "Categorised Report",
+    description: "Stock report by selected category filter",
     icon: BarChart3,
     iconBg: "bg-[#FFEDD5]",
     iconColor: "text-[#EA580C]",
@@ -302,6 +310,94 @@ function loadBatches(): any[] {
   }
 }
 
+function batchesFromItemMaster(stockItems: any[]): any[] {
+  const rows: any[] = [];
+  for (const i of stockItems || []) {
+    if (!i || i.isActive === false) continue;
+    // Full history: API batches + primary fields + stock-item-batches-v1 local history
+    const batches = mergeBatchMaps(
+      collectBatchesFromItem(i),
+      i.id != null ? loadLocalItemBatches(i.id) : [],
+    );
+    if (batches.length === 0) {
+      if (String(i.expiryDate || "").trim() || String(i.manufacturingDate || "").trim()) {
+        rows.push({
+          batchNo: "—",
+          productCode: String(i.code || ""),
+          productName: String(i.name || ""),
+          warehouse: "—",
+          mfgDate: String(i.manufacturingDate || ""),
+          expiryDate: String(i.expiryDate || ""),
+          qty: Number(i.stockQty) || 0,
+          unitPrice: Number(i.purchasePrice ?? i.unitPrice) || 0,
+          customer: "—",
+          supplier: "—",
+          vendor: "—",
+          stockItemId: i.id,
+          fromItemMaster: true,
+        });
+      }
+      continue;
+    }
+    for (const b of batches) {
+      rows.push({
+        batchNo: b.batchNo,
+        productCode: String(i.code || ""),
+        productName: String(i.name || ""),
+        warehouse: "—",
+        mfgDate: String(b.manufacturingDate || ""),
+        expiryDate: String(b.expiryDate || ""),
+        qty: Number(b.availableQty) || Number(i.stockQty) || 0,
+        unitPrice: Number(i.purchasePrice ?? i.unitPrice) || 0,
+        customer: "—",
+        supplier: "—",
+        vendor: "—",
+        stockItemId: i.id,
+        fromItemMaster: true,
+      });
+    }
+  }
+  return rows;
+}
+
+/** Local batch rows + Item Master batch history. Same batch+code merges; different batches all kept. */
+function allBatchesForReport(stockItems: any[]): any[] {
+  const local = loadBatches();
+  const fromMaster = batchesFromItemMaster(stockItems);
+  const byKey = new Map<string, any>();
+  // Prefer master history first so every Item Master batch is present, then enrich from local rows.
+  for (const b of fromMaster) {
+    const key = `${String(b.batchNo || "").trim().toLowerCase()}|${String(b.productCode || "").trim().toLowerCase()}`;
+    byKey.set(key, { ...b });
+  }
+  for (const b of local) {
+    const key = `${String(b.batchNo || "").trim().toLowerCase()}|${String(b.productCode || "").trim().toLowerCase()}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, b);
+      continue;
+    }
+    byKey.set(key, {
+      ...existing,
+      ...b,
+      batchNo: (b.batchNo && b.batchNo !== "—") ? b.batchNo : existing.batchNo,
+      mfgDate: b.mfgDate || existing.mfgDate || "",
+      expiryDate: b.expiryDate || existing.expiryDate || "",
+      productName: b.productName || existing.productName,
+      productCode: b.productCode || existing.productCode,
+      qty: Number(b.qty) > 0 ? b.qty : existing.qty,
+      unitPrice: Number(b.unitPrice) > 0 ? b.unitPrice : existing.unitPrice,
+      warehouse: b.warehouse && b.warehouse !== "—" ? b.warehouse : existing.warehouse,
+      vendor: b.vendor && b.vendor !== "—" ? b.vendor : existing.vendor,
+      supplier: b.supplier && b.supplier !== "—" ? b.supplier : existing.supplier,
+      customer: b.customer && b.customer !== "—" ? b.customer : existing.customer,
+      stockItemId: existing.stockItemId || b.stockItemId,
+      fromItemMaster: existing.fromItemMaster || b.fromItemMaster,
+    });
+  }
+  return Array.from(byKey.values());
+}
+
 export default function ReportsPage() {
   const { user, selectedCompany } = useAuth();
   const { toast } = useToast();
@@ -310,7 +406,6 @@ export default function ReportsPage() {
   const companyName = selectedCompany?.name || "Company";
 
   const [filters, setFilters] = useState<Filters>(() => defaultFilters());
-  const [applied, setApplied] = useState<Filters>(() => defaultFilters());
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [savedOpen, setSavedOpen] = useState(false);
   const [recent, setRecent] = useState<RecentReport[]>(() => loadJson(RECENT_KEY, []));
@@ -336,39 +431,40 @@ export default function ReportsPage() {
     { query: { queryKey: getListStockItemsQueryKey({} as any), refetchOnWindowFocus: false } },
   );
 
-  const activeItems = useMemo(
-    () => (stockItems as any[]).filter((i) => i.isActive !== false),
-    [stockItems],
-  );
+  // Prefer raw API so `batches` history from Item Master is included (not stripped by typed client).
+  const { data: stockItemsWithBatches = [] } = useQuery<any[]>({
+    queryKey: ["stock-reports-items-with-batches"],
+    staleTime: 0,
+    queryFn: async () => {
+      const res = await fetch("/api/stock-items", { credentials: "include" });
+      if (!res.ok) return [];
+      const rows = await res.json();
+      return Array.isArray(rows) ? rows : [];
+    },
+  });
+
+  const activeItems = useMemo(() => {
+    const source = stockItemsWithBatches.length > 0 ? stockItemsWithBatches : (stockItems as any[]);
+    return source.filter((i) => i.isActive !== false);
+  }, [stockItems, stockItemsWithBatches]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
     for (const i of activeItems) {
-      const t = String(i.type || "product");
-      set.add(t.charAt(0).toUpperCase() + t.slice(1));
+      const c = String(i.category || "").trim();
+      if (c) set.add(c);
     }
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [activeItems]);
 
   const batchOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const b of loadBatches()) {
+    for (const b of allBatchesForReport(activeItems)) {
       const no = String(b.batchNo || "").trim();
-      if (no) set.add(no);
+      if (no && no !== "—") set.add(no);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, []);
-
-  function clearFilters() {
-    const next = defaultFilters();
-    setFilters(next);
-    setApplied(next);
-  }
-
-  function applyFilters() {
-    setApplied({ ...filters });
-    toast({ title: "Filters applied" });
-  }
+  }, [activeItems]);
 
   function pushRecent(report: ReportDef) {
     const entry: RecentReport = {
@@ -389,48 +485,63 @@ export default function ReportsPage() {
 
   function buildMeta(title: string, layout: ReturnType<typeof resolveLayout>): ReportMeta {
     const warehouseName =
-      applied.warehouseId === "all"
+      filters.warehouseId === "all"
         ? "All Warehouses"
-        : warehouses.find((w) => String(w.id) === applied.warehouseId)?.name || "All Warehouses";
+        : warehouses.find((w) => String(w.id) === filters.warehouseId)?.name || "All Warehouses";
     return {
       companyName,
       reportTitle: title,
       layout,
-      dateFrom: applied.dateFrom,
-      dateTo: applied.dateTo,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
       reportDate: todayIso(),
       warehouse: warehouseName,
-      category: applied.category === "all" ? "All Categories" : applied.category,
+      category: filters.category === "all" ? "All Categories" : filters.category,
       generatedBy: userName,
     };
   }
 
-  async function openReport(report: ReportDef) {
+  function openReport(report: ReportDef) {
     setReportProductFilter("all");
     setActiveReport(report.id);
     setPreviewTitle(report.title);
     setPreviewLayout(resolveLayout(report.id));
+    pushRecent(report);
+  }
+
+  useEffect(() => {
+    if (!activeReport) return;
+    let cancelled = false;
     setPreviewLoading(true);
     setPreviewRows([]);
     setStockWiseRows([]);
     setBatchWiseRows([]);
     setExpiryWiseRows([]);
-    try {
-      const data = await buildReportData(report.id, applied, {
-        warehouses,
-        stockItems: activeItems,
-      });
-      setPreviewLayout(data.layout);
-      setStockWiseRows(data.stockWise);
-      setBatchWiseRows(data.batchWise);
-      setExpiryWiseRows(data.expiryWise);
-      setPreviewRows(data.generic);
-      pushRecent(report);
-    } catch {
-      toast({ title: "Failed to load report", variant: "destructive" });
-    } finally {
-      setPreviewLoading(false);
-    }
+    void (async () => {
+      try {
+        const data = await buildReportData(activeReport, filters, {
+          warehouses,
+          stockItems: activeItems,
+        });
+        if (cancelled) return;
+        setPreviewLayout(data.layout);
+        setStockWiseRows(data.stockWise);
+        setBatchWiseRows(data.batchWise);
+        setExpiryWiseRows(data.expiryWise);
+        setPreviewRows(data.generic);
+      } catch {
+        if (!cancelled) toast({ title: "Failed to load report", variant: "destructive" });
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeReport, filters, warehouses, activeItems]);
+
+  function onPreviewWarehouseChange(warehouseId: string) {
+    setFilters((f) => ({ ...f, warehouseId }));
   }
 
   const displayedBatchWise = useMemo(() => {
@@ -584,18 +695,28 @@ ${styles}
           <FilterField label="From Date">
             <SyncBridgeDatePicker
               value={filters.dateFrom}
-              onChange={(v) => setFilters((f) => ({ ...f, dateFrom: v }))}
+              onChange={(v) =>
+                setFilters((f) => {
+                  const dateFrom = v || f.dateFrom;
+                  const dateTo = f.dateTo && dateFrom > f.dateTo ? dateFrom : f.dateTo;
+                  return { ...f, dateFrom, dateTo };
+                })
+              }
               placeholder="From"
-              max={filters.dateTo || undefined}
             />
           </FilterField>
 
           <FilterField label="To Date">
             <SyncBridgeDatePicker
               value={filters.dateTo}
-              onChange={(v) => setFilters((f) => ({ ...f, dateTo: v }))}
+              onChange={(v) =>
+                setFilters((f) => {
+                  const dateTo = v || f.dateTo;
+                  const dateFrom = f.dateFrom && dateTo < f.dateFrom ? dateTo : f.dateFrom;
+                  return { ...f, dateFrom, dateTo };
+                })
+              }
               placeholder="To"
-              min={filters.dateFrom || undefined}
             />
           </FilterField>
 
@@ -696,15 +817,6 @@ ${styles}
             </div>
           </FilterField>
         </div>
-
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" className="gap-2" onClick={clearFilters}>
-            <RotateCcw className="h-4 w-4" /> Clear
-          </Button>
-          <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={applyFilters}>
-            <Filter className="h-4 w-4" /> Apply Filters
-          </Button>
-        </div>
       </section>
 
       {/* All Stock Reports */}
@@ -795,6 +907,22 @@ ${styles}
                   </Select>
                 </div>
               )}
+              {activeReport === "warehouse_stock" && (
+                <div className="flex items-center gap-1.5 mr-2">
+                  <span className="text-xs font-medium text-[#6B7280] whitespace-nowrap">Warehouse Wise:</span>
+                  <Select value={filters.warehouseId} onValueChange={onPreviewWarehouseChange}>
+                    <SelectTrigger className="h-9 w-52 bg-white text-xs">
+                      <SelectValue placeholder="" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Warehouses</SelectItem>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button type="button" variant="outline" className="gap-2" onClick={handlePrint}>
                 <Printer className="h-4 w-4" /> Print
               </Button>
@@ -820,12 +948,6 @@ ${styles}
                 generic={previewRows}
               />
             )}
-          </div>
-
-          <div className="flex justify-end border-t border-[#E5E7EB] px-5 py-3 print:hidden">
-            <Button type="button" variant="outline" className="gap-2" onClick={() => setActiveReport(null)}>
-              <X className="h-4 w-4" /> Close
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -926,8 +1048,7 @@ async function buildReportData(
     if (filters.category !== "all") {
       next = next.filter((r) => {
         const item = itemMap.get(String(r.stockItemId));
-        const type = String(item?.type || "product");
-        return type.charAt(0).toUpperCase() + type.slice(1) === filters.category;
+        return String(item?.category || "").trim() === filters.category;
       });
     }
     if (!filters.includeZeroStock) {
@@ -984,6 +1105,10 @@ async function buildReportData(
     for (const id of ids) {
       if (filters.itemId !== "all" && id !== filters.itemId) continue;
       const item = itemMap.get(id);
+      if (filters.category !== "all") {
+        const cat = String(item?.category || "").trim();
+        if (cat !== filters.category) continue;
+      }
       const led = ledgerByItem.get(id);
       const st = stockByItem.get(id);
       if (!item && !st && !led) continue;
@@ -991,19 +1116,17 @@ async function buildReportData(
       const opening = Number(led?.opening) || 0;
       const purchase = Number(led?.received) || 0;
       const sales = Number(led?.issued) || 0;
-      // Adjust includes stock adjustments + transfers so Opening+Purchase−Sales+Adjust = Closing
+      // Adjust = stock adjustments (±) + warehouse transfers (±) + credit/debit note effects
+      // so visible columns always satisfy: Opening + Purchase − Sales + Adjust = Closing
       const adjust =
         (Number(led?.adjustedIn) || 0) -
         (Number(led?.adjustedOut) || 0) +
         (Number(led?.transferredIn) || 0) -
         (Number(led?.transferredOut) || 0);
-      const closing =
-        led != null
-          ? Number(led.closing) || 0
-          : Number(st?.quantity) || Number(item?.stockQty) || 0;
+      const closing = Math.round((opening + purchase - sales + adjust) * 1000) / 1000;
       const unitCost = Number(st?.unitPrice ?? item?.unitPrice ?? 0) || 0;
 
-      if (!filters.includeZeroStock && closing === 0 && opening === 0 && purchase === 0 && sales === 0) continue;
+      if (!filters.includeZeroStock && closing === 0 && opening === 0 && purchase === 0 && sales === 0 && adjust === 0) continue;
 
       rows.push({
         id,
@@ -1048,13 +1171,19 @@ async function buildReportData(
   }
 
   if (reportId === "batch_report") {
-    let batches = loadBatches();
+    let batches = allBatchesForReport(ctx.stockItems);
+    if (filters.itemId !== "all") {
+      batches = batches.filter((b: any) =>
+        String(b.stockItemId) === filters.itemId ||
+        String(b.productCode || "").toLowerCase() === String(itemMap.get(filters.itemId)?.code || "").toLowerCase(),
+      );
+    }
     if (filters.batchNo !== "all") {
       batches = batches.filter((b: any) => String(b.batchNo || "") === filters.batchNo);
     }
     if (filters.warehouseId !== "all") {
       const name = ctx.warehouses.find((w) => String(w.id) === filters.warehouseId)?.name;
-      if (name) batches = batches.filter((b: any) => String(b.warehouse || "") === name);
+      if (name) batches = batches.filter((b: any) => !b.warehouse || b.warehouse === "—" || String(b.warehouse || "") === name);
     }
 
     // Dynamic database fetch for fallback customers/vendors
@@ -1120,17 +1249,31 @@ async function buildReportData(
     return { ...emptyBuilt("batch_wise"), batchWise };
   }
 
-  if (reportId === "expiry_report") {
-    let batches = loadBatches();
+  if (reportId === "expiry_report" || reportId === "expired_stock") {
+    let batches = allBatchesForReport(ctx.stockItems).filter(
+      (b: any) => String(b.expiryDate || "").trim() !== "",
+    );
+    if (filters.itemId !== "all") {
+      batches = batches.filter((b: any) =>
+        String(b.stockItemId) === filters.itemId ||
+        String(b.productCode || "").toLowerCase() === String(itemMap.get(filters.itemId)?.code || "").toLowerCase(),
+      );
+    }
     if (filters.batchNo !== "all") {
       batches = batches.filter((b: any) => String(b.batchNo || "") === filters.batchNo);
     }
     if (filters.warehouseId !== "all") {
       const name = ctx.warehouses.find((w) => String(w.id) === filters.warehouseId)?.name;
-      if (name) batches = batches.filter((b: any) => String(b.warehouse || "") === name);
+      if (name) batches = batches.filter((b: any) => !b.warehouse || b.warehouse === "—" || String(b.warehouse || "") === name);
     }
     let filtered = batches.map((b: any, idx: number) => {
       const days = daysRemaining(String(b.expiryDate || ""));
+      const availableQty = Number(b.qty) || 0;
+      const item = itemMap.get(String(b.stockItemId));
+      const unitCost =
+        Number(b.unitPrice) ||
+        Number(item?.purchasePrice ?? item?.unitPrice ?? 0) ||
+        0;
       return {
         sno: idx + 1,
         itemCode: String(b.productCode || ""),
@@ -1139,12 +1282,19 @@ async function buildReportData(
         mfgDate: String(b.mfgDate || ""),
         expiryDate: String(b.expiryDate || ""),
         daysRemaining: days,
-        availableQty: Number(b.qty) || 0,
+        expiryAlert:
+          days < 0 ? "Expired" : days >= 0 && days <= 15 ? "Expiring Soon" : "",
+        availableQty,
         warehouse: String(b.warehouse || ""),
         status: expiryStatus(days),
+        expiredOn: String(b.expiryDate || ""),
+        expiredQty: availableQty,
+        value: availableQty * unitCost,
       } satisfies ExpiryWiseRow;
     });
-    if (filters.expiryStatus !== "all") {
+    if (reportId === "expired_stock") {
+      filtered = filtered.filter((r) => r.status === "Expired");
+    } else if (filters.expiryStatus !== "all") {
       filtered = filtered.filter((r) => {
         if (filters.expiryStatus === "fresh") return r.status === "Safe";
         if (filters.expiryStatus === "expiring") return r.status === "Near Expiry";
@@ -1215,7 +1365,6 @@ async function buildReportData(
         "Item Code": r.itemCode || item?.code || "",
         "Item Name": r.itemName || item?.name || "",
         UOM: r.uom || item?.uom || "Nos",
-        Qty: qty,
         "In Stock": moved.inQty,
         "Out Stock": moved.outQty,
         "Closing Balance": qty,
@@ -1274,17 +1423,34 @@ async function buildReportData(
     return built;
   }
 
-  if (reportId === "purchase_vs_sales") {
+  if (reportId === "categorised_report") {
     const { rows } = await loadStockLedgerRows();
-    built.generic = rows.map((r, i) => ({
-      "S.No.": i + 1,
-      "Item Code": r.itemCode,
-      "Item Name": r.itemName,
-      UOM: r.uom,
-      "Purchase Qty": r.purchase,
-      "Sales Qty": r.sales,
-      Difference: r.purchase - r.sales,
-    }));
+    // When a category is selected in filters, only that category’s items are included
+    // (via applyItemFilter inside loadStockLedgerRows). When "all", show every item with Category.
+    built.generic = rows
+      .map((r) => {
+        const item = itemMap.get(r.id);
+        return {
+          ...r,
+          category: String(item?.category || "").trim() || "Uncategorized",
+        };
+      })
+      .filter((r) => filters.category === "all" || r.category === filters.category)
+      .sort((a, b) => a.category.localeCompare(b.category) || a.itemCode.localeCompare(b.itemCode))
+      .map((r, i) => ({
+        "S.No.": i + 1,
+        Category: r.category,
+        "Item Code": r.itemCode,
+        "Item Name": r.itemName,
+        UOM: r.uom,
+        "Opening Qty": r.opening,
+        "Purchase Qty": r.purchase,
+        "Sales Qty": r.sales,
+        "Adjust Qty": r.adjust,
+        "Closing Qty": r.closing,
+        "Unit Cost (SGD)": Number(r.unitCost.toFixed(2)),
+        "Stock Value (SGD)": Number((r.closing * r.unitCost).toFixed(2)),
+      }));
     return built;
   }
 
@@ -1310,7 +1476,21 @@ async function buildReportData(
   }
 
   if (reportId === "stock_movement") {
-    const movements = await inventoryApi.getMovements(whId ? { warehouseId: String(whId) } : undefined);
+    const [{ rows: ledgerRows }, movements] = await Promise.all([
+      loadStockLedgerRows(),
+      inventoryApi.getMovements(whId ? { warehouseId: String(whId) } : undefined),
+    ]);
+    const statusByItem = new Map<string, "Fast Moving" | "Slow Moving" | "Dead Moving">();
+    for (const r of ledgerRows) {
+      let status: "Fast Moving" | "Slow Moving" | "Dead Moving";
+      if (r.sales <= 0) status = "Dead Moving";
+      else {
+        const turnoverBase = Math.max(r.closing + r.sales, r.purchase, 1);
+        const ratio = r.sales / turnoverBase;
+        status = ratio >= 0.45 ? "Fast Moving" : "Slow Moving";
+      }
+      statusByItem.set(r.id, status);
+    }
     built.generic = movements
       .filter((r) => {
         if (filters.itemId !== "all" && String(r.stockItemId) !== filters.itemId) return false;
@@ -1323,15 +1503,16 @@ async function buildReportData(
         const qtyIn = Number(r.quantityIn) || 0;
         const qtyOut = Number(r.quantityOut) || 0;
         const quantity = qtyIn > 0 ? qtyIn : qtyOut || Number(r.quantity) || 0;
+        const itemId = String(r.stockItemId || "");
         return {
           "S.No.": i + 1,
           Date: String(r.movementDate || r.transactionDate || r.createdAt || "").slice(0, 10),
           Type: r.transactionType || r.type || "",
-          "Item Code": r.itemCode || itemMap.get(String(r.stockItemId))?.code || "",
-          "Item Name": r.itemName || itemMap.get(String(r.stockItemId))?.name || "",
+          "Item Code": r.itemCode || itemMap.get(itemId)?.code || "",
+          "Item Name": r.itemName || itemMap.get(itemId)?.name || "",
           Warehouse: r.warehouseName || whName(r.warehouseId) || "",
           Quantity: quantity,
-          Reference: r.documentNumber || r.reference || r.referenceNo || r.documentNo || "",
+          Status: statusByItem.get(itemId) || "Dead Moving",
         };
       });
     return built;
@@ -1389,11 +1570,12 @@ function ReportDocument({
       sales: a.sales + r.salesQty,
       adjust: a.adjust + r.adjustQty,
       closing: a.closing + r.closingQty,
+      unitCost: a.unitCost + r.unitCost,
       value: a.value + r.stockValue,
       gst: a.gst + r.gst,
       total: a.total + r.totalValue,
     }),
-    { opening: 0, purchase: 0, sales: 0, adjust: 0, closing: 0, value: 0, gst: 0, total: 0 },
+    { opening: 0, purchase: 0, sales: 0, adjust: 0, closing: 0, unitCost: 0, value: 0, gst: 0, total: 0 },
   );
 
   return (
@@ -1468,7 +1650,7 @@ function ReportDocument({
                     <td className="px-2 py-2 text-center">{qty(stockTotals.sales)}</td>
                     <td className="px-2 py-2 text-center">{qty(stockTotals.adjust)}</td>
                     <td className="px-2 py-2 text-center">{qty(stockTotals.closing)}</td>
-                    <td className="px-2 py-2" />
+                    <td className="px-2 py-2 text-center">{money(stockTotals.unitCost)}</td>
                     <td className="px-2 py-2 text-center">{money(stockTotals.value)}</td>
                     <td className="px-2 py-2 text-center">{money(stockTotals.gst)}</td>
                     <td className="px-2 py-2 text-center">{money(stockTotals.total)}</td>
@@ -1523,21 +1705,35 @@ function ReportDocument({
           </>
         )}
 
-        {layout === "expiry_wise" && (
+        {layout === "expiry_wise" && (() => {
+          const isExpiredStock = /expired\s*stock/i.test(meta.reportTitle || "");
+          const midHeaders = isExpiredStock
+            ? ["Expired On", "Expired Qty", "Value"]
+            : ["Days Remaining", "Expiry Alert", "Available Qty"];
+          return (
           <>
             <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">
               <table className="w-full min-w-[900px] text-xs">
                 <thead>
                   <tr className={cn("text-left text-white", layoutBarClass(layout))}>
-                    {["S.No.", "Item Code", "Item Name", "Batch No.", "Mfg. Date", "Expiry Date", "Days Remaining", "Available Qty", "Warehouse", "Status"].map((h) => (
-                      <th key={h} className="px-2 py-2 font-semibold">{h}</th>
+                    {["S.No.", "Item Code", "Item Name", "Batch No.", "Mfg. Date", "Expiry Date", ...midHeaders, "Warehouse", "Status"].map((h) => (
+                      <th
+                        key={h}
+                        className={cn(
+                          "px-2 py-2 font-semibold",
+                          (h === "Days Remaining" || h === "Expiry Alert" || h === "Available Qty" ||
+                            h === "Expired On" || h === "Expired Qty" || h === "Value") && "text-center",
+                        )}
+                      >
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {expiryWise.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-12 text-center text-sm text-[#6B7280]">
+                      <td colSpan={11} className="px-4 py-12 text-center text-sm text-[#6B7280]">
                         No records found for the selected filters.
                       </td>
                     </tr>
@@ -1550,8 +1746,24 @@ function ReportDocument({
                         <td className="px-2 py-1.5">{r.batchNo}</td>
                         <td className="px-2 py-1.5">{fmtDate(r.mfgDate)}</td>
                         <td className="px-2 py-1.5">{fmtDate(r.expiryDate)}</td>
-                        <td className="px-2 py-1.5 text-right">{r.daysRemaining}</td>
-                        <td className="px-2 py-1.5 text-right">{qty(r.availableQty)}</td>
+                        {isExpiredStock ? (
+                          <>
+                            <td className="px-2 py-1.5 text-center">{fmtDate(r.expiredOn || r.expiryDate)}</td>
+                            <td className="px-2 py-1.5 text-center">{qty(r.expiredQty ?? r.availableQty)}</td>
+                            <td className="px-2 py-1.5 text-center font-semibold">{money(r.value ?? 0)}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-2 py-1.5 text-center">{r.daysRemaining}</td>
+                            <td className={cn(
+                              "px-2 py-1.5 text-center font-semibold",
+                              (r.expiryAlert === "Expiring Soon" || r.expiryAlert === "Expired") && "text-[#DC2626]",
+                            )}>
+                              {r.expiryAlert || "—"}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">{qty(r.availableQty)}</td>
+                          </>
+                        )}
                         <td className="px-2 py-1.5">{r.warehouse}</td>
                         <td className="px-2 py-1.5">
                           <span
@@ -1572,7 +1784,8 @@ function ReportDocument({
               </table>
             </div>
           </>
-        )}
+          );
+        })()}
 
         {layout === "generic" && (
           <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">

@@ -12,7 +12,8 @@ router.get("/customers", async (req, res) => {
       .where(eq(customersTable.companyId, companyId))
       .orderBy(desc(customersTable.createdAt), desc(customersTable.id));
     return res.json(customers);
-  } catch {
+  } catch (e: any) {
+    console.error("[customers] list failed:", e?.message || e);
     return res.status(500).json({ error: "Failed to fetch customers" });
   }
 });
@@ -22,8 +23,17 @@ router.post("/customers", async (req, res) => {
   const companyId = (req.session as any).companyId;
   if (!companyId) return res.status(400).json({ error: "No company selected" });
 
-  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, currency, shipToAddress, quotationTerms } = req.body;
+  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, currency, shipToAddress, quotationTerms, creditLimitEnabled, creditLimit } = req.body;
   if (!name) return res.status(400).json({ error: "Name is required" });
+
+  const limitEnabled = creditLimitEnabled === true || creditLimitEnabled === "true" || creditLimitEnabled === 1 || creditLimitEnabled === "1";
+  const gstOn = gstRegistered === true || gstRegistered === "true" || gstRegistered === 1 || gstRegistered === "1";
+  const parsedLimit = limitEnabled && creditLimit != null && creditLimit !== ""
+    ? Number(creditLimit)
+    : null;
+  const creditLimitValue = parsedLimit != null && Number.isFinite(parsedLimit) && parsedLimit >= 0
+    ? String(parsedLimit)
+    : null;
 
   try {
     const [customer] = await db.insert(customersTable).values({
@@ -36,14 +46,17 @@ router.post("/customers", async (req, res) => {
       contactEmail: contactEmail || null,
       phone: phone || null,
       currency: currency || null,
-      gstRegistered: Boolean(gstRegistered),
-      gstNo: gstRegistered && gstNo ? gstNo : null,
+      gstRegistered: gstOn,
+      gstNo: gstOn && gstNo ? String(gstNo) : null,
+      creditLimitEnabled: limitEnabled,
+      creditLimit: creditLimitValue,
       shipToAddress: shipToAddress || null,
       quotationTerms: quotationTerms || null,
-    } as any).returning();
+    }).returning();
     return res.status(201).json(customer);
-  } catch {
-    return res.status(500).json({ error: "Failed to create customer" });
+  } catch (e: any) {
+    console.error("[customers] create failed:", e?.message || e);
+    return res.status(500).json({ error: e?.message || "Failed to create customer" });
   }
 });
 
@@ -53,7 +66,16 @@ router.put("/customers/:id", async (req, res) => {
   if (!companyId) return res.status(400).json({ error: "No company selected" });
 
   const id = parseInt(req.params.id);
-  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, isActive, currency, shipToAddress, quotationTerms } = req.body;
+  const { name, address, postalCode, country, contactPerson, contactEmail, phone, gstRegistered, gstNo, isActive, currency, shipToAddress, quotationTerms, creditLimitEnabled, creditLimit } = req.body;
+
+  const limitEnabled = creditLimitEnabled === true || creditLimitEnabled === "true" || creditLimitEnabled === 1 || creditLimitEnabled === "1";
+  const gstOn = gstRegistered === true || gstRegistered === "true" || gstRegistered === 1 || gstRegistered === "1";
+  const parsedLimit = limitEnabled && creditLimit != null && creditLimit !== ""
+    ? Number(creditLimit)
+    : null;
+  const creditLimitValue = parsedLimit != null && Number.isFinite(parsedLimit) && parsedLimit >= 0
+    ? String(parsedLimit)
+    : null;
 
   try {
     const [customer] = await db.update(customersTable).set({
@@ -65,17 +87,20 @@ router.put("/customers/:id", async (req, res) => {
       contactEmail: contactEmail || null,
       phone: phone || null,
       currency: currency || null,
-      gstRegistered: Boolean(gstRegistered),
-      gstNo: gstRegistered && gstNo ? gstNo : null,
+      gstRegistered: gstOn,
+      gstNo: gstOn && gstNo ? String(gstNo) : null,
+      creditLimitEnabled: limitEnabled,
+      creditLimit: creditLimitValue,
       shipToAddress: shipToAddress || null,
       quotationTerms: quotationTerms !== undefined ? (quotationTerms || null) : undefined,
       isActive: isActive !== undefined ? Boolean(isActive) : undefined,
-    } as any).where(and(eq(customersTable.id, id), eq(customersTable.companyId, companyId))).returning();
+    }).where(and(eq(customersTable.id, id), eq(customersTable.companyId, companyId))).returning();
 
     if (!customer) return res.status(404).json({ error: "Customer not found" });
     return res.json(customer);
-  } catch {
-    return res.status(500).json({ error: "Failed to update customer" });
+  } catch (e: any) {
+    console.error("[customers] update failed:", e?.message || e);
+    return res.status(500).json({ error: e?.message || "Failed to update customer" });
   }
 });
 

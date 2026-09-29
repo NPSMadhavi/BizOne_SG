@@ -64,7 +64,7 @@ export function PaymentTermsSelect({ value = "", onChange }: PaymentTermsSelectP
       <select
         value={value || ""}
         onChange={handleSelectChange}
-        className="flex h-10 w-full appearance-none items-center rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
+        className="flex h-10 w-full appearance-none items-center rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 pr-8 text-sm shadow-none ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
       >
         <option value="" disabled>Select payment terms</option>
         {PRESET_TERMS.map(t => (

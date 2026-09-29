@@ -67,7 +67,7 @@ router.post("/expenses", async (req, res): Promise<void> => {
 
   const companyId = req.session.companyId!;
   const {
-    expenseDate, vendorName, description, category,
+    expenseDate, vendorName, description, category, accountId,
     amount, gstAmount, gstClaimable, isDeductible, deductiblePct,
     currency, paymentMethod, receiptData, receiptMimeType,
     vendorId, projectId, voucherId, notes, status,
@@ -78,7 +78,10 @@ router.post("/expenses", async (req, res): Promise<void> => {
   if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
   if (!vendorName?.trim()) { res.status(400).json({ error: "Vendor / payee name is required" }); return; }
   if (!description?.trim()) { res.status(400).json({ error: "Description is required" }); return; }
-  if (!category) { res.status(400).json({ error: "Category is required" }); return; }
+  const parsedAccountId = accountId != null && accountId !== "" ? parseInt(String(accountId), 10) : NaN;
+  if (!Number.isFinite(parsedAccountId) && !category) {
+    res.status(400).json({ error: "Ledger is required" }); return;
+  }
   if (!amount || isNaN(parseFloat(amount))) { res.status(400).json({ error: "Amount is required" }); return; }
 
   const [created] = await db.insert(expensesTable).values({
@@ -86,7 +89,8 @@ router.post("/expenses", async (req, res): Promise<void> => {
     expenseDate,
     vendorName: vendorName.trim(),
     description: description.trim(),
-    category,
+    category: category || String(parsedAccountId),
+    accountId: Number.isFinite(parsedAccountId) ? parsedAccountId : null,
     amount: parseFloat(amount).toFixed(2),
     gstAmount: parseFloat(gstAmount ?? 0).toFixed(2),
     gstClaimable: !!gstClaimable,
@@ -126,7 +130,7 @@ router.put("/expenses/:id", async (req, res): Promise<void> => {
   }
 
   const {
-    expenseDate, vendorName, description, category,
+    expenseDate, vendorName, description, category, accountId,
     amount, gstAmount, gstClaimable, isDeductible, deductiblePct,
     currency, paymentMethod, receiptData, receiptMimeType,
     vendorId, projectId, voucherId, notes, status,
@@ -137,6 +141,10 @@ router.put("/expenses/:id", async (req, res): Promise<void> => {
   if (vendorName !== undefined) updateData.vendorName = vendorName.trim();
   if (description !== undefined) updateData.description = description.trim();
   if (category !== undefined) updateData.category = category;
+  if (accountId !== undefined) {
+    const parsedAccountId = accountId != null && accountId !== "" ? parseInt(String(accountId), 10) : NaN;
+    updateData.accountId = Number.isFinite(parsedAccountId) ? parsedAccountId : null;
+  }
   if (amount !== undefined) updateData.amount = parseFloat(amount).toFixed(2);
   if (gstAmount !== undefined) updateData.gstAmount = parseFloat(gstAmount ?? 0).toFixed(2);
   if (gstClaimable !== undefined) updateData.gstClaimable = !!gstClaimable;

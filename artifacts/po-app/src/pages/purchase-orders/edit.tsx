@@ -464,33 +464,36 @@ export default function PurchaseOrderEdit() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg">Vendor Details</CardTitle>
-                <DirectoryPickerButton
- type="vendor"
- onSelect={(v) => {
-                    form.setValue("vendorName", v.name);
-                    form.setValue("vendorAddress", v.fullAddress);
-                    form.setValue("vendorContact", v.contactPerson);
-                    form.setValue("vendorContactEmail", v.contactEmail);
-                    if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
-                    if (v.currency) {
-                      form.setValue("currency", v.currency);
-                      setDirectoryCurrency(v.currency);
-                      setDirectoryCurrencyName(v.name);
-                    }
-                  }}
-                />
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField
  control={form.control}
  name="vendorName"
  render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
+                      <div className="flex h-5 items-center justify-between gap-1.5">
+                        <FormLabel className="leading-none">Vendor Name <span className="text-destructive">*</span></FormLabel>
+                        <DirectoryPickerButton
+ type="vendor"
+ onSelect={(v) => {
+                            form.setValue("vendorName", v.name);
+                            form.setValue("vendorAddress", v.fullAddress);
+                            form.setValue("vendorContact", v.contactPerson);
+                            form.setValue("vendorContactEmail", v.contactEmail);
+                            if (v.effectiveGstRate !== undefined) form.setValue("tax", v.effectiveGstRate);
+                            if (v.currency) {
+                              form.setValue("currency", v.currency);
+                              setDirectoryCurrency(v.currency);
+                              setDirectoryCurrencyName(v.name);
+                            }
+                          }}
+                        />
+                      </div>
                       <FormControl>
                         <ContactAutocomplete
  type="vendor"
@@ -511,23 +514,10 @@ export default function PurchaseOrderEdit() {
                 />
                 <FormField
  control={form.control}
- name="vendorAddress"
- render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address</FormLabel>
-                      <FormControl>
-                        <Textarea className="resize-none" rows={3} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
- control={form.control}
  name="vendorContact"
  render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person</FormLabel>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
                       <FormControl>
                         <Input  {...field} />
                       </FormControl>
@@ -540,7 +530,7 @@ export default function PurchaseOrderEdit() {
  name="vendorContactEmail"
  render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Email</FormLabel>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
                       <FormControl>
                         <Input type="email" {...field} />
                       </FormControl>
@@ -548,6 +538,22 @@ export default function PurchaseOrderEdit() {
                     </FormItem>
                   )}
                 />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField
+ control={form.control}
+ name="vendorAddress"
+ render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl>
+                        <Textarea className="resize-none" rows={3} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                </div>
               </CardContent>
             </Card>
 
@@ -556,6 +562,7 @@ export default function PurchaseOrderEdit() {
                 <CardTitle className="text-lg">Order Logistics</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField
  control={form.control}
  name="customerId"
@@ -608,37 +615,11 @@ export default function PurchaseOrderEdit() {
                 />
                 <FormField
  control={form.control}
- name="deliveryAddress"
- render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Delivery Address</FormLabel>
-                      <FormControl>
-                        <Textarea className="resize-none" rows={3} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
- control={form.control}
  name="issueDate"
  render={({ field }) => (
                     <FormItem>
                       <FormControl>
                         <IssueDateField value={field.value || ""} onChange={field.onChange} label="PO Date" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
- control={form.control}
- name="deliveryDate"
- render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Delivery Date</FormLabel>
-                      <FormControl>
-                        <DeliveryDateField value={field.value} onChange={field.onChange} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -662,12 +643,10 @@ export default function PurchaseOrderEdit() {
  name="isPrivate"
  render={({ field }) => (
                     <FormItem>
-                      <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                      <FormLabel>Private Document</FormLabel>
+                      <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3">
                         <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <div className="flex-1">
-                          <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
-                          <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
-                        </div>
+                        <p className="flex-1 text-xs text-muted-foreground">Only you &amp; admins</p>
                         <FormControl>
                           <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </FormControl>
@@ -694,6 +673,35 @@ export default function PurchaseOrderEdit() {
                     </FormItem>
                   )}
                 />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField
+ control={form.control}
+ name="deliveryDate"
+ render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Date</FormLabel>
+                      <FormControl>
+                        <DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+ control={form.control}
+ name="deliveryAddress"
+ render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Address</FormLabel>
+                      <FormControl>
+                        <Textarea className="resize-none" rows={3} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                </div>
               </CardContent>
             </Card>
           </div>

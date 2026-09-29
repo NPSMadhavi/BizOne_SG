@@ -12,6 +12,7 @@ import { useGetSettings } from "@workspace/api-client-react";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
 import { CustomerCreateDialog } from "@/components/customer-create-dialog";
 import { isInternationalParty, isSameCountry } from "@/lib/countries";
+import { cn } from "@/lib/utils";
 
 interface DirectoryEntry {
   id: number;
@@ -25,6 +26,8 @@ interface DirectoryEntry {
   currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
+  creditLimitEnabled?: boolean;
+  creditLimit?: string | number | null;
   shipToAddress: string | null;
   quotationTerms: string | null;
   isActive: boolean;
@@ -46,12 +49,15 @@ export interface PickedEntry {
   currency: string;
   shipToAddress: string;
   quotationTerms: string;
+  creditLimitEnabled: boolean;
+  creditLimit: number | null;
 }
 
 interface DirectoryPickerButtonProps {
   type: "vendor" | "customer";
   onSelect: (entry: PickedEntry) => void;
   label?: string;
+  className?: string;
 }
 
 async function fetchEntries(type: "vendor" | "customer"): Promise<DirectoryEntry[]> {
@@ -76,7 +82,7 @@ function buildFullAddress(entry: { address?: string | null; country?: string | n
   return lines.join("\n");
 }
 
-export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPickerButtonProps) {
+export function DirectoryPickerButton({ type, onSelect, label, className }: DirectoryPickerButtonProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -118,10 +124,16 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
     currency?: string | null;
     gstRegistered?: boolean;
     gstNo?: string | null;
+    creditLimitEnabled?: boolean;
+    creditLimit?: string | number | null;
     shipToAddress?: string | null;
     quotationTerms?: string | null;
   }): PickedEntry {
     const isOverseas = isInternationalParty(entry.country, companyCountry);
+    const limitEnabled = !!entry.creditLimitEnabled;
+    const parsedLimit = limitEnabled && entry.creditLimit != null && entry.creditLimit !== ""
+      ? Number(entry.creditLimit)
+      : NaN;
     return {
       name: entry.name,
       address: entry.address || "",
@@ -137,6 +149,8 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
       currency: entry.currency || "",
       shipToAddress: entry.shipToAddress || "",
       quotationTerms: entry.quotationTerms || "",
+      creditLimitEnabled: limitEnabled,
+      creditLimit: Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : null,
     };
   }
 
@@ -162,6 +176,7 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
     name: string; address?: string | null; postalCode?: string | null;
     country?: string | null; contactPerson?: string | null; contactEmail?: string | null;
     phone?: string | null; currency?: string | null; gstRegistered?: boolean; gstNo?: string | null;
+    creditLimitEnabled?: boolean; creditLimit?: string | number | null;
     shipToAddress?: string | null; quotationTerms?: string | null;
   }) {
     onSelect(toPickedEntry(entry));
@@ -177,10 +192,10 @@ export function DirectoryPickerButton({ type, onSelect, label }: DirectoryPicker
         type="button"
         variant="outline"
         size="sm"
-        className="gap-1.5 text-xs h-8"
+        className={cn("h-5 shrink-0 gap-1 px-1.5 text-[10px] leading-none", className)}
         onClick={() => setOpen(true)}
       >
-        <Icon className="h-3.5 w-3.5" />
+        <Icon className="h-2.5 w-2.5" />
         {btnLabel}
       </Button>
 

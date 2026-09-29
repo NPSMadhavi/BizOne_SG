@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formFieldGridClass, formFieldGrid2Class } from "@/lib/form-ui";
 import {
   Dialog,
   DialogContent,
@@ -45,15 +46,10 @@ import {
 } from "@/operations-8june/lib/asset-attachments";
 import { 
   Package, 
-  User, 
-  CreditCard, 
-  Calculator,
-  FileText,
   HelpCircle,
   UserPlus,
   Plus,
   Pencil,
-  Paperclip,
   Upload,
   X
 } from "lucide-react";
@@ -162,7 +158,7 @@ const formSchema = insertAssetSchema.extend({
   serial: z.string().optional(),
   model: z.string().optional(),
   manufacturer: z.string().optional(),
-  status: z.string().min(1, "Status is required"),
+  status: z.string().min(1, "Assignment Status is required"),
   condition: z.string().optional(),
   assignedTo: z.string().optional(),
   location: z.string().optional(),
@@ -888,14 +884,14 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
           {/* Basic Details */}
           <section className="space-y-4">
             <ModalSectionHeader icon={Package} title="Basic Details" />
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+            <div className={formFieldGridClass}>
                       <FormField
                         control={form.control}
                         name="tag"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="flex items-center gap-2 text-sm font-medium text-[#111827]">
-                              Asset Tag <span className="text-destructive">*</span>
+                              Asset Tag <span className="text-[#DC2626]">*</span>
                               <Tooltip>
                                 <TooltipTrigger>
                                   <HelpCircle className="h-4 w-4 text-gray-400" />
@@ -908,7 +904,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             <FormControl>
                               <Input 
                                 placeholder="Auto-generated" 
-                                className="w-full bg-muted/40" 
+                                className="w-full" 
                                 autoFocus={!isEditMode ? false : true}
                                 readOnly={!isEditMode}
                                 {...field}
@@ -925,7 +921,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         name="type"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-sm font-medium text-[#111827]">Asset Name *</FormLabel>
+                            <FormLabel className="text-sm font-medium text-[#111827]">
+                              Asset Name <span className="text-[#DC2626]">*</span>
+                            </FormLabel>
                             <Select
                               key={`type-${assetId ?? "new"}-${field.value}`}
                               open={openOptionMenu === "type"}
@@ -969,7 +967,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         name="category"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-sm font-medium text-[#111827]">Asset Category *</FormLabel>
+                            <FormLabel className="text-sm font-medium text-[#111827]">
+                              Asset Category <span className="text-[#DC2626]">*</span>
+                            </FormLabel>
                             <Select
                               key={`category-${assetId ?? "new"}-${field.value}`}
                               open={openOptionMenu === "category"}
@@ -1015,7 +1015,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                           <FormItem>
                             <FormLabel className="text-sm font-medium text-[#111827]">Serial Number</FormLabel>
                             <FormControl>
-                              <Input placeholder="C02XN1ABMD6R" className="w-full" {...field} />
+                              <Input placeholder="" className="w-full" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1029,7 +1029,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                           <FormItem>
                             <FormLabel className="text-sm font-medium text-[#111827]">Model Number</FormLabel>
                             <FormControl>
-                              <Input placeholder="MacBook Pro 14-inch" className="w-full" {...field} />
+                              <Input placeholder="" className="w-full" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1079,23 +1079,19 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                           </FormItem>
                         )}
                       />
-            </div>
-          </section>
 
-          {/* Assignment & Status */}
-          <section className="space-y-4">
-            <ModalSectionHeader icon={User} title="Assignment & Status" />
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                     <FormField
                       control={form.control}
                       name="status"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-sm font-medium text-[#111827]">Status *</FormLabel>
+                          <FormLabel className="text-sm font-medium text-[#111827]">
+                            Assignment Status <span className="text-[#DC2626]">*</span>
+                          </FormLabel>
                           <Select onValueChange={field.onChange} value={field.value || undefined}>
                             <FormControl>
                               <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select status" />
+                                <SelectValue placeholder="" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="max-h-[14rem]">
@@ -1244,13 +1240,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         </FormItem>
                       )}
                     />
-            </div>
-          </section>
 
-          {/* Procurement Details */}
-          <section className="space-y-4">
-            <ModalSectionHeader icon={CreditCard} title="Procurement Details" />
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                     <FormField
                       control={form.control}
                       name="vendor"
@@ -1258,7 +1248,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         <FormItem>
                           <FormLabel className="text-sm font-medium text-[#111827]">Vendor</FormLabel>
                           <FormControl>
-                            <Input placeholder="Vendor name" className="w-full" {...field} />
+                            <Input placeholder="" className="w-full" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1272,7 +1262,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         <FormItem>
                           <FormLabel className="text-sm font-medium text-[#111827]">Invoice Number</FormLabel>
                           <FormControl>
-                            <Input placeholder="INV-2024-001" className="w-full" {...field} />
+                            <Input placeholder="" className="w-full" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1312,13 +1302,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                         </FormItem>
                       )}
                     />
-            </div>
-          </section>
 
-          {/* Finance Details (Optional) */}
-          <section className="space-y-4">
-            <ModalSectionHeader icon={Calculator} title="Finance Details (Optional)" />
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                         <FormField
                           control={form.control}
                           name="depreciationStartDate"
@@ -1346,7 +1330,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 <Input
                                   type="text"
                                   inputMode="numeric"
-                                  placeholder="e.g. 3"
+                                  placeholder=""
                                   value={field.value ?? ""}
                                   onChange={(e) => {
                                     const v = e.target.value.replace(/\D/g, "");
@@ -1389,93 +1373,86 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
             </div>
           </section>
 
-          {/* Additional Notes + Attachments */}
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-            <section className="space-y-4">
-              <ModalSectionHeader icon={FileText} title="Additional Notes" />
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-sm font-medium text-[#111827]">Description / Notes</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Additional information about this asset..."
-                        className="min-h-[100px] resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </section>
-
-            <section className="space-y-4">
-              <ModalSectionHeader icon={Paperclip} title="Attachments" />
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-[#111827]">Files</label>
-                <div className="space-y-3">
-                  <div className="flex flex-col items-start gap-1">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(event) => {
-                        void handleFilesSelected(event.target.files);
-                        event.target.value = "";
-                      }}
+          <div className={formFieldGrid2Class}>
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-sm font-medium text-[#111827]">Description / Notes</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder=""
+                      className="min-h-[100px] resize-none"
+                      {...field}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-[#E5E7EB] text-[#111827]"
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Files
-                    </Button>
-                    <p className="text-xs text-[#6B7280]">
-                      Attach invoices, warranty cards or photos.
-                    </p>
-                  </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-                  {attachments.length > 0 && (
-                    <ul className="space-y-2">
-                      {attachments.map((attachment) => (
-                        <li
-                          key={attachment.id}
-                          className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
-                        >
-                          <a
-                            href={attachment.dataUrl}
-                            download={attachment.name}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="min-w-0 flex-1 truncate text-sm font-medium text-[#2563EB] hover:underline"
-                          >
-                            {attachment.name}
-                          </a>
-                          <span className="shrink-0 text-xs text-[#6B7280]">
-                            {formatFileSize(attachment.size)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveAttachment(attachment.id)}
-                            className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#F3F4F6] hover:text-[#DC2626]"
-                            aria-label={`Remove ${attachment.name}`}
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#111827]">Attachments</label>
+              <div className="space-y-3">
+                <div className="flex flex-col items-start gap-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleFilesSelected(event.target.files);
+                      event.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-[#E5E7EB] text-[#111827]"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload Files
+                  </Button>
+                  <p className="text-xs text-[#6B7280]">
+                    Attach invoices, warranty cards or photos.
+                  </p>
                 </div>
+
+                {attachments.length > 0 && (
+                  <ul className="space-y-2">
+                    {attachments.map((attachment) => (
+                      <li
+                        key={attachment.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
+                      >
+                        <a
+                          href={attachment.dataUrl}
+                          download={attachment.name}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="min-w-0 flex-1 truncate text-sm font-medium text-[#2563EB] hover:underline"
+                        >
+                          {attachment.name}
+                        </a>
+                        <span className="shrink-0 text-xs text-[#6B7280]">
+                          {formatFileSize(attachment.size)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(attachment.id)}
+                          className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#F3F4F6] hover:text-[#DC2626]"
+                          aria-label={`Remove ${attachment.name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            </section>
+            </div>
           </div>
 
           {!hideFooter && (

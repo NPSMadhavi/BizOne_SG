@@ -46,6 +46,14 @@ async function getAccountByCode(companyId: number, code: string) {
   return acct ?? null;
 }
 
+async function getAccountById(companyId: number, id: number) {
+  const [acct] = await db.select()
+    .from(accountsTable)
+    .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.id, id)))
+    .limit(1);
+  return acct ?? null;
+}
+
 // ── Expense Confirmed ─────────────────────────────────────────────────────────
 
 function isPayrollPayment(expense: { notes?: string | null; description?: string | null }) {
@@ -92,6 +100,7 @@ export async function postExpenseJE(
     vendorName: string;
     description: string;
     category: string;
+    accountId?: number | null;
     amount: string | number;
     gstAmount: string | number;
     gstClaimable: boolean;
@@ -127,14 +136,22 @@ export async function postExpenseJE(
   const claimGst  = !payrollPayment && expense.gstClaimable && gstAmount > 0.001;
   const totalPaid = claimGst ? netAmount + gstAmount : netAmount;
 
-  const expenseCode = ledgerCodeFromNotes(expense.notes) ?? CATEGORY_ACCOUNT[expense.category] ?? "7200";
+  const expenseCode =
+    ledgerCodeFromNotes(expense.notes) ??
+    CATEGORY_ACCOUNT[expense.category] ??
+    (/^\d+$/.test(String(expense.category || "")) ? String(expense.category) : null) ??
+    "7200";
   const creditAcct = payrollPayment
     ? await payableAccount(expense.companyId)
     : await getAccountByCode(expense.companyId, "1010");
-  const [expAcct, inputTaxAcct] = await Promise.all([
-    getAccountByCode(expense.companyId, expenseCode),
+  const linkedAcct = expense.accountId
+    ? await getAccountById(expense.companyId, Number(expense.accountId))
+    : null;
+  const [mappedAcct, inputTaxAcct] = await Promise.all([
+    linkedAcct ? Promise.resolve(null) : getAccountByCode(expense.companyId, expenseCode),
     claimGst ? getAccountByCode(expense.companyId, "1110") : Promise.resolve(null),
   ]);
+  const expAcct = linkedAcct ?? mappedAcct;
   const bankAcct = creditAcct;
 
   if (!bankAcct || !expAcct) {

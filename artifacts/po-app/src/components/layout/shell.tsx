@@ -567,14 +567,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Purchase Orders
           </NavItem>
         )}
-        {hasModuleAccess("vendor_invoices") && (
-          <NavItem href="/vendor-invoices" icon={FileInput} active={location.startsWith("/vendor-invoices")} inGroup>
-            Vendor Invoices
-          </NavItem>
-        )}
         {hasModuleAccess("grn") && (
           <NavItem href="/grn" icon={ClipboardList} active={location.startsWith("/grn")} inGroup>
             GoodsReceipt Note
+          </NavItem>
+        )}
+        {hasModuleAccess("vendor_invoices") && (
+          <NavItem href="/vendor-invoices" icon={FileInput} active={location.startsWith("/vendor-invoices")} inGroup>
+            Vendor Invoices
           </NavItem>
         )}
         {hasModuleAccess("debit_notes") && (
@@ -629,10 +629,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Bill of Materials
           </NavItem>
         )}
-        {hasModuleAccess("multi_price_level") && (
-          <NavItem href="/multi-price-level" icon={DollarSign} active={location.startsWith("/multi-price-level")} inGroup>
-            Multiple Price Levels
-          </NavItem>
+        {/* Hidden from sidebar — keep route/module access intact */}
+        {false && hasModuleAccess("multi_price_level") && (
+        <NavItem href="/multi-price-level" icon={DollarSign} active={location.startsWith("/multi-price-level")} inGroup>
+          Multiple Price Levels
+        </NavItem>
         )}
       </NavGroup>
 
@@ -675,7 +676,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Sales Person Wise Report
           </NavItem>
         )}
-        {hasModuleAccess("batch_expiry") && (
+        {/* Hidden from sidebar — keep route/module access intact */}
+        {false && hasModuleAccess("batch_expiry") && (
           <NavItem href="/inventory/batch-expiry" icon={Hourglass} active={location.startsWith("/inventory/batch-expiry")} inGroup>
             Batch & Expiry
           </NavItem>

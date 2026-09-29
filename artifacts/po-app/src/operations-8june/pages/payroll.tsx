@@ -1137,7 +1137,6 @@ export default function PayrollPage() {
     <>
       <ManagementPageHeader
         title="Payroll Management"
-        description="Manage employee payroll and process monthly payroll"
         action={
           <div className="flex shrink-0 flex-nowrap items-center gap-2">
             <Button

@@ -100,7 +100,7 @@ export function VendorInvoiceLineItems({
 
   const handleStockSelect = (selection: StockItemSelection) => {
     if (stockPickerIndex == null) return;
-    const { item, qty, warehouseId, warehouseName } = selection;
+    const { item, qty, warehouseId, warehouseName, batchNo, expiryDate, manufacturingDate } = selection;
     updateItem(stockPickerIndex, {
       partNumber: item.code || "",
       description: item.name ? `<p>${item.name}</p>` : "",
@@ -111,6 +111,9 @@ export function VendorInvoiceLineItems({
       stockItemId: item.id,
       warehouseId: warehouseId || undefined,
       warehouseName: warehouseName || undefined,
+      batchNo: batchNo || undefined,
+      expiryDate: expiryDate || undefined,
+      manufacturingDate: manufacturingDate || undefined,
     });
     setStockPickerIndex(null);
   };
@@ -464,6 +467,7 @@ export function VendorInvoiceLineItems({
         mode="receive"
         ignoreStockLimit
         requireWarehouse={false}
+        showBatchFields
       />
     </>
   );

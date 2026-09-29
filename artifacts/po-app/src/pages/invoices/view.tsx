@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail, Copy } from "lucide-react";
+import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail, Copy, AlertTriangle } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart, listInvoiceReportTemplates } from "@/lib/report-designer/api";
@@ -129,6 +129,16 @@ export default function InvoiceView() {
 
   const { data: doc, isLoading, refetch } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
+  });
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ["customers-credit-limit", selectedCompany?.id],
+    queryFn: async () => {
+      const res = await fetch("/api/customers", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedCompany?.id,
   });
 
   const { data: reportTemplates = [] } = useQuery({
@@ -323,6 +333,15 @@ export default function InvoiceView() {
   const tax = Number(doc.tax) || 0;
   const total = Number(doc.totalAmount) || 0;
   const discountAmt = Number((doc as any).discountAmount) || 0;
+  const matchedCustomer = (customers as any[]).find(
+    (x: any) => (x.name || "").toLowerCase().trim() === (doc.customerName || "").toLowerCase().trim()
+  );
+  const customerCreditLimit =
+    matchedCustomer?.creditLimitEnabled && matchedCustomer?.creditLimit != null && matchedCustomer.creditLimit !== ""
+      ? Number(matchedCustomer.creditLimit)
+      : null;
+  const creditLimitExceeded =
+    customerCreditLimit != null && Number.isFinite(customerCreditLimit) && total > customerCreditLimit;
   const regularItems = items.filter((item: any) => item.type !== "section");
   const hasItemDiscount = regularItems.some((item: any) => Number(item.discount) > 0);
   const hasPartNo = regularItems.some((item: any) => item.partNumber && String(item.partNumber).trim() !== "");
@@ -602,6 +621,15 @@ export default function InvoiceView() {
             {discountAmt > 0 && <div className="flex justify-between text-xs text-muted-foreground"><span>Net Amount</span><span>{fmt(subtotal - discountAmt)}</span></div>}
             <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span>{fmt(tax)}</span></div>
             <div className="flex justify-between font-semibold text-base border-t pt-2"><span>Total</span><span>{fmt(total)}</span></div>
+            {creditLimitExceeded && customerCreditLimit != null && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 mt-2">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  Invoice total exceeds this customer&apos;s credit limit of{" "}
+                  <strong>{fmt(customerCreditLimit)}</strong>.
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </Card>

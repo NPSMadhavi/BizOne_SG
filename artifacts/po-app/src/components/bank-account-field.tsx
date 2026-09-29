@@ -33,6 +33,83 @@ export function getStoredBankAccounts(): BankAccountItem[] {
   return [];
 }
 
+/** Mask account number like XXXXXXX2424 for ledger display names. */
+export function maskedBankAccountName(bank: BankAccountItem): string {
+  const num = String(bank.accountNumber || "");
+  const masked =
+    num.length <= 4 ? num : `${"X".repeat(Math.min(7, Math.max(0, num.length - 4)))}${num.slice(-4)}`;
+  return `${bank.bankName}${masked ? masked : ""}`.trim();
+}
+
+export function bankMatchesAccount(
+  bank: BankAccountItem,
+  account: { code: string; name: string },
+): boolean {
+  const name = account.name.toLowerCase();
+  const bankName = (bank.bankName || "").toLowerCase();
+  const accNum = String(bank.accountNumber || "");
+  const label = (bank.label || "").toLowerCase();
+  if (label && (name === label || `${account.code} ${account.name}`.toLowerCase() === label)) return true;
+  if (bankName && name.includes(bankName)) return true;
+  if (accNum && name.includes(accNum)) return true;
+  if (accNum.length > 4 && name.includes(accNum.slice(-4))) return true;
+  return false;
+}
+
+/**
+ * Ensure each Expenses "Select Bank Account" entry exists in Chart of Accounts
+ * so Bank Reconciliation (and JEs) can select them.
+ */
+export async function syncStoredBanksToChartOfAccounts(): Promise<void> {
+  const banks = getStoredBankAccounts();
+  if (banks.length === 0) return;
+
+  let accounts: { id: number; code: string; name: string }[] = [];
+  try {
+    const res = await fetch("/api/accounts", { credentials: "include" });
+    if (!res.ok) return;
+    accounts = await res.json();
+  } catch {
+    return;
+  }
+
+  const usedCodes = new Set(accounts.map(a => a.code));
+
+  for (const bank of banks) {
+    if (accounts.some(a => bankMatchesAccount(bank, a))) continue;
+
+    let code = (bank.bankCode || "").trim();
+    if (!code || usedCodes.has(code)) {
+      // Prefer 10xx cash-bank range; fall back to BA-xxxx
+      let n = 1050;
+      while (usedCodes.has(String(n)) && n < 1099) n += 1;
+      code = usedCodes.has(String(n)) ? `BA${String(bank.accountNumber || Date.now()).slice(-4)}` : String(n);
+    }
+    usedCodes.add(code);
+
+    try {
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          code,
+          name: maskedBankAccountName(bank) || bank.label,
+          type: "asset",
+          subType: "current_asset",
+          description: `Bank account from Expenses: ${bank.label}`,
+        }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        accounts.push(created);
+      }
+    } catch {
+      /* ignore — may require admin */
+    }
+  }
+}
+
 export function saveNewBankAccount(item: Omit<BankAccountItem, "id" | "label">): BankAccountItem {
   const label = `${item.bankName} - ${item.accountNumber}${item.currency ? ` (${item.currency})` : ""}`;
   const newItem: BankAccountItem = {
@@ -104,6 +181,7 @@ export function BankAccountField({
     onBankAccountChange(created.label);
     resetCreateForm();
     setCreateBankOpen(false);
+    void syncStoredBanksToChartOfAccounts();
   };
 
   return (

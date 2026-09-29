@@ -333,3 +333,29 @@
     inset: -1px;
   }
 }
+
+/* Line-item / table inputs stay compact — do not use form field boxes */
+table input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+table textarea {
+  height: 2.25rem;
+  min-height: 2.25rem;
+  border-radius: 0.375rem;
+  background-color: transparent;
+  box-shadow: none;
+}
+table textarea {
+  height: auto;
+  min-height: 2.25rem;
+}
+table button[role="combobox"],
+table [data-radix-collection-item] {
+  /* no-op placeholder for specificity */
+}
+table button.flex.h-10,
+td button.flex.h-10,
+th button.flex.h-10 {
+  height: 2.25rem;
+  border-radius: 0.375rem;
+  background-color: transparent;
+  box-shadow: none;
+}

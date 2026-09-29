@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -18,7 +18,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -55,6 +54,7 @@ import {
   Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formFieldBoxClass, formFieldGrid2Class } from "@/lib/form-ui";
 import {
   TooltipProvider,
   Tooltip,
@@ -69,6 +69,75 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
+import {
+  Dialog as TypeDialog,
+  DialogContent as TypeDialogContent,
+  DialogFooter as TypeDialogFooter,
+  DialogHeader as TypeDialogHeader,
+  DialogTitle as TypeDialogTitle,
+} from "@/components/ui/dialog";
+
+const LICENSE_TYPE_STORAGE_KEY = "license-custom-types-v1";
+
+const DEFAULT_LICENSE_TYPES = [
+  { value: "software", label: "Software" },
+  { value: "hardware", label: "Hardware" },
+  { value: "subscription", label: "Subscription" },
+  { value: "service", label: "Service" },
+  { value: "other", label: "Other" },
+] as const;
+
+const ENUM_LICENSE_TYPES = new Set(DEFAULT_LICENSE_TYPES.map((t) => t.value));
+
+type LicenseTypeOption = { value: string; label: string };
+
+function loadCustomLicenseTypes(): LicenseTypeOption[] {
+  try {
+    const raw = localStorage.getItem(LICENSE_TYPE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const value = String((item as any).value || "").trim().toLowerCase();
+        const label = String((item as any).label || "").trim();
+        if (!value || !label) return null;
+        return { value, label };
+      })
+      .filter((item): item is LicenseTypeOption => !!item);
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomLicenseTypes(types: LicenseTypeOption[]) {
+  try {
+    localStorage.setItem(LICENSE_TYPE_STORAGE_KEY, JSON.stringify(types));
+  } catch {
+    // ignore
+  }
+}
+
+function slugifyLicenseType(label: string) {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || `custom-${Date.now()}`;
+}
+
+function parseLicenseTypeTag(notes?: string | null): string | null {
+  if (!notes) return null;
+  const match = notes.match(/^__LT__:([^|\n]+)/);
+  return match ? match[1].trim() : null;
+}
+
+function stripLicenseTypeTag(notes?: string | null): string {
+  if (!notes) return "";
+  return notes.replace(/^__LT__:[^|\n]+\|?/, "").trim();
+}
 
 // Function to create the schema based on whether license key is required
 const createLicenseFormSchema = (hasLicenseKey: boolean) => {
@@ -77,7 +146,7 @@ const createLicenseFormSchema = (hasLicenseKey: boolean) => {
     licenseKey: hasLicenseKey
       ? z.string().min(1, "License key is required")
       : z.string().optional().nullable(),
-    type: z.enum(["software", "hardware", "subscription", "service", "other"]),
+    type: z.string().min(1, "License type is required"),
     assetId: z.number().nullable().optional(),
     // Accept both string (ISO format from date input) and Date objects
     purchaseDate: z.union([z.string(), z.date()]).optional().nullable().transform((val) => {
@@ -122,12 +191,13 @@ type LicenseFormValues = z.infer<typeof licenseFormSchema>;
 type CustomRenewalUnit = "days" | "weeks" | "months" | "years";
 
 function parseCustomRenewal(notes?: string | null): { every: number; unit: CustomRenewalUnit } {
-  if (!notes) return { every: 3, unit: "months" };
-  const tagged = notes.match(/^__CR__:(\d+):(days|weeks|months|years)$/);
+  const cleaned = stripLicenseTypeTag(notes);
+  if (!cleaned) return { every: 3, unit: "months" };
+  const tagged = cleaned.match(/^__CR__:(\d+):(days|weeks|months|years)$/);
   if (tagged) {
     return { every: Number(tagged[1]), unit: tagged[2] as CustomRenewalUnit };
   }
-  const readable = notes.match(/^Renews every (\d+) (days|weeks|months|years)$/i);
+  const readable = cleaned.match(/^Renews every (\d+) (days|weeks|months|years)$/i);
   if (readable) {
     return { every: Number(readable[1]), unit: readable[2].toLowerCase() as CustomRenewalUnit };
   }
@@ -161,6 +231,10 @@ export default function LicenseForm({
   );
   const [isVendorFormOpen, setIsVendorFormOpen] = useState(false);
   const [showLicenseKey, setShowLicenseKey] = useState(false);
+  const [customLicenseTypes, setCustomLicenseTypes] = useState<LicenseTypeOption[]>(() => loadCustomLicenseTypes());
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const [typeDialogOpen, setTypeDialogOpen] = useState(false);
+  const [newTypeName, setNewTypeName] = useState("");
 
   // Fetch all assets for the asset selection
   const { data: assets = [] } = useQuery<Asset[]>({
@@ -172,14 +246,30 @@ export default function LicenseForm({
     queryKey: ["/api/vendors"],
   });
 
+  const licenseTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: LicenseTypeOption[] = [];
+    for (const option of [...DEFAULT_LICENSE_TYPES, ...customLicenseTypes]) {
+      if (seen.has(option.value)) continue;
+      seen.add(option.value);
+      merged.push(option);
+    }
+    return merged;
+  }, [customLicenseTypes]);
+
   // Initialize form with default values or existing license data
   const parsedCustom = parseCustomRenewal(license?.notes);
+  const storedTypeLabel = parseLicenseTypeTag(license?.notes);
+  const initialType =
+    storedTypeLabel
+      ? slugifyLicenseType(storedTypeLabel)
+      : license?.type || "software";
   const form = useForm<LicenseFormValues>({
     resolver: zodResolver(createLicenseFormSchema(hasLicenseKey)),
     defaultValues: {
       name: license?.name || "",
       licenseKey: license?.licenseKey || "",
-      type: license?.type || "software",
+      type: initialType,
       assetId: license?.assetId || null,
       purchaseDate: license?.purchaseDate ? new Date(license.purchaseDate) : null,
       expiryDate: license?.expiryDate ? new Date(license.expiryDate) : null,
@@ -198,6 +288,18 @@ export default function LicenseForm({
 
   // Check if license is expired
   const isExpired = form.watch("expiryDate") && isBefore(form.watch("expiryDate")!, new Date());
+
+  useEffect(() => {
+    const label = parseLicenseTypeTag(license?.notes);
+    if (!label) return;
+    const value = slugifyLicenseType(label);
+    setCustomLicenseTypes((prev) => {
+      if (prev.some((t) => t.value === value)) return prev;
+      const next = [...prev, { value, label }];
+      saveCustomLicenseTypes(next);
+      return next;
+    });
+  }, [license?.notes]);
 
   // Update form validation when hasLicenseKey changes
   useEffect(() => {
@@ -269,16 +371,23 @@ export default function LicenseForm({
     const { customRenewalEvery, customRenewalUnit, ...rest } = values;
     const every = customRenewalEvery && customRenewalEvery > 0 ? customRenewalEvery : 3;
     const unit = customRenewalUnit || "months";
+    const selectedType = licenseTypeOptions.find((t) => t.value === values.type);
+    const isCustomType = !!values.type && !ENUM_LICENSE_TYPES.has(values.type);
+    const apiType = ENUM_LICENSE_TYPES.has(values.type) ? values.type : "other";
+    const crNotes =
+      values.renewalCycle === "custom" ? `__CR__:${every}:${unit}` : "";
+    const typeTag =
+      isCustomType && selectedType?.label ? `__LT__:${selectedType.label}` : "";
+    const notes =
+      typeTag && crNotes ? `${typeTag}|${crNotes}` : typeTag || crNotes || null;
 
     const updatedValues: LicenseFormValues = {
       ...rest,
+      type: apiType as LicenseFormValues["type"],
       purchaseDate: values.purchaseDate ? new Date(values.purchaseDate) : null,
       expiryDate: values.expiryDate ? new Date(values.expiryDate) : null,
       seats: values.seats ?? null,
-      notes:
-        values.renewalCycle === "custom"
-          ? `__CR__:${every}:${unit}`
-          : null,
+      notes,
     };
 
     // Auto-set status to expired if expiry date has passed
@@ -291,6 +400,32 @@ export default function LicenseForm({
     } else {
       createMutation.mutate(updatedValues);
     }
+  };
+
+  const handleCreateLicenseType = () => {
+    const label = newTypeName.trim();
+    if (!label) {
+      toast({ title: "Name required", description: "Enter a license type name.", variant: "destructive" });
+      return;
+    }
+    const value = slugifyLicenseType(label);
+    const existing = licenseTypeOptions.find(
+      (t) => t.value === value || t.label.toLowerCase() === label.toLowerCase(),
+    );
+    if (existing) {
+      form.setValue("type", existing.value, { shouldDirty: true, shouldValidate: true });
+      setTypeDialogOpen(false);
+      setNewTypeName("");
+      toast({ title: "Type selected", description: `${existing.label} is now selected.` });
+      return;
+    }
+    const next = [...customLicenseTypes, { value, label }];
+    setCustomLicenseTypes(next);
+    saveCustomLicenseTypes(next);
+    form.setValue("type", value, { shouldDirty: true, shouldValidate: true });
+    setTypeDialogOpen(false);
+    setNewTypeName("");
+    toast({ title: "License type created", description: `${label} added to the list.` });
   };
 
   useEffect(() => {
@@ -310,17 +445,19 @@ export default function LicenseForm({
             >
               <section className="space-y-4">
                 <ModalSectionHeader title="License Information" />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                <div className={formFieldGrid2Class}>
                           {/* Name */}
                           <FormField
                             control={form.control}
                             name="name"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>License Name*</FormLabel>
+                                <FormLabel>
+                                  License Name <span className="text-[#DC2626]">*</span>
+                                </FormLabel>
                                 <FormControl>
                                   <Input 
-                                    placeholder="e.g., Microsoft Office 365" 
+                                    placeholder="" 
                                     {...field} 
                                     autoFocus
                                   />
@@ -336,21 +473,39 @@ export default function LicenseForm({
                             name="type"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>License Type*</FormLabel>
+                                <FormLabel>
+                                  License Type <span className="text-[#DC2626]">*</span>
+                                </FormLabel>
                                 <Select
+                                  open={typeMenuOpen}
+                                  onOpenChange={setTypeMenuOpen}
                                   onValueChange={field.onChange}
-                                  defaultValue={field.value}
+                                  value={field.value || undefined}
                                 >
                                   <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select type" />
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue placeholder="" />
                                     </SelectTrigger>
                                   </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="software">Software</SelectItem>
-                                    <SelectItem value="subscription">Subscription</SelectItem>
-                                    <SelectItem value="service">Service</SelectItem>
-                                    <SelectItem value="other">Other</SelectItem>
+                                  <SelectContent className="max-h-[14rem]">
+                                    <div
+                                      className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        setTypeMenuOpen(false);
+                                        setNewTypeName("");
+                                        setTypeDialogOpen(true);
+                                      }}
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                      Create New License Type
+                                    </div>
+                                    <div className="my-1 border-t" />
+                                    {licenseTypeOptions.map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                                 <FormMessage />
@@ -359,7 +514,7 @@ export default function LicenseForm({
                           />
 
                           {/* Have License Key Toggle */}
-                          <div className="md:col-span-2">
+                          <div className="flex min-h-10 flex-col justify-center">
                             <div className="flex items-center gap-3">
                               <Label className="text-sm font-medium text-[#111827]">Have License Key</Label>
                               <Switch
@@ -377,21 +532,22 @@ export default function LicenseForm({
 
                           {/* License Key - Conditional */}
                           {hasLicenseKey && (
-                            <div className="md:col-span-2">
                             <FormField
                               control={form.control}
                               name="licenseKey"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>License Key*</FormLabel>
+                                  <FormLabel>
+                                    License Key <span className="text-[#DC2626]">*</span>
+                                  </FormLabel>
                                   <FormControl>
-                                    <div className="relative flex items-center w-full">
+                                    <div className="relative flex w-full items-center">
                                       <Input
                                         type={showLicenseKey ? "text" : "password"}
-                                        placeholder="e.g., ABCD-1234-EFGH-5678"
+                                        placeholder=""
                                         {...field}
                                         value={field.value || ""}
-                                        className="font-mono text-sm pr-10 w-full"
+                                        className="w-full pr-10 font-mono text-sm"
                                         onChange={(e) => {
                                           // Auto-format license key to uppercase and add hyphens
                                           let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -403,7 +559,7 @@ export default function LicenseForm({
                                       />
                                       <button
                                         type="button"
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none p-1 rounded-md hover:bg-muted transition-colors"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none"
                                         onClick={() => setShowLicenseKey(!showLicenseKey)}
                                       >
                                         {showLicenseKey ? (
@@ -414,14 +570,10 @@ export default function LicenseForm({
                                       </button>
                                     </div>
                                   </FormControl>
-                                  <FormDescription className="text-xs">
-                                    Enter the license key as provided by the manufacturer
-                                  </FormDescription>
                                   <FormMessage />
                                 </FormItem>
                               )}
                             />
-                            </div>
                           )}
 
                 </div>
@@ -429,7 +581,7 @@ export default function LicenseForm({
 
               <section className="space-y-4">
                 <ModalSectionHeader title="Purchase Details" />
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                <div className={formFieldGrid2Class}>
 
                           {/* Cost */}
                           <FormField
@@ -499,7 +651,7 @@ export default function LicenseForm({
                                   <FormLabel className="flex items-center gap-2">
                                     Expiry Date
                                     {isExpiredLicense && (
-                                      <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium">
+                                      <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
                                         Expired
                                       </span>
                                     )}
@@ -531,7 +683,7 @@ export default function LicenseForm({
                                 >
                                   <FormControl>
                                     <SelectTrigger className="w-full">
-                                      <SelectValue placeholder="Select status" />
+                                      <SelectValue placeholder="" />
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
@@ -565,11 +717,6 @@ export default function LicenseForm({
                               </FormItem>
                             )}
                           />
-                </div>
-              </section>
-
-              <section className="space-y-4">
-                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
 
                         {/* Asset Licenses - Searchable */}
                         <FormField
@@ -585,8 +732,12 @@ export default function LicenseForm({
                                       variant="outline"
                                       role="combobox"
                                       aria-expanded={assetSearchOpen}
-                                      className="w-full justify-between"
+                                      className={cn(
+                                        formFieldBoxClass,
+                                        "w-full justify-between px-3 font-normal hover:bg-[#F8FAFC]",
+                                      )}
                                     >
+                                      <span className="truncate">
                                       {field.value && field.value !== null
                                         ? (() => {
                                             const selectedAsset = assets.find(asset => asset.id === field.value);
@@ -595,6 +746,7 @@ export default function LicenseForm({
                                               : "None";
                                           })()
                                         : "Select asset (optional)..."}
+                                      </span>
                                       <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                     </Button>
                                   </FormControl>
@@ -665,8 +817,8 @@ export default function LicenseForm({
                                 value={field.value?.toString() || "none"}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select vendor (optional)" />
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
@@ -696,7 +848,7 @@ export default function LicenseForm({
                         )}
                       />
 
-                      {/* Renewal Cycle — half width like other purchase fields */}
+                      {/* Renewal Cycle */}
                       <div className="space-y-3">
                         <FormField
                           control={form.control}
@@ -721,8 +873,8 @@ export default function LicenseForm({
                                 value={field.value || "none"}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select renewal cycle" />
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
@@ -758,7 +910,7 @@ export default function LicenseForm({
                         />
 
                         {form.watch("renewalCycle") === "custom" && (
-                          <div className="rounded-xl border border-[#E0E7FF] bg-[#F8FAFF] p-4 space-y-4">
+                          <div className="space-y-4 rounded-xl border border-[#E0E7FF] bg-[#F8FAFF] p-4 md:col-span-2">
                             <div className="flex items-start gap-3">
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EDE9FE]">
                                 <Settings className="h-4 w-4 text-violet-600" />
@@ -784,7 +936,7 @@ export default function LicenseForm({
                                       <Input
                                         type="number"
                                         min={1}
-                                        className="!mt-0 h-10 w-full bg-white"
+                                        className="!mt-0 h-10 w-full"
                                         value={field.value ?? 3}
                                         onChange={(e) => {
                                           const n = parseInt(e.target.value, 10);
@@ -809,7 +961,7 @@ export default function LicenseForm({
                                       onValueChange={field.onChange}
                                     >
                                       <FormControl>
-                                        <SelectTrigger className="!mt-0 h-10 w-full bg-white">
+                                        <SelectTrigger className="!mt-0 h-10 w-full">
                                           <SelectValue />
                                         </SelectTrigger>
                                       </FormControl>
@@ -874,6 +1026,34 @@ export default function LicenseForm({
           form.setValue("vendorId", vendor.id);
         }}
       />
+
+      <TypeDialog open={typeDialogOpen} onOpenChange={setTypeDialogOpen}>
+        <TypeDialogContent className="sm:max-w-md">
+          <TypeDialogHeader>
+            <TypeDialogTitle>Create New License Type</TypeDialogTitle>
+          </TypeDialogHeader>
+          <Input
+            autoFocus
+            value={newTypeName}
+            onChange={(event) => setNewTypeName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                handleCreateLicenseType();
+              }
+            }}
+            placeholder=""
+          />
+          <TypeDialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTypeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleCreateLicenseType}>
+              Save
+            </Button>
+          </TypeDialogFooter>
+        </TypeDialogContent>
+      </TypeDialog>
     </>
   );
 }

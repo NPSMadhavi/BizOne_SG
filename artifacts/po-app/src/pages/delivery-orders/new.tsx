@@ -188,7 +188,6 @@ export default function DeliveryOrderNew() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Delivery Order</h1>
-            <p className="text-muted-foreground mt-1">Create a new delivery order.</p>
           </div>
         </div>
         {nextDoNumber && (
@@ -201,83 +200,114 @@ export default function DeliveryOrderNew() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit((v) => onSubmit(v), onFormInvalid)} className="space-y-8">
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
-                <DirectoryPickerButton
- type="customer"
- onSelect={(c) => {
-                    form.setValue("customerName", c.name);
-                    form.setValue("customerAddress", c.fullAddress);
-                    form.setValue("customerContact", c.contactPerson);
-                    form.setValue("customerContactEmail", c.contactEmail);
-                  }}
-                />
               </CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="customerName" render={({ field }) => (
-                  <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                      <ContactAutocomplete
- type="customer"
- value={field.value}
- onChange={field.onChange}
- onSelect={(c) => {
-                          form.setValue("customerName", c.name);
-                          if (c.address) form.setValue("customerAddress", c.address);
-                          if (c.contact) form.setValue("customerContact", c.contact);
-                          if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
-                        }}
-                      />
-                    </FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Address</FormLabel>
-                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContact" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Person / Email</FormLabel>
-                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="customerName" render={({ field }) => (
+                    <FormItem>
+                      <div className="flex h-5 items-center justify-between gap-1.5">
+                        <FormLabel className="leading-none">Customer Name <span className="text-destructive">*</span></FormLabel>
+                        <DirectoryPickerButton
+                          type="customer"
+                          onSelect={(c) => {
+                            form.setValue("customerName", c.name);
+                            form.setValue("customerAddress", c.fullAddress);
+                            form.setValue("customerContact", c.contactPerson);
+                            form.setValue("customerContactEmail", c.contactEmail);
+                          }}
+                        />
+                      </div>
+                      <FormControl>
+                        <ContactAutocomplete
+                          type="customer"
+                          value={field.value}
+                          onChange={field.onChange}
+                          onSelect={(c) => {
+                            form.setValue("customerName", c.name);
+                            if (c.address) form.setValue("customerAddress", c.address);
+                            if (c.contact) form.setValue("customerContact", c.contact);
+                            if (c.email) form.setValue("customerContactEmail", c.email);
+                            if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="customerContact" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                      <FormControl><Input type="email" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField control={form.control} name="customerAddress" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Address</FormLabel>
+                      <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Delivery Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <FormField control={form.control} name="issueDate" render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Document Date" />
-                    </FormControl><FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
-                  <FormItem><FormLabel>Payment Terms</FormLabel>
-                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <div>
-                  <p className="text-sm font-medium mb-1.5">Sales Order</p>
-                  <p className="h-9 flex items-center px-3 rounded-md border bg-muted/40 text-sm font-mono text-muted-foreground">—</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="issueDate" render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <IssueDateField value={field.value || ""} onChange={field.onChange} label="Document Date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Terms</FormLabel>
+                      <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div>
+                    <p className="text-sm font-medium mb-1.5">Sales Order</p>
+                    <p className="h-10 flex items-center px-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] text-sm font-mono text-muted-foreground">—</p>
+                  </div>
                 </div>
-
-                <FormField control={form.control} name="isPrivate" render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
-                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1">
-                        <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Private Document</FormLabel>
+                      <div className="flex h-10 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-2.5">
+                        <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">Only you &amp; admins</p>
+                        <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                       </div>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    </div>
-                  </FormItem>
-                )} />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Delivery Date</FormLabel>
+                      <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </CardContent>
             </Card>
           </div>

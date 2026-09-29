@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { addDays, addWeeks, format } from "date-fns";
 
@@ -39,8 +38,8 @@ export function DeliveryDateField({
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap gap-1.5 shrink-0">
         {QUICK_OPTIONS.map(opt => {
           const optVal = opt.getValue();
           const isActive = nativeToDisplay(value) === optVal || value === optVal;
@@ -60,7 +59,7 @@ export function DeliveryDateField({
           );
         })}
       </div>
-      <div className={allowCustomText ? "flex gap-2 items-center" : ""}>
+      <div className={allowCustomText ? "flex min-w-[12rem] flex-1 gap-2 items-center" : "w-[11rem] shrink-0"}>
         <Input
           type="date"
           value={isDateString ? value : ""}

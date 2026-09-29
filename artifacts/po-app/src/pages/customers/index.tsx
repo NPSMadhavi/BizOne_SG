@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit2, Trash2, MapPin, Globe, Info, Check } from "lucide-react";
+import { Plus, Edit2, Trash2, MapPin, Globe, Info, Check, Eye } from "lucide-react";
 import {
   ManagementPageHeader,
   ManagementSearchBar,
@@ -58,6 +58,8 @@ interface Customer {
   currency: string | null;
   gstRegistered: boolean;
   gstNo: string | null;
+  creditLimitEnabled: boolean;
+  creditLimit: string | null;
   shipToAddress: string | null;
   quotationTerms: string | null;
   isActive: boolean;
@@ -67,8 +69,38 @@ interface Customer {
 const blank = (): Partial<Customer> => ({
   name: "", address: "", postalCode: "", country: "Singapore", contactPerson: "",
   contactEmail: "", phone: "", currency: "SGD", gstRegistered: false, gstNo: "",
+  creditLimitEnabled: false, creditLimit: "",
   shipToAddress: "", quotationTerms: "", isActive: true,
 });
+
+function customerToForm(c: Customer | Record<string, any>): Partial<Customer> {
+  const creditLimitEnabled = Boolean(
+    c.creditLimitEnabled ?? (c as any).credit_limit_enabled
+  );
+  const rawLimit = c.creditLimit ?? (c as any).credit_limit;
+  const gstRegistered = Boolean(
+    c.gstRegistered ?? (c as any).gst_registered
+  );
+  const gstNo = c.gstNo ?? (c as any).gst_no ?? "";
+  return {
+    ...c,
+    name: c.name ?? "",
+    address: c.address ?? "",
+    postalCode: c.postalCode ?? (c as any).postal_code ?? "",
+    country: c.country ?? "",
+    contactPerson: c.contactPerson ?? (c as any).contact_person ?? "",
+    contactEmail: c.contactEmail ?? (c as any).contact_email ?? "",
+    phone: c.phone ?? "",
+    currency: c.currency ?? "",
+    gstRegistered,
+    gstNo: gstNo || "",
+    creditLimitEnabled,
+    creditLimit: rawLimit != null && rawLimit !== "" ? String(rawLimit) : "",
+    quotationTerms: c.quotationTerms ?? (c as any).quotation_terms ?? "",
+    shipToAddress: c.shipToAddress ?? (c as any).ship_to_address ?? "",
+    isActive: (c.isActive ?? (c as any).is_active) !== false,
+  };
+}
 
 async function fetchCustomers(): Promise<Customer[]> {
   const res = await fetch("/api/customers", { credentials: "include" });
@@ -103,6 +135,7 @@ export default function CustomersPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<"create" | "edit" | "view">("create");
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<Partial<Customer>>(blank());
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -137,13 +170,35 @@ export default function CustomersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       setDeleteId(null);
+      setDialogOpen(false);
+      setEditing(null);
       toast({ title: "Deleted", description: "Customer removed." });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const openNew = () => { setEditing(null); setForm(blank()); setDialogOpen(true); };
-  const openEdit = (c: Customer) => { setEditing(c); setForm({ ...c }); setDialogOpen(true); };
+  const isView = dialogMode === "view";
+
+  const openNew = () => {
+    setEditing(null);
+    setDialogMode("create");
+    setForm(blank());
+    setDialogOpen(true);
+  };
+  const openEdit = (c: Customer) => {
+    const latest = customers.find((x) => x.id === c.id) || c;
+    setEditing(latest);
+    setDialogMode("edit");
+    setForm(customerToForm(latest));
+    setDialogOpen(true);
+  };
+  const openView = (c: Customer) => {
+    const latest = customers.find((x) => x.id === c.id) || c;
+    setEditing(latest);
+    setDialogMode("view");
+    setForm(customerToForm(latest));
+    setDialogOpen(true);
+  };
   const setField = (k: keyof Customer, val: any) => setForm(p => ({ ...p, [k]: val }));
 
   const mutationRef = useRef(mutation);
@@ -299,18 +354,12 @@ export default function CustomersPage() {
                     </TableCell>
                     <TableCell className="w-px whitespace-nowrap">
                       <div className="flex items-center justify-start gap-2">
+                        <ManagementIconAction label="View customer" onClick={() => openView(c)}>
+                          <Eye className="h-4 w-4" />
+                        </ManagementIconAction>
                         <ManagementIconAction label="Edit customer" onClick={() => openEdit(c)}>
                           <Edit2 className="h-4 w-4" />
                         </ManagementIconAction>
-                        {canManage && (
-                          <ManagementIconAction
-                            variant="delete"
-                            label="Delete customer"
-                            onClick={() => setDeleteId(c.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </ManagementIconAction>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -340,13 +389,21 @@ export default function CustomersPage() {
         )}
       </ManagementTableCard>
 
-      {/* Create / Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* Create / Edit / View Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open);
+        if (!open) {
+          setEditing(null);
+          setDialogMode("create");
+        }
+      }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Customer" : "New Customer"}</DialogTitle>
+            <DialogTitle>
+              {dialogMode === "view" ? "View Customer" : editing ? "Edit Customer" : "New Customer"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className={`space-y-4 py-2 ${isView ? "pointer-events-none select-none" : ""}`}>
             <div className="space-y-1.5">
               <Label>Company / Customer Name <span className="text-destructive">*</span></Label>
               <Input value={form.name || ""} onChange={e => setField("name", e.target.value)} />
@@ -521,14 +578,15 @@ export default function CustomersPage() {
                     </p>
                   </div>
                   <Switch
-                    checked={form.gstRegistered || false}
+                    checked={!!form.gstRegistered}
                     onCheckedChange={v => setField("gstRegistered", v)}
+                    disabled={isView}
                   />
                 </div>
-                {form.gstRegistered && (
+                {!!form.gstRegistered && (
                   <div className="space-y-1.5">
                     <Label>GST / Tax Registration Number</Label>
-                    <Input value={form.gstNo || ""} onChange={e => setField("gstNo", e.target.value)} />
+                    <Input value={form.gstNo || ""} onChange={e => setField("gstNo", e.target.value)} readOnly={isView} />
                   </div>
                 )}
               </div>
@@ -540,6 +598,37 @@ export default function CustomersPage() {
                 Select a country to determine if GST applies to this customer.
               </div>
             )}
+
+            <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-semibold">Credit Limit</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Toggle on to set a credit limit for this customer. Tax invoices that exceed the limit will show a warning.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!form.creditLimitEnabled}
+                  onCheckedChange={v => setField("creditLimitEnabled", v)}
+                  disabled={isView}
+                />
+              </div>
+              {!!form.creditLimitEnabled && (
+                <div className="space-y-1.5">
+                  <Label>Credit Limit</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    placeholder=""
+                    value={form.creditLimit ?? ""}
+                    onChange={e => setField("creditLimit", e.target.value)}
+                    readOnly={isView}
+                  />
+                </div>
+              )}
+            </div>
 
             <div className="space-y-1.5">
               <Label>Quotation Terms &amp; Conditions <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
@@ -561,20 +650,47 @@ export default function CustomersPage() {
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => {
-                const digits = parseSingaporePhoneDigits(form.phone || "");
-                mutation.mutate({
-                  ...form,
-                  phone: digits ? formatSingaporePhoneForApi(digits) : "",
-                });
-              }}
-              disabled={!form.name || mutation.isPending}
-            >
-              {mutation.isPending ? "Saving…" : editing ? "Update Customer" : "Create Customer"}
-            </Button>
+          <DialogFooter className={dialogMode === "edit" && canManage ? "sm:justify-between sm:space-x-0" : undefined}>
+            {dialogMode === "edit" && canManage && editing && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteId(editing.id)}
+                aria-label="Delete customer"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:space-x-2">
+              {isView ? (
+                <>
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Close</Button>
+                  <Button onClick={() => { if (editing) openEdit(editing); }}>Edit</Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => {
+                      const digits = parseSingaporePhoneDigits(form.phone || "");
+                      mutation.mutate({
+                        ...form,
+                        gstRegistered: !!form.gstRegistered,
+                        gstNo: form.gstRegistered ? (form.gstNo || "") : "",
+                        creditLimitEnabled: !!form.creditLimitEnabled,
+                        creditLimit: form.creditLimitEnabled ? (form.creditLimit ?? "") : "",
+                        phone: digits ? formatSingaporePhoneForApi(digits) : "",
+                      });
+                    }}
+                    disabled={!form.name || mutation.isPending}
+                  >
+                    {mutation.isPending ? "Saving…" : editing ? "Update Customer" : "Create Customer"}
+                  </Button>
+                </>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

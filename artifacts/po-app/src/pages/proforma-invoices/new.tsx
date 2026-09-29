@@ -343,36 +343,40 @@ export default function ProformaInvoiceNew() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-4 flex flex-row items-center justify-between">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg">Customer Details</CardTitle>
-                <DirectoryPickerButton
- type="customer"
- onSelect={(c) => {
-                    form.setValue("customerName", c.name);
-                    form.setValue("customerAddress", c.fullAddress);
-                    form.setValue("customerContact", c.contactPerson);
-                    form.setValue("customerContactEmail", c.contactEmail);
-                    if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
-                    if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
-                    if (c.currency) {
-                      form.setValue("currency", c.currency);
-                      setDirectoryCurrency(c.currency);
-                      setDirectoryCurrencyName(c.name);
-                    }
-                  }}
-                />
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField control={form.control} name="customerName" render={({ field }) => (
-                  <FormItem><FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
+                  <FormItem>
+                    <div className="flex h-5 items-center justify-between gap-1.5">
+                      <FormLabel className="leading-none">Customer Name <span className="text-destructive">*</span></FormLabel>
+                      <DirectoryPickerButton
+                        type="customer"
+                        onSelect={(c) => {
+                          form.setValue("customerName", c.name);
+                          form.setValue("customerAddress", c.fullAddress);
+                          form.setValue("customerContact", c.contactPerson);
+                          form.setValue("customerContactEmail", c.contactEmail);
+                          if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
+                          if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
+                          if (c.currency) {
+                            form.setValue("currency", c.currency);
+                            setDirectoryCurrency(c.currency);
+                            setDirectoryCurrencyName(c.name);
+                          }
+                        }}
+                      />
+                    </div>
                     <FormControl>
                       <ContactAutocomplete
- type="customer"
- value={field.value}
- onChange={field.onChange}
- onSelect={(c) => {
+                        type="customer"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onSelect={(c) => {
                           form.setValue("customerName", c.name);
                           if (c.address) form.setValue("customerAddress", c.address);
                           if (c.contact) form.setValue("customerContact", c.contact);
@@ -380,19 +384,29 @@ export default function ProformaInvoiceNew() {
                           if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
                         }}
                       />
-                    </FormControl><FormMessage /></FormItem>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )} />
+                <FormField control={form.control} name="customerContact" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                    <FormControl><Input type="email" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <FormField control={form.control} name="customerAddress" render={({ field }) => (
                   <FormItem><FormLabel>Address</FormLabel>
                     <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContact" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Person</FormLabel>
-                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="customerContactEmail" render={({ field }) => (
-                  <FormItem><FormLabel>Contact Email</FormLabel>
-                    <FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
                   const addrs = (field.value || "").split("\n\n");
@@ -451,22 +465,20 @@ export default function ProformaInvoiceNew() {
                     </FormItem>
                   );
                 }} />
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-4"><CardTitle className="text-lg">Proforma Invoice Details</CardTitle></CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField control={form.control} name="issueDate" render={({ field }) => (
                   <FormItem>
                     <FormControl>
                       <IssueDateField value={field.value || ""} onChange={field.onChange} label="Issue Date" />
                     </FormControl><FormMessage />
                   </FormItem>
-                )} />
-                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
-                  <FormItem><FormLabel>Delivery Date</FormLabel>
-                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="paymentTerms" render={({ field }) => (
                   <FormItem><FormLabel>Payment Terms</FormLabel>
@@ -476,18 +488,23 @@ export default function ProformaInvoiceNew() {
                   <FormItem><FormLabel>Quotation Ref No.</FormLabel>
                     <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField control={form.control} name="isPrivate" render={({ field }) => (
                   <FormItem>
-                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                    <FormLabel>Private Document</FormLabel>
+                    <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3">
                       <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1">
-                        <FormLabel className="text-sm font-medium cursor-pointer">Private Document</FormLabel>
-                        <p className="text-xs text-muted-foreground mt-0.5">Only visible to you and admins</p>
-                      </div>
+                      <p className="flex-1 text-xs text-muted-foreground">Only you &amp; admins</p>
                       <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                     </div>
                   </FormItem>
                 )} />
+                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                  <FormItem className="sm:col-span-2"><FormLabel>Delivery Date</FormLabel>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl><FormMessage /></FormItem>
+                )} />
+                </div>
               </CardContent>
             </Card>
           </div>

@@ -328,54 +328,66 @@ export default function DebitNoteEdit() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-2xl font-bold text-[#2563EB]">Edit Debit Note — {doc?.dnNumber}</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Debit Note — {doc?.dnNumber}</h1>
         </div>
       </div>
 
       <Form {...form}>
         <form className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Vendor</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2 items-end">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Vendor Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="customerName" render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>Vendor Name <span className="text-destructive">*</span></FormLabel>
+                    <FormItem>
+                      <div className="flex h-5 items-center justify-between gap-1.5">
+                        <FormLabel className="leading-none">Vendor Name <span className="text-destructive">*</span></FormLabel>
+                        <DirectoryPickerButton type="vendor" onSelect={v => {
+                          form.setValue("customerName", v.name);
+                          form.setValue("customerAddress", v.fullAddress || v.address || "");
+                          form.setValue("contactPerson", v.contactPerson || "");
+                          form.setValue("contactEmail", v.contactEmail || "");
+                          if (v.effectiveGstRate !== undefined) form.setValue("taxRate", v.effectiveGstRate);
+                          if (v.currency) form.setValue("currency", v.currency);
+                        }} />
+                      </div>
                       <FormControl><Input {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <DirectoryPickerButton type="vendor" onSelect={v => {
-                    form.setValue("customerName", v.name);
-                    form.setValue("customerAddress", v.fullAddress || v.address || "");
-                    form.setValue("contactPerson", v.contactPerson || "");
-                    form.setValue("contactEmail", v.contactEmail || "");
-                    if (v.effectiveGstRate !== undefined) form.setValue("taxRate", v.effectiveGstRate);
-                    if (v.currency) form.setValue("currency", v.currency);
-                  }} />
-                </div>
-                <FormField control={form.control} name="customerAddress" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Address</FormLabel>
-                    <FormControl><Textarea {...field} rows={3} /></FormControl>
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-3">
                   <FormField control={form.control} name="contactPerson" render={({ field }) => (
-                    <FormItem><FormLabel>Contact Person</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                    <FormItem>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                    </FormItem>
                   )} />
                   <FormField control={form.control} name="contactEmail" render={({ field }) => (
-                    <FormItem><FormLabel>Contact Email</FormLabel><FormControl><Input {...field} type="email" /></FormControl></FormItem>
+                    <FormItem>
+                      <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                      <FormControl><Input {...field} type="email" /></FormControl>
+                    </FormItem>
+                  )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField control={form.control} name="customerAddress" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl><Textarea className="resize-none" {...field} rows={3} /></FormControl>
+                    </FormItem>
                   )} />
                 </div>
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader><CardTitle className="text-sm">Debit Note Details</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Debit Note Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="refInvNumber" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Reference Invoice No.</FormLabel>
@@ -403,15 +415,20 @@ export default function DebitNoteEdit() {
                   <FormField control={form.control} name="issueDate" render={({ field }) => (
                     <IssueDateField value={field.value ?? ""} onChange={field.onChange} label="Issue Date" />
                   )} />
+                  <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Private Document</FormLabel>
+                      <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3">
+                        <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <p className="flex-1 text-xs text-muted-foreground">Only you &amp; admins</p>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </div>
+                    </FormItem>
+                  )} />
                 </div>
-                <FormField control={form.control} name="reason" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reason for Return <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Textarea {...field} rows={2} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField control={form.control} name="currency" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Currency</FormLabel>
@@ -422,18 +439,27 @@ export default function DebitNoteEdit() {
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="taxRate" render={({ field }) => (
-                    <FormItem><FormLabel>GST %</FormLabel><FormControl><Input {...field} type="text" inputMode="decimal" min={0} max={100} step={0.1} /></FormControl></FormItem>
+                    <FormItem>
+                      <FormLabel>GST %</FormLabel>
+                      <FormControl><Input {...field} type="text" inputMode="decimal" min={0} max={100} step={0.1} /></FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="notes" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                    </FormItem>
                   )} />
                 </div>
-                <FormField control={form.control} name="notes" render={({ field }) => (
-                  <FormItem><FormLabel>Notes</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="isPrivate" render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 pt-1">
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    <span className="text-sm flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" />Private</span>
-                  </FormItem>
-                )} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <FormField control={form.control} name="reason" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reason for Return <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </CardContent>
             </Card>
           </div>

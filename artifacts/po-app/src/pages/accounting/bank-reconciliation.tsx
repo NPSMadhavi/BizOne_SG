@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import {
+  getStoredBankAccounts,
+  bankMatchesAccount,
+  syncStoredBanksToChartOfAccounts,
+} from "@/components/bank-account-field";
 import {
   ArrowLeft,
   Upload,
@@ -298,16 +303,52 @@ export default function BankReconciliation() {
     }
   });
 
-  // Filter bank accounts for the bank account selector
+  // Sync Expenses "Select Bank Account" banks into Chart of Accounts so they appear here
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await syncStoredBanksToChartOfAccounts();
+      if (!cancelled) {
+        queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [queryClient]);
+
+  const storedExpenseBanks = useMemo(() => getStoredBankAccounts(), [accounts]);
+
+  // Show the same banks as Expenses → Select Bank Account (matched in COA),
+  // plus Cash at Bank defaults — not every asset starting with "1".
   const bankAccounts = useMemo(() => {
-    return accounts.filter(a => 
-      a.isActive && 
-      (a.type === "asset" && (a.name.toLowerCase().includes("bank") || a.code.startsWith("1")) )
-    );
-  }, [accounts]);
+    const activeAssets = accounts.filter(a => a.isActive && a.type === "asset");
+    const map = new Map<number, Account>();
+
+    for (const a of activeAssets) {
+      if (storedExpenseBanks.some(b => bankMatchesAccount(b, a))) {
+        map.set(a.id, a);
+      }
+    }
+
+    // If no expense banks yet, keep useful cash/bank defaults so the page isn't empty
+    if (map.size === 0) {
+      for (const a of activeAssets) {
+        const n = a.name.toLowerCase();
+        if (
+          n.includes("cash at bank") ||
+          n.includes("petty cash") ||
+          n.includes("cash & cash") ||
+          (n.includes("bank") && !n.includes("loan") && !n.includes("charge"))
+        ) {
+          map.set(a.id, a);
+        }
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+  }, [accounts, storedExpenseBanks]);
 
   // Set default selected bank account once loaded
-  useMemo(() => {
+  useEffect(() => {
     if (bankAccounts.length > 0 && !selectedAccount) {
       setSelectedAccount(String(bankAccounts[0].id));
     }

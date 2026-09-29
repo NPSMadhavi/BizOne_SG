@@ -55,7 +55,7 @@ Return ONLY valid JSON with this exact structure, no extra keys, no markdown fen
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: "gpt-4o-mini",
       max_completion_tokens: 512,
       messages: [{ role: "user", content: prompt }],
     });
