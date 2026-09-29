@@ -17,6 +17,7 @@ import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
 import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent, fetchDocJson } from "@/components/bulk-email-bar";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
@@ -34,7 +35,7 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
 }
 
 function fmt(amount: number, currency = "SGD") {
-  return new Intl.NumberFormat("en-SG", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
+  return formatCurrencySafe(amount, currency);
 }
 
 const QUARTERS = [

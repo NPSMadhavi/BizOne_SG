@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export type VedaFormAction = "save" | "preview" | "download";
+export type VedaFormAction = "save" | "preview" | "download" | "close";
 
 const PENDING_KEY = "__vedaPendingFormAction";
 
@@ -10,13 +10,14 @@ export function queueVedaFormAction(action: VedaFormAction) {
 }
 
 /**
- * Listen for Veda save / preview / download actions on the open document page.
+ * Listen for Veda save / preview / download / close actions on the open document page.
  * Also consumes a pending action queued before navigation (list → view/edit).
  */
 export function useVedaFormActions(handlers: {
   onSave?: () => void;
   onPreview?: () => void;
   onDownload?: () => void;
+  onClose?: () => void;
 }) {
   const ref = useRef(handlers);
   ref.current = handlers;
@@ -26,6 +27,7 @@ export function useVedaFormActions(handlers: {
       if (action === "save") ref.current.onSave?.();
       else if (action === "preview") ref.current.onPreview?.();
       else if (action === "download") ref.current.onDownload?.();
+      else if (action === "close") ref.current.onClose?.();
     };
 
     const handler = (e: Event) => {

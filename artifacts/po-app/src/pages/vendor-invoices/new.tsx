@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation, useSearch } from "wouter";
 import { Check, BookOpen, AlertTriangle, RefreshCw, Plus, ArrowLeft, Eye } from "lucide-react";
@@ -345,6 +346,12 @@ export default function VendorInvoiceNew() {
       setSaving(false);
     }
   };
+
+  useVedaFormActions({
+    onSave: () => { void handleSave(); },
+    onPreview: () => { void handleSave(); },
+    onDownload: () => { void handleSave(); },
+  });
 
   const saveButton = (
     <Button

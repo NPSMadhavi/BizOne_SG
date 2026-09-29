@@ -28,6 +28,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -185,7 +186,7 @@ export default function InvoiceView() {
   const voidMutation = useVoidInvoice();
   const knockOffMutation = useKnockOffInvoice();
 
-  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: (doc as any)?.currency || "SGD" }).format(v);
+  const fmt = (v: number) => formatCurrencySafe(v, (doc as any)?.currency);
 
   const invalidate = async () => {
     await Promise.all([

@@ -5,10 +5,12 @@ import {
   settingsTable, purchaseOrdersTable, vendorsTable, deliveryOrdersTable,
   vendorInvoicesTable, grnTable, pool,
 } from "@workspace/db";
-import { eq, and, ilike, or, desc, SQL, gte } from "drizzle-orm";
+import { eq, and, ilike, or, desc, SQL, gte, ne } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { speechToText, ensureCompatibleFormat } from "@workspace/integrations-openai-ai-server/audio";
 import { nextDocNumber } from "../lib/running-numbers.js";
+import { adjustItemStockInWarehouse, resolveWarehouseId } from "../lib/inventory-service.js";
+import { recordStockPurchasePrice } from "../lib/stock-purchase-price.js";
 import {
   loadAgentAuthContext,
   resolveAgentCompanyId,
@@ -77,8 +79,86 @@ const AGENT_TOOLS = [
     type: "function",
     function: {
       name: "searchStockItems",
-      description: "Search the product/service catalogue by name or part code.",
-      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      description: "Search or list the product/service catalogue by name or part code. Leave query empty or pass '' to list recent items.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Name, part code, or keyword to match. Leave empty to list items." },
+          type: { type: "string", enum: ["stock_item", "service_item", "product", "service"], description: "Optional filter by type" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getStockItem",
+      description: "Get full details of a specific stock item / product by its id or code. Also opens the item on screen in edit mode.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer", description: "Database ID of the stock item" },
+          code: { type: "string", description: "Or stock item code/part number" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createStockItem",
+      description: "Create a new stock item / product in the inventory catalogue. You can set name, code, price, cost, uom, category, brand, opening quantity, barcode, etc. Always use this tool when the user asks to create, add, or make a new stock item or product.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Item name (required)" },
+          code: { type: "string", description: "Item code / part number. If omitted, will be auto-generated from sequence." },
+          description: { type: "string", description: "Item description" },
+          uom: { type: "string", description: "Unit of measure (e.g. 'Pcs', 'Kg', 'Box', 'Set', default 'Pcs')" },
+          type: { type: "string", enum: ["stock_item", "service_item", "product", "service"], description: "Type: product/stock_item or service/service_item (default stock_item)" },
+          category: { type: "string", description: "Category name" },
+          brand: { type: "string", description: "Brand name" },
+          barcode: { type: "string", description: "Barcode. If omitted, will be auto-generated." },
+          salesPerson: { type: "string", description: "Sales person" },
+          purchasePrice: { type: "number", description: "Cost / purchase price (default 0)" },
+          unitPrice: { type: "number", description: "Selling / unit price (default 0)" },
+          mrpPrice: { type: "number", description: "MRP price (default 0)" },
+          stockQty: { type: "number", description: "Opening stock quantity (default 0)" },
+          minStockLevel: { type: "number", description: "Minimum stock level" },
+          reorderLevel: { type: "number", description: "Reorder level" },
+          maxStockLevel: { type: "number", description: "Maximum stock level" },
+          batchNo: { type: "string", description: "Batch number" },
+          alternateUom: { type: "string", description: "Alternate UOM" },
+          alternateQty: { type: "number", description: "Alternate quantity" },
+          mainQty: { type: "number", description: "Main quantity conversion" },
+          trackInventory: { type: "boolean", description: "Track inventory (default true)" },
+          showInPos: { type: "boolean", description: "Show in POS (default true)" },
+          isWeightBased: { type: "boolean", description: "Weight based (default false)" },
+          pricingMethod: { type: "string", description: "Pricing method (default fixed)" },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateStockItem",
+      description: "Update an existing stock item / product in the inventory catalogue by id or code.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer", description: "Stock item database ID (provide id or code)" },
+          code: { type: "string", description: "Stock item code (used if id is omitted)" },
+          fields: {
+            type: "object",
+            description: "Fields to update: name, code, description, uom, type, category, brand, barcode, salesPerson, purchasePrice, unitPrice, mrpPrice, stockQty, minStockLevel, reorderLevel, maxStockLevel, batchNo, alternateUom, alternateQty, mainQty, trackInventory, showInPos, isWeightBased, pricingMethod, isActive.",
+            additionalProperties: true,
+          },
+          summary: { type: "string", description: "One-line summary of what changed" },
+        },
+        required: ["fields"],
+      },
     },
   },
   {
@@ -292,7 +372,7 @@ const AGENT_TOOLS = [
         properties: {
           path: {
             type: "string",
-            description: "App route. Pages: /dashboard, /settings, /customers, /customers?vedaNew=1, /vendors, /vendors?vedaNew=1, /employees, /employees/new, /employees/:id/edit, /stock, /grn, /vendor-invoices, /accounting, /expenses. Document lists: /invoices, /quotations, /purchase-orders, /delivery-orders. New forms: /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new. View/edit: /invoices/:id, /invoices/:id/edit, etc. Admin: /admin/users.",
+            description: "App route. Pages: /dashboard, /settings, /customers, /customers?vedaNew=1, /vendors, /vendors?vedaNew=1, /employees, /employees/new, /employees/:id/edit, /assets, /assets/new, /assets/:id/edit, /stock, /grn, /vendor-invoices, /accounting, /expenses. Document lists: /invoices, /quotations, /purchase-orders, /delivery-orders. New forms: /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new. View/edit: /invoices/:id, /invoices/:id/edit, etc. Admin: /admin/users.",
           },
           prefill: {
             type: "object",
@@ -676,6 +756,83 @@ const AGENT_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "searchAssets",
+      description: "Search company fixed assets by asset tag, name/type, category, serial number, model, manufacturer, or assignee.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search term (tag, name, serial, category, etc.)" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getAsset",
+      description: "Get detailed information about a specific fixed asset by its database ID or asset tag.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer", description: "Asset database ID" },
+          tag: { type: "string", description: "Asset tag, e.g. FA-0001" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createAsset",
+      description: "Create a new fixed asset in the system. Required fields: type (name) and category.",
+      parameters: {
+        type: "object",
+        properties: {
+          type: { type: "string", description: "Asset name / type, e.g. Laptop, MacBook Pro, Monitor" },
+          category: { type: "string", description: "Asset category, e.g. Hardware, Software, Furniture" },
+          serial: { type: "string", description: "Serial number" },
+          model: { type: "string", description: "Model number or description" },
+          manufacturer: { type: "string", description: "Manufacturer brand, e.g. Apple, Dell, HP" },
+          location: { type: "string", description: "Location, e.g. Headquarters, IT Room, Remote" },
+          status: { type: "string", enum: ["available", "assigned", "maintenance", "retired"] },
+          condition: { type: "string", enum: ["new", "used", "refurbished", "damaged"] },
+          assignedTo: { type: "string", description: "Assigned employee name" },
+          cost: { type: "string", description: "Purchase cost or value" },
+          description: { type: "string", description: "Additional notes" },
+        },
+        required: ["type", "category"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "updateAsset",
+      description: "Update an existing asset by database ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "integer", description: "Asset database ID" },
+          type: { type: "string" },
+          category: { type: "string" },
+          serial: { type: "string" },
+          model: { type: "string" },
+          manufacturer: { type: "string" },
+          location: { type: "string" },
+          status: { type: "string", enum: ["available", "assigned", "maintenance", "retired"] },
+          condition: { type: "string" },
+          assignedTo: { type: "string" },
+          cost: { type: "string" },
+          description: { type: "string" },
+        },
+        required: ["id"],
+      },
+    },
+  },
 ] as const;
 
 function queryTokens(raw: string): string[] {
@@ -884,16 +1041,276 @@ async function executeTool(
     }
 
     case "searchStockItems": {
+      const q = String(args.query || "").trim();
+      const typeFilter = String(args.type || "").trim();
+      const conditions: SQL[] = [
+        eq(stockItemsTable.companyId, companyId),
+        eq(stockItemsTable.isActive, true),
+      ];
+      if (typeFilter) {
+        const t = typeFilter === "product" ? "stock_item" : typeFilter === "service" ? "service_item" : typeFilter;
+        conditions.push(eq(stockItemsTable.type, t));
+      }
+      if (q) {
+        conditions.push(or(tokenOr(stockItemsTable.name, q), tokenOr(stockItemsTable.code, q)) as SQL);
+      }
       const rows = await db.select({
         id: stockItemsTable.id, code: stockItemsTable.code, name: stockItemsTable.name,
         description: stockItemsTable.description, unitPrice: stockItemsTable.unitPrice,
+        purchasePrice: stockItemsTable.purchasePrice,
         uom: stockItemsTable.uom, type: stockItemsTable.type, stockQty: stockItemsTable.stockQty,
-      }).from(stockItemsTable).where(and(
-        eq(stockItemsTable.companyId, companyId),
-        eq(stockItemsTable.isActive, true),
-        or(tokenOr(stockItemsTable.name, args.query), tokenOr(stockItemsTable.code, args.query)),
-      )).limit(10);
+        category: stockItemsTable.category, brand: stockItemsTable.brand, barcode: stockItemsTable.barcode,
+      }).from(stockItemsTable)
+        .where(and(...conditions))
+        .orderBy(desc(stockItemsTable.id))
+        .limit(15);
       return rows.length > 0 ? rows : { message: "No stock items found matching that search." };
+    }
+
+    case "getStockItem": {
+      const id = Number(args.id);
+      const code = String(args.code || "").trim();
+      if (!id && !code) return { error: "Please provide either an id or a code for the stock item." };
+      const cond = id
+        ? and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.id, id))
+        : and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, code));
+      const [item] = await db.select().from(stockItemsTable).where(cond).limit(1);
+      if (!item) return { error: "Stock item not found." };
+      return {
+        ...item,
+        editPath: `/stock/${item.id}/edit`,
+        _navigate: true,
+        path: `/stock/${item.id}/edit`,
+        reason: `Viewing stock item ${item.name} (${item.code})`,
+      };
+    }
+
+    case "createStockItem": {
+      const name = String(args.name || "").trim();
+      if (!name) return { error: "Stock item name is required." };
+
+      let resolvedCode: string;
+      if (args.code && String(args.code).trim()) {
+        resolvedCode = String(args.code).trim();
+      } else {
+        try {
+          resolvedCode = await nextDocNumber("si", companyId);
+        } catch {
+          resolvedCode = `ITM-${Date.now().toString().slice(-6)}`;
+        }
+      }
+
+      let resolvedBarcode: string | null = null;
+      if (args.barcode && String(args.barcode).trim()) {
+        resolvedBarcode = String(args.barcode).trim();
+      } else {
+        try {
+          resolvedBarcode = await nextDocNumber("bc", companyId);
+        } catch {
+          resolvedBarcode = null;
+        }
+      }
+
+      const itemType = args.type === "service" || args.type === "service_item" ? "service_item" : "stock_item";
+      const isService = itemType === "service_item";
+      const openingQty = !isService ? Math.max(0, Number(args.stockQty) || 0) : 0;
+      const purchasePrice = Number(args.purchasePrice) || 0;
+      const unitPrice = Number(args.unitPrice) || 0;
+      const mrpPrice = Number(args.mrpPrice) || 0;
+
+      let item;
+      try {
+        [item] = await db.insert(stockItemsTable).values({
+          companyId,
+          code: resolvedCode,
+          name,
+          description: args.description || null,
+          uom: args.uom || "Pcs",
+          type: itemType,
+          category: args.category ? String(args.category).trim() : null,
+          brand: args.brand ? String(args.brand).trim() : null,
+          barcode: resolvedBarcode,
+          salesPerson: args.salesPerson ? String(args.salesPerson).trim() : null,
+          purchasePrice: String(purchasePrice),
+          unitPrice: String(unitPrice),
+          mrpPrice: String(mrpPrice),
+          stockQty: "0",
+          minStockLevel: args.minStockLevel != null ? String(args.minStockLevel) : "0",
+          reorderLevel: args.reorderLevel != null ? String(args.reorderLevel) : "0",
+          maxStockLevel: args.maxStockLevel != null ? String(args.maxStockLevel) : "0",
+          batchNo: args.batchNo ? String(args.batchNo).trim() : null,
+          alternateUom: args.alternateUom ? String(args.alternateUom).trim() : null,
+          alternateQty: args.alternateQty != null ? String(args.alternateQty) : "0",
+          mainQty: args.mainQty != null ? String(args.mainQty) : "0",
+          trackInventory: args.trackInventory === undefined ? true : Boolean(args.trackInventory),
+          showInPos: args.showInPos === undefined ? true : Boolean(args.showInPos),
+          isWeightBased: Boolean(args.isWeightBased),
+          pricingMethod: args.pricingMethod || "fixed",
+          isActive: true,
+        }).returning();
+      } catch (err: any) {
+        const msg = err?.message || "Failed to create stock item";
+        const isDup = /unique|duplicate/i.test(msg);
+        return { error: isDup ? `Item code "${resolvedCode}" already exists.` : msg };
+      }
+
+      if (openingQty > 0) {
+        const targetWarehouseId = Number(args.warehouseId) || await resolveWarehouseId(companyId);
+        if (targetWarehouseId) {
+          try {
+            await adjustItemStockInWarehouse({
+              companyId,
+              stockItemId: item.id,
+              warehouseId: targetWarehouseId,
+              newTotalQty: openingQty,
+              userId,
+              reference: "Opening stock (created by Veda)",
+            });
+          } catch {
+            // non-fatal
+          }
+        }
+      }
+
+      if (purchasePrice > 0) {
+        const today = new Date();
+        const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        try {
+          await recordStockPurchasePrice({
+            companyId,
+            stockItemId: item.id,
+            purchasePrice,
+            effectiveDate: ymd,
+            sourceType: "item_master",
+            notes: "Opening purchase cost (created by Veda)",
+            userId,
+            updateMasterPrice: false,
+          });
+        } catch {
+          // non-fatal
+        }
+      }
+
+      const [fresh] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, item.id));
+      return {
+        success: true,
+        item: fresh ?? item,
+        _navigate: true,
+        path: `/stock/${item.id}/edit`,
+        reason: `Created stock item ${name} (${resolvedCode})`,
+      };
+    }
+
+    case "updateStockItem": {
+      const id = Number(args.id);
+      const code = String(args.code || "").trim();
+      const fields = args.fields || {};
+      if (!id && !code) return { error: "Please provide either an id or a code to identify the stock item." };
+      if (!fields || typeof fields !== "object") return { error: "fields must be an object of updates." };
+
+      const cond = id
+        ? and(eq(stockItemsTable.companyId, companyId), eq(stockItemsTable.id, id))
+        : and(eq(stockItemsTable.companyId, companyId), ilike(stockItemsTable.code, code));
+      const [before] = await db.select().from(stockItemsTable).where(cond).limit(1);
+      if (!before) return { error: "Stock item not found." };
+
+      const patch: Record<string, any> = {};
+      if (fields.code !== undefined) patch.code = String(fields.code).trim();
+      if (fields.name !== undefined) patch.name = String(fields.name).trim();
+      if (fields.description !== undefined) patch.description = fields.description || null;
+      if (fields.uom !== undefined) patch.uom = String(fields.uom).trim();
+      if (fields.type !== undefined) {
+        const t = String(fields.type).trim();
+        patch.type = !t || t === "product" ? "stock_item" : t === "service" ? "service_item" : t;
+      }
+      if (fields.unitPrice !== undefined) patch.unitPrice = String(fields.unitPrice);
+      if (fields.purchasePrice !== undefined) patch.purchasePrice = String(fields.purchasePrice);
+      if (fields.mrpPrice !== undefined) patch.mrpPrice = String(fields.mrpPrice);
+      if (fields.category !== undefined) patch.category = fields.category ? String(fields.category).trim() : null;
+      if (fields.brand !== undefined) patch.brand = fields.brand ? String(fields.brand).trim() : null;
+      if (fields.barcode !== undefined) patch.barcode = fields.barcode ? String(fields.barcode).trim() : null;
+      if (fields.salesPerson !== undefined) patch.salesPerson = fields.salesPerson ? String(fields.salesPerson).trim() : null;
+      if (fields.minStockLevel !== undefined) patch.minStockLevel = String(fields.minStockLevel);
+      if (fields.reorderLevel !== undefined) patch.reorderLevel = String(fields.reorderLevel);
+      if (fields.maxStockLevel !== undefined) patch.maxStockLevel = String(fields.maxStockLevel);
+      if (fields.batchNo !== undefined) patch.batchNo = fields.batchNo ? String(fields.batchNo).trim() : null;
+      if (fields.alternateUom !== undefined) patch.alternateUom = fields.alternateUom ? String(fields.alternateUom).trim() : null;
+      if (fields.alternateQty !== undefined) patch.alternateQty = String(fields.alternateQty);
+      if (fields.mainQty !== undefined) patch.mainQty = String(fields.mainQty);
+      if (fields.trackInventory !== undefined) patch.trackInventory = Boolean(fields.trackInventory);
+      if (fields.showInPos !== undefined) patch.showInPos = Boolean(fields.showInPos);
+      if (fields.isWeightBased !== undefined) patch.isWeightBased = Boolean(fields.isWeightBased);
+      if (fields.pricingMethod !== undefined) patch.pricingMethod = String(fields.pricingMethod);
+      if (fields.isActive !== undefined) patch.isActive = Boolean(fields.isActive);
+
+      if (patch.barcode) {
+        const [dup] = await db.select({ id: stockItemsTable.id })
+          .from(stockItemsTable)
+          .where(and(
+            eq(stockItemsTable.companyId, companyId),
+            eq(stockItemsTable.barcode, patch.barcode),
+            ne(stockItemsTable.id, before.id),
+          ))
+          .limit(1);
+        if (dup) return { error: `Barcode "${patch.barcode}" is already used by another item.` };
+      }
+
+      const [updated] = Object.keys(patch).length > 0
+        ? await db.update(stockItemsTable).set(patch).where(eq(stockItemsTable.id, before.id)).returning()
+        : [before];
+
+      if (fields.stockQty !== undefined && updated.type !== "service_item" && updated.type !== "service") {
+        const targetWarehouseId = Number(fields.warehouseId) || await resolveWarehouseId(companyId);
+        if (targetWarehouseId) {
+          try {
+            await adjustItemStockInWarehouse({
+              companyId,
+              stockItemId: updated.id,
+              warehouseId: targetWarehouseId,
+              newTotalQty: Number(fields.stockQty) || 0,
+              userId,
+              reference: "Stock quantity updated by Veda",
+            });
+          } catch {
+            await db.update(stockItemsTable)
+              .set({ stockQty: String(Number(fields.stockQty) || 0) })
+              .where(eq(stockItemsTable.id, updated.id));
+          }
+        } else {
+          await db.update(stockItemsTable)
+            .set({ stockQty: String(Number(fields.stockQty) || 0) })
+            .where(eq(stockItemsTable.id, updated.id));
+        }
+      }
+
+      if (fields.purchasePrice !== undefined && Number(fields.purchasePrice) > 0) {
+        const today = new Date();
+        const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        try {
+          await recordStockPurchasePrice({
+            companyId,
+            stockItemId: updated.id,
+            purchasePrice: Number(fields.purchasePrice),
+            effectiveDate: ymd,
+            sourceType: "item_master",
+            notes: "Cost update by Veda",
+            userId,
+            updateMasterPrice: false,
+          });
+        } catch {
+          // non-fatal
+        }
+      }
+
+      const [fresh] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, updated.id));
+      return {
+        success: true,
+        item: fresh ?? updated,
+        summary: args.summary || `Updated stock item ${updated.name}`,
+        _navigate: true,
+        path: `/stock/${updated.id}/edit`,
+        reason: args.summary || `Updated stock item ${updated.name}`,
+      };
     }
 
     case "searchPurchaseOrders": {
@@ -1602,6 +2019,115 @@ async function executeTool(
       };
     }
 
+    case "searchAssets": {
+      const q = String(args.query || "").trim();
+      const result = await pool.query(
+        `SELECT id, tag, type, category, serial, model, manufacturer, status, condition, assigned_to, location, cost
+         FROM assets
+         WHERE company_id = $1
+           AND (tag ILIKE $2 OR type ILIKE $2 OR category ILIKE $2 OR serial ILIKE $2 OR model ILIKE $2 OR manufacturer ILIKE $2 OR assigned_to ILIKE $2)
+         ORDER BY id DESC LIMIT 10`,
+        [companyId, `%${q}%`],
+      );
+      return result.rows.length > 0 ? result.rows : { message: "No assets found matching that search." };
+    }
+
+    case "getAsset": {
+      const id = args.id ? Number(args.id) : null;
+      const tag = args.tag ? String(args.tag).trim() : null;
+      let result;
+      if (id) {
+        result = await pool.query(`SELECT * FROM assets WHERE id = $1 AND company_id = $2`, [id, companyId]);
+      } else if (tag) {
+        result = await pool.query(`SELECT * FROM assets WHERE LOWER(tag) = LOWER($1) AND company_id = $2`, [tag, companyId]);
+      } else {
+        return { error: "Please provide either an asset ID or asset tag." };
+      }
+      return result.rows[0] ? result.rows[0] : { error: "Asset not found" };
+    }
+
+    case "createAsset": {
+      try {
+        const tag = await nextDocNumber("fa", companyId);
+        const type = String(args.type || "Asset").trim();
+        const category = String(args.category || "Hardware").trim();
+        const serial = String(args.serial || "").trim();
+        const status = String(args.status || "available").trim();
+        const model = args.model ? String(args.model).trim() : null;
+        const manufacturer = args.manufacturer ? String(args.manufacturer).trim() : null;
+        const location = args.location ? String(args.location).trim() : null;
+        const condition = args.condition ? String(args.condition).trim() : "new";
+        const assignedTo = args.assignedTo ? String(args.assignedTo).trim() : null;
+        const cost = args.cost ? String(args.cost).trim() : null;
+        const description = args.description ? String(args.description).trim() : null;
+
+        const insertRes = await pool.query(
+          `INSERT INTO assets (
+            company_id, tag, type, category, serial, model, manufacturer,
+            status, condition, assigned_to, location, cost, description
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          RETURNING *`,
+          [
+            companyId, tag, type, category, serial, model, manufacturer,
+            status, condition, assignedTo, location, cost, description
+          ]
+        );
+        const created = insertRes.rows[0];
+        return {
+          created: true,
+          assetId: created.id,
+          tag: created.tag,
+          type: created.type,
+          navigatePath: `/assets/${created.id}/edit`,
+          message: `Created asset ${created.tag} (${created.type}).`,
+        };
+      } catch (err: any) {
+        return { error: err?.message || "Failed to create asset" };
+      }
+    }
+
+    case "updateAsset": {
+      try {
+        const id = Number(args.id);
+        if (!id) return { error: "Invalid asset ID" };
+        const updates: string[] = [];
+        const values: any[] = [];
+        let idx = 1;
+
+        const allowed = [
+          "type", "category", "serial", "model", "manufacturer", "status",
+          "condition", "assignedTo", "location", "cost", "description"
+        ];
+        const colMap: Record<string, string> = { assignedTo: "assigned_to" };
+
+        for (const key of allowed) {
+          if (args[key] !== undefined) {
+            const col = colMap[key] || key;
+            updates.push(`${col} = $${idx++}`);
+            values.push(args[key]);
+          }
+        }
+        if (updates.length === 0) return { error: "No fields provided to update" };
+
+        values.push(id, companyId);
+        const updateRes = await pool.query(
+          `UPDATE assets SET ${updates.join(", ")} WHERE id = $${idx++} AND company_id = $${idx} RETURNING *`,
+          values
+        );
+        if (!updateRes.rows[0]) return { error: "Asset not found" };
+        const updated = updateRes.rows[0];
+        return {
+          updated: true,
+          assetId: updated.id,
+          tag: updated.tag,
+          navigatePath: `/assets/${updated.id}/edit`,
+          message: `Updated asset ${updated.tag}.`,
+        };
+      } catch (err: any) {
+        return { error: err?.message || "Failed to update asset" };
+      }
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -1654,6 +2180,7 @@ ${permissionContextBlock(auth)}
 
 ## Your capabilities
 - CREATE documents via API
+- CREATE, VIEW, and EDIT stock items / products / catalogue items (createStockItem, getStockItem, updateStockItem, searchStockItems)
 - CONFIRM / VOID / MARK PAID
 - EMAIL documents as PDF
 - NAVIGATE to any app page the tools allow
@@ -1721,15 +2248,29 @@ Example: "change vendor Venkatesh to Ramu on this PO, save and download"
 Key MUST be vendorName / customerName. Never say it was changed unless updateDocumentFields returned success:true. Keep the reply to one short line.
 
 ### Save, preview, and download the open document
-- User says "save" while on a form → confirm briefly if many fields just changed, then submitCurrentForm
+- User says "save", "save form", "submit", "save draft", or confirms saving → IMMEDIATELY call submitCurrentForm without delay or extra questions.
 - User says "preview" → previewCurrentDocument
 - User says "download" → downloadCurrentDocument
-- After guided create fields are done: ask "Shall I save this?" → submitCurrentForm only on yes
+- After guided create fields are done: ask "Shall I save this?" → on yes / save / confirm → call submitCurrentForm immediately.
+
+### Stock items / Products / Catalogue (critical)
+- Creating, viewing, searching, and editing stock items IS FULLY SUPPORTED. NEVER say creating stock items is not supported.
+- When the user asks to create or add a stock item / product / inventory item:
+  - If they provide details (name, price, etc.) in the request: call createStockItem directly with the provided details.
+  - If they say "create stock item", "new product", "add stock item" without full details: navigateTo /stock/new, or ask for the item name and create with createStockItem.
+- When the user asks to view or search stock items:
+  - Call searchStockItems to search by name/code (or list recent items).
+  - Call getStockItem to retrieve full details by id or code (which also navigates to /stock/:id/edit).
+  - Or navigateTo /stock to show the item master list.
+- When the user asks to edit or update a stock item:
+  - Call updateStockItem with id or code and fields to update (e.g. unitPrice, purchasePrice, stockQty, name, description, category, brand, etc.).
+  - Or navigateTo /stock/:id/edit.
 
 ### Guided create — field by field (critical — SPEED)
-When the user asks to create a new invoice / quotation / purchase order / delivery order / employee / customer / vendor (or "create new" / "add a person" / "open a quotation form"):
+When the user asks to create a new invoice / quotation / purchase order / delivery order / sales order / purchase quotation / proforma invoice / vendor invoice / employee / customer / vendor / project / stock item (or "create new" / "add a person" / "open a form"):
 1. Open the matching form FIRST:
-   - Documents: navigateTo /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new
+   - Documents: navigateTo /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new, /sales-orders/new, /purchase-quotations/new, /proforma-invoices/new, /vendor-invoices/new, /projects/new
+   - Stock item: navigateTo /stock/new
    - Employee: navigateTo /employees/new
    - Customer: navigateTo /customers?vedaNew=1 (opens New Customer dialog)
    - Vendor: navigateTo /vendors?vedaNew=1 (opens New Vendor dialog)

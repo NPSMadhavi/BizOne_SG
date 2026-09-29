@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 import {
   ArrowLeft, FolderKanban, Plus, Edit, Trash2, Receipt,
   TrendingUp, Calendar, DollarSign, CheckCircle, FileText,
@@ -39,7 +40,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 function fmt(n: number, currency = "SGD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 2 }).format(n);
+  return formatCurrencySafe(n, currency);
 }
 function fmtDate(d: string | null | undefined) {
   if (!d) return "—";

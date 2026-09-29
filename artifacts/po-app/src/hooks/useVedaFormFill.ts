@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { parseSingaporePhoneDigits } from "@/lib/singapore-phone";
+import { normalizeCurrency } from "@/lib/currencies";
 
 const PENDING_KEY = "__vedaPendingFormFill";
 
@@ -90,6 +91,9 @@ function coerceValue(key: string, value: unknown): unknown {
       }
       return d;
     }
+  }
+  if (key === "currency") {
+    return normalizeCurrency(value);
   }
   if (key === "phone" && typeof value === "string") {
     return parseSingaporePhoneDigits(value);

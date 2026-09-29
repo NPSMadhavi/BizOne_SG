@@ -22,6 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDeleteSalesOrder } from "@workspace/api-client-react";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 export default function SalesOrderList() {
   const [, setLocation] = useLocation();
@@ -95,7 +96,7 @@ export default function SalesOrderList() {
   };
 
   const fmt = (v: number | string, currency = "SGD") =>
-    new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(Number(v) || 0);
+    formatCurrencySafe(Number(v) || 0, currency);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

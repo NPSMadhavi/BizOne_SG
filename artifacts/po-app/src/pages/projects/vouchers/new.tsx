@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { ArrowLeft, Plus, Trash2, Receipt, Paperclip, X, FileImage, Upload, Users, Info } from "lucide-react";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 interface Item {
   description: string;
@@ -173,6 +175,12 @@ export default function VoucherNew() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  useVedaFormActions({
+    onSave: () => {
+      mutation.mutate();
+    },
+  });
+
   const set = (field: string, val: string) => setForm(f => ({ ...f, [field]: val }));
   const setItem = (i: number, field: keyof Item, val: string) => {
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [field]: val } : it));
@@ -180,7 +188,7 @@ export default function VoucherNew() {
   const addItem = () => setItems(prev => [...prev, { description: "", category: "", amount: "" }]);
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
   const total = items.reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
-  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: form.currency, minimumFractionDigits: 2 }).format(n);
+  const fmt = (n: number) => formatCurrencySafe(n, form.currency);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);

@@ -562,11 +562,22 @@ router.post("/assets", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     const tag = await nextDocNumber("fa", req.session.companyId!);
-    const body = { status: "available", ...req.body, tag };
+    const body = {
+      status: "available",
+      serial: "",
+      type: "Asset",
+      category: "Hardware",
+      ...req.body,
+      tag: (typeof req.body?.tag === "string" && req.body.tag.trim()) ? req.body.tag.trim() : tag,
+    };
+    if (!body.serial) body.serial = "";
+    if (!body.type) body.type = "Asset";
+    if (!body.category) body.category = "Hardware";
     const { sql, values } = buildInsert("assets", req.session.companyId!, body, ASSET_COLUMNS);
     const result = await pool.query(sql, values);
     res.status(201).json(formatRow(result.rows[0]));
   } catch (err: any) {
+    console.error("Asset creation error:", err);
     res.status(500).json({ error: err?.message ?? "Failed to create asset" });
   }
 });
@@ -576,12 +587,17 @@ router.put("/assets/:id", async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
-    const built = buildUpdate("assets", id, req.session.companyId!, req.body, ASSET_COLUMNS);
+    const updateBody = { ...req.body };
+    if ("serial" in updateBody && (updateBody.serial === null || updateBody.serial === undefined)) {
+      updateBody.serial = "";
+    }
+    const built = buildUpdate("assets", id, req.session.companyId!, updateBody, ASSET_COLUMNS);
     if (!built) { res.status(400).json({ error: "No fields to update" }); return; }
     const result = await pool.query(built.sql, built.values);
     if (!result.rows[0]) { res.status(404).json({ error: "Asset not found" }); return; }
     res.json(formatRow(result.rows[0]));
   } catch (err: any) {
+    console.error("Asset update error:", err);
     res.status(500).json({ error: err?.message ?? "Failed to update asset" });
   }
 });

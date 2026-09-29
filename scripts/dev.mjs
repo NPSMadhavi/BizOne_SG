@@ -129,6 +129,7 @@ freePort(API_PORT);
 freePort(WEB_PORT);
 
 const fileEnv = {
+  ...loadEnvFile(path.join(root, ".env")),
   ...loadEnvFile(path.join(apiDir, ".env")),
   ...loadEnvFile(path.join(apiDir, "src", ".env")),
 };
