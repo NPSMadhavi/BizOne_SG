@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Send, Mic, Volume2, Loader2, Sparkles, ExternalLink,
   Square, BarChart2, Navigation, X, CheckCircle2, Plus, Radio,
+  PanelRightClose, Columns, Maximize2, Minimize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -1443,6 +1444,29 @@ type ConvState = "idle" | "greeting" | "listening" | "processing" | "speaking";
 
 export function AgentPanel() {
   const [open, setOpen] = useState(false);
+  const [isDocked, setIsDocked] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const saved = localStorage.getItem("veda_panel_docked");
+      return saved === null ? true : saved === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleDocked = () => {
+    setIsDocked(prev => {
+      const next = !prev;
+      try { localStorage.setItem("veda_panel_docked", String(next)); } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const handleOpen = () => setOpen(true);
+    window.addEventListener("open-veda", handleOpen);
+    return () => window.removeEventListener("open-veda", handleOpen);
+  }, []);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -2435,81 +2459,8 @@ export function AgentPanel() {
   const clear = () => { stopAudio(); setMessages([]); };
   const close = () => { stopAudio(); setOpen(false); };
 
-  return (
-    <>
-      {/* ── Active Voice Floating Pill when panel is closed ── */}
-      {!open && convState !== "idle" && (
-        <div className="fixed bottom-20 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-background border border-primary/40 shadow-2xl animate-in slide-in-from-bottom-2 duration-200">
-          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shrink-0">
-            {convState === "listening" ? (
-              <Mic className="h-4 w-4 animate-pulse text-white" />
-            ) : convState === "processing" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4 animate-pulse" />
-            )}
-          </div>
-          <div className="flex flex-col text-xs max-w-[260px]">
-            <span className="font-semibold text-primary">
-              {convState === "greeting" ? "Veda awake" : convState === "listening" ? "Listening…" : convState === "speaking" ? "Speaking…" : "Processing…"}
-            </span>
-            <span className="truncate text-foreground/80">{convText || "Speak your command"}</span>
-          </div>
-          <button
-            onClick={stopConversation}
-            className="ml-1 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
-            title="Stop listening (Esc)"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* ── FAB trigger ── */}
-      {!open && (
-        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
-          {wakeSupported && (
-            <button
-              onClick={toggleHandsFree}
-              title={
-                wakeError
-                  ? "Mic blocked — allow microphone, or press Alt+M"
-                  : handsFree
-                  ? "Hands-free ON — say 'Veda' or 'Agent' anytime"
-                  : "Enable hands-free listening"
-              }
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all duration-200",
-                wakeError
-                  ? "bg-yellow-500/10 text-yellow-700 border border-yellow-300"
-                  : handsFree
-                  ? "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
-                  : "bg-background border border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Radio className={cn("h-3 w-3", handsFree && "animate-pulse text-primary")} />
-              {wakeError ? "⚠ Mic blocked" : handsFree ? "Say \"Agent\" or \"Veda\"" : "Hands-free OFF"}
-            </button>
-          )}
-          <button
-            onClick={() => setOpen(true)}
-            title="Open Veda AI Assistant"
-            className={cn(
-              "relative flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95",
-            )}
-          >
-            {handsFree && (
-              <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
-            )}
-            <Sparkles className="h-5 w-5" />
-          </button>
-        </div>
-      )}
-
-      {/* ── Floating panel ── */}
-      {open && (
-        <div className="fixed bottom-6 right-6 z-50 pointer-events-none flex flex-col items-end">
-          <div className="pointer-events-auto flex flex-col w-[520px] h-[620px] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+  const panelInner = (
+    <div className="flex flex-col h-full w-full overflow-hidden bg-card text-card-foreground">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
               <div className="flex items-center gap-2">
@@ -2558,6 +2509,17 @@ export function AgentPanel() {
                     New
                   </button>
                 )}
+                <button
+                  onClick={toggleDocked}
+                  title={isDocked ? "Float panel over page" : "Dock panel to side (like Gemini)"}
+                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  {isDocked ? (
+                    <PanelRightClose className="h-3.5 w-3.5" />
+                  ) : (
+                    <Columns className="h-3.5 w-3.5" />
+                  )}
+                </button>
                 <button
                   onClick={close}
                   className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -2889,8 +2851,125 @@ export function AgentPanel() {
                 </p>
               </div>
             )}
+    </div>
+  );
+
+  return (
+    <>
+      {/* ── Active Voice Floating Pill when panel is closed ── */}
+      {!open && convState !== "idle" && (
+        <div className="fixed bottom-20 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-background border border-primary/40 shadow-2xl animate-in slide-in-from-bottom-2 duration-200">
+          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shrink-0">
+            {convState === "listening" ? (
+              <Mic className="h-4 w-4 animate-pulse text-white" />
+            ) : convState === "processing" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 animate-pulse" />
+            )}
           </div>
+          <div className="flex flex-col text-xs max-w-[260px]">
+            <span className="font-semibold text-primary">
+              {convState === "greeting" ? "Veda awake" : convState === "listening" ? "Listening…" : convState === "speaking" ? "Speaking…" : "Processing…"}
+            </span>
+            <span className="truncate text-foreground/80">{convText || "Speak your command"}</span>
+          </div>
+          <button
+            onClick={stopConversation}
+            className="ml-1 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+            title="Stop listening (Esc)"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
+      )}
+
+      {/* ── FAB & Side Tab triggers when closed ── */}
+      {!open && (
+        <>
+          {/* Gemini-style right edge tab */}
+          <button
+            onClick={() => setOpen(true)}
+            title="Ask Veda AI Assistant (Alt+M)"
+            className="hidden lg:flex fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-card border border-r-0 border-border/80 shadow-md rounded-l-xl px-2 py-3.5 items-center gap-1.5 hover:bg-muted text-primary hover:pr-3.5 transition-all group cursor-pointer"
+          >
+            <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform text-primary animate-pulse" />
+            <span className="text-[10px] font-bold uppercase tracking-wider [writing-mode:vertical-rl] rotate-180 text-foreground/80 group-hover:text-primary">
+              Veda
+            </span>
+          </button>
+
+          {/* Top upside Ask Veda button */}
+          <div className="fixed top-3.5 right-6 z-40 flex items-center gap-2">
+            {wakeSupported && (
+              <button
+                onClick={toggleHandsFree}
+                title={
+                  wakeError
+                    ? "Mic blocked — allow microphone, or press Alt+M"
+                    : handsFree
+                    ? "Hands-free ON — say 'Veda' or 'Agent' anytime"
+                    : "Enable hands-free listening"
+                }
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-sm transition-all duration-200 backdrop-blur-sm",
+                  wakeError
+                    ? "bg-yellow-500/10 text-yellow-700 border border-yellow-300"
+                    : handsFree
+                    ? "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
+                    : "bg-background/90 border border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Radio className={cn("h-3 w-3", handsFree && "animate-pulse text-primary")} />
+                {wakeError ? "⚠ Mic blocked" : handsFree ? "Say \"Veda\"" : "Hands-free OFF"}
+              </button>
+            )}
+            <button
+              onClick={() => setOpen(true)}
+              title="Open Veda AI Assistant"
+              className={cn(
+                "relative flex items-center gap-2 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 via-primary to-indigo-600 text-white rounded-full shadow-md hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20 select-none cursor-pointer",
+              )}
+            >
+              {handsFree && (
+                <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
+              )}
+              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+              <span className="text-xs font-semibold tracking-wide">Ask Veda</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Veda Panel: Docked (Gemini side panel) or Floating ── */}
+      {open && (
+        isDocked ? (
+          <>
+            {/* Desktop: Docked right sidebar (decreased width so dashboard numbers never cramp) */}
+            <aside
+              aria-label="Veda AI Assistant Panel"
+              className="hidden lg:flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-screen sticky top-0 shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
+            >
+              {panelInner}
+            </aside>
+
+            {/* Mobile / Tablet: Slide-over drawer */}
+            <div
+              className="lg:hidden fixed inset-0 bg-black/40 z-40 backdrop-blur-sm animate-in fade-in duration-200"
+              onClick={close}
+            />
+            <div className="lg:hidden fixed inset-y-0 right-0 w-full sm:w-[360px] z-50 flex flex-col bg-card border-l border-border shadow-2xl animate-in slide-in-from-right duration-300">
+              {panelInner}
+            </div>
+          </>
+        ) : (
+          /* Floating window mode (user preference toggle) */
+          <div className="fixed top-14 right-6 z-50 pointer-events-none flex flex-col items-end">
+            <div className="pointer-events-auto flex flex-col w-[350px] sm:w-[380px] h-[580px] max-h-[85vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              {panelInner}
+            </div>
+          </div>
+        )
       )}
     </>
   );

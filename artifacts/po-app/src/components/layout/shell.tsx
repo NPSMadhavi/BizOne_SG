@@ -56,6 +56,7 @@ import {
   ArrowLeftRight,
   Landmark,
   LayoutTemplate,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -931,12 +932,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-2">
           <img src={activeLogo} alt="BizOne" className="h-6" />
         </div>
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="-mr-2">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => window.dispatchEvent(new CustomEvent("open-veda"))}
+            className="text-primary hover:bg-muted"
+            title="Ask Veda AI"
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="-mr-2">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
           <SheetContent side="left" className="w-72 p-0 flex flex-col">
             <div className="p-4 border-b shrink-0">
               <img src={activeLogo} alt="BizOne" className="h-8" />
@@ -958,7 +969,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </div>
           </SheetContent>
         </Sheet>
-      </header>
+      </div>
+    </header>
 
       {/* ── Desktop sidebar ───────────────────────────────────── */}
       <aside

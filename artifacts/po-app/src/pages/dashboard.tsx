@@ -19,6 +19,7 @@ import {
   RotateCcw,
   AlertCircle,
   Clock,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { fmtDate } from "@/lib/utils";
@@ -529,6 +530,15 @@ export default function Dashboard() {
             showCloseFyButton
             onCloseFyClick={(from, to) => setFyRolloverRequest({ from, to })}
           />
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("open-veda"))}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-xs shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            title="Ask Veda AI Assistant"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-primary animate-pulse" />
+            <span>Ask Veda</span>
+          </button>
         </div>
       </div>
 
@@ -538,42 +548,55 @@ export default function Dashboard() {
       />
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-5 xl:gap-4">
         {summaryCards.map((card) => {
           const Icon = card.icon;
           return (
             <div
               key={card.title}
-              className="rounded-2xl border border-[#e8edf5] bg-white p-5 shadow-[0_2px_8px_rgba(15,28,51,0.04)]"
+              className="rounded-2xl border border-[#e8edf5] bg-white p-3.5 sm:p-4 shadow-[0_2px_8px_rgba(15,28,51,0.04)] min-w-0 overflow-hidden flex flex-col justify-between"
             >
-              <div className="mb-3 flex items-start justify-between">
-                <p className="text-[12px] font-medium text-[#64748b]">{card.title}</p>
-                <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${card.iconBg}`}>
-                  <Icon size={18} className={card.iconColor} />
+              <div>
+                <div className="mb-2 flex items-start justify-between gap-1">
+                  <p className="text-[11px] sm:text-[12px] font-medium text-[#64748b] leading-tight truncate mr-1" title={card.title}>
+                    {card.title}
+                  </p>
+                  <div className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl ${card.iconBg}`}>
+                    <Icon size={16} className={card.iconColor} />
+                  </div>
                 </div>
-              </div>
-              <p className="text-[1.35rem] font-bold tracking-tight text-[#101828]">{card.value}</p>
-              {card.change && (
                 <p
-                  className={`mt-1 flex items-center gap-1 text-[12px] font-semibold ${
-                    card.up ? "text-[#16a34a]" : "text-[#dc2626]"
-                  }`}
+                  className="text-[1.15rem] sm:text-[1.3rem] font-bold tracking-tight text-[#101828] truncate leading-tight"
+                  title={card.value}
                 >
-                  {card.up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                  {card.change}
+                  {card.value}
                 </p>
-              )}
-              {card.sub && (
-                <p className="mt-1 text-[11px] font-medium text-[#dc2626]">{card.sub}</p>
-              )}
+              </div>
+              <div>
+                {card.change && (
+                  <p
+                    className={`mt-1.5 flex items-center gap-1 text-[11px] sm:text-[12px] font-semibold truncate ${
+                      card.up ? "text-[#16a34a]" : "text-[#dc2626]"
+                    }`}
+                  >
+                    {card.up ? <TrendingUp size={12} className="shrink-0" /> : <TrendingDown size={12} className="shrink-0" />}
+                    <span className="truncate">{card.change}</span>
+                  </p>
+                )}
+                {card.sub && (
+                  <p className="mt-1 text-[10px] sm:text-[11px] font-medium text-[#dc2626] truncate" title={card.sub}>
+                    {card.sub}
+                  </p>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-        <div className="rounded-2xl border border-[#e8edf5] bg-white p-5 shadow-[0_2px_8px_rgba(15,28,51,0.04)] xl:col-span-3">
+      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-5 xl:grid-cols-1">
+        <div className="rounded-2xl border border-[#e8edf5] bg-white p-5 shadow-[0_2px_8px_rgba(15,28,51,0.04)] 2xl:col-span-3 min-w-0 overflow-hidden">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-[#101828]">
               Income vs Expense Overview
@@ -599,23 +622,23 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="rounded-2xl border border-[#e8edf5] bg-white p-5 shadow-[0_2px_8px_rgba(15,28,51,0.04)] xl:col-span-2">
+        <div className="rounded-2xl border border-[#e8edf5] bg-white p-5 shadow-[0_2px_8px_rgba(15,28,51,0.04)] 2xl:col-span-2 min-w-0 overflow-hidden">
           <h2 className="mb-4 text-[15px] font-semibold text-[#101828]">
             Income by Category
           </h2>
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <div className="flex flex-col sm:flex-row xl:flex-row 2xl:flex-col items-center gap-4 min-w-0">
             <DonutChart segments={metrics.donutSegments} />
-            <div className="w-full space-y-3">
+            <div className="w-full space-y-3 min-w-0">
               {metrics.cats.map((cat) => (
-                <div key={cat.label} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                <div key={cat.label} className="flex items-center justify-between gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 truncate">
                     <span
-                      className="h-2.5 w-2.5 rounded-full"
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: cat.color }}
                     />
-                    <span className="text-[12px] text-[#64748b]">{cat.label}</span>
+                    <span className="text-[12px] text-[#64748b] truncate">{cat.label}</span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <p className="text-[12px] font-semibold text-[#101828]">{cat.value}</p>
                     <p className="text-[10px] text-[#94a3b8]">{cat.pct}</p>
                   </div>
