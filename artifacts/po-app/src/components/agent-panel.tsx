@@ -1442,6 +1442,18 @@ function listenForCommand(
 // ── Component ─────────────────────────────────────────────────────────────────
 type ConvState = "idle" | "greeting" | "listening" | "processing" | "speaking";
 
+function AudioWave({ active = true, color = "bg-primary" }: { active?: boolean; color?: string }) {
+  return (
+    <div className="flex items-center gap-[2.5px] h-4 px-0.5">
+      <span className={cn("w-[2.5px] rounded-full transition-all duration-300 animate-pulse", color, active ? "h-2.5" : "h-1")} style={{ animationDelay: "0ms", animationDuration: "700ms" }} />
+      <span className={cn("w-[2.5px] rounded-full transition-all duration-300 animate-pulse", color, active ? "h-4" : "h-1.5")} style={{ animationDelay: "150ms", animationDuration: "600ms" }} />
+      <span className={cn("w-[2.5px] rounded-full transition-all duration-300 animate-pulse", color, active ? "h-3" : "h-1")} style={{ animationDelay: "300ms", animationDuration: "800ms" }} />
+      <span className={cn("w-[2.5px] rounded-full transition-all duration-300 animate-pulse", color, active ? "h-4.5" : "h-2")} style={{ animationDelay: "100ms", animationDuration: "650ms" }} />
+      <span className={cn("w-[2.5px] rounded-full transition-all duration-300 animate-pulse", color, active ? "h-2" : "h-1")} style={{ animationDelay: "250ms", animationDuration: "750ms" }} />
+    </div>
+  );
+}
+
 export function AgentPanel() {
   const [open, setOpen] = useState(false);
   const [isDocked, setIsDocked] = useState<boolean>(() => {
@@ -1486,6 +1498,10 @@ export function AgentPanel() {
   const panelListenAbortRef = useRef<AbortController | null>(null);
 
   const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, convText, convState, panelListening]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [location, navigate] = useLocation();
@@ -2425,8 +2441,11 @@ export function AgentPanel() {
   const mic = async () => {
     if (thinking || transcribing) return;
     // Second tap only cancels if already listening (escape hatch)
-    if (panelListening) {
+    if (panelListening || convState === "listening") {
       panelListenAbortRef.current?.abort();
+      setPanelListening(false);
+      setConvState("idle");
+      setConvText("");
       return;
     }
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -2437,17 +2456,25 @@ export function AgentPanel() {
     setVoiceError(null);
     setMicError(false);
     setPanelListening(true);
+    setConvState("listening");
+    setConvText("");
     const ctrl = new AbortController();
     panelListenAbortRef.current = ctrl;
     try {
-      const t = await listenForCommand(() => {}, ctrl.signal);
+      const t = await listenForCommand(text => setConvText(text), ctrl.signal);
       if (ctrl.signal.aborted) return;
-      if (t.trim()) await send(t, true);
-      else setVoiceError("Couldn't catch that — speak again, then pause when done.");
+      if (t.trim()) {
+        setConvState("processing");
+        await send(t, true);
+      } else {
+        setVoiceError("Couldn't catch that — speak again, then pause when done.");
+      }
     } catch {
       setVoiceError("Voice listening failed — try again or type instead.");
     } finally {
       setPanelListening(false);
+      setConvState("idle");
+      setConvText("");
       panelListenAbortRef.current = null;
     }
   };
@@ -2540,6 +2567,21 @@ export function AgentPanel() {
             <p className="text-xs text-muted-foreground mt-1 text-center max-w-[260px]">
               Ask questions, run reports, or navigate BizOne
             </p>
+
+            {/* Live speech listening card on welcome screen */}
+            {(panelListening || convState === "listening") && (
+              <div className="w-full flex flex-col items-center justify-center gap-2 p-3.5 mt-4 rounded-2xl bg-gradient-to-r from-blue-600/10 via-primary/10 to-indigo-600/10 border border-primary/30 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                  <AudioWave active={true} color="bg-primary" />
+                  <span className="text-xs font-semibold text-primary">Listening…</span>
+                </div>
+                <p className="text-sm font-semibold text-foreground text-center px-2">
+                  {convText ? `"${convText}"` : "Speak your command or question"}
+                </p>
+                <span className="text-[10px] text-muted-foreground">Pause speaking to send</span>
+              </div>
+            )}
 
             {voiceError && (
               <p className="mt-2 text-xs text-red-600 text-center max-w-sm px-2">{voiceError}</p>
@@ -2657,6 +2699,58 @@ export function AgentPanel() {
                 )}
               </div>
             ))}
+
+            {/* Live speech listening bubble */}
+            {(panelListening || convState === "listening") && (
+              <div className="flex justify-end gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                <div className="flex flex-col items-end max-w-[85%]">
+                  <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl rounded-tr-sm bg-gradient-to-r from-blue-600/10 via-primary/10 to-indigo-600/10 border border-primary/30 text-foreground shadow-xs">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                    <AudioWave active={true} color="bg-primary" />
+                    <span className="text-sm font-medium leading-relaxed">
+                      {convText ? (
+                        <span className="font-semibold text-foreground">"{convText}"</span>
+                      ) : (
+                        <span className="text-primary font-medium animate-pulse">Listening… speak now</span>
+                      )}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground mt-1 mr-1">
+                    Pause speaking to send · Esc to cancel
+                  </span>
+                </div>
+                <div className="shrink-0 w-6 h-6 rounded-lg bg-primary/20 text-primary flex items-center justify-center text-xs font-bold mt-0.5 shadow-xs">
+                  <Mic className="h-3.5 w-3.5 text-primary animate-pulse" />
+                </div>
+              </div>
+            )}
+
+            {/* Assistant Thinking / Processing */}
+            {(thinking || convState === "processing") && !panelListening && convState !== "listening" && (
+              <div className="flex justify-start gap-2.5 animate-in fade-in duration-200">
+                <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
+                  <Sparkles className="h-3.5 w-3.5 animate-spin text-white" />
+                </div>
+                <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-muted/40 border border-border/50 text-foreground text-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                  <span className="text-xs text-muted-foreground font-medium">Thinking…</span>
+                </div>
+              </div>
+            )}
+
+            {/* Assistant Speaking */}
+            {convState === "speaking" && !panelListening && convState !== "listening" && !thinking && (
+              <div className="flex justify-start gap-2.5 animate-in fade-in duration-200">
+                <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
+                  <Sparkles className="h-3 w-3" />
+                </div>
+                <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl rounded-tl-sm bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
+                  <AudioWave active={true} color="bg-primary" />
+                  <span>Speaking…</span>
+                </div>
+              </div>
+            )}
+
             <div ref={endRef} />
           </div>
         )}
@@ -2667,14 +2761,14 @@ export function AgentPanel() {
         <div className={cn(
           "flex flex-col bg-muted/40 border border-border/80 rounded-2xl p-2.5 transition-all shadow-xs",
           "focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 focus-within:bg-background",
-          panelListening && "ring-2 ring-red-400/50 border-red-400 bg-red-500/5"
+          (panelListening || convState === "listening") && "ring-2 ring-red-400/50 border-red-400 bg-red-500/5"
         )}>
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKey}
-            placeholder={panelListening ? "Listening… speak then pause" : "Ask Veda anything…"}
+            placeholder={(panelListening || convState === "listening") ? "Listening… speak then pause" : "Ask Veda anything…"}
             rows={1}
             disabled={thinking || panelListening || transcribing}
             className="w-full resize-none bg-transparent text-sm focus:outline-none disabled:opacity-50 min-h-[32px] max-h-[120px] overflow-y-auto px-1 py-0.5 placeholder:text-muted-foreground/60 leading-relaxed"
@@ -2686,16 +2780,22 @@ export function AgentPanel() {
           />
 
           <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-border/30">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {panelListening ? (
-                <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                  Listening…
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+              {panelListening || convState === "listening" ? (
+                <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium truncate">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+                  <AudioWave active={true} color="bg-red-500" />
+                  <span className="truncate max-w-[170px]">{convText ? `"${convText}"` : "Listening…"}</span>
                 </span>
-              ) : thinking ? (
+              ) : thinking || convState === "processing" ? (
                 <span className="flex items-center gap-1.5 text-primary">
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
                   Thinking…
+                </span>
+              ) : convState === "speaking" ? (
+                <span className="flex items-center gap-1.5 text-primary">
+                  <AudioWave active={true} color="bg-primary" />
+                  Speaking…
                 </span>
               ) : (
                 <span className="text-[11px] text-muted-foreground/70">
@@ -2718,13 +2818,13 @@ export function AgentPanel() {
                 <button
                   onClick={mic}
                   disabled={transcribing || thinking}
-                  title={micError ? "Mic access denied" : panelListening ? "Cancel listening" : "Voice input (ends on pause)"}
+                  title={micError ? "Mic access denied" : (panelListening || convState === "listening") ? "Cancel listening" : "Voice input (ends on pause)"}
                   className={cn(
                     "w-7 h-7 rounded-full flex items-center justify-center transition-all",
                     micError
                       ? "bg-red-100 text-red-500 dark:bg-red-950/40"
-                      : panelListening
-                      ? "bg-red-500 text-white animate-pulse"
+                      : (panelListening || convState === "listening")
+                      ? "bg-red-500 text-white shadow-md shadow-red-500/30 ring-2 ring-red-400/50 animate-pulse"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted",
                   )}
                 >
