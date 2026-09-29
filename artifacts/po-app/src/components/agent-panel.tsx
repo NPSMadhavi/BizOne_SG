@@ -2889,22 +2889,6 @@ export function AgentPanel() {
         </div>
       )}
 
-      {/* ── Trigger button down right side when closed ── */}
-      {!open && (
-        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
-          <button
-            onClick={() => setOpen(true)}
-            title="Ask Veda AI Assistant (Alt+M)"
-            className="group relative flex items-center gap-2.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 via-primary to-indigo-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 border border-white/20 select-none cursor-pointer"
-          >
-            {handsFree && (
-              <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
-            )}
-            <Sparkles className="h-4 w-4 text-amber-300 group-hover:rotate-12 transition-transform" />
-            <span className="text-sm font-semibold tracking-wide">Ask Veda</span>
-          </button>
-        </div>
-      )}
 
       {/* ── Veda Panel: Docked (Gemini side panel) or Floating ── */}
       {open && (

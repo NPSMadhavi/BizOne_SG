@@ -135,6 +135,61 @@ export function guessFieldFromAssistantQuestion(assistantText: string): FieldGue
   return null;
 }
 
+/** Extract direct field assignments from user statements (e.g. "customer is Acme", "terms 30 days net", "tax 9"). */
+export function extractFieldsFromUserStatement(statement: string): Record<string, unknown> | null {
+  const t = String(statement || "").trim();
+  if (!t) return null;
+  const out: Record<string, unknown> = {};
+
+  // Customer: e.g. "customer is SP Systems", "customer SP Systems", "client is SP Systems"
+  const custMatch = t.match(/\b(?:customer(?:\s*name)?|client)\s*(?:is|:|=)?\s*([A-Za-z0-9&.,' -]+?)(?=(?:\s*,\s*|\s+and\s+|\s+(?:terms|payment|po|currency|tax|item|date)|$))/i);
+  if (custMatch && custMatch[1].trim() && !/^(is|the|a|an|new|create)$/i.test(custMatch[1].trim())) {
+    out.customerName = custMatch[1].trim();
+  }
+
+  // Vendor: e.g. "vendor is Westcon", "vendor Westcon", "supplier Cisco"
+  const vendMatch = t.match(/\b(?:vendor(?:\s*name)?|supplier)\s*(?:is|:|=)?\s*([A-Za-z0-9&.,' -]+?)(?=(?:\s*,\s*|\s+and\s+|\s+(?:terms|payment|po|currency|tax|item|date)|$))/i);
+  if (vendMatch && vendMatch[1].trim() && !/^(is|the|a|an|new|create)$/i.test(vendMatch[1].trim())) {
+    out.vendorName = vendMatch[1].trim();
+  }
+
+  // Payment terms: "payment terms 30 days", "terms 30 days net", "terms: COD"
+  const termsMatch = t.match(/\b(?:payment\s*terms?|terms?)\s*(?:is|:|=)?\s*(\d+\s*days?(?:\s*net)?|cod|immediate|cash)/i);
+  if (termsMatch) {
+    out.paymentTerms = termsMatch[1].trim();
+  }
+
+  // Currency: "currency USD", "currency is SGD", "currency EUR"
+  const currMatch = t.match(/\b(?:currency)\s*(?:is|:|=)?\s*([A-Za-z]{3})\b/i);
+  if (currMatch) {
+    out.currency = normalizeCurrency(currMatch[1]);
+  }
+
+  // Tax / GST: "tax 9%", "gst 9", "tax 0"
+  const taxMatch = t.match(/\b(?:tax|gst)\s*(?:is|:|=)?\s*(\d+(?:\.\d+)?)\s*%?/i);
+  if (taxMatch) {
+    out.tax = parseFloat(taxMatch[1]);
+  }
+
+  // PO ref: "po ref PO123", "po number 123", "po #123"
+  const poMatch = t.match(/\b(?:po\s*(?:ref(?:erence)?|no|number)?|reference)\s*(?:is|:|=|#)?\s*([A-Za-z0-9-_]+)\b/i);
+  if (poMatch && !/^(is|the|a)$/i.test(poMatch[1])) {
+    out.poRefNo = poMatch[1].trim();
+  }
+
+  // Item / Line item: "item Laptop qty 5 price 1200", "add 5 laptops at 1200"
+  const itemMatch = t.match(/\bitem\s*(?:is|:)?\s*([^,]+?)(?:,\s*|\s+)qty\s*(\d+)(?:,\s*|\s+)(?:price|rate|unit\s*price)\s*(\d+(?:\.\d+)?)/i);
+  if (itemMatch) {
+    out.items = [{
+      description: itemMatch[1].trim(),
+      qty: parseInt(itemMatch[2], 10),
+      unitPrice: parseFloat(itemMatch[3]),
+    }];
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 /**
  * Instantly patch the open form from the user's answer (before the LLM round-trip).
  * Returns the fields dispatched, or null if nothing matched.
@@ -154,7 +209,14 @@ export function dispatchOptimisticGuidedFill(
   }
 
   const guess = guessFieldFromAssistantQuestion(assistantText);
-  if (!guess) return null;
+  if (!guess) {
+    const direct = extractFieldsFromUserStatement(answer);
+    if (direct) {
+      queueVedaFormFill(direct);
+      return direct;
+    }
+    return null;
+  }
 
   let value: unknown = guess.transform ? guess.transform(answer) : answer;
   if (value == null || value === "") return null;

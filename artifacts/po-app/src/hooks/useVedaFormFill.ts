@@ -7,6 +7,63 @@ const PENDING_KEY = "__vedaPendingFormFill";
 
 /** Common aliases the model may send instead of RHF field names. */
 const FIELD_ALIASES: Record<string, string> = {
+  customer: "customerName",
+  client: "customerName",
+  client_name: "customerName",
+  clientName: "customerName",
+  customer_name: "customerName",
+  vendor: "vendorName",
+  supplier: "vendorName",
+  supplier_name: "vendorName",
+  supplierName: "vendorName",
+  vendor_name: "vendorName",
+  contact: "contactPerson",
+  contact_person: "contactPerson",
+  contact_email: "contactEmail",
+  customer_address: "customerAddress",
+  customer_contact: "customerContact",
+  customer_contact_email: "customerContactEmail",
+  payment_terms: "paymentTerms",
+  payment_term: "paymentTerms",
+  paymentTerm: "paymentTerms",
+  terms: "paymentTerms",
+  delivery_date: "deliveryDate",
+  delivery_address: "deliveryAddress",
+  deliveryAddress: "deliveryAddress",
+  ship_to_address: "shipToAddress",
+  shipping_address: "shipToAddress",
+  shippingAddress: "shipToAddress",
+  shipTo: "shipToAddress",
+  ship_to: "shipToAddress",
+  po_ref_no: "poRefNo",
+  po_number: "poRefNo",
+  poNumber: "poRefNo",
+  po_no: "poRefNo",
+  poNo: "poRefNo",
+  poRef: "poRefNo",
+  reference: "poRefNo",
+  refNo: "poRefNo",
+  invoice_date: "issueDate",
+  invoiceDate: "issueDate",
+  order_date: "issueDate",
+  orderDate: "issueDate",
+  date: "issueDate",
+  note: "notes",
+  customer_note: "customerNote",
+  customer_notes: "customerNote",
+  customerNote: "customerNote",
+  delivery_instructions: "deliveryInstructions",
+  deliveryInstructions: "deliveryInstructions",
+  terms_and_conditions: "termsAndConditions",
+  termsAndConditions: "termsAndConditions",
+  quotation_terms: "quotationTerms",
+  unit_price: "unitPrice",
+  postal_code: "postalCode",
+  gst_registered: "gstRegistered",
+  gst_no: "gstNo",
+  is_active: "isActive",
+
+  // Employee fields
   employee_id: "employeeId",
   employee_code: "employeeId",
   empId: "employeeId",
@@ -44,23 +101,6 @@ const FIELD_ALIASES: Record<string, string> = {
   annual_salary: "annualSalary",
   monthlySalary: "salary",
   monthly_salary: "salary",
-  customer_name: "customerName",
-  vendor_name: "vendorName",
-  contact: "contactPerson",
-  contact_person: "contactPerson",
-  contact_email: "contactEmail",
-  customer_address: "customerAddress",
-  customer_contact: "customerContact",
-  customer_contact_email: "customerContactEmail",
-  payment_terms: "paymentTerms",
-  delivery_date: "deliveryDate",
-  unit_price: "unitPrice",
-  postal_code: "postalCode",
-  gst_registered: "gstRegistered",
-  gst_no: "gstNo",
-  ship_to_address: "shipToAddress",
-  quotation_terms: "quotationTerms",
-  is_active: "isActive",
 };
 
 const DATE_KEYS = new Set([
@@ -81,11 +121,9 @@ function coerceValue(key: string, value: unknown): unknown {
   if (DATE_KEYS.has(key) || /(?:Date|Expiry)$/.test(key)) {
     if (value instanceof Date) return value;
     if (typeof value === "string") {
-      // Keep ISO date strings for native date / delivery fields (not Date objects)
       if (/^\d{4}-\d{2}-\d{2}/.test(value.trim())) return value.trim().slice(0, 10);
       const d = new Date(value);
       if (Number.isNaN(d.getTime())) return value;
-      // Employee form date pickers expect Date; document forms prefer ISO string
       if (key === "deliveryDate" || key === "issueDate" || key === "validUntil") {
         return d.toISOString().slice(0, 10);
       }
@@ -118,6 +156,14 @@ function coerceValue(key: string, value: unknown): unknown {
     if (/singapore|citizen|^sg$/.test(t)) return "Singapore";
     return value.trim();
   }
+  if (key === "tax" && typeof value === "string") {
+    const num = parseFloat(value.replace(/[^\d.]/g, ""));
+    return Number.isFinite(num) ? num : value;
+  }
+  if (key === "discountAmount" && typeof value === "string") {
+    const num = parseFloat(value.replace(/[^\d.]/g, ""));
+    return Number.isFinite(num) ? num : value;
+  }
   if (key === "gstRegistered" || key === "isActive") {
     if (typeof value === "string") {
       const t = value.toLowerCase();
@@ -143,14 +189,116 @@ function normalizeFields(fields: Record<string, unknown>): Record<string, unknow
 
 function applyFields(form: UseFormReturn<any>, fields: Record<string, unknown>) {
   const normalized = normalizeFields(fields);
+
+  // 1. Direct form fields
   Object.entries(normalized).forEach(([key, value]) => {
-    form.setValue(key as any, value as any, {
-      shouldDirty: true,
-      shouldTouch: true,
-      shouldValidate: false,
-    });
+    if (key === "items" || key === "item" || key === "lineItem" || key === "lineItems") return;
+    try {
+      form.setValue(key as any, value as any, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    } catch {
+      // ignore
+    }
   });
-  // Keep a sticky merge so React Strict Mode remount / late form mount can re-apply
+
+  // 2. Line item handling for document forms (invoices, sales orders, purchase orders, quotations, etc.)
+  const currentItems = form.getValues("items");
+  if (Array.isArray(currentItems)) {
+    // If incoming payload has an items array
+    if (Array.isArray(normalized.items)) {
+      const updated = normalized.items.map((it: any, idx: number) => {
+        const base = currentItems[idx] || currentItems[0] || {};
+        return {
+          ...base,
+          type: it.type || base.type || "item",
+          description: String(it.description || it.name || it.item || base.description || ""),
+          qty: Number(it.qty ?? it.quantity ?? base.qty ?? 1),
+          unitPrice: Number(it.unitPrice ?? it.price ?? it.rate ?? base.unitPrice ?? 0),
+          discount: Number(it.discount ?? base.discount ?? 0),
+          uom: String(it.uom || base.uom || "Pcs"),
+        };
+      });
+      form.setValue("items" as any, updated as any, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    } else if (normalized.description || normalized.item || normalized.itemName) {
+      // Single line item provided directly as top-level fields
+      const desc = String(normalized.description || normalized.item || normalized.itemName || "");
+      const qty = Number(normalized.qty ?? normalized.quantity ?? 1);
+      const price = Number(normalized.unitPrice ?? normalized.price ?? normalized.rate ?? 0);
+      const itemsCopy = [...currentItems];
+
+      // If first row is blank, replace it; otherwise append
+      const firstRow = itemsCopy[0];
+      const isFirstBlank = firstRow && !firstRow.description?.trim() && (!firstRow.unitPrice || firstRow.unitPrice === 0);
+
+      if (isFirstBlank) {
+        itemsCopy[0] = {
+          ...firstRow,
+          description: desc,
+          qty: qty || firstRow.qty || 1,
+          unitPrice: price || firstRow.unitPrice || 0,
+        };
+      } else {
+        itemsCopy.push({
+          ...(firstRow || {}),
+          type: "item",
+          sectionLabel: "",
+          partNumber: "",
+          description: desc,
+          qty: qty || 1,
+          uom: "Pcs",
+          unitPrice: price || 0,
+          discount: 0,
+          isFoc: false,
+          isStockItem: false,
+          selectedSerials: [],
+          selectedSerialIds: [],
+          itemImage: "",
+        });
+      }
+      form.setValue("items" as any, itemsCopy as any, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    }
+  }
+
+  // 3. Auto-enrich directory contact details if customerName or vendorName was filled
+  const targetPartyName = normalized.customerName || normalized.vendorName;
+  const partyType = normalized.customerName ? "customer" : normalized.vendorName ? "vendor" : null;
+  if (typeof targetPartyName === "string" && targetPartyName.trim() && partyType) {
+    void fetch(`/api/contacts?type=${partyType}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((contacts: any[]) => {
+        const query = targetPartyName.trim().toLowerCase();
+        const match = contacts.find((c: any) =>
+          c.name?.toLowerCase() === query || c.name?.toLowerCase().includes(query)
+        );
+        if (match) {
+          window.dispatchEvent(new CustomEvent("veda:select-contact", {
+            detail: { type: partyType, contact: match },
+          }));
+          if (partyType === "customer") {
+            if (match.address && !form.getValues("customerAddress")) form.setValue("customerAddress" as any, match.address, { shouldDirty: true });
+            if (match.contact && !form.getValues("customerContact")) form.setValue("customerContact" as any, match.contact, { shouldDirty: true });
+            if (match.email && !form.getValues("customerContactEmail")) form.setValue("customerContactEmail" as any, match.email, { shouldDirty: true });
+          } else {
+            if (match.address && !form.getValues("vendorAddress")) form.setValue("vendorAddress" as any, match.address, { shouldDirty: true });
+            if (match.contact && !form.getValues("vendorContact")) form.setValue("vendorContact" as any, match.contact, { shouldDirty: true });
+            if (match.email && !form.getValues("vendorContactEmail")) form.setValue("vendorContactEmail" as any, match.email, { shouldDirty: true });
+          }
+        }
+      })
+      .catch(() => {});
+  }
+
   queuePending(normalized);
 }
 
@@ -162,7 +310,6 @@ function queuePending(fields: Record<string, unknown>) {
 function takePending(): Record<string, unknown> | null {
   const pending = (window as any)[PENDING_KEY] as Record<string, unknown> | undefined;
   if (!pending || typeof pending !== "object") return null;
-  // Do not clear — remounts (Strict Mode) need the same snapshot
   return { ...pending };
 }
 
@@ -192,7 +339,6 @@ export function useVedaFormFill(form: UseFormReturn<any>) {
 
     // Flush anything that arrived before this form mounted (navigate race)
     flush();
-    // Retry shortly — form reset / Strict Mode remount often races the first fill
     const t1 = window.setTimeout(flush, 100);
     const t2 = window.setTimeout(flush, 400);
 

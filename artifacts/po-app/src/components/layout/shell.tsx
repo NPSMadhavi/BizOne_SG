@@ -87,6 +87,7 @@ import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
 import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
 import singaporeFlag from "../../assets/flag-for-singapore.png";
 import { AgentPanel } from "@/components/agent-panel";
+import { cn } from "@/lib/utils";
 
 // ── Sidebar collapse context ──────────────────────────────────────────────────
 // true = collapsed icon-rail; false = full expanded sidebar
@@ -913,8 +914,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {navItems}
         </div>
 
-        {/* Bottom: company + user */}
+        {/* Bottom: veda + company + user */}
         <div className="border-t border-border/50 bg-muted/10 pt-2 shrink-0">
+          <div className={collapsed ? "px-2 pb-1.5" : "px-3 pb-1.5"}>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("open-veda"))}
+              className={cn(
+                "w-full flex items-center rounded-lg text-primary hover:bg-primary/10 transition-colors",
+                collapsed ? "justify-center p-2" : "gap-2.5 px-3 py-2 text-xs font-medium"
+              )}
+              title="Ask Veda AI Assistant (Alt+M)"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              {!collapsed && <span className="truncate">Ask Veda AI</span>}
+            </button>
+          </div>
           <CompanyBadge />
           <UserMenu />
         </div>
