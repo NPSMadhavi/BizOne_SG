@@ -12,8 +12,11 @@ export function FormStickyActions({
     <>
       <div className="h-16 shrink-0" aria-hidden />
       <div
+        style={{
+          right: "var(--app-veda-width, 0px)",
+        }}
         className={cn(
-          "fixed bottom-0 left-0 right-0 z-30 flex gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:left-[var(--app-sidebar-width,16rem)] md:px-8",
+          "fixed bottom-0 left-0 z-20 flex gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur md:left-[var(--app-sidebar-width,16rem)] md:px-8 transition-all duration-300 shadow-sm",
           className ?? "justify-end",
         )}
       >

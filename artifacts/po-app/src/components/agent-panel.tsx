@@ -1479,6 +1479,31 @@ export function AgentPanel() {
     window.addEventListener("open-veda", handleOpen);
     return () => window.removeEventListener("open-veda", handleOpen);
   }, []);
+
+  // Sync --app-veda-width CSS variable so sticky action bars & layouts never hide behind Veda
+  useEffect(() => {
+    const updateVedaWidth = () => {
+      if (!open || !isDocked) {
+        document.documentElement.style.setProperty("--app-veda-width", "0px");
+        return;
+      }
+      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+        document.documentElement.style.setProperty("--app-veda-width", "0px");
+        return;
+      }
+      const w = typeof window !== "undefined"
+        ? (window.innerWidth >= 1280 ? "370px" : window.innerWidth >= 640 ? "350px" : "320px")
+        : "350px";
+      document.documentElement.style.setProperty("--app-veda-width", w);
+    };
+
+    updateVedaWidth();
+    window.addEventListener("resize", updateVedaWidth);
+    return () => {
+      window.removeEventListener("resize", updateVedaWidth);
+      document.documentElement.style.setProperty("--app-veda-width", "0px");
+    };
+  }, [open, isDocked]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -2761,7 +2786,7 @@ export function AgentPanel() {
         <div className={cn(
           "flex flex-col bg-muted/40 border border-border/80 rounded-2xl p-2.5 transition-all shadow-xs",
           "focus-within:ring-2 focus-within:ring-primary/25 focus-within:border-primary/40 focus-within:bg-background",
-          (panelListening || convState === "listening") && "ring-2 ring-red-400/50 border-red-400 bg-red-500/5"
+          (panelListening || convState === "listening") && "ring-2 ring-primary/40 border-primary/50 bg-primary/5"
         )}>
           <textarea
             ref={inputRef}
@@ -2782,9 +2807,9 @@ export function AgentPanel() {
           <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-border/30">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
               {panelListening || convState === "listening" ? (
-                <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium truncate">
+                <span className="flex items-center gap-1.5 text-primary font-medium truncate">
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
-                  <AudioWave active={true} color="bg-red-500" />
+                  <AudioWave active={true} color="bg-primary" />
                   <span className="truncate max-w-[170px]">{convText ? `"${convText}"` : "Listening…"}</span>
                 </span>
               ) : thinking || convState === "processing" ? (
@@ -2824,7 +2849,7 @@ export function AgentPanel() {
                     micError
                       ? "bg-red-100 text-red-500 dark:bg-red-950/40"
                       : (panelListening || convState === "listening")
-                      ? "bg-red-500 text-white shadow-md shadow-red-500/30 ring-2 ring-red-400/50 animate-pulse"
+                      ? "bg-primary text-white shadow-md shadow-primary/30 ring-2 ring-primary/50 animate-pulse"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted",
                   )}
                 >
