@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, FileInput, Package, X, Upload } from "lucide-react";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
@@ -196,6 +197,12 @@ export default function DeliveryOrderEdit() {
       },
     });
   }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => onSubmit(v, false), onFormInvalid)(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+    onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+  });
 
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 

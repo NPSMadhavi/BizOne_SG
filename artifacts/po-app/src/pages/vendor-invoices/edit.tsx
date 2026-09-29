@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
 import { useLocation, useParams } from "wouter";
 import { Check, AlertTriangle, RefreshCw, Plus, ArrowLeft, Eye, BookOpen } from "lucide-react";
@@ -394,6 +395,12 @@ export default function VendorInvoiceEdit() {
       setSaving(false);
     }
   };
+
+  useVedaFormActions({
+    onSave: () => { void handleSave(); },
+    onPreview: () => { void handleSave(); },
+    onDownload: () => { void handleSave(); },
+  });
 
   if (isLoading || (pi && !initialized.current)) {
     return (

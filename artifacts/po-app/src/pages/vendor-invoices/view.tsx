@@ -21,10 +21,12 @@ import {
 import { ArrowLeft, Plus, Trash2, Building, Calendar, CreditCard, FileText, Pencil } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
 import { BankAccountField } from "@/components/bank-account-field";
 import { calcViLineAmount } from "@/lib/vendor-invoice-items";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -35,7 +37,7 @@ function statusBadge(status: string) {
 }
 
 function formatCurrency(amount: number, currency = "SGD") {
-  return new Intl.NumberFormat("en-SG", { style: "currency", currency }).format(amount);
+  return formatCurrencySafe(amount, currency);
 }
 
 const PAYMENT_METHODS_LIST = [
@@ -53,6 +55,13 @@ export default function VendorInvoiceView() {
   const { toast } = useToast();
   const { isAdmin, canManage } = useAuth();
   const queryClient = useQueryClient();
+
+  useVedaFormActions({
+    onSave: () => {
+      if (!id) return;
+      setLocation(`/vendor-invoices/${id}/edit`);
+    },
+  });
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));

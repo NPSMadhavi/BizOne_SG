@@ -14,6 +14,7 @@ import { ListPagination } from "@/components/list-pagination";
 import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
 import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, fetchDocJson } from "@/components/bulk-email-bar";
 import { generateVendorInvoice_PDF } from "@/lib/pdf";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -24,7 +25,7 @@ function statusBadge(status: string) {
 }
 
 function fmt(amount: number, currency = "SGD") {
-  return new Intl.NumberFormat("en-SG", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
+  return formatCurrencySafe(amount, currency);
 }
 
 const QUARTERS = [

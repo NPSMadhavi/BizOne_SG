@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { previewRunningNumber } from "@/lib/running-number";
 import { apiRequest } from "@/operations-8june/lib/queryClient";
+import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -156,7 +157,7 @@ const optionalDate = z.union([z.date(), z.literal(""), z.null(), z.undefined()])
 
 // Enhanced form schema with better validation
 const formSchema = insertAssetSchema.extend({
-  tag: z.string().min(3, "Asset tag must be at least 3 characters"),
+  tag: z.string().optional(),
   type: z.string().min(1, "Asset name is required"),
   category: z.string().min(1, "Asset category is required"),
   serial: z.string().optional(),
@@ -545,9 +546,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     values: editFormValues,
   });
 
+  useVedaFormFill(form);
+
   useEffect(() => {
     if (!isEditMode && nextAssetTag) {
-      form.setValue("tag", nextAssetTag, { shouldValidate: false });
+      form.setValue("tag", nextAssetTag, { shouldValidate: true });
     }
   }, [form, isEditMode, nextAssetTag]);
 
@@ -790,7 +793,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       const responseData = await res.json();
       if (!res.ok) {
         console.error("❌ Asset creation failed:", responseData);
-        throw new Error(responseData.message || "Failed to create asset");
+        throw new Error(responseData.error || responseData.message || "Failed to create asset");
       }
       return responseData;
     },
@@ -821,7 +824,12 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const updateAssetMutation = useMutation({
     mutationFn: async (data: AssetFormData) => {
       const res = await apiRequest("PUT", `/api/assets/${assetId}`, data);
-      return await res.json();
+      const responseData = await res.json();
+      if (!res.ok) {
+        console.error("❌ Asset update failed:", responseData);
+        throw new Error(responseData.error || responseData.message || "Failed to update asset");
+      }
+      return responseData;
     },
     onSuccess: () => {
       toast({
@@ -850,6 +858,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const onSubmit = (data: AssetFormData) => {
     const cleanedData = {
       ...data,
+      tag: (data.tag && data.tag.trim()) || nextAssetTag || "AUTO",
       serial: data.serial?.trim() || "",
       purchaseDate: data.purchaseDate ? (data.purchaseDate instanceof Date ? data.purchaseDate.toISOString() : new Date(data.purchaseDate).toISOString()) : undefined,
       warrantyExpiry: data.warrantyExpiry ? (data.warrantyExpiry instanceof Date ? data.warrantyExpiry.toISOString() : new Date(data.warrantyExpiry).toISOString()) : undefined,
@@ -881,7 +890,17 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       <Form {...form}>
         <form
           id={formId}
-          onSubmit={form.handleSubmit(onSubmit)}
+          onSubmit={form.handleSubmit(onSubmit, (errors) => {
+            console.warn("Asset form validation errors:", errors);
+            const firstError = Object.values(errors)[0];
+            if (firstError?.message) {
+              toast({
+                title: "Please complete required fields",
+                description: String(firstError.message),
+                variant: "destructive",
+              });
+            }
+          })}
           onKeyDown={handleKeyDown}
           className="space-y-8"
         >
@@ -912,7 +931,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 autoFocus={!isEditMode ? false : true}
                                 readOnly={!isEditMode}
                                 {...field}
-                                value={!isEditMode ? (nextAssetTag || field.value) : field.value}
+                                value={field.value || (!isEditMode ? nextAssetTag : "") || ""}
                               />
                             </FormControl>
                             <FormMessage />

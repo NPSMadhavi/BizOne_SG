@@ -18,6 +18,7 @@ import {
   Trash2, AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 
@@ -71,7 +72,7 @@ const EXPENSE_CATEGORIES = [
 const CURRENCIES = ["SGD", "USD", "EUR", "GBP", "MYR", "INR"];
 
 function fmt(n: number, currency = "SGD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 2 }).format(n);
+  return formatCurrencySafe(n, currency);
 }
 
 function fmtDate(d: string | null) {

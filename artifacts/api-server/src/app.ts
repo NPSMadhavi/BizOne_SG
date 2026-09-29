@@ -278,7 +278,9 @@ if (!frontendPath) {
    * /favicon.png
    */
   app.use(
-    express.static(frontendPath),
+    express.static(frontendPath, {
+      redirect: false,
+    }),
   );
 
   /**

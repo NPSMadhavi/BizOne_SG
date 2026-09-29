@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useParams, useLocation } from "wouter";
@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Plus, Layers, AlignLeft, AlignCenter, Upload, Copy, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -32,6 +33,8 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generatePurchaseQuotation_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -46,15 +49,6 @@ const itemSchema = z.object({
   isFoc: z.boolean().default(false),
   itemImage: z.string().default(""),
 });
-
-const CURRENCIES = [
-  { code: "SGD", label: "SGD – S$" },
-  { code: "USD", label: "USD – $" },
-  { code: "EUR", label: "EUR – €" },
-  { code: "GBP", label: "GBP – £" },
-  { code: "MYR", label: "MYR – RM" },
-  { code: "INR", label: "INR – ₹" },
-];
 
 const schema = z.object({
   vendorName: z.string().min(1, "Required"),
@@ -192,7 +186,8 @@ export default function PurchaseQuotationEdit() {
     return () => sub.unsubscribe();
   }, [form, append]);
 
-  const currency = form.watch("currency") || "SGD";
+  const rawCurrency = form.watch("currency") || "SGD";
+  const currency = normalizeCurrency(rawCurrency);
 
   const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
@@ -203,8 +198,7 @@ export default function PurchaseQuotationEdit() {
   }, [subtotal]);
   const taxAmount = taxableAmount * (taxPercent / 100);
   const totalAmount = taxableAmount + taxAmount;
-  const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
-  const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
+  const fmt = (v: number) => formatCurrencySafe(v, currency);
 
   async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
     if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
@@ -249,6 +243,30 @@ export default function PurchaseQuotationEdit() {
     });
   }
 
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => doSubmit(v, false), onFormInvalid)(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+    onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+  });
+
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
@@ -266,21 +284,43 @@ export default function PurchaseQuotationEdit() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit((v) => onSubmit(v))} className="space-y-8">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Currency</CardTitle>
+              <div className="w-56">
+                <Select value={currency} onValueChange={(val) => form.setValue("currency", val)}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {CURRENCIES.map(c => (
+                      <SelectItem key={c.code} value={c.code} className="text-xs">
+                        {c.label} ({c.name})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {CURRENCIES.map(c => (
+                {CURRENCIES.slice(0, 6).map(c => (
                   <button
- key={c.code}
- type="button"
- onClick={() => form.setValue("currency", c.code)}
- className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                    key={c.code}
+                    type="button"
+                    onClick={() => form.setValue("currency", c.code)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
-                    {c.label}
+                    {c.code} – {c.symbol}
                   </button>
                 ))}
+                {!CURRENCIES.slice(0, 6).some(c => c.code === currency) && (
+                  <button
+                    type="button"
+                    className="px-4 py-1.5 rounded-full text-sm font-medium border bg-primary text-primary-foreground border-primary"
+                  >
+                    {CURRENCIES.find(c => c.code === currency)?.label || currency}
+                  </button>
+                )}
               </div>
             </CardContent>
           </Card>

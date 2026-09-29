@@ -128,7 +128,11 @@ process.on("SIGTERM", () => shutdown(0));
 freePort(API_PORT);
 freePort(WEB_PORT);
 
-const fileEnv = loadEnvFile(path.join(apiDir, "src", ".env"));
+const fileEnv = {
+  ...loadEnvFile(path.join(apiDir, "src", ".env")),
+  ...loadEnvFile(path.join(apiDir, ".env")),
+  ...loadEnvFile(path.join(root, ".env")),
+};
 const apiEnv = {
   ...fileEnv,
   PORT: API_PORT,

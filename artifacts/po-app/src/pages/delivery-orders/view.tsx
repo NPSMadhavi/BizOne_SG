@@ -9,6 +9,7 @@ import { fmtDate } from "@/lib/utils";
 import { generateDO_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,6 +34,19 @@ export default function DeliveryOrderView() {
 
   const { data: doc, isLoading, refetch } = useGetDeliveryOrder(id, {
     query: { queryKey: getGetDeliveryOrderQueryKey(id), enabled: !!id },
+  });
+
+  useVedaFormActions({
+    onSave: () => {
+      if (!id) return;
+      setLocation(`/delivery-orders/${id}/edit`);
+    },
+    onPreview: () => {
+      setPreviewOpen(true);
+    },
+    onDownload: () => {
+      setPreviewOpen(true);
+    },
   });
 
   const deleteMutation = useDeleteDeliveryOrder();

@@ -63,16 +63,8 @@ const itemSchema = z.object({
   itemImage: z.string().default(""),
 });
 
-const CURRENCIES = [
-  { code: "SGD", label: "SGD – S$" },
-  { code: "USD", label: "USD – $" },
-  { code: "EUR", label: "EUR – €" },
-  { code: "GBP", label: "GBP – £" },
-  { code: "MYR", label: "MYR – RM" },
-  { code: "INR", label: "INR – ₹" },
-];
-
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 import { useSalesPersons } from "@/hooks/use-sales-persons";
 
 const schema = z.object({
@@ -302,7 +294,8 @@ export default function InvoiceEdit() {
     return () => sub.unsubscribe();
   }, [form, append]);
 
-  const currency = form.watch("currency") || "SGD";
+  const rawCurrency = form.watch("currency") || "SGD";
+  const currency = normalizeCurrency(rawCurrency);
 
   const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
   const discountAmt = form.watch("discountAmount") || 0;
@@ -313,8 +306,7 @@ export default function InvoiceEdit() {
   }, [subtotal]);
   const taxAmount = taxableAmount * (taxPercent / 100);
   const totalAmount = taxableAmount + taxAmount;
-  const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
-  const fmt = (v: number) => new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(v);
+  const fmt = (v: number) => formatCurrencySafe(v, currency);
 
   function firstErrorMessage(errors: FieldErrors): string | undefined {
     for (const value of Object.values(errors)) {
@@ -448,6 +440,7 @@ export default function InvoiceEdit() {
     onSave: () => { void form.handleSubmit((v) => onSubmit(v, false), onFormInvalid)(); },
     onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
     onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+    onClose: () => { setLocation(id ? `/invoices/${id}` : "/invoices"); },
   });
 
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
@@ -465,21 +458,49 @@ export default function InvoiceEdit() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit((v) => onSubmit(v))} className="space-y-8">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Currency</CardTitle>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-lg">Currency</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Select by code or full name</p>
+              </div>
+              <div className="w-64">
+                <Select
+                  value={currency}
+                  onValueChange={(val) => form.setValue("currency", normalizeCurrency(val))}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Select currency…" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.code} — {c.name} ({c.symbol})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {CURRENCIES.map(c => (
+                {CURRENCIES.slice(0, 6).map(c => (
                   <button
- key={c.code}
- type="button"
- onClick={() => form.setValue("currency", c.code)}
- className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                    key={c.code}
+                    type="button"
+                    onClick={() => form.setValue("currency", c.code)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
-                    {c.label}
+                    {c.code} – {c.symbol}
                   </button>
                 ))}
+                {!CURRENCIES.slice(0, 6).some(c => c.code === currency) && (
+                  <button
+                    type="button"
+                    className="px-4 py-1.5 rounded-full text-sm font-medium border bg-primary text-primary-foreground border-primary"
+                  >
+                    {CURRENCIES.find(c => c.code === currency)?.label || currency}
+                  </button>
+                )}
               </div>
             </CardContent>
           </Card>

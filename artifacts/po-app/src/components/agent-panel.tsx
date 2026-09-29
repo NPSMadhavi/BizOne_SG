@@ -13,6 +13,9 @@ import {
   guidedAnswerHint,
   isGuidedCreatePath,
   sanitizeGuidedAnswer,
+  WAKE_WORD,
+  WAKE_TOKEN_RE,
+  isWakeWordDetected,
 } from "@/lib/veda-optimistic-fill";
 import {
   applyGuidedEmployeeAnswer,
@@ -104,6 +107,9 @@ const TOOL_LABELS: Record<string, string> = {
   searchQuotations: "Searching quotations",
   getQuotation: "Loading quotation",
   searchStockItems: "Searching catalogue",
+  getStockItem: "Loading stock item",
+  createStockItem: "Creating stock item",
+  updateStockItem: "Updating stock item",
   searchPurchaseOrders: "Searching POs",
   getPurchaseOrder: "Loading PO",
   searchInvoices: "Searching invoices",
@@ -124,6 +130,10 @@ const TOOL_LABELS: Record<string, string> = {
   searchEmployees: "Searching employees",
   createEmployee: "Creating employee",
   updateEmployee: "Updating employee",
+  searchAssets: "Searching assets",
+  getAsset: "Loading asset",
+  createAsset: "Creating asset",
+  updateAsset: "Updating asset",
   createCustomer: "Creating customer",
   updateCustomer: "Updating customer",
   createVendor: "Creating vendor",
@@ -171,7 +181,7 @@ function looksLikeCreateOrNavPhrase(text: string): boolean {
   const t = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
   if (!t) return true;
   if (/\b(create|open|show|launch|add|make|go\s*to|goto|navigate|please\s*go|form|page|module)\b/.test(t)) return true;
-  if (/\b(new\s+)?(employee|staff|invoice|quotation|quote|purchase\s*order|delivery\s*order|customer|vendor)\b/.test(t)) return true;
+  if (/\b(new\s+)?(employee|staff|invoice|quotation|quote|purchase\s*order|delivery\s*order|customer|vendor|asset|fixed\s*asset)\b/.test(t)) return true;
   return false;
 }
 
@@ -232,6 +242,128 @@ function guidedCreateKickoffHint(path: string, partyHint?: string): string {
   return `${navOnly} Start guided create: ask ONLY the first field now.`;
 }
 
+function matchExplicitFormAction(text: string): "save" | "preview" | "download" | "close" | null {
+  const t = normalizeVoiceTranscript(String(text || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  const clean = t.replace(/^(?:veda|please|kindly|can\s+you|could\s+you)\s+/i, "").replace(/[.!?]+$/g, "").trim();
+
+  // Close / exit / cancel form commands
+  if (
+    /^(?:close|exit|leave|dismiss|cancel)(?:\s+(?:the|this|current)?\s*(?:form|dialog|modal|screen|drawer|page|editor|new|window|record|it))?$/i.test(clean) ||
+    /^(?:back\s+to\s+list|go\s+back|discard(?:\s+form|\s+changes)?)$/i.test(clean) ||
+    clean === "close" || clean === "close form" || clean === "cancel" || clean === "cancel form" || clean === "exit" || clean === "exit form"
+  ) {
+    return "close";
+  }
+
+  if (
+    /^(?:save|submit)(?:\s+(?:the|this)?\s*(?:form|document|record|draft|changes|details|it))?$/i.test(clean) ||
+    /^save\s+and\s+(?:preview|download)$/i.test(clean) ||
+    clean === "save" || clean === "submit" || clean === "save now"
+  ) {
+    return "save";
+  }
+  if (
+    /^(?:preview|show\s+preview)(?:\s+(?:the|this)?\s*(?:form|document|record|draft|pdf|it))?$/i.test(clean) ||
+    clean === "preview" || clean === "preview now"
+  ) {
+    return "preview";
+  }
+  if (
+    /^(?:download|print)(?:\s+(?:the|this)?\s*(?:form|document|record|pdf|invoice|it))?$/i.test(clean) ||
+    clean === "download" || clean === "download pdf"
+  ) {
+    return "download";
+  }
+  return null;
+}
+
+function closeActiveFormsAndModals(navigate: (path: string) => void, currentPath: string): { closed: boolean; message: string } {
+  // 1. Broadcast close action to any active form component
+  queueVedaFormAction("close");
+
+  // 2. Dispatch events for custom modals and directory forms
+  window.dispatchEvent(new CustomEvent("veda:close-modal"));
+  window.dispatchEvent(new CustomEvent("veda:open-directory-form", { detail: { mode: "close" } }));
+
+  // 3. Dispatch Escape key to dismiss any open Radix UI Dialog / Sheet / Popover / Command
+  try {
+    const escEvent = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(escEvent);
+    window.dispatchEvent(escEvent);
+  } catch {}
+
+  // 4. Click any open dialog/sheet close button
+  try {
+    const closeButtons = document.querySelectorAll<HTMLElement>(
+      '[role="dialog"] button[aria-label="Close"], [data-state="open"] button[aria-label="Close"], [role="dialog"] button:has(svg.lucide-x)'
+    );
+    closeButtons.forEach((btn) => {
+      try { btn.click(); } catch {}
+    });
+  } catch {}
+
+  // 5. If on a form route (/module/new or /module/:id/edit or ?vedaNew=1), navigate back to parent list/view
+  const cleanPath = (currentPath || "").split("?")[0];
+  const editMatch = cleanPath.match(/^\/([a-z0-9-]+)\/(\d+)\/edit$/i);
+  const newMatch = cleanPath.match(/^\/([a-z0-9-]+)\/new$/i);
+  const isVedaNew = (currentPath || "").includes("vedaNew=1");
+
+  if (editMatch) {
+    const moduleName = editMatch[1];
+    const id = editMatch[2];
+    const parentPath = `/${moduleName}/${id}`;
+    navigate(parentPath);
+    const label = PATH_LABELS[`/${moduleName}`] || moduleName.replace(/-/g, " ");
+    return { closed: true, message: `Closed form, returned to ${label}.` };
+  }
+
+  if (newMatch) {
+    const moduleName = newMatch[1];
+    const parentPath = `/${moduleName}`;
+    navigate(parentPath);
+    const label = PATH_LABELS[parentPath] || moduleName.replace(/-/g, " ");
+    return { closed: true, message: `Closed form, returned to ${label}.` };
+  }
+
+  if (isVedaNew) {
+    navigate(cleanPath);
+    const label = PATH_LABELS[cleanPath] || cleanPath;
+    return { closed: true, message: `Closed form, returned to ${label}.` };
+  }
+
+  return { closed: true, message: "Form closed." };
+}
+
+function matchDocViewEditAction(command: string, currentPath: string): { path: string; label: string } | null {
+  const t = normalizeVoiceTranscript(String(command || "")).toLowerCase().replace(/\s+/g, " ").trim();
+  const clean = t.replace(/^(?:veda|please|kindly|can\s+you|could\s+you)\s+/i, "").replace(/[.!?]+$/g, "").trim();
+
+  const isEditCmd = /^(?:edit|update|modify|change)(?:\s+(?:this|the|current)?\s*(?:form|document|invoice|quotation|quote|order|purchase\s*order|delivery\s*order|sales\s*order|voucher|project))?$/i.test(clean);
+  const isViewCmd = /^(?:view|show|see|open|display)(?:\s+(?:this|the|current)?\s*(?:form|document|invoice|quotation|quote|order|purchase\s*order|delivery\s*order|sales\s*order|voucher|project))?$/i.test(clean);
+
+  const viewMatch = currentPath.match(/^\/(invoices|quotations|sales-orders|purchase-orders|delivery-orders|purchase-quotations|proforma-invoices|vendor-invoices|projects|assets)\/(\d+)$/);
+  if (viewMatch && isEditCmd) {
+    const [, moduleName, id] = viewMatch;
+    return { path: `/${moduleName}/${id}/edit`, label: `Edit ${moduleName.replace(/-/g, " ")}` };
+  }
+
+  const editMatch = currentPath.match(/^\/(invoices|quotations|sales-orders|purchase-orders|delivery-orders|purchase-quotations|proforma-invoices|vendor-invoices|projects|assets)\/(\d+)\/edit$/);
+  if (editMatch && isViewCmd) {
+    const [, moduleName, id] = editMatch;
+    return { path: `/${moduleName}/${id}`, label: `View ${moduleName.replace(/-/g, " ")}` };
+  }
+
+  return null;
+}
+
 /** Instant client-side navigate for clear "go to / open / create …" phrases (no LLM wait). */
 function matchQuickNavigate(command: string): QuickNavResult | null {
   const t = normalizeVoiceTranscript(String(command || "")).toLowerCase().replace(/\s+/g, " ").trim();
@@ -246,17 +378,19 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
   const wantsCreate =
     /\b(create|new|add|make)\b/.test(t)
     || /\b(open|show|launch)\b.+\b(new\s+)?(form|page)\b/.test(t)
-    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor)\b/.test(t);
+    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor|stock\s*item|product)\b/.test(t);
 
   const party = extractPartyFromCommand(normalizeVoiceTranscript(command));
 
-  // Create / open new form — always /new (not the list), even with "for me" or "for Acme"
-  // Do not client-prefill guessed spelling — agent will search directory for accuracy.
   if (wantsCreate) {
     const openNew = (path: string): QuickNavResult => ({
       path,
       spokenParty: party || undefined,
     });
+    if (/\b(stock\s*items?|products?|inventory\s*items?|catalogue\s*items?)\b/.test(t)) return openNew("/stock/new");
+    if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return openNew("/vendor-invoices/new");
+    if (/\bpurchase\s*quotations?\b/.test(t)) return openNew("/purchase-quotations/new");
+    if (/\bproforma\s*invoices?\b|\bpi\b/.test(t)) return openNew("/proforma-invoices/new");
     if (/\binvoices?\b/.test(t)) return openNew("/invoices/new");
     if (/\bquotations?\b|\bquotes?\b/.test(t)) return openNew("/quotations/new");
     if (/\bpurchase\s*orders?\b/.test(t)) return openNew("/purchase-orders/new");
@@ -265,6 +399,8 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     if (/\bemployees?\b|\bstaff\b|\bperson\b/.test(t)) return openNew("/employees/new");
     if (/\bcustomers?\b/.test(t)) return openNew("/customers?vedaNew=1");
     if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return openNew("/vendors?vedaNew=1");
+    if (/\bprojects?\b/.test(t)) return openNew("/projects/new");
+    if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return openNew("/assets/new");
   }
 
   // Plain list / module navigation (no create intent)
@@ -272,7 +408,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
 
   const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/.test(t)
     || /\b(page|module|screen|list)\b/.test(t)
-    || /^(invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|employees?|staff|stock|grn|dashboard|settings|point\s*of\s*sale|pos)$/.test(t);
+    || /^(invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|employees?|staff|stock|grn|dashboard|settings|point\s*of\s*sale|pos|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|projects?|inventory|catalogue|catalog|item\s*master|assets?|fixed\s*assets?)$/.test(t);
   if (!wantsNav) return null;
 
   // "show/open X for Y" without create → let agent search (unless it's clearly a page jump)
@@ -280,9 +416,11 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     return null;
   }
 
+  if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return { path: "/vendor-invoices" };
+  if (/\bpurchase\s*quotations?\b/.test(t)) return { path: "/purchase-quotations" };
+  if (/\bproforma\s*invoices?\b/.test(t)) return { path: "/proforma-invoices" };
   if (/\bpurchase\s*orders?\b/.test(t)) return { path: "/purchase-orders" };
   if (/\bpoint\s*of\s*sale\b/.test(t)) return { path: "/point-of-sale" };
-  if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return { path: "/vendor-invoices" };
   if (/\binvoices?\b/.test(t)) return { path: "/invoices" };
   if (/\bquotations?\b|\bquotes?\b/.test(t)) return { path: "/quotations" };
   if (/\bdelivery\s*orders?\b/.test(t)) return { path: "/delivery-orders" };
@@ -290,7 +428,9 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
   if (/\bemployees?\b|\bstaff\b|\bpayroll\b/.test(t)) return { path: "/employees" };
   if (/\bcustomers?\b/.test(t)) return { path: "/customers" };
   if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return { path: "/vendors" };
-  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b/.test(t)) return { path: "/stock" };
+  if (/\bprojects?\b/.test(t)) return { path: "/projects" };
+  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b|\bitem\s*master\b/.test(t)) return { path: "/stock" };
+  if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return { path: "/assets" };
   if (/\bgrn\b|\bgoods\s*received\b/.test(t)) return { path: "/grn" };
   if (/\bdashboard\b|\bhome\b/.test(t)) return { path: "/dashboard" };
   if (/\bsettings?\b/.test(t)) return { path: "/settings" };
@@ -311,16 +451,26 @@ const PATH_LABELS: Record<string, string> = {
   "/delivery-orders/new": "New Delivery Order",
   "/sales-orders": "Sales Orders",
   "/sales-orders/new": "New Sales Order",
+  "/purchase-quotations": "Purchase Quotations",
+  "/purchase-quotations/new": "New Purchase Quotation",
+  "/proforma-invoices": "Proforma Invoices",
+  "/proforma-invoices/new": "New Proforma Invoice",
   "/employees": "Employees",
   "/employees/new": "New Employee",
+  "/assets": "Fixed Assets",
+  "/assets/new": "New Asset",
   "/stock": "Item Master",
+  "/stock/new": "New Stock Item",
   "/grn": "GRN",
   "/settings": "Settings",
   "/vendor-invoices": "Vendor Invoices",
+  "/vendor-invoices/new": "New Vendor Invoice",
   "/customers": "Customers",
   "/customers?vedaNew=1": "New Customer",
   "/vendors": "Vendors",
   "/vendors?vedaNew=1": "New Vendor",
+  "/projects": "Projects",
+  "/projects/new": "New Project",
   "/accounting": "Accounting",
   "/accounting/gst-f5": "GST F5",
   "/expenses": "Expenses",
@@ -432,6 +582,47 @@ if (typeof window !== "undefined" && window.speechSynthesis) {
   _initVoiceCache();
 }
 
+/** Instant sensory audio chime (<1ms latency) using Web Audio API when wake word is detected. */
+function playWakeChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+    const now = ctx.currentTime;
+
+    // First tone (warm ascending chime: D5 ~ 587Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(587.33, now);
+    gain1.gain.setValueAtTime(0.14, now);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.12);
+
+    // Second tone (higher crisp chime: A5 ~ 880Hz)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(880, now + 0.07);
+    gain2.gain.setValueAtTime(0.18, now + 0.07);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.07);
+    osc2.stop(now + 0.28);
+
+    setTimeout(() => {
+      try { void ctx.close(); } catch {}
+    }, 350);
+  } catch {}
+}
+
 let _browserTtsResolve: (() => void) | null = null;
 let _browserTtsTimeout: ReturnType<typeof setTimeout> | null = null;
 function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }): Promise<void> {
@@ -443,6 +634,10 @@ function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }):
     window.speechSynthesis.cancel();
     _browserTtsResolve?.();
     _browserTtsResolve = resolve;
+
+    if (window.speechSynthesis.paused) {
+      try { window.speechSynthesis.resume(); } catch {}
+    }
 
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
     if (!clean) { _browserTtsResolve = null; resolve(); return; }
@@ -471,6 +666,17 @@ function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }):
       window.speechSynthesis.speak(utt);
     }, deferMs);
   });
+}
+
+/** Fast wake acknowledgment word so user immediately hears Veda is awake and ready. */
+async function speakWakeGreeting(text: string): Promise<void> {
+  const clean = String(text || "Ready!").trim();
+  if (!clean) return;
+  _userHasInteracted = true;
+  if (typeof window !== "undefined" && window.speechSynthesis?.paused) {
+    try { window.speechSynthesis.resume(); } catch {}
+  }
+  await speakBrowser(clean, { rate: 1.15, deferMs: 0 });
 }
 
 async function speak(text: string): Promise<void> {
@@ -512,6 +718,11 @@ function claimSpeechMic(rec: any) {
   _activeSpeechRec = rec;
 }
 
+function getSpeechLang(): string {
+  if (typeof navigator !== "undefined" && navigator.language) return navigator.language;
+  return "en-SG";
+}
+
 /** Fix common Web Speech mishears for BizOne / Singapore ERP phrases. */
 function normalizeVoiceTranscript(raw: string): string {
   let t = String(raw || "").replace(/\s+/g, " ").trim();
@@ -537,7 +748,7 @@ function normalizeVoiceTranscript(raw: string): string {
 const ERP_SCORE_WORDS = [
   "quotation", "quotations", "quote", "invoice", "invoices", "purchase", "order", "orders",
   "delivery", "customer", "vendor", "supplier", "employee", "create", "open", "form",
-  "save", "preview", "download", "veda", "new", "edit",
+  "save", "preview", "download", "veda", "new", "edit", "asset", "assets", "stock", "items",
 ];
 
 /** Prefer the SpeechRecognition alternative that best matches ERP vocabulary. */
@@ -581,6 +792,7 @@ function isLikelyNoise(text: string): boolean {
   const t = String(text || "").trim().toLowerCase();
   if (!t) return true;
   if (isStopCommand(t)) return false;
+  if (/^(close|cancel|exit|dismiss|save|preview|download)$/i.test(t)) return false;
   // Digits, emails, yes/no, currencies, common form answers are always real
   if (/\d/.test(t) || /@/.test(t)) return false;
   if (/^(yes|yeah|yep|yup|ok|okay|sure|no|nope|nah|skip|later|none|sgd|usd|eur|inr|myr|gbp|active|singapore|foreigner|pr)$/i.test(t)) return false;
@@ -679,7 +891,7 @@ function speakAndMaybeCapture(
         bargeRec = new SR();
         bargeRec.continuous = true;
         bargeRec.interimResults = true;
-        bargeRec.lang = "en-SG";
+        bargeRec.lang = getSpeechLang();
         bargeRec.maxAlternatives = 5;
         claimSpeechMic(bargeRec);
         bargeRec.onresult = (evt: any) => {
@@ -890,8 +1102,8 @@ function useVoice() {
 // ── Wake word hook (single-shot loop — far more reliable than continuous) ─────
 // Keep as a plain variable (not const) so HMR always refreshes it in place.
 // The hook reads it via a ref so stale useCallback closures always see the latest value.
-// Phonetic / STT variants of "Veda" only — avoid common English words that false-trigger.
-let WAKE_WORDS = /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedaah|vedha|veyda|veida|beeda|bheda|veda\s*ji|hey\s*veda)\b/i;
+// Phonetic / STT variants of "Veda" and wake commands (including soft, slow, and Indian English accents)
+let WAKE_WORDS = /\b(wake\s*up(?:\s*veda)?|wake\s*veda|wake\s*up\s*agent|wake\s*agent|wake\s*up|wake|veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|fader|vedaah|vedaa|vedas|vedha|veyda|veida|beeda|bheda|vada|vaada|vadaa|wada|waada|weather|whether|wait\s*a|waiter|way\s*that|way\s*the|way\s*da|wayda|where\s*the|wear\s*the|veena|veera|video|beta|vee\s*da|ve\s*da|v\s*da|veda\s*ji|hey\s*veda|hi\s*veda|hello\s*veda|ok\s*veda|okay\s*veda|yo\s*veda|oye\s*veda|agent|the\s*agent|hey\s*agent|hi\s*agent|hello\s*agent|call\s*agent|call\s*the\s*agent|bizone|biz\s*one|hey\s*bizone|assistant|hey\s*assistant)\b/i;
 const WAKE_WORDS_REF = { current: WAKE_WORDS };
 WAKE_WORDS_REF.current = WAKE_WORDS;
 
@@ -904,49 +1116,58 @@ function matchWakeUtterance(raw: string): { hit: boolean; followOn?: string } {
     .trim();
   if (!t) return { hit: false };
 
-  // Drop leading filler so "say veda" / "hey veda" / "ok veda" still wake
-  const strippedLead = t.replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|yo|oye|hello)\s+/i, "").trim();
-  const candidates = [t, strippedLead];
+  // Explicit exact matches for wake commands without follow-on (including soft voice STT results)
+  if (/^(wake\s*up(\s*veda)?|wake\s*veda|wake\s*up\s*agent|wake\s*agent|wake\s*up|wake|veda|hey\s*veda|hi\s*veda|hello\s*veda|ok\s*veda|agent|hey\s*agent|hi\s*agent|hello\s*agent|vada|wada|weather|whether|wait\s*a|veeda|vedaa|vida|wayda|way\s*da|veena|veera|video|beta)$/i.test(t)) {
+    return { hit: true, followOn: undefined };
+  }
+
+  // Drop leading filler so "say veda" / "hey veda" / "ok veda" / "wake up veda" still wake
+  const strippedLead = t.replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "").trim();
+  const candidates = [t, strippedLead].filter(Boolean);
 
   for (const c of candidates) {
     if (!WAKE_WORDS_REF.current.test(c)) continue;
     // reset lastIndex in case flag quirks
     WAKE_WORDS_REF.current.lastIndex = 0;
-    const followOn = c
+    let followOn = c
       .replace(WAKE_WORDS_REF.current, " ")
-      .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|yo|oye|hello)\s+/i, "")
+      .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "")
       .replace(/\s+/g, " ")
       .trim();
+    followOn = followOn.replace(/^(veda|agent|assistant)\s+/i, "").trim();
     return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
   }
 
-  // Single-token fuzzy: STT often mangles short "Veda" (e.g. "ved", "veda.", "v eda")
+  // Single-token fuzzy: STT often mangles short words like "veda" or "agent" when spoken softly or slowly
   const tokens = [strippedLead.replace(/\s+/g, ""), ...strippedLead.split(/\s+/).filter(Boolean)];
   for (const one of tokens) {
     if (one.length < 3 || one.length > 8) continue;
-    const target = "veda";
-    const a = one.slice(0, 8);
-    const b = target;
-    const m = a.length;
-    const n = b.length;
-    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        dp[i][j] = a[i - 1] === b[j - 1]
-          ? dp[i - 1][j - 1]
-          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    const targets = ["veda", "veeda", "vida", "vada", "weda", "wada", "beta", "agent", "weather", "veena", "veera", "video"];
+    for (const target of targets) {
+      const a = one.slice(0, 8);
+      const b = target;
+      const m = a.length;
+      const n = b.length;
+      const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          dp[i][j] = a[i - 1] === b[j - 1]
+            ? dp[i - 1][j - 1]
+            : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
       }
-    }
-    if (dp[m][n] <= 1) {
-      const followOn = strippedLead
-        .split(/\s+/)
-        .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
-        .join(" ")
-        .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|yo|oye|hello)\s+/i, "")
-        .trim();
-      return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
+      if (dp[m][n] <= 1) {
+        let followOn = strippedLead
+          .split(/\s+/)
+          .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
+          .join(" ")
+          .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "")
+          .trim();
+        followOn = followOn.replace(/^(veda|agent|assistant)\s+/i, "").trim();
+        return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
+      }
     }
   }
 
@@ -996,37 +1217,46 @@ function useWakeWord(
     if (!SR) return;
     try {
       const rec = new SR();
-      // Single-shot sessions are more reliable than continuous for short wake words
-      rec.continuous      = false;
+      // Continuous recognition keeps the mic open without restart gaps or dropped quiet speech
+      rec.continuous      = true;
       rec.interimResults  = true;
-      rec.lang            = "en-SG";
+      rec.lang            = getSpeechLang();
       rec.maxAlternatives = 8;
       claimSpeechMic(rec);
       recRef.current = rec;
 
       clearWatchdog();
-      // Chrome can hang a single-shot session with no onend — restart before mic goes stale
       watchdogRef.current = setTimeout(() => {
         stopListening();
-        if (enabledRef.current) timerRef.current = setTimeout(startListening, 180);
-      }, 14_000);
+        if (enabledRef.current) timerRef.current = setTimeout(startListening, 10);
+      }, 45_000);
 
       let fired = false;
-      const tryWake = (text: string) => {
-        if (fired || !text) return;
-        onHeardRef.current?.(text);
-        const match = matchWakeUtterance(text);
-        if (!match.hit) return;
-        fired = true;
-        stopListening();
-        onWakeRef.current(match.followOn);
+      const tryWake = (transcript: string) => {
+        if (fired || !transcript) return;
+        onHeardRef.current?.(transcript);
+
+        const wakeWordDetected = isWakeWordDetected(transcript) || matchWakeUtterance(transcript).hit;
+        if (wakeWordDetected) {
+          fired = true;
+          stopListening();
+          playWakeChime();
+          const cleanCommand = sanitizeGuidedAnswer(transcript);
+          onWakeRef.current(cleanCommand || undefined);
+        }
       };
 
       rec.onresult = (evt: any) => {
-        for (let i = 0; i < evt.results.length; i++) {
+        clearWatchdog();
+        watchdogRef.current = setTimeout(() => {
+          stopListening();
+          if (enabledRef.current) timerRef.current = setTimeout(startListening, 10);
+        }, 45_000);
+
+        for (let i = evt.resultIndex; i < evt.results.length; i++) {
           for (let j = 0; j < evt.results[i].length; j++) {
-            const t = normalizeVoiceTranscript(evt.results[i][j].transcript || "").toLowerCase().trim();
-            if (t) tryWake(t);
+            const transcript = normalizeVoiceTranscript(evt.results[i][j].transcript || "").toLowerCase().trim();
+            if (transcript) tryWake(transcript);
             if (fired) return;
           }
         }
@@ -1040,7 +1270,7 @@ function useWakeWord(
           onMicErrRef.current?.(e.error);
           return;
         }
-        const delay = e.error === "no-speech" ? 120 : 400;
+        const delay = e.error === "no-speech" ? 10 : 80;
         if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, delay);
       };
 
@@ -1048,20 +1278,20 @@ function useWakeWord(
         clearWatchdog();
         if (_activeSpeechRec === rec) _activeSpeechRec = null;
         recRef.current = null;
-        if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, 180);
+        if (enabledRef.current && !fired) timerRef.current = setTimeout(startListening, 10);
       };
 
       rec.start();
     } catch {
       clearWatchdog();
       recRef.current = null;
-      if (enabledRef.current) timerRef.current = setTimeout(startListening, 400);
+      if (enabledRef.current) timerRef.current = setTimeout(startListening, 200);
     }
   }, [clearWatchdog, stopListening]);
 
   useEffect(() => {
     if (enabled) {
-      timerRef.current = setTimeout(startListening, 180);
+      timerRef.current = setTimeout(startListening, 10);
     } else {
       stopListening();
     }
@@ -1118,7 +1348,7 @@ function listenForCommand(
         // continuous helps capture full "create quotation for Acme Systems" phrases
         rec.continuous = true;
         rec.interimResults = true;
-        rec.lang = "en-SG";
+        rec.lang = getSpeechLang();
         rec.maxAlternatives = 8;
         claimSpeechMic(rec);
 
@@ -1128,8 +1358,8 @@ function listenForCommand(
             const t = picked.text;
             const bestConf = picked.conf;
             if (!t) continue;
-            // Only drop near-zero junk; accents often score low
-            if (bestConf > 0 && bestConf < 0.08) continue;
+            // Only drop near-zero junk; accents and quiet speech often score low
+            if (bestConf > 0 && bestConf < 0.01) continue;
 
             if (evt.results[i].isFinal) {
               if (isLikelyNoise(t) && !finalText) {
@@ -1306,7 +1536,7 @@ export function AgentPanel() {
   const hasMessages = messages.length > 0;
 
   // ── Ambient conversation loop (exclusive mic: wake OR listen OR barge-in) ──
-  const runAmbientConversation = useCallback(async (greeting = "Yes?", firstCommand?: string) => {
+  const runAmbientConversation = useCallback(async (greeting = "Ready!", firstCommand?: string) => {
     if (convActiveRef.current) return;
     convActiveRef.current = true;
     killSpeechMic();
@@ -1321,17 +1551,28 @@ export function AgentPanel() {
       setConvState("greeting");
       setConvText(greeting);
 
-      if (_userHasInteracted) void speak(greeting);
-      // Wait for wake mic to fully release before command mic
-      await new Promise(r => setTimeout(r, 220));
+      let pendingFirst = (firstCommand || "").trim();
+
+      if (!pendingFirst) {
+        // Non-blocking wake greeting so command mic starts listening IMMEDIATELY with zero lag
+        _userHasInteracted = true;
+        setConvState("listening");
+        setConvText("");
+        void speakWakeGreeting(greeting);
+      } else {
+        // If user already gave the command in the same breath, acknowledge immediately
+        _userHasInteracted = true;
+        setConvState("listening");
+        setConvText(pendingFirst);
+        void speakWakeGreeting("Sure.");
+      }
 
       let lastSpokenWords: string[] = [];
-      let pendingFirst = (firstCommand || "").trim();
 
       const isEcho = (cmd: string) => {
         if (lastSpokenWords.length === 0) return false;
         // Ignore common ERP words that legitimately repeat after Veda speaks
-        const skip = new Set(["invoice", "invoices", "quotation", "quotations", "purchase", "order", "orders", "customer", "customers", "vendor", "vendors", "please", "veda", "opening", "create", "created"]);
+        const skip = new Set(["invoice", "invoices", "quotation", "quotations", "purchase", "order", "orders", "customer", "customers", "vendor", "vendors", "please", "veda", "opening", "create", "created", "ready", "sure", "yes"]);
         const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !skip.has(w));
         if (cmdWords.length === 0) return false;
         const spoken = lastSpokenWords.filter(w => !skip.has(w));
@@ -1368,6 +1609,12 @@ export function AgentPanel() {
           continue;
         }
 
+        const cmdLower = command.trim().toLowerCase();
+        if (cmdLower === "ready" || cmdLower === "ready!" || cmdLower === "sure" || cmdLower === "sure.") {
+          // Discard echo of Veda's own greeting
+          continue;
+        }
+
         if (isEcho(command)) {
           lastSpokenWords = [];
           continue;
@@ -1381,7 +1628,7 @@ export function AgentPanel() {
           // Bare "Veda" during guided create: stay listening — never fill a field
           if (guidedNow) continue;
           cancelSpeech();
-          void speak("Yes?");
+          void speakWakeGreeting("Ready!");
           continue;
         }
 
@@ -1399,6 +1646,52 @@ export function AgentPanel() {
           setConvText("Okay, stopped.");
           await speak("Okay, stopped.");
           break;
+        }
+
+        const explicitAction = matchExplicitFormAction(command);
+        if (explicitAction) {
+          if (explicitAction === "close") {
+            guidedEmployeeRef.current = null;
+            guidedSalesOrderRef.current = null;
+            guidedFormPathRef.current = null;
+            const res = closeActiveFormsAndModals(navigate, resolveAgentPath());
+            setConvState("speaking");
+            setConvText(res.message);
+            ambientHistoryRef.current = [
+              ...ambientHistoryRef.current,
+              { role: "user", content: command },
+              { role: "assistant", content: res.message },
+            ].slice(-16);
+            await speakGuidedFast(res.message);
+            continue;
+          }
+          queueVedaFormAction(explicitAction);
+          const actionMsg = explicitAction === "save" ? "Saving form now." : explicitAction === "preview" ? "Opening preview." : "Downloading PDF.";
+          setConvState("speaking");
+          setConvText(actionMsg);
+          ambientHistoryRef.current = [
+            ...ambientHistoryRef.current,
+            { role: "user", content: command },
+            { role: "assistant", content: actionMsg },
+          ].slice(-16);
+          await speakGuidedFast(actionMsg);
+          continue;
+        }
+
+        const docViewEdit = matchDocViewEditAction(command, resolveAgentPath());
+        if (docViewEdit) {
+          unlockVedaModules();
+          navigate(docViewEdit.path);
+          setConvState("speaking");
+          const navMsg = `Opened ${docViewEdit.label}.`;
+          setConvText(navMsg);
+          ambientHistoryRef.current = [
+            ...ambientHistoryRef.current,
+            { role: "user", content: command },
+            { role: "assistant", content: navMsg },
+          ].slice(-16);
+          await speakGuidedFast(navMsg);
+          continue;
         }
 
         // ── Local guided employee: fill live instantly, ask next ASAP ──
@@ -1599,6 +1892,14 @@ export function AgentPanel() {
         setConvText(command);
         cancelSpeech();
 
+        const uid = "u-" + Date.now();
+        const aid = "a-" + (Date.now() + 1);
+        setMessages(p => [
+          ...p,
+          { id: uid, role: "user", content: command, fromVoice: true },
+          { id: aid, role: "assistant", content: "", toolCalls: [] },
+        ]);
+
         const agentPath = resolveAgentPath();
         const lastAsst = [...ambientHistoryRef.current].reverse().find(m => m.role === "assistant")?.content || "";
         // Live form fill BEFORE waiting on the LLM (~instant UI) — exact user words only
@@ -1611,8 +1912,14 @@ export function AgentPanel() {
           await streamChat(
             [...ambientHistoryRef.current, { role: "user", content: userContent }],
             memory,
-            chunk => { response += chunk; setConvText(response.slice(-150)); },
-            () => {},
+            chunk => {
+              response += chunk;
+              setConvText(response.slice(-150));
+              setMessages(p => p.map(m => m.id === aid ? { ...m, content: response } : m));
+            },
+            tool => {
+              setMessages(p => p.map(m => m.id === aid ? { ...m, toolCalls: [...(m.toolCalls ?? []), tool] } : m));
+            },
             (path, prefill) => {
               unlockVedaModules();
               storeVedaPrefill(prefill);
@@ -1631,6 +1938,7 @@ export function AgentPanel() {
           if (ctrl.signal.aborted || !convActiveRef.current) break;
 
           if (response || didNavigate) {
+            setMessages(p => p.map(m => m.id === aid ? { ...m, content: response || (didNavigate ? "Done." : ""), complete: true } : m));
             if (response) {
               ambientHistoryRef.current = [
                 ...ambientHistoryRef.current,
@@ -1696,18 +2004,25 @@ export function AgentPanel() {
     }
   }, [navigate, memory, resolveAgentPath, dispatchFill, selectedCompany?.id, handleDocumentUpdated, handleVedaEmail]);
 
-  const handleWakeWord = useCallback((followOn?: string) => {
+  const activateVedaImmediately = useCallback((followOn?: string) => {
+    // Instant sensory audio feedback (<1ms) so the user immediately knows the wake command was heard
+    playWakeChime();
+    // Open the panel so the voice assistant visibly wakes up
+    setOpen(true);
+    _userHasInteracted = true;
     if (convActiveRef.current) {
       // Interrupt current turn (including TTS) and restart
       convActiveRef.current = false;
       ambientAbortRef.current?.abort();
       cancelSpeech();
       killSpeechMic();
-      setTimeout(() => runAmbientConversation("Yes?", followOn), 250);
+      setTimeout(() => runAmbientConversation("Ready!", followOn), 60);
       return;
     }
-    runAmbientConversation("Yes?", followOn);
+    runAmbientConversation("Ready!", followOn);
   }, [runAmbientConversation]);
+
+  const handleWakeWord = activateVedaImmediately;
 
   const stopConversation = useCallback(() => {
     convActiveRef.current = false;
@@ -1725,7 +2040,7 @@ export function AgentPanel() {
   const wakeEnabled = handsFree && !panelListening && convState === "idle";
 
   const { supported: wakeSupported } = useWakeWord(
-    handleWakeWord,
+    activateVedaImmediately,
     wakeEnabled,
     (code) => setWakeError(code),
   );
@@ -1761,12 +2076,12 @@ export function AgentPanel() {
       }
       if (e.altKey && e.key.toLowerCase() === "m" && convState === "idle" && !open) {
         e.preventDefault();
-        runAmbientConversation("Yes?");
+        activateVedaImmediately();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [convState, open, runAmbientConversation, stopConversation]);
+  }, [convState, open, activateVedaImmediately, stopConversation]);
 
   // Auto-clear mic error after 3 seconds
   useEffect(() => {
@@ -1775,27 +2090,60 @@ export function AgentPanel() {
     return () => clearTimeout(t);
   }, [micError]);
 
-  // First click/key anywhere unlocks mic permission so "Veda" works without opening chat
+  // Hardware microphone warmup & Automatic Gain Control (AGC) keeper
+  // Keeping an active audio stream with autoGainControl boosts quiet/slow speech so users don't need to shout
+  const warmMicStreamRef = useRef<MediaStream | null>(null);
+
   useEffect(() => {
-    let done = false;
-    const unlock = async () => {
-      if (done) return;
-      done = true;
+    let active = true;
+    const startWarmMic = async () => {
+      if (!handsFree || warmMicStreamRef.current) return;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((t) => t.stop());
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            autoGainControl: true,
+            noiseSuppression: false,
+            echoCancellation: true,
+          },
+        });
+        if (!active) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        warmMicStreamRef.current = stream;
         setWakeError(null);
       } catch {
-        // leave wakeError to SpeechRecognition if it fails later
+        // SpeechRecognition will manage permissions if getUserMedia fails
       }
     };
-    window.addEventListener("pointerdown", unlock, { once: true, capture: true });
-    window.addEventListener("keydown", unlock, { once: true, capture: true });
-    return () => {
-      window.removeEventListener("pointerdown", unlock, true);
-      window.removeEventListener("keydown", unlock, true);
+
+    if (handsFree) {
+      void startWarmMic();
+    } else {
+      if (warmMicStreamRef.current) {
+        warmMicStreamRef.current.getTracks().forEach((t) => t.stop());
+        warmMicStreamRef.current = null;
+      }
+    }
+
+    const unlockOnGesture = () => {
+      if (handsFree && !warmMicStreamRef.current) {
+        void startWarmMic();
+      }
     };
-  }, []);
+    window.addEventListener("pointerdown", unlockOnGesture, { capture: true });
+    window.addEventListener("keydown", unlockOnGesture, { capture: true });
+
+    return () => {
+      active = false;
+      window.removeEventListener("pointerdown", unlockOnGesture, true);
+      window.removeEventListener("keydown", unlockOnGesture, true);
+      if (warmMicStreamRef.current) {
+        warmMicStreamRef.current.getTracks().forEach((t) => t.stop());
+        warmMicStreamRef.current = null;
+      }
+    };
+  }, [handsFree]);
 
   const history = messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
 
@@ -1816,6 +2164,35 @@ export function AgentPanel() {
   const send = useCallback(async (text: string, fromVoice = false) => {
     if (!text.trim() || thinking) return;
     text = normalizeVoiceTranscript(text);
+
+    const explicitAction = matchExplicitFormAction(text);
+    if (explicitAction) {
+      const uid = Date.now().toString();
+      const aid = `asst-${uid}`;
+      if (explicitAction === "close") {
+        guidedEmployeeRef.current = null;
+        guidedSalesOrderRef.current = null;
+        guidedFormPathRef.current = null;
+        const res = closeActiveFormsAndModals(navigate, resolveAgentPath());
+        setMessages(p => [...p,
+          { id: uid, role: "user", content: text.trim(), fromVoice },
+          { id: aid, role: "assistant", content: res.message, complete: true },
+        ]);
+        setInput("");
+        if (fromVoice) void speak(res.message);
+        return;
+      }
+      queueVedaFormAction(explicitAction);
+      const actionMsg = explicitAction === "save" ? "Saving form now." : explicitAction === "preview" ? "Opening preview." : "Downloading PDF.";
+      setMessages(p => [...p,
+        { id: uid, role: "user", content: text.trim(), fromVoice },
+        { id: aid, role: "assistant", content: actionMsg, complete: true, toolCalls: [explicitAction === "save" ? "submitCurrentForm" : explicitAction === "preview" ? "previewCurrentDocument" : "downloadCurrentDocument"] },
+      ]);
+      setInput("");
+      if (fromVoice) void speak(actionMsg);
+      return;
+    }
+
     // Guided kickoff from quick-nav — skip another navigate short-circuit
     const isGuidedKickoff = /\[The .+ form is now open at /.test(text);
     const quick = isGuidedKickoff ? null : matchQuickNavigate(text.trim());
@@ -1913,6 +2290,21 @@ export function AgentPanel() {
     const uid = Date.now().toString();
     const aid = `asst-${uid}`;
     const agentPath = resolveAgentPath();
+
+    const docViewEdit = matchDocViewEditAction(text, agentPath);
+    if (docViewEdit) {
+      unlockVedaModules();
+      navigate(docViewEdit.path);
+      const navMsg = `Opened ${docViewEdit.label}.`;
+      setMessages(p => [...p,
+        { id: uid, role: "user", content: text.trim(), fromVoice },
+        { id: aid, role: "assistant", content: navMsg, complete: true, toolCalls: ["navigateTo"], navigated: { path: docViewEdit.path, label: docViewEdit.label } },
+      ]);
+      setInput("");
+      if (fromVoice) void speak(navMsg);
+      return;
+    }
+
     const lastAsst = [...messages].reverse().find(m => m.role === "assistant" && m.content)?.content || "";
     // Guided: never send wake/filler into fields — use exact cleaned user words only
     let answerText = text.trim();
@@ -2045,11 +2437,37 @@ export function AgentPanel() {
 
   return (
     <>
-      {/* Hands-free voice runs fully hidden — no overlay box. Chat opens only via FAB. */}
+      {/* ── Active Voice Floating Pill when panel is closed ── */}
+      {!open && convState !== "idle" && (
+        <div className="fixed bottom-20 right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-background border border-primary/40 shadow-2xl animate-in slide-in-from-bottom-2 duration-200">
+          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shrink-0">
+            {convState === "listening" ? (
+              <Mic className="h-4 w-4 animate-pulse text-white" />
+            ) : convState === "processing" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 animate-pulse" />
+            )}
+          </div>
+          <div className="flex flex-col text-xs max-w-[260px]">
+            <span className="font-semibold text-primary">
+              {convState === "greeting" ? "Veda awake" : convState === "listening" ? "Listening…" : convState === "speaking" ? "Speaking…" : "Processing…"}
+            </span>
+            <span className="truncate text-foreground/80">{convText || "Speak your command"}</span>
+          </div>
+          <button
+            onClick={stopConversation}
+            className="ml-1 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+            title="Stop listening (Esc)"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
-      {/* ── FAB trigger — chat panel opens ONLY from this icon ── */}
+      {/* ── FAB trigger ── */}
       {!open && (
-        <div className="group fixed bottom-6 right-0 z-40 flex flex-col items-end gap-2 translate-x-[calc(100%-10px)] hover:translate-x-0 transition-transform duration-300 ease-in-out pr-3">
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
           {wakeSupported && (
             <button
               onClick={toggleHandsFree}
@@ -2057,30 +2475,30 @@ export function AgentPanel() {
                 wakeError
                   ? "Mic blocked — allow microphone, or press Alt+M"
                   : handsFree
-                  ? "Hands-free ON — say Veda anytime (stays hidden)"
+                  ? "Hands-free ON — say 'Veda' or 'Agent' anytime"
                   : "Enable hands-free listening"
               }
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all opacity-0 group-hover:opacity-100 duration-200",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-md transition-all duration-200",
                 wakeError
                   ? "bg-yellow-500/10 text-yellow-700 border border-yellow-300"
                   : handsFree
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
                   : "bg-background border border-border text-muted-foreground hover:text-foreground",
               )}
             >
-              <Radio className="h-3 w-3" />
-              {wakeError ? "⚠ Mic blocked" : handsFree ? "Listening" : "Hands-free OFF"}
+              <Radio className={cn("h-3 w-3", handsFree && "animate-pulse text-primary")} />
+              {wakeError ? "⚠ Mic blocked" : handsFree ? "Say \"Agent\" or \"Veda\"" : "Hands-free OFF"}
             </button>
           )}
           <button
             onClick={() => setOpen(true)}
-            title="Open Veda chat"
+            title="Open Veda AI Assistant"
             className={cn(
               "relative flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-xl hover:bg-primary/90 transition-all hover:scale-105 active:scale-95",
             )}
           >
-            {handsFree && convState === "idle" && (
+            {handsFree && (
               <span className="absolute inset-0 rounded-full animate-ping bg-primary opacity-25 pointer-events-none" />
             )}
             <Sparkles className="h-5 w-5" />
@@ -2148,6 +2566,48 @@ export function AgentPanel() {
                 </button>
               </div>
             </div>
+
+            {/* Active Voice Bar inside open panel */}
+            {convState !== "idle" && (
+              <div className="flex items-center justify-between px-4 py-2 bg-primary/10 border-b border-primary/20 text-xs text-primary animate-in fade-in duration-200 shrink-0">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  {convState === "greeting" && (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5 animate-pulse text-primary shrink-0" />
+                      <span className="font-semibold">Ready:</span>
+                      <span className="truncate">{convText || "Ready!"}</span>
+                    </>
+                  )}
+                  {convState === "listening" && (
+                    <>
+                      <Mic className="h-3.5 w-3.5 animate-pulse text-red-500 shrink-0" />
+                      <span className="font-semibold text-red-500">Listening…</span>
+                      <span className="truncate text-foreground/80">{convText ? `"${convText}"` : "speak now"}</span>
+                    </>
+                  )}
+                  {convState === "processing" && (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                      <span className="font-semibold">Processing…</span>
+                      <span className="truncate text-muted-foreground">{convText}</span>
+                    </>
+                  )}
+                  {convState === "speaking" && (
+                    <>
+                      <Volume2 className="h-3.5 w-3.5 animate-bounce text-primary shrink-0" />
+                      <span className="font-semibold">Speaking…</span>
+                      <span className="truncate text-muted-foreground">{convText}</span>
+                    </>
+                  )}
+                </div>
+                <button
+                  onClick={stopConversation}
+                  className="px-2 py-0.5 rounded bg-background/80 hover:bg-background border border-border text-[11px] text-muted-foreground hover:text-foreground shrink-0 ml-2"
+                >
+                  Stop (Esc)
+                </button>
+              </div>
+            )}
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto min-h-0">

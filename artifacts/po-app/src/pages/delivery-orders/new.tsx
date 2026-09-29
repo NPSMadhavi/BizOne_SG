@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, Eye, Lock, Plus, FileInput, Package, ArrowLeft, X, Upload } from "lucide-react";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
@@ -172,6 +173,12 @@ export default function DeliveryOrderNew() {
       },
     });
   }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => onSubmit(v, false), onFormInvalid)(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+    onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">

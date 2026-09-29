@@ -17,6 +17,7 @@ import {
 import { generateVoucherPDF } from "@/lib/voucher-pdf";
 import type { VoucherAttachment } from "@/lib/voucher-pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 const TYPE_LABELS: Record<string, string> = {
   payment: "Payment Voucher",
@@ -41,7 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function fmt(n: number, currency = "SGD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 2 }).format(n);
+  return formatCurrencySafe(n, currency);
 }
 function fmtDate(d: string | null | undefined) {
   if (!d) return "—";

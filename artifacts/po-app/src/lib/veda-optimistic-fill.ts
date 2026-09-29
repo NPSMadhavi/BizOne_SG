@@ -1,17 +1,30 @@
 import { parseSingaporePhoneDigits } from "@/lib/singapore-phone";
 import { queueVedaFormFill } from "@/hooks/useVedaFormFill";
+import { normalizeCurrency } from "@/lib/currencies";
 
 /** Paths where Veda walks the create form field-by-field. */
 export function isGuidedCreatePath(path: string | undefined | null): boolean {
   if (!path) return false;
-  return path.includes("/new") || /vedaNew=1/.test(path) || /\/employees\/\d+\/edit/.test(path);
+  return path.includes("/new") || /vedaNew=1/.test(path) || /\/employees\/\d+\/edit/.test(path) || /\/stock\/\d+\/edit/.test(path) || /\/assets\/\d+\/edit/.test(path);
 }
 
-const WAKE_TOKEN_RE =
-  /\b(veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|vedaah|vedha|veyda|veida|beeda|bheda|hey\s*veda|veda\s*ji)\b/gi;
-const LEAD_FILLER_RE = /^(hey|hi|ok|okay|please|um|uh|ah|oh|hmm|so|say|call|yo|oye|hello|and|then)\s+/i;
-const ONLY_FILLER_RE =
-  /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an|so|yes|yeah|yep|ok|okay|please|hey|hi|veda|veeda|vida|vita|veta)+[.!?]?$/i;
+// Actual wake detection
+export const WAKE_WORD = "veda";
+
+// Transcript cleanup after wake detection (includes soft, slow, accented speech variants)
+export const WAKE_TOKEN_RE =
+  /\b(wake\s*up(?:\s*veda)?|wake\s*veda|wake\s*up\s*agent|wake\s*agent|wake\s*up|wake|veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|fader|vedaah|vedaa|vedas|vedha|veyda|veida|beeda|bheda|vada|vaada|vadaa|wada|waada|weather|whether|wait\s*a|waiter|way\s*that|way\s*the|way\s*da|wayda|where\s*the|wear\s*the|veena|veera|video|beta|vee\s*da|ve\s*da|v\s*da|veda\s*ji|hey\s*veda|hi\s*veda|hello\s*veda|ok\s*veda|okay\s*veda|yo\s*veda|oye\s*veda|agent|the\s*agent|hey\s*agent|hi\s*agent|hello\s*agent|call\s*agent|call\s*the\s*agent|bizone|biz\s*one|hey\s*bizone|assistant|hey\s*assistant)\b/gi;
+export const LEAD_FILLER_RE = /^(hey|hi|ok|okay|please|um|uh|ah|oh|hmm|so|say|call|yo|oye|hello|and|then)\s+/i;
+export const ONLY_FILLER_RE =
+  /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an|so|yes|yeah|yep|ok|okay|please|hey|hi|veda|veeda|vida|vita|veta|vada|wada|weather|whether|wait|agent)+[.!?]?$/i;
+
+/** Fast check if wake word is present in a spoken phrase (including soft / slow / accented voice). */
+export function isWakeWordDetected(raw: string): boolean {
+  const t = String(raw || "").toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  WAKE_TOKEN_RE.lastIndex = 0;
+  return WAKE_TOKEN_RE.test(t);
+}
 
 /**
  * Strip wake-word / filler from a spoken field answer.
@@ -36,9 +49,21 @@ export function sanitizeGuidedAnswer(raw: string): string {
 type FieldGuess = { key: string; transform?: (answer: string) => unknown };
 
 const ASK_PATTERNS: Array<{ re: RegExp; field: FieldGuess }> = [
+  { re: /asset\s*tag|tag\s*number/i, field: { key: "tag" } },
+  { re: /asset\s*name|asset\s*type/i, field: { key: "type" } },
+  { re: /asset\s*category/i, field: { key: "category" } },
+  { re: /serial\s*number|serial\s*no/i, field: { key: "serial" } },
+  { re: /model\s*(?:number|name)?/i, field: { key: "model" } },
+  { re: /manufacturer|brand/i, field: { key: "manufacturer" } },
   { re: /employee\s*id|emp(?:loyee)?\s*code/i, field: { key: "employeeId" } },
   { re: /customer\s*name/i, field: { key: "customerName" } },
   { re: /vendor\s*name/i, field: { key: "vendorName" } },
+  { re: /item\s*name|product\s*name/i, field: { key: "name" } },
+  { re: /item\s*code|part\s*number|sku/i, field: { key: "code" } },
+  { re: /selling\s*price|unit\s*price/i, field: { key: "unitPrice", transform: (a) => a.replace(/[^\d.]/g, "") } },
+  { re: /cost\s*price|purchase\s*price/i, field: { key: "purchasePrice", transform: (a) => a.replace(/[^\d.]/g, "") } },
+  { re: /\buom\b|unit\s*of\s*measure/i, field: { key: "uom" } },
+  { re: /opening\s*stock|stock\s*qty|quantity/i, field: { key: "stockQty", transform: (a) => a.replace(/[^\d.]/g, "") } },
   { re: /employee\s*name|full\s*name/i, field: { key: "name" } },
   { re: /\bemail\b|e-?mail/i, field: { key: "email" } },
   { re: /\bphone\b|mobile|contact\s*number/i, field: { key: "phone", transform: (a) => parseSingaporePhoneDigits(a) } },
@@ -84,7 +109,7 @@ const ASK_PATTERNS: Array<{ re: RegExp; field: FieldGuess }> = [
       },
     },
   },
-  { re: /\bcurrency\b/i, field: { key: "currency" } },
+  { re: /\bcurrency\b/i, field: { key: "currency", transform: (a) => normalizeCurrency(a) } },
   { re: /payment\s*terms/i, field: { key: "paymentTerms" } },
   { re: /contact\s*person/i, field: { key: "contactPerson" } },
   { re: /contact\s*email/i, field: { key: "contactEmail" } },
@@ -98,7 +123,7 @@ export function guessFieldFromAssistantQuestion(assistantText: string): FieldGue
   if (!text) return null;
   // Never map from navigation / opening chatter — only real field questions
   if (/^opening\b/i.test(text) || /\bform is now open\b/i.test(text)) return null;
-  if (!/[?]/.test(text) && !/\b(id|name|email|phone|address|department|salary|designation|nationality|date|passport|visa|nric|status|currency|payment|contact)\b/i.test(text)) {
+  if (!/[?]/.test(text) && !/\b(id|name|email|phone|address|department|salary|designation|nationality|date|passport|visa|nric|status|currency|payment|contact|stock|price|cost|uom|qty)\b/i.test(text)) {
     return null;
   }
   // Prefer the last sentence / question fragment

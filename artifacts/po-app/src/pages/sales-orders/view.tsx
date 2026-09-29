@@ -9,6 +9,7 @@ import { fmtDate } from "@/lib/utils";
 import { generateSalesOrder_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,6 +18,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -137,9 +139,22 @@ export default function SalesOrderView() {
     query: { queryKey: getGetSettingsQueryKey() },
   });
 
+  useVedaFormActions({
+    onSave: () => {
+      if (!id) return;
+      setLocation(`/sales-orders/${id}/edit`);
+    },
+    onPreview: () => {
+      setPreviewOpen(true);
+    },
+    onDownload: () => {
+      setPreviewOpen(true);
+    },
+  });
+
   const deleteMutation = useDeleteSalesOrder();
 
-  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: (doc as any)?.currency || "SGD" }).format(v);
+  const fmt = (v: number) => formatCurrencySafe(v, (doc as any)?.currency);
 
   const resolveSoStatus = (d: any) => {
     const hasInv = !!d?.invId;

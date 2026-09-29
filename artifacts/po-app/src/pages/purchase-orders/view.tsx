@@ -19,6 +19,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
   AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function shouldUseCompactPoHeader() {
   if (typeof window === "undefined") return false;
@@ -162,7 +163,7 @@ export default function PurchaseOrderView() {
   const deleteMutation = useDeletePurchaseOrder();
 
   const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('en-SG', { style: 'currency', currency: (po as any)?.currency || 'SGD' }).format(value);
+    formatCurrencySafe(value, (po as any)?.currency);
 
   const hasPOUom = !!(po && (po.items as any[]).some((item: any) => item.uom && String(item.uom).trim() !== ""));
 
@@ -560,7 +561,7 @@ export default function PurchaseOrderView() {
         const remaining = poTotal - totalInvoiced;
         const pct = poTotal > 0 ? Math.min(100, Math.round((totalInvoiced / poTotal) * 100)) : 0;
         const fmtSGD = (v: number) =>
-          new Intl.NumberFormat("en-SG", { style: "currency", currency: (po as any).currency || "SGD" }).format(v);
+          formatCurrencySafe(v, (po as any)?.currency);
 
         return (
           <Card>

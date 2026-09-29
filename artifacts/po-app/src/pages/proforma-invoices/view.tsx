@@ -10,12 +10,14 @@ import { fmtDate, cn } from "@/lib/utils";
 import { generatePI_PDF } from "@/lib/pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
 import { useState } from "react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -43,6 +45,19 @@ export default function ProformaInvoiceView() {
   });
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  useVedaFormActions({
+    onSave: () => {
+      if (!id) return;
+      setLocation(`/proforma-invoices/${id}/edit`);
+    },
+    onPreview: () => {
+      setPreviewOpen(true);
+    },
+    onDownload: () => {
+      setPreviewOpen(true);
+    },
+  });
 
   const markSentMutation = useMutation({
     mutationFn: async (sentTo: string[]) => {
@@ -77,7 +92,7 @@ export default function ProformaInvoiceView() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const fmt = (v: number) => new Intl.NumberFormat("en-SG", { style: "currency", currency: doc?.currency || "SGD" }).format(v);
+  const fmt = (v: number) => formatCurrencySafe(v, doc?.currency);
 
   const getStatusBadge = (s: string) => {
     switch (s) {

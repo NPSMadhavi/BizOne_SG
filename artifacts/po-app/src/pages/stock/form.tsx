@@ -48,6 +48,7 @@ import {
 import { Camera, Info, Package, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useQuery } from "@tanstack/react-query";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 
 function todayYmd() {
   const d = new Date();
@@ -533,6 +534,61 @@ export default function StockItemFormPage() {
     })();
     return () => { cancelled = true; };
   }, [isEdit]);
+
+  useVedaFormActions({
+    onSave: () => handleSave(),
+    onClose: () => setLocation("/stock"),
+  });
+
+  // Consume prefill if navigating from Veda
+  useEffect(() => {
+    if (isEdit) return;
+    const prefill = (window as any).__vedaPrefill;
+    if (prefill && typeof prefill === "object") {
+      (window as any).__vedaPrefill = null;
+      setForm((prev) => ({
+        ...prev,
+        ...prefill,
+        name: prefill.name != null ? String(prefill.name) : prev.name,
+        code: prefill.code != null ? String(prefill.code) : prev.code,
+        uom: prefill.uom != null ? String(prefill.uom) : prev.uom,
+        unitPrice: prefill.unitPrice != null ? String(prefill.unitPrice) : prev.unitPrice,
+        purchasePrice: prefill.purchasePrice != null ? String(prefill.purchasePrice) : prev.purchasePrice,
+        category: prefill.category != null ? String(prefill.category) : prev.category,
+        brand: prefill.brand != null ? String(prefill.brand) : prev.brand,
+        barcode: prefill.barcode != null ? String(prefill.barcode) : prev.barcode,
+      }));
+    }
+  }, [isEdit]);
+
+  // Dynamic field updates via Veda
+  useEffect(() => {
+    const handleVedaFill = (e: Event) => {
+      const fields = (e as CustomEvent<Record<string, unknown>>).detail;
+      if (!fields || typeof fields !== "object") return;
+      setForm((prev) => {
+        const next = { ...prev };
+        if (fields.name !== undefined) next.name = String(fields.name);
+        if (fields.code !== undefined) next.code = String(fields.code);
+        if (fields.uom !== undefined) next.uom = String(fields.uom);
+        if (fields.type !== undefined) next.type = String(fields.type);
+        if (fields.category !== undefined) next.category = String(fields.category);
+        if (fields.brand !== undefined) next.brand = String(fields.brand);
+        if (fields.barcode !== undefined) next.barcode = String(fields.barcode);
+        if (fields.salesPerson !== undefined) next.salesPerson = String(fields.salesPerson);
+        if (fields.unitPrice !== undefined) next.unitPrice = String(fields.unitPrice);
+        if (fields.purchasePrice !== undefined) next.purchasePrice = String(fields.purchasePrice);
+        if (fields.stockQty !== undefined) (next as any).stockQty = String(fields.stockQty);
+        if (fields.isActive !== undefined) next.isActive = Boolean(fields.isActive);
+        if (fields.trackInventory !== undefined) next.trackInventory = Boolean(fields.trackInventory);
+        if (fields.showInPos !== undefined) next.showInPos = Boolean(fields.showInPos);
+        if (fields.isWeightBased !== undefined) next.isWeightBased = Boolean(fields.isWeightBased);
+        return next;
+      });
+    };
+    window.addEventListener("veda:fill-form", handleVedaFill);
+    return () => window.removeEventListener("veda:fill-form", handleVedaFill);
+  }, []);
 
   const uomOptions = useMemo(() => {
     const seen = new Set(UOM_OPTIONS.map((o) => o.value.toLowerCase()));

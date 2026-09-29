@@ -50,6 +50,7 @@ import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { generatePO_PDF } from "@/lib/pdf";
 import { useAuth } from "@/contexts/auth-context";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
+import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
@@ -67,14 +68,6 @@ const itemSchema = z.object({
   itemImage: z.string().default(""),
 });
 
-const CURRENCIES = [
-  { code: "SGD", label: "SGD – S$" },
-  { code: "USD", label: "USD – $" },
-  { code: "EUR", label: "EUR – €" },
-  { code: "GBP", label: "GBP – £" },
-  { code: "MYR", label: "MYR – RM" },
-  { code: "INR", label: "INR – ₹" },
-];
 
 const poSchema = z.object({
   vendorName: z.string().min(1, "Vendor name is required"),
@@ -264,10 +257,9 @@ export default function PurchaseOrderEdit() {
   const taxAmount = subtotal * (taxPercent / 100);
   const totalAmount = subtotal + taxAmount;
 
-  const currency = form.watch("currency") || "SGD";
-  const CURRENCY_LOCALE: Record<string, string> = { SGD: "en-SG", USD: "en-US", EUR: "en-IE", GBP: "en-GB", MYR: "ms-MY", INR: "en-IN" };
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat(CURRENCY_LOCALE[currency] || "en", { style: "currency", currency }).format(value);
+  const rawCurrency = form.watch("currency") || "SGD";
+  const currency = normalizeCurrency(rawCurrency);
+  const formatCurrency = (value: number) => formatCurrencySafe(value, currency);
 
   function firstErrorMessage(errors: FieldErrors): string | undefined {
     for (const value of Object.values(errors)) {
@@ -445,21 +437,49 @@ export default function PurchaseOrderEdit() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, onFormInvalid)} className="space-y-8">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Currency</CardTitle>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-lg">Currency</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Select by code or full name</p>
+              </div>
+              <div className="w-64">
+                <Select
+                  value={currency}
+                  onValueChange={(val) => form.setValue("currency", normalizeCurrency(val), { shouldDirty: true })}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Select currency…" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.code} — {c.name} ({c.symbol})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {CURRENCIES.map(c => (
+                {CURRENCIES.slice(0, 6).map(c => (
                   <button
- key={c.code}
- type="button"
- onClick={() => form.setValue("currency", c.code)}
- className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                    key={c.code}
+                    type="button"
+                    onClick={() => form.setValue("currency", c.code, { shouldDirty: true })}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
                   >
-                    {c.label}
+                    {c.code} – {c.symbol}
                   </button>
                 ))}
+                {!CURRENCIES.slice(0, 6).some(c => c.code === currency) && (
+                  <button
+                    type="button"
+                    className="px-4 py-1.5 rounded-full text-sm font-medium border bg-primary text-primary-foreground border-primary"
+                  >
+                    {CURRENCIES.find(c => c.code === currency)?.label || currency}
+                  </button>
+                )}
               </div>
             </CardContent>
           </Card>

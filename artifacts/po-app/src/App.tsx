@@ -334,6 +334,7 @@ function Router() {
           <Route path="/assets/new">{() => <ProtectedRoute component={AssetNewPage} module="assets" />}</Route>
           <Route path="/assets/:id/edit">{() => <ProtectedRoute component={AssetEditPage} module="assets" />}</Route>
           <Route path="/assets">{() => <ProtectedRoute component={AssetsPage} module="assets" />}</Route>
+          <Route path="/assets/">{() => <ProtectedRoute component={AssetsPage} module="assets" />}</Route>
           <Route path="/licenses/new">{() => <ProtectedRoute component={LicenseNewPage} module="licenses" />}</Route>
           <Route path="/licenses/:id/edit">{() => <ProtectedRoute component={LicenseEditPage} module="licenses" />}</Route>
           <Route path="/licenses">{() => <ProtectedRoute component={LicensesPage} module="licenses" />}</Route>
