@@ -85,8 +85,8 @@ const STANDARD_PAYMENT_METHODS: {
 
 import { useAuth } from "@/contexts/auth-context";
 import {
-  useSalesPersons,
-  loginOrCreateSalesPerson,
+  loginSalesPerson,
+  createSalesPersonAccount,
   loadPosEmployeeSession,
   savePosEmployeeSession,
   clearPosEmployeeSession,
@@ -254,7 +254,6 @@ function KpiCard({
 export default function PointOfSalePage() {
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
-  const { salesPersons } = useSalesPersons();
   const [mode, setMode] = useState<"list" | "pos">("list");
   const [salesList, setSalesList] = useState<PosSaleRecord[]>(() => loadPosSales());
   const [listSearch, setListSearch] = useState("");
@@ -280,6 +279,8 @@ export default function PointOfSalePage() {
   const [payOpen, setPayOpen] = useState(false);
   const [payMethod, setPayMethod] = useState<PaymentMethod>("Cash");
   const [payAmount, setPayAmount] = useState(0);
+  const [showAmountZero, setShowAmountZero] = useState(false);
+  const payAmountEdited = useRef(false);
   const [pendingPayByMethod, setPendingPayByMethod] = useState<Partial<Record<PaymentMethod, number>>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSale, setPreviewSale] = useState<PosSaleRecord | null>(null);
@@ -288,6 +289,8 @@ export default function PointOfSalePage() {
   const [employeeLoginOpen, setEmployeeLoginOpen] = useState(false);
   const [employeeIdInput, setEmployeeIdInput] = useState("");
   const [employeePassword, setEmployeePassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const [employeeLoginError, setEmployeeLoginError] = useState("");
   const [employeeLoggingIn, setEmployeeLoggingIn] = useState(false);
   const employeeIdRef = useRef<HTMLInputElement>(null);
@@ -742,12 +745,6 @@ export default function PointOfSalePage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mode]);
 
-  function updateUnitPrice(key: string, unitPrice: number) {
-    setCart((prev) =>
-      prev.map((l) => (l.key === key ? { ...l, unitPrice: Math.max(0, unitPrice) } : l)),
-    );
-  }
-
   function updateQty(key: string, qty: number, removeIfZero = false) {
     setCart((prev) => {
       const next = prev.map((l) => {
@@ -799,6 +796,8 @@ export default function PointOfSalePage() {
     if (posEmployee) return;
     setEmployeeIdInput("");
     setEmployeePassword("");
+    setConfirmPassword("");
+    setCreatingAccount(false);
     setEmployeeLoginError("");
     setEmployeeLoginOpen(true);
     requestAnimationFrame(() => employeeIdRef.current?.focus());
@@ -810,29 +809,41 @@ export default function PointOfSalePage() {
     toast({ title: "Employee logged out" });
   }
 
+  function finishEmployeeSession(person: { id: string; name: string; employmentCode: string }, created: boolean) {
+    const session: PosEmployeeSession = {
+      id: person.id,
+      name: person.name,
+      employmentCode: person.employmentCode,
+    };
+    savePosEmployeeSession(session);
+    setPosEmployee(session);
+    setEmployeeLoginOpen(false);
+    toast({
+      title: created ? "Account created" : "Logged in",
+      description: person.name,
+    });
+  }
+
   function handleEmployeeLogin(e?: FormEvent) {
     e?.preventDefault();
     setEmployeeLoggingIn(true);
     setEmployeeLoginError("");
     try {
-      const result = loginOrCreateSalesPerson(employeeIdInput, employeePassword);
+      if (creatingAccount) {
+        const result = createSalesPersonAccount(employeeIdInput, employeePassword, confirmPassword);
+        if (!result.ok) {
+          setEmployeeLoginError(result.error);
+          return;
+        }
+        finishEmployeeSession(result.person, true);
+        return;
+      }
+      const result = loginSalesPerson(employeeIdInput, employeePassword);
       if (!result.ok) {
         setEmployeeLoginError(result.error);
         return;
       }
-      const session: PosEmployeeSession = {
-        id: result.person.id,
-        name: result.person.name,
-        employmentCode: result.person.employmentCode,
-      };
-      savePosEmployeeSession(session);
-      setPosEmployee(session);
-      setEmployeeLoginOpen(false);
-      toast({
-        title: result.created ? "Employee created & logged in" : "Logged in",
-        description: `${result.person.name} — session active until you close the app.`,
-      });
-      // Stay on list; Create New POS becomes available for this session
+      finishEmployeeSession(result.person, false);
     } finally {
       setEmployeeLoggingIn(false);
     }
@@ -869,27 +880,9 @@ export default function PointOfSalePage() {
 
   function switchToPayMethod(nextMethod: PaymentMethod) {
     if (nextMethod === payMethod) return;
-
-    const raw = Math.max(0, Number(payAmount) || 0);
-
-    setPendingPayByMethod((prev) => {
-      const next = { ...prev };
-      if (raw > 0) next[payMethod] = raw;
-      else delete next[payMethod];
-
-      const pendingTotal = PAYMENT_METHODS.reduce((s, { method }) => s + (next[method] || 0), 0);
-      const remaining = Math.max(0, Math.round((total - paidSoFar - pendingTotal) * 100) / 100);
-
-      if (next[nextMethod] != null && next[nextMethod]! > 0) {
-        setPayAmount(next[nextMethod]!);
-      } else if (raw > 0) {
-        // Only auto-fill remaining when leaving a method with a typed amount
-        setPayAmount(remaining);
-      } else {
-        setPayAmount(0);
-      }
-      return next;
-    });
+    payAmountEdited.current = false;
+    setPayAmount(0);
+    setShowAmountZero(false);
     setPayMethod(nextMethod);
   }
 
@@ -915,7 +908,9 @@ export default function PointOfSalePage() {
       return;
     }
     setPayMethod(method);
+    payAmountEdited.current = false;
     setPayAmount(0);
+    setShowAmountZero(false);
     setPendingPayByMethod({});
     setPayOpen(true);
   }
@@ -987,8 +982,7 @@ export default function PointOfSalePage() {
     );
     const received = Math.max(0, Number(payAmount) || 0);
     const due = Math.max(0, Math.round((total - paidSoFar - otherPending) * 100) / 100);
-    const thisPayApplied =
-      payMethod === "Cash" ? received : Math.min(received, due);
+    const thisPayApplied = Math.min(received, due);
     const stagedTotal = otherPending + thisPayApplied;
     const paidTotal = Math.round((paidSoFar + stagedTotal) * 100) / 100;
     const remainingAfter = Math.max(0, Math.round((total - paidTotal) * 100) / 100);
@@ -1037,30 +1031,19 @@ export default function PointOfSalePage() {
       (s, { method }) => s + (pendingPayByMethod[method] || 0),
       0,
     );
-    const thisPayRaw = Math.max(0, Number(payAmount) || 0);
-    const dueForInput = Math.max(
+    const displayedPaid = Math.round((paidSoFar + pendingTotal) * 100) / 100;
+    const remainingAfter = Math.max(
       0,
       Math.round((total - paidSoFar - pendingTotal) * 100) / 100,
     );
-    const thisPayApplied =
-      payMethod === "Cash" ? thisPayRaw : Math.min(thisPayRaw, dueForInput);
-    const displayedPaid = Math.round((paidSoFar + pendingTotal + thisPayApplied) * 100) / 100;
-    const remainingAfter = Math.max(
-      0,
-      Math.round((total - paidSoFar - pendingTotal - thisPayApplied) * 100) / 100,
-    );
-    const cashChange =
-      payMethod === "Cash" && thisPayRaw > dueForInput + 0.001
-        ? Math.round((thisPayRaw - dueForInput) * 100) / 100
-        : 0;
     return {
       pendingTotal,
-      thisPayRaw,
-      dueForInput,
-      thisPayApplied,
+      thisPayRaw: 0,
+      dueForInput: remainingAfter,
+      thisPayApplied: 0,
       displayedPaid,
       remainingAfter,
-      cashChange,
+      cashChange: 0,
     };
   }
 
@@ -1068,15 +1051,22 @@ export default function PointOfSalePage() {
     return PAYMENT_METHODS.some(({ method }) => (pendingPayByMethod[method] || 0) > 0);
   }
 
-  function amountForMethod(method: PaymentMethod, thisPayApplied: number) {
-    const saved =
-      tenderTotalByMethod(alreadyPaidTenders, method) + tenderTotalByMethod(tenders, method);
-    const pending = pendingPayByMethod[method] || 0;
-    const unstaged = method === payMethod ? thisPayApplied : 0;
-    return Math.round((saved + pending + unstaged) * 100) / 100;
+  function amountForMethod(method: PaymentMethod, _thisPayApplied: number) {
+    return Math.round(tenderTotalByMethod(allCommittedPayments(), method) * 100) / 100;
   }
 
   function savePayment() {
+    if (!payAmountEdited.current) {
+      const committedRemaining = Math.max(0, Math.round((total - paidSoFar) * 100) / 100);
+      if (committedRemaining <= 0.001 && paidSoFar > 0) {
+        setPayOpen(false);
+        finalizeSale(allCommittedPayments(), { showPreview: true });
+      } else {
+        toast({ title: "Enter amount", description: "Type the amount, then press Enter or Add Payment." });
+      }
+      return;
+    }
+
     const { due, received, thisPayApplied, remainingAfter } = stagedPaymentTotals();
 
     // Fully covered (saved + staged) — complete and show preview
@@ -1092,12 +1082,6 @@ export default function PointOfSalePage() {
 
     if (received <= 0) {
       toast({ title: "Enter amount", description: "Payment amount must be greater than zero." });
-      return;
-    }
-
-    // Cash may exceed due (change); other methods cannot exceed balance
-    if (payMethod !== "Cash" && received > due + 0.001) {
-      toast({ title: "Amount too high", description: `Balance due is ${money(due)}.` });
       return;
     }
 
@@ -1117,7 +1101,9 @@ export default function PointOfSalePage() {
         });
       } else {
         queueMicrotask(() => {
-          setPayAmount(remaining);
+          payAmountEdited.current = false;
+          setPayAmount(0);
+          setShowAmountZero(true);
           setPendingPayByMethod((p) => {
             const next = { ...p };
             delete next[payMethod];
@@ -1318,16 +1304,15 @@ export default function PointOfSalePage() {
             if (open) {
               setEmployeeIdInput("");
               setEmployeePassword("");
+              setConfirmPassword("");
+              setCreatingAccount(false);
               setEmployeeLoginError("");
             }
           }}
         >
           <DialogContent className="sm:max-w-lg gap-5 p-8">
             <DialogHeader className="space-y-2">
-              <DialogTitle className="text-xl">Employee Login</DialogTitle>
-              <DialogDescription className="text-sm">
-                Enter Employee ID and password. New IDs are saved automatically. Session stays active until you close the app.
-              </DialogDescription>
+              <DialogTitle className="text-xl">Sales Person Login</DialogTitle>
             </DialogHeader>
             <form
               onSubmit={handleEmployeeLogin}
@@ -1339,47 +1324,94 @@ export default function PointOfSalePage() {
               <input type="password" name="prevent_autofill_pass" autoComplete="current-password" className="hidden" tabIndex={-1} readOnly aria-hidden="true" />
 
               <div className="space-y-2">
-                <Label htmlFor="pos-emp-code">Employee ID</Label>
+                <Label htmlFor="pos-emp-code">Sales Person ID</Label>
                 <Input
                   id="pos-emp-code"
                   name="pos_emp_code"
                   ref={employeeIdRef}
                   value={employeeIdInput}
                   onChange={(e) => setEmployeeIdInput(e.target.value)}
-                  placeholder="Employment code (e.g. EMP-1001)"
                   autoComplete="off"
                   autoCorrect="off"
                   spellCheck={false}
                   className="h-11 font-mono text-sm"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="pos-emp-pin">Password</Label>
-                <Input
-                  id="pos-emp-pin"
-                  name="pos_emp_pin"
-                  type="password"
-                  value={employeePassword}
-                  onChange={(e) => setEmployeePassword(e.target.value)}
-                  placeholder="Enter password"
-                  autoComplete="new-password"
-                  className="h-11 text-sm"
-                />
-              </div>
+              {creatingAccount ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="pos-emp-pin">Password</Label>
+                    <Input
+                      id="pos-emp-pin"
+                      name="pos_emp_pin"
+                      type="password"
+                      value={employeePassword}
+                      onChange={(e) => setEmployeePassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="h-11 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pos-emp-confirm">Confirm Password</Label>
+                    <Input
+                      id="pos-emp-confirm"
+                      name="pos_emp_confirm"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="h-11 text-sm"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="pos-emp-pin">Password</Label>
+                  <Input
+                    id="pos-emp-pin"
+                    name="pos_emp_pin"
+                    type="password"
+                    value={employeePassword}
+                    onChange={(e) => setEmployeePassword(e.target.value)}
+                    autoComplete="new-password"
+                    className="h-11 text-sm"
+                  />
+                </div>
+              )}
               {employeeLoginError ? (
                 <p className="text-sm text-red-600">{employeeLoginError}</p>
               ) : null}
-              <DialogFooter className="gap-2 pt-2 sm:gap-2">
-                <Button type="button" variant="outline" className="h-10 px-5" onClick={() => setEmployeeLoginOpen(false)}>
-                  Cancel
-                </Button>
+              <DialogFooter className="flex-row items-center justify-between gap-2 pt-2 sm:justify-between sm:space-x-0">
                 <Button
-                  type="submit"
-                  className="h-10 bg-[#2563EB] px-6 hover:bg-[#1D4ED8]"
-                  disabled={employeeLoggingIn || !employeeIdInput.trim() || !employeePassword.trim()}
+                  type="button"
+                  className="h-10 bg-[#2563EB] px-5 text-white hover:bg-[#1D4ED8]"
+                  onClick={() => {
+                    setCreatingAccount((open) => !open);
+                    setConfirmPassword("");
+                    setEmployeeLoginError("");
+                  }}
                 >
-                  {employeeLoggingIn ? "Logging in..." : "Login"}
+                  {creatingAccount ? "Login" : "Create account"}
                 </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" className="h-10 px-5" onClick={() => setEmployeeLoginOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="h-10 bg-[#2563EB] px-6 hover:bg-[#1D4ED8]"
+                    disabled={
+                      employeeLoggingIn ||
+                      !employeeIdInput.trim() ||
+                      !employeePassword.trim() ||
+                      (creatingAccount && !confirmPassword.trim())
+                    }
+                  >
+                    {employeeLoggingIn
+                      ? creatingAccount ? "Creating..." : "Logging in..."
+                      : creatingAccount ? "Create account" : "Login"}
+                  </Button>
+                </div>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -1727,18 +1759,9 @@ export default function PointOfSalePage() {
                         </button>
                       </div>
                     )}
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="h-7 w-full rounded border border-[#E5E7EB] px-1 text-right text-xs"
-                      value={line.unitPrice > 0 ? line.unitPrice : ""}
-                      placeholder=""
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        updateUnitPrice(line.key, raw === "" ? 0 : parseFloat(raw) || 0);
-                      }}
-                    />
+                    <p className="text-right text-xs font-medium text-[#111827]">
+                      {line.unitPrice > 0 ? line.unitPrice : "—"}
+                    </p>
                     <p className="text-right text-xs font-semibold text-[#111827]">
                       {money(lineAmount(line))}
                     </p>
@@ -1755,21 +1778,6 @@ export default function PointOfSalePage() {
             </div>
 
             <div className="space-y-2.5 border-t border-[#E5E7EB] px-4 py-3 text-sm overflow-hidden">
-              <div className="flex items-center justify-between gap-2 text-[#4B5563]">
-                <span className="shrink-0">Sales Person</span>
-                <Select value={salesPerson} onValueChange={setSalesPerson}>
-                  <SelectTrigger className="h-8 flex-1 max-w-[180px] text-sm bg-white border-gray-200">
-                    <SelectValue placeholder="Select Sales Person" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {salesPersons.map((sp) => (
-                      <SelectItem key={sp.id} value={sp.name}>
-                        {sp.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="flex justify-between text-[#4B5563]">
                 <span>Subtotal</span>
                 <span className="font-medium text-[#111827]">{money(subtotal)}</span>
@@ -1888,8 +1896,11 @@ export default function PointOfSalePage() {
 
           <div className="space-y-4 py-1">
             {(() => {
-              const { thisPayApplied, displayedPaid, remainingAfter, cashChange } =
+              const { thisPayApplied, displayedPaid, remainingAfter } =
                 paymentDisplayTotals();
+              const typedAmount = payAmountEdited.current ? Math.max(0, Number(payAmount) || 0) : 0;
+              const refundToCustomer = Math.max(0, Math.round((typedAmount - remainingAfter) * 100) / 100);
+              const shownRemaining = refundToCustomer > 0.001 ? 0 : remainingAfter;
 
               return (
             <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 space-y-2.5 text-sm">
@@ -1921,13 +1932,15 @@ export default function PointOfSalePage() {
                   );
                 })}
               </div>
-              <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
-                <span className="font-semibold text-[#111827]">
-                  {cashChange > 0 ? "Change" : "Remaining"}
-                </span>
-                <span className="text-lg font-bold text-[#DC2626]">
-                  {money(cashChange > 0 ? cashChange : remainingAfter)}
-                </span>
+              {refundToCustomer > 0.001 && (
+                <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
+                  <span className="font-semibold text-[#111827]">Refund to Customer</span>
+                  <span className="text-lg font-bold text-[#D97706]">{money(refundToCustomer)}</span>
+                </div>
+              )}
+              <div className={cn("flex justify-between", refundToCustomer > 0.001 ? "" : "border-t border-[#E5E7EB] pt-2")}>
+                <span className="font-semibold text-[#111827]">Remaining</span>
+                <span className="text-lg font-bold text-[#DC2626]">{money(shownRemaining)}</span>
               </div>
             </div>
               );
@@ -2009,10 +2022,20 @@ export default function PointOfSalePage() {
                   min={0}
                   step="0.01"
                   autoFocus
-                  value={payAmount || ""}
-                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
-                  className="h-11 text-base [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  value={payAmount === 0 ? (showAmountZero ? "0.00" : "") : payAmount}
                   placeholder="0.00"
+                  onChange={(e) => {
+                    payAmountEdited.current = true;
+                    setShowAmountZero(false);
+                    setPayAmount(parseFloat(e.target.value) || 0);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      savePayment();
+                    }
+                  }}
+                  className="h-11 text-base [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
             </div>

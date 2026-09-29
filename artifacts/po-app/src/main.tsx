@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { bootstrapBrowserSession } from "./lib/browser-session";
+import { installBrowserSuggestionBlocker } from "./lib/block-browser-suggestions";
 
 // Suppress benign browser noise before Vite/Replit runtime overlays see it.
 // Chrome fires ErrorEvents with null `error` for ResizeObserver loops (common
@@ -44,9 +45,10 @@ if (import.meta.env.DEV) {
   );
 }
 
-async function start() {
-  await bootstrapBrowserSession();
+function start() {
+  bootstrapBrowserSession();
   createRoot(document.getElementById("root")!).render(<App />);
+  installBrowserSuggestionBlocker();
 }
 
 void start();

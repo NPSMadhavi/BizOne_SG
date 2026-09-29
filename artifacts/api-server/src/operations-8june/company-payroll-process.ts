@@ -437,45 +437,13 @@ async function upsertPayrollRecord(
     return { action: "created", record: insertResult.rows[0]! };
   }
 
-  const forceUpdate = parseForceOverwriteFlag(options.forceUpdate);
   const configChanged = hasPayrollConfigChanged(activeConfig, existing, amounts);
-
-  if (!forceUpdate) {
-    if (!configChanged) {
-      return { action: "skipped", record: existing, reason: "already_processed" };
-    }
-    if (options.requireForceForReprocess) {
-      return { action: "skipped", record: existing, reason: "data_changed" };
-    }
-  }
-
-  const updateResult = await pool.query<DbPayrollRecord>(
-    `UPDATE payroll_records SET
-       payroll_config_id = $1,
-       pay_period_start = $2,
-       pay_period_end = $3,
-       gross_pay = $4,
-       net_pay = $5,
-       cpf_employee = $6,
-       cpf_employer = $7,
-       status = 'pending',
-       processed_at = NOW()
-     WHERE id = $8 AND company_id = $9
-     RETURNING *`,
-    [
-      activeConfig.id,
-      payPeriodStart,
-      payPeriodEnd,
-      amounts.grossPay,
-      amounts.netPay,
-      amounts.employeeCpf,
-      amounts.employerCpf,
-      existing.id,
-      companyId,
-    ],
-  );
-
-  return { action: "updated", record: updateResult.rows[0]! };
+  void options;
+  return {
+    action: "skipped",
+    record: existing,
+    reason: configChanged ? "data_changed" : "already_processed",
+  };
 }
 
 export async function processIndividualPayrollCompany(
@@ -543,9 +511,7 @@ export async function processIndividualPayrollCompany(
       res.status(409).json({
         alreadyProcessed: true,
         dataChanged,
-        message: dataChanged
-          ? `Payroll for ${monthLabel} has already been processed. The payroll values have been modified.`
-          : `Payroll for ${monthLabel} has already been processed. There are no changes to process.`,
+        message: `Payroll for ${monthLabel} has already been processed. Payroll can be processed only once in a month.`,
         action: "skipped",
       });
       return;
@@ -682,42 +648,31 @@ export async function batchProcessPayrollCompany(
         });
         return;
       }
-      if (changedConfigs.length > 0) {
+      if (changedConfigs.length > 0 || pendingConfigs.length === 0) {
         res.json({
-          needsOverwriteConfirmation: true,
-          scenario: "values-changed",
+          needsNoChangesNotice: true,
+          scenario: "no-changes",
           alreadyProcessed: true,
           message:
-            "Payroll for the selected period has already been processed. Payroll values have been modified for one or more employees. Do you want to overwrite the existing payroll for those employees?",
+            "Payroll for the selected period has already been processed. Payroll can be processed only once in a month.",
           summary: buildStatusSummary(),
         });
         return;
       }
-      res.json({
-        needsNoChangesNotice: true,
-        scenario: "no-changes",
-        alreadyProcessed: true,
-        message:
-          "Payroll for the selected period has already been processed. There are no changes to process.",
-        summary: buildStatusSummary(),
-      });
-      return;
     }
 
     let configsToProcess: DbPayrollConfig[] = [];
     let useForceUpdate = forceOverwriteFlag;
 
-    if (forceOverwriteFlag) {
-      configsToProcess = configs;
-      useForceUpdate = true;
+    if (forceOverwriteFlag || processScope === "changed") {
+      configsToProcess = pendingConfigs;
+      useForceUpdate = false;
     } else if (processScope === "pending") {
       configsToProcess = pendingConfigs;
       useForceUpdate = false;
-    } else if (processScope === "changed") {
-      configsToProcess = changedConfigs;
-      useForceUpdate = true;
     } else {
-      configsToProcess = [...pendingConfigs, ...changedConfigs];
+      configsToProcess = pendingConfigs;
+      useForceUpdate = false;
     }
 
     if (configsToProcess.length === 0) {
@@ -726,7 +681,7 @@ export async function batchProcessPayrollCompany(
         scenario: "no-changes",
         alreadyProcessed: true,
         message:
-          "Payroll for the selected period has already been processed. There are no changes to process.",
+          "Payroll for the selected period has already been processed. Payroll can be processed only once in a month.",
         summary: buildStatusSummary(),
       });
       return;

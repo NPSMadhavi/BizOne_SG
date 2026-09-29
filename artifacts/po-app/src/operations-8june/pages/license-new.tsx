@@ -12,7 +12,6 @@ export default function LicenseNewPage() {
   return (
     <FormPageShell
       title="Create License"
-      description="Add a new software or service license."
       backHref="/licenses"
       footer={
         <>

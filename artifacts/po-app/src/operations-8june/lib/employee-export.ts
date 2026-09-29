@@ -8,6 +8,7 @@ export type EmployeeExportRow = {
   name?: string | null;
   email?: string | null;
   phone?: string | null;
+  gender?: string | null;
   address?: string | null;
   department?: string | null;
   designation?: string | null;
@@ -46,6 +47,7 @@ function toSheetRows(employees: EmployeeExportRow[]) {
     Name: fmtText(e.name),
     Email: fmtText(e.email),
     Phone: fmtText(e.phone),
+    Gender: fmtText(e.gender),
     Department: fmtText(e.department),
     Designation: fmtText(e.designation),
     "Join Date": fmtDate(e.joinDate),
@@ -100,6 +102,7 @@ export function exportEmployeesToPdf(employees: EmployeeExportRow[]) {
       "Name",
       "Email",
       "Phone",
+      "Gender",
       "Department",
       "Designation",
       "Join Date",
@@ -112,6 +115,7 @@ export function exportEmployeesToPdf(employees: EmployeeExportRow[]) {
       fmtText(e.name),
       fmtText(e.email),
       fmtText(e.phone),
+      fmtText(e.gender),
       fmtText(e.department),
       fmtText(e.designation),
       fmtDate(e.joinDate),

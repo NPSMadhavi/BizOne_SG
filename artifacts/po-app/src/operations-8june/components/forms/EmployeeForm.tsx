@@ -27,6 +27,10 @@ import {
 
 import { isBefore } from "date-fns";
 import { Users, FileText, Plus, Trash2, User, Upload } from "lucide-react";
+import {
+  EmployeeScanFile,
+  EmployeeUploadedDocuments,
+} from "@/operations-8june/components/employees/EmployeeFiles";
 import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
 import { cn } from "@/lib/utils";
 import {
@@ -66,6 +70,10 @@ const employeeFormSchema = insertEmployeeSchema.extend({
   phone: z.string().refine((v) => !validateSingaporePhoneDigits(parseSingaporePhoneDigits(v)), {
     message: "Enter a valid 8-digit Singapore phone number",
   }),
+  gender: z.preprocess(
+    (val) => (val === "" || val == null ? undefined : val),
+    z.enum(["Male", "Female"], { required_error: "Gender is required" })
+  ),
   address: z.string().min(10, "Address must be at least 10 characters"),
   department: z.string().min(2, "Department must be at least 2 characters"),
   designation: z.string().min(2, "Designation must be at least 2 characters"),
@@ -132,6 +140,8 @@ export default function EmployeeForm({
   const passportInputRef = useRef<HTMLInputElement>(null);
   const visaInputRef = useRef<HTMLInputElement>(null);
   const nricInputRef = useRef<HTMLInputElement>(null);
+  const pendingScans = useRef(0);
+  const [scanNames, setScanNames] = useState<Record<string, string>>({});
   
   const toFormString = (value: unknown) =>
     value == null || value === "" ? "" : String(value);
@@ -141,6 +151,7 @@ export default function EmployeeForm({
     name: emp?.name || "",
     email: (emp as any)?.email || "",
     phone: parseSingaporePhoneDigits((emp as any)?.phone || ""),
+    gender: (emp as any)?.gender || "",
     address: (emp as any)?.address || "",
     department: emp?.department || "",
     designation: emp?.designation || "",
@@ -182,26 +193,33 @@ export default function EmployeeForm({
 
   // Track if form has been initialized to prevent repeated resets
   const [formInitialized, setFormInitialized] = useState(false);
-  
-  // Reset form when sheet opens or employee changes (avoid wiping live Veda fills on create remount)
+  const initializedFor = useRef<string | null>(null);
+
+  // Reset form when sheet opens or employee changes (avoid wiping live Veda fills or a file just chosen)
   useEffect(() => {
-    if (isOpen && employee) {
-      const defaults = getDefaultValues(employee);
-      form.reset(defaults);
-      setFormInitialized(true);
-    } else if (isOpen && !employee && !formInitialized) {
-      form.reset(getDefaultValues());
-      setFormInitialized(true);
-      // Re-apply any Veda fills that arrived during navigate/mount race
-      window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("veda:fill-form-flush"));
-      }, 50);
-    }
     if (!isOpen) {
+      initializedFor.current = null;
       setFormInitialized(false);
+      setScanNames({});
       clearVedaFormFillQueue();
+      return;
     }
-  }, [employee?.id, isOpen, formInitialized]);
+    if (employee) {
+      const key = `edit-${employee.id}`;
+      if (initializedFor.current === key) return;
+      initializedFor.current = key;
+      form.reset(getDefaultValues(employee));
+      setFormInitialized(true);
+      return;
+    }
+    if (initializedFor.current === "create") return;
+    initializedFor.current = "create";
+    form.reset(getDefaultValues());
+    setFormInitialized(true);
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("veda:fill-form-flush"));
+    }, 50);
+  }, [employee?.id, isOpen]);
 
   // Apply Veda navigateTo prefill once the form is open
   useEffect(() => {
@@ -343,10 +361,14 @@ export default function EmployeeForm({
 
   // File upload handler
   const handleFileUpload = (file: File, fieldName: string) => {
+    setScanNames((current) => ({ ...current, [fieldName]: file.name }));
+    pendingScans.current += 1;
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64String = reader.result as string;
-      form.setValue(fieldName as any, base64String);
+      pendingScans.current = Math.max(0, pendingScans.current - 1);
+      if (typeof reader.result === "string") {
+        form.setValue(fieldName as any, reader.result, { shouldDirty: true });
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -368,6 +390,13 @@ export default function EmployeeForm({
 
   // Handle form submission
   const onSubmit = (values: EmployeeFormData) => {
+    if (pendingScans.current > 0) {
+      toast({
+        title: "Please wait",
+        description: "The document is still being prepared.",
+      });
+      return;
+    }
     // Auto-set status based on document expiry
     const updatedValues = { ...values };
     if (values.passportExpiry && isBefore(values.passportExpiry, new Date())) {
@@ -453,7 +482,7 @@ export default function EmployeeForm({
                 )} />
               </div>
 
-              {/* Row 2: Email | Phone */}
+              {/* Row 2: Email | Phone + Gender */}
               <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 lg:grid-cols-2">
                 <FormField control={form.control} name="email" render={({ field }) => (
                   <FormItem>
@@ -462,18 +491,37 @@ export default function EmployeeForm({
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="phone" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className={formLabelClass}>Phone Number <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                      <SingaporePhoneInput
-                        value={field.value || ""}
-                        onChange={(digits) => field.onChange(digits)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+                <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                  <FormField control={form.control} name="phone" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className={formLabelClass}>Phone Number <span className="text-destructive">*</span></FormLabel>
+                      <FormControl>
+                        <SingaporePhoneInput
+                          value={field.value || ""}
+                          onChange={(digits) => field.onChange(digits)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="gender" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className={formLabelClass}>Gender <span className="text-destructive">*</span></FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </div>
 
               {/* Row 3: Department | Salary + Annual Salary */}
@@ -774,9 +822,15 @@ export default function EmployeeForm({
                                   <Upload className="mr-2 h-4 w-4" />
                                   Upload
                                 </Button>
-                                {field.value && (
-                                  <p className="text-xs text-green-600">File uploaded successfully</p>
-                                )}
+                                <EmployeeScanFile
+                                  value={field.value}
+                                  pickedName={scanNames.passportScan}
+                                  href={
+                                    employee?.id && field.value && !String(field.value).startsWith("data:")
+                                      ? `/api/employees/${employee.id}/files/passport`
+                                      : undefined
+                                  }
+                                />
                               </div>
                             </FormControl>
                             <FormMessage />
@@ -813,9 +867,15 @@ export default function EmployeeForm({
                                   <Upload className="mr-2 h-4 w-4" />
                                   Upload
                                 </Button>
-                                {field.value && (
-                                  <p className="text-xs text-green-600">File uploaded successfully</p>
-                                )}
+                                <EmployeeScanFile
+                                  value={field.value}
+                                  pickedName={scanNames.visaScan}
+                                  href={
+                                    employee?.id && field.value && !String(field.value).startsWith("data:")
+                                      ? `/api/employees/${employee.id}/files/visa`
+                                      : undefined
+                                  }
+                                />
                               </div>
                             </FormControl>
                             <FormMessage />
@@ -852,9 +912,15 @@ export default function EmployeeForm({
                                   <Upload className="mr-2 h-4 w-4" />
                                   Upload
                                 </Button>
-                                {field.value && (
-                                  <p className="text-xs text-green-600">File uploaded successfully</p>
-                                )}
+                                <EmployeeScanFile
+                                  value={field.value}
+                                  pickedName={scanNames.nricScan}
+                                  href={
+                                    employee?.id && field.value && !String(field.value).startsWith("data:")
+                                      ? `/api/employees/${employee.id}/files/nric`
+                                      : undefined
+                                  }
+                                />
                               </div>
                             </FormControl>
                             <FormMessage />
@@ -862,6 +928,7 @@ export default function EmployeeForm({
                         )}
                       />
             </div>
+            {employee?.id ? <EmployeeUploadedDocuments employeeId={employee.id} /> : null}
           </section>
 
           <section className="space-y-4">

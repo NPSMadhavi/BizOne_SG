@@ -13,6 +13,10 @@ import { logger } from "./logger.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Package root: dist/ -> ..  or src/lib -> ../.. depending on runtime. */
+export function getUploadsRoot(): string {
+  return resolveUploadsRoot();
+}
+
 function resolveUploadsRoot(): string {
   const candidates = [
     path.resolve(__dirname, "..", "uploads"), // dist/../uploads when bundled

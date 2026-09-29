@@ -27,21 +27,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [localCompanyId, setLocalCompanyId] = useState<number | null>(null);
   const prevUserIdRef = React.useRef<number | null>(null);
+  const tabSession = isBrowserSessionLive();
 
   const { data: user, isLoading } = useGetMe({
     query: {
       queryKey: getGetMeQueryKey(),
       retry: false,
+      enabled: tabSession,
     },
   });
 
   const logoutMutation = useLogout();
-  const forcingLogin = React.useRef(false);
 
   const handleLogout = () => {
-    clearBrowserSessionLive();
     logoutMutation.mutate(undefined, {
-      onSuccess: () => {
+      onSettled: () => {
+        clearBrowserSessionLive();
         queryClient.clear();
         setLocalCompanyId(null);
         prevUserIdRef.current = null;
@@ -50,26 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // If server still has a cookie session but this browser run was closed, force login.
-  useEffect(() => {
-    if (isLoading || !user || forcingLogin.current) return;
-    if (isBrowserSessionLive()) return;
-    forcingLogin.current = true;
-    clearBrowserSessionLive();
-    logoutMutation.mutate(undefined, {
-      onSettled: () => {
-        queryClient.clear();
-        setLocalCompanyId(null);
-        prevUserIdRef.current = null;
-        setLocation("/login");
-        forcingLogin.current = false;
-      },
-    });
-  }, [isLoading, user]);
-
-  const sessionOk = !user || isBrowserSessionLive();
-  const resolvedUser = sessionOk ? (user || null) : null;
-  const resolvedLoading = isLoading || (!!user && !sessionOk);
+  // Cookie sessions are shared across tabs. Only a session id stored in this
+  // tab counts, so opening a new tab shows the login page.
+  const resolvedUser = tabSession ? (user || null) : null;
+  const resolvedLoading = tabSession ? isLoading : false;
 
   // Keep selected company in sync with the logged-in user; drop stale IDs from prior sessions.
   useEffect(() => {

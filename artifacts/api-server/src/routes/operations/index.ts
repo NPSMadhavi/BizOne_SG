@@ -1,7 +1,13 @@
+import fs from "fs";
+import path from "path";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
 import { nextDocNumber } from "../../lib/running-numbers.js";
-import { saveEmployeeDocumentUpload } from "../../lib/operations-upload";
+import {
+  mimeForStoredFile,
+  resolveStoredEmployeeDocument,
+  saveEmployeeDocumentUpload,
+} from "../../lib/operations-upload";
 import {
   batchProcessPayrollCompany,
   downloadPayslipForConfigCompany,
@@ -144,6 +150,56 @@ function formatRow(row: Record<string, unknown>): Record<string, unknown> {
 
 function formatRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   return rows.map(formatRow);
+}
+
+const EMPLOYEE_SCAN_FIELDS = ["passportScan", "visaScan", "nricScan"] as const;
+
+async function persistEmployeeScanUploads(
+  body: Record<string, unknown>,
+  keepExistingOnBlank: boolean,
+): Promise<void> {
+  for (const key of EMPLOYEE_SCAN_FIELDS) {
+    const value = body[key];
+    if (typeof value !== "string" || value.trim() === "") {
+      if (keepExistingOnBlank) delete body[key];
+      else body[key] = null;
+      continue;
+    }
+    if (value.startsWith("data:")) {
+      const prefix = key === "passportScan" ? "passport" : key === "visaScan" ? "visa" : "nric";
+      body[key] = await saveEmployeeDocumentUpload(value, prefix);
+    }
+  }
+}
+
+function sendStoredEmployeeFile(res: Response, stored: unknown): void {
+  const value = typeof stored === "string" ? stored : "";
+  if (!value) {
+    res.status(404).json({ error: "File not found" });
+    return;
+  }
+  if (value.startsWith("data:")) {
+    const match = value.match(/^data:([^;,]+)(;base64)?,([\s\S]*)$/);
+    if (!match) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+    const mime = match[1] || "application/octet-stream";
+    const buf = match[2] ? Buffer.from(match[3], "base64") : Buffer.from(decodeURIComponent(match[3]));
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Content-Disposition", "inline");
+    res.send(buf);
+    return;
+  }
+  const absolute = resolveStoredEmployeeDocument(value);
+  if (!absolute) {
+    res.status(404).json({ error: "File not found" });
+    return;
+  }
+  const filename = path.basename(absolute).replace(/"/g, "");
+  res.setHeader("Content-Type", mimeForStoredFile(absolute));
+  res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+  fs.createReadStream(absolute).pipe(res);
 }
 
 function parseId(param: string | string[] | undefined): number | null {
@@ -414,7 +470,7 @@ const ASSET_COLUMNS = [
 ];
 
 const EMPLOYEE_COLUMNS = [
-  "employee_id", "user_id", "name", "email", "phone", "address", "department",
+  "employee_id", "user_id", "name", "email", "phone", "gender", "address", "department",
   "designation", "join_date", "status", "salary", "annual_salary", "nationality",
   "pr_status", "date_of_birth", "passport_number", "passport_expiry", "visa_number",
   "visa_expiry", "visa_type", "visa_remarks", "nric_number", "nric_expiry",
@@ -779,6 +835,7 @@ router.post("/employees", async (req, res): Promise<void> => {
     if (!body.employeeId) {
       body.employeeId = await nextEmployeeCode(companyId);
     }
+    await persistEmployeeScanUploads(body, false);
     const { sql, values } = buildInsert("employees", companyId, body, EMPLOYEE_COLUMNS);
     const result = await pool.query(sql, values);
     const employee = formatRow(result.rows[0]);
@@ -802,6 +859,7 @@ router.put("/employees/:id", async (req, res): Promise<void> => {
   try {
     const companyId = req.session.companyId!;
     const { dependents, ...body } = req.body;
+    await persistEmployeeScanUploads(body, true);
     const built = buildUpdate("employees", id, companyId, body, EMPLOYEE_COLUMNS);
     if (!built) { res.status(400).json({ error: "No fields to update" }); return; }
     const result = await pool.query(built.sql, built.values);
@@ -854,6 +912,31 @@ router.get("/employees/:employeeId/dependents", async (req, res): Promise<void> 
   }
 });
 
+router.get("/employees/:id/files/:kind", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  const id = parseId(req.params.id);
+  const kind = String(req.params.kind || "");
+  const column =
+    kind === "passport" ? "passport_scan" : kind === "visa" ? "visa_scan" : kind === "nric" ? "nric_scan" : null;
+  if (id == null || !column) {
+    res.status(400).json({ error: "Invalid file" });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      `SELECT ${column} AS file_ref FROM employees WHERE id = $1 AND company_id = $2`,
+      [id, req.session.companyId],
+    );
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "Employee not found" });
+      return;
+    }
+    sendStoredEmployeeFile(res, result.rows[0].file_ref);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to open file" });
+  }
+});
+
 router.get("/employees/:employeeId/documents", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   const employeeId = parseId(req.params.employeeId);
@@ -866,6 +949,28 @@ router.get("/employees/:employeeId/documents", async (req, res): Promise<void> =
     res.json(formatRows(result.rows));
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to fetch employee documents" });
+  }
+});
+
+router.get("/documents/:id/file", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  const id = parseId(req.params.id);
+  if (id == null) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      `SELECT file_path FROM employee_documents WHERE id = $1 AND company_id = $2`,
+      [id, req.session.companyId],
+    );
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
+    sendStoredEmployeeFile(res, result.rows[0].file_path);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to open file" });
   }
 });
 

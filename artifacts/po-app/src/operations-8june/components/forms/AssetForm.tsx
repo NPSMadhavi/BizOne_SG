@@ -52,6 +52,7 @@ import {
   HelpCircle,
   UserPlus,
   Plus,
+  Pencil,
   Paperclip,
   Upload,
   X
@@ -104,6 +105,44 @@ function loadCustomOptions(target: CustomOptionTarget): string[] {
     return [];
   }
 }
+
+function loadOptionRenames(target: CustomOptionTarget): Record<string, string> {
+  try {
+    const value = localStorage.getItem(`asset-option-renames-${target}`);
+    const parsed = value ? JSON.parse(value) : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function capitalizeStart(value: string): string {
+  const text = value.trim();
+  if (!text) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function applyOptionRenames(options: string[], renames: Record<string, string>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const option of options) {
+    const renamed = renames[option.trim().toLowerCase()] ?? option;
+    const key = renamed.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(renamed);
+  }
+  return result;
+}
+
+type OptionDialogState =
+  | { mode: "create"; target: CustomOptionTarget }
+  | { mode: "edit"; target: CustomOptionTarget; original: string };
 
 // Depreciation methods
 const depreciationMethods = [
@@ -338,6 +377,28 @@ function loadAssetFormDraft(): AssetFormDraft | null {
   }
 }
 
+function EditableOptionItem({ option, onEdit }: { option: string; onEdit: () => void }) {
+  return (
+    <div className="relative">
+      <SelectItem value={option.toLowerCase()} className="pr-14">
+        {option}
+      </SelectItem>
+      <button
+        type="button"
+        title={`Edit ${option}`}
+        className="absolute right-8 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#6B7280] hover:bg-gray-100 hover:text-[#111827]"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onEdit();
+        }}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hideFooter, onPendingChange }: AssetFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -349,8 +410,16 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     manufacturer: loadCustomOptions("manufacturer"),
     location: loadCustomOptions("location"),
   }));
-  const [createOptionTarget, setCreateOptionTarget] = useState<CustomOptionTarget | null>(null);
+  const [optionRenames, setOptionRenames] = useState<Record<CustomOptionTarget, Record<string, string>>>(() => ({
+    type: loadOptionRenames("type"),
+    category: loadOptionRenames("category"),
+    manufacturer: loadOptionRenames("manufacturer"),
+    location: loadOptionRenames("location"),
+  }));
+  const [optionDialog, setOptionDialog] = useState<OptionDialogState | null>(null);
+  const [openOptionMenu, setOpenOptionMenu] = useState<CustomOptionTarget | null>(null);
   const [newOptionName, setNewOptionName] = useState("");
+  const [optionSaving, setOptionSaving] = useState(false);
   const [attachments, setAttachments] = useState<AssetAttachment[]>(() => loadAssetAttachments(assetId));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const draftRestoredRef = useRef(false);
@@ -398,48 +467,60 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   }, [assetId, resolvedAsset]);
 
   const typeOptions = useMemo(
-    () => withStoredOption(
-      mergeOptions(
-        assetTypes,
-        getExistingAssetOptions(existingAssets as AssetRecord[], "type", "asset_type"),
-        customOptions.type,
+    () => applyOptionRenames(
+      withStoredOption(
+        mergeOptions(
+          assetTypes,
+          getExistingAssetOptions(existingAssets as AssetRecord[], "type", "asset_type"),
+          customOptions.type,
+        ),
+        resolvedAsset?.type,
       ),
-      resolvedAsset?.type,
+      optionRenames.type,
     ),
-    [customOptions.type, existingAssets, resolvedAsset?.type],
+    [customOptions.type, existingAssets, optionRenames.type, resolvedAsset?.type],
   );
   const categoryOptions = useMemo(
-    () => withStoredOption(
-      mergeOptions(
-        assetCategories,
-        getExistingAssetOptions(existingAssets as AssetRecord[], "category", "category"),
-        customOptions.category,
+    () => applyOptionRenames(
+      withStoredOption(
+        mergeOptions(
+          assetCategories,
+          getExistingAssetOptions(existingAssets as AssetRecord[], "category", "category"),
+          customOptions.category,
+        ),
+        resolvedAsset?.category,
       ),
-      resolvedAsset?.category,
+      optionRenames.category,
     ),
-    [customOptions.category, existingAssets, resolvedAsset?.category],
+    [customOptions.category, existingAssets, optionRenames.category, resolvedAsset?.category],
   );
   const manufacturerOptions = useMemo(
-    () => withStoredOption(
-      mergeOptions(
-        manufacturers,
-        getExistingAssetOptions(existingAssets as AssetRecord[], "manufacturer", "manufacturer"),
-        customOptions.manufacturer,
+    () => applyOptionRenames(
+      withStoredOption(
+        mergeOptions(
+          manufacturers,
+          getExistingAssetOptions(existingAssets as AssetRecord[], "manufacturer", "manufacturer"),
+          customOptions.manufacturer,
+        ),
+        resolvedAsset?.manufacturer,
       ),
-      resolvedAsset?.manufacturer,
+      optionRenames.manufacturer,
     ),
-    [customOptions.manufacturer, existingAssets, resolvedAsset?.manufacturer],
+    [customOptions.manufacturer, existingAssets, optionRenames.manufacturer, resolvedAsset?.manufacturer],
   );
   const locationOptions = useMemo(
-    () => withStoredOption(
-      mergeOptions(
-        locations,
-        getExistingAssetOptions(existingAssets as AssetRecord[], "location", "location"),
-        customOptions.location,
+    () => applyOptionRenames(
+      withStoredOption(
+        mergeOptions(
+          locations,
+          getExistingAssetOptions(existingAssets as AssetRecord[], "location", "location"),
+          customOptions.location,
+        ),
+        resolvedAsset?.location,
       ),
-      resolvedAsset?.location,
+      optionRenames.location,
     ),
-    [customOptions.location, existingAssets, resolvedAsset?.location],
+    [customOptions.location, existingAssets, optionRenames.location, resolvedAsset?.location],
   );
   const depreciationMethodOptions = useMemo(
     () => withStoredOption(depreciationMethods, resolvedAsset?.depreciationMethod),
@@ -524,58 +605,150 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     setLocation(`/employees/new?returnTo=${returnTo}`);
   };
 
+  const optionsFor = (target: CustomOptionTarget) => {
+    if (target === "type") return typeOptions;
+    if (target === "category") return categoryOptions;
+    if (target === "manufacturer") return manufacturerOptions;
+    return locationOptions;
+  };
+
   const handleOpenCreateOption = (target: CustomOptionTarget) => {
-    setCreateOptionTarget(target);
+    setOpenOptionMenu(null);
+    setOptionDialog({ mode: "create", target });
     setNewOptionName("");
   };
 
-  const handleCreateOption = () => {
-    if (!createOptionTarget) return;
-    const name = newOptionName.trim();
+  const handleOpenEditOption = (target: CustomOptionTarget, original: string) => {
+    setOpenOptionMenu(null);
+    setOptionDialog({ mode: "edit", target, original });
+    setNewOptionName(original);
+  };
+
+  const closeOptionDialog = () => {
+    setOptionDialog(null);
+    setNewOptionName("");
+  };
+
+  const rememberCustomOption = (target: CustomOptionTarget, name: string, previous?: string) => {
+    setCustomOptions((current) => {
+      const withoutPrevious = current[target].filter(
+        (item) => !previous || item.toLowerCase() !== previous.toLowerCase(),
+      );
+      const next = withoutPrevious.some((item) => item.toLowerCase() === name.toLowerCase())
+        ? withoutPrevious
+        : [...withoutPrevious, name];
+      try {
+        localStorage.setItem(`asset-custom-options-${target}`, JSON.stringify(next));
+      } catch {
+        // The value still remains available for the current session.
+      }
+      return { ...current, [target]: next };
+    });
+  };
+
+  const rememberRename = (target: CustomOptionTarget, original: string, name: string) => {
+    setOptionRenames((current) => {
+      const next = { ...current[target], [original.toLowerCase()]: name };
+      for (const [key, value] of Object.entries(next)) {
+        if (value.toLowerCase() === original.toLowerCase()) next[key] = name;
+      }
+      try {
+        localStorage.setItem(`asset-option-renames-${target}`, JSON.stringify(next));
+      } catch {
+        // Keep the rename for this session even if storage is full.
+      }
+      return { ...current, [target]: next };
+    });
+  };
+
+  const handleSaveOption = async () => {
+    if (!optionDialog) return;
+    const name = capitalizeStart(newOptionName);
+    const label = optionLabels[optionDialog.target].toLowerCase();
     if (!name) {
       toast({
         title: "Name required",
-        description: `Enter a ${optionLabels[createOptionTarget].toLowerCase()} name.`,
+        description: `Enter a ${label} name.`,
         variant: "destructive",
       });
       return;
     }
 
-    const existingOptions = {
-      type: typeOptions,
-      category: categoryOptions,
-      manufacturer: manufacturerOptions,
-      location: locationOptions,
-    }[createOptionTarget];
-
-    const existing = existingOptions.find((option) => option.toLowerCase() === name.toLowerCase());
-    const selectedName = existing ?? name;
-
-    if (!existing) {
-      setCustomOptions((current) => {
-        const nextValues = [...current[createOptionTarget], name];
-        try {
-          localStorage.setItem(
-            `asset-custom-options-${createOptionTarget}`,
-            JSON.stringify(nextValues),
-          );
-        } catch {
-          // The value still remains available for the current session.
-        }
-        return { ...current, [createOptionTarget]: nextValues };
+    const existingOptions = optionsFor(optionDialog.target);
+    if (optionDialog.mode === "create") {
+      const existing = existingOptions.find((option) => option.toLowerCase() === name.toLowerCase());
+      const selectedName = existing ?? name;
+      if (!existing) rememberCustomOption(optionDialog.target, selectedName);
+      form.setValue(optionDialog.target, selectedName.toLowerCase(), {
+        shouldDirty: true,
+        shouldValidate: true,
       });
+      closeOptionDialog();
+      toast({
+        title: existing ? "Option selected" : `${optionLabels[optionDialog.target]} created`,
+        description: `${selectedName} is now selected.`,
+      });
+      return;
     }
 
-    form.setValue(createOptionTarget, selectedName.toLowerCase(), {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
-    setCreateOptionTarget(null);
-    setNewOptionName("");
-    toast({
-      title: existing ? "Option selected" : `${optionLabels[createOptionTarget]} created`,
-      description: `${selectedName} is now selected.`,
-    });
+    const original = optionDialog.original;
+    const conflict = existingOptions.find(
+      (option) =>
+        option.toLowerCase() === name.toLowerCase() &&
+        option.toLowerCase() !== original.toLowerCase(),
+    );
+    if (conflict) {
+      toast({
+        title: "Name already exists",
+        description: `${conflict} is already in this list.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (name.toLowerCase() === original.toLowerCase() && name === original) {
+      closeOptionDialog();
+      return;
+    }
+
+    setOptionSaving(true);
+    try {
+      const field = optionDialog.target;
+      const matches = (existingAssets as AssetRecord[]).filter((asset) => {
+        const value = pickField(
+          asset,
+          field,
+          field === "type" ? "asset_type" : field,
+        );
+        return String(value ?? "").trim().toLowerCase() === original.toLowerCase();
+      });
+      await Promise.all(
+        matches.map(async (asset) => {
+          const id = Number(pickField(asset, "id", "id"));
+          if (!Number.isFinite(id)) return;
+          await apiRequest("PUT", `/api/assets/${id}`, { [field]: name });
+        }),
+      );
+      rememberCustomOption(field, name, original);
+      rememberRename(field, original, name);
+      if (String(form.getValues(field) ?? "").trim().toLowerCase() === original.toLowerCase()) {
+        form.setValue(field, name.toLowerCase(), { shouldDirty: true, shouldValidate: true });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
+      closeOptionDialog();
+      toast({
+        title: `${optionLabels[field]} updated`,
+        description: `${original} is now ${name}.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to update option",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setOptionSaving(false);
+    }
   };
   
   const handleFilesSelected = async (fileList: FileList | null) => {
@@ -755,6 +928,8 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             <FormLabel className="text-sm font-medium text-[#111827]">Asset Name *</FormLabel>
                             <Select
                               key={`type-${assetId ?? "new"}-${field.value}`}
+                              open={openOptionMenu === "type"}
+                              onOpenChange={(open) => setOpenOptionMenu(open ? "type" : null)}
                               onValueChange={field.onChange}
                               value={field.value || undefined}
                             >
@@ -776,9 +951,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 </div>
                                 <div className="my-1 border-t" />
                                 {typeOptions.map((type) => (
-                                  <SelectItem key={type} value={type.toLowerCase()}>
-                                    {type}
-                                  </SelectItem>
+                                  <EditableOptionItem
+                                    key={type}
+                                    option={type}
+                                    onEdit={() => handleOpenEditOption("type", type)}
+                                  />
                                 ))}
                               </SelectContent>
                             </Select>
@@ -795,6 +972,8 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             <FormLabel className="text-sm font-medium text-[#111827]">Asset Category *</FormLabel>
                             <Select
                               key={`category-${assetId ?? "new"}-${field.value}`}
+                              open={openOptionMenu === "category"}
+                              onOpenChange={(open) => setOpenOptionMenu(open ? "category" : null)}
                               onValueChange={field.onChange}
                               value={field.value || undefined}
                             >
@@ -816,9 +995,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 </div>
                                 <div className="my-1 border-t" />
                                 {categoryOptions.map((category) => (
-                                  <SelectItem key={category} value={category.toLowerCase()}>
-                                    {category}
-                                  </SelectItem>
+                                  <EditableOptionItem
+                                    key={category}
+                                    option={category}
+                                    onEdit={() => handleOpenEditOption("category", category)}
+                                  />
                                 ))}
                               </SelectContent>
                             </Select>
@@ -863,6 +1044,8 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             <FormLabel className="text-sm font-medium text-[#111827]">Manufacturer</FormLabel>
                             <Select
                               key={`manufacturer-${assetId ?? "new"}-${field.value}`}
+                              open={openOptionMenu === "manufacturer"}
+                              onOpenChange={(open) => setOpenOptionMenu(open ? "manufacturer" : null)}
                               onValueChange={field.onChange}
                               value={field.value || undefined}
                             >
@@ -884,9 +1067,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                                 </div>
                                 <div className="my-1 border-t" />
                                 {manufacturerOptions.map((manufacturer) => (
-                                  <SelectItem key={manufacturer} value={manufacturer.toLowerCase()}>
-                                    {manufacturer}
-                                  </SelectItem>
+                                  <EditableOptionItem
+                                    key={manufacturer}
+                                    option={manufacturer}
+                                    onEdit={() => handleOpenEditOption("manufacturer", manufacturer)}
+                                  />
                                 ))}
                               </SelectContent>
                             </Select>
@@ -1024,6 +1209,8 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                           <FormLabel className="text-sm font-medium text-[#111827]">Location</FormLabel>
                           <Select
                             key={`location-${assetId ?? "new"}-${field.value}`}
+                            open={openOptionMenu === "location"}
+                            onOpenChange={(open) => setOpenOptionMenu(open ? "location" : null)}
                             onValueChange={field.onChange}
                             value={field.value || undefined}
                           >
@@ -1045,9 +1232,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                               </div>
                               <div className="my-1 border-t" />
                               {locationOptions.map((location) => (
-                                <SelectItem key={location} value={location.toLowerCase()}>
-                                  {location}
-                                </SelectItem>
+                                <EditableOptionItem
+                                  key={location}
+                                  option={location}
+                                  onEdit={() => handleOpenEditOption("location", location)}
+                                />
                               ))}
                             </SelectContent>
                           </Select>
@@ -1314,18 +1503,16 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       </Form>
 
       <Dialog
-        open={createOptionTarget !== null}
+        open={optionDialog !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setCreateOptionTarget(null);
-            setNewOptionName("");
-          }
+          if (!open && !optionSaving) closeOptionDialog();
         }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Create New {createOptionTarget ? optionLabels[createOptionTarget] : "Option"}
+              {optionDialog?.mode === "edit" ? "Edit" : "Create New"}{" "}
+              {optionDialog ? optionLabels[optionDialog.target] : "Option"}
             </DialogTitle>
           </DialogHeader>
           <Input
@@ -1335,21 +1522,26 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                handleCreateOption();
+                void handleSaveOption();
               }
             }}
-            placeholder={`Enter ${createOptionTarget ? optionLabels[createOptionTarget].toLowerCase() : "option"} name`}
+            placeholder={`Enter ${optionDialog ? optionLabels[optionDialog.target].toLowerCase() : "option"}`}
           />
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setCreateOptionTarget(null)}
+              disabled={optionSaving}
+              onClick={closeOptionDialog}
             >
               Cancel
             </Button>
-            <Button type="button" onClick={handleCreateOption}>
-              Create & Select
+            <Button type="button" disabled={optionSaving} onClick={() => void handleSaveOption()}>
+              {optionSaving
+                ? "Saving..."
+                : optionDialog?.mode === "edit"
+                  ? "Save"
+                  : "Create & Select"}
             </Button>
           </DialogFooter>
         </DialogContent>

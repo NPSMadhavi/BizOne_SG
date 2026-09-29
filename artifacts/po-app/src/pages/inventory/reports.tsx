@@ -1189,11 +1189,26 @@ async function buildReportData(
   }
 
   if (reportId === "warehouse_stock") {
-    const stock = await inventoryApi.getCurrentStockReport(whId);
+    const [stock, movements] = await Promise.all([
+      inventoryApi.getCurrentStockReport(whId),
+      inventoryApi.getMovements(whId ? { warehouseId: String(whId) } : undefined),
+    ]);
+    const flow = new Map<string, { inQty: number; outQty: number }>();
+    for (const m of movements) {
+      const d = String(m.movementDate || m.transactionDate || m.createdAt || "").slice(0, 10);
+      if (filters.dateFrom && d && d < filters.dateFrom) continue;
+      if (filters.dateTo && d && d > filters.dateTo) continue;
+      const key = `${m.warehouseId}:${m.stockItemId}`;
+      const cur = flow.get(key) || { inQty: 0, outQty: 0 };
+      cur.inQty += Number(m.quantityIn) || 0;
+      cur.outQty += Number(m.quantityOut) || 0;
+      flow.set(key, cur);
+    }
     built.generic = applyItemFilter(stock).map((r: any, i: number) => {
       const item = itemMap.get(String(r.stockItemId));
       const qty = Number(r.quantity) || 0;
       const unitCost = Number(r.unitPrice ?? item?.unitPrice ?? 0) || 0;
+      const moved = flow.get(`${r.warehouseId}:${r.stockItemId}`) || { inQty: 0, outQty: 0 };
       return {
         "S.No.": i + 1,
         Warehouse: r.warehouseName || whName(r.warehouseId) || "—",
@@ -1201,6 +1216,9 @@ async function buildReportData(
         "Item Name": r.itemName || item?.name || "",
         UOM: r.uom || item?.uom || "Nos",
         Qty: qty,
+        "In Stock": moved.inQty,
+        "Out Stock": moved.outQty,
+        "Closing Balance": qty,
         "Unit Cost (SGD)": Number(unitCost.toFixed(2)),
         "Value (SGD)": Number((qty * unitCost).toFixed(2)),
       };
@@ -1217,9 +1235,9 @@ async function buildReportData(
         "Item Code": r.itemCode,
         "Item Name": r.itemName,
         UOM: r.uom,
+        "Purchase Qty": r.purchase,
+        "Sales Qty": r.sales,
         "Closing Qty": r.closing,
-        "Sales Qty (Period)": r.sales,
-        "Purchase Qty (Period)": r.purchase,
         Status: "Slow Moving",
       }));
     return built;
@@ -1296,21 +1314,26 @@ async function buildReportData(
     built.generic = movements
       .filter((r) => {
         if (filters.itemId !== "all" && String(r.stockItemId) !== filters.itemId) return false;
-        const d = String(r.transactionDate || r.createdAt || "").slice(0, 10);
+        const d = String(r.movementDate || r.transactionDate || r.createdAt || "").slice(0, 10);
         if (filters.dateFrom && d && d < filters.dateFrom) return false;
         if (filters.dateTo && d && d > filters.dateTo) return false;
         return true;
       })
-      .map((r, i) => ({
-        "S.No.": i + 1,
-        Date: String(r.transactionDate || r.createdAt || "").slice(0, 10),
-        Type: r.transactionType || r.type || "",
-        "Item Code": r.itemCode || itemMap.get(String(r.stockItemId))?.code || "",
-        "Item Name": r.itemName || itemMap.get(String(r.stockItemId))?.name || "",
-        Warehouse: r.warehouseName || whName(r.warehouseId) || "",
-        Quantity: Number(r.quantity) || 0,
-        Reference: r.referenceNo || r.documentNo || "",
-      }));
+      .map((r, i) => {
+        const qtyIn = Number(r.quantityIn) || 0;
+        const qtyOut = Number(r.quantityOut) || 0;
+        const quantity = qtyIn > 0 ? qtyIn : qtyOut || Number(r.quantity) || 0;
+        return {
+          "S.No.": i + 1,
+          Date: String(r.movementDate || r.transactionDate || r.createdAt || "").slice(0, 10),
+          Type: r.transactionType || r.type || "",
+          "Item Code": r.itemCode || itemMap.get(String(r.stockItemId))?.code || "",
+          "Item Name": r.itemName || itemMap.get(String(r.stockItemId))?.name || "",
+          Warehouse: r.warehouseName || whName(r.warehouseId) || "",
+          Quantity: quantity,
+          Reference: r.documentNumber || r.reference || r.referenceNo || r.documentNo || "",
+        };
+      });
     return built;
   }
 
@@ -1402,11 +1425,11 @@ function ReportDocument({
         {layout === "stock_wise" && (
           <>
             <div className="overflow-x-auto rounded-lg border border-[#E5E7EB]">
-              <table className="w-full min-w-[1100px] text-xs">
+              <table className="w-full min-w-[1100px] text-center text-xs">
                 <thead>
-                  <tr className={cn("text-left text-white", layoutBarClass(layout))}>
+                  <tr className={cn("text-white", layoutBarClass(layout))}>
                     {["S.No.", "Item Code", "Item Name", "UOM", "Opening Qty", "Purchase Qty", "Sales Qty", "Adjust Qty", "Closing Qty", "Unit Cost (SGD)", "Stock Value (SGD)", "GST 9%", "Total Value (SGD)"].map((h) => (
-                      <th key={h} className="px-2 py-2 font-semibold">{h}</th>
+                      <th key={h} className="px-2 py-2 text-center font-semibold">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1420,35 +1443,35 @@ function ReportDocument({
                   ) : (
                     stockWise.map((r, i) => (
                       <tr key={r.sno} className={i % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
-                        <td className="px-2 py-1.5">{r.sno}</td>
-                        <td className="px-2 py-1.5">{r.itemCode}</td>
-                        <td className="px-2 py-1.5">{r.itemName}</td>
-                        <td className="px-2 py-1.5">{r.uom}</td>
-                        <td className="px-2 py-1.5 text-right">{qty(r.openingQty)}</td>
-                        <td className="px-2 py-1.5 text-right">{qty(r.purchaseQty)}</td>
-                        <td className="px-2 py-1.5 text-right">{qty(r.salesQty)}</td>
-                        <td className="px-2 py-1.5 text-right">{qty(r.adjustQty)}</td>
-                        <td className="px-2 py-1.5 text-right font-semibold">{qty(r.closingQty)}</td>
-                        <td className="px-2 py-1.5 text-right">{money(r.unitCost)}</td>
-                        <td className="px-2 py-1.5 text-right font-semibold">{money(r.stockValue)}</td>
-                        <td className="px-2 py-1.5 text-right">{money(r.gst)}</td>
-                        <td className="px-2 py-1.5 text-right font-semibold">{money(r.totalValue)}</td>
+                        <td className="px-2 py-1.5 text-center">{r.sno}</td>
+                        <td className="px-2 py-1.5 text-center">{r.itemCode}</td>
+                        <td className="px-2 py-1.5 text-center">{r.itemName}</td>
+                        <td className="px-2 py-1.5 text-center">{r.uom}</td>
+                        <td className="px-2 py-1.5 text-center">{qty(r.openingQty)}</td>
+                        <td className="px-2 py-1.5 text-center">{qty(r.purchaseQty)}</td>
+                        <td className="px-2 py-1.5 text-center">{qty(r.salesQty)}</td>
+                        <td className="px-2 py-1.5 text-center">{qty(r.adjustQty)}</td>
+                        <td className="px-2 py-1.5 text-center font-semibold">{qty(r.closingQty)}</td>
+                        <td className="px-2 py-1.5 text-center">{money(r.unitCost)}</td>
+                        <td className="px-2 py-1.5 text-center font-semibold">{money(r.stockValue)}</td>
+                        <td className="px-2 py-1.5 text-center">{money(r.gst)}</td>
+                        <td className="px-2 py-1.5 text-center font-semibold">{money(r.totalValue)}</td>
                       </tr>
                     ))
                   )}
                 </tbody>
                 <tfoot>
                   <tr className="bg-[#F3F4F6] font-bold">
-                    <td className="px-2 py-2" colSpan={4}>GRAND TOTAL</td>
-                    <td className="px-2 py-2 text-right">{qty(stockTotals.opening)}</td>
-                    <td className="px-2 py-2 text-right">{qty(stockTotals.purchase)}</td>
-                    <td className="px-2 py-2 text-right">{qty(stockTotals.sales)}</td>
-                    <td className="px-2 py-2 text-right">{qty(stockTotals.adjust)}</td>
-                    <td className="px-2 py-2 text-right">{qty(stockTotals.closing)}</td>
+                    <td className="px-2 py-2 text-center" colSpan={4}>GRAND TOTAL</td>
+                    <td className="px-2 py-2 text-center">{qty(stockTotals.opening)}</td>
+                    <td className="px-2 py-2 text-center">{qty(stockTotals.purchase)}</td>
+                    <td className="px-2 py-2 text-center">{qty(stockTotals.sales)}</td>
+                    <td className="px-2 py-2 text-center">{qty(stockTotals.adjust)}</td>
+                    <td className="px-2 py-2 text-center">{qty(stockTotals.closing)}</td>
                     <td className="px-2 py-2" />
-                    <td className="px-2 py-2 text-right">{money(stockTotals.value)}</td>
-                    <td className="px-2 py-2 text-right">{money(stockTotals.gst)}</td>
-                    <td className="px-2 py-2 text-right">{money(stockTotals.total)}</td>
+                    <td className="px-2 py-2 text-center">{money(stockTotals.value)}</td>
+                    <td className="px-2 py-2 text-center">{money(stockTotals.gst)}</td>
+                    <td className="px-2 py-2 text-center">{money(stockTotals.total)}</td>
                   </tr>
                 </tfoot>
               </table>

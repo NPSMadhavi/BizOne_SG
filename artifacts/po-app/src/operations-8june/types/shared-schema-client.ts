@@ -71,7 +71,13 @@ export type Employee = {
   visaNumber?: string | null;
   visaExpiry?: string | Date | null;
   nric?: string | null;
+  nricNumber?: string | null;
   nricExpiry?: string | Date | null;
+  visaType?: string | null;
+  visaRemarks?: string | null;
+  passportScan?: string | null;
+  visaScan?: string | null;
+  nricScan?: string | null;
   createdAt?: string | Date | null;
 };
 
@@ -189,6 +195,7 @@ export const insertEmployeeSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   phone: z.string().min(1),
+  gender: z.string().optional().nullable(),
   address: z.string().min(1),
   department: z.string().min(1),
   designation: z.string().min(1),

@@ -1,112 +1,75 @@
-/** Marks an authenticated browser run. Cleared when the browser fully closes. */
-const LIVE_KEY = "bizone_live_session";
-const TABS_KEY = "bizone_open_tabs";
-const REFRESH_COOKIE = "bizone_rf";
-const TAB_STALE_MS = 20_000;
+/** Per-tab login. sessionStorage is not shared with other tabs. */
+const TAB_SESSION_KEY = "bizone_tab_session";
 
-function readCookie(name: string): boolean {
-  return document.cookie.split("; ").some((c) => c.startsWith(`${name}=`));
-}
-
-function clearCookie(name: string) {
-  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
-}
-
-function setRefreshMarker() {
-  document.cookie = `${REFRESH_COOKIE}=1; Path=/; Max-Age=5; SameSite=Lax`;
-}
-
-function getTabs(): Record<string, number> {
+export function getTabSessionId(): string | null {
   try {
-    return JSON.parse(localStorage.getItem(TABS_KEY) || "{}") as Record<string, number>;
+    return sessionStorage.getItem(TAB_SESSION_KEY);
   } catch {
-    return {};
+    return null;
   }
 }
 
-function saveTabs(tabs: Record<string, number>) {
-  localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+export function setTabSessionId(sessionId: string) {
+  sessionStorage.setItem(TAB_SESSION_KEY, sessionId);
 }
 
-function pruneTabs(tabs: Record<string, number>, now = Date.now()) {
-  for (const [id, ts] of Object.entries(tabs)) {
-    if (now - ts > TAB_STALE_MS) delete tabs[id];
-  }
-  return tabs;
+export function clearTabSessionId() {
+  sessionStorage.removeItem(TAB_SESSION_KEY);
 }
 
-export function markBrowserSessionLive() {
-  sessionStorage.setItem(LIVE_KEY, "1");
-  localStorage.setItem(LIVE_KEY, "1");
+export function markBrowserSessionLive(sessionId?: string) {
+  if (sessionId) setTabSessionId(sessionId);
 }
 
 export function clearBrowserSessionLive() {
-  sessionStorage.removeItem(LIVE_KEY);
-  localStorage.removeItem(LIVE_KEY);
+  clearTabSessionId();
 }
 
 export function isBrowserSessionLive(): boolean {
-  if (sessionStorage.getItem(LIVE_KEY) === "1") return true;
-  if (localStorage.getItem(LIVE_KEY) === "1") {
-    sessionStorage.setItem(LIVE_KEY, "1");
-    return true;
-  }
-  return false;
+  return Boolean(getTabSessionId());
 }
 
-/**
- * Call once before React mounts.
- * - Refresh / SPA navigations keep the session.
- * - Full browser reopen clears any restored session cookie and requires login.
- * - Extra tabs in the same browser run keep the session.
- */
-export async function bootstrapBrowserSession(): Promise<void> {
-  const isRefresh = readCookie(REFRESH_COOKIE);
-  clearCookie(REFRESH_COOKIE);
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
 
-  if (!isRefresh) {
-    const now = Date.now();
-    const liveTabs = Object.entries(pruneTabs(getTabs(), now));
-    if (liveTabs.length > 0) {
-      markBrowserSessionLive();
-    } else {
-      clearBrowserSessionLive();
-      localStorage.removeItem(TABS_KEY);
-      try {
-        await fetch("/api/auth/logout", {
-          method: "POST",
-          credentials: "include",
-          keepalive: true,
-        });
-      } catch {
-        // ignore — session may already be gone
-      }
-    }
+function isAppApiRequest(input: RequestInfo | URL): boolean {
+  try {
+    const url = new URL(requestUrl(input), window.location.origin);
+    return url.origin === window.location.origin && url.pathname.startsWith("/api");
+  } catch {
+    return false;
   }
+}
 
-  const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+let fetchPatched = false;
 
-  const touchTab = () => {
-    const tabs = pruneTabs(getTabs());
-    tabs[tabId] = Date.now();
-    saveTabs(tabs);
-  };
+/** Attach this tab's session id to API calls so tabs do not share the cookie session. */
+export function installTabSessionFetch() {
+  if (fetchPatched) return;
+  fetchPatched = true;
+  const original = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!isAppApiRequest(input)) return original(input, init);
+    const sid = getTabSessionId();
+    if (!sid) return original(input, init);
 
-  const dropTab = () => {
-    const tabs = pruneTabs(getTabs());
-    delete tabs[tabId];
-    saveTabs(tabs);
-    if (Object.keys(tabs).length === 0) {
-      localStorage.removeItem(LIVE_KEY);
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    if (!headers.has("X-BizOne-Session")) {
+      headers.set("X-BizOne-Session", sid);
     }
+    if (input instanceof Request) {
+      return original(new Request(input, { ...init, headers }));
+    }
+    return original(input, { ...init, headers });
   };
+}
 
-  touchTab();
-  const heartbeat = window.setInterval(touchTab, 5_000);
-
-  window.addEventListener("pagehide", () => {
-    setRefreshMarker();
-    dropTab();
-    window.clearInterval(heartbeat);
-  });
+/** Call once before React mounts. */
+export function bootstrapBrowserSession(): void {
+  installTabSessionFetch();
 }

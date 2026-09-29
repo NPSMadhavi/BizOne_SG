@@ -8,6 +8,8 @@
  *   DR 1110 GST Input Tax Recoverable = gstAmount   → only if gstClaimable & gstAmount > 0
  *   CR 1010 Cash at Bank - SGD        = total paid  → cash / bank paid out
  *
+ * Payroll payment records credit 2040 Staff Salaries Payable instead of the bank.
+ *
  * ON EXPENSE DELETED (if was confirmed) → reverse the JE
  *
  * backfillExpenseJEs() → idempotent catch-up for confirmed expenses missing a JE.
@@ -46,6 +48,42 @@ async function getAccountByCode(companyId: number, code: string) {
 
 // ── Expense Confirmed ─────────────────────────────────────────────────────────
 
+function isPayrollPayment(expense: { notes?: string | null; description?: string | null }) {
+  return (
+    (expense.notes ?? "").includes("payroll-payment:") ||
+    (expense.description ?? "").startsWith("Payroll payment")
+  );
+}
+
+function ledgerCodeFromNotes(notes?: string | null) {
+  const match = notes?.match(/Ledger:\s*(\d+)/);
+  return match?.[1] ?? null;
+}
+
+async function payableAccount(companyId: number) {
+  return (
+    (await getAccountByCode(companyId, "2040")) ??
+    (await getAccountByCode(companyId, "2000"))
+  );
+}
+
+/** Payroll payment records credit salaries payable, not the bank. */
+async function alignPayrollPaymentCredit(
+  companyId: number,
+  journalEntryId: number,
+) {
+  const payable = await payableAccount(companyId);
+  const bank = await getAccountByCode(companyId, "1010");
+  if (!payable || !bank) return;
+
+  await db.update(journalLinesTable)
+    .set({ accountId: payable.id })
+    .where(and(
+      eq(journalLinesTable.journalEntryId, journalEntryId),
+      eq(journalLinesTable.accountId, bank.id),
+    ));
+}
+
 export async function postExpenseJE(
   expense: {
     id: number;
@@ -57,6 +95,7 @@ export async function postExpenseJE(
     amount: string | number;
     gstAmount: string | number;
     gstClaimable: boolean;
+    notes?: string | null;
   },
   userId: number,
   log?: any,
@@ -75,19 +114,28 @@ export async function postExpenseJE(
       eq(journalEntriesTable.refId,     expense.id),
     ))
     .limit(1);
-  if (existing) return existing.id;
+  if (existing) {
+    if (isPayrollPayment(expense)) {
+      await alignPayrollPaymentCredit(expense.companyId, existing.id);
+    }
+    return existing.id;
+  }
 
+  const payrollPayment = isPayrollPayment(expense);
   const netAmount = parseFloat(String(expense.amount));
   const gstAmount = parseFloat(String(expense.gstAmount ?? "0"));
-  const claimGst  = expense.gstClaimable && gstAmount > 0.001;
+  const claimGst  = !payrollPayment && expense.gstClaimable && gstAmount > 0.001;
   const totalPaid = claimGst ? netAmount + gstAmount : netAmount;
 
-  const expenseCode = CATEGORY_ACCOUNT[expense.category] ?? "7200";
-  const [bankAcct, expAcct, inputTaxAcct] = await Promise.all([
-    getAccountByCode(expense.companyId, "1010"),
+  const expenseCode = ledgerCodeFromNotes(expense.notes) ?? CATEGORY_ACCOUNT[expense.category] ?? "7200";
+  const creditAcct = payrollPayment
+    ? await payableAccount(expense.companyId)
+    : await getAccountByCode(expense.companyId, "1010");
+  const [expAcct, inputTaxAcct] = await Promise.all([
     getAccountByCode(expense.companyId, expenseCode),
     claimGst ? getAccountByCode(expense.companyId, "1110") : Promise.resolve(null),
   ]);
+  const bankAcct = creditAcct;
 
   if (!bankAcct || !expAcct) {
     if (log) log.warn({ companyId: expense.companyId, expenseId: expense.id }, "expense-auto-post: bank or expense account not found");

@@ -362,6 +362,7 @@ export default function VendorsPage() {
                 <SingaporePhoneInput
                   value={form.phone || ""}
                   onChange={(digits) => setField("phone", digits)}
+                  placeholder=""
                 />
               </div>
             </div>
@@ -373,7 +374,7 @@ export default function VendorsPage() {
                 onChange={v => setField("address", v)}
                 onPostalCodeChange={v => setField("postalCode", v)}
                 country={form.country || undefined}
-                placeholder="Start typing to search address…"
+                placeholder=""
               />
             </div>
 
@@ -383,9 +384,7 @@ export default function VendorsPage() {
                 <Input
                   value={form.postalCode || ""}
                   onChange={e => setField("postalCode", e.target.value)}
-                  placeholder="e.g. 408564 (SG) or 530007 (IN)"
                 />
-                <p className="text-[11px] text-muted-foreground">Auto-filled when you select an address suggestion above.</p>
               </div>
               <div className="space-y-1.5">
                 <Label>Default Currency</Label>
@@ -430,18 +429,17 @@ export default function VendorsPage() {
                     </Command>
                   </PopoverContent>
                 </Popover>
-                <p className="text-[11px] text-muted-foreground">Used to auto-fill currency when creating documents for this vendor.</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Contact Person</Label>
-                <Input value={form.contactPerson || ""} onChange={e => setField("contactPerson", e.target.value)} placeholder="Name" />
+                <Input value={form.contactPerson || ""} onChange={e => setField("contactPerson", e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Contact Email</Label>
-                <Input type="email" value={form.contactEmail || ""} onChange={e => setField("contactEmail", e.target.value)} placeholder="email@vendor.com" />
+                <Input type="email" value={form.contactEmail || ""} onChange={e => setField("contactEmail", e.target.value)} />
               </div>
             </div>
 

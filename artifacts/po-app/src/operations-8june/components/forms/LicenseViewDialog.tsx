@@ -95,8 +95,8 @@ export default function LicenseViewDialog({ open, onClose, license }: LicenseVie
           value={license.expiryDate ? formatViewDate(license.expiryDate) : "-"}
         />
         <EntityViewField
-          label="Purchase value"
-          value={license.cost ? `$${license.cost}` : "-"}
+          label="Purchase value ($)"
+          value={license.cost ? `($${license.cost})` : "-"}
         />
         <EntityViewField label="Renewal cycle" value={renewalCycle} />
         <EntityViewField

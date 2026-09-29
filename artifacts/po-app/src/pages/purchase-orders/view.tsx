@@ -177,6 +177,16 @@ export default function PurchaseOrderView() {
     }
   };
 
+  const convertedToViBadge = (compact = false) => {
+    if (linkedPIs.length === 0) return null;
+    const size = compact ? "text-xs py-0 px-1.5" : "text-sm py-1";
+    return (
+      <Badge variant="outline" className={`border-blue-300 bg-blue-50 text-blue-700 ${size}`}>
+        Convert to VI
+      </Badge>
+    );
+  };
+
   const handleDelete = () => {
     deleteMutation.mutate({ id }, {
       onSuccess: () => {
@@ -238,6 +248,7 @@ export default function PurchaseOrderView() {
         <Button
           variant="outline"
           className={`${btnClass} border-blue-300 text-blue-700 hover:bg-blue-50`}
+          disabled={linkedPIs.length > 0}
           onClick={() => setLocation(
             `/vendor-invoices/new?poId=${id}&poNumber=${encodeURIComponent(po.poNumber)}&vendorName=${encodeURIComponent(po.vendorName)}&amount=${po.totalAmount}&currency=${encodeURIComponent((po as any).currency || "SGD")}`
           )}
@@ -297,6 +308,7 @@ export default function PurchaseOrderView() {
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <h1 className="text-lg font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
                 {getStatusBadge(po.status, true)}
+                {convertedToViBadge(true)}
                 {(po as any).isPrivate && (
                   <Badge variant="outline" className="gap-0.5 text-muted-foreground text-xs py-0 px-1.5 shrink-0">
                     <Lock className="h-3 w-3" />
@@ -335,6 +347,7 @@ export default function PurchaseOrderView() {
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
               {getStatusBadge(po.status)}
+              {convertedToViBadge()}
               {(po as any).isPrivate && (
                 <Badge variant="outline" className="gap-1 text-muted-foreground shrink-0">
                   <Lock className="h-3 w-3" />

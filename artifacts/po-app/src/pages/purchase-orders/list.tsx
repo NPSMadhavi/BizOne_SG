@@ -332,7 +332,14 @@ export default function PurchaseOrderList() {
                         {(po as any).customerName ? <span className="text-foreground font-medium">{(po as any).customerName}</span> : <span>—</span>}
                       </td>
                       <td className="px-6 py-4 font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:(po as any).currency||"SGD"}).format(po.totalAmount)}</td>
-                      <td className="px-6 py-4">{getStatusBadge(po.status)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {getStatusBadge(po.status)}
+                          {pis.length > 0 && (
+                            <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700">Convert to VI</Badge>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4"><SentToCell emailSentTo={(po as any).emailSentTo}/></td>
                       <td className="px-6 py-4">
                         {pis.length === 0 ? <span className="text-muted-foreground">—</span>

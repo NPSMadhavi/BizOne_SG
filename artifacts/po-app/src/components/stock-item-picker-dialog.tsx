@@ -6,13 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Search, Package, ArrowLeft, Loader2, Lock, MoreVertical } from "lucide-react";
+import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface PurchasePriceHistoryRow {
@@ -444,7 +438,10 @@ export function StockItemPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent
+        style={{ animation: "none", transition: "none" }}
+        className={step === "qty" ? "max-w-md" : step === "serials" ? "max-w-3xl" : "max-w-xl"}
+      >
 
         {step === "items" && (
           <>
@@ -473,15 +470,12 @@ export function StockItemPickerDialog({
                     <TableHead className="w-28">Code</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead className="w-32 min-w-[7.5rem] text-right whitespace-nowrap">Avail. Qty</TableHead>
-                    <TableHead className="w-28 text-right whitespace-nowrap">Purchase Price</TableHead>
-                    <TableHead className="w-28 text-right whitespace-nowrap">Selling Price</TableHead>
-                    <TableHead className="w-20 text-center whitespace-nowrap">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
                         <Loader2 className="h-5 w-5 animate-spin mx-auto mb-1" />
                         Loading...
                       </TableCell>
@@ -489,7 +483,7 @@ export function StockItemPickerDialog({
                   )}
                   {!isLoading && displayItems.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No stock items found.</TableCell>
+                      <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No stock items found.</TableCell>
                     </TableRow>
                   )}
                   {!isLoading && displayItems.map((item) => {
@@ -498,8 +492,6 @@ export function StockItemPickerDialog({
                     const availLabel = Number.isInteger(avail)
                       ? String(avail)
                       : avail.toFixed(3).replace(/\.?0+$/, "");
-                    const purchase = Number(item.purchasePrice ?? 0);
-                    const unit = Number(item.unitPrice || 0);
                     const dateLabel = formatPriceDate(item.priceDate);
                     return (
                       <TableRow
@@ -528,29 +520,6 @@ export function StockItemPickerDialog({
                           >
                             {availLabel} {item.uom || ""}
                           </Badge>
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-medium tabular-nums">
-                          {purchase.toFixed(2)}
-                          <span className="text-xs text-muted-foreground ml-1">/{item.uom || "—"}</span>
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-medium tabular-nums">
-                          {unit.toFixed(2)}
-                          <span className="text-xs text-muted-foreground ml-1">/{item.uom || "—"}</span>
-                        </TableCell>
-                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                                <span className="sr-only">Actions</span>
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleItemClick(item)}>
-                                Select
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );

@@ -214,7 +214,12 @@ export default function ExpenseView() {
                   <Separator />
                   <div>
                     <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Notes</p>
-                    <p className="text-sm whitespace-pre-wrap">{expense.notes}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {expense.notes
+                        .split("\n")
+                        .filter((line) => !line.startsWith("payroll-payment:"))
+                        .join("\n")}
+                    </p>
                   </div>
                 </>
               )}

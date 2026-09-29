@@ -25,10 +25,29 @@ import { apiRequest, queryClient } from "@/operations-8june/lib/queryClient";
 import { insertEmployeePayrollSchema } from "@shared/schema";
 import {
   Calculator,
+  ChevronDown,
   DollarSign,
+  Pencil,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { calculateSyncBridgePayrollPreview, CPF_WAGE_CEILING } from "@/operations-8june/lib/payroll-utils";
 import {
@@ -135,6 +154,8 @@ function formatCurrency(amount: number) {
   }).format(amount || 0);
 }
 
+const ALL_EMPLOYEES_ID = 0;
+
 const PAYROLL_MONTH_OPTIONS = [
   { value: 1, label: "January" },
   { value: 2, label: "February" },
@@ -192,11 +213,172 @@ const formLabelClass = "text-sm font-medium text-[#111827]";
 const payheadLabelClass = "text-base font-medium text-[#111827]";
 const readOnlyInputClass = "bg-[#F9FAFB] text-[#111827]";
 
+type Payhead = { id: string; label: string };
+type PayheadKind = "earning" | "deduction";
+type PayheadStore = { renames: Record<string, string>; hidden: string[]; custom: Payhead[] };
+
+const BUILTIN_EARNINGS: Payhead[] = [
+  { id: "transport", label: "Travelling Allowance" },
+  { id: "meal", label: "Food Allowance" },
+  { id: "phone", label: "Mobile Allowance" },
+  { id: "others", label: "Other Allowance" },
+];
+const BUILTIN_DEDUCTIONS: Payhead[] = [
+  { id: "medical", label: "Medical Insurance" },
+  { id: "advance", label: "Advanced / Loan Recovery" },
+  { id: "others", label: "Other Deductions" },
+];
+const RESERVED_EARNING_IDS = new Set(["transport", "meal", "phone", "others", "overtime"]);
+const RESERVED_DEDUCTION_IDS = new Set(["medical", "advance", "others"]);
+const EARNING_FORM_FIELDS: Record<string, "allowanceTransport" | "allowanceMeal" | "allowancePhone" | "allowanceOthers"> = {
+  transport: "allowanceTransport",
+  meal: "allowanceMeal",
+  phone: "allowancePhone",
+  others: "allowanceOthers",
+};
+const DEDUCTION_FORM_FIELDS: Record<string, "deductionMedical" | "deductionAdvance" | "deductionOthers"> = {
+  medical: "deductionMedical",
+  advance: "deductionAdvance",
+  others: "deductionOthers",
+};
+
+function emptyPayheadStore(): PayheadStore {
+  return { renames: {}, hidden: [], custom: [] };
+}
+
+function payheadStorageKey(kind: PayheadKind) {
+  return kind === "earning" ? "payroll-payhead-earnings" : "payroll-payhead-deductions";
+}
+
+function loadPayheadStore(kind: PayheadKind): PayheadStore {
+  try {
+    const raw = localStorage.getItem(payheadStorageKey(kind));
+    if (!raw) return emptyPayheadStore();
+    const parsed = JSON.parse(raw) as Partial<PayheadStore>;
+    return {
+      renames: parsed.renames && typeof parsed.renames === "object" ? parsed.renames : {},
+      hidden: Array.isArray(parsed.hidden) ? parsed.hidden.filter((id) => typeof id === "string") : [],
+      custom: Array.isArray(parsed.custom)
+        ? parsed.custom.filter((item) => item && typeof item.id === "string" && typeof item.label === "string")
+        : [],
+    };
+  } catch {
+    return emptyPayheadStore();
+  }
+}
+
+function savePayheadStore(kind: PayheadKind, store: PayheadStore) {
+  localStorage.setItem(payheadStorageKey(kind), JSON.stringify(store));
+}
+
+function visiblePayheads(kind: PayheadKind, store: PayheadStore): Payhead[] {
+  const builtins = kind === "earning" ? BUILTIN_EARNINGS : BUILTIN_DEDUCTIONS;
+  const hidden = new Set(store.hidden);
+  const builtinItems = builtins
+    .filter((item) => !hidden.has(item.id))
+    .map((item) => ({ id: item.id, label: store.renames[item.id] || item.label }));
+  const customItems = store.custom
+    .filter((item) => !hidden.has(item.id))
+    .map((item) => ({ id: item.id, label: store.renames[item.id] || item.label }));
+  return [...builtinItems, ...customItems];
+}
+
+function slugifyPayhead(label: string) {
+  const base = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  return base || "payhead";
+}
+
+function labelFromPayheadId(id: string) {
+  return id.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function mergeSavedPayheads(kind: PayheadKind, amounts: Record<string, unknown> | null | undefined): PayheadStore {
+  const store = loadPayheadStore(kind);
+  const reserved = kind === "earning" ? RESERVED_EARNING_IDS : RESERVED_DEDUCTION_IDS;
+  const hidden = new Set(store.hidden);
+  let changed = false;
+  for (const key of Object.keys(amounts || {})) {
+    if (reserved.has(key) || hidden.has(key) || store.custom.some((item) => item.id === key)) continue;
+    store.custom.push({ id: key, label: labelFromPayheadId(key) });
+    changed = true;
+  }
+  if (changed) savePayheadStore(kind, store);
+  return store;
+}
+
+function PayheadMenu({
+  buttonLabel,
+  buttonClassName,
+  items,
+  onCreate,
+  onEdit,
+  onDelete,
+}: {
+  buttonLabel: string;
+  buttonClassName: string;
+  items: Payhead[];
+  onCreate: () => void;
+  onEdit: (item: Payhead) => void;
+  onDelete: (item: Payhead) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className={buttonClassName}>
+          <Plus className="mr-1 h-4 w-4" />
+          {buttonLabel}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuItem
+          onSelect={onCreate}
+          className="font-medium text-[#2563EB] focus:bg-[#EFF6FF] focus:text-[#2563EB]"
+        >
+          Create new payhead
+        </DropdownMenuItem>
+        {items.length > 0 ? <DropdownMenuSeparator /> : null}
+        {items.map((item) => (
+          <div key={item.id} className="flex items-center gap-1 px-2 py-1.5">
+            <span className="min-w-0 flex-1 truncate text-sm text-[#111827]">{item.label}</span>
+            <button
+              type="button"
+              className="rounded p-1 text-[#2563EB] hover:bg-[#EFF6FF]"
+              title={`Edit ${item.label}`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+                onEdit(item);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              className="rounded p-1 text-[#DC2626] hover:bg-[#FEF2F2]"
+              title={`Delete ${item.label}`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+                onDelete(item);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function OptionalAmountInput({
   field,
   placeholder = "",
 }: {
-  field: { value?: number; onChange: (value: number | undefined) => void; onBlur: () => void; name: string; ref: React.Ref<HTMLInputElement> };
+  field: { value?: number; onChange: (value: number | undefined) => void; onBlur?: () => void; name: string; ref?: React.Ref<HTMLInputElement> };
   placeholder?: string;
 }) {
   return (
@@ -259,7 +441,11 @@ function buildPayrollConfigPayload(
   selectedEmployee: any,
   citizenshipStatus: string,
   age: number,
-  monthDays?: number | null
+  monthDays?: number | null,
+  extraAllowances: Record<string, number> = {},
+  extraDeductions: Record<string, number> = {},
+  includedEarnings: string[] = ["transport", "meal", "phone", "others"],
+  includedDeductions: string[] = ["medical", "advance", "others"],
 ) {
   const {
     age: _age,
@@ -277,24 +463,33 @@ function buildPayrollConfigPayload(
     ...payrollData
   } = data;
 
-  const allowances = {
-    transport: allowanceTransport || 0,
-    meal: allowanceMeal || 0,
-    phone: allowancePhone || 0,
-    others: allowanceOthers || 0,
+  const earningIncluded = new Set(includedEarnings);
+  const deductionIncluded = new Set(includedDeductions);
+  const allowances: Record<string, number> = {
     // Overtime Hours × Overtime pay (SGD) — counted with allowances
     overtime: Math.round(
       (Number(payrollData.overtimeRate) || 0) * (Number(payrollData.hourlyRate) || 0) * 100
     ) / 100,
   };
+  if (earningIncluded.has("transport")) allowances.transport = allowanceTransport || 0;
+  if (earningIncluded.has("meal")) allowances.meal = allowanceMeal || 0;
+  if (earningIncluded.has("phone")) allowances.phone = allowancePhone || 0;
+  if (earningIncluded.has("others")) allowances.others = allowanceOthers || 0;
+  for (const [key, value] of Object.entries(extraAllowances)) {
+    if (!RESERVED_EARNING_IDS.has(key)) allowances[key] = Number(value) || 0;
+  }
 
-  const deductions = {
-    medical: deductionMedical || 0,
-    advance: deductionAdvance || 0,
-    others: deductionOthers || 0,
-  };
+  const deductions: Record<string, number> = {};
+  if (deductionIncluded.has("medical")) deductions.medical = deductionMedical || 0;
+  if (deductionIncluded.has("advance")) deductions.advance = deductionAdvance || 0;
+  if (deductionIncluded.has("others")) deductions.others = deductionOthers || 0;
+  for (const [key, value] of Object.entries(extraDeductions)) {
+    if (!RESERVED_DEDUCTION_IDS.has(key)) deductions[key] = Number(value) || 0;
+  }
 
   const overtimePay = Number(allowances.overtime) || 0;
+  const previewAllowances = { ...allowances };
+  delete previewAllowances.overtime;
 
   const calculation = calculateSyncBridgePayrollPreview({
     monthlySalary: calcBasicSalaryForCpf(
@@ -306,12 +501,7 @@ function buildPayrollConfigPayload(
     citizenshipStatus: citizenshipStatus as "citizen" | "pr" | "foreigner",
     prStatus: selectedEmployee?.prStatus,
     overtimePay,
-    allowances: {
-      transport: allowances.transport,
-      meal: allowances.meal,
-      phone: allowances.phone,
-      others: allowances.others,
-    },
+    allowances: previewAllowances,
     deductions,
   });
 
@@ -353,6 +543,11 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     queryKey: ["/api/employees"],
   });
 
+  const activeEmployees = useMemo(
+    () => employees.filter((employee) => String(employee.status || "active") === "active"),
+    [employees],
+  );
+
   const employeeOptions = useMemo(() => {
     const options = [...employees];
     if (editData?.employeeId) {
@@ -372,8 +567,17 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
         });
       }
     }
-    return options;
-  }, [employees, editData]);
+    if (editData?.id) return options;
+    return [
+      {
+        id: ALL_EMPLOYEES_ID,
+        name: "All Employees",
+        employeeId: `${activeEmployees.length} active`,
+        designation: "Process payroll for everyone",
+      },
+      ...options,
+    ];
+  }, [employees, editData, activeEmployees.length]);
 
   const form = useForm<PayrollConfigFormData>({
     resolver: zodResolver(payrollConfigSchema),
@@ -389,14 +593,33 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   const isEditMode = Boolean(editData?.id);
   const [selectedPayrollMonth, setSelectedPayrollMonth] = useState<number | null>(null);
+  const [monthMenuOpen, setMonthMenuOpen] = useState(false);
+  const [monthError, setMonthError] = useState("");
+  const [earningStore, setEarningStore] = useState<PayheadStore>(() => loadPayheadStore("earning"));
+  const [deductionStore, setDeductionStore] = useState<PayheadStore>(() => loadPayheadStore("deduction"));
+  const [customEarningAmounts, setCustomEarningAmounts] = useState<Record<string, number | undefined>>({});
+  const [customDeductionAmounts, setCustomDeductionAmounts] = useState<Record<string, number | undefined>>({});
+  const [payheadDialog, setPayheadDialog] = useState<{
+    kind: PayheadKind;
+    mode: "create" | "edit";
+    id?: string;
+    label: string;
+  } | null>(null);
+  const [payheadName, setPayheadName] = useState("");
+
+  const earningCatalog = useMemo(() => visiblePayheads("earning", earningStore), [earningStore]);
+  const deductionCatalog = useMemo(() => visiblePayheads("deduction", deductionStore), [deductionStore]);
 
   const selectedEmployeeId = form.watch("employeeId");
+  const isAllEmployees = Number(selectedEmployeeId) === ALL_EMPLOYEES_ID;
   const selectedEmployee = useMemo(
     () =>
-      employeeOptions.find(
-        (employee) => Number(employee.id) === Number(selectedEmployeeId)
-      ),
-    [employeeOptions, selectedEmployeeId]
+      isAllEmployees
+        ? undefined
+        : employeeOptions.find(
+            (employee) => Number(employee.id) === Number(selectedEmployeeId)
+          ),
+    [employeeOptions, selectedEmployeeId, isAllEmployees]
   );
 
   const baseSalary = Number(form.watch("baseSalary") || 0);
@@ -421,6 +644,46 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   const deductionAdvance = Number(form.watch("deductionAdvance") || 0);
   const deductionOthers = Number(form.watch("deductionOthers") || 0);
 
+  const allowancePreview = useMemo(() => {
+    const visible = new Set(earningCatalog.map((item) => item.id));
+    const map: Record<string, number> = {};
+    if (visible.has("transport")) map.transport = allowanceTransport;
+    if (visible.has("meal")) map.meal = allowanceMeal;
+    if (visible.has("phone")) map.phone = allowancePhone;
+    if (visible.has("others")) map.others = allowanceOthers;
+    for (const item of earningCatalog) {
+      if (RESERVED_EARNING_IDS.has(item.id)) continue;
+      map[item.id] = Number(customEarningAmounts[item.id]) || 0;
+    }
+    return map;
+  }, [
+    earningCatalog,
+    allowanceTransport,
+    allowanceMeal,
+    allowancePhone,
+    allowanceOthers,
+    customEarningAmounts,
+  ]);
+
+  const deductionPreview = useMemo(() => {
+    const visible = new Set(deductionCatalog.map((item) => item.id));
+    const map: Record<string, number> = {};
+    if (visible.has("medical")) map.medical = deductionMedical;
+    if (visible.has("advance")) map.advance = deductionAdvance;
+    if (visible.has("others")) map.others = deductionOthers;
+    for (const item of deductionCatalog) {
+      if (RESERVED_DEDUCTION_IDS.has(item.id)) continue;
+      map[item.id] = Number(customDeductionAmounts[item.id]) || 0;
+    }
+    return map;
+  }, [
+    deductionCatalog,
+    deductionMedical,
+    deductionAdvance,
+    deductionOthers,
+    customDeductionAmounts,
+  ]);
+
   const calculationPreview = useMemo(() => {
     if (!baseSalary || !age) return null;
 
@@ -430,17 +693,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
       citizenshipStatus,
       prStatus: selectedEmployee?.prStatus,
       overtimePay,
-      allowances: {
-        transport: allowanceTransport,
-        meal: allowanceMeal,
-        phone: allowancePhone,
-        others: allowanceOthers,
-      },
-      deductions: {
-        medical: deductionMedical,
-        advance: deductionAdvance,
-        others: deductionOthers,
-      },
+      allowances: allowancePreview,
+      deductions: deductionPreview,
     });
   }, [
     baseSalary,
@@ -449,13 +703,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     citizenshipStatus,
     selectedEmployee?.prStatus,
     overtimePay,
-    allowanceTransport,
-    allowanceMeal,
-    allowancePhone,
-    allowanceOthers,
-    deductionMedical,
-    deductionAdvance,
-    deductionOthers,
+    allowancePreview,
+    deductionPreview,
   ]);
   const populateFromEmployee = (employee: any) => {
     const dob = employee?.dateOfBirth ? new Date(employee.dateOfBirth) : null;
@@ -495,6 +744,20 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
       ...mapped,
       employeeId: Number(editData.employeeId),
     } as PayrollConfigFormData);
+    const savedAllowances = (editData.allowances || {}) as Record<string, unknown>;
+    const savedDeductions = (editData.deductions || {}) as Record<string, unknown>;
+    setEarningStore(mergeSavedPayheads("earning", savedAllowances));
+    setDeductionStore(mergeSavedPayheads("deduction", savedDeductions));
+    const extraEarnings: Record<string, number | undefined> = {};
+    const extraDeductions: Record<string, number | undefined> = {};
+    for (const [key, value] of Object.entries(savedAllowances)) {
+      if (!RESERVED_EARNING_IDS.has(key)) extraEarnings[key] = Number(value) || undefined;
+    }
+    for (const [key, value] of Object.entries(savedDeductions)) {
+      if (!RESERVED_DEDUCTION_IDS.has(key)) extraDeductions[key] = Number(value) || undefined;
+    }
+    setCustomEarningAmounts(extraEarnings);
+    setCustomDeductionAmounts(extraDeductions);
   }, [isEditMode, editData, employeeOptions, form]);
 
   useEffect(() => {
@@ -504,21 +767,78 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   const savePayrollConfigMutation = useMutation({
     mutationFn: async (data: PayrollConfigFormData) => {
+      const creatingForEveryone = !editData?.id && Number(data.employeeId) === ALL_EMPLOYEES_ID;
       const resolvedAge =
         Number(data.age) ||
         (data.dateOfBirth ? calculateAge(new Date(data.dateOfBirth)) : 0) ||
         (selectedEmployee?.dateOfBirth
           ? calculateAge(new Date(selectedEmployee.dateOfBirth))
           : 0);
-      if (!resolvedAge || resolvedAge < 16) {
+      if (!creatingForEveryone && (!resolvedAge || resolvedAge < 16)) {
         throw new Error("Selected employee must have a valid date of birth (age 16+).");
       }
+      const extraAllowances: Record<string, number> = {};
+      const extraDeductions: Record<string, number> = {};
+      for (const item of earningCatalog) {
+        if (!RESERVED_EARNING_IDS.has(item.id)) {
+          extraAllowances[item.id] = Number(customEarningAmounts[item.id]) || 0;
+        }
+      }
+      for (const item of deductionCatalog) {
+        if (!RESERVED_DEDUCTION_IDS.has(item.id)) {
+          extraDeductions[item.id] = Number(customDeductionAmounts[item.id]) || 0;
+        }
+      }
+      const monthDays = selectedPayrollMonth != null ? getDaysInMonth(selectedPayrollMonth) : null;
+      const earningIds = earningCatalog.map((item) => item.id);
+      const deductionIds = deductionCatalog.map((item) => item.id);
+
+      if (creatingForEveryone) {
+        const targets = activeEmployees.filter((employee) => {
+          if (!employee.dateOfBirth) return false;
+          return calculateAge(new Date(employee.dateOfBirth)) >= 16;
+        });
+        if (targets.length === 0) {
+          throw new Error("No active employees with a valid date of birth.");
+        }
+        const created = [];
+        for (const employee of targets) {
+          const dob = new Date(employee.dateOfBirth);
+          const age = calculateAge(dob);
+          const citizenship = mapNationalityToCitizenship(employee.nationality);
+          const payload = buildPayrollConfigPayload(
+            {
+              ...data,
+              employeeId: Number(employee.id),
+              age,
+              dateOfBirth: toDateInputValue(dob),
+              citizenshipStatus: citizenship,
+            },
+            employee,
+            citizenship,
+            age,
+            monthDays,
+            extraAllowances,
+            extraDeductions,
+            earningIds,
+            deductionIds,
+          );
+          const res = await apiRequest("POST", "/api/employee-payroll", payload);
+          created.push(await res.json());
+        }
+        return created;
+      }
+
       const payload = buildPayrollConfigPayload(
         data,
         selectedEmployee,
         data.citizenshipStatus || "citizen",
         resolvedAge,
-        selectedPayrollMonth != null ? getDaysInMonth(selectedPayrollMonth) : null
+        monthDays,
+        extraAllowances,
+        extraDeductions,
+        earningIds,
+        deductionIds,
       );
 
       const res = editData?.id
@@ -534,7 +854,9 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
         title: "Success",
         description: editData?.id
           ? "Payroll updated successfully"
-          : "Payroll created successfully",
+          : Array.isArray(data)
+            ? `Payroll created for ${data.length} employees`
+            : "Payroll created successfully",
       });
       onSuccess();
     },
@@ -548,13 +870,92 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   });
 
   const onSubmit = (data: PayrollConfigFormData) => {
+    if (selectedPayrollMonth == null) {
+      setMonthError("Month is required");
+      return;
+    }
+    setMonthError("");
     savePayrollConfigMutation.mutate(data);
+  };
+
+  const commitPayheadStore = (kind: PayheadKind, next: PayheadStore) => {
+    savePayheadStore(kind, next);
+    if (kind === "earning") setEarningStore(next);
+    else setDeductionStore(next);
+  };
+
+  const openPayheadDialog = (kind: PayheadKind, mode: "create" | "edit", item?: Payhead) => {
+    setPayheadDialog({ kind, mode, id: item?.id, label: item?.label || "" });
+    setPayheadName(item?.label || "");
+  };
+
+  const savePayheadName = () => {
+    if (!payheadDialog) return;
+    const label = payheadName.trim();
+    if (!label) {
+      toast({ title: "Enter a name", variant: "destructive" });
+      return;
+    }
+    const kind = payheadDialog.kind;
+    const store = kind === "earning" ? earningStore : deductionStore;
+    const catalog = kind === "earning" ? earningCatalog : deductionCatalog;
+    const duplicate = catalog.some(
+      (item) => item.id !== payheadDialog.id && item.label.toLowerCase() === label.toLowerCase(),
+    );
+    if (duplicate) {
+      toast({ title: "That name already exists", variant: "destructive" });
+      return;
+    }
+    if (payheadDialog.mode === "create") {
+      const reserved = kind === "earning" ? RESERVED_EARNING_IDS : RESERVED_DEDUCTION_IDS;
+      let id = slugifyPayhead(label);
+      let suffix = 2;
+      const base = id;
+      while (reserved.has(id) || store.custom.some((item) => item.id === id) || catalog.some((item) => item.id === id)) {
+        id = `${base}_${suffix++}`;
+      }
+      commitPayheadStore(kind, { ...store, custom: [...store.custom, { id, label }] });
+    } else if (payheadDialog.id) {
+      commitPayheadStore(kind, {
+        ...store,
+        renames: { ...store.renames, [payheadDialog.id]: label },
+        custom: store.custom.map((item) => (item.id === payheadDialog.id ? { ...item, label } : item)),
+      });
+    }
+    setPayheadDialog(null);
+  };
+
+  const deletePayhead = (kind: PayheadKind, id: string) => {
+    const store = kind === "earning" ? earningStore : deductionStore;
+    const isCustom = store.custom.some((item) => item.id === id);
+    commitPayheadStore(kind, {
+      ...store,
+      hidden: isCustom ? store.hidden.filter((hiddenId) => hiddenId !== id) : [...store.hidden, id],
+      custom: store.custom.filter((item) => item.id !== id),
+    });
+    const earningField = EARNING_FORM_FIELDS[id];
+    const deductionField = DEDUCTION_FORM_FIELDS[id];
+    if (kind === "earning" && earningField) form.setValue(earningField, undefined);
+    if (kind === "deduction" && deductionField) form.setValue(deductionField, undefined);
+    if (kind === "earning" && !earningField) {
+      setCustomEarningAmounts((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
+    if (kind === "deduction" && !deductionField) {
+      setCustomDeductionAmounts((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
   };
 
   const hasPayrollPreview = Boolean(baseSalary && age);
 
-  const allowancesOnly =
-    allowanceTransport + allowanceMeal + allowancePhone + allowanceOthers;
+  const allowancesOnly = Object.values(allowancePreview).reduce((sum, value) => sum + value, 0);
   const allowancesTotal =
     (calculationPreview?.allowancesTotal ?? allowancesOnly) + overtimePay;
   const deductionsTotal = calculationPreview?.deductionsTotal ?? 0;
@@ -574,7 +975,13 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     <TooltipProvider>
       <div className="w-full">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <form
+            onSubmit={(event) => {
+              if (selectedPayrollMonth == null) setMonthError("Month is required");
+              form.handleSubmit(onSubmit)(event);
+            }}
+            className="space-y-8"
+          >
             <section className="space-y-4">
               <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
                 <FormField
@@ -605,6 +1012,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                             onChange={(id) => field.onChange(id)}
                             disabled={employeesLoading}
                             loading={employeesLoading}
+                            placeholder="Select employee or All Employees"
+                            searchPlaceholder="Search employee..."
                           />
                         </FormControl>
                       )}
@@ -614,29 +1023,52 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                 />
 
                 <FormItem>
-                  <FormLabel className={formLabelClass}>Month</FormLabel>
-                  <Select
-                    value={selectedPayrollMonth != null ? String(selectedPayrollMonth) : undefined}
-                    onValueChange={(value) => {
-                      const month = Number(value);
-                      setSelectedPayrollMonth(month);
-                      form.setValue("workingDays", getDaysInMonth(month), {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      });
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAYROLL_MONTH_OPTIONS.map((month) => (
-                        <SelectItem key={month.value} value={String(month.value)}>
-                          {month.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel className={formLabelClass}>Month *</FormLabel>
+                  <Popover open={monthMenuOpen} onOpenChange={setMonthMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <span className={selectedPayrollMonth == null ? "text-muted-foreground" : "text-[#111827]"}>
+                          {PAYROLL_MONTH_OPTIONS.find((month) => month.value === selectedPayrollMonth)?.label ?? "Select month"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="w-[var(--radix-popover-trigger-width)] p-2"
+                    >
+                      <div className="grid grid-cols-3 gap-2">
+                        {PAYROLL_MONTH_OPTIONS.map((month) => {
+                          const selected = selectedPayrollMonth === month.value;
+                          return (
+                            <button
+                              key={month.value}
+                              type="button"
+                              className={cn(
+                                "rounded-md border border-[#BFDBFE] bg-white px-2 py-2 text-center text-sm text-[#111827] hover:bg-[#EFF6FF]",
+                                selected && "border-[#2563EB] bg-[#EFF6FF] font-medium text-[#1D4ED8]",
+                              )}
+                              onClick={() => {
+                                setSelectedPayrollMonth(month.value);
+                                setMonthError("");
+                                setMonthMenuOpen(false);
+                                form.setValue("workingDays", getDaysInMonth(month.value), {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                });
+                              }}
+                            >
+                              {month.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  {monthError ? <p className="text-sm font-medium text-destructive">{monthError}</p> : null}
                 </FormItem>
               </div>
 
@@ -738,9 +1170,19 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
               </div>
 
               <div className="space-y-4">
-                <h4 className="inline-flex items-center rounded-md bg-[#EFF6FF] px-3 py-1.5 text-lg font-bold tracking-wide text-[#1D4ED8]">
-                  Earnings
-                </h4>
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="inline-flex items-center rounded-md bg-[#EFF6FF] px-3 py-1.5 text-lg font-bold tracking-wide text-[#1D4ED8]">
+                    Earnings
+                  </h4>
+                  <PayheadMenu
+                    buttonLabel="Add earnings"
+                    buttonClassName="border-[#BFDBFE] text-[#1D4ED8] hover:bg-[#EFF6FF]"
+                    items={earningCatalog}
+                    onCreate={() => openPayheadDialog("earning", "create")}
+                    onEdit={(item) => openPayheadDialog("earning", "edit", item)}
+                    onDelete={(item) => deletePayhead("earning", item.id)}
+                  />
+                </div>
                 <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                   <FormField
                     control={form.control}
@@ -849,105 +1291,92 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={form.control}
-                    name="allowanceTransport"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Travelling Allowance</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
+                  {earningCatalog.map((item) => {
+                    const fieldName = EARNING_FORM_FIELDS[item.id];
+                    if (fieldName) {
+                      return (
+                        <FormField
+                          key={item.id}
+                          control={form.control}
+                          name={fieldName}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                              <FormControl>
+                                <OptionalAmountInput field={field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      );
+                    }
+                    return (
+                      <FormItem key={item.id}>
+                        <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                        <OptionalAmountInput
+                          field={{
+                            name: item.id,
+                            value: customEarningAmounts[item.id],
+                            onChange: (value) =>
+                              setCustomEarningAmounts((current) => ({ ...current, [item.id]: value })),
+                          }}
+                        />
                       </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="allowanceMeal"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Food Allowance</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="allowancePhone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Mobile Allowance</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="allowanceOthers"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Other Allowance</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="space-y-4">
-                <h4 className="inline-flex items-center rounded-md bg-[#FEF2F2] px-3 py-1.5 text-lg font-bold tracking-wide text-[#B91C1C]">
-                  Deductions
-                </h4>
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="inline-flex items-center rounded-md bg-[#FEF2F2] px-3 py-1.5 text-lg font-bold tracking-wide text-[#B91C1C]">
+                    Deductions
+                  </h4>
+                  <PayheadMenu
+                    buttonLabel="Add deductions"
+                    buttonClassName="border-[#FECACA] text-[#B91C1C] hover:bg-[#FEF2F2]"
+                    items={deductionCatalog}
+                    onCreate={() => openPayheadDialog("deduction", "create")}
+                    onEdit={(item) => openPayheadDialog("deduction", "edit", item)}
+                    onDelete={(item) => deletePayhead("deduction", item.id)}
+                  />
+                </div>
                 <div className="grid grid-cols-1 items-start gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <FormField
-                    control={form.control}
-                    name="deductionMedical"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Medical Insurance</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
+                  {deductionCatalog.map((item) => {
+                    const fieldName = DEDUCTION_FORM_FIELDS[item.id];
+                    if (fieldName) {
+                      return (
+                        <FormField
+                          key={item.id}
+                          control={form.control}
+                          name={fieldName}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                              <FormControl>
+                                <OptionalAmountInput field={field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      );
+                    }
+                    return (
+                      <FormItem key={item.id}>
+                        <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                        <OptionalAmountInput
+                          field={{
+                            name: item.id,
+                            value: customDeductionAmounts[item.id],
+                            onChange: (value) =>
+                              setCustomDeductionAmounts((current) => ({ ...current, [item.id]: value })),
+                          }}
+                        />
                       </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="deductionAdvance"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Advanced / Loan Recovery</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="deductionOthers"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payheadLabelClass}>Other Deductions</FormLabel>
-                        <FormControl>
-                          <OptionalAmountInput field={field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1000,6 +1429,34 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     : "Create Payroll"}
               </Button>
             </div>
+            <Dialog open={payheadDialog != null} onOpenChange={(open) => { if (!open) setPayheadDialog(null); }}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {payheadDialog?.mode === "edit" ? "Edit payhead" : "Create new payhead"}
+                  </DialogTitle>
+                </DialogHeader>
+                <Input
+                  value={payheadName}
+                  placeholder="Enter name"
+                  onChange={(event) => setPayheadName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      savePayheadName();
+                    }
+                  }}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setPayheadDialog(null)}>
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={savePayheadName}>
+                    Save
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </form>
         </Form>
       </div>

@@ -814,7 +814,7 @@ export default function ProformaInvoiceEdit() {
  onClick={form.handleSubmit(v => doSubmit(v, false))}
               >
                 <Save className="h-4 w-4" />
-                {isSubmitting ? "Saving..." : "Save"}
+                {isSubmitting ? "Saving..." : "Save Changes"}
               </Button>
               <Button
  type="button"

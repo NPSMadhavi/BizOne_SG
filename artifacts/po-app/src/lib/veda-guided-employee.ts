@@ -53,6 +53,11 @@ export const EMPLOYEE_GUIDED_FIELDS: GuidedEmployeeField[] = [
     ask: "Phone?",
     transform: (a) => parseSingaporePhoneDigits(a),
   },
+  {
+    key: "gender",
+    ask: "Gender? Male or Female",
+    transform: (a) => (/^f/i.test(a.trim()) ? "Female" : /^m/i.test(a.trim()) ? "Male" : a.trim()),
+  },
   { key: "department", ask: "Department?" },
   { key: "designation", ask: "Designation?" },
   {

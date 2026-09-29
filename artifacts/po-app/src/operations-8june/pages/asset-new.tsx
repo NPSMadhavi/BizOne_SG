@@ -12,7 +12,6 @@ export default function AssetNewPage() {
   return (
     <FormPageShell
       title="Create Asset"
-      description="Add a new asset to your inventory."
       backHref="/assets"
       footer={
         <>

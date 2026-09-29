@@ -2,15 +2,19 @@ import * as React from "react"
 import { Calendar } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { blockBrowserSuggestions } from "@/lib/block-browser-suggestions"
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, autoComplete, ...props }, ref) => {
     const innerRef = React.useRef<HTMLInputElement>(null)
     React.useImperativeHandle(ref, () => innerRef.current as HTMLInputElement)
 
-    // Default off so browsers don't show previous-input / autofill history.
-    // Call sites (login/register) can still pass autoComplete explicitly.
-    const resolvedAutoComplete = autoComplete ?? "off"
+    // "off" is ignored by Chrome for address, email, and phone fields.
+    const resolvedAutoComplete =
+      !autoComplete || /^(on|off)$|address|email|tel|name|postal|street/i.test(autoComplete)
+        ? "new-password"
+        : autoComplete
+    const renderedType = type === "email" || type === "tel" ? "text" : type
 
     const openDatePicker = () => {
       const el = innerRef.current
@@ -27,7 +31,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
         <div className="relative w-full">
           <input
             type="date"
-            autoComplete={resolvedAutoComplete}
+            autoComplete="off"
             className={cn(
               "flex h-9 w-full rounded-md border border-input bg-transparent py-1 pl-3 pr-9 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
               "[&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-9 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer",
@@ -51,15 +55,23 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
 
     return (
       <input
-        type={type}
+        {...props}
+        type={renderedType}
+        inputMode={props.inputMode ?? (type === "email" ? "email" : type === "tel" ? "numeric" : undefined)}
         autoComplete={resolvedAutoComplete}
+        autoCorrect="off"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        onFocus={(event) => {
+          blockBrowserSuggestions(event.currentTarget)
+          props.onFocus?.(event)
+        }}
         className={cn(
           "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
           type === "number" && "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
           className
         )}
         ref={innerRef}
-        {...props}
       />
     )
   }

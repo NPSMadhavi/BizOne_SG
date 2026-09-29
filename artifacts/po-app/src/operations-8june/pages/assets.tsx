@@ -506,7 +506,11 @@ export default function AssetsPage() {
                   {paginatedItems.map((asset) => (
                     <TableRow key={asset.id}>
                       <TableCell className="font-medium text-[#111827]">{asset.tag}</TableCell>
-                      <TableCell className="text-[#111827]">{asset.type || "—"}</TableCell>
+                      <TableCell className="text-[#111827]">
+                        {asset.type
+                          ? asset.type.charAt(0).toUpperCase() + asset.type.slice(1)
+                          : "—"}
+                      </TableCell>
                       <TableCell className="text-[#444651]">{asset.category || "—"}</TableCell>
                       <TableCell>
                         <span

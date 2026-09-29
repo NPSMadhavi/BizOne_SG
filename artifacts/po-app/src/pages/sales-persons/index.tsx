@@ -41,6 +41,8 @@ import {
 } from "@/operations-8june/components/layout/ManagementPageUI";
 import { useSalesPersons, type SalesPerson } from "@/hooks/use-sales-persons";
 import { usePagination } from "@/hooks/use-pagination";
+import { SingaporePhoneInput } from "@/components/singapore-phone-input";
+import { formatSingaporePhoneForApi, parseSingaporePhoneDigits } from "@/lib/singapore-phone";
 
 const blankForm = (): Omit<SalesPerson, "id" | "createdAt"> => ({
   name: "",
@@ -110,22 +112,15 @@ export default function SalesPersonsPage() {
     if (!form.employmentCode.trim()) {
       toast({
         title: "Validation Error",
-        description: "Employment Code is required for POS Employee Login.",
+        description: "Sales Person Code is required for POS Employee Login.",
         variant: "destructive",
       });
       return;
     }
-    if (!editingId && !form.password.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Password is required for POS Employee Login.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+    const phoneDigits = parseSingaporePhoneDigits(form.phone || "");
     saveSalesPerson({
       ...form,
+      phone: phoneDigits ? formatSingaporePhoneForApi(phoneDigits) : "",
       id: editingId || undefined,
     });
 
@@ -180,7 +175,7 @@ export default function SalesPersonsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Employment Code</TableHead>
+                  <TableHead>Sales Person Code</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Country</TableHead>
@@ -256,7 +251,6 @@ export default function SalesPersonsPage() {
                 Sales Person Name <span className="text-red-500">*</span>
               </Label>
               <Input
-                placeholder="Enter sales person name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
@@ -266,10 +260,9 @@ export default function SalesPersonsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>
-                  Employment Code <span className="text-red-500">*</span>
+                  Sales Person Code <span className="text-red-500">*</span>
                 </Label>
                 <Input
-                  placeholder="e.g. EMP-1001"
                   value={form.employmentCode}
                   onChange={(e) => setForm({ ...form, employmentCode: e.target.value })}
                   required
@@ -278,40 +271,24 @@ export default function SalesPersonsPage() {
               <div className="space-y-1.5">
                 <Label>Department</Label>
                 <Input
-                  placeholder="e.g. Sales / Marketing"
                   value={form.department}
                   onChange={(e) => setForm({ ...form, department: e.target.value })}
                 />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>
-                POS Login Password {!editingId && <span className="text-red-500">*</span>}
-              </Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                placeholder={editingId ? "Leave blank to keep current password" : "Set login password"}
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                required={!editingId}
-              />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Phone Number</Label>
-                <Input
-                  placeholder="e.g. +65 9123 4567"
+                <SingaporePhoneInput
                   value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  onChange={(digits) => setForm({ ...form, phone: digits })}
+                  placeholder=""
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>Country</Label>
                 <Input
-                  placeholder="e.g. Singapore"
                   value={form.country}
                   onChange={(e) => setForm({ ...form, country: e.target.value })}
                 />
@@ -322,7 +299,6 @@ export default function SalesPersonsPage() {
               <Label>Address</Label>
               <Textarea
                 rows={3}
-                placeholder="Enter full address"
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
               />

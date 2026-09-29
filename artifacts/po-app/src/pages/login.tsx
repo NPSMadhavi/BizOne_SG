@@ -95,7 +95,8 @@ export default function Login() {
       },
       {
         onSuccess: async (data) => {
-          markBrowserSessionLive();
+          const sessionId = (data as { sessionId?: string }).sessionId;
+          if (sessionId) markBrowserSessionLive(sessionId);
           queryClient.clear();
 
           const companyId =

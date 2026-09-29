@@ -215,11 +215,16 @@ if (isMigrateOnly()) {
     .then(() => logSafeDbDiagnostics())
     .then(() => {
       if (!frontendPath) {
-        logger.error(
-          "React frontend build directory was not found — refusing to listen",
+        if (process.env.NODE_ENV === "production") {
+          logger.error(
+            "React frontend build directory was not found — refusing to listen",
+          );
+          process.exit(1);
+          return;
+        }
+        logger.warn(
+          "React frontend build directory was not found — listening anyway (development)",
         );
-        process.exit(1);
-        return;
       }
       const port = resolveListenPort();
       app.listen(port, "0.0.0.0", (err) => {

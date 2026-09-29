@@ -12,6 +12,7 @@ type SingaporePhoneInputProps = {
   className?: string;
   id?: string;
   disabled?: boolean;
+  placeholder?: string;
 };
 
 /** Split phone field: fixed +65 prefix + local number (matches register / design mock). */
@@ -21,6 +22,7 @@ export function SingaporePhoneInput({
   className,
   id,
   disabled,
+  placeholder = "9123 4567",
 }: SingaporePhoneInputProps) {
   const digits = parseSingaporePhoneDigits(value || "");
 
@@ -37,10 +39,11 @@ export function SingaporePhoneInput({
       </span>
       <Input
         id={id}
-        type="tel"
+        type="text"
         inputMode="numeric"
-        autoComplete="tel-national"
-        placeholder="9123 4567"
+        autoComplete="new-password"
+        name="local-digits"
+        placeholder={placeholder}
         maxLength={SG_PHONE_DIGITS}
         disabled={disabled}
         value={digits}

@@ -150,30 +150,48 @@ const pgPool = new pg.Pool({
 
 // Session table DDL lives in runStartupMigrations() (awaited) — no fire-and-forget here.
 
+const SESSION_COOKIE_NAME = "bizone.sid";
+
+function cookieWithoutSession(cookieHeader: string): string {
+  return cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && !part.startsWith(`${SESSION_COOKIE_NAME}=`))
+    .join("; ");
+}
+
 /**
- * Mobile clients (React Native) often cannot read Set-Cookie.
- * Accept unsigned session id via X-BizOne-Session and inject a signed cookie
- * before express-session runs.
+ * Each browser tab sends its own session id in X-BizOne-Session (sessionStorage).
+ * The shared bizone.sid cookie is ignored unless that header is present, so a new
+ * tab is not signed in as whoever logged in on another tab.
+ * Mobile clients use the same header because they cannot read Set-Cookie.
  */
 app.use((req, _res, next) => {
-  const mobileSid = req.headers["x-bizone-session"];
-  if (typeof mobileSid === "string" && mobileSid.length > 5) {
-    const existing = req.headers.cookie || "";
-    if (!existing.includes("bizone.sid=")) {
-      if (!sessionSecret) {
-        next(new Error("SESSION_SECRET is not configured"));
-        return;
-      }
-      const signed = signCookie(mobileSid, sessionSecret);
-      req.headers.cookie = `bizone.sid=${signed}${existing ? `; ${existing}` : ""}`;
+  const headerSid = req.headers["x-bizone-session"];
+  const sid = Array.isArray(headerSid) ? headerSid[0] : headerSid;
+  const existing = typeof req.headers.cookie === "string" ? req.headers.cookie : "";
+  const rest = cookieWithoutSession(existing);
+
+  if (typeof sid === "string" && sid.length > 5) {
+    if (!sessionSecret) {
+      next(new Error("SESSION_SECRET is not configured"));
+      return;
     }
+    const signed = signCookie(sid, sessionSecret);
+    req.headers.cookie = rest
+      ? `${SESSION_COOKIE_NAME}=${signed}; ${rest}`
+      : `${SESSION_COOKIE_NAME}=${signed}`;
+  } else if (rest) {
+    req.headers.cookie = rest;
+  } else {
+    delete req.headers.cookie;
   }
   next();
 });
 
 app.use(
   session({
-    name: "bizone.sid",
+    name: SESSION_COOKIE_NAME,
 
     store: new PgSession({
       pool: pgPool,
@@ -229,13 +247,16 @@ export const frontendPath =
   ) ?? null;
 
 if (!frontendPath) {
-  logger.error(
+  const log = isProd ? logger.error.bind(logger) : logger.warn.bind(logger);
+  log(
     {
       cwd: process.cwd(),
       moduleDir: here,
       candidates: frontendCandidates,
     },
-    "React frontend build directory was not found",
+    isProd
+      ? "React frontend build directory was not found"
+      : "React frontend build directory was not found — development continues; Vite serves the UI",
   );
 } else {
   logger.info(

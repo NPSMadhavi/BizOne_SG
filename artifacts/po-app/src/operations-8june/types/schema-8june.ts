@@ -308,6 +308,7 @@ export const employees = pgTable("employees", {
   name: text("name").notNull(),
   email: text("email").notNull(),
   phone: text("phone").notNull(),
+  gender: text("gender"),
   address: text("address").notNull(),
   department: text("department").notNull(),
   designation: text("designation").notNull(),

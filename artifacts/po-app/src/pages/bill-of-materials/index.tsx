@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
@@ -38,6 +39,7 @@ import {
   Check,
   ArrowRight,
   ArrowLeft,
+  ChevronDown,
 } from "lucide-react";
 
 import { useSalesPersons } from "@/hooks/use-sales-persons";
@@ -299,6 +301,8 @@ export default function BillOfMaterialsPage() {
   const [saving, setSaving] = useState(false);
 
   const [compDialogOpen, setCompDialogOpen] = useState(false);
+  const [stockItemOpen, setStockItemOpen] = useState(false);
+  const [stockItemQuery, setStockItemQuery] = useState("");
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
   const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
   const [createUomOpen, setCreateUomOpen] = useState(false);
@@ -340,6 +344,15 @@ export default function BillOfMaterialsPage() {
   }, [stockItems]);
 
   const componentOptions = useMemo(() => allStockOptions, [allStockOptions]);
+  const filteredComponentOptions = useMemo(() => {
+    const q = stockItemQuery.trim().toLowerCase();
+    if (!q) return componentOptions;
+    return componentOptions.filter((p) =>
+      p.label.toLowerCase().includes(q) ||
+      p.code.toLowerCase().includes(q) ||
+      p.name.toLowerCase().includes(q),
+    );
+  }, [componentOptions, stockItemQuery]);
 
   const uomOptions = useMemo(() => {
     const seen = new Set(UOM_OPTIONS.map((o) => o.value.toLowerCase()));
@@ -591,6 +604,8 @@ export default function BillOfMaterialsPage() {
       unitCost: 0,
       availableQty: 0,
     });
+    setStockItemQuery("");
+    setStockItemOpen(false);
     setCompDialogOpen(true);
   }
 
@@ -607,6 +622,8 @@ export default function BillOfMaterialsPage() {
       unitCost: c.unitCost,
       availableQty: getAvailableQty(c.itemCode, c.availableQty),
     });
+    setStockItemQuery("");
+    setStockItemOpen(false);
     setCompDialogOpen(true);
   }
 
@@ -1123,21 +1140,53 @@ export default function BillOfMaterialsPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Stock Item *</Label>
-              <Select
- value={compForm.stockItemId}
- onValueChange={(id) => {
-                  const item = componentOptions.find((p) => p.id === id);
-                  if (item) applyStockItemToCompForm(item);
-                }}
- disabled={!componentOptions.length}
-              >
-                <SelectTrigger><SelectValue placeholder="Select stock item" /></SelectTrigger>
-                <SelectContent>
-                  {componentOptions.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={stockItemOpen} onOpenChange={setStockItemOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!componentOptions.length}
+                    className="h-9 w-full justify-between px-3 font-normal"
+                  >
+                    <span className={cn("truncate", !compForm.stockItemId && "text-muted-foreground")}>
+                      {componentOptions.find((p) => p.id === compForm.stockItemId)?.label || "Select stock item"}
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <div className="border-b p-2">
+                    <Input
+                      value={stockItemQuery}
+                      onChange={(e) => setStockItemQuery(e.target.value)}
+                      placeholder="Search item"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-[11rem] overflow-y-auto p-1">
+                    {filteredComponentOptions.length === 0 ? (
+                      <p className="px-2 py-2 text-sm text-muted-foreground">No items found</p>
+                    ) : (
+                      filteredComponentOptions.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={cn(
+                            "flex w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent",
+                            compForm.stockItemId === p.id && "bg-accent",
+                          )}
+                          onClick={() => {
+                            applyStockItemToCompForm(p);
+                            setStockItemOpen(false);
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1.5">
               <Label>Item Code</Label>

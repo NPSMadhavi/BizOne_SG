@@ -52,6 +52,10 @@ import {
   formatViewDate,
 } from "@/operations-8june/components/ui/entity-view-dialog";
 import DocumentForm from "@/operations-8june/components/forms/DocumentForm";
+import {
+  EmployeeScanFile,
+  EmployeeUploadedDocuments,
+} from "@/operations-8june/components/employees/EmployeeFiles";
 
 export default function EmployeesPage() {
   const { toast } = useToast();
@@ -421,6 +425,7 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
       <EntityViewField label="Name" value={employee.name} />
       <EntityViewField label="Email" value={(employee as any).email} />
       <EntityViewField label="Phone" value={(employee as any).phone} />
+      <EntityViewField label="Gender" value={(employee as any).gender} />
       <EntityViewField label="Address" value={(employee as any).address} fullWidth />
       <EntityViewField label="Department" value={employee.department} />
       <EntityViewField label="Designation" value={employee.designation} />
@@ -499,6 +504,40 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
           ) : null}
         </>
       ) : null}
+      {employee.passportScan ? (
+        <EntityViewField
+          label="Passport scan"
+          value={
+            <EmployeeScanFile
+              value={employee.passportScan}
+              href={`/api/employees/${employee.id}/files/passport`}
+            />
+          }
+        />
+      ) : null}
+      {employee.visaScan ? (
+        <EntityViewField
+          label="Visa scan"
+          value={
+            <EmployeeScanFile
+              value={employee.visaScan}
+              href={`/api/employees/${employee.id}/files/visa`}
+            />
+          }
+        />
+      ) : null}
+      {employee.nricScan ? (
+        <EntityViewField
+          label="NRIC scan"
+          value={
+            <EmployeeScanFile
+              value={employee.nricScan}
+              href={`/api/employees/${employee.id}/files/nric`}
+            />
+          }
+        />
+      ) : null}
+      <EmployeeUploadedDocuments employeeId={employee.id} />
       {dependents.map((dependent, index) => {
         const depPassportStatus = getExpiryStatus(dependent.passportExpiry);
         const depVisaStatus = getExpiryStatus(dependent.visaExpiry);

@@ -7,7 +7,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { clearBrowserSessionLive } from "@/lib/browser-session";
+import { clearBrowserSessionLive, setTabSessionId } from "@/lib/browser-session";
 import {
   formatSingaporePhoneForApi,
   parseSingaporePhoneDigits,
@@ -220,6 +220,9 @@ export default function Register() {
         return;
       }
 
+      if (typeof data.sessionId === "string" && data.sessionId) {
+        setTabSessionId(data.sessionId);
+      }
       await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",

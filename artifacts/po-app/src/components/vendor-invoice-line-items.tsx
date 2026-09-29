@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trash2, Plus, Layers, FileInput, Package, Upload, AlignLeft, AlignCenter } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
-import { ImportFromPurchaseQuotationDialog } from "@/components/import-from-purchase-quotation-dialog";
+import { ImportFromPODialog, type InvoiceImportItem } from "@/components/import-from-po-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { cn } from "@/lib/utils";
@@ -59,7 +59,7 @@ export function VendorInvoiceLineItems({
   totals,
 }: Props) {
   const [importExcelOpen, setImportExcelOpen] = useState(false);
-  const [importPqOpen, setImportPqOpen] = useState(false);
+  const [importPoOpen, setImportPoOpen] = useState(false);
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
 
@@ -128,9 +128,26 @@ export function VendorInvoiceLineItems({
     setImportExcelOpen(false);
   };
 
-  const handlePqImport = (imported: VendorInvoiceLineItem[]) => {
-    commitItems([...itemsRef.current.filter((i) => i.type !== "section" || i.sectionLabel), ...imported]);
-    setImportPqOpen(false);
+  const handlePoImport = (imported: InvoiceImportItem[]) => {
+    const mapped: VendorInvoiceLineItem[] = imported.map((it) => ({
+      ...emptyViLineItem(),
+      partNumber: it.partNumber || "",
+      description: it.description || "",
+      qty: it.qty || 1,
+      unitPrice: it.unitPrice || 0,
+      uom: it.uom || "",
+      discount: it.discount || 0,
+      isFoc: !!it.isFoc,
+      isStockItem: !!it.isStockItem,
+      stockItemId: it.stockItemId,
+      warehouseId: it.warehouseId,
+    }));
+    const kept = itemsRef.current.filter((i) => {
+      if (i.type === "section") return !!i.sectionLabel?.trim();
+      return !!(i.partNumber?.trim() || i.description?.trim() || i.unitPrice);
+    });
+    commitItems([...kept, ...mapped]);
+    setImportPoOpen(false);
   };
 
   const onDiscountPctChange = (raw: string) => {
@@ -159,8 +176,8 @@ export function VendorInvoiceLineItems({
               <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append(emptyViSection())}>
                 <Layers className="h-3 w-3" /> Add Section
               </Button>
-              <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportPqOpen(true)}>
-                <FileInput className="h-3 w-3" /> Import from Quotation
+              <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportPoOpen(true)}>
+                <FileInput className="h-3 w-3" /> Import from PO
               </Button>
               <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
                 <Upload className="h-3 w-3" /> Import from PDF/Excel
@@ -434,7 +451,12 @@ export function VendorInvoiceLineItems({
       </Card>
 
       <ImportItemsDialog open={importExcelOpen} onClose={() => setImportExcelOpen(false)} onImport={handleImport} />
-      <ImportFromPurchaseQuotationDialog open={importPqOpen} onClose={() => setImportPqOpen(false)} onImport={handlePqImport} currentItems={items} />
+      <ImportFromPODialog
+        open={importPoOpen}
+        onOpenChange={setImportPoOpen}
+        mode="invoice"
+        onImport={(imported) => handlePoImport(imported as InvoiceImportItem[])}
+      />
       <StockItemPickerDialog
         open={stockPickerIndex != null}
         onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}

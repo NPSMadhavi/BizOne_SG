@@ -6,7 +6,8 @@ import type {
 } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 500
+const TOAST_DURATION = 2000
+const TOAST_REMOVE_DELAY = 200
 
 type ToasterToast = ToastProps & {
   id: string
@@ -155,11 +156,16 @@ function toast({ ...props }: Toast) {
       ...props,
       id,
       open: true,
+      duration: TOAST_DURATION,
       onOpenChange: (open) => {
         if (!open) dismiss()
       },
     },
   })
+
+  // Close on our own timer. Radix pauses its timer while the pointer is over
+  // the toast, which kept messages on screen much longer than a few seconds.
+  window.setTimeout(dismiss, TOAST_DURATION)
 
   return {
     id: id,

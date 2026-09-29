@@ -86,17 +86,8 @@ export function calculateSyncBridgePayrollPreview(params: {
   citizenshipStatus: ResidencyType;
   prStatus?: string | null;
   overtimePay?: number;
-  allowances?: {
-    transport?: number;
-    meal?: number;
-    phone?: number;
-    others?: number;
-  };
-  deductions?: {
-    medical?: number;
-    advance?: number;
-    others?: number;
-  };
+  allowances?: Record<string, number | undefined>;
+  deductions?: Record<string, number | undefined>;
 }): SyncBridgePayrollPreview {
   const monthlySalary = Number(params.monthlySalary) || 0;
   const allowancesTotal = Object.values(params.allowances || {}).reduce(

@@ -35,7 +35,6 @@ import { InventoryPageHeader, InventorySectionCard, InventoryStatusBadge } from 
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { CountrySelect } from "@/operations-8june/components/forms/CountrySelect";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
 import { SingaporePhoneInput } from "@/components/singapore-phone-input";
 import {
   formatSingaporePhoneForApi,
@@ -61,7 +60,6 @@ const EMPTY = {
 
 export default function WarehousesPage() {
   const { toast } = useToast();
-  const { salesPersons } = useSalesPersons();
   const [rows, setRows] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -118,10 +116,17 @@ export default function WarehousesPage() {
   }
 
   async function handleSave() {
-    if (!form.code.trim() || !form.name.trim() || !form.address.trim() || !form.city.trim()) {
+    if (
+      !form.code.trim() ||
+      !form.name.trim() ||
+      !form.address.trim() ||
+      !form.city.trim() ||
+      !form.pinCode.trim() ||
+      !form.country.trim()
+    ) {
       toast({
         title: "Missing required fields",
-        description: "Warehouse code, name, address and city are required.",
+        description: "Warehouse code, name, address, city, postal code and country are required.",
         variant: "destructive",
       });
       return;
@@ -256,55 +261,42 @@ export default function WarehousesPage() {
       </InventorySectionCard>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <DialogHeader>
             <DialogTitle>{editRow ? "Edit Warehouse" : "Create Warehouse"}</DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Warehouse Code *</Label>
+              <Label>Warehouse Code <span className="text-red-500">*</span></Label>
               <Input
-                placeholder="Enter unique warehouse code"
                 value={form.code}
                 onChange={(e) => updateField("code", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Warehouse Name *</Label>
+              <Label>Warehouse Name <span className="text-red-500">*</span></Label>
               <Input
-                placeholder="Enter warehouse name"
                 value={form.name}
                 onChange={(e) => updateField("name", e.target.value)}
               />
             </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label>Address *</Label>
-              <Textarea
-                rows={2}
-                placeholder="Enter full address"
-                value={form.address}
-                onChange={(e) => updateField("address", e.target.value)}
-              />
-            </div>
             <div className="space-y-1.5">
-              <Label>City *</Label>
+              <Label>City <span className="text-red-500">*</span></Label>
               <Input
-                placeholder="Enter city"
                 value={form.city}
                 onChange={(e) => updateField("city", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Postal Code *</Label>
+              <Label>Postal Code <span className="text-red-500">*</span></Label>
               <Input
-                placeholder="Enter postal code"
                 value={form.pinCode}
                 onChange={(e) => updateField("pinCode", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Country *</Label>
+              <Label>Country <span className="text-red-500">*</span></Label>
               <CountrySelect
                 value={form.country}
                 onChange={(v) => updateField("country", v)}
@@ -315,7 +307,6 @@ export default function WarehousesPage() {
             <div className="space-y-1.5">
               <Label>Contact Person</Label>
               <Input
-                placeholder="Enter contact person name"
                 value={form.contactPerson}
                 onChange={(e) => updateField("contactPerson", e.target.value)}
               />
@@ -325,10 +316,11 @@ export default function WarehousesPage() {
               <SingaporePhoneInput
                 value={form.contactNumber}
                 onChange={(digits) => updateField("contactNumber", digits)}
+                placeholder=""
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Status *</Label>
+              <Label>Status <span className="text-red-500">*</span></Label>
               <Select
                 value={form.isActive ? "active" : "inactive"}
                 onValueChange={(v) => updateField("isActive", v === "active")}
@@ -342,49 +334,20 @@ export default function WarehousesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                placeholder="Enter email address"
-                value={form.email}
-                onChange={(e) => updateField("email", e.target.value)}
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>Address <span className="text-red-500">*</span></Label>
+              <Textarea
+                rows={2}
+                value={form.address}
+                onChange={(e) => updateField("address", e.target.value)}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Sales Person</Label>
-              <Select
-                value={form.salesPerson || ""}
-                onValueChange={(v) => updateField("salesPerson", v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Sales Person" />
-                </SelectTrigger>
-                <SelectContent>
-                  {salesPersons.map((sp) => (
-                    <SelectItem key={sp.id} value={sp.name}>
-                      {sp.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label>Description</Label>
               <Textarea
                 rows={2}
-                placeholder="Enter description"
                 value={form.description}
                 onChange={(e) => updateField("description", e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label>Remarks</Label>
-              <Textarea
-                rows={2}
-                placeholder="Enter remarks"
-                value={form.remarks}
-                onChange={(e) => updateField("remarks", e.target.value)}
               />
             </div>
           </div>

@@ -156,7 +156,7 @@ export default function SalesOrderView() {
       case "draft": return <Badge variant="secondary" className="text-sm py-1">Draft</Badge>;
       case "cancelled": return <Badge variant="destructive" className="text-sm py-1">Cancelled</Badge>;
       case "sent": return <Badge className="bg-violet-600 hover:bg-violet-700 text-sm py-1">Sent</Badge>;
-      case "converted_to_invoice": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Invoiced</Badge>;
+      case "converted_to_invoice": return <Badge className="bg-emerald-600 hover:bg-emerald-700 text-sm py-1">Convert to Invoice</Badge>;
       case "converted_to_do": return <Badge className="bg-sky-600 hover:bg-sky-700 text-sm py-1">Converted to DO</Badge>;
       case "converted": return <Badge className="bg-indigo-600 hover:bg-indigo-700 text-sm py-1">Converted</Badge>;
       default: return <Badge variant="outline" className="text-sm py-1">{s}</Badge>;

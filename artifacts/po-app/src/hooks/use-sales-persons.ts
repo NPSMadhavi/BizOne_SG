@@ -50,49 +50,62 @@ export function findSalesPersonByCode(employeeId: string): SalesPerson | null {
   return getSalesPersons().find((p) => p.employmentCode.trim().toLowerCase() === id) || null;
 }
 
-/** Login with Employee ID + password. If ID does not exist yet, create and log in. */
-export function loginOrCreateSalesPerson(
-  employeeId: string,
+export function loginSalesPerson(
+  salesPersonId: string,
   password: string,
-): { ok: true; person: SalesPerson; created: boolean } | { ok: false; error: string } {
-  const code = employeeId.trim();
+): { ok: true; person: SalesPerson } | { ok: false; error: string } {
+  const code = salesPersonId.trim();
   const pass = password.trim();
   if (!code || !pass) {
-    return { ok: false, error: "Employee ID and password are required." };
+    return { ok: false, error: "Sales Person ID and password are required." };
+  }
+  const existing = findSalesPersonByCode(code);
+  if (!existing || (existing.password || "").trim() !== pass) {
+    return { ok: false, error: "Invalid Sales Person ID or password." };
+  }
+  return { ok: true, person: existing };
+}
+
+export function createSalesPersonAccount(
+  salesPersonId: string,
+  password: string,
+  confirmPassword: string,
+): { ok: true; person: SalesPerson } | { ok: false; error: string } {
+  const code = salesPersonId.trim();
+  const pass = password.trim();
+  const confirm = confirmPassword.trim();
+  if (!code || !pass || !confirm) {
+    return { ok: false, error: "Sales Person ID, password, and confirm password are required." };
+  }
+  if (pass !== confirm) {
+    return { ok: false, error: "Password and confirm password do not match." };
   }
 
   const existing = findSalesPersonByCode(code);
+  if (existing && (existing.password || "").trim()) {
+    return { ok: false, error: "An account already exists for this Sales Person ID. Please login." };
+  }
+
   if (existing) {
-    if ((existing.password || "").trim() !== pass) {
-      // First-time records may have empty password — set it on first successful login attempt
-      if (!(existing.password || "").trim()) {
-        const updated = saveSalesPerson({
-          ...existing,
-          id: existing.id,
-          password: pass,
-        });
-        const person = updated.find((p) => p.id === existing.id) || { ...existing, password: pass };
-        return { ok: true, person, created: false };
-      }
-      return { ok: false, error: "Invalid Employee ID or password." };
-    }
-    return { ok: true, person: existing, created: false };
+    const updated = saveSalesPerson({ ...existing, id: existing.id, password: pass });
+    const person = updated.find((p) => p.id === existing.id) || { ...existing, password: pass };
+    return { ok: true, person };
   }
 
   const list = saveSalesPerson({
     name: code,
     employmentCode: code,
     password: pass,
-    department: "POS",
+    department: "",
     phone: "",
     country: "Singapore",
     address: "",
   });
   const person = list.find((p) => p.employmentCode.trim().toLowerCase() === code.toLowerCase());
   if (!person) {
-    return { ok: false, error: "Could not create employee. Try again." };
+    return { ok: false, error: "Could not create the account. Try again." };
   }
-  return { ok: true, person, created: true };
+  return { ok: true, person };
 }
 
 /** Browser-tab session for POS employee (clears when app/tab closes). */

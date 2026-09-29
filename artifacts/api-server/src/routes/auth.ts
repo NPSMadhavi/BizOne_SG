@@ -233,7 +233,11 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     req.session.permissions = await getUserPermissions(adminRole.id);
 
     const companies = await getUserCompanies(user.id);
-    res.status(201).json({ message: "Registration Successful", user: formatUser(user, companies, company.id, req.session.permissions) });
+    res.status(201).json({
+      message: "Registration Successful",
+      user: formatUser(user, companies, company.id, req.session.permissions),
+      sessionId: req.sessionID,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Registration failed";
     if (message.includes("column") || message.includes("Failed query")) {

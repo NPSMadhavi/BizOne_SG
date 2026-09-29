@@ -65,6 +65,9 @@ export default function JournalEntryView() {
     queryKey: ["journal-entry", id],
     queryFn: () => fetchEntry(id),
     enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const deleteMutation = useMutation({

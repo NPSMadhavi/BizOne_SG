@@ -70,7 +70,8 @@ import {
   payrollCancelButtonClass,
   payrollPrimaryButtonClass,
 } from "@/operations-8june/lib/payroll-ui";
-import { exportPayrollTableToExcel } from "@/operations-8june/lib/excel-utils";
+import { exportPayrollTableToExcel, exportPayrollTableToPdf } from "@/operations-8june/lib/excel-utils";
+import { PayrollPaymentRecordDialog } from "@/operations-8june/components/forms/PayrollPaymentRecordDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -78,6 +79,7 @@ import {
   Users,
   DollarSign,
   Calculator,
+  CreditCard,
   FileText,
   Edit,
   Eye,
@@ -298,6 +300,7 @@ export default function PayrollPage() {
   const [payslipViewerFilename, setPayslipViewerFilename] = useState("payslip.pdf");
   const [forceDeleteId, setForceDeleteId] = useState<number | null>(null);
   const [showForceDeleteDialog, setShowForceDeleteDialog] = useState(false);
+  const [paymentRecordOpen, setPaymentRecordOpen] = useState(false);
 
   const { payPeriodStart, payPeriodEnd } = getLastCompletedPayPeriod();
 
@@ -554,17 +557,11 @@ export default function PayrollPage() {
       return;
     }
 
-    const { monthLabel, year, month } = derivePayrollMonthYear(batchPayPeriodStart);
+    const { monthLabel } = derivePayrollMonthYear(batchPayPeriodStart);
     setIsBatchProcessing(true);
 
     try {
-      const targetConfigIds =
-        selectedIds.length > 0 ? selectedIds : undefined;
-      const configsForDownload =
-        selectedIds.length > 0
-          ? configs.filter((c) => selectedIds.includes(c.id) && c.isActive)
-          : activeConfigs;
-
+      const targetConfigIds = selectedIds.length > 0 ? selectedIds : undefined;
       const result = await batchProcessPayrollForPeriod(
         batchPayPeriodStart,
         batchPayPeriodEnd,
@@ -588,80 +585,13 @@ export default function PayrollPage() {
       closeBatchConfirmDialog();
 
       if (result.ok) {
-        let payslipsDownloaded = "downloaded" in result && result.downloaded === true;
-
-        // If batch API did not return a ZIP (e.g. PDF gen failed mid-process), fetch one ZIP.
-        if (!payslipsDownloaded && configsForDownload.length > 0) {
-          const zipResult = await downloadBatchPayslipsZip(
-            configsForDownload,
-            batchPayPeriodStart,
-            batchPayPeriodEnd
-          );
-          if (zipResult.ok) {
-            payslipsDownloaded = true;
-          } else if (year && month) {
-            // Last resort: build one client-side ZIP (never separate PDF downloads).
-            const zipEntries: Array<{ filename: string; data: Uint8Array }> = [];
-            const freshRecords =
-              (queryClient.getQueryData<any[]>(["/api/payroll/records"]) as any[]) ||
-              payrollRecords;
-
-            for (const config of configsForDownload) {
-              try {
-                const resolved = await resolvePayslipPdfForMonth({
-                  config,
-                  month,
-                  year,
-                  employees,
-                  payrollRecords: freshRecords,
-                  company: selectedCompany,
-                });
-                if (!resolved) continue;
-                const blob = await generatePayslip_PDF(resolved.data, {
-                  returnBlob: true,
-                  filename: resolved.filename,
-                });
-                if (blob instanceof Blob) {
-                  zipEntries.push({
-                    filename: resolved.filename,
-                    data: new Uint8Array(await blob.arrayBuffer()),
-                  });
-                }
-              } catch {
-                // Skip failed employee; keep building ZIP for the rest.
-              }
-            }
-
-            if (zipEntries.length > 0) {
-              const zipBlob = createPayslipZipBlob(zipEntries);
-              const url = window.URL.createObjectURL(zipBlob);
-              const anchor = document.createElement("a");
-              anchor.href = url;
-              anchor.download = `Payslips_${monthLabel.replace(" ", "_")}.zip`;
-              anchor.rel = "noopener";
-              anchor.style.display = "none";
-              document.body.appendChild(anchor);
-              anchor.click();
-              anchor.remove();
-              window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-              payslipsDownloaded = true;
-            }
-          }
-        }
-
         toast({
           title: options?.forceOverwrite ? "Payroll overwritten" : "Batch payroll complete",
-          description: payslipsDownloaded
-            ? options?.forceOverwrite
-              ? `Payroll overwritten for ${monthLabel}. Payslip ZIP downloaded.`
-              : options?.processScope === "changed"
-                ? `Payroll updated for employees with changed values (${monthLabel}). Payslip ZIP downloaded.`
-                : `Payroll for ${monthLabel} processed successfully. Payslip ZIP downloaded.`
-            : options?.forceOverwrite
-              ? `Payroll overwritten for the selected period (${monthLabel}). Download payslips from Payroll when needed.`
-              : options?.processScope === "changed"
-                ? `Payroll updated for employees with changed values (${monthLabel}). Download payslips when needed.`
-                : `Payroll for ${monthLabel} processed successfully. Download payslips from Payroll when needed.`,
+          description: options?.forceOverwrite
+            ? `Payroll overwritten for the selected period (${monthLabel}). Download payslips from Payroll when needed.`
+            : options?.processScope === "changed"
+              ? `Payroll updated for employees with changed values (${monthLabel}). Download payslips when needed.`
+              : `Payroll for ${monthLabel} processed successfully. Download payslips from Payroll when needed.`,
         });
       } else {
         toast({
@@ -684,10 +614,6 @@ export default function PayrollPage() {
   const handleBatchConfirmProceed = async () => {
     if (batchConfirmScenario === "pending") {
       await runBatchProcess({ processScope: "pending" });
-      return;
-    }
-    if (batchConfirmScenario === "values-changed" || batchConfirmScenario === "no-changes") {
-      await runBatchProcess({ forceOverwrite: true });
     }
   };
 
@@ -1152,7 +1078,7 @@ export default function PayrollPage() {
     );
   };
 
-  const exportConfigs = () => {
+  const handleExport = (formatType: "excel" | "pdf") => {
     if (!configs.length) {
       toast({
         title: "Nothing to export",
@@ -1185,12 +1111,19 @@ export default function PayrollPage() {
         };
       });
 
-      exportPayrollTableToExcel(rows);
-
-      toast({
-        title: "Export successful",
-        description: "Payroll data has been downloaded as an Excel file.",
-      });
+      if (formatType === "excel") {
+        exportPayrollTableToExcel(rows);
+        toast({
+          title: "Export successful",
+          description: "Payroll data has been downloaded as an Excel file.",
+        });
+      } else {
+        exportPayrollTableToPdf(rows);
+        toast({
+          title: "Export successful",
+          description: "Payroll data has been downloaded as a PDF file.",
+        });
+      }
     } catch {
       toast({
         title: "Export failed",
@@ -1207,6 +1140,13 @@ export default function PayrollPage() {
         description="Manage employee payroll and process monthly payroll"
         action={
           <div className="flex shrink-0 flex-nowrap items-center gap-2">
+            <Button
+              variant="outline"
+              className="border-[#E5E7EB]"
+              onClick={() => setPaymentRecordOpen(true)}
+            >
+              <CreditCard className="mr-2 h-4 w-4" /> Payment Record
+            </Button>
             <Button className={payrollPrimaryButtonClass} onClick={() => openConfigForm()}>
               <Plus className="mr-2 h-4 w-4" /> Create Payroll
             </Button>
@@ -1309,9 +1249,22 @@ export default function PayrollPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="outline" className="border-[#E5E7EB]" onClick={exportConfigs}>
-            <Download className="mr-2 h-4 w-4" /> Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="border-[#E5E7EB]" disabled={configs.length === 0}>
+                <Download className="mr-2 h-4 w-4" /> Export
+                <ChevronDown className="ml-2 h-4 w-4 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("excel")}>
+                Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </ManagementToolbarRow>
 
@@ -1550,6 +1503,24 @@ export default function PayrollPage() {
         )}
       </EntityViewDialog>
 
+      <PayrollPaymentRecordDialog
+        open={paymentRecordOpen}
+        onOpenChange={setPaymentRecordOpen}
+        employees={activeConfigs.map((config) => {
+          const employee = employees.find((item) => Number(item.id) === Number(config.employeeId));
+          const designation = employee?.designation || config.designation || "";
+          const monthlyPay = formatCurrency(parseFloat(config.baseSalary) || 0);
+          return {
+            id: Number(config.employeeId),
+            name: employee?.name || config.employeeName,
+            employeeId: employee?.employeeId,
+            designation: `${designation} (${monthlyPay}/month)`.trim(),
+            department: employee?.department || config.department,
+          };
+        })}
+        payrollRecords={payrollRecords}
+      />
+
       {/* Batch Process Pay Period Selection */}
       <Dialog open={batchModalOpen} onOpenChange={setBatchModalOpen}>
         <DialogContent className="max-w-lg">
@@ -1619,26 +1590,16 @@ export default function PayrollPage() {
                   <p>Payroll for the selected period has not been processed for some employees.</p>
                   <p>Do you want to process payroll for all pending employees?</p>
                 </>
-              ) : batchConfirmScenario === "values-changed" ? (
-                <>
-                  <p>Payroll for the selected period has already been processed.</p>
-                  <p>
-                    Payroll values have been modified for one or more employees. Do you want to
-                    overwrite the existing payroll for those employees?
-                  </p>
-                </>
               ) : (
                 <>
                   <p>Payroll for the selected period has already been processed.</p>
-                  <p>There are no changes to process.</p>
+                  <p>Payroll can be processed only once in a month.</p>
                 </>
               )}
             </div>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            {batchConfirmScenario === "no-changes" ||
-            batchConfirmScenario === "values-changed" ||
-            batchConfirmScenario === "pending" ? (
+            {batchConfirmScenario === "pending" ? (
               <>
                 <Button
                   type="button"

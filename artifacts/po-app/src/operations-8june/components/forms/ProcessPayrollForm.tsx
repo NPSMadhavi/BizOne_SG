@@ -499,13 +499,9 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
     if (Number(formData.employeeId) === ALL_EMPLOYEES_ID) {
       if (processedDialogMode === "pending") {
         processPayrollMutation.mutate({ ...formData, processScope: "pending" });
-        return;
       }
-      processPayrollMutation.mutate({ ...formData, forceOverwrite: true });
       return;
     }
-
-    processPayrollMutation.mutate({ ...formData, forceOverwrite: true });
   };
 
   const isSubmitDisabled = processPayrollMutation.isPending || !calculationPreview;
@@ -741,26 +737,15 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                   <p>
                     Payroll for{" "}
                     <span className="font-semibold text-gray-900">{dialogMonthLabel}</span> has
-                    already been processed
-                    {isAllEmployees || Number(pendingFormData?.employeeId) === ALL_EMPLOYEES_ID
-                      ? " for one or more employees"
-                      : ""}
-                    .
+                    already been processed.
                   </p>
-                  {processedDialogMode === "overwrite" ? (
-                    <>
-                      <p>The payroll values have been modified.</p>
-                      <p>Do you want to overwrite the existing payroll for this period?</p>
-                    </>
-                  ) : (
-                    <p>There are no changes to process.</p>
-                  )}
+                  <p>Payroll can be processed only once in a month.</p>
                 </>
               )}
             </div>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            {processedDialogMode === "overwrite" || processedDialogMode === "pending" ? (
+            {processedDialogMode === "pending" ? (
               <>
                 <Button
                   type="button"
@@ -786,7 +771,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                 onClick={closeProcessedDialog}
                 className={payrollCancelButtonClass}
               >
-                Cancel
+                Close
               </Button>
             )}
           </DialogFooter>

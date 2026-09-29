@@ -33,8 +33,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
-import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload } from "lucide-react";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload, FileInput } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { ImportFromPurchaseQuotationDialog } from "@/components/import-from-purchase-quotation-dialog";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { cn, plainText } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -88,9 +89,7 @@ const poSchema = z.object({
   notes: z.string().optional(),
   currency: z.string().default("SGD"),
   isPrivate: z.boolean().default(false),
-  customerId: z.number({ required_error: "Customer is required" }).nullable().refine((val) => val !== null, {
-    message: "Customer is required",
-  }),
+  customerId: z.number().nullable().optional(),
   customerPoRef: z.string().optional(),
   status: z.enum(["draft", "confirmed", "cancelled", "sent"]),
   tax: z.coerce.number().min(0).max(100).default(0),
@@ -113,6 +112,7 @@ export default function PurchaseOrderEdit() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importQuotationOpen, setImportQuotationOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
 
   const { data: po, isLoading } = useGetPurchaseOrder(id, {
@@ -563,7 +563,7 @@ export default function PurchaseOrderEdit() {
                     <FormItem>
                       <FormLabel className="flex items-center gap-1.5">
                         <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                        Customer (for reference) <span className="text-destructive">*</span>
+                        Customer (for reference)
                       </FormLabel>
                       <Select
  value={field.value != null ? String(field.value) : ""}
@@ -700,11 +700,35 @@ export default function PurchaseOrderEdit() {
 
           <Card className="overflow-hidden">
             <CardHeader className="pb-4 bg-muted/20 border-b">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Line Items</CardTitle>
-                <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-8 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
-                  Import from Excel / PDF
-                </Button>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <CardTitle className="text-lg">Line Items</CardTitle>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "item", sectionLabel: "", sectionAlign: "left", partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" })}>
+                    <Plus className="h-3 w-3" /> Add Item
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section", sectionLabel: "", sectionAlign: "left", partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" })}>
+                    <Layers className="h-3 w-3" /> Add Section
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportQuotationOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from Quotation
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
+                    <Upload className="h-3 w-3" /> Import from PDF/Excel
+                  </Button>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground">Overseas / Export</span>
+                    <Switch
+                      checked={taxPercent === 0}
+                      onCheckedChange={(on) => form.setValue("tax", on ? 0 : 9)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-muted-foreground">GST:</span>
+                    <span className="text-sm font-medium">{taxPercent}%</span>
+                  </div>
+                </div>
               </div>
               {form.formState.errors.items?.root && (
                 <div className="text-sm text-destructive mt-2">
@@ -991,6 +1015,29 @@ export default function PurchaseOrderEdit() {
           form.setValue(`items.${stockPickerIndex}.warehouseName`, "");
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
+        }}
+      />
+      <ImportFromPurchaseQuotationDialog
+        open={importQuotationOpen}
+        onClose={() => setImportQuotationOpen(false)}
+        onImport={(imported) => {
+          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
+          const newItems = imported
+            .filter((it) => it.type !== "section")
+            .map((it) => ({
+              ...blankItem,
+              partNumber: it.partNumber || "",
+              description: it.description || "",
+              qty: it.qty || 1,
+              uom: it.uom || "",
+              unitPrice: it.unitPrice || 0,
+            }));
+          const current = form.getValues("items");
+          const kept = current.filter((i) => {
+            if (i.type === "section") return !!String(i.sectionLabel || "").trim();
+            return !!(String(i.partNumber || "").trim() || String(i.description || "").trim() || Number(i.unitPrice));
+          });
+          form.setValue("items", [...kept, ...newItems]);
         }}
       />
       <ImportItemsDialog

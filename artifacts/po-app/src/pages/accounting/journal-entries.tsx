@@ -55,6 +55,9 @@ export default function JournalEntriesList() {
   const { data: entries = [], isLoading, error } = useQuery({
     queryKey: ["journal-entries"],
     queryFn: fetchJournalEntries,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const deleteMutation = useMutation({

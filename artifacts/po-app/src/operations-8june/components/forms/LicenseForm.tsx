@@ -437,7 +437,7 @@ export default function LicenseForm({
                             name="cost"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Purchase Value</FormLabel>
+                                <FormLabel>Purchase Value ($)</FormLabel>
                                 <FormControl>
                                   <Input
                                     type="text"

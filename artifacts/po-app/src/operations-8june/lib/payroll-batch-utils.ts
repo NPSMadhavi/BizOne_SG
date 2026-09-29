@@ -525,7 +525,26 @@ export async function batchProcessPayrollForPeriod(
     };
   }
 
-  // Auto-download PDF/ZIP payslips returned after successful batch process.
+  // Payroll is already saved. Do not download payslips from this request.
+  if (res.ok) {
+    const summaryHeader = res.headers.get("X-Payroll-Summary");
+    let summary: BatchPayrollSummary | undefined;
+    if (summaryHeader) {
+      try {
+        summary = JSON.parse(summaryHeader) as BatchPayrollSummary;
+      } catch {
+        summary = undefined;
+      }
+    }
+    await res.arrayBuffer().catch(() => undefined);
+    return {
+      ok: true as const,
+      downloaded: false as const,
+      summary,
+      message: "Payroll processed successfully.",
+    };
+  }
+
   const { monthLabel } = derivePayrollMonthYear(payPeriodStart);
   const fallbackFilename = `Payslips_${monthLabel.replace(" ", "_")}.zip`;
   const result = await downloadPayrollFileResponse(res, fallbackFilename);

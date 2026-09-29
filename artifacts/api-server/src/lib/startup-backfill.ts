@@ -630,6 +630,7 @@ export async function runStartupMigrations(): Promise<void> {
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_scan text;
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS visa_scan text;
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS nric_scan text;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS gender text;
       `,
     },
     {

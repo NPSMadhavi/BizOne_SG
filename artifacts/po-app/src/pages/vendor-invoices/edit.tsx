@@ -20,7 +20,6 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from "@/lib/utils";
 import { CURRENCIES } from "@/lib/currencies";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
-import { useSalesPersons } from "@/hooks/use-sales-persons";
 import { VendorInvoiceLineItems } from "@/components/vendor-invoice-line-items";
 import { VendorInvoiceAdditionalInfo } from "@/components/vendor-invoice-additional-info";
 import {
@@ -45,7 +44,6 @@ export default function VendorInvoiceEdit() {
   const params = useParams();
   const id = Number(params.id);
   const { toast } = useToast();
-  const { salesPersons } = useSalesPersons();
   const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
@@ -649,19 +647,24 @@ export default function VendorInvoiceEdit() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Sales Person</Label>
-              <Select value={salesPerson || undefined} onValueChange={setSalesPerson}>
+              <Label>GST Treatment</Label>
+              <Select value={gstTreatment} onValueChange={v => { setGstTreatment(v); if (v !== "standard_rated") setGstInclusive(false); }}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select Sales Person" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {salesPersons.map((sp) => (
-                    <SelectItem key={sp.id} value={sp.name}>
-                      {sp.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="standard_rated">Standard Rate (SR 9%)</SelectItem>
+                  <SelectItem value="zero_rated">Zero-Rated (ZR 0%)</SelectItem>
+                  <SelectItem value="exempt">Exempt (ES)</SelectItem>
+                  <SelectItem value="out_of_scope">Out of Scope (OS)</SelectItem>
                 </SelectContent>
               </Select>
+              {gstTreatment === "standard_rated" && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Switch id="gst-inclusive-edit" checked={gstInclusive} onCheckedChange={setGstInclusive} />
+                  <Label htmlFor="gst-inclusive-edit" className="cursor-pointer font-normal text-sm">GST Inclusive</Label>
+                </div>
+              )}
             </div>
           </div>
           {selectedPoIds.length > 0 && (
@@ -731,29 +734,6 @@ export default function VendorInvoiceEdit() {
               <p className="text-[10px] text-amber-600">Rate auto-fetched from public exchange rates for {piDate}. Verify with MAS (mas.gov.sg) for IRAS compliance.</p>
             </div>
           )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>GST Treatment</Label>
-              <Select value={gstTreatment} onValueChange={v => { setGstTreatment(v); if (v !== "standard_rated") setGstInclusive(false); }}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="standard_rated">Standard Rate (SR 9%)</SelectItem>
-                  <SelectItem value="zero_rated">Zero-Rated (ZR 0%)</SelectItem>
-                  <SelectItem value="exempt">Exempt (ES)</SelectItem>
-                  <SelectItem value="out_of_scope">Out of Scope (OS)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {gstTreatment === "standard_rated" && (
-              <div className="flex items-center gap-2 pt-6">
-                <Switch id="gst-inclusive-edit" checked={gstInclusive} onCheckedChange={setGstInclusive} />
-                <Label htmlFor="gst-inclusive-edit" className="cursor-pointer font-normal text-sm">GST Inclusive</Label>
-              </div>
-            )}
-          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
