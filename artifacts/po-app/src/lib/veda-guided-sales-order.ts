@@ -181,6 +181,17 @@ export function currentSoQuestion(session: GuidedSalesOrderSession): string {
   return currentSoField(session)?.ask || "Shall I save and preview?";
 }
 
+export function isAffirmativeOrSave(text: string): boolean {
+  const t = String(text || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
+  if (!t) return false;
+  if (/^(yes|yeah|yep|yup|ok|okay|sure|save|preview|submit|confirm|done|go ahead|proceed|do it)[.!]?$/i.test(t)) return true;
+  if (/^(yes|sure|ok|okay)\s+(?:please|save|preview|submit|confirm|do it|go ahead|proceed)$/i.test(t)) return true;
+  if (/^(?:please\s+)?(?:save|submit|preview|confirm)(?:\s+(?:it|this|now|as draft|and preview|the order|form|order))?$/i.test(t)) return true;
+  if (/save\s+(?:and|&)\s+preview/i.test(t)) return true;
+  if (/\b(?:save|submit|confirm)\b/i.test(t)) return true;
+  return false;
+}
+
 function isSkipAnswer(answer: string): boolean {
   return /^(skip|none|no|later|n\/a|na|pass|same)[.!]?$/i.test(answer.trim());
 }
@@ -197,14 +208,19 @@ export async function applyGuidedSalesOrderAnswer(
   if (!answer) return { ok: false, nextAsk: currentSoQuestion(session) };
 
   if (session.awaitingSave) {
-    if (/^(yes|yeah|yep|yup|ok|okay|sure|save|preview|submit)[.!]?$/i.test(answer)) {
+    if (isAffirmativeOrSave(answer)) {
       return { ok: true, nextAsk: "Saving and preview.", done: true };
     }
-    if (/^(no|nope|not yet|wait|cancel)[.!]?$/i.test(answer)) {
+    if (/^(no|nope|not yet|wait|cancel|don'?t save)[.!]?$/i.test(answer)) {
       session.awaitingSave = false;
       return { ok: true, nextAsk: "Okay. Say save when ready." };
     }
     return { ok: false, nextAsk: "Shall I save and preview?" };
+  }
+
+  // If user says "save" / "save order" / "submit" at any point during guided sales order fill:
+  if (isAffirmativeOrSave(answer) && /\b(?:save|submit)\b/i.test(answer)) {
+    return { ok: true, nextAsk: "Saving and preview.", done: true };
   }
 
   const field = currentSoField(session);

@@ -372,7 +372,16 @@ const AGENT_TOOLS = [
         properties: {
           path: {
             type: "string",
-            description: "App route. Pages: /dashboard, /settings, /customers, /customers?vedaNew=1, /vendors, /vendors?vedaNew=1, /employees, /employees/new, /employees/:id/edit, /assets, /assets/new, /assets/:id/edit, /stock, /grn, /vendor-invoices, /accounting, /expenses. Document lists: /invoices, /quotations, /purchase-orders, /delivery-orders. New forms: /invoices/new, /quotations/new, /purchase-orders/new, /delivery-orders/new. View/edit: /invoices/:id, /invoices/:id/edit, etc. Admin: /admin/users.",
+            description:
+              "App route. Exact sidebar module paths: " +
+              "Inventory: /inventory/warehouses, /stock, /stock/new, /inventory/stock-transfer, /inventory/reports, /inventory/sales-person-wise-report, /inventory/batch-expiry. " +
+              "Operations: /assets, /assets/new, /licenses, /licenses/new, /employees, /employees/new, /payroll. " +
+              "Bank: /accounting/bank-reconciliation. " +
+              "Directory: /customers, /customers?vedaNew=1, /vendors, /vendors?vedaNew=1, /sales-persons, /address-book. " +
+              "Documents: /invoices, /invoices/new, /quotations, /quotations/new, /purchase-orders, /purchase-orders/new, /delivery-orders, /delivery-orders/new, /sales-orders, /sales-orders/new, /purchase-quotations, /purchase-quotations/new, /proforma-invoices, /proforma-invoices/new, /credit-notes, /credit-notes/new, /debit-notes, /debit-notes/new, /vendor-invoices, /vendor-invoices/new, /grn, /grn/new, /point-of-sale, /bill-of-materials. " +
+              "Accounting: /accounting/chart-of-accounts, /accounting/journal-entries, /accounting/general-ledger, /accounting/trial-balance, /accounting/balance-sheet, /accounting/profit-loss, /accounting/cash-flow, /accounting/income, /accounting/expenses, /accounting/gst-f5, /accounting/gst-f7, /accounting/gst-io, /accounting/wht, /accounting/eci, /accounting/form-cs, /accounting/iaf, /accounting/ar, /accounting/ar-aging, /accounting/customer-statement, /accounting/ap, /accounting/ap-aging, /accounting/vendor-statement. " +
+              "System: /dashboard, /admin, /audit-log, /settings, /settings/backups, /report-templates. " +
+              "Document details/edit: /invoices/:id, /quotations/:id, etc.",
           },
           prefill: {
             type: "object",
@@ -1639,7 +1648,53 @@ async function executeTool(
     }
 
     case "navigateTo": {
-      return { _navigate: true, path: args.path, prefill: args.prefill || null, reason: args.reason || "" };
+      let navPath = String(args.path || "").trim();
+      const aliasMap: Record<string, string> = {
+        "/warehouses": "/inventory/warehouses",
+        "/warehouse": "/inventory/warehouses",
+        "/stock-transfer": "/inventory/stock-transfer",
+        "/stock-transfers": "/inventory/stock-transfer",
+        "/stock-reports": "/inventory/reports",
+        "/inventory-reports": "/inventory/reports",
+        "/sales-person-wise-report": "/inventory/sales-person-wise-report",
+        "/batch-expiry": "/inventory/batch-expiry",
+        "/bank-reconciliation": "/accounting/bank-reconciliation",
+        "/bank-recon": "/accounting/bank-reconciliation",
+        "/chart-of-accounts": "/accounting/chart-of-accounts",
+        "/coa": "/accounting/chart-of-accounts",
+        "/journal-entries": "/accounting/journal-entries",
+        "/general-ledger": "/accounting/general-ledger",
+        "/trial-balance": "/accounting/trial-balance",
+        "/balance-sheet": "/accounting/balance-sheet",
+        "/profit-loss": "/accounting/profit-loss",
+        "/cash-flow": "/accounting/cash-flow",
+        "/expenses": "/accounting/expenses",
+        "/income": "/accounting/income",
+        "/gst-f5": "/accounting/gst-f5",
+        "/gst-f7": "/accounting/gst-f7",
+        "/gst-io": "/accounting/gst-io",
+        "/wht": "/accounting/wht",
+        "/eci": "/accounting/eci",
+        "/form-cs": "/accounting/form-cs",
+        "/iaf": "/accounting/iaf",
+        "/ar": "/accounting/ar",
+        "/ar-aging": "/accounting/ar-aging",
+        "/customer-statement": "/accounting/customer-statement",
+        "/ap": "/accounting/ap",
+        "/ap-aging": "/accounting/ap-aging",
+        "/vendor-statement": "/accounting/vendor-statement",
+        "/admin/users": "/admin",
+        "/users": "/admin",
+        "/user-management": "/admin",
+        "/backups": "/settings/backups",
+        "/report-designer": "/report-templates",
+      };
+      const cleanPath = navPath.split("?")[0].replace(/\/+$/, "") || "/";
+      const query = navPath.includes("?") ? navPath.slice(navPath.indexOf("?")) : "";
+      if (aliasMap[cleanPath]) {
+        navPath = aliasMap[cleanPath] + query;
+      }
+      return { _navigate: true, path: navPath, prefill: args.prefill || null, reason: args.reason || "" };
     }
 
     case "openDirectoryForm": {
@@ -2203,7 +2258,25 @@ Current page: ${currentPath || "unknown"}.
 - User asks about GRN or goods received → searchGRN
 - Stats question → getFinancialStats immediately
 - Never ask "what's the PO/invoice/DO number?" — search for it yourself
-- "Open", "show", "take me to", "edit", "go to" X → IMMEDIATELY call navigateTo (e.g. /invoices, /quotations, /purchase-orders). Do this in the first tool call — do not only talk about navigating.
+- "Open", "show", "take me to", "edit", "go to" X → IMMEDIATELY call navigateTo with exact route:
+  - Warehouses: /inventory/warehouses (NOT /warehouses)
+  - Item Master / Stock: /stock
+  - Stock Transfer: /inventory/stock-transfer
+  - Stock Reports: /inventory/reports
+  - Bank Reconciliation: /accounting/bank-reconciliation
+  - Employees: /employees
+  - Invoices: /invoices
+  - Quotations: /quotations
+  - Purchase Orders: /purchase-orders
+  - Sales Orders: /sales-orders
+  - Delivery Orders: /delivery-orders
+  - Vendor Invoices: /vendor-invoices
+  - GRN: /grn
+  - Customers: /customers
+  - Vendors: /vendors
+  - Settings: /settings
+  - Dashboard: /dashboard
+  Do this in the first tool call — do not only talk about navigating. Do NOT call fillCurrentForm when navigating to a new module.
 
 ### Listing / filtering by status (critical)
 - When the user asks to "show", "list", or "filter" by status (confirmed/draft/sent/paid/etc.), ALWAYS: (1) call the matching search* tool with status=... and empty query, then (2) navigateTo the listPath with ?status=... so the table itself filters. Do NOT add status filter chips in the UI — filtering is Veda-driven via the URL only.

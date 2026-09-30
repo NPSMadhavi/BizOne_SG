@@ -168,11 +168,79 @@ export function isVedaModuleUnlocked(): boolean {
   try { return sessionStorage.getItem("veda_module_unlock") === "1"; } catch { return false; }
 }
 
+const PATH_ALIASES: Record<string, string> = {
+  "/warehouses": "/inventory/warehouses",
+  "/warehouse": "/inventory/warehouses",
+  "/stock-transfer": "/inventory/stock-transfer",
+  "/stock-transfers": "/inventory/stock-transfer",
+  "/stock-reports": "/inventory/reports",
+  "/stock-report": "/inventory/reports",
+  "/inventory-reports": "/inventory/reports",
+  "/inventory-report": "/inventory/reports",
+  "/inventory/stock-reports": "/inventory/reports",
+  "/sales-person-wise-report": "/inventory/sales-person-wise-report",
+  "/sales-person-report": "/inventory/sales-person-wise-report",
+  "/salesperson-report": "/inventory/sales-person-wise-report",
+  "/batch-expiry": "/inventory/batch-expiry",
+  "/bank-reconciliation": "/accounting/bank-reconciliation",
+  "/bank-recon": "/accounting/bank-reconciliation",
+  "/chart-of-accounts": "/accounting/chart-of-accounts",
+  "/coa": "/accounting/chart-of-accounts",
+  "/journal-entries": "/accounting/journal-entries",
+  "/journal-entry": "/accounting/journal-entries",
+  "/general-ledger": "/accounting/general-ledger",
+  "/gl": "/accounting/general-ledger",
+  "/trial-balance": "/accounting/trial-balance",
+  "/tb": "/accounting/trial-balance",
+  "/balance-sheet": "/accounting/balance-sheet",
+  "/bs": "/accounting/balance-sheet",
+  "/profit-loss": "/accounting/profit-loss",
+  "/profit-and-loss": "/accounting/profit-loss",
+  "/pl": "/accounting/profit-loss",
+  "/cash-flow": "/accounting/cash-flow",
+  "/cash-flow-statement": "/accounting/cash-flow",
+  "/cf": "/accounting/cash-flow",
+  "/expenses": "/accounting/expenses",
+  "/expense": "/accounting/expenses",
+  "/income": "/accounting/income",
+  "/gst-f5": "/accounting/gst-f5",
+  "/gst-f7": "/accounting/gst-f7",
+  "/gst-io": "/accounting/gst-io",
+  "/wht": "/accounting/wht",
+  "/withholding-tax": "/accounting/wht",
+  "/eci": "/accounting/eci",
+  "/form-cs": "/accounting/form-cs",
+  "/form-c-s": "/accounting/form-cs",
+  "/iaf": "/accounting/iaf",
+  "/iras-audit-file": "/accounting/iaf",
+  "/ar": "/accounting/ar",
+  "/ar-collections": "/accounting/ar",
+  "/ar-aging": "/accounting/ar-aging",
+  "/customer-statement": "/accounting/customer-statement",
+  "/ap": "/accounting/ap",
+  "/ap-payments": "/accounting/ap",
+  "/ap-aging": "/accounting/ap-aging",
+  "/vendor-statement": "/accounting/vendor-statement",
+  "/admin/users": "/admin",
+  "/users": "/admin",
+  "/user-management": "/admin",
+  "/backups": "/settings/backups",
+  "/backup": "/settings/backups",
+  "/accounting/backups": "/settings/backups",
+  "/report-designer": "/report-templates",
+  "/report-design": "/report-templates",
+  "/pos": "/point-of-sale",
+  "/bom": "/bill-of-materials",
+};
+
 function normalizeNavPath(path: string): string {
   let p = String(path || "").trim();
   if (!p) return "/dashboard";
   if (!p.startsWith("/")) p = `/${p}`;
-  return p;
+  const [pathname, search] = p.split("?");
+  const clean = pathname.replace(/\/+$/, "") || "/";
+  const mapped = PATH_ALIASES[clean] || clean;
+  return search ? `${mapped}?${search}` : mapped;
 }
 
 type QuickNavResult = { path: string; prefill?: Record<string, string>; spokenParty?: string };
@@ -246,7 +314,10 @@ function guidedCreateKickoffHint(path: string, partyHint?: string): string {
 function matchExplicitFormAction(text: string): "save" | "preview" | "download" | "close" | null {
   const t = normalizeVoiceTranscript(String(text || "")).toLowerCase().replace(/\s+/g, " ").trim();
   if (!t) return null;
-  const clean = t.replace(/^(?:veda|please|kindly|can\s+you|could\s+you)\s+/i, "").replace(/[.!?]+$/g, "").trim();
+  const clean = t
+    .replace(/^(?:veda|please|kindly|can\s+you|could\s+you|yes|yeah|sure|ok|okay)\s+/i, "")
+    .replace(/[.!?]+$/g, "")
+    .trim();
 
   // Close / exit / cancel form commands
   if (
@@ -258,9 +329,9 @@ function matchExplicitFormAction(text: string): "save" | "preview" | "download" 
   }
 
   if (
-    /^(?:save|submit)(?:\s+(?:the|this)?\s*(?:form|document|record|draft|changes|details|it))?$/i.test(clean) ||
-    /^save\s+and\s+(?:preview|download)$/i.test(clean) ||
-    clean === "save" || clean === "submit" || clean === "save now"
+    /^(?:save|submit|confirm|store)(?:\s+(?:the|this|as)?\s*(?:form|document|record|draft|changes|details|it|order|sales\s*order|invoice|quotation))?$/i.test(clean) ||
+    /^(?:save\s+(?:and|&)\s+preview|save\s+preview|preview\s+(?:and|&)\s+save)$/i.test(clean) ||
+    clean === "save" || clean === "submit" || clean === "save now" || clean === "save draft" || clean === "save as draft" || clean === "save it" || clean === "yes save"
   ) {
     return "save";
   }
@@ -379,7 +450,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
   const wantsCreate =
     /\b(create|new|add|make)\b/.test(t)
     || /\b(open|show|launch)\b.+\b(new\s+)?(form|page)\b/.test(t)
-    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor|stock\s*item|product)\b/.test(t);
+    || /\b(open|show)\s+(?:a\s+|the\s+)?new\s+(?:invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor|stock\s*item|product|license|project|expense|income|journal)\b/.test(t);
 
   const party = extractPartyFromCommand(normalizeVoiceTranscript(command));
 
@@ -397,19 +468,28 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     if (/\bpurchase\s*orders?\b/.test(t)) return openNew("/purchase-orders/new");
     if (/\bdelivery\s*orders?\b/.test(t)) return openNew("/delivery-orders/new");
     if (/\bsales\s*orders?\b/.test(t)) return openNew("/sales-orders/new");
+    if (/\bcredit\s*notes?\b/.test(t)) return openNew("/credit-notes/new");
+    if (/\bdebit\s*notes?\b/.test(t)) return openNew("/debit-notes/new");
+    if (/\b(grn|goods\s*received|goods\s*receipt(?:\s*notes?)?)\b/.test(t)) return openNew("/grn/new");
     if (/\bemployees?\b|\bstaff\b|\bperson\b/.test(t)) return openNew("/employees/new");
+    if (/\blicenses?\b/.test(t)) return openNew("/licenses/new");
     if (/\bcustomers?\b/.test(t)) return openNew("/customers?vedaNew=1");
     if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return openNew("/vendors?vedaNew=1");
     if (/\bprojects?\b/.test(t)) return openNew("/projects/new");
     if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return openNew("/assets/new");
+    if (/\bexpenses?\b/.test(t)) return openNew("/accounting/expenses/new");
+    if (/\bincome\b/.test(t)) return openNew("/accounting/income/new");
+    if (/\b(journal\s*entries|journals?)\b/.test(t)) return openNew("/accounting/journal-entries/new");
+    if (/\bwarehouses?\b/.test(t)) return openNew("/inventory/warehouses");
+    if (/\bstock\s*transfers?\b/.test(t)) return openNew("/inventory/stock-transfer");
   }
 
   // Plain list / module navigation (no create intent)
   if (t.split(/\s+/).length > 10) return null;
 
-  const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/.test(t)
+  const wantsNav = /\b(go\s*to|goto|open(?:ing)?|show(?:ing)?|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/i.test(t)
     || /\b(page|module|screen|list)\b/.test(t)
-    || /^(invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|employees?|staff|stock|grn|dashboard|settings|point\s*of\s*sale|pos|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|projects?|inventory|catalogue|catalog|item\s*master|assets?|fixed\s*assets?)$/.test(t);
+    || /^(warehouses?|stock\s*transfers?|stock\s*reports?|inventory\s*reports?|sales\s*person\s*(?:wise\s*)?reports?|batch\s*(?:&|and)?\s*expiry|item\s*master|invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|sales\s*orders?|customers?|vendors?|suppliers?|employees?|staff|payroll|licenses?|stock|grn|dashboard|home|settings|backups?|audit\s*logs?|point\s*of\s*sale|pos|bill\s*of\s*materials|bom|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|credit\s*notes?|debit\s*notes?|projects?|inventory|catalogue|catalog|assets?|fixed\s*assets?|sales\s*persons?|address\s*book|contacts?|bank\s*(?:reconciliation|recon)|chart\s*of\s*accounts|coa|journal\s*entries|journals?|general\s*ledger|ledger|trial\s*balance|balance\s*sheet|profit\s*(?:and|&)?\s*loss|p\s*(?:and|&)?\s*l|income\s*statement|cash\s*flow|income|expenses?|gst\s*f5|gst\s*f7|gst\s*io|withholding\s*tax|wht|eci|form\s*c-?s|iras\s*audit\s*file|iaf|ar\s*collections?|receivables?|ar\s*aging|customer\s*statements?|ap\s*payments?|payables?|ap\s*aging|vendor\s*statements?|admin|user\s*management|users?|report\s*(?:templates?|design(?:er)?))$/.test(t);
   if (!wantsNav) return null;
 
   // "show/open X for Y" without create → let agent search (unless it's clearly a page jump)
@@ -417,31 +497,92 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     return null;
   }
 
+  // Inventory
+  if (/\bwarehouses?\b/.test(t)) return { path: "/inventory/warehouses" };
+  if (/\bstock\s*transfers?\b/.test(t)) return { path: "/inventory/stock-transfer" };
+  if (/\b(stock\s*reports?|inventory\s*reports?)\b/.test(t)) return { path: "/inventory/reports" };
+  if (/\bsales\s*person\s*(?:wise\s*)?reports?\b/.test(t)) return { path: "/inventory/sales-person-wise-report" };
+  if (/\bbatch\s*(?:&|and)?\s*expiry\b/.test(t)) return { path: "/inventory/batch-expiry" };
+  if (/\b(item\s*master|catalogue|catalog)\b/.test(t)) return { path: "/stock" };
+
+  // Bank Reconciliation
+  if (/\bbank\s*(?:reconciliation|recon)\b/.test(t)) return { path: "/accounting/bank-reconciliation" };
+
+  // Documents
   if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return { path: "/vendor-invoices" };
   if (/\bpurchase\s*quotations?\b/.test(t)) return { path: "/purchase-quotations" };
-  if (/\bproforma\s*invoices?\b/.test(t)) return { path: "/proforma-invoices" };
+  if (/\bproforma\s*invoices?\b|\bpi\b/.test(t)) return { path: "/proforma-invoices" };
   if (/\bpurchase\s*orders?\b/.test(t)) return { path: "/purchase-orders" };
-  if (/\bpoint\s*of\s*sale\b/.test(t)) return { path: "/point-of-sale" };
-  if (/\binvoices?\b/.test(t)) return { path: "/invoices" };
-  if (/\bquotations?\b|\bquotes?\b/.test(t)) return { path: "/quotations" };
   if (/\bdelivery\s*orders?\b/.test(t)) return { path: "/delivery-orders" };
   if (/\bsales\s*orders?\b/.test(t)) return { path: "/sales-orders" };
-  if (/\bemployees?\b|\bstaff\b|\bpayroll\b/.test(t)) return { path: "/employees" };
+  if (/\bcredit\s*notes?\b/.test(t)) return { path: "/credit-notes" };
+  if (/\bdebit\s*notes?\b/.test(t)) return { path: "/debit-notes" };
+  if (/\bpoint\s*of\s*sale\b|\bpos\b/.test(t)) return { path: "/point-of-sale" };
+  if (/\bbill\s*of\s*materials\b|\bbom\b/.test(t)) return { path: "/bill-of-materials" };
+  if (/\b(tax\s*)?invoices?\b/.test(t)) return { path: "/invoices" };
+  if (/\bquotations?\b|\bquotes?\b/.test(t)) return { path: "/quotations" };
+  if (/\b(grn|goods\s*received|goods\s*receipt(?:\s*notes?)?)\b/.test(t)) return { path: "/grn" };
+
+  // Operations
+  if (/\bemployees?\b|\bstaff\b/.test(t)) return { path: "/employees" };
+  if (/\bpayroll\b/.test(t)) return { path: "/payroll" };
+  if (/\blicenses?\b/.test(t)) return { path: "/licenses" };
+  if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return { path: "/assets" };
+
+  // Directory
   if (/\bcustomers?\b/.test(t)) return { path: "/customers" };
   if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return { path: "/vendors" };
-  if (/\bprojects?\b/.test(t)) return { path: "/projects" };
-  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b|\bitem\s*master\b/.test(t)) return { path: "/stock" };
-  if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return { path: "/assets" };
-  if (/\bgrn\b|\bgoods\s*received\b/.test(t)) return { path: "/grn" };
-  if (/\bdashboard\b|\bhome\b/.test(t)) return { path: "/dashboard" };
-  if (/\bsettings?\b/.test(t)) return { path: "/settings" };
+  if (/\b(sales\s*persons?|salespeople|sales\s*rep)\b/.test(t)) return { path: "/sales-persons" };
+  if (/\b(address\s*book|contacts?)\b/.test(t)) return { path: "/address-book" };
+
+  // Accounting
+  if (/\b(chart\s*of\s*accounts|coa)\b/.test(t)) return { path: "/accounting/chart-of-accounts" };
+  if (/\b(journal\s*entries|journals?)\b/.test(t)) return { path: "/accounting/journal-entries" };
+  if (/\b(general\s*ledger|ledger)\b/.test(t)) return { path: "/accounting/general-ledger" };
+  if (/\btrial\s*balance\b/.test(t)) return { path: "/accounting/trial-balance" };
+  if (/\bbalance\s*sheet\b/.test(t)) return { path: "/accounting/balance-sheet" };
+  if (/\b(profit\s*(?:and|&)\s*loss|p\s*(?:and|&)\s*l|income\s*statement)\b/.test(t)) return { path: "/accounting/profit-loss" };
+  if (/\bcash\s*flow\b/.test(t)) return { path: "/accounting/cash-flow" };
+  if (/\bincome\b/.test(t)) return { path: "/accounting/income" };
   if (/\bexpenses?\b/.test(t)) return { path: "/accounting/expenses" };
+  if (/\bgst\s*f5\b/.test(t)) return { path: "/accounting/gst-f5" };
+  if (/\bgst\s*f7\b/.test(t)) return { path: "/accounting/gst-f7" };
+  if (/\bgst\s*io\b/.test(t)) return { path: "/accounting/gst-io" };
+  if (/\b(withholding\s*tax|wht)\b/.test(t)) return { path: "/accounting/wht" };
+  if (/\beci\b/.test(t)) return { path: "/accounting/eci" };
+  if (/\bform\s*c-?s\b/.test(t)) return { path: "/accounting/form-cs" };
+  if (/\b(iras\s*audit\s*file|iaf)\b/.test(t)) return { path: "/accounting/iaf" };
+  if (/\b(ar\s*collections?|receivables?)\b/.test(t)) return { path: "/accounting/ar" };
+  if (/\bar\s*aging\b/.test(t)) return { path: "/accounting/ar-aging" };
+  if (/\bcustomer\s*statements?\b/.test(t)) return { path: "/accounting/customer-statement" };
+  if (/\b(ap\s*payments?|payables?)\b/.test(t)) return { path: "/accounting/ap" };
+  if (/\bap\s*aging\b/.test(t)) return { path: "/accounting/ap-aging" };
+  if (/\bvendor\s*statements?\b/.test(t)) return { path: "/accounting/vendor-statement" };
+
+  // System
+  if (/\b(user\s*management|users?|admin)\b/.test(t)) return { path: "/admin" };
+  if (/\baudit\s*logs?\b/.test(t)) return { path: "/audit-log" };
+  if (/\bsettings?\b/.test(t)) return { path: "/settings" };
+  if (/\bbackups?\b/.test(t)) return { path: "/settings/backups" };
+  if (/\breport\s*(?:templates?|design(?:er)?)\b/.test(t)) return { path: "/report-templates" };
+  if (/\bprojects?\b/.test(t)) return { path: "/projects" };
+  if (/\bdashboard\b|\bhome\b/.test(t)) return { path: "/dashboard" };
+  if (/\b(stock|inventory)\b/.test(t)) return { path: "/stock" };
   if (/\baccounting\b/.test(t)) return { path: "/accounting/chart-of-accounts" };
   return null;
 }
 
 const PATH_LABELS: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/inventory/warehouses": "Warehouses",
+  "/warehouses": "Warehouses",
+  "/inventory/stock-transfer": "Stock Transfer",
+  "/stock-transfer": "Stock Transfer",
+  "/inventory/reports": "Stock Reports",
+  "/inventory/sales-person-wise-report": "Sales Person Wise Report",
+  "/inventory/batch-expiry": "Batch & Expiry",
+  "/stock": "Item Master",
+  "/stock/new": "New Stock Item",
   "/invoices": "Invoices",
   "/invoices/new": "New Invoice",
   "/quotations": "Quotations",
@@ -456,26 +597,64 @@ const PATH_LABELS: Record<string, string> = {
   "/purchase-quotations/new": "New Purchase Quotation",
   "/proforma-invoices": "Proforma Invoices",
   "/proforma-invoices/new": "New Proforma Invoice",
-  "/employees": "Employees",
-  "/employees/new": "New Employee",
-  "/assets": "Fixed Assets",
-  "/assets/new": "New Asset",
-  "/stock": "Item Master",
-  "/stock/new": "New Stock Item",
-  "/grn": "GRN",
-  "/settings": "Settings",
+  "/credit-notes": "Credit Notes",
+  "/credit-notes/new": "New Credit Note",
+  "/debit-notes": "Debit Notes",
+  "/debit-notes/new": "New Debit Note",
+  "/point-of-sale": "Point of Sale",
+  "/bill-of-materials": "Bill of Materials",
+  "/multi-price-level": "Multi Price Level",
+  "/grn": "Goods Receipt Notes",
+  "/grn/new": "New Goods Receipt Note",
   "/vendor-invoices": "Vendor Invoices",
   "/vendor-invoices/new": "New Vendor Invoice",
   "/customers": "Customers",
   "/customers?vedaNew=1": "New Customer",
   "/vendors": "Vendors",
   "/vendors?vedaNew=1": "New Vendor",
+  "/sales-persons": "Sales Persons",
+  "/address-book": "Address Book",
+  "/assets": "Fixed Assets",
+  "/assets/new": "New Asset",
+  "/licenses": "Licenses",
+  "/licenses/new": "New License",
+  "/employees": "Employees",
+  "/employees/new": "New Employee",
+  "/payroll": "Payroll",
+  "/accounting/chart-of-accounts": "Chart of Accounts",
+  "/accounting/bank-reconciliation": "Bank Reconciliation",
+  "/accounting/journal-entries": "Journal Entries",
+  "/accounting/journal-entries/new": "New Journal Entry",
+  "/accounting/profit-loss": "Profit & Loss",
+  "/accounting/cash-flow": "Cash Flow Statement",
+  "/accounting/iaf": "IRAS Audit File",
+  "/accounting/gst-f5": "GST F5 Return",
+  "/accounting/gst-f7": "GST F7 Amended Return",
+  "/accounting/gst-io": "GST IO Listing",
+  "/accounting/wht": "Withholding Tax",
+  "/accounting/eci": "ECI",
+  "/accounting/form-cs": "Form C-S",
+  "/accounting/ar": "AR Collections",
+  "/accounting/ar-aging": "AR Aging",
+  "/accounting/ap": "AP Payments",
+  "/accounting/ap-aging": "AP Aging",
+  "/accounting/balance-sheet": "Balance Sheet",
+  "/accounting/trial-balance": "Trial Balance",
+  "/accounting/customer-statement": "Customer Statement",
+  "/accounting/vendor-statement": "Vendor Statement",
+  "/accounting/general-ledger": "General Ledger",
+  "/accounting/expenses": "Expenses",
+  "/accounting/expenses/new": "New Expense",
+  "/accounting/income": "Income",
+  "/accounting/income/new": "New Income",
   "/projects": "Projects",
   "/projects/new": "New Project",
-  "/accounting": "Accounting",
-  "/accounting/gst-f5": "GST F5",
-  "/expenses": "Expenses",
-  "/admin/users": "Admin — Users",
+  "/admin": "User Management",
+  "/admin/users": "User Management",
+  "/audit-log": "Audit Log",
+  "/settings": "Settings",
+  "/settings/backups": "Backup & Restore",
+  "/report-templates": "Report Templates",
 };
 
 const SUGGESTIONS = [
@@ -640,10 +819,76 @@ function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }):
       try { window.speechSynthesis.resume(); } catch {}
     }
 
+let _isSpeakingTts = false;
+let _lastTtsSpokenText = "";
+let _ttsFinishedTimestamp = 0;
+
+function stripTtsEcho(transcript: string, lastSpoken: string): string {
+  if (!transcript) return "";
+  if (!lastSpoken) return transcript.trim();
+
+  // If TTS finished more than 6 seconds ago, don't strip
+  if (_ttsFinishedTimestamp > 0 && Date.now() - _ttsFinishedTimestamp > 6000) {
+    return transcript.trim();
+  }
+
+  const cleanT = transcript.trim();
+  const cleanSpoken = lastSpoken.trim().toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ");
+  if (!cleanSpoken) return cleanT;
+
+  const spokenWords = cleanSpoken.split(" ").filter(w => w.length > 1);
+  if (spokenWords.length === 0) return cleanT;
+
+  const lowerT = cleanT.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  // 1. Exact or near-exact match -> completely echo
+  if (lowerT === cleanSpoken) return "";
+
+  // 2. All words in transcript are a subset of the spoken words -> completely echo
+  const tWords = lowerT.split(" ").filter(Boolean);
+  if (tWords.length > 0 && tWords.every(w => cleanSpoken.includes(w))) {
+    return "";
+  }
+
+  // 3. Transcript starts with spoken phrase or significant part of it
+  // e.g. spoken: "opening sales persons", transcript: "opening sales person open vendor"
+  const pattern = spokenWords
+    .map(w => w.replace(/s$/, "s?").replace(/ing$/, "(?:ing)?"))
+    .join("\\s+");
+  try {
+    const rx = new RegExp(`^\\s*${pattern}\\s*`, "i");
+    if (rx.test(cleanT)) {
+      const rest = cleanT.replace(rx, "").trim();
+      return rest;
+    }
+  } catch {}
+
+  // 4. Try matching first 2+ words of spoken phrase at the start of transcript
+  if (spokenWords.length >= 2) {
+    const firstTwo = spokenWords.slice(0, 2).map(w => w.replace(/s$/, "s?").replace(/ing$/, "(?:ing)?")).join("\\s+");
+    try {
+      const rx2 = new RegExp(`^\\s*${firstTwo}\\s*`, "i");
+      if (rx2.test(cleanT)) {
+        const rest = cleanT.replace(rx2, "").trim();
+        const lowerRest = rest.toLowerCase().replace(/[^\w\s]/g, " ").trim();
+        if (spokenWords.slice(2).join(" ").includes(lowerRest)) return "";
+        return rest;
+      }
+    } catch {}
+  }
+
+  return cleanT;
+}
+
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
     if (!clean) { _browserTtsResolve = null; resolve(); return; }
 
+    _isSpeakingTts = true;
+    _lastTtsSpokenText = clean;
+
     const done = () => {
+      _isSpeakingTts = false;
+      _ttsFinishedTimestamp = Date.now();
       if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
       if (_browserTtsResolve === resolve) { _browserTtsResolve = null; resolve(); }
     };
@@ -694,6 +939,8 @@ async function speakGuidedFast(text: string): Promise<void> {
 }
 
 function cancelSpeech() {
+  _isSpeakingTts = false;
+  _ttsFinishedTimestamp = Date.now();
   window.speechSynthesis?.cancel();
   _browserTtsResolve?.();
   _browserTtsResolve = null;
@@ -1139,36 +1386,20 @@ function matchWakeUtterance(raw: string): { hit: boolean; followOn?: string } {
     return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
   }
 
-  // Single-token fuzzy: STT often mangles short words like "veda" or "agent" when spoken softly or slowly
+  // Single-token fast fuzzy check without heavy matrix loops
   const tokens = [strippedLead.replace(/\s+/g, ""), ...strippedLead.split(/\s+/).filter(Boolean)];
   for (const one of tokens) {
     if (one.length < 3 || one.length > 8) continue;
     const targets = ["veda", "veeda", "vida", "vada", "weda", "wada", "beta", "agent", "weather", "veena", "veera", "video"];
-    for (const target of targets) {
-      const a = one.slice(0, 8);
-      const b = target;
-      const m = a.length;
-      const n = b.length;
-      const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-      for (let i = 0; i <= m; i++) dp[i][0] = i;
-      for (let j = 0; j <= n; j++) dp[0][j] = j;
-      for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-          dp[i][j] = a[i - 1] === b[j - 1]
-            ? dp[i - 1][j - 1]
-            : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-        }
-      }
-      if (dp[m][n] <= 1) {
-        let followOn = strippedLead
-          .split(/\s+/)
-          .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
-          .join(" ")
-          .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "")
-          .trim();
-        followOn = followOn.replace(/^(veda|agent|assistant)\s+/i, "").trim();
-        return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
-      }
+    if (targets.some(target => target === one || (Math.abs(target.length - one.length) <= 1 && (target.includes(one) || one.includes(target))))) {
+      let followOn = strippedLead
+        .split(/\s+/)
+        .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
+        .join(" ")
+        .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "")
+        .trim();
+      followOn = followOn.replace(/^(veda|agent|assistant)\s+/i, "").trim();
+      return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
     }
   }
 
@@ -1322,7 +1553,7 @@ function listenForCommand(
     let maxTimer: ReturnType<typeof setTimeout> | null = null;
     let rec: any = null;
     let restartTimer: ReturnType<typeof setTimeout> | null = null;
-    const silenceMs = opts?.silenceMs ?? 850;
+    const silenceMs = opts?.silenceMs ?? 380;
 
     const done = (text: string) => {
       if (resolved) return;
@@ -1339,11 +1570,17 @@ function listenForCommand(
           rec.abort();
         }
       } catch {}
-      resolve(String(text || "").trim());
+      const cleaned = stripTtsEcho(String(text || "").trim(), _lastTtsSpokenText);
+      resolve(cleaned);
     };
 
     const startRec = () => {
       if (resolved) return;
+      // Do not record while browser TTS is speaking
+      if (_isSpeakingTts || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+        setTimeout(startRec, 60);
+        return;
+      }
       try {
         rec = new SR();
         // continuous helps capture full "create quotation for Acme Systems" phrases
@@ -1354,6 +1591,10 @@ function listenForCommand(
         claimSpeechMic(rec);
 
         rec.onresult = (evt: any) => {
+          if (_isSpeakingTts || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+            // Discard sound picked up while Veda is outputting audio
+            return;
+          }
           for (let i = evt.resultIndex; i < evt.results.length; i++) {
             const picked = pickBestSpeechAlternative(evt.results[i]);
             const t = picked.text;
@@ -1374,7 +1615,9 @@ function listenForCommand(
                 done(finalText);
                 return;
               }
-              // Guided create uses a shorter pause for snappy field turns
+              // Fast pause timeout so turns feel instant
+              const isWakeOnly = /^(veda|agent|hey\s*veda|hi\s*veda)$/i.test(finalText.trim());
+              const timeout = isWakeOnly ? 200 : silenceMs;
               silenceTimer = setTimeout(() => {
                 if (isLikelyNoise(finalText)) {
                   finalText = "";
@@ -1382,7 +1625,7 @@ function listenForCommand(
                   return;
                 }
                 done(normalizeVoiceTranscript(finalText));
-              }, silenceMs);
+              }, timeout);
             } else {
               interimText = t;
               onInterim(t);
@@ -1390,6 +1633,11 @@ function listenForCommand(
               if (isStopCommand(t)) {
                 done(normalizeVoiceTranscript(t));
                 return;
+              }
+              if (/^(veda|agent|hey\s*veda|hi\s*veda)$/i.test(t.trim())) {
+                silenceTimer = setTimeout(() => {
+                  done(normalizeVoiceTranscript(t));
+                }, 200);
               }
             }
           }
@@ -1517,16 +1765,77 @@ export function AgentPanel() {
   const [convState, setConvState] = useState<ConvState>("idle");
   const [convText, setConvText] = useState("");
   const [panelListening, setPanelListening] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const convActiveRef = useRef(false);
   const ambientAbortRef = useRef<AbortController | null>(null);
   const ambientHistoryRef = useRef<{ role: string; content: string }[]>([]);
   const panelListenAbortRef = useRef<AbortController | null>(null);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  const scrollToBottom = useCallback((instant = true) => {
+    const doScroll = () => {
+      const el = scrollContainerRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+      try {
+        endRef.current?.scrollIntoView({
+          behavior: instant ? "auto" : "smooth",
+          block: "end",
+        });
+      } catch {}
+    };
+
+    doScroll();
+    requestAnimationFrame(doScroll);
+    setTimeout(doScroll, 40);
+    setTimeout(doScroll, 120);
+  }, []);
+
+  // When chat panel is opened or toggled, immediately scroll to the most recent message
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, convText, convState, panelListening]);
+    if (open) {
+      scrollToBottom(true);
+      const t1 = setTimeout(() => scrollToBottom(true), 40);
+      const t2 = setTimeout(() => scrollToBottom(true), 120);
+      const t3 = setTimeout(() => scrollToBottom(true), 250);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [open, scrollToBottom]);
+
+  // Scroll to bottom when messages update
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages, scrollToBottom]);
+
+  // Keep near bottom as live speech text or state changes
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [convText, convState, panelListening, thinking, scrollToBottom]);
+
+  // Keep pinned to recent messages when content height expands (markdown, images, badges)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [messages]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [location, navigate] = useLocation();
@@ -1545,6 +1854,46 @@ export function AgentPanel() {
   const resolveAgentPath = useCallback(() => {
     return guidedFormPathRef.current || locationRef.current || location;
   }, [location]);
+
+  const appendVoiceTurn = useCallback((userText?: string, assistantText?: string, toolCalls?: string[]) => {
+    setMessages(prev => {
+      const next = [...prev];
+      if (userText && userText.trim()) {
+        next.push({
+          id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          role: "user",
+          content: userText.trim(),
+          complete: true,
+          fromVoice: true,
+        });
+      }
+      if (assistantText && assistantText.trim()) {
+        next.push({
+          id: `a-${Date.now() + 1}-${Math.random().toString(36).slice(2, 6)}`,
+          role: "assistant",
+          content: assistantText.trim(),
+          complete: true,
+          toolCalls: toolCalls || [],
+          fromVoice: true,
+        });
+      }
+      return next;
+    });
+    scrollToBottom(true);
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    const onFormError = (e: Event) => {
+      const detail = (e as CustomEvent<{ message?: string }>).detail;
+      const msg = detail?.message || "Please fill in all required fields.";
+      setConvState("speaking");
+      setConvText(`Cannot save: ${msg}`);
+      appendVoiceTurn(undefined, `Cannot save: ${msg}`);
+      void speak(`Cannot save: ${msg}`);
+    };
+    window.addEventListener("veda:form-action-error", onFormError);
+    return () => window.removeEventListener("veda:form-action-error", onFormError);
+  }, [appendVoiceTurn]);
 
   const dispatchFill = useCallback((fields: Record<string, any>) => {
     queueVedaFormFill(fields);
@@ -1619,33 +1968,22 @@ export function AgentPanel() {
       let pendingFirst = (firstCommand || "").trim();
 
       if (!pendingFirst) {
-        // Non-blocking wake greeting so command mic starts listening IMMEDIATELY with zero lag
         _userHasInteracted = true;
+        setConvState("speaking");
+        setConvText(greeting);
+        await speakWakeGreeting(greeting);
+        await new Promise(r => setTimeout(r, 120));
         setConvState("listening");
         setConvText("");
-        void speakWakeGreeting(greeting);
       } else {
-        // If user already gave the command in the same breath, acknowledge immediately
         _userHasInteracted = true;
+        setConvState("speaking");
+        setConvText("Sure.");
+        await speakWakeGreeting("Sure.");
+        await new Promise(r => setTimeout(r, 120));
         setConvState("listening");
         setConvText(pendingFirst);
-        void speakWakeGreeting("Sure.");
       }
-
-      let lastSpokenWords: string[] = [];
-
-      const isEcho = (cmd: string) => {
-        if (lastSpokenWords.length === 0) return false;
-        // Ignore common ERP words that legitimately repeat after Veda speaks
-        const skip = new Set(["invoice", "invoices", "quotation", "quotations", "purchase", "order", "orders", "customer", "customers", "vendor", "vendors", "please", "veda", "opening", "create", "created", "ready", "sure", "yes"]);
-        const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !skip.has(w));
-        if (cmdWords.length === 0) return false;
-        const spoken = lastSpokenWords.filter(w => !skip.has(w));
-        if (spoken.length === 0) return false;
-        const matches = cmdWords.filter(w => spoken.includes(w)).length;
-        // Only treat as echo when almost the whole command matches TTS
-        return matches / cmdWords.length > 0.75;
-      };
 
       while (convActiveRef.current) {
         let command = "";
@@ -1658,16 +1996,17 @@ export function AgentPanel() {
         } else {
           setConvState("listening");
           setConvText("");
-          // Guided field answers: shorter silence so turns feel instant
+          // Shorter silence timeout (380ms) for ultra-snappy turns
           command = await listenForCommand(
             t => setConvText(t),
             ctrl.signal,
-            { silenceMs: guidedNow || guidedEmployeeRef.current || guidedSalesOrderRef.current ? 180 : 850 },
+            { silenceMs: guidedNow || guidedEmployeeRef.current || guidedSalesOrderRef.current ? 180 : 380 },
           );
         }
         if (ctrl.signal.aborted || !convActiveRef.current) break;
 
         command = normalizeVoiceTranscript(command);
+        command = stripTtsEcho(command, _lastTtsSpokenText);
 
         if (!command.trim() || isLikelyNoise(command)) {
           // Keep listening — ignore empty / room noise / wake-only (do NOT auto-stop)
@@ -1680,12 +2019,6 @@ export function AgentPanel() {
           continue;
         }
 
-        if (isEcho(command)) {
-          lastSpokenWords = [];
-          continue;
-        }
-        lastSpokenWords = [];
-
         const wakeAgain = matchWakeUtterance(command);
         if (wakeAgain.hit && wakeAgain.followOn) {
           command = wakeAgain.followOn;
@@ -1693,7 +2026,12 @@ export function AgentPanel() {
           // Bare "Veda" during guided create: stay listening — never fill a field
           if (guidedNow) continue;
           cancelSpeech();
-          void speakWakeGreeting("Ready!");
+          setConvState("speaking");
+          setConvText("Ready!");
+          await speakWakeGreeting("Ready!");
+          await new Promise(r => setTimeout(r, 120));
+          setConvState("listening");
+          setConvText("");
           continue;
         }
 
@@ -1715,10 +2053,10 @@ export function AgentPanel() {
 
         const explicitAction = matchExplicitFormAction(command);
         if (explicitAction) {
+          guidedEmployeeRef.current = null;
+          guidedSalesOrderRef.current = null;
+          guidedFormPathRef.current = null;
           if (explicitAction === "close") {
-            guidedEmployeeRef.current = null;
-            guidedSalesOrderRef.current = null;
-            guidedFormPathRef.current = null;
             const res = closeActiveFormsAndModals(navigate, resolveAgentPath());
             setConvState("speaking");
             setConvText(res.message);
@@ -1727,6 +2065,7 @@ export function AgentPanel() {
               { role: "user", content: command },
               { role: "assistant", content: res.message },
             ].slice(-16);
+            appendVoiceTurn(command, res.message, ["closeCurrentForm"]);
             await speakGuidedFast(res.message);
             continue;
           }
@@ -1739,6 +2078,7 @@ export function AgentPanel() {
             { role: "user", content: command },
             { role: "assistant", content: actionMsg },
           ].slice(-16);
+          appendVoiceTurn(command, actionMsg, [explicitAction === "save" ? "submitCurrentForm" : explicitAction === "preview" ? "previewCurrentDocument" : "downloadCurrentDocument"]);
           await speakGuidedFast(actionMsg);
           continue;
         }
@@ -1755,6 +2095,7 @@ export function AgentPanel() {
             { role: "user", content: command },
             { role: "assistant", content: navMsg },
           ].slice(-16);
+          appendVoiceTurn(command, navMsg, ["navigateTo"]);
           await speakGuidedFast(navMsg);
           continue;
         }
@@ -1773,6 +2114,7 @@ export function AgentPanel() {
             { role: "assistant", content: result.nextAsk },
           ].slice(-16);
           setConvText(result.nextAsk);
+          appendVoiceTurn(command, result.nextAsk, result.filled ? ["fillCurrentForm"] : result.done ? ["submitCurrentForm"] : []);
 
           if (result.done) {
             queueVedaFormAction("save");
@@ -1805,6 +2147,7 @@ export function AgentPanel() {
             { role: "assistant", content: result.nextAsk },
           ].slice(-16);
           setConvText(result.nextAsk);
+          appendVoiceTurn(command, result.nextAsk, result.filled ? ["fillCurrentForm"] : result.done ? ["submitCurrentForm"] : []);
 
           if (result.done) {
             queueVedaFormAction("preview");
@@ -1831,7 +2174,13 @@ export function AgentPanel() {
           unlockVedaModules();
           if (quick.prefill) storeVedaPrefill(quick.prefill);
           navigate(normalizeNavPath(quickPath));
-          if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
+          if (isGuidedCreatePath(quickPath)) {
+            guidedFormPathRef.current = quickPath;
+          } else {
+            guidedEmployeeRef.current = null;
+            guidedSalesOrderRef.current = null;
+            guidedFormPathRef.current = null;
+          }
           setConvState("speaking");
           const label = PATH_LABELS[quickPath] || quickPath;
           const rawParty = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
@@ -1855,6 +2204,7 @@ export function AgentPanel() {
               { role: "assistant", content: q },
             ];
             setConvText(q);
+            appendVoiceTurn(command, q);
             setConvState("speaking");
             const asked = await guidedAskNext(q, ctrl.signal, t => setConvText(t));
             if (asked.stop) {
@@ -1882,6 +2232,7 @@ export function AgentPanel() {
               { role: "assistant", content: q },
             ];
             setConvText(q);
+            appendVoiceTurn(command, q, partyHint ? ["fillCurrentForm"] : []);
             setConvState("speaking");
             const asked = await guidedAskNext(q, ctrl.signal, t => setConvText(t));
             if (asked.stop) {
@@ -1892,9 +2243,12 @@ export function AgentPanel() {
             continue;
           }
 
-          setConvText(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
-          void speak(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
-          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 120 : 450));
+          const navMsg = partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`;
+          setConvText(navMsg);
+          appendVoiceTurn(command, navMsg, ["navigateTo"]);
+          setConvState("speaking");
+          await speak(navMsg);
+          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 120 : 250));
 
           // New form / directory create → start guided field-by-field
           if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
@@ -1933,6 +2287,7 @@ export function AgentPanel() {
                   { role: "user", content: `[guided create started at ${quickPath}]` },
                   { role: "assistant", content: response },
                 ].slice(-16);
+                appendVoiceTurn(undefined, response);
                 setConvState("speaking");
                 setConvText(response.slice(0, 240));
                 const speakLimit = isGuidedCreatePath(quickPath) ? 120 : 600;
@@ -2122,10 +2477,6 @@ export function AgentPanel() {
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
-  // Scroll to bottom when messages update
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Escape stops hands-free conversation; Alt+M wakes Veda
   useEffect(() => {
@@ -2216,7 +2567,13 @@ export function AgentPanel() {
     unlockVedaModules();
     storeVedaPrefill(prefill);
     const normalized = normalizeNavPath(path);
-    if (isGuidedCreatePath(normalized)) guidedFormPathRef.current = normalized;
+    if (isGuidedCreatePath(normalized)) {
+      guidedFormPathRef.current = normalized;
+    } else {
+      guidedEmployeeRef.current = null;
+      guidedSalesOrderRef.current = null;
+      guidedFormPathRef.current = null;
+    }
     const label = PATH_LABELS[normalized] || reason || normalized.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
@@ -2247,6 +2604,9 @@ export function AgentPanel() {
         if (fromVoice) void speak(res.message);
         return;
       }
+      guidedEmployeeRef.current = null;
+      guidedSalesOrderRef.current = null;
+      guidedFormPathRef.current = null;
       queueVedaFormAction(explicitAction);
       const actionMsg = explicitAction === "save" ? "Saving form now." : explicitAction === "preview" ? "Opening preview." : "Downloading PDF.";
       setMessages(p => [...p,
@@ -2277,7 +2637,13 @@ export function AgentPanel() {
       setInput("");
       if (quick.prefill) storeVedaPrefill(quick.prefill);
       navigate(normalizeNavPath(quickPath));
-      if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
+      if (isGuidedCreatePath(quickPath)) {
+        guidedFormPathRef.current = quickPath;
+      } else {
+        guidedEmployeeRef.current = null;
+        guidedSalesOrderRef.current = null;
+        guidedFormPathRef.current = null;
+      }
       if (quick.prefill) {
         window.setTimeout(() => {
           dispatchFill(quick.prefill);
@@ -2578,7 +2944,7 @@ export function AgentPanel() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
         {!hasMessages ? (
           /* ── Gemini Welcome ── */
           <div className="flex flex-col items-center justify-center min-h-[320px] py-4">
@@ -2593,20 +2959,7 @@ export function AgentPanel() {
               Ask questions, run reports, or navigate BizOne
             </p>
 
-            {/* Live speech listening card on welcome screen */}
-            {(panelListening || convState === "listening") && (
-              <div className="w-full flex flex-col items-center justify-center gap-2 p-3.5 mt-4 rounded-2xl bg-gradient-to-r from-blue-600/10 via-primary/10 to-indigo-600/10 border border-primary/30 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-                  <AudioWave active={true} color="bg-primary" />
-                  <span className="text-xs font-semibold text-primary">Listening…</span>
-                </div>
-                <p className="text-sm font-semibold text-foreground text-center px-2">
-                  {convText ? `"${convText}"` : "Speak your command or question"}
-                </p>
-                <span className="text-[10px] text-muted-foreground">Pause speaking to send</span>
-              </div>
-            )}
+
 
             {voiceError && (
               <p className="mt-2 text-xs text-red-600 text-center max-w-sm px-2">{voiceError}</p>
@@ -2725,32 +3078,7 @@ export function AgentPanel() {
               </div>
             ))}
 
-            {/* Live speech listening bubble */}
-            {(panelListening || convState === "listening") && (
-              <div className="flex justify-end gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <div className="flex flex-col items-end max-w-[85%]">
-                  <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl rounded-tr-sm bg-gradient-to-r from-blue-600/10 via-primary/10 to-indigo-600/10 border border-primary/30 text-foreground shadow-xs">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
-                    <AudioWave active={true} color="bg-primary" />
-                    <span className="text-sm font-medium leading-relaxed">
-                      {convText ? (
-                        <span className="font-semibold text-foreground">"{convText}"</span>
-                      ) : (
-                        <span className="text-primary font-medium animate-pulse">Listening… speak now</span>
-                      )}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground mt-1 mr-1">
-                    Pause speaking to send · Esc to cancel
-                  </span>
-                </div>
-                <div className="shrink-0 w-6 h-6 rounded-lg bg-primary/20 text-primary flex items-center justify-center text-xs font-bold mt-0.5 shadow-xs">
-                  <Mic className="h-3.5 w-3.5 text-primary animate-pulse" />
-                </div>
-              </div>
-            )}
-
-            {/* Assistant Thinking / Processing */}
+            {/* Assistant Thinking / Processing (fallback indicator before response stream) */}
             {(thinking || convState === "processing") && !panelListening && convState !== "listening" && (
               <div className="flex justify-start gap-2.5 animate-in fade-in duration-200">
                 <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
@@ -2763,20 +3091,7 @@ export function AgentPanel() {
               </div>
             )}
 
-            {/* Assistant Speaking */}
-            {convState === "speaking" && !panelListening && convState !== "listening" && !thinking && (
-              <div className="flex justify-start gap-2.5 animate-in fade-in duration-200">
-                <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
-                  <Sparkles className="h-3 w-3" />
-                </div>
-                <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl rounded-tl-sm bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
-                  <AudioWave active={true} color="bg-primary" />
-                  <span>Speaking…</span>
-                </div>
-              </div>
-            )}
-
-            <div ref={endRef} />
+            <div ref={endRef} className="h-px w-full shrink-0" />
           </div>
         )}
       </div>
@@ -2918,24 +3233,26 @@ export function AgentPanel() {
       {/* ── Veda Panel: Docked (Gemini side panel) or Floating ── */}
       {open && (
         isDocked ? (
-          <>
-            {/* Desktop: Docked right sidebar (decreased width so dashboard numbers never cramp) */}
+          isMobile ? (
+            <>
+              {/* Mobile / Tablet: Slide-over drawer */}
+              <div
+                className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={close}
+              />
+              <div className="fixed inset-y-0 right-0 w-full sm:w-[360px] z-50 flex flex-col bg-card border-l border-border shadow-2xl animate-in slide-in-from-right duration-300">
+                {panelInner}
+              </div>
+            </>
+          ) : (
+            /* Desktop: Docked right sidebar (decreased width so dashboard numbers never cramp) */
             <aside
               aria-label="Veda AI Assistant Panel"
-              className="hidden lg:flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-screen sticky top-0 shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
+              className="flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-screen sticky top-0 shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
             >
               {panelInner}
             </aside>
-
-            {/* Mobile / Tablet: Slide-over drawer */}
-            <div
-              className="lg:hidden fixed inset-0 bg-black/40 z-40 backdrop-blur-sm animate-in fade-in duration-200"
-              onClick={close}
-            />
-            <div className="lg:hidden fixed inset-y-0 right-0 w-full sm:w-[360px] z-50 flex flex-col bg-card border-l border-border shadow-2xl animate-in slide-in-from-right duration-300">
-              {panelInner}
-            </div>
-          </>
+          )
         ) : (
           /* Floating window mode (user preference toggle) */
           <div className="fixed top-14 right-6 z-50 pointer-events-none flex flex-col items-end">

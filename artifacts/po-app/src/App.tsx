@@ -483,7 +483,45 @@ function Router() {
           <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
           <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
           <Route path="/report-templates/:id/edit">{() => <ProtectedRoute component={ReportDesignerPage} module="report_templates" />}</Route>
-          <Route path="/report-templates">{() => <ProtectedRoute component={ReportTemplateList} module="report_templates" />}</Route>
+          {/* Aliases & friendly redirects for sidebar menu items */}
+          <Route path="/warehouses">{() => <Redirect to="/inventory/warehouses" />}</Route>
+          <Route path="/warehouse">{() => <Redirect to="/inventory/warehouses" />}</Route>
+          <Route path="/stock-transfer">{() => <Redirect to="/inventory/stock-transfer" />}</Route>
+          <Route path="/stock-transfers">{() => <Redirect to="/inventory/stock-transfer" />}</Route>
+          <Route path="/stock-reports">{() => <Redirect to="/inventory/reports" />}</Route>
+          <Route path="/inventory-reports">{() => <Redirect to="/inventory/reports" />}</Route>
+          <Route path="/sales-person-wise-report">{() => <Redirect to="/inventory/sales-person-wise-report" />}</Route>
+          <Route path="/batch-expiry">{() => <Redirect to="/inventory/batch-expiry" />}</Route>
+          <Route path="/bank-reconciliation">{() => <Redirect to="/accounting/bank-reconciliation" />}</Route>
+          <Route path="/bank-recon">{() => <Redirect to="/accounting/bank-reconciliation" />}</Route>
+          <Route path="/chart-of-accounts">{() => <Redirect to="/accounting/chart-of-accounts" />}</Route>
+          <Route path="/coa">{() => <Redirect to="/accounting/chart-of-accounts" />}</Route>
+          <Route path="/journal-entries">{() => <Redirect to="/accounting/journal-entries" />}</Route>
+          <Route path="/general-ledger">{() => <Redirect to="/accounting/general-ledger" />}</Route>
+          <Route path="/trial-balance">{() => <Redirect to="/accounting/trial-balance" />}</Route>
+          <Route path="/balance-sheet">{() => <Redirect to="/accounting/balance-sheet" />}</Route>
+          <Route path="/profit-loss">{() => <Redirect to="/accounting/profit-loss" />}</Route>
+          <Route path="/cash-flow">{() => <Redirect to="/accounting/cash-flow" />}</Route>
+          <Route path="/expenses">{() => <Redirect to="/accounting/expenses" />}</Route>
+          <Route path="/income">{() => <Redirect to="/accounting/income" />}</Route>
+          <Route path="/gst-f5">{() => <Redirect to="/accounting/gst-f5" />}</Route>
+          <Route path="/gst-f7">{() => <Redirect to="/accounting/gst-f7" />}</Route>
+          <Route path="/gst-io">{() => <Redirect to="/accounting/gst-io" />}</Route>
+          <Route path="/wht">{() => <Redirect to="/accounting/wht" />}</Route>
+          <Route path="/eci">{() => <Redirect to="/accounting/eci" />}</Route>
+          <Route path="/form-cs">{() => <Redirect to="/accounting/form-cs" />}</Route>
+          <Route path="/iaf">{() => <Redirect to="/accounting/iaf" />}</Route>
+          <Route path="/ar">{() => <Redirect to="/accounting/ar" />}</Route>
+          <Route path="/ar-aging">{() => <Redirect to="/accounting/ar-aging" />}</Route>
+          <Route path="/customer-statement">{() => <Redirect to="/accounting/customer-statement" />}</Route>
+          <Route path="/ap">{() => <Redirect to="/accounting/ap" />}</Route>
+          <Route path="/ap-aging">{() => <Redirect to="/accounting/ap-aging" />}</Route>
+          <Route path="/vendor-statement">{() => <Redirect to="/accounting/vendor-statement" />}</Route>
+          <Route path="/admin/users">{() => <Redirect to="/admin" />}</Route>
+          <Route path="/users">{() => <Redirect to="/admin" />}</Route>
+          <Route path="/user-management">{() => <Redirect to="/admin" />}</Route>
+          <Route path="/backups">{() => <Redirect to="/settings/backups" />}</Route>
+          <Route path="/report-designer">{() => <Redirect to="/report-templates" />}</Route>
 
           <Route component={NotFound} />
         </Switch>
