@@ -16,7 +16,7 @@ export const WAKE_TOKEN_RE =
   /\b(wake\s*up(?:\s*veda)?|wake\s*veda|wake\s*up\s*agent|wake\s*agent|wake\s*up|wake|veda|veeda|vida|vita|veta|veja|beda|vetta|weda|weeder|veeder|vader|feder|fader|vedaah|vedaa|vedas|vedha|veyda|veida|beeda|bheda|vada|vaada|vadaa|wada|waada|weather|whether|wait\s*a|waiter|way\s*that|way\s*the|way\s*da|wayda|where\s*the|wear\s*the|veena|veera|video|beta|vee\s*da|ve\s*da|v\s*da|veda\s*ji|hey\s*veda|hi\s*veda|hello\s*veda|ok\s*veda|okay\s*veda|yo\s*veda|oye\s*veda|agent|the\s*agent|hey\s*agent|hi\s*agent|hello\s*agent|call\s*agent|call\s*the\s*agent|bizone|biz\s*one|hey\s*bizone|assistant|hey\s*assistant)\b/gi;
 export const LEAD_FILLER_RE = /^(hey|hi|ok|okay|please|um|uh|ah|oh|hmm|so|say|call|yo|oye|hello|and|then)\s+/i;
 export const ONLY_FILLER_RE =
-  /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an|so|yes|yeah|yep|ok|okay|please|hey|hi|veda|veeda|vida|vita|veta|vada|wada|weather|whether|wait|agent)+[.!?]?$/i;
+  /^(um|uh|ah|oh|hmm|ha|la|na|aa|ee|the|a|an|so|hey|hi|veda|veeda|vida|vita|veta|vada|wada|weather|whether|wait|agent)+[.!?]?$/i;
 
 /** Fast check if wake word is present in a spoken phrase (including soft / slow / accented voice). */
 export function isWakeWordDetected(raw: string): boolean {

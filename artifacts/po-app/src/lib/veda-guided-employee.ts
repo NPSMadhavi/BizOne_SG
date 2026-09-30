@@ -127,6 +127,16 @@ function isSkipAnswer(answer: string): boolean {
   return /^(skip|none|no|later|n\/a|na|pass)[.!]?$/i.test(answer.trim());
 }
 
+export function isAffirmativeOrSave(text: string): boolean {
+  const t = String(text || "").toLowerCase().replace(/[.!?]+$/g, "").trim();
+  if (!t) return false;
+  if (/^(yes|yeah|yep|yup|ok|okay|sure|save|submit|confirm|done|go ahead|proceed|do it)[.!]?$/i.test(t)) return true;
+  if (/^(yes|sure|ok|okay)\s+(?:please|save|submit|confirm|do it|go ahead|proceed)$/i.test(t)) return true;
+  if (/^(?:please\s+)?(?:save|submit|confirm)(?:\s+(?:it|this|now|as draft|employee|the form|form))?$/i.test(t)) return true;
+  if (/\b(?:save|submit|confirm)\b/i.test(t)) return true;
+  return false;
+}
+
 /**
  * Apply the user's spoken answer to the current field instantly.
  * Returns the next question to speak, or save prompt.
@@ -139,14 +149,19 @@ export function applyGuidedEmployeeAnswer(
   if (!answer) return { ok: false, nextAsk: currentEmployeeQuestion(session) };
 
   if (session.awaitingSave) {
-    if (/^(yes|yeah|yep|yup|ok|okay|sure|save|submit)[.!]?$/i.test(answer)) {
+    if (isAffirmativeOrSave(answer)) {
       return { ok: true, nextAsk: "Saving.", done: true };
     }
-    if (/^(no|nope|not yet|wait|cancel)[.!]?$/i.test(answer)) {
+    if (/^(no|nope|not yet|wait|cancel|don'?t save)[.!]?$/i.test(answer)) {
       session.awaitingSave = false;
       return { ok: true, nextAsk: "Okay. Say save when ready." };
     }
     return { ok: false, nextAsk: "Shall I save?" };
+  }
+
+  // If user says "save" at any point during guided employee fill:
+  if (isAffirmativeOrSave(answer) && /\b(?:save|submit)\b/i.test(answer)) {
+    return { ok: true, nextAsk: "Saving.", done: true };
   }
 
   const field = currentEmployeeField(session);

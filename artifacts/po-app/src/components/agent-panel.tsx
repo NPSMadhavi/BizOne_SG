@@ -246,7 +246,10 @@ function guidedCreateKickoffHint(path: string, partyHint?: string): string {
 function matchExplicitFormAction(text: string): "save" | "preview" | "download" | "close" | null {
   const t = normalizeVoiceTranscript(String(text || "")).toLowerCase().replace(/\s+/g, " ").trim();
   if (!t) return null;
-  const clean = t.replace(/^(?:veda|please|kindly|can\s+you|could\s+you)\s+/i, "").replace(/[.!?]+$/g, "").trim();
+  const clean = t
+    .replace(/^(?:veda|please|kindly|can\s+you|could\s+you|yes|yeah|sure|ok|okay)\s+/i, "")
+    .replace(/[.!?]+$/g, "")
+    .trim();
 
   // Close / exit / cancel form commands
   if (
@@ -258,9 +261,9 @@ function matchExplicitFormAction(text: string): "save" | "preview" | "download" 
   }
 
   if (
-    /^(?:save|submit)(?:\s+(?:the|this)?\s*(?:form|document|record|draft|changes|details|it))?$/i.test(clean) ||
-    /^save\s+and\s+(?:preview|download)$/i.test(clean) ||
-    clean === "save" || clean === "submit" || clean === "save now"
+    /^(?:save|submit|confirm|store)(?:\s+(?:the|this|as)?\s*(?:form|document|record|draft|changes|details|it|order|sales\s*order|invoice|quotation))?$/i.test(clean) ||
+    /^(?:save\s+(?:and|&)\s+preview|save\s+preview|preview\s+(?:and|&)\s+save)$/i.test(clean) ||
+    clean === "save" || clean === "submit" || clean === "save now" || clean === "save draft" || clean === "save as draft" || clean === "save it" || clean === "yes save"
   ) {
     return "save";
   }
@@ -1517,16 +1520,77 @@ export function AgentPanel() {
   const [convState, setConvState] = useState<ConvState>("idle");
   const [convText, setConvText] = useState("");
   const [panelListening, setPanelListening] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const convActiveRef = useRef(false);
   const ambientAbortRef = useRef<AbortController | null>(null);
   const ambientHistoryRef = useRef<{ role: string; content: string }[]>([]);
   const panelListenAbortRef = useRef<AbortController | null>(null);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  const scrollToBottom = useCallback((instant = true) => {
+    const doScroll = () => {
+      const el = scrollContainerRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+      try {
+        endRef.current?.scrollIntoView({
+          behavior: instant ? "auto" : "smooth",
+          block: "end",
+        });
+      } catch {}
+    };
+
+    doScroll();
+    requestAnimationFrame(doScroll);
+    setTimeout(doScroll, 40);
+    setTimeout(doScroll, 120);
+  }, []);
+
+  // When chat panel is opened or toggled, immediately scroll to the most recent message
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, convText, convState, panelListening]);
+    if (open) {
+      scrollToBottom(true);
+      const t1 = setTimeout(() => scrollToBottom(true), 40);
+      const t2 = setTimeout(() => scrollToBottom(true), 120);
+      const t3 = setTimeout(() => scrollToBottom(true), 250);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [open, scrollToBottom]);
+
+  // Scroll to bottom when messages update
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages, scrollToBottom]);
+
+  // Keep near bottom as live speech text or state changes
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [convText, convState, panelListening, thinking, scrollToBottom]);
+
+  // Keep pinned to recent messages when content height expands (markdown, images, badges)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [messages]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [location, navigate] = useLocation();
@@ -1545,6 +1609,46 @@ export function AgentPanel() {
   const resolveAgentPath = useCallback(() => {
     return guidedFormPathRef.current || locationRef.current || location;
   }, [location]);
+
+  const appendVoiceTurn = useCallback((userText?: string, assistantText?: string, toolCalls?: string[]) => {
+    setMessages(prev => {
+      const next = [...prev];
+      if (userText && userText.trim()) {
+        next.push({
+          id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          role: "user",
+          content: userText.trim(),
+          complete: true,
+          fromVoice: true,
+        });
+      }
+      if (assistantText && assistantText.trim()) {
+        next.push({
+          id: `a-${Date.now() + 1}-${Math.random().toString(36).slice(2, 6)}`,
+          role: "assistant",
+          content: assistantText.trim(),
+          complete: true,
+          toolCalls: toolCalls || [],
+          fromVoice: true,
+        });
+      }
+      return next;
+    });
+    scrollToBottom(true);
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    const onFormError = (e: Event) => {
+      const detail = (e as CustomEvent<{ message?: string }>).detail;
+      const msg = detail?.message || "Please fill in all required fields.";
+      setConvState("speaking");
+      setConvText(`Cannot save: ${msg}`);
+      appendVoiceTurn(undefined, `Cannot save: ${msg}`);
+      void speak(`Cannot save: ${msg}`);
+    };
+    window.addEventListener("veda:form-action-error", onFormError);
+    return () => window.removeEventListener("veda:form-action-error", onFormError);
+  }, [appendVoiceTurn]);
 
   const dispatchFill = useCallback((fields: Record<string, any>) => {
     queueVedaFormFill(fields);
@@ -1715,10 +1819,10 @@ export function AgentPanel() {
 
         const explicitAction = matchExplicitFormAction(command);
         if (explicitAction) {
+          guidedEmployeeRef.current = null;
+          guidedSalesOrderRef.current = null;
+          guidedFormPathRef.current = null;
           if (explicitAction === "close") {
-            guidedEmployeeRef.current = null;
-            guidedSalesOrderRef.current = null;
-            guidedFormPathRef.current = null;
             const res = closeActiveFormsAndModals(navigate, resolveAgentPath());
             setConvState("speaking");
             setConvText(res.message);
@@ -1727,6 +1831,7 @@ export function AgentPanel() {
               { role: "user", content: command },
               { role: "assistant", content: res.message },
             ].slice(-16);
+            appendVoiceTurn(command, res.message, ["closeCurrentForm"]);
             await speakGuidedFast(res.message);
             continue;
           }
@@ -1739,6 +1844,7 @@ export function AgentPanel() {
             { role: "user", content: command },
             { role: "assistant", content: actionMsg },
           ].slice(-16);
+          appendVoiceTurn(command, actionMsg, [explicitAction === "save" ? "submitCurrentForm" : explicitAction === "preview" ? "previewCurrentDocument" : "downloadCurrentDocument"]);
           await speakGuidedFast(actionMsg);
           continue;
         }
@@ -1755,6 +1861,7 @@ export function AgentPanel() {
             { role: "user", content: command },
             { role: "assistant", content: navMsg },
           ].slice(-16);
+          appendVoiceTurn(command, navMsg, ["navigateTo"]);
           await speakGuidedFast(navMsg);
           continue;
         }
@@ -1773,6 +1880,7 @@ export function AgentPanel() {
             { role: "assistant", content: result.nextAsk },
           ].slice(-16);
           setConvText(result.nextAsk);
+          appendVoiceTurn(command, result.nextAsk, result.filled ? ["fillCurrentForm"] : result.done ? ["submitCurrentForm"] : []);
 
           if (result.done) {
             queueVedaFormAction("save");
@@ -1805,6 +1913,7 @@ export function AgentPanel() {
             { role: "assistant", content: result.nextAsk },
           ].slice(-16);
           setConvText(result.nextAsk);
+          appendVoiceTurn(command, result.nextAsk, result.filled ? ["fillCurrentForm"] : result.done ? ["submitCurrentForm"] : []);
 
           if (result.done) {
             queueVedaFormAction("preview");
@@ -1855,6 +1964,7 @@ export function AgentPanel() {
               { role: "assistant", content: q },
             ];
             setConvText(q);
+            appendVoiceTurn(command, q);
             setConvState("speaking");
             const asked = await guidedAskNext(q, ctrl.signal, t => setConvText(t));
             if (asked.stop) {
@@ -1882,6 +1992,7 @@ export function AgentPanel() {
               { role: "assistant", content: q },
             ];
             setConvText(q);
+            appendVoiceTurn(command, q, partyHint ? ["fillCurrentForm"] : []);
             setConvState("speaking");
             const asked = await guidedAskNext(q, ctrl.signal, t => setConvText(t));
             if (asked.stop) {
@@ -1892,8 +2003,10 @@ export function AgentPanel() {
             continue;
           }
 
-          setConvText(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
-          void speak(partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`);
+          const navMsg = partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`;
+          setConvText(navMsg);
+          appendVoiceTurn(command, navMsg, ["navigateTo"]);
+          void speak(navMsg);
           await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 120 : 450));
 
           // New form / directory create → start guided field-by-field
@@ -1933,6 +2046,7 @@ export function AgentPanel() {
                   { role: "user", content: `[guided create started at ${quickPath}]` },
                   { role: "assistant", content: response },
                 ].slice(-16);
+                appendVoiceTurn(undefined, response);
                 setConvState("speaking");
                 setConvText(response.slice(0, 240));
                 const speakLimit = isGuidedCreatePath(quickPath) ? 120 : 600;
@@ -2122,10 +2236,6 @@ export function AgentPanel() {
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
-  // Scroll to bottom when messages update
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Escape stops hands-free conversation; Alt+M wakes Veda
   useEffect(() => {
@@ -2247,6 +2357,9 @@ export function AgentPanel() {
         if (fromVoice) void speak(res.message);
         return;
       }
+      guidedEmployeeRef.current = null;
+      guidedSalesOrderRef.current = null;
+      guidedFormPathRef.current = null;
       queueVedaFormAction(explicitAction);
       const actionMsg = explicitAction === "save" ? "Saving form now." : explicitAction === "preview" ? "Opening preview." : "Downloading PDF.";
       setMessages(p => [...p,
@@ -2578,7 +2691,7 @@ export function AgentPanel() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
         {!hasMessages ? (
           /* ── Gemini Welcome ── */
           <div className="flex flex-col items-center justify-center min-h-[320px] py-4">
@@ -2593,20 +2706,7 @@ export function AgentPanel() {
               Ask questions, run reports, or navigate BizOne
             </p>
 
-            {/* Live speech listening card on welcome screen */}
-            {(panelListening || convState === "listening") && (
-              <div className="w-full flex flex-col items-center justify-center gap-2 p-3.5 mt-4 rounded-2xl bg-gradient-to-r from-blue-600/10 via-primary/10 to-indigo-600/10 border border-primary/30 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-                  <AudioWave active={true} color="bg-primary" />
-                  <span className="text-xs font-semibold text-primary">Listening…</span>
-                </div>
-                <p className="text-sm font-semibold text-foreground text-center px-2">
-                  {convText ? `"${convText}"` : "Speak your command or question"}
-                </p>
-                <span className="text-[10px] text-muted-foreground">Pause speaking to send</span>
-              </div>
-            )}
+
 
             {voiceError && (
               <p className="mt-2 text-xs text-red-600 text-center max-w-sm px-2">{voiceError}</p>
@@ -2725,32 +2825,7 @@ export function AgentPanel() {
               </div>
             ))}
 
-            {/* Live speech listening bubble */}
-            {(panelListening || convState === "listening") && (
-              <div className="flex justify-end gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <div className="flex flex-col items-end max-w-[85%]">
-                  <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl rounded-tr-sm bg-gradient-to-r from-blue-600/10 via-primary/10 to-indigo-600/10 border border-primary/30 text-foreground shadow-xs">
-                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
-                    <AudioWave active={true} color="bg-primary" />
-                    <span className="text-sm font-medium leading-relaxed">
-                      {convText ? (
-                        <span className="font-semibold text-foreground">"{convText}"</span>
-                      ) : (
-                        <span className="text-primary font-medium animate-pulse">Listening… speak now</span>
-                      )}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground mt-1 mr-1">
-                    Pause speaking to send · Esc to cancel
-                  </span>
-                </div>
-                <div className="shrink-0 w-6 h-6 rounded-lg bg-primary/20 text-primary flex items-center justify-center text-xs font-bold mt-0.5 shadow-xs">
-                  <Mic className="h-3.5 w-3.5 text-primary animate-pulse" />
-                </div>
-              </div>
-            )}
-
-            {/* Assistant Thinking / Processing */}
+            {/* Assistant Thinking / Processing (fallback indicator before response stream) */}
             {(thinking || convState === "processing") && !panelListening && convState !== "listening" && (
               <div className="flex justify-start gap-2.5 animate-in fade-in duration-200">
                 <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
@@ -2763,20 +2838,7 @@ export function AgentPanel() {
               </div>
             )}
 
-            {/* Assistant Speaking */}
-            {convState === "speaking" && !panelListening && convState !== "listening" && !thinking && (
-              <div className="flex justify-start gap-2.5 animate-in fade-in duration-200">
-                <div className="shrink-0 w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-500 to-sky-400 text-white flex items-center justify-center mt-0.5 shadow-xs">
-                  <Sparkles className="h-3 w-3" />
-                </div>
-                <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl rounded-tl-sm bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
-                  <AudioWave active={true} color="bg-primary" />
-                  <span>Speaking…</span>
-                </div>
-              </div>
-            )}
-
-            <div ref={endRef} />
+            <div ref={endRef} className="h-px w-full shrink-0" />
           </div>
         )}
       </div>
@@ -2918,24 +2980,26 @@ export function AgentPanel() {
       {/* ── Veda Panel: Docked (Gemini side panel) or Floating ── */}
       {open && (
         isDocked ? (
-          <>
-            {/* Desktop: Docked right sidebar (decreased width so dashboard numbers never cramp) */}
+          isMobile ? (
+            <>
+              {/* Mobile / Tablet: Slide-over drawer */}
+              <div
+                className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={close}
+              />
+              <div className="fixed inset-y-0 right-0 w-full sm:w-[360px] z-50 flex flex-col bg-card border-l border-border shadow-2xl animate-in slide-in-from-right duration-300">
+                {panelInner}
+              </div>
+            </>
+          ) : (
+            /* Desktop: Docked right sidebar (decreased width so dashboard numbers never cramp) */
             <aside
               aria-label="Veda AI Assistant Panel"
-              className="hidden lg:flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-screen sticky top-0 shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
+              className="flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-screen sticky top-0 shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
             >
               {panelInner}
             </aside>
-
-            {/* Mobile / Tablet: Slide-over drawer */}
-            <div
-              className="lg:hidden fixed inset-0 bg-black/40 z-40 backdrop-blur-sm animate-in fade-in duration-200"
-              onClick={close}
-            />
-            <div className="lg:hidden fixed inset-y-0 right-0 w-full sm:w-[360px] z-50 flex flex-col bg-card border-l border-border shadow-2xl animate-in slide-in-from-right duration-300">
-              {panelInner}
-            </div>
-          </>
+          )
         ) : (
           /* Floating window mode (user preference toggle) */
           <div className="fixed top-14 right-6 z-50 pointer-events-none flex flex-col items-end">

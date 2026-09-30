@@ -42,11 +42,11 @@ const itemSchema = z.object({
   type: z.enum(["item", "section"]).default("item"),
   sectionLabel: z.string().default(""),
   sectionAlign: z.enum(["left", "center"]).default("left"),
-  partNumber: z.string(),
-  description: z.string(),
+  partNumber: z.string().default(""),
+  description: z.string().default(""),
   qty: z.coerce.number().min(0).default(1),
   uom: z.string().default(""),
-  unitPrice: z.coerce.number().min(0, "Cannot be negative"),
+  unitPrice: z.coerce.number().min(0, "Cannot be negative").default(0),
   discount: z.coerce.number().min(0).max(100).default(0),
   isFoc: z.boolean().default(false),
   itemImage: z.string().default(""),
@@ -424,11 +424,13 @@ export default function SalesOrderNew() {
   }
 
   function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    const msg = firstErrorMessage(errors) || "Please fill in all required fields.";
     toast({
       title: "Cannot save",
-      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      description: msg,
       variant: "destructive",
     });
+    window.dispatchEvent(new CustomEvent("veda:form-action-error", { detail: { message: msg } }));
   }
 
   useVedaFormActions({
