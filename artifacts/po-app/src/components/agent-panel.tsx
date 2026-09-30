@@ -173,62 +173,116 @@ const PATH_ALIASES: Record<string, string> = {
   "/warehouse": "/inventory/warehouses",
   "/stock-transfer": "/inventory/stock-transfer",
   "/stock-transfers": "/inventory/stock-transfer",
+  "/stock_transfer": "/inventory/stock-transfer",
   "/stock-reports": "/inventory/reports",
   "/stock-report": "/inventory/reports",
   "/inventory-reports": "/inventory/reports",
   "/inventory-report": "/inventory/reports",
+  "/inventory_reports": "/inventory/reports",
   "/inventory/stock-reports": "/inventory/reports",
   "/sales-person-wise-report": "/inventory/sales-person-wise-report",
   "/sales-person-report": "/inventory/sales-person-wise-report",
   "/salesperson-report": "/inventory/sales-person-wise-report",
+  "/sales_person_wise_report": "/inventory/sales-person-wise-report",
   "/batch-expiry": "/inventory/batch-expiry",
+  "/batch_expiry": "/inventory/batch-expiry",
+  "/stock_items": "/stock",
+
+  // Bank Reconciliation
   "/bank-reconciliation": "/accounting/bank-reconciliation",
   "/bank-recon": "/accounting/bank-reconciliation",
+  "/bank_reconciliation": "/accounting/bank-reconciliation",
+  "/bank_recon": "/accounting/bank-reconciliation",
+  "/accounting/bank_recon": "/accounting/bank-reconciliation",
+  "/accounting/bank-recon": "/accounting/bank-reconciliation",
+  "/accounting_bank_recon": "/accounting/bank-reconciliation",
+  "/accounting-bank-recon": "/accounting/bank-reconciliation",
+  "/accounting_bank_reconciliation": "/accounting/bank-reconciliation",
+
+  // Accounting module aliases
   "/chart-of-accounts": "/accounting/chart-of-accounts",
   "/coa": "/accounting/chart-of-accounts",
+  "/accounting_coa": "/accounting/chart-of-accounts",
+  "/accounting/coa": "/accounting/chart-of-accounts",
   "/journal-entries": "/accounting/journal-entries",
   "/journal-entry": "/accounting/journal-entries",
+  "/accounting_je": "/accounting/journal-entries",
   "/general-ledger": "/accounting/general-ledger",
   "/gl": "/accounting/general-ledger",
+  "/accounting_gl": "/accounting/general-ledger",
   "/trial-balance": "/accounting/trial-balance",
   "/tb": "/accounting/trial-balance",
+  "/accounting_tb": "/accounting/trial-balance",
   "/balance-sheet": "/accounting/balance-sheet",
   "/bs": "/accounting/balance-sheet",
+  "/accounting_bs": "/accounting/balance-sheet",
   "/profit-loss": "/accounting/profit-loss",
   "/profit-and-loss": "/accounting/profit-loss",
   "/pl": "/accounting/profit-loss",
+  "/accounting_pl": "/accounting/profit-loss",
   "/cash-flow": "/accounting/cash-flow",
   "/cash-flow-statement": "/accounting/cash-flow",
   "/cf": "/accounting/cash-flow",
+  "/accounting_cf": "/accounting/cash-flow",
   "/expenses": "/accounting/expenses",
   "/expense": "/accounting/expenses",
+  "/accounting_expenses": "/accounting/expenses",
   "/income": "/accounting/income",
+  "/accounting_income": "/accounting/income",
   "/gst-f5": "/accounting/gst-f5",
+  "/accounting_gst_f5": "/accounting/gst-f5",
   "/gst-f7": "/accounting/gst-f7",
+  "/accounting_gst_f7": "/accounting/gst-f7",
   "/gst-io": "/accounting/gst-io",
+  "/accounting_gst_io": "/accounting/gst-io",
   "/wht": "/accounting/wht",
   "/withholding-tax": "/accounting/wht",
+  "/accounting_wht": "/accounting/wht",
   "/eci": "/accounting/eci",
+  "/accounting_eci": "/accounting/eci",
   "/form-cs": "/accounting/form-cs",
   "/form-c-s": "/accounting/form-cs",
+  "/accounting_formcs": "/accounting/form-cs",
   "/iaf": "/accounting/iaf",
   "/iras-audit-file": "/accounting/iaf",
+  "/accounting_iaf": "/accounting/iaf",
   "/ar": "/accounting/ar",
   "/ar-collections": "/accounting/ar",
   "/ar-aging": "/accounting/ar-aging",
+  "/accounting_ar": "/accounting/ar",
+  "/accounting_ar_aging": "/accounting/ar-aging",
   "/customer-statement": "/accounting/customer-statement",
+  "/accounting_cust_stmt": "/accounting/customer-statement",
   "/ap": "/accounting/ap",
   "/ap-payments": "/accounting/ap",
   "/ap-aging": "/accounting/ap-aging",
+  "/accounting_ap": "/accounting/ap",
+  "/accounting_ap_aging": "/accounting/ap-aging",
   "/vendor-statement": "/accounting/vendor-statement",
+  "/accounting_vendor_stmt": "/accounting/vendor-statement",
+
+  // Documents & System
+  "/purchase_quotations": "/purchase-quotations",
+  "/purchase_orders": "/purchase-orders",
+  "/vendor_invoices": "/vendor-invoices",
+  "/sales_orders": "/sales-orders",
+  "/proforma_invoices": "/proforma-invoices",
+  "/delivery_orders": "/delivery-orders",
+  "/credit_notes": "/credit-notes",
+  "/debit_notes": "/debit-notes",
+  "/point_of_sale": "/point-of-sale",
+  "/bill_of_materials": "/bill-of-materials",
+  "/multi_price_level": "/multi-price-level",
   "/admin/users": "/admin",
   "/users": "/admin",
   "/user-management": "/admin",
+  "/user_management": "/admin",
   "/backups": "/settings/backups",
   "/backup": "/settings/backups",
   "/accounting/backups": "/settings/backups",
   "/report-designer": "/report-templates",
   "/report-design": "/report-templates",
+  "/report_templates": "/report-templates",
   "/pos": "/point-of-sale",
   "/bom": "/bill-of-materials",
 };
@@ -239,8 +293,16 @@ function normalizeNavPath(path: string): string {
   if (!p.startsWith("/")) p = `/${p}`;
   const [pathname, search] = p.split("?");
   const clean = pathname.replace(/\/+$/, "") || "/";
-  const mapped = PATH_ALIASES[clean] || clean;
-  return search ? `${mapped}?${search}` : mapped;
+  if (PATH_ALIASES[clean]) {
+    const mapped = PATH_ALIASES[clean];
+    return search ? `${mapped}?${search}` : mapped;
+  }
+  const withHyphens = clean.replace(/_/g, "-");
+  if (PATH_ALIASES[withHyphens]) {
+    const mapped = PATH_ALIASES[withHyphens];
+    return search ? `${mapped}?${search}` : mapped;
+  }
+  return search ? `${clean}?${search}` : clean;
 }
 
 type QuickNavResult = { path: string; prefill?: Record<string, string>; spokenParty?: string };
@@ -484,10 +546,15 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     if (/\bstock\s*transfers?\b/.test(t)) return openNew("/inventory/stock-transfer");
   }
 
+  // Direct bank reconciliation phrases (e.g. "Om bank reconciliation", "open bank reconciliation", "bank recon")
+  if (/\b(?:bank\s*(?:reconciliation|recon|reconcile)|reconcile\s*bank|accounting_bank_recon)\b/.test(t)) {
+    return { path: "/accounting/bank-reconciliation" };
+  }
+
   // Plain list / module navigation (no create intent)
   if (t.split(/\s+/).length > 10) return null;
 
-  const wantsNav = /\b(go\s*to|goto|open(?:ing)?|show(?:ing)?|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/i.test(t)
+  const wantsNav = /\b(go\s*to|goto|open(?:ing)?|om|ope|op|on|show(?:ing)?|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/i.test(t)
     || /\b(page|module|screen|list)\b/.test(t)
     || /^(warehouses?|stock\s*transfers?|stock\s*reports?|inventory\s*reports?|sales\s*person\s*(?:wise\s*)?reports?|batch\s*(?:&|and)?\s*expiry|item\s*master|invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|sales\s*orders?|customers?|vendors?|suppliers?|employees?|staff|payroll|licenses?|stock|grn|dashboard|home|settings|backups?|audit\s*logs?|point\s*of\s*sale|pos|bill\s*of\s*materials|bom|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|credit\s*notes?|debit\s*notes?|projects?|inventory|catalogue|catalog|assets?|fixed\s*assets?|sales\s*persons?|address\s*book|contacts?|bank\s*(?:reconciliation|recon)|chart\s*of\s*accounts|coa|journal\s*entries|journals?|general\s*ledger|ledger|trial\s*balance|balance\s*sheet|profit\s*(?:and|&)?\s*loss|p\s*(?:and|&)?\s*l|income\s*statement|cash\s*flow|income|expenses?|gst\s*f5|gst\s*f7|gst\s*io|withholding\s*tax|wht|eci|form\s*c-?s|iras\s*audit\s*file|iaf|ar\s*collections?|receivables?|ar\s*aging|customer\s*statements?|ap\s*payments?|payables?|ap\s*aging|vendor\s*statements?|admin|user\s*management|users?|report\s*(?:templates?|design(?:er)?))$/.test(t);
   if (!wantsNav) return null;

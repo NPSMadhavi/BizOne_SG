@@ -1649,50 +1649,100 @@ async function executeTool(
 
     case "navigateTo": {
       let navPath = String(args.path || "").trim();
+      if (!navPath.startsWith("/")) navPath = `/${navPath}`;
       const aliasMap: Record<string, string> = {
         "/warehouses": "/inventory/warehouses",
         "/warehouse": "/inventory/warehouses",
         "/stock-transfer": "/inventory/stock-transfer",
         "/stock-transfers": "/inventory/stock-transfer",
+        "/stock_transfer": "/inventory/stock-transfer",
         "/stock-reports": "/inventory/reports",
         "/inventory-reports": "/inventory/reports",
+        "/inventory_reports": "/inventory/reports",
         "/sales-person-wise-report": "/inventory/sales-person-wise-report",
+        "/sales_person_wise_report": "/inventory/sales-person-wise-report",
         "/batch-expiry": "/inventory/batch-expiry",
+        "/batch_expiry": "/inventory/batch-expiry",
+        "/stock_items": "/stock",
         "/bank-reconciliation": "/accounting/bank-reconciliation",
         "/bank-recon": "/accounting/bank-reconciliation",
+        "/bank_reconciliation": "/accounting/bank-reconciliation",
+        "/bank_recon": "/accounting/bank-reconciliation",
+        "/accounting/bank_recon": "/accounting/bank-reconciliation",
+        "/accounting/bank-recon": "/accounting/bank-reconciliation",
+        "/accounting_bank_recon": "/accounting/bank-reconciliation",
+        "/accounting-bank-recon": "/accounting/bank-reconciliation",
+        "/accounting_bank_reconciliation": "/accounting/bank-reconciliation",
         "/chart-of-accounts": "/accounting/chart-of-accounts",
         "/coa": "/accounting/chart-of-accounts",
+        "/accounting_coa": "/accounting/chart-of-accounts",
         "/journal-entries": "/accounting/journal-entries",
+        "/accounting_je": "/accounting/journal-entries",
         "/general-ledger": "/accounting/general-ledger",
+        "/accounting_gl": "/accounting/general-ledger",
         "/trial-balance": "/accounting/trial-balance",
+        "/accounting_tb": "/accounting/trial-balance",
         "/balance-sheet": "/accounting/balance-sheet",
+        "/accounting_bs": "/accounting/balance-sheet",
         "/profit-loss": "/accounting/profit-loss",
+        "/accounting_pl": "/accounting/profit-loss",
         "/cash-flow": "/accounting/cash-flow",
+        "/accounting_cf": "/accounting/cash-flow",
         "/expenses": "/accounting/expenses",
+        "/accounting_expenses": "/accounting/expenses",
         "/income": "/accounting/income",
+        "/accounting_income": "/accounting/income",
         "/gst-f5": "/accounting/gst-f5",
+        "/accounting_gst_f5": "/accounting/gst-f5",
         "/gst-f7": "/accounting/gst-f7",
+        "/accounting_gst_f7": "/accounting/gst-f7",
         "/gst-io": "/accounting/gst-io",
+        "/accounting_gst_io": "/accounting/gst-io",
         "/wht": "/accounting/wht",
+        "/accounting_wht": "/accounting/wht",
         "/eci": "/accounting/eci",
+        "/accounting_eci": "/accounting/eci",
         "/form-cs": "/accounting/form-cs",
+        "/accounting_formcs": "/accounting/form-cs",
         "/iaf": "/accounting/iaf",
+        "/accounting_iaf": "/accounting/iaf",
         "/ar": "/accounting/ar",
+        "/accounting_ar": "/accounting/ar",
         "/ar-aging": "/accounting/ar-aging",
+        "/accounting_ar_aging": "/accounting/ar-aging",
         "/customer-statement": "/accounting/customer-statement",
+        "/accounting_cust_stmt": "/accounting/customer-statement",
         "/ap": "/accounting/ap",
+        "/accounting_ap": "/accounting/ap",
         "/ap-aging": "/accounting/ap-aging",
+        "/accounting_ap_aging": "/accounting/ap-aging",
         "/vendor-statement": "/accounting/vendor-statement",
+        "/accounting_vendor_stmt": "/accounting/vendor-statement",
+        "/purchase_quotations": "/purchase-quotations",
+        "/purchase_orders": "/purchase-orders",
+        "/vendor_invoices": "/vendor-invoices",
+        "/sales_orders": "/sales-orders",
+        "/proforma_invoices": "/proforma-invoices",
+        "/delivery_orders": "/delivery-orders",
+        "/credit_notes": "/credit-notes",
+        "/debit_notes": "/debit-notes",
+        "/point_of_sale": "/point-of-sale",
+        "/bill_of_materials": "/bill-of-materials",
+        "/multi_price_level": "/multi-price-level",
         "/admin/users": "/admin",
         "/users": "/admin",
         "/user-management": "/admin",
+        "/user_management": "/admin",
         "/backups": "/settings/backups",
         "/report-designer": "/report-templates",
+        "/report_templates": "/report-templates",
       };
       const cleanPath = navPath.split("?")[0].replace(/\/+$/, "") || "/";
       const query = navPath.includes("?") ? navPath.slice(navPath.indexOf("?")) : "";
       if (aliasMap[cleanPath]) {
         navPath = aliasMap[cleanPath] + query;
+      } else if (aliasMap[cleanPath.replace(/_/g, "-")]) {
+        navPath = aliasMap[cleanPath.replace(/_/g, "-")] + query;
       }
       return { _navigate: true, path: navPath, prefill: args.prefill || null, reason: args.reason || "" };
     }
@@ -2263,7 +2313,7 @@ Current page: ${currentPath || "unknown"}.
   - Item Master / Stock: /stock
   - Stock Transfer: /inventory/stock-transfer
   - Stock Reports: /inventory/reports
-  - Bank Reconciliation: /accounting/bank-reconciliation
+  - Bank Reconciliation: /accounting/bank-reconciliation (NEVER /accounting_bank_recon or /bank-reconciliation)
   - Employees: /employees
   - Invoices: /invoices
   - Quotations: /quotations
