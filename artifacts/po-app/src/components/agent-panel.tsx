@@ -872,20 +872,6 @@ function playWakeChime() {
 
 let _browserTtsResolve: (() => void) | null = null;
 let _browserTtsTimeout: ReturnType<typeof setTimeout> | null = null;
-function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }): Promise<void> {
-  return new Promise((resolve) => {
-    if (!window.speechSynthesis) { resolve(); return; }
-
-    // Clear any prior pending promise and utterance
-    if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
-    window.speechSynthesis.cancel();
-    _browserTtsResolve?.();
-    _browserTtsResolve = resolve;
-
-    if (window.speechSynthesis.paused) {
-      try { window.speechSynthesis.resume(); } catch {}
-    }
-
 let _isSpeakingTts = false;
 let _lastTtsSpokenText = "";
 let _ttsFinishedTimestamp = 0;
@@ -946,6 +932,20 @@ function stripTtsEcho(transcript: string, lastSpoken: string): string {
 
   return cleanT;
 }
+
+function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }): Promise<void> {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis) { resolve(); return; }
+
+    // Clear any prior pending promise and utterance
+    if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
+    window.speechSynthesis.cancel();
+    _browserTtsResolve?.();
+    _browserTtsResolve = resolve;
+
+    if (window.speechSynthesis.paused) {
+      try { window.speechSynthesis.resume(); } catch {}
+    }
 
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
     if (!clean) { _browserTtsResolve = null; resolve(); return; }
