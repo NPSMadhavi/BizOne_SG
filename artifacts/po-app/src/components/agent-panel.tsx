@@ -487,7 +487,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
   // Plain list / module navigation (no create intent)
   if (t.split(/\s+/).length > 10) return null;
 
-  const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/.test(t)
+  const wantsNav = /\b(go\s*to|goto|open(?:ing)?|show(?:ing)?|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/i.test(t)
     || /\b(page|module|screen|list)\b/.test(t)
     || /^(warehouses?|stock\s*transfers?|stock\s*reports?|inventory\s*reports?|sales\s*person\s*(?:wise\s*)?reports?|batch\s*(?:&|and)?\s*expiry|item\s*master|invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|sales\s*orders?|customers?|vendors?|suppliers?|employees?|staff|payroll|licenses?|stock|grn|dashboard|home|settings|backups?|audit\s*logs?|point\s*of\s*sale|pos|bill\s*of\s*materials|bom|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|credit\s*notes?|debit\s*notes?|projects?|inventory|catalogue|catalog|assets?|fixed\s*assets?|sales\s*persons?|address\s*book|contacts?|bank\s*(?:reconciliation|recon)|chart\s*of\s*accounts|coa|journal\s*entries|journals?|general\s*ledger|ledger|trial\s*balance|balance\s*sheet|profit\s*(?:and|&)?\s*loss|p\s*(?:and|&)?\s*l|income\s*statement|cash\s*flow|income|expenses?|gst\s*f5|gst\s*f7|gst\s*io|withholding\s*tax|wht|eci|form\s*c-?s|iras\s*audit\s*file|iaf|ar\s*collections?|receivables?|ar\s*aging|customer\s*statements?|ap\s*payments?|payables?|ap\s*aging|vendor\s*statements?|admin|user\s*management|users?|report\s*(?:templates?|design(?:er)?))$/.test(t);
   if (!wantsNav) return null;
@@ -819,10 +819,76 @@ function speakBrowser(text: string, opts?: { rate?: number; deferMs?: number }):
       try { window.speechSynthesis.resume(); } catch {}
     }
 
+let _isSpeakingTts = false;
+let _lastTtsSpokenText = "";
+let _ttsFinishedTimestamp = 0;
+
+function stripTtsEcho(transcript: string, lastSpoken: string): string {
+  if (!transcript) return "";
+  if (!lastSpoken) return transcript.trim();
+
+  // If TTS finished more than 6 seconds ago, don't strip
+  if (_ttsFinishedTimestamp > 0 && Date.now() - _ttsFinishedTimestamp > 6000) {
+    return transcript.trim();
+  }
+
+  const cleanT = transcript.trim();
+  const cleanSpoken = lastSpoken.trim().toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ");
+  if (!cleanSpoken) return cleanT;
+
+  const spokenWords = cleanSpoken.split(" ").filter(w => w.length > 1);
+  if (spokenWords.length === 0) return cleanT;
+
+  const lowerT = cleanT.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  // 1. Exact or near-exact match -> completely echo
+  if (lowerT === cleanSpoken) return "";
+
+  // 2. All words in transcript are a subset of the spoken words -> completely echo
+  const tWords = lowerT.split(" ").filter(Boolean);
+  if (tWords.length > 0 && tWords.every(w => cleanSpoken.includes(w))) {
+    return "";
+  }
+
+  // 3. Transcript starts with spoken phrase or significant part of it
+  // e.g. spoken: "opening sales persons", transcript: "opening sales person open vendor"
+  const pattern = spokenWords
+    .map(w => w.replace(/s$/, "s?").replace(/ing$/, "(?:ing)?"))
+    .join("\\s+");
+  try {
+    const rx = new RegExp(`^\\s*${pattern}\\s*`, "i");
+    if (rx.test(cleanT)) {
+      const rest = cleanT.replace(rx, "").trim();
+      return rest;
+    }
+  } catch {}
+
+  // 4. Try matching first 2+ words of spoken phrase at the start of transcript
+  if (spokenWords.length >= 2) {
+    const firstTwo = spokenWords.slice(0, 2).map(w => w.replace(/s$/, "s?").replace(/ing$/, "(?:ing)?")).join("\\s+");
+    try {
+      const rx2 = new RegExp(`^\\s*${firstTwo}\\s*`, "i");
+      if (rx2.test(cleanT)) {
+        const rest = cleanT.replace(rx2, "").trim();
+        const lowerRest = rest.toLowerCase().replace(/[^\w\s]/g, " ").trim();
+        if (spokenWords.slice(2).join(" ").includes(lowerRest)) return "";
+        return rest;
+      }
+    } catch {}
+  }
+
+  return cleanT;
+}
+
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#{1,6}\s/g, "").replace(/`/g, "").replace(/•\s*/g, "").trim();
     if (!clean) { _browserTtsResolve = null; resolve(); return; }
 
+    _isSpeakingTts = true;
+    _lastTtsSpokenText = clean;
+
     const done = () => {
+      _isSpeakingTts = false;
+      _ttsFinishedTimestamp = Date.now();
       if (_browserTtsTimeout) { clearTimeout(_browserTtsTimeout); _browserTtsTimeout = null; }
       if (_browserTtsResolve === resolve) { _browserTtsResolve = null; resolve(); }
     };
@@ -873,6 +939,8 @@ async function speakGuidedFast(text: string): Promise<void> {
 }
 
 function cancelSpeech() {
+  _isSpeakingTts = false;
+  _ttsFinishedTimestamp = Date.now();
   window.speechSynthesis?.cancel();
   _browserTtsResolve?.();
   _browserTtsResolve = null;
@@ -1318,36 +1386,20 @@ function matchWakeUtterance(raw: string): { hit: boolean; followOn?: string } {
     return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
   }
 
-  // Single-token fuzzy: STT often mangles short words like "veda" or "agent" when spoken softly or slowly
+  // Single-token fast fuzzy check without heavy matrix loops
   const tokens = [strippedLead.replace(/\s+/g, ""), ...strippedLead.split(/\s+/).filter(Boolean)];
   for (const one of tokens) {
     if (one.length < 3 || one.length > 8) continue;
     const targets = ["veda", "veeda", "vida", "vada", "weda", "wada", "beta", "agent", "weather", "veena", "veera", "video"];
-    for (const target of targets) {
-      const a = one.slice(0, 8);
-      const b = target;
-      const m = a.length;
-      const n = b.length;
-      const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-      for (let i = 0; i <= m; i++) dp[i][0] = i;
-      for (let j = 0; j <= n; j++) dp[0][j] = j;
-      for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-          dp[i][j] = a[i - 1] === b[j - 1]
-            ? dp[i - 1][j - 1]
-            : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-        }
-      }
-      if (dp[m][n] <= 1) {
-        let followOn = strippedLead
-          .split(/\s+/)
-          .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
-          .join(" ")
-          .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "")
-          .trim();
-        followOn = followOn.replace(/^(veda|agent|assistant)\s+/i, "").trim();
-        return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
-      }
+    if (targets.some(target => target === one || (Math.abs(target.length - one.length) <= 1 && (target.includes(one) || one.includes(target))))) {
+      let followOn = strippedLead
+        .split(/\s+/)
+        .filter(w => w !== one && w.replace(/\s+/g, "") !== one)
+        .join(" ")
+        .replace(/^(hey|hi|ok|okay|please|um|uh|so|say|call|wake|wake\s+up|yo|oye|hello)\s+(the\s+)?/i, "")
+        .trim();
+      followOn = followOn.replace(/^(veda|agent|assistant)\s+/i, "").trim();
+      return { hit: true, followOn: followOn.length > 1 ? followOn : undefined };
     }
   }
 
@@ -1501,7 +1553,7 @@ function listenForCommand(
     let maxTimer: ReturnType<typeof setTimeout> | null = null;
     let rec: any = null;
     let restartTimer: ReturnType<typeof setTimeout> | null = null;
-    const silenceMs = opts?.silenceMs ?? 850;
+    const silenceMs = opts?.silenceMs ?? 380;
 
     const done = (text: string) => {
       if (resolved) return;
@@ -1518,11 +1570,17 @@ function listenForCommand(
           rec.abort();
         }
       } catch {}
-      resolve(String(text || "").trim());
+      const cleaned = stripTtsEcho(String(text || "").trim(), _lastTtsSpokenText);
+      resolve(cleaned);
     };
 
     const startRec = () => {
       if (resolved) return;
+      // Do not record while browser TTS is speaking
+      if (_isSpeakingTts || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+        setTimeout(startRec, 60);
+        return;
+      }
       try {
         rec = new SR();
         // continuous helps capture full "create quotation for Acme Systems" phrases
@@ -1533,6 +1591,10 @@ function listenForCommand(
         claimSpeechMic(rec);
 
         rec.onresult = (evt: any) => {
+          if (_isSpeakingTts || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+            // Discard sound picked up while Veda is outputting audio
+            return;
+          }
           for (let i = evt.resultIndex; i < evt.results.length; i++) {
             const picked = pickBestSpeechAlternative(evt.results[i]);
             const t = picked.text;
@@ -1553,7 +1615,9 @@ function listenForCommand(
                 done(finalText);
                 return;
               }
-              // Guided create uses a shorter pause for snappy field turns
+              // Fast pause timeout so turns feel instant
+              const isWakeOnly = /^(veda|agent|hey\s*veda|hi\s*veda)$/i.test(finalText.trim());
+              const timeout = isWakeOnly ? 200 : silenceMs;
               silenceTimer = setTimeout(() => {
                 if (isLikelyNoise(finalText)) {
                   finalText = "";
@@ -1561,7 +1625,7 @@ function listenForCommand(
                   return;
                 }
                 done(normalizeVoiceTranscript(finalText));
-              }, silenceMs);
+              }, timeout);
             } else {
               interimText = t;
               onInterim(t);
@@ -1569,6 +1633,11 @@ function listenForCommand(
               if (isStopCommand(t)) {
                 done(normalizeVoiceTranscript(t));
                 return;
+              }
+              if (/^(veda|agent|hey\s*veda|hi\s*veda)$/i.test(t.trim())) {
+                silenceTimer = setTimeout(() => {
+                  done(normalizeVoiceTranscript(t));
+                }, 200);
               }
             }
           }
@@ -1899,33 +1968,22 @@ export function AgentPanel() {
       let pendingFirst = (firstCommand || "").trim();
 
       if (!pendingFirst) {
-        // Non-blocking wake greeting so command mic starts listening IMMEDIATELY with zero lag
         _userHasInteracted = true;
+        setConvState("speaking");
+        setConvText(greeting);
+        await speakWakeGreeting(greeting);
+        await new Promise(r => setTimeout(r, 120));
         setConvState("listening");
         setConvText("");
-        void speakWakeGreeting(greeting);
       } else {
-        // If user already gave the command in the same breath, acknowledge immediately
         _userHasInteracted = true;
+        setConvState("speaking");
+        setConvText("Sure.");
+        await speakWakeGreeting("Sure.");
+        await new Promise(r => setTimeout(r, 120));
         setConvState("listening");
         setConvText(pendingFirst);
-        void speakWakeGreeting("Sure.");
       }
-
-      let lastSpokenWords: string[] = [];
-
-      const isEcho = (cmd: string) => {
-        if (lastSpokenWords.length === 0) return false;
-        // Ignore common ERP words that legitimately repeat after Veda speaks
-        const skip = new Set(["invoice", "invoices", "quotation", "quotations", "purchase", "order", "orders", "customer", "customers", "vendor", "vendors", "please", "veda", "opening", "create", "created", "ready", "sure", "yes"]);
-        const cmdWords = cmd.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !skip.has(w));
-        if (cmdWords.length === 0) return false;
-        const spoken = lastSpokenWords.filter(w => !skip.has(w));
-        if (spoken.length === 0) return false;
-        const matches = cmdWords.filter(w => spoken.includes(w)).length;
-        // Only treat as echo when almost the whole command matches TTS
-        return matches / cmdWords.length > 0.75;
-      };
 
       while (convActiveRef.current) {
         let command = "";
@@ -1938,16 +1996,17 @@ export function AgentPanel() {
         } else {
           setConvState("listening");
           setConvText("");
-          // Guided field answers: shorter silence so turns feel instant
+          // Shorter silence timeout (380ms) for ultra-snappy turns
           command = await listenForCommand(
             t => setConvText(t),
             ctrl.signal,
-            { silenceMs: guidedNow || guidedEmployeeRef.current || guidedSalesOrderRef.current ? 180 : 850 },
+            { silenceMs: guidedNow || guidedEmployeeRef.current || guidedSalesOrderRef.current ? 180 : 380 },
           );
         }
         if (ctrl.signal.aborted || !convActiveRef.current) break;
 
         command = normalizeVoiceTranscript(command);
+        command = stripTtsEcho(command, _lastTtsSpokenText);
 
         if (!command.trim() || isLikelyNoise(command)) {
           // Keep listening — ignore empty / room noise / wake-only (do NOT auto-stop)
@@ -1960,12 +2019,6 @@ export function AgentPanel() {
           continue;
         }
 
-        if (isEcho(command)) {
-          lastSpokenWords = [];
-          continue;
-        }
-        lastSpokenWords = [];
-
         const wakeAgain = matchWakeUtterance(command);
         if (wakeAgain.hit && wakeAgain.followOn) {
           command = wakeAgain.followOn;
@@ -1973,7 +2026,12 @@ export function AgentPanel() {
           // Bare "Veda" during guided create: stay listening — never fill a field
           if (guidedNow) continue;
           cancelSpeech();
-          void speakWakeGreeting("Ready!");
+          setConvState("speaking");
+          setConvText("Ready!");
+          await speakWakeGreeting("Ready!");
+          await new Promise(r => setTimeout(r, 120));
+          setConvState("listening");
+          setConvText("");
           continue;
         }
 
@@ -2188,8 +2246,9 @@ export function AgentPanel() {
           const navMsg = partyHint ? `Opening ${label} for ${partyHint}` : `Opening ${label}`;
           setConvText(navMsg);
           appendVoiceTurn(command, navMsg, ["navigateTo"]);
-          void speak(navMsg);
-          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 120 : 450));
+          setConvState("speaking");
+          await speak(navMsg);
+          await new Promise(r => setTimeout(r, isGuidedCreatePath(quickPath) ? 120 : 250));
 
           // New form / directory create → start guided field-by-field
           if (quickPath.endsWith("/new") || /vedaNew=1/.test(quickPath)) {
