@@ -168,11 +168,79 @@ export function isVedaModuleUnlocked(): boolean {
   try { return sessionStorage.getItem("veda_module_unlock") === "1"; } catch { return false; }
 }
 
+const PATH_ALIASES: Record<string, string> = {
+  "/warehouses": "/inventory/warehouses",
+  "/warehouse": "/inventory/warehouses",
+  "/stock-transfer": "/inventory/stock-transfer",
+  "/stock-transfers": "/inventory/stock-transfer",
+  "/stock-reports": "/inventory/reports",
+  "/stock-report": "/inventory/reports",
+  "/inventory-reports": "/inventory/reports",
+  "/inventory-report": "/inventory/reports",
+  "/inventory/stock-reports": "/inventory/reports",
+  "/sales-person-wise-report": "/inventory/sales-person-wise-report",
+  "/sales-person-report": "/inventory/sales-person-wise-report",
+  "/salesperson-report": "/inventory/sales-person-wise-report",
+  "/batch-expiry": "/inventory/batch-expiry",
+  "/bank-reconciliation": "/accounting/bank-reconciliation",
+  "/bank-recon": "/accounting/bank-reconciliation",
+  "/chart-of-accounts": "/accounting/chart-of-accounts",
+  "/coa": "/accounting/chart-of-accounts",
+  "/journal-entries": "/accounting/journal-entries",
+  "/journal-entry": "/accounting/journal-entries",
+  "/general-ledger": "/accounting/general-ledger",
+  "/gl": "/accounting/general-ledger",
+  "/trial-balance": "/accounting/trial-balance",
+  "/tb": "/accounting/trial-balance",
+  "/balance-sheet": "/accounting/balance-sheet",
+  "/bs": "/accounting/balance-sheet",
+  "/profit-loss": "/accounting/profit-loss",
+  "/profit-and-loss": "/accounting/profit-loss",
+  "/pl": "/accounting/profit-loss",
+  "/cash-flow": "/accounting/cash-flow",
+  "/cash-flow-statement": "/accounting/cash-flow",
+  "/cf": "/accounting/cash-flow",
+  "/expenses": "/accounting/expenses",
+  "/expense": "/accounting/expenses",
+  "/income": "/accounting/income",
+  "/gst-f5": "/accounting/gst-f5",
+  "/gst-f7": "/accounting/gst-f7",
+  "/gst-io": "/accounting/gst-io",
+  "/wht": "/accounting/wht",
+  "/withholding-tax": "/accounting/wht",
+  "/eci": "/accounting/eci",
+  "/form-cs": "/accounting/form-cs",
+  "/form-c-s": "/accounting/form-cs",
+  "/iaf": "/accounting/iaf",
+  "/iras-audit-file": "/accounting/iaf",
+  "/ar": "/accounting/ar",
+  "/ar-collections": "/accounting/ar",
+  "/ar-aging": "/accounting/ar-aging",
+  "/customer-statement": "/accounting/customer-statement",
+  "/ap": "/accounting/ap",
+  "/ap-payments": "/accounting/ap",
+  "/ap-aging": "/accounting/ap-aging",
+  "/vendor-statement": "/accounting/vendor-statement",
+  "/admin/users": "/admin",
+  "/users": "/admin",
+  "/user-management": "/admin",
+  "/backups": "/settings/backups",
+  "/backup": "/settings/backups",
+  "/accounting/backups": "/settings/backups",
+  "/report-designer": "/report-templates",
+  "/report-design": "/report-templates",
+  "/pos": "/point-of-sale",
+  "/bom": "/bill-of-materials",
+};
+
 function normalizeNavPath(path: string): string {
   let p = String(path || "").trim();
   if (!p) return "/dashboard";
   if (!p.startsWith("/")) p = `/${p}`;
-  return p;
+  const [pathname, search] = p.split("?");
+  const clean = pathname.replace(/\/+$/, "") || "/";
+  const mapped = PATH_ALIASES[clean] || clean;
+  return search ? `${mapped}?${search}` : mapped;
 }
 
 type QuickNavResult = { path: string; prefill?: Record<string, string>; spokenParty?: string };
@@ -382,7 +450,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
   const wantsCreate =
     /\b(create|new|add|make)\b/.test(t)
     || /\b(open|show|launch)\b.+\b(new\s+)?(form|page)\b/.test(t)
-    || /\b(open|show)\s+(a\s+|the\s+)?(new\s+)?(invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor|stock\s*item|product)\b/.test(t);
+    || /\b(open|show)\s+(?:a\s+|the\s+)?new\s+(?:invoice|quotation|quote|purchase\s*order|delivery\s*order|sales\s*order|employee|customer|vendor|stock\s*item|product|license|project|expense|income|journal)\b/.test(t);
 
   const party = extractPartyFromCommand(normalizeVoiceTranscript(command));
 
@@ -400,11 +468,20 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     if (/\bpurchase\s*orders?\b/.test(t)) return openNew("/purchase-orders/new");
     if (/\bdelivery\s*orders?\b/.test(t)) return openNew("/delivery-orders/new");
     if (/\bsales\s*orders?\b/.test(t)) return openNew("/sales-orders/new");
+    if (/\bcredit\s*notes?\b/.test(t)) return openNew("/credit-notes/new");
+    if (/\bdebit\s*notes?\b/.test(t)) return openNew("/debit-notes/new");
+    if (/\b(grn|goods\s*received|goods\s*receipt(?:\s*notes?)?)\b/.test(t)) return openNew("/grn/new");
     if (/\bemployees?\b|\bstaff\b|\bperson\b/.test(t)) return openNew("/employees/new");
+    if (/\blicenses?\b/.test(t)) return openNew("/licenses/new");
     if (/\bcustomers?\b/.test(t)) return openNew("/customers?vedaNew=1");
     if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return openNew("/vendors?vedaNew=1");
     if (/\bprojects?\b/.test(t)) return openNew("/projects/new");
     if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return openNew("/assets/new");
+    if (/\bexpenses?\b/.test(t)) return openNew("/accounting/expenses/new");
+    if (/\bincome\b/.test(t)) return openNew("/accounting/income/new");
+    if (/\b(journal\s*entries|journals?)\b/.test(t)) return openNew("/accounting/journal-entries/new");
+    if (/\bwarehouses?\b/.test(t)) return openNew("/inventory/warehouses");
+    if (/\bstock\s*transfers?\b/.test(t)) return openNew("/inventory/stock-transfer");
   }
 
   // Plain list / module navigation (no create intent)
@@ -412,7 +489,7 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
 
   const wantsNav = /\b(go\s*to|goto|open|show|take\s*me|navigate|switch\s*to|bring\s*(me\s*)?up|launch|visit)\b/.test(t)
     || /\b(page|module|screen|list)\b/.test(t)
-    || /^(invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|customers?|vendors?|employees?|staff|stock|grn|dashboard|settings|point\s*of\s*sale|pos|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|projects?|inventory|catalogue|catalog|item\s*master|assets?|fixed\s*assets?)$/.test(t);
+    || /^(warehouses?|stock\s*transfers?|stock\s*reports?|inventory\s*reports?|sales\s*person\s*(?:wise\s*)?reports?|batch\s*(?:&|and)?\s*expiry|item\s*master|invoices?|quotations?|quotes?|purchase\s*orders?|delivery\s*orders?|sales\s*orders?|customers?|vendors?|suppliers?|employees?|staff|payroll|licenses?|stock|grn|dashboard|home|settings|backups?|audit\s*logs?|point\s*of\s*sale|pos|bill\s*of\s*materials|bom|purchase\s*quotations?|proforma\s*invoices?|vendor\s*invoices?|credit\s*notes?|debit\s*notes?|projects?|inventory|catalogue|catalog|assets?|fixed\s*assets?|sales\s*persons?|address\s*book|contacts?|bank\s*(?:reconciliation|recon)|chart\s*of\s*accounts|coa|journal\s*entries|journals?|general\s*ledger|ledger|trial\s*balance|balance\s*sheet|profit\s*(?:and|&)?\s*loss|p\s*(?:and|&)?\s*l|income\s*statement|cash\s*flow|income|expenses?|gst\s*f5|gst\s*f7|gst\s*io|withholding\s*tax|wht|eci|form\s*c-?s|iras\s*audit\s*file|iaf|ar\s*collections?|receivables?|ar\s*aging|customer\s*statements?|ap\s*payments?|payables?|ap\s*aging|vendor\s*statements?|admin|user\s*management|users?|report\s*(?:templates?|design(?:er)?))$/.test(t);
   if (!wantsNav) return null;
 
   // "show/open X for Y" without create → let agent search (unless it's clearly a page jump)
@@ -420,31 +497,92 @@ function matchQuickNavigate(command: string): QuickNavResult | null {
     return null;
   }
 
+  // Inventory
+  if (/\bwarehouses?\b/.test(t)) return { path: "/inventory/warehouses" };
+  if (/\bstock\s*transfers?\b/.test(t)) return { path: "/inventory/stock-transfer" };
+  if (/\b(stock\s*reports?|inventory\s*reports?)\b/.test(t)) return { path: "/inventory/reports" };
+  if (/\bsales\s*person\s*(?:wise\s*)?reports?\b/.test(t)) return { path: "/inventory/sales-person-wise-report" };
+  if (/\bbatch\s*(?:&|and)?\s*expiry\b/.test(t)) return { path: "/inventory/batch-expiry" };
+  if (/\b(item\s*master|catalogue|catalog)\b/.test(t)) return { path: "/stock" };
+
+  // Bank Reconciliation
+  if (/\bbank\s*(?:reconciliation|recon)\b/.test(t)) return { path: "/accounting/bank-reconciliation" };
+
+  // Documents
   if (/\b(vendor\s*invoices?|supplier\s*invoices?)\b/.test(t)) return { path: "/vendor-invoices" };
   if (/\bpurchase\s*quotations?\b/.test(t)) return { path: "/purchase-quotations" };
-  if (/\bproforma\s*invoices?\b/.test(t)) return { path: "/proforma-invoices" };
+  if (/\bproforma\s*invoices?\b|\bpi\b/.test(t)) return { path: "/proforma-invoices" };
   if (/\bpurchase\s*orders?\b/.test(t)) return { path: "/purchase-orders" };
-  if (/\bpoint\s*of\s*sale\b/.test(t)) return { path: "/point-of-sale" };
-  if (/\binvoices?\b/.test(t)) return { path: "/invoices" };
-  if (/\bquotations?\b|\bquotes?\b/.test(t)) return { path: "/quotations" };
   if (/\bdelivery\s*orders?\b/.test(t)) return { path: "/delivery-orders" };
   if (/\bsales\s*orders?\b/.test(t)) return { path: "/sales-orders" };
-  if (/\bemployees?\b|\bstaff\b|\bpayroll\b/.test(t)) return { path: "/employees" };
+  if (/\bcredit\s*notes?\b/.test(t)) return { path: "/credit-notes" };
+  if (/\bdebit\s*notes?\b/.test(t)) return { path: "/debit-notes" };
+  if (/\bpoint\s*of\s*sale\b|\bpos\b/.test(t)) return { path: "/point-of-sale" };
+  if (/\bbill\s*of\s*materials\b|\bbom\b/.test(t)) return { path: "/bill-of-materials" };
+  if (/\b(tax\s*)?invoices?\b/.test(t)) return { path: "/invoices" };
+  if (/\bquotations?\b|\bquotes?\b/.test(t)) return { path: "/quotations" };
+  if (/\b(grn|goods\s*received|goods\s*receipt(?:\s*notes?)?)\b/.test(t)) return { path: "/grn" };
+
+  // Operations
+  if (/\bemployees?\b|\bstaff\b/.test(t)) return { path: "/employees" };
+  if (/\bpayroll\b/.test(t)) return { path: "/payroll" };
+  if (/\blicenses?\b/.test(t)) return { path: "/licenses" };
+  if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return { path: "/assets" };
+
+  // Directory
   if (/\bcustomers?\b/.test(t)) return { path: "/customers" };
   if (/\bvendors?\b|\bsuppliers?\b/.test(t)) return { path: "/vendors" };
-  if (/\bprojects?\b/.test(t)) return { path: "/projects" };
-  if (/\bstock\b|\binventory\b|\bcatalogue\b|\bcatalog\b|\bitem\s*master\b/.test(t)) return { path: "/stock" };
-  if (/\b(assets?|fixed\s*assets?)\b/.test(t)) return { path: "/assets" };
-  if (/\bgrn\b|\bgoods\s*received\b/.test(t)) return { path: "/grn" };
-  if (/\bdashboard\b|\bhome\b/.test(t)) return { path: "/dashboard" };
-  if (/\bsettings?\b/.test(t)) return { path: "/settings" };
+  if (/\b(sales\s*persons?|salespeople|sales\s*rep)\b/.test(t)) return { path: "/sales-persons" };
+  if (/\b(address\s*book|contacts?)\b/.test(t)) return { path: "/address-book" };
+
+  // Accounting
+  if (/\b(chart\s*of\s*accounts|coa)\b/.test(t)) return { path: "/accounting/chart-of-accounts" };
+  if (/\b(journal\s*entries|journals?)\b/.test(t)) return { path: "/accounting/journal-entries" };
+  if (/\b(general\s*ledger|ledger)\b/.test(t)) return { path: "/accounting/general-ledger" };
+  if (/\btrial\s*balance\b/.test(t)) return { path: "/accounting/trial-balance" };
+  if (/\bbalance\s*sheet\b/.test(t)) return { path: "/accounting/balance-sheet" };
+  if (/\b(profit\s*(?:and|&)\s*loss|p\s*(?:and|&)\s*l|income\s*statement)\b/.test(t)) return { path: "/accounting/profit-loss" };
+  if (/\bcash\s*flow\b/.test(t)) return { path: "/accounting/cash-flow" };
+  if (/\bincome\b/.test(t)) return { path: "/accounting/income" };
   if (/\bexpenses?\b/.test(t)) return { path: "/accounting/expenses" };
+  if (/\bgst\s*f5\b/.test(t)) return { path: "/accounting/gst-f5" };
+  if (/\bgst\s*f7\b/.test(t)) return { path: "/accounting/gst-f7" };
+  if (/\bgst\s*io\b/.test(t)) return { path: "/accounting/gst-io" };
+  if (/\b(withholding\s*tax|wht)\b/.test(t)) return { path: "/accounting/wht" };
+  if (/\beci\b/.test(t)) return { path: "/accounting/eci" };
+  if (/\bform\s*c-?s\b/.test(t)) return { path: "/accounting/form-cs" };
+  if (/\b(iras\s*audit\s*file|iaf)\b/.test(t)) return { path: "/accounting/iaf" };
+  if (/\b(ar\s*collections?|receivables?)\b/.test(t)) return { path: "/accounting/ar" };
+  if (/\bar\s*aging\b/.test(t)) return { path: "/accounting/ar-aging" };
+  if (/\bcustomer\s*statements?\b/.test(t)) return { path: "/accounting/customer-statement" };
+  if (/\b(ap\s*payments?|payables?)\b/.test(t)) return { path: "/accounting/ap" };
+  if (/\bap\s*aging\b/.test(t)) return { path: "/accounting/ap-aging" };
+  if (/\bvendor\s*statements?\b/.test(t)) return { path: "/accounting/vendor-statement" };
+
+  // System
+  if (/\b(user\s*management|users?|admin)\b/.test(t)) return { path: "/admin" };
+  if (/\baudit\s*logs?\b/.test(t)) return { path: "/audit-log" };
+  if (/\bsettings?\b/.test(t)) return { path: "/settings" };
+  if (/\bbackups?\b/.test(t)) return { path: "/settings/backups" };
+  if (/\breport\s*(?:templates?|design(?:er)?)\b/.test(t)) return { path: "/report-templates" };
+  if (/\bprojects?\b/.test(t)) return { path: "/projects" };
+  if (/\bdashboard\b|\bhome\b/.test(t)) return { path: "/dashboard" };
+  if (/\b(stock|inventory)\b/.test(t)) return { path: "/stock" };
   if (/\baccounting\b/.test(t)) return { path: "/accounting/chart-of-accounts" };
   return null;
 }
 
 const PATH_LABELS: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/inventory/warehouses": "Warehouses",
+  "/warehouses": "Warehouses",
+  "/inventory/stock-transfer": "Stock Transfer",
+  "/stock-transfer": "Stock Transfer",
+  "/inventory/reports": "Stock Reports",
+  "/inventory/sales-person-wise-report": "Sales Person Wise Report",
+  "/inventory/batch-expiry": "Batch & Expiry",
+  "/stock": "Item Master",
+  "/stock/new": "New Stock Item",
   "/invoices": "Invoices",
   "/invoices/new": "New Invoice",
   "/quotations": "Quotations",
@@ -459,26 +597,64 @@ const PATH_LABELS: Record<string, string> = {
   "/purchase-quotations/new": "New Purchase Quotation",
   "/proforma-invoices": "Proforma Invoices",
   "/proforma-invoices/new": "New Proforma Invoice",
-  "/employees": "Employees",
-  "/employees/new": "New Employee",
-  "/assets": "Fixed Assets",
-  "/assets/new": "New Asset",
-  "/stock": "Item Master",
-  "/stock/new": "New Stock Item",
-  "/grn": "GRN",
-  "/settings": "Settings",
+  "/credit-notes": "Credit Notes",
+  "/credit-notes/new": "New Credit Note",
+  "/debit-notes": "Debit Notes",
+  "/debit-notes/new": "New Debit Note",
+  "/point-of-sale": "Point of Sale",
+  "/bill-of-materials": "Bill of Materials",
+  "/multi-price-level": "Multi Price Level",
+  "/grn": "Goods Receipt Notes",
+  "/grn/new": "New Goods Receipt Note",
   "/vendor-invoices": "Vendor Invoices",
   "/vendor-invoices/new": "New Vendor Invoice",
   "/customers": "Customers",
   "/customers?vedaNew=1": "New Customer",
   "/vendors": "Vendors",
   "/vendors?vedaNew=1": "New Vendor",
+  "/sales-persons": "Sales Persons",
+  "/address-book": "Address Book",
+  "/assets": "Fixed Assets",
+  "/assets/new": "New Asset",
+  "/licenses": "Licenses",
+  "/licenses/new": "New License",
+  "/employees": "Employees",
+  "/employees/new": "New Employee",
+  "/payroll": "Payroll",
+  "/accounting/chart-of-accounts": "Chart of Accounts",
+  "/accounting/bank-reconciliation": "Bank Reconciliation",
+  "/accounting/journal-entries": "Journal Entries",
+  "/accounting/journal-entries/new": "New Journal Entry",
+  "/accounting/profit-loss": "Profit & Loss",
+  "/accounting/cash-flow": "Cash Flow Statement",
+  "/accounting/iaf": "IRAS Audit File",
+  "/accounting/gst-f5": "GST F5 Return",
+  "/accounting/gst-f7": "GST F7 Amended Return",
+  "/accounting/gst-io": "GST IO Listing",
+  "/accounting/wht": "Withholding Tax",
+  "/accounting/eci": "ECI",
+  "/accounting/form-cs": "Form C-S",
+  "/accounting/ar": "AR Collections",
+  "/accounting/ar-aging": "AR Aging",
+  "/accounting/ap": "AP Payments",
+  "/accounting/ap-aging": "AP Aging",
+  "/accounting/balance-sheet": "Balance Sheet",
+  "/accounting/trial-balance": "Trial Balance",
+  "/accounting/customer-statement": "Customer Statement",
+  "/accounting/vendor-statement": "Vendor Statement",
+  "/accounting/general-ledger": "General Ledger",
+  "/accounting/expenses": "Expenses",
+  "/accounting/expenses/new": "New Expense",
+  "/accounting/income": "Income",
+  "/accounting/income/new": "New Income",
   "/projects": "Projects",
   "/projects/new": "New Project",
-  "/accounting": "Accounting",
-  "/accounting/gst-f5": "GST F5",
-  "/expenses": "Expenses",
-  "/admin/users": "Admin — Users",
+  "/admin": "User Management",
+  "/admin/users": "User Management",
+  "/audit-log": "Audit Log",
+  "/settings": "Settings",
+  "/settings/backups": "Backup & Restore",
+  "/report-templates": "Report Templates",
 };
 
 const SUGGESTIONS = [
@@ -1940,7 +2116,13 @@ export function AgentPanel() {
           unlockVedaModules();
           if (quick.prefill) storeVedaPrefill(quick.prefill);
           navigate(normalizeNavPath(quickPath));
-          if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
+          if (isGuidedCreatePath(quickPath)) {
+            guidedFormPathRef.current = quickPath;
+          } else {
+            guidedEmployeeRef.current = null;
+            guidedSalesOrderRef.current = null;
+            guidedFormPathRef.current = null;
+          }
           setConvState("speaking");
           const label = PATH_LABELS[quickPath] || quickPath;
           const rawParty = quick.spokenParty || quick.prefill?.customerName || quick.prefill?.vendorName || quick.prefill?.name;
@@ -2326,7 +2508,13 @@ export function AgentPanel() {
     unlockVedaModules();
     storeVedaPrefill(prefill);
     const normalized = normalizeNavPath(path);
-    if (isGuidedCreatePath(normalized)) guidedFormPathRef.current = normalized;
+    if (isGuidedCreatePath(normalized)) {
+      guidedFormPathRef.current = normalized;
+    } else {
+      guidedEmployeeRef.current = null;
+      guidedSalesOrderRef.current = null;
+      guidedFormPathRef.current = null;
+    }
     const label = PATH_LABELS[normalized] || reason || normalized.split("/").filter(Boolean).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
     setMessages(p => p.map(m =>
       m.role === "assistant" && !m.complete
@@ -2390,7 +2578,13 @@ export function AgentPanel() {
       setInput("");
       if (quick.prefill) storeVedaPrefill(quick.prefill);
       navigate(normalizeNavPath(quickPath));
-      if (isGuidedCreatePath(quickPath)) guidedFormPathRef.current = quickPath;
+      if (isGuidedCreatePath(quickPath)) {
+        guidedFormPathRef.current = quickPath;
+      } else {
+        guidedEmployeeRef.current = null;
+        guidedSalesOrderRef.current = null;
+        guidedFormPathRef.current = null;
+      }
       if (quick.prefill) {
         window.setTimeout(() => {
           dispatchFill(quick.prefill);
