@@ -846,7 +846,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
         : await apiRequest("POST", "/api/employee-payroll", payload);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee-payroll"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
@@ -854,8 +854,8 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
         title: "Success",
         description: editData?.id
           ? "Payroll updated successfully"
-          : Array.isArray(data)
-            ? `Payroll created for ${data.length} employees`
+          : Array.isArray(result)
+            ? `Payroll created for ${result.length} employees`
             : "Payroll created successfully",
       });
       onSuccess();
