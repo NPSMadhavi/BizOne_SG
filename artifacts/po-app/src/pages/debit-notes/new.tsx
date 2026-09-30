@@ -179,8 +179,8 @@ export default function DebitNoteNew() {
     form.setValue("items", mapInvoiceItemsToDn(inv.items || []));
     lastLoadedRef.current = inv.invNumber || "";
     toast({
-      title: "Invoice loaded",
-      description: `${inv.invNumber}: customer and stock line items filled automatically.`,
+      title: "Vendor invoice loaded",
+      description: `${inv.invNumber}: vendor and line items filled automatically.`,
     });
   }
 
@@ -191,22 +191,53 @@ export default function DebitNoteNew() {
 
     setLoadingInvoice(true);
     try {
-      const res = await fetch(`/api/invoices/by-number/${encodeURIComponent(invNumber)}`, {
-        credentials: "include",
-      });
+      const res = await fetch("/api/vendor-invoices", { credentials: "include" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
         toast({
-          title: "Invoice not found",
-          description: err.error || `No invoice matching "${invNumber}"`,
+          title: "Vendor invoice not found",
+          description: `Could not load vendor invoices`,
           variant: "destructive",
         });
         return;
       }
-      const inv = await res.json();
-      applyInvoiceToForm(inv);
+      const rows = await res.json();
+      const match = (Array.isArray(rows) ? rows : []).find(
+        (row: any) => String(row.piNumber || "").toLowerCase() === invNumber.toLowerCase()
+      );
+      if (!match) {
+        toast({
+          title: "Vendor invoice not found",
+          description: `No vendor invoice matching "${invNumber}"`,
+          variant: "destructive",
+        });
+        return;
+      }
+      // Prefer full detail (includes items) when available
+      let detail = match;
+      if (match.id != null) {
+        const detailRes = await fetch(`/api/vendor-invoices/${match.id}`, { credentials: "include" });
+        if (detailRes.ok) detail = await detailRes.json();
+      }
+      applyInvoiceToForm({
+        id: detail.id,
+        invNumber: detail.piNumber || "",
+        customerName: detail.vendorName || "",
+        customerAddress: detail.vendorAddress || null,
+        customerContact: detail.vendorContact || detail.contactPerson || null,
+        customerContactEmail: detail.vendorContactEmail || detail.contactEmail || null,
+        currency: detail.currency || "SGD",
+        paymentTerms: detail.paymentTerms || null,
+        notes: detail.notes || null,
+        subtotal: detail.subtotal,
+        discountAmount: detail.discountAmount,
+        tax: detail.tax ?? detail.gstAmount,
+        totalAmount: detail.totalAmount,
+        status: detail.status,
+        issueDate: detail.piDate || null,
+        items: Array.isArray(detail.items) ? detail.items : [],
+      });
     } catch {
-      toast({ title: "Failed to load invoice", variant: "destructive" });
+      toast({ title: "Failed to load vendor invoice", variant: "destructive" });
     } finally {
       setLoadingInvoice(false);
     }
@@ -345,6 +376,7 @@ export default function DebitNoteNew() {
                       <FormLabel>Reference Invoice No.</FormLabel>
                       <FormControl>
                         <InvoiceRefPicker
+                          source="vendor"
                           value={field.value || ""}
                           loading={loadingInvoice}
                           placeholder=""

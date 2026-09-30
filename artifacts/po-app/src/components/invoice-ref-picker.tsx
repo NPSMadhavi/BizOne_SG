@@ -24,15 +24,40 @@ export type InvoiceRefOption = {
   items?: any[];
 };
 
+export type InvoiceRefSource = "sales" | "vendor";
+
 interface InvoiceRefPickerProps {
   value: string;
   onChange: (invNumber: string) => void;
   onSelectInvoice: (invoice: InvoiceRefOption) => void;
   /** Called when user finishes typing (Enter / blur) without picking a list row */
   onCommitTyped?: (invNumber: string) => void;
+  /** sales = customer invoices (credit notes); vendor = vendor invoices (debit notes) */
+  source?: InvoiceRefSource;
   disabled?: boolean;
   loading?: boolean;
   placeholder?: string;
+}
+
+function mapVendorInvoiceToOption(row: any): InvoiceRefOption {
+  return {
+    id: row.id,
+    invNumber: row.piNumber || "",
+    customerName: row.vendorName || "",
+    customerAddress: row.vendorAddress || null,
+    customerContact: row.vendorContact || row.contactPerson || null,
+    customerContactEmail: row.vendorContactEmail || row.contactEmail || null,
+    currency: row.currency || "SGD",
+    paymentTerms: row.paymentTerms || null,
+    notes: row.notes || null,
+    subtotal: row.subtotal,
+    discountAmount: row.discountAmount,
+    tax: row.tax ?? row.gstAmount,
+    totalAmount: row.totalAmount,
+    status: row.status,
+    issueDate: row.piDate || null,
+    items: Array.isArray(row.items) ? row.items : [],
+  };
 }
 
 export function InvoiceRefPicker({
@@ -40,6 +65,7 @@ export function InvoiceRefPicker({
   onChange,
   onSelectInvoice,
   onCommitTyped,
+  source = "sales",
   disabled,
   loading,
   placeholder = "Type or search invoice no…",
@@ -49,10 +75,19 @@ export function InvoiceRefPicker({
   const [highlighted, setHighlighted] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const skipBlurCommit = useRef(false);
+  const isVendor = source === "vendor";
 
   const { data: invoices = [], isLoading } = useQuery<InvoiceRefOption[]>({
-    queryKey: ["invoices-for-cn-ref", selectedCompany?.id],
+    queryKey: [isVendor ? "vendor-invoices-for-dn-ref" : "invoices-for-cn-ref", selectedCompany?.id],
     queryFn: async () => {
+      if (isVendor) {
+        const res = await fetch("/api/vendor-invoices", { credentials: "include" });
+        if (!res.ok) return [];
+        const rows = await res.json();
+        return (Array.isArray(rows) ? rows : [])
+          .filter((row: any) => row.status !== "cancelled" && row.status !== "void")
+          .map(mapVendorInvoiceToOption);
+      }
       const res = await fetch("/api/invoices", { credentials: "include" });
       if (!res.ok) return [];
       const rows = await res.json();
@@ -135,6 +170,9 @@ export function InvoiceRefPicker({
     }
   }
 
+  const emptyLabel = isVendor ? "No vendor invoices found" : "No invoices found";
+  const loadingLabel = isVendor ? "Loading vendor invoices…" : "Loading invoices…";
+
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative w-full">
@@ -143,7 +181,7 @@ export function InvoiceRefPicker({
           disabled={disabled || loading}
           placeholder={placeholder}
           className="h-10 w-full pr-10 text-sm"
-          autoComplete="off"
+          autoComplete="nope"
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             onChange(e.target.value);
@@ -171,7 +209,7 @@ export function InvoiceRefPicker({
             e.preventDefault();
             setOpen((o) => !o);
           }}
-          aria-label="Toggle invoice list"
+          aria-label={isVendor ? "Toggle vendor invoice list" : "Toggle invoice list"}
         >
           {loading || isLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -184,12 +222,12 @@ export function InvoiceRefPicker({
       {open && (
         <div className="absolute z-50 mt-1 w-full min-w-[280px] max-h-64 overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md">
           {isLoading ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">Loading invoices…</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">{loadingLabel}</div>
           ) : filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">
               {value.trim()
                 ? "No match — keep typing and press Enter to load"
-                : "No invoices found"}
+                : emptyLabel}
             </div>
           ) : (
             <ul className="py-1">

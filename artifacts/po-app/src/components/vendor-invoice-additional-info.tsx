@@ -48,7 +48,7 @@ export function VendorInvoiceAdditionalInfo({
           <Textarea
             value={customerNote}
             onChange={(e) => onCustomerNoteChange(e.target.value)}
-            placeholder="Note for the customer..."
+            placeholder=""
             rows={4}
             className="min-h-[96px] resize-y"
           />
@@ -58,7 +58,7 @@ export function VendorInvoiceAdditionalInfo({
           <Textarea
             value={deliveryInstructions}
             onChange={(e) => onDeliveryInstructionsChange(e.target.value)}
-            placeholder="Special instructions for delivery..."
+            placeholder=""
             rows={4}
             className="min-h-[96px] resize-y"
           />
@@ -68,7 +68,7 @@ export function VendorInvoiceAdditionalInfo({
           <Textarea
             value={termsAndConditions}
             onChange={(e) => onTermsAndConditionsChange(e.target.value)}
-            placeholder="Terms & conditions..."
+            placeholder=""
             rows={4}
             className="min-h-[96px] resize-y"
           />

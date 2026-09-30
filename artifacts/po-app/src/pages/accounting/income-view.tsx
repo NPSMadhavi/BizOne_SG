@@ -242,7 +242,7 @@ export default function IncomeView() {
               <TrendingUp className="h-5 w-5" />{record.payerName}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {fmtDate(record.incomeDate)} · {CATEGORY_LABELS[record.category] ?? record.category}
+              {fmtDate(record.incomeDate)} · {record.accountName || CATEGORY_LABELS[record.category] || record.category}
             </p>
           </div>
         </div>
@@ -296,8 +296,7 @@ export default function IncomeView() {
               <Row label="Date" value={fmtDate(record.incomeDate)} />
               <Row label="Payer" value={record.payerName} />
               <Row label="Description" value={record.description} />
-              <Row label="Category" value={CATEGORY_LABELS[record.category] ?? record.category} />
-              {record.accountName && <Row label="Revenue Account" value={record.accountName} />}
+              <Row label="Ledger" value={record.accountName || CATEGORY_LABELS[record.category] || record.category} />
               {record.reference && <Row label="Reference" value={record.reference} />}
               {record.paymentMethod && <Row label="Payment Method" value={PAYMENT_LABELS[record.paymentMethod] ?? record.paymentMethod} />}
               {record.notes && (

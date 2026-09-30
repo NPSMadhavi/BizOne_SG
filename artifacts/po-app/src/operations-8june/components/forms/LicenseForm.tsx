@@ -543,11 +543,13 @@ export default function LicenseForm({
                                   <FormControl>
                                     <div className="relative flex w-full items-center">
                                       <Input
-                                        type={showLicenseKey ? "text" : "password"}
-                                        placeholder=""
                                         {...field}
+                                        type="text"
+                                        name="license_key_value"
+                                        autoComplete="nope"
+                                        placeholder=""
                                         value={field.value || ""}
-                                        className="w-full pr-10 font-mono text-sm"
+                                        className={`w-full pr-10 font-mono text-sm ${showLicenseKey ? "" : "[-webkit-text-security:disc]"}`}
                                         onChange={(e) => {
                                           // Auto-format license key to uppercase and add hyphens
                                           let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');

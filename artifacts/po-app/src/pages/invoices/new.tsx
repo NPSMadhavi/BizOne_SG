@@ -795,7 +795,7 @@ export default function InvoiceNew() {
                                   newAddrs[idx] = e.target.value;
                                   field.onChange(newAddrs.join("\n\n"));
                                 }}
- placeholder={`Ship-to Address #${idx + 1}`}
+ placeholder=""
  className="resize-none pr-8 text-sm"
  rows={2}
                               />

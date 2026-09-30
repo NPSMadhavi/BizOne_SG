@@ -78,7 +78,12 @@ export function AuthFormPanel({
         </div>
 
         {mode === "signin" ? (
-          <form onSubmit={signInForm.handleSubmit(onSignIn)} className="space-y-5">
+          <form
+            onSubmit={signInForm.handleSubmit(onSignIn)}
+            className="space-y-5"
+            data-allow-autofill="true"
+            autoComplete="on"
+          >
             <div className="space-y-2">
               <Label htmlFor="signin-email" className="text-sm font-semibold text-[#111827]">
                 Email Address<RequiredMark />
@@ -90,6 +95,7 @@ export function AuthFormPanel({
                   {...signInForm.register("email")}
                   type="email"
                   autoComplete="email"
+                  data-allow-autofill="true"
                   placeholder="Enter your email address"
                   className={inputClassName}
                 />
@@ -110,6 +116,7 @@ export function AuthFormPanel({
                   {...signInForm.register("password")}
                   type={showSignInPassword ? "text" : "password"}
                   autoComplete="current-password"
+                  data-allow-autofill="true"
                   placeholder="Type your password"
                   className={`${inputClassName} pr-10`}
                 />
@@ -172,7 +179,12 @@ export function AuthFormPanel({
             </p>
           </form>
         ) : (
-          <form onSubmit={signUpForm.handleSubmit(onSignUp)} className="space-y-4">
+          <form
+            onSubmit={signUpForm.handleSubmit(onSignUp)}
+            className="space-y-4"
+            data-allow-autofill="true"
+            autoComplete="on"
+          >
             <div className="space-y-2">
               <Label htmlFor="signup-full-name" className="text-sm font-semibold text-[#111827]">
                 Full Name<RequiredMark />
@@ -183,6 +195,7 @@ export function AuthFormPanel({
                   id="signup-full-name"
                   {...signUpForm.register("fullName")}
                   autoComplete="name"
+                  data-allow-autofill="true"
                   placeholder="Enter your full name"
                   className={inputClassName}
                 />
@@ -203,6 +216,7 @@ export function AuthFormPanel({
                   {...signUpForm.register("email")}
                   type="email"
                   autoComplete="email"
+                  data-allow-autofill="true"
                   placeholder="Enter your email address"
                   className={inputClassName}
                 />
@@ -223,6 +237,7 @@ export function AuthFormPanel({
                   {...signUpForm.register("phoneNumber")}
                   type="tel"
                   autoComplete="tel"
+                  data-allow-autofill="true"
                   placeholder="Enter your phone number"
                   className={inputClassName}
                 />
@@ -243,6 +258,7 @@ export function AuthFormPanel({
                   {...signUpForm.register("password")}
                   type={showSignUpPassword ? "text" : "password"}
                   autoComplete="new-password"
+                  data-allow-autofill="true"
                   placeholder="Create a password"
                   className={`${inputClassName} pr-10`}
                 />
@@ -271,6 +287,7 @@ export function AuthFormPanel({
                   {...signUpForm.register("confirmPassword")}
                   type={showConfirmPassword ? "text" : "password"}
                   autoComplete="new-password"
+                  data-allow-autofill="true"
                   placeholder="Confirm your password"
                   className={`${inputClassName} pr-10`}
                 />

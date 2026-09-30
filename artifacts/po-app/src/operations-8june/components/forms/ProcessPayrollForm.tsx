@@ -542,7 +542,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 min-w-0 max-w-2xl">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
               <section className="space-y-4">
                 <ModalSectionHeader icon={User} title="Employee & Pay Period" />
                 <div className="space-y-4 max-w-2xl">

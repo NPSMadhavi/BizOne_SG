@@ -4,7 +4,6 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -232,14 +231,13 @@ export default function JournalEntryNew() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Journal Entry</h1>
-          <p className="text-muted-foreground mt-1">Create a balanced double-entry journal.</p>
         </div>
       </div>
 
       {/* Entry details */}
       <Card>
         <CardHeader className="pb-4"><CardTitle className="text-lg">Entry Details</CardTitle></CardHeader>
-        <CardContent className="grid sm:grid-cols-2 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-start">
           <div className="space-y-1.5">
             <Label htmlFor="entry-date">Entry Date <span className="text-destructive">*</span></Label>
             <Input
@@ -250,15 +248,13 @@ export default function JournalEntryNew() {
               onChange={e => setEntryDate(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="space-y-1.5">
             <Label htmlFor="entry-desc">Description <span className="text-destructive">*</span></Label>
-            <Textarea
+            <Input
               id="entry-desc"
               placeholder="e.g. Record sales revenue for June 2026"
               value={description}
               onChange={e => setDescription(e.target.value)}
-              rows={2}
-              className="resize-none"
             />
           </div>
         </CardContent>

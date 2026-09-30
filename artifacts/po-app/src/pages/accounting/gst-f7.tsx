@@ -172,9 +172,7 @@ export default function GstF7Page() {
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-border">
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1">IRAS Singapore</p>
           <h1 className="text-2xl font-bold text-[#2563EB]">GST F7 — Amended Return</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Use this to correct a previously submitted F5 return</p>
         </div>
         {data && (
           <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading}>

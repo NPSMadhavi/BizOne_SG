@@ -96,7 +96,7 @@ export function ManagementSearchBar({
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-white pl-10 pr-3 text-sm text-gray-700 outline-none transition-all duration-200 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+        className="h-11 w-full rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] pl-10 pr-3 text-sm text-gray-700 outline-none transition-all duration-200 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
         style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}
       />
     </div>

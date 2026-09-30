@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
-import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft, Upload, FileInput } from "lucide-react";
+import { Trash2, Save, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, ArrowLeft, Upload } from "lucide-react";
 import { cn, plainText } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -41,7 +41,6 @@ import { StockItemPickerDialog, type StockItemSelection } from "@/components/sto
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
-import { ImportFromPurchaseQuotationDialog } from "@/components/import-from-purchase-quotation-dialog";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
@@ -100,7 +99,6 @@ export default function PurchaseOrderNew() {
   const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof poSchema> | null>(null);
   const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importQuotationOpen, setImportQuotationOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [qtPrefilled, setQtPrefilled] = useState(false);
 
@@ -366,8 +364,8 @@ export default function PurchaseOrderNew() {
       amount: (item as any).type === "section" ? 0 : item.qty * item.unitPrice,
       isStockItem: item.isStockItem === true || Number((item as any).stockItemId) > 0,
       stockItemId: Number((item as any).stockItemId) > 0 ? Number((item as any).stockItemId) : undefined,
-      warehouseId: undefined,
-      warehouseName: undefined,
+      warehouseId: Number((item as any).warehouseId) > 0 ? Number((item as any).warehouseId) : undefined,
+      warehouseName: (item as any).warehouseName || undefined,
     }));
 
     return new Promise<any>((resolve, reject) => {
@@ -684,7 +682,7 @@ export default function PurchaseOrderNew() {
  render={({ field }) => (
                     <FormItem>
                       <FormLabel>Customer PO Ref No.</FormLabel>
-                      <FormControl><Input placeholder="CUST-PO-2024-001" {...field} /></FormControl>
+                      <FormControl><Input placeholder="" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -695,7 +693,7 @@ export default function PurchaseOrderNew() {
  render={({ field }) => (
                     <FormItem>
                       <FormLabel>Sales Quote Reference No.</FormLabel>
-                      <FormControl><Input placeholder="SQ-2024-001" {...field} /></FormControl>
+                      <FormControl><Input placeholder="" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -782,9 +780,6 @@ export default function PurchaseOrderNew() {
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append({ type: "section", sectionLabel: "", sectionAlign: "left", partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" })}>
                     <Layers className="h-3 w-3" /> Add Section
-                  </Button>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportQuotationOpen(true)}>
-                    <FileInput className="h-3 w-3" /> Import from Quotation
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/40 hover:bg-primary/5" onClick={() => setImportOpen(true)}>
                     <Upload className="h-3 w-3" /> Import from PDF/Excel
@@ -979,7 +974,7 @@ export default function PurchaseOrderNew() {
                       <FormItem>
                         <FormLabel className="text-muted-foreground">Additional Notes</FormLabel>
                         <FormControl>
-                          <RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="Any special instructions or terms..." className="min-h-[96px]" />
+                          <RichTextEditor value={field.value ?? ""} onChange={field.onChange} placeholder="" className="min-h-[96px]" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1065,29 +1060,6 @@ export default function PurchaseOrderNew() {
         }}
       />
 
-      <ImportFromPurchaseQuotationDialog
-        open={importQuotationOpen}
-        onClose={() => setImportQuotationOpen(false)}
-        onImport={(imported) => {
-          const blankItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", uom: "", description: "", qty: 1, unitPrice: 0, isStockItem: false, itemImage: "" };
-          const newItems = imported
-            .filter((it) => it.type !== "section")
-            .map((it) => ({
-              ...blankItem,
-              partNumber: it.partNumber || "",
-              description: it.description || "",
-              qty: it.qty || 1,
-              uom: it.uom || "",
-              unitPrice: it.unitPrice || 0,
-            }));
-          const current = form.getValues("items");
-          const kept = current.filter((i) => {
-            if (i.type === "section") return !!String(i.sectionLabel || "").trim();
-            return !!(String(i.partNumber || "").trim() || String(i.description || "").trim() || Number(i.unitPrice));
-          });
-          form.setValue("items", [...kept, ...newItems]);
-        }}
-      />
       <ImportItemsDialog
  open={importOpen}
  onClose={() => setImportOpen(false)}
@@ -1112,8 +1084,9 @@ export default function PurchaseOrderNew() {
  open={stockPickerIndex !== null}
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
  mode="receive"
-        showWarehouse={false}
- onSelect={({ item, qty }: StockItemSelection) => {
+        showWarehouse
+        requireWarehouse
+ onSelect={({ item, qty, warehouseId, warehouseName }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
           form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
@@ -1121,8 +1094,8 @@ export default function PurchaseOrderNew() {
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "pcs");
           form.setValue(`items.${stockPickerIndex}.isStockItem`, true);
           form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
-          form.setValue(`items.${stockPickerIndex}.warehouseId`, undefined as any);
-          form.setValue(`items.${stockPickerIndex}.warehouseName`, "");
+          form.setValue(`items.${stockPickerIndex}.warehouseId`, warehouseId ?? (undefined as any));
+          form.setValue(`items.${stockPickerIndex}.warehouseName`, warehouseName || "");
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}

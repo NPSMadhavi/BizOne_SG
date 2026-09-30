@@ -41,7 +41,6 @@ import {
   type StockWiseRow,
 } from "./inventory-report-export";
 import {
-  Bookmark,
   LayoutGrid,
   List,
   ChevronRight,
@@ -407,7 +406,6 @@ export default function ReportsPage() {
 
   const [filters, setFilters] = useState<Filters>(() => defaultFilters());
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [savedOpen, setSavedOpen] = useState(false);
   const [recent, setRecent] = useState<RecentReport[]>(() => loadJson(RECENT_KEY, []));
   const [activeReport, setActiveReport] = useState<ReportId | null>(null);
   const [previewRows, setPreviewRows] = useState<Record<string, string | number>[]>([]);
@@ -678,15 +676,8 @@ ${styles}
   return (
     <div className="space-y-6 pb-8">
       {/* Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Stock Reports</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" className="gap-2" onClick={() => setSavedOpen(true)}>
-            <Bookmark className="h-4 w-4" /> Saved Reports
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Stock Reports</h1>
       </div>
 
       {/* Filters */}
@@ -949,38 +940,6 @@ ${styles}
               />
             )}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={savedOpen} onOpenChange={setSavedOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Saved / Recent Reports</DialogTitle>
-          </DialogHeader>
-          {recent.length === 0 ? (
-            <p className="text-sm text-[#6B7280]">No saved reports yet.</p>
-          ) : (
-            <div className="max-h-[50vh] space-y-2 overflow-auto">
-              {recent.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-left text-sm hover:bg-[#F9FAFB]"
-                  onClick={() => {
-                    setSavedOpen(false);
-                    const def = REPORTS.find((x) => x.id === r.reportId);
-                    if (def) openReport(def);
-                  }}
-                >
-                  <div>
-                    <p className="font-medium text-[#111827]">{r.reportName}</p>
-                    <p className="text-xs text-[#6B7280]">{formatStamp(r.generatedOn)} · {r.generatedBy}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-[#9CA3AF]" />
-                </button>
-              ))}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </div>

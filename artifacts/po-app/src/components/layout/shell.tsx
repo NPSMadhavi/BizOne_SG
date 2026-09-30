@@ -88,6 +88,7 @@ import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
 import singaporeFlag from "../../assets/flag-for-singapore.png";
 import { AgentPanel } from "@/components/agent-panel";
 import { cn } from "@/lib/utils";
+import { GlobalSearch } from "@/components/global-search";
 
 // ── Sidebar collapse context ──────────────────────────────────────────────────
 // true = collapsed icon-rail; false = full expanded sidebar
@@ -998,6 +999,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       {/* ── Main content ─────────────────────────────────────── */}
       <main className="flex-1 min-w-0 p-4 md:p-6 xl:p-8 overflow-auto">
+        <GlobalSearch />
         {children}
       </main>
       <AgentPanel />

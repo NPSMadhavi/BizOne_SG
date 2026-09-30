@@ -149,7 +149,7 @@ export default function Login() {
   const loading = loginMutation.isPending;
 
   const loginForm = (
-    <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+    <form className="flex flex-col gap-5" onSubmit={handleSubmit} data-allow-autofill="true" autoComplete="on">
       <label className="flex min-w-0 flex-col gap-2">
         <span className={authMobileLabelClass}>Email Address<RequiredMark /></span>
         <input
@@ -159,6 +159,7 @@ export default function Login() {
           value={form.email}
           onChange={handleChange}
           autoComplete="email"
+          data-allow-autofill="true"
           className={authMobileInputClass}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
@@ -174,6 +175,7 @@ export default function Login() {
             value={form.password}
             onChange={handleChange}
             autoComplete="current-password"
+            data-allow-autofill="true"
             className={authMobilePasswordInputClass}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />

@@ -318,7 +318,7 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
             </SheetHeader>
 
             {/* Form Content - Scrollable Area */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 pb-24">
+            <div className="flex-1 overflow-y-auto px-6 py-6 pb-24 [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 
                 {/* Employee Selection & Pay Period */}

@@ -511,24 +511,14 @@ export default function Admin() {
           key={mode === "create" ? "add-user-form" : `edit-user-${editingUser?.id ?? "x"}`}
           className="p-6 space-y-6 border-[#E5E7EB] shadow-sm"
         >
-          {/* Hidden decoys absorb browser autofill of the logged-in admin credentials */}
-          <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0">
-            <input type="text" name="prevent-autofill-user" autoComplete="username" tabIndex={-1} readOnly />
-            <input type="password" name="prevent-autofill-pass" autoComplete="current-password" tabIndex={-1} readOnly />
-          </div>
-
+          {/* Hidden decoys removed — they primed Chrome password/history UI */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="user-email">Email</Label>
               <Input
                 id="user-email"
-                name="new-user-email"
                 type="text"
                 inputMode="email"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
                 placeholder="name@company.com"
                 value={form.username}
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
@@ -542,12 +532,11 @@ export default function Admin() {
               </Label>
               <Input
                 id="user-password"
-                name="new-user-password"
-                type="password"
-                autoComplete="new-password"
+                type="text"
                 placeholder={mode === "edit" ? "••••••••" : "Min 6 characters"}
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                className="[-webkit-text-security:disc]"
               />
             </div>
 

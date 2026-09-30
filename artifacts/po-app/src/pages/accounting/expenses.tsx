@@ -165,7 +165,6 @@ export default function ExpensesList() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2"><ReceiptText className="h-6 w-6" /> Expenses</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Singapore IRAS-compliant expense recording</p>
         </div>
         <Button onClick={() => setLocation("/accounting/expenses/new")}>
           <Plus className="h-4 w-4 mr-2" /> New Expense

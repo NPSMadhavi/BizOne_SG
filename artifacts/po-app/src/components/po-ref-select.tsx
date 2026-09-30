@@ -12,7 +12,7 @@ interface PORefSelectProps {
   placeholder?: string;
 }
 
-export function PORefSelect({ value, onChange, placeholder = "e.g. PO-0001" }: PORefSelectProps) {
+export function PORefSelect({ value, onChange, placeholder = "" }: PORefSelectProps) {
   const [open, setOpen] = useState(false);
   const { data: pos = [] } = useListPurchaseOrders();
   const allPoNumbers: string[] = (pos as any[]).map((po: any) => po.poNumber).filter(Boolean);

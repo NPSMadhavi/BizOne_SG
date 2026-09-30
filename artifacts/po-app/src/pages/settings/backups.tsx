@@ -736,7 +736,7 @@ export default function SettingsBackupsPage() {
                     disabled={restoreMut.isPending}
                     onChange={(e) => setConfirmPhrase(e.target.value)}
                     placeholder="RESTORE"
-                    autoComplete="off"
+                    autoComplete="nope"
                   />
                 </div>
               )}

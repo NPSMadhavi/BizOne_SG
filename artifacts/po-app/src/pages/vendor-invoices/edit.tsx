@@ -432,7 +432,7 @@ export default function VendorInvoiceEdit() {
           <CardTitle className="text-lg">Invoice Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
             <div className="space-y-1.5">
               <Label>Vendor Invoice Number <span className="text-destructive">*</span></Label>
               <Input
@@ -444,6 +444,70 @@ export default function VendorInvoiceEdit() {
               <Label>Vendor Invoice Date</Label>
               <Input type="date" value={piDate} onChange={e => setPiDate(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                Expense Account (GL)
+              </Label>
+              {(() => {
+                const selectedAccount = expenseAccounts.find((a: any) => String(a.id) === expenseAccountId);
+                return (
+                  <Popover modal={false} open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={expenseAccountPickerOpen}
+                        className={cn("w-full justify-between font-normal text-left h-9 px-3", !selectedAccount && "text-muted-foreground")}
+                      >
+                        <span className="truncate">
+                          {selectedAccount
+                            ? <><span className="font-mono text-xs mr-2 opacity-60">{selectedAccount.code}</span>{selectedAccount.name}</>
+                            : "— None (no journal entry) —"}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[420px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search expense accounts…" className="h-9" />
+                        <CommandList>
+                          <CommandEmpty>No account found.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="__none__"
+                              onSelect={() => { setExpenseAccountId("none"); setExpenseAccountPickerOpen(false); }}
+                              className="italic text-muted-foreground"
+                            >
+                              — None (no journal entry) —
+                              {expenseAccountId === "none" && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
+                            </CommandItem>
+                          </CommandGroup>
+                          <CommandGroup heading="Expense Accounts">
+                            {expenseAccounts.map((a: any) => (
+                              <CommandItem
+                                key={a.id}
+                                value={`${a.code} ${a.name}`}
+                                onSelect={() => { setExpenseAccountId(String(a.id)); setExpenseAccountPickerOpen(false); }}
+                                className="gap-2"
+                              >
+                                <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{a.code}</span>
+                                <span className="flex-1">{a.name}</span>
+                                {String(a.id) === expenseAccountId && <Check className="h-3.5 w-3.5 shrink-0" />}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                );
+              })()}
+              {expenseAccountId && expenseAccountId !== "none" && (
+                <p className="text-xs text-emerald-700 flex items-center gap-1">
+                  ✓ Will auto-post: DR {expenseAccounts.find((a: any) => String(a.id) === expenseAccountId)?.name} / CR Accounts Payable
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="rounded-md border bg-muted/20 p-3 space-y-3">
@@ -454,7 +518,7 @@ export default function VendorInvoiceEdit() {
             </div>
             <div className="rounded-md border bg-background p-3 space-y-3">
               <div className="flex items-center justify-between"><div><Label>Payment reminders</Label><p className="text-xs text-muted-foreground">Daily reminders begin after the selected day.</p></div><Switch checked={remindersEnabled} onCheckedChange={setRemindersEnabled} /></div>
-              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Remaind after (days)</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(e.target.value)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="name@example.com" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
+              {remindersEnabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="space-y-1"><Label className="text-sm">Remaind after (days)</Label><Input type="number" min="0" value={reminderStartAfterDay} onChange={e => setReminderStartAfterDay(e.target.value)} /></div><div className="space-y-1"><Label className="text-sm">Additional email addresses</Label><div className="flex gap-2"><Input type="email" placeholder="" value={reminderEmail} onChange={e => setReminderEmail(e.target.value)} /><Button type="button" variant="outline" onClick={() => { if (reminderEmail.trim()) { setReminderEmails([...reminderEmails, reminderEmail.trim()]); setReminderEmail(""); } }}>Add email</Button></div>{reminderEmails.length > 0 && <p className="text-xs text-muted-foreground">{reminderEmails.join(", ")}</p>}</div></div>}
             </div>
           </div>
 
@@ -639,9 +703,6 @@ export default function VendorInvoiceEdit() {
                 </p>
               )}
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Currency</Label>
               <Select value={currency} onValueChange={setCurrency}>
@@ -653,6 +714,9 @@ export default function VendorInvoiceEdit() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>GST Treatment</Label>
               <Select value={gstTreatment} onValueChange={v => { setGstTreatment(v); if (v !== "standard_rated") setGstInclusive(false); }}>
@@ -672,6 +736,14 @@ export default function VendorInvoiceEdit() {
                   <Label htmlFor="gst-inclusive-edit" className="cursor-pointer font-normal text-sm">GST Inclusive</Label>
                 </div>
               )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder=""
+              />
             </div>
           </div>
           {selectedPoIds.length > 0 && (
@@ -710,81 +782,6 @@ export default function VendorInvoiceEdit() {
               )}
             </div>
           )}
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                Expense Account (GL)
-              </Label>
-              {(() => {
-                const selectedAccount = expenseAccounts.find((a: any) => String(a.id) === expenseAccountId);
-                return (
-                  <Popover modal={false} open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={expenseAccountPickerOpen}
-                        className={cn("w-full justify-between font-normal text-left h-9 px-3", !selectedAccount && "text-muted-foreground")}
-                      >
-                        <span className="truncate">
-                          {selectedAccount
-                            ? <><span className="font-mono text-xs mr-2 opacity-60">{selectedAccount.code}</span>{selectedAccount.name}</>
-                            : "— None (no journal entry) —"}
-                        </span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[420px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="e.g. 1.350000" className="h-9" />
-                        <CommandList>
-                          <CommandEmpty>No account found.</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value="__none__"
-                              onSelect={() => { setExpenseAccountId("none"); setExpenseAccountPickerOpen(false); }}
-                              className="italic text-muted-foreground"
-                            >
-                              — None (no journal entry) —
-                              {expenseAccountId === "none" && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
-                            </CommandItem>
-                          </CommandGroup>
-                          <CommandGroup heading="Expense Accounts">
-                            {expenseAccounts.map((a: any) => (
-                              <CommandItem
-                                key={a.id}
-                                value={`${a.code} ${a.name}`}
-                                onSelect={() => { setExpenseAccountId(String(a.id)); setExpenseAccountPickerOpen(false); }}
-                                className="gap-2"
-                              >
-                                <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{a.code}</span>
-                                <span className="flex-1">{a.name}</span>
-                                {String(a.id) === expenseAccountId && <Check className="h-3.5 w-3.5 shrink-0" />}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                );
-              })()}
-              {expenseAccountId && expenseAccountId !== "none" && (
-                <p className="text-xs text-emerald-700 flex items-center gap-1">
-                  ✓ Will auto-post: DR {expenseAccounts.find((a: any) => String(a.id) === expenseAccountId)?.name} / CR Accounts Payable
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Notes</Label>
-              <Input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Search expense accounts…"
-              />
-            </div>
-          </div>
 
         </CardContent>
       </Card>

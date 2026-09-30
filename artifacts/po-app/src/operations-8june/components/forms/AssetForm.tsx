@@ -39,10 +39,13 @@ import {
 import { DatePicker } from "@/operations-8june/components/ui/date-picker";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import {
+  downloadAssetAttachment,
   formatFileSize,
   loadAssetAttachments,
+  mimeFromFileName,
   readFileAsDataUrl,
   saveAssetAttachments,
+  viewAssetAttachment,
   type AssetAttachment,
 } from "@/operations-8june/lib/asset-attachments";
 import { 
@@ -52,6 +55,7 @@ import {
   Plus,
   Pencil,
   Upload,
+  Download,
   X
 } from "lucide-react";
 import {
@@ -121,7 +125,10 @@ function loadOptionRenames(target: CustomOptionTarget): Record<string, string> {
 function capitalizeStart(value: string): string {
   const text = value.trim();
   if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  return text
+    .split(/([\s_-]+)/)
+    .map((part) => (/^[\s_-]+$/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join("");
 }
 
 function applyOptionRenames(options: string[], renames: Record<string, string>): string[] {
@@ -375,14 +382,15 @@ function loadAssetFormDraft(): AssetFormDraft | null {
 }
 
 function EditableOptionItem({ option, onEdit }: { option: string; onEdit: () => void }) {
+  const label = capitalizeStart(option);
   return (
     <div className="relative">
       <SelectItem value={option.toLowerCase()} className="pr-14">
-        {option}
+        {label}
       </SelectItem>
       <button
         type="button"
-        title={`Edit ${option}`}
+        title={`Edit ${label}`}
         className="absolute right-8 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#6B7280] hover:bg-gray-100 hover:text-[#111827]"
         onPointerDown={(event) => {
           event.preventDefault();
@@ -760,7 +768,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
           id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
           name: file.name,
           size: file.size,
-          type: file.type,
+          type: file.type || mimeFromFileName(file.name),
           dataUrl: await readFileAsDataUrl(file),
         })),
       );
@@ -855,6 +863,14 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     const cleanedData = {
       ...data,
       tag: (data.tag && data.tag.trim()) || nextAssetTag || "AUTO",
+      type: capitalizeStart(data.type || ""),
+      category: capitalizeStart(data.category || ""),
+      manufacturer: data.manufacturer ? capitalizeStart(data.manufacturer) : data.manufacturer,
+      model: data.model ? capitalizeStart(data.model) : data.model,
+      condition: data.condition ? capitalizeStart(data.condition) : data.condition,
+      location: data.location ? capitalizeStart(data.location) : data.location,
+      assignedTo: data.assignedTo ? capitalizeStart(data.assignedTo) : data.assignedTo,
+      vendor: data.vendor ? capitalizeStart(data.vendor) : data.vendor,
       serial: data.serial?.trim() || "",
       purchaseDate: data.purchaseDate ? (data.purchaseDate instanceof Date ? data.purchaseDate.toISOString() : new Date(data.purchaseDate).toISOString()) : undefined,
       warrantyExpiry: data.warrantyExpiry ? (data.warrantyExpiry instanceof Date ? data.warrantyExpiry.toISOString() : new Date(data.warrantyExpiry).toISOString()) : undefined,
@@ -1444,20 +1460,28 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                     {attachments.map((attachment) => (
                       <li
                         key={attachment.id}
-                        className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-white px-3 py-2"
+                        className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2"
                       >
-                        <a
-                          href={attachment.dataUrl}
-                          download={attachment.name}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="min-w-0 flex-1 truncate text-sm font-medium text-[#2563EB] hover:underline"
+                        <button
+                          type="button"
+                          onClick={() => viewAssetAttachment(attachment)}
+                          className="min-w-0 flex-1 truncate text-left text-sm font-medium text-[#2563EB] hover:underline"
+                          title={`View ${attachment.name}`}
                         >
                           {attachment.name}
-                        </a>
+                        </button>
                         <span className="shrink-0 text-xs text-[#6B7280]">
                           {formatFileSize(attachment.size)}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => downloadAssetAttachment(attachment)}
+                          className="shrink-0 rounded p-1 text-[#6B7280] transition-colors hover:bg-[#EFF6FF] hover:text-[#2563EB]"
+                          aria-label={`Download ${attachment.name}`}
+                          title="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleRemoveAttachment(attachment.id)}

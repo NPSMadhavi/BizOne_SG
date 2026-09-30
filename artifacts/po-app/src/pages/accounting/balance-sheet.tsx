@@ -140,7 +140,6 @@ export default function BalanceSheetPage() {
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Financial Statements</p>
           <h1 className="text-2xl font-bold text-[#2563EB]">Balance Sheet</h1>
         </div>
         <div className="flex items-end gap-4 flex-wrap">

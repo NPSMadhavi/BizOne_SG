@@ -233,9 +233,7 @@ export default function GstF5Page() {
         {/* Header */}
         <div className="flex items-end justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">IRAS Singapore</p>
             <h1 className="text-2xl font-bold text-[#2563EB]">GST F5 Return</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">IRAS Form F5 — Singapore GST Reporting</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleBackfill} disabled={backfilling} title="Auto-fill exchange rates for non-SGD records" className="border-amber-200 text-amber-700 hover:text-amber-900 hover:bg-amber-50">

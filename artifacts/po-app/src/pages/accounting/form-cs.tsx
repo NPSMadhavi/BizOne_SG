@@ -194,9 +194,6 @@ export default function FormCsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Form C-S / Corporate Tax Return</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Annual corporate income tax return for Singapore companies
-          </p>
         </div>
         {/* YA selector */}
         <div className="flex gap-1.5 flex-wrap justify-end">

@@ -232,7 +232,7 @@ export default function PurchaseOrderView() {
           onClick={() => setLocation(`/grn/${linkedGrn.id}`)}
         >
           <ClipboardList className={iconClass} />
-          {linkedGrn.grnNumber}
+          Convert to GRN
         </Button>
       ) : ["confirmed", "sent"].includes(po.status) && (
         <Button
@@ -242,7 +242,7 @@ export default function PurchaseOrderView() {
           disabled={createGrnMutation.isPending}
         >
           <ClipboardList className={iconClass} />
-          {createGrnMutation.isPending ? "Creating..." : "GRN"}
+          {createGrnMutation.isPending ? "Creating..." : "Convert to GRN"}
         </Button>
       )}
       {["confirmed", "sent"].includes(po.status) && (

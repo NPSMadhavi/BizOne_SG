@@ -374,6 +374,11 @@ export default function EmployeeForm({
     reader.readAsDataURL(file);
   };
 
+  const handleScanRemove = (fieldName: "passportScan" | "visaScan" | "nricScan") => {
+    form.setValue(fieldName, "", { shouldDirty: true });
+    setScanNames((current) => ({ ...current, [fieldName]: "" }));
+  };
+
   const getFirstValidationMessage = (errors: FieldErrors<EmployeeFormData>): string => {
     const walk = (value: unknown): string | undefined => {
       if (!value || typeof value !== "object") return undefined;
@@ -617,7 +622,7 @@ export default function EmployeeForm({
                         disabled={!isPrNationality}
                       >
                         <FormControl>
-                          <SelectTrigger className={cn("w-full", !isPrNationality && "bg-[#F9FAFB]")}>
+                          <SelectTrigger className={cn("w-full", !isPrNationality && "bg-[#F8FAFC]")}>
                             <SelectValue placeholder="" />
                           </SelectTrigger>
                         </FormControl>
@@ -822,6 +827,7 @@ export default function EmployeeForm({
                                       ? `/api/employees/${employee.id}/files/passport`
                                       : undefined
                                   }
+                                  onRemove={() => handleScanRemove("passportScan")}
                                 />
                               </div>
                             </FormControl>
@@ -867,6 +873,7 @@ export default function EmployeeForm({
                                       ? `/api/employees/${employee.id}/files/visa`
                                       : undefined
                                   }
+                                  onRemove={() => handleScanRemove("visaScan")}
                                 />
                               </div>
                             </FormControl>
@@ -912,6 +919,7 @@ export default function EmployeeForm({
                                       ? `/api/employees/${employee.id}/files/nric`
                                       : undefined
                                   }
+                                  onRemove={() => handleScanRemove("nricScan")}
                                 />
                               </div>
                             </FormControl>

@@ -396,7 +396,7 @@ export function EmailSendDialog({
                   }}
                   placeholder={recipients.length === 0 ? "recipient@example.com" : "Add more..."}
                   className="flex-1 min-w-[160px] bg-transparent outline-none text-sm placeholder:text-muted-foreground"
-                  autoComplete="off"
+                  autoComplete="nope"
                 />
               </div>
               {showSuggestions && suggestions.length > 0 && (

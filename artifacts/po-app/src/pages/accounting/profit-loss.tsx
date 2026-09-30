@@ -119,7 +119,6 @@ export default function ProfitLoss() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Financial Statements</p>
           <h1 className="text-2xl font-bold text-[#2563EB]">Profit &amp; Loss</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Income Statement — {selectedCompany?.name}</p>
         </div>

@@ -44,11 +44,13 @@ import incomeRouter from "./income";
 import operationsRouter from "./operations";
 import inventoryRouter from "./inventory";
 import reportsRouter from "./reports";
+import globalSearchRouter from "./global-search";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(globalSearchRouter);
 router.use(usersRouter);
 router.use(rolesRouter);
 router.use(companiesRouter);

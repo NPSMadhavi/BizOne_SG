@@ -113,6 +113,17 @@ export default function IncomeList() {
     return true;
   }), [records, statusFilter, categoryFilter, search]);
 
+  const ledgerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+    for (const r of records) {
+      if (!r.category || seen.has(r.category)) continue;
+      seen.add(r.category);
+      opts.push({ value: r.category, label: CATEGORY_LABELS[r.category] ?? r.category });
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label));
+  }, [records]);
+
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
   const totalAmount = filtered.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
@@ -130,7 +141,6 @@ export default function IncomeList() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#2563EB] flex items-center gap-2"><TrendingUp className="h-6 w-6" /> Income</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Non-trade income — Singapore IRAS-aligned</p>
         </div>
         <Button onClick={() => setLocation("/accounting/income/new")}>
           <Plus className="h-4 w-4 mr-2" /> New Income Entry
@@ -167,10 +177,10 @@ export default function IncomeList() {
           <Input placeholder="Search payer or description…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[220px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
+          <SelectTrigger className="w-[220px]"><SelectValue placeholder="All Ledgers" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {Object.entries(CATEGORY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+            <SelectItem value="all">All Ledgers</SelectItem>
+            {ledgerOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -195,7 +205,7 @@ export default function IncomeList() {
                 <th className="text-left px-4 py-3 font-medium">Date</th>
                 <th className="text-left px-4 py-3 font-medium">Payer</th>
                 <th className="text-left px-4 py-3 font-medium">Description</th>
-                <th className="text-left px-4 py-3 font-medium">Category</th>
+                <th className="text-left px-4 py-3 font-medium">Ledger</th>
                 <th className="text-left px-4 py-3 font-medium">GST Treatment</th>
                 <th className="text-right px-4 py-3 font-medium">Amount (Net)</th>
                 <th className="text-right px-4 py-3 font-medium">GST</th>

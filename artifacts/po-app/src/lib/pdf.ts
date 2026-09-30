@@ -1502,7 +1502,10 @@ export async function generateSalesOrder_PDF(
   options?: { returnBase64?: boolean },
 ): Promise<string | void> {
   const qt = { ...so, qtNumber: so.soNumber || so.qtNumber || (so as any).qtNumber || "SO" };
-  return generateQuotation_PDF(qt as Quotation, company, settings, options);
+  return generateQuotation_PDF(qt as Quotation, company, settings, {
+    ...options,
+    titleOverride: "Sales Order",
+  });
 }
 
 export async function generatePurchaseQuotation_PDF(
@@ -1549,7 +1552,13 @@ export async function generateQuotation_PDF(qt: Quotation, company?: Company | n
   }
 
   doc.setFontSize(10); doc.setFont(PDF_FONT, "bold"); doc.setTextColor(0, 0, 0);
-  doc.text(options?.titleOverride ? "Vendor:" : "Quote To:", marginLeft, 67);
+  const partyLabel =
+    !options?.titleOverride || options.titleOverride === "Quotation"
+      ? "Quote To:"
+      : /purchase/i.test(options.titleOverride)
+        ? "Vendor:"
+        : "Bill To:";
+  doc.text(partyLabel, marginLeft, 67);
 
   const qtEntityBottom = renderEntityBlock(
     doc,
@@ -3381,7 +3390,7 @@ export async function generateCreditNote_PDF(
     lineNum++;
     const row: any[] = [String(lineNum)];
     if (hasPartNo) row.push(item.partNumber || "");
-    row.push(item.description || "");
+    row.push(htmlToText(item.description || ""));
     row.push(String(item.qty ?? 1));
     row.push(fmtMoney(cnCurrency, Number(item.unitPrice)));
     if (hasDiscount) row.push(Number(item.discount) > 0 ? `${item.discount}%` : "");
@@ -3530,7 +3539,7 @@ export async function generateDebitNote_PDF(
     lineNum++;
     const row: any[] = [String(lineNum)];
     if (hasPartNo) row.push(item.partNumber || "");
-    row.push(item.description || "");
+    row.push(htmlToText(item.description || ""));
     row.push(String(item.qty ?? 1));
     row.push(fmtMoney(dnCurrency, Number(item.unitPrice)));
     if (hasDiscount) row.push(Number(item.discount) > 0 ? `${item.discount}%` : "");

@@ -342,9 +342,6 @@ export default function WhtRegister() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Withholding Tax Register</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Singapore Section 45 WHT — track, calculate, and file WHT on payments to non-residents
-          </p>
         </div>
         <Button onClick={() => { setEditing(null); setShowNew(true); }} className="gap-2 shrink-0">
           <Plus className="h-4 w-4" />

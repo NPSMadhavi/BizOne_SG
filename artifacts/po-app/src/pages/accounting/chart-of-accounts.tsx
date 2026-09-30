@@ -179,8 +179,6 @@ export default function ChartOfAccounts() {
     accounts: paginatedItems.filter(a => a.type === type),
   })).filter(g => g.accounts.length > 0);
 
-  const totalActive = accounts.filter(a => a.isActive).length;
-
   if (error) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-center">
       <BookOpen className="h-12 w-12 text-muted-foreground/40" />
@@ -198,9 +196,6 @@ export default function ChartOfAccounts() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Chart of Accounts</h1>
-          <p className="text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `${totalActive} active account${totalActive !== 1 ? "s" : ""}`}
-          </p>
         </div>
         {canManage && (
           <Button className="gap-2" onClick={openAdd}>
