@@ -17,7 +17,7 @@
  * All functions are idempotent (safe to call multiple times).
  */
 
-import { db, accountsTable, journalEntriesTable, journalLinesTable } from "@workspace/db";
+import { db, accountsTable, journalEntriesTable, journalLinesTable, vendorInvoicesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
 import { assertPeriodWritable } from "./financial-year.js";
@@ -35,6 +35,33 @@ async function getAccountById(id: number) {
   return acct ?? null;
 }
 
+async function resolveVendorDebitAccount(pi: {
+  id: number;
+  companyId: number;
+  expenseAccountId?: number | null;
+  items?: Array<{ stockItemId?: number | null }> | null;
+}) {
+  if (pi.expenseAccountId) {
+    const chosen = await getAccountById(pi.expenseAccountId);
+    if (chosen) return chosen;
+  }
+  let items = pi.items;
+  if (!items) {
+    const [row] = await db.select({ items: vendorInvoicesTable.items })
+      .from(vendorInvoicesTable)
+      .where(and(eq(vendorInvoicesTable.id, pi.id), eq(vendorInvoicesTable.companyId, pi.companyId)))
+      .limit(1);
+    items = (row?.items as Array<{ stockItemId?: number | null }> | null) ?? null;
+  }
+  const hasStock = Array.isArray(items) && items.some((item) => Number(item?.stockItemId) > 0);
+  if (hasStock) {
+    const inventory = await getAccountByCode(pi.companyId, "1200");
+    if (inventory) return inventory;
+  }
+  return await getAccountByCode(pi.companyId, "5000")
+    ?? await getAccountByCode(pi.companyId, "1200");
+}
+
 // ── Vendor Invoice Created ────────────────────────────────────────────────────
 
 export async function postVendorInvoiceJE(
@@ -48,12 +75,11 @@ export async function postVendorInvoiceJE(
     gstAmount?: number | string;
     gstTreatment?: string;
     expenseAccountId?: number | null;
+    items?: Array<{ stockItemId?: number | null }> | null;
   },
   userId: number,
   log?: any,
 ): Promise<void> {
-  if (!pi.expenseAccountId) return;
-
   await ensureAccountsSeeded(pi.companyId);
 
   const entryDate = pi.piDate || new Date().toISOString().split("T")[0];
@@ -70,12 +96,10 @@ export async function postVendorInvoiceJE(
     .limit(1);
   if (existing) return;
 
-  const [apAcct, expAcct] = await Promise.all([
-    getAccountByCode(pi.companyId, "2000"),
-    getAccountById(pi.expenseAccountId),
-  ]);
+  const apAcct = await getAccountByCode(pi.companyId, "2000");
+  const expAcct = await resolveVendorDebitAccount(pi);
   if (!apAcct || !expAcct) {
-    if (log) log.warn({ companyId: pi.companyId }, "vendor-invoice-auto-post: AP or expense account not found");
+    if (log) log.warn({ companyId: pi.companyId, piNumber: pi.piNumber }, "vendor-invoice-auto-post: AP or debit account not found");
     return;
   }
 
@@ -309,4 +333,43 @@ export async function reversePaymentJE(
   } catch (err) {
     if (log) log.error({ err }, "vendor-invoice-auto-post: payment reversal failed (non-fatal)");
   }
+}
+
+/** Post journal entries for vendor invoices that were saved without one. */
+export async function backfillVendorInvoiceJEs(companyId: number, userId: number, log?: any): Promise<number> {
+  const rows = await db.select().from(vendorInvoicesTable)
+    .where(eq(vendorInvoicesTable.companyId, companyId));
+
+  let posted = 0;
+  for (const pi of rows) {
+    const status = String(pi.status || "").toLowerCase();
+    if (status === "void" || status === "cancelled" || status === "draft") continue;
+    const before = await db.select({ id: journalEntriesTable.id })
+      .from(journalEntriesTable)
+      .where(and(
+        eq(journalEntriesTable.companyId, companyId),
+        eq(journalEntriesTable.refType, "vendor_invoice"),
+        eq(journalEntriesTable.refId, pi.id),
+      ))
+      .limit(1);
+    if (before.length > 0) continue;
+    try {
+      await postVendorInvoiceJE({
+        id: pi.id,
+        companyId: pi.companyId,
+        piNumber: pi.piNumber,
+        vendorName: pi.vendorName,
+        piDate: pi.piDate,
+        totalAmount: pi.totalAmount,
+        gstAmount: pi.gstAmount,
+        gstTreatment: pi.gstTreatment ?? undefined,
+        expenseAccountId: pi.expenseAccountId,
+        items: (pi.items as Array<{ stockItemId?: number | null }> | null) ?? null,
+      }, userId, log);
+      posted++;
+    } catch (err) {
+      if (log) log.warn({ err, piNumber: pi.piNumber }, "vendor-invoice-auto-post: backfill skipped");
+    }
+  }
+  return posted;
 }

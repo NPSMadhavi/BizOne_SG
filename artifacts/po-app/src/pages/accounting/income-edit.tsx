@@ -165,6 +165,8 @@ export default function IncomeEdit() {
   const deductiblePct       = watch("deductiblePct");
   const watchedCurrency     = watch("currency");
   const watchedDate         = watch("incomeDate");
+  const payerName           = watch("payerName");
+  const description         = watch("description");
 
   // Populate form when data loads
   useEffect(() => {
@@ -371,7 +373,11 @@ export default function IncomeEdit() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>Income Date <span className="text-destructive">*</span></Label>
-                    <Input type="date" {...register("incomeDate", { required: true })} />
+                    <Input
+                      type="date"
+                      value={watchedDate || ""}
+                      onChange={(e) => setValue("incomeDate", e.target.value, { shouldDirty: true, shouldValidate: true })}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Currency</Label>
@@ -410,8 +416,11 @@ export default function IncomeEdit() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>Payer Name <span className="text-destructive">*</span></Label>
-                    <Input {...register("payerName", { required: true })} />
+                    <Label>Payer Name</Label>
+                    <Input
+                      value={payerName}
+                      onChange={(e) => setValue("payerName", e.target.value, { shouldDirty: true })}
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -421,8 +430,11 @@ export default function IncomeEdit() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Description <span className="text-destructive">*</span></Label>
-                  <Input {...register("description", { required: true })} />
+                  <Label>Description</Label>
+                  <Input
+                    value={description}
+                    onChange={(e) => setValue("description", e.target.value, { shouldDirty: true })}
+                  />
                 </div>
               </CardContent>
             </Card>

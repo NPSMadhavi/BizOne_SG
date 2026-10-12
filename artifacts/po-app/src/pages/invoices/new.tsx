@@ -31,6 +31,7 @@ import { SerialPickerDialog } from "@/components/serial-picker-dialog";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
+import { deliveryOrderAttachmentNames, deliveryOrderPdfAttachments, invoiceEmailBody, markDeliveryOrdersSent, useInvoiceDeliveryOrders } from "@/lib/invoice-delivery-order-email";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
@@ -104,6 +105,9 @@ export default function InvoiceNew() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [savedDoc, setSavedDoc] = useState<any>(null);
+  const { data: linkedDos = [] } = useInvoiceDeliveryOrders(
+    savedDoc?.id ? { id: savedDoc.id, invNumber: savedDoc.invNumber, soId: savedDoc.soId } : null,
+  );
   const [isOverseas, setIsOverseas] = useState(false);
   const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
   const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
@@ -1542,12 +1546,24 @@ export default function InvoiceNew() {
             { ...opts, filename: `${savedDoc.invNumber}.pdf` },
           )}
  pdfFilename={`${savedDoc.invNumber}.pdf`}
+ pdfFilenames={[`${savedDoc.invNumber}.pdf`, ...deliveryOrderAttachmentNames(linkedDos, [savedDoc])]}
+ generateAttachments={async () => {
+          const content = await generateInvoicePdfSmart(
+            savedDoc.id,
+            () => generateInvoice_PDF(savedDoc, selectedCompany, undefined, { returnBase64: true }),
+            { returnBase64: true, filename: `${savedDoc.invNumber}.pdf` },
+          );
+          if (typeof content !== "string" || !content) throw new Error("Could not generate the invoice PDF.");
+          const deliveryOrders = await deliveryOrderPdfAttachments(savedDoc, selectedCompany);
+          return [{ filename: `${savedDoc.invNumber}.pdf`, content }, ...deliveryOrders];
+        }}
  defaultEmailTo={savedDoc.customerContactEmail || ""}
  defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
- defaultEmailBody={`Dear ${savedDoc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${savedDoc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+ defaultEmailBody={invoiceEmailBody(savedDoc.customerContact, savedDoc.invNumber, deliveryOrderAttachmentNames(linkedDos, [savedDoc]).map((name) => name.replace(/\.pdf$/i, "")))}
  onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
  onEmailSent={async (recipients) => {
             await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+            await markDeliveryOrdersSent({ id: savedDoc.id, invNumber: savedDoc.invNumber, soId: savedDoc.soId }, recipients);
             setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: recipients.join(", ") } : prev);
           }}
         />

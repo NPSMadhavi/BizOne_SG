@@ -84,6 +84,8 @@ export interface PayslipData {
   basicPay: number;
   overtime: number;
   allowance: number;
+  bonus: number;
+  otherIncome: number;
   grossPay: number;
   employeeCpf: number;
   netPay: number;
@@ -562,6 +564,14 @@ body {
       <tr>
         <td class="label-cell">Allowance</td>
         <td class="amount-cell">${formatAmount(data.allowance)}</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Bonus</td>
+        <td class="amount-cell">${formatAmount(data.bonus)}</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Other Income / Benefits</td>
+        <td class="amount-cell">${formatAmount(data.otherIncome)}</td>
       </tr>
     </table>
   </td>

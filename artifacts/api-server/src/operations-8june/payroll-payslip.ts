@@ -24,6 +24,7 @@ import {
   PayslipData,
   savePayslipPdf,
 } from "./payslip-generator";
+import { splitEarnings } from "./payroll-earnings";
 import {
   createPayslipZipArchive,
   getPayslipZipFileName,
@@ -106,6 +107,8 @@ function buildPayslipFromProcessedRecord(
   payPeriodEnd: string,
   employerCpf: number
 ): PayslipData {
+  const earnings = splitEarnings(record.allowances);
+  const recordOvertime = parseFloat(String(record.overtimePay || 0));
   return {
     companyName: company?.companyName || "",
     companyAddress: company?.address || "",
@@ -122,8 +125,10 @@ function buildPayslipFromProcessedRecord(
     basicRate: parseFloat(String(record.baseSalary)),
     workingDays: config.noOfWorkingDays ?? null,
     basicPay: parseFloat(String(record.baseSalary)),
-    overtime: parseFloat(String(record.overtimePay || 0)),
-    allowance: sumJsonValues(record.allowances),
+    overtime: recordOvertime > 0 ? recordOvertime : earnings.overtime,
+    allowance: earnings.allowances,
+    bonus: earnings.bonus,
+    otherIncome: earnings.otherIncome,
     grossPay: parseFloat(String(record.grossPay)),
     employeeCpf: parseFloat(String(record.cpfDeduction || 0)),
     netPay: parseFloat(String(record.netPay)),

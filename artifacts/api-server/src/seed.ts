@@ -2,7 +2,12 @@ import bcrypt from "bcryptjs";
 import { db, usersTable, companiesTable, settingsTable, rolesTable, permissionsTable, rolePermissionsTable, APP_ALL_MODULES } from "@workspace/db";
 import { sql, eq } from "drizzle-orm";
 
-export async function seedRolesForCompany(companyId: number, tx: any = db) {
+export async function seedRolesForCompany(
+  companyId: number,
+  tx: any = db,
+  allowedModules?: readonly string[],
+) {
+  const allow = allowedModules ? new Set(allowedModules) : null;
   const rolesToSeed = [
     { name: "Administrator", actions: ["view", "create", "edit", "delete"], modules: [...APP_ALL_MODULES] },
     { name: "Manager", actions: ["view", "create", "edit"], modules: [...APP_ALL_MODULES] },
@@ -27,7 +32,9 @@ export async function seedRolesForCompany(companyId: number, tx: any = db) {
     }
 
     const allowedPermissions = allPermissions.filter((p: any) =>
-      r.modules.includes(p.module) && r.actions.includes(p.action)
+      r.modules.includes(p.module) &&
+      r.actions.includes(p.action) &&
+      (!allow || allow.has(p.module))
     );
 
     for (const perm of allowedPermissions) {

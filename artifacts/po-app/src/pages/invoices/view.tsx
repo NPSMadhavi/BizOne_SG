@@ -13,6 +13,7 @@ import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSi
 import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart, listInvoiceReportTemplates } from "@/lib/report-designer/api";
+import { deliveryOrderAttachmentNames, deliveryOrderPdfAttachments, invoiceEmailBody, markDeliveryOrdersSent, useInvoiceDeliveryOrders } from "@/lib/invoice-delivery-order-email";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -131,6 +132,9 @@ export default function InvoiceView() {
   const { data: doc, isLoading, refetch } = useGetInvoice(id, {
     query: { queryKey: getGetInvoiceQueryKey(id), enabled: !!id },
   });
+  const { data: linkedDos = [] } = useInvoiceDeliveryOrders(
+    doc ? { id: doc.id, invNumber: doc.invNumber, soId: (doc as any).soId } : null,
+  );
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers-credit-limit", selectedCompany?.id],
@@ -754,9 +758,24 @@ export default function InvoiceView() {
           },
         )}
         pdfFilename={`${doc.invNumber}.pdf`}
+        pdfFilenames={[`${doc.invNumber}.pdf`, ...deliveryOrderAttachmentNames(linkedDos, [doc])]}
+        generateAttachments={async () => {
+          const content = await generateInvoicePdfSmart(
+            id,
+            () => generateInvoice_PDF(doc, selectedCompany, docSettings as any, { returnBase64: true }),
+            {
+              returnBase64: true,
+              filename: `${doc.invNumber}.pdf`,
+              templateId: selectedTemplateId === "active" ? null : Number(selectedTemplateId),
+            },
+          );
+          if (typeof content !== "string" || !content) throw new Error("Could not generate the invoice PDF.");
+          const deliveryOrders = await deliveryOrderPdfAttachments(doc, selectedCompany);
+          return [{ filename: `${doc.invNumber}.pdf`, content }, ...deliveryOrders];
+        }}
         defaultEmailTo={(doc as any).customerContactEmail || ""}
         defaultEmailSubject={`Invoice ${doc.invNumber}`}
-        defaultEmailBody={`Dear ${doc.customerContact || "Sir/Madam"},\n\nPlease find attached Invoice ${doc.invNumber} for your records.\n\nPlease arrange payment as per the agreed terms.\n\nThank you.`}
+        defaultEmailBody={invoiceEmailBody((doc as any).customerContact, doc.invNumber, deliveryOrderAttachmentNames(linkedDos, [doc]).map((name) => name.replace(/\.pdf$/i, "")))}
         docInfo={{
           docType: "Tax Invoice",
           docNumber: doc.invNumber,
@@ -769,6 +788,7 @@ export default function InvoiceView() {
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
+          await markDeliveryOrdersSent({ id: doc.id, invNumber: doc.invNumber, soId: (doc as any).soId }, recipients);
           await qc.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
           await qc.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
         }}

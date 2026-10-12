@@ -8,6 +8,7 @@ import {
   type ResidencyType,
   type PrYear,
 } from "@shared/singapore-payroll";
+import { resolvePayrollEarnings } from "./payroll-earnings";
 
 export interface PayrollCalculationInput {
   grossSalary: number;
@@ -24,6 +25,8 @@ export interface PayrollCalculationInput {
 export interface PayrollCalculationResult {
   grossPay: number;
   allowancesTotal: number;
+  bonusTotal: number;
+  otherIncomeTotal: number;
   deductionsTotal: number;
   adjustedGrossPay: number;
   employeeCpf: number;
@@ -57,10 +60,11 @@ export interface PayrollCalculationResult {
 export function calculateSingaporePayroll(
   input: PayrollCalculationInput
 ): PayrollCalculationResult {
-  const allowancesTotal = Object.values(input.monthlyAllowances ?? {}).reduce(
-    (s, v) => s + Number(v),
-    0
-  );
+  const earnings = resolvePayrollEarnings({
+    allowances: input.monthlyAllowances,
+    overtimeHours: input.overtimeHours,
+    overtimeRate: input.overtimeRate,
+  });
   const deductionsTotal = Object.values(input.monthlyDeductions ?? {}).reduce(
     (s, v) => s + Number(v),
     0
@@ -71,17 +75,18 @@ export function calculateSingaporePayroll(
     age: input.age,
     residencyType: input.citizenshipStatus,
     prYear: input.prYear ?? null,
-    monthlyAllowances: allowancesTotal,
+    monthlyAllowances: earnings.taxableEarnings,
     monthlyDeductions: deductionsTotal,
-    overtimeHours: input.overtimeHours,
-    overtimeRate: input.overtimeRate,
+    overtimePay: earnings.overtimePay,
   });
 
   const grossPay = calc.grossSalary;
 
   return {
     grossPay,
-    allowancesTotal: calc.allowancesTotal,
+    allowancesTotal: earnings.allowances,
+    bonusTotal: earnings.bonus,
+    otherIncomeTotal: earnings.otherIncome,
     deductionsTotal: calc.deductionsTotal,
     adjustedGrossPay: grossPay,
     employeeCpf: calc.monthlyEmployeeCpf,

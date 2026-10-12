@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { useGetMe, getGetMeQueryKey, useLogout, type User, type UserCompany } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { type AppModule } from "./auth-modules";
+import { type AppModule, modulesForBusinessType } from "./auth-modules";
 import { clearBrowserSessionLive, isBrowserSessionLive } from "@/lib/browser-session";
 
 interface AuthContextType {
@@ -101,9 +101,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const effectiveCompanyId = localCompanyId ?? resolvedUser?.selectedCompanyId ?? null;
   const selectedCompany = resolvedUser?.companies?.find(c => c.id === effectiveCompanyId) ?? null;
 
+  const businessModules = modulesForBusinessType(
+    (selectedCompany as { businessType?: string | null } | null)?.businessType,
+  );
+
   const hasModuleAccess = (module: AppModule): boolean => {
-    // Only company admins get every module. Everyone else (user / accountant / external)
-    // is gated strictly by user_companies.modules — no DEFAULT/ALL fallbacks.
+    if (businessModules && !businessModules.includes(module)) return false;
     if (isAdmin) return true;
     if (!selectedCompany) return false;
     const mods = selectedCompany.modules;

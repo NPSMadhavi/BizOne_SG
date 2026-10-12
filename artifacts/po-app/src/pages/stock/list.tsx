@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -23,6 +23,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -43,17 +51,24 @@ import {
   Pencil,
   Trash2,
   Download,
-  SlidersHorizontal,
   ArrowUpDown,
   Barcode,
   Printer,
+  Upload,
+  FileSpreadsheet,
+  FileText,
+  ChevronDown,
 } from "lucide-react";
+import { parseItemMasterFile, type ItemMasterImportRow } from "@/lib/item-master-import";
 import { AdjustStockDialog } from "@/components/adjust-stock-dialog";
 import { BarcodePreviewDialog, type BarcodePreviewItem } from "@/components/barcode-preview-dialog";
 import { BarcodePrintDialog, type BarcodePrintSource } from "@/components/barcode-print-dialog";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { cn } from "@/lib/utils";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const CATEGORY_PILL: Record<string, string> = {
   computers: "bg-blue-100 text-blue-800",
@@ -222,6 +237,17 @@ export default function StockList() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<null | {
+    fileName: string;
+    kind: "excel" | "pdf";
+    items: ItemMasterImportRow[];
+    warnings: string[];
+  }>(null);
+  const [importRowFocus, setImportRowFocus] = useState<number | null>(null);
+  const [importDeleteIndex, setImportDeleteIndex] = useState<number | null>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const [barcodePreview, setBarcodePreview] = useState<BarcodePreviewItem | null>(null);
   const [barcodePrint, setBarcodePrint] = useState<BarcodePrintSource | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<null | {
@@ -341,29 +367,222 @@ export default function StockList() {
     }
   }
 
-  function exportCsv() {
-    const rows = [
-      ["Item Code", "Item Name", "Category", "Brand", "UOM", "Purchase Price", "Selling Price", "Stock Qty", "Status"],
-      ...filtered.map((i: any) => [
-        i.code,
-        i.name,
-        i.category || "",
-        i.brand || "",
-        i.uom || "",
-        parseFloat(i.purchasePrice ?? "0").toFixed(2),
-        parseFloat(i.unitPrice ?? "0").toFixed(2),
-        parseFloat(i.stockQty ?? "0").toFixed(3),
-        i.isActive ? "Active" : "Inactive",
-      ]),
-    ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "item-master.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportHeaders = [
+    "Item Code",
+    "Item Name",
+    "Barcode",
+    "Category",
+    "Brand",
+    "UOM",
+    "Purchase Price",
+    "Effective From",
+    "Selling Price",
+    "Stock Qty",
+    "Status",
+  ];
+
+  function exportBody() {
+    return filtered.map((i: any) => [
+      i.code ?? "",
+      i.name ?? "",
+      i.barcode ?? "",
+      i.category || "",
+      i.brand || "",
+      i.uom || "",
+      fmtMoney(i.displayPurchasePrice ?? i.purchasePrice),
+      formatPriceDate(i.priceDate) || "—",
+      fmtMoney(i.displaySellingPrice ?? i.unitPrice),
+      String(parseFloat(String(i.displayStockQty ?? i.stockQty ?? "0")) || 0),
+      i.isActive ? "Active" : "Inactive",
+    ]);
+  }
+
+  function exportExcel() {
+    const sheet = XLSX.utils.aoa_to_sheet([exportHeaders, ...exportBody()]);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Item Master");
+    XLSX.writeFile(book, "item-master.xlsx");
+    toast({ title: "Excel exported", description: "Item Master downloaded as Excel." });
+  }
+
+  async function itemImageForPdf(src: string): Promise<string | null> {
+    const url = src.trim();
+    if (!url) return null;
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("image"));
+        if (!url.startsWith("data:")) el.crossOrigin = "anonymous";
+        el.src = url;
+      });
+      const size = 128;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx || !img.width || !img.height) return null;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, size, size);
+      const scale = Math.min(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      return canvas.toDataURL("image/jpeg", 0.86);
+    } catch {
+      return null;
+    }
+  }
+
+  async function exportPdf() {
+    const rows = filtered as any[];
+    const images = await Promise.all(
+      rows.map((item) => itemImageForPdf(String(item.itemImage || item.item_image || ""))),
+    );
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(14);
+    doc.text("Item Master", 14, 14);
+    autoTable(doc, {
+      head: [["Image", ...exportHeaders]],
+      body: exportBody().map((row) => ["", ...row]),
+      startY: 20,
+      styles: { fontSize: 8, valign: "middle" },
+      headStyles: { fillColor: [37, 99, 235] },
+      columnStyles: { 0: { cellWidth: 18 } },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 0 && images[data.row.index]) {
+          data.cell.styles.minCellHeight = 16;
+        }
+      },
+      didDrawCell: (data) => {
+        if (data.section !== "body" || data.column.index !== 0) return;
+        const src = images[data.row.index];
+        if (!src) return;
+        const pad = 1.4;
+        const size = Math.min(13, data.cell.height - pad * 2, data.cell.width - pad * 2);
+        const x = data.cell.x + (data.cell.width - size) / 2;
+        const y = data.cell.y + (data.cell.height - size) / 2;
+        try {
+          doc.addImage(src, "JPEG", x, y, size, size);
+        } catch {
+          /* skip a picture the PDF cannot draw */
+        }
+      },
+    });
+    doc.save("item-master.pdf");
+    toast({ title: "PDF exported", description: "Item Master downloaded as PDF." });
+  }
+
+  async function saveImportedItems(rows: ItemMasterImportRow[]) {
+    let created = 0;
+    const errors: string[] = [];
+    for (const row of rows) {
+      const res = await fetch("/api/stock-items", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: row.code || undefined,
+          name: row.name,
+          uom: row.uom || "Pcs",
+          type: "stock_item",
+          category: row.category || null,
+          brand: row.brand || null,
+          barcode: row.barcode || null,
+          purchasePrice: row.purchasePrice || 0,
+          unitPrice: row.sellingPrice || 0,
+          stockQty: row.stockQty || 0,
+          isActive: row.isActive,
+          purchasePriceDate: row.purchasePriceDate,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        errors.push(`${row.name}: ${(err as { error?: string }).error || "Could not save"}`);
+      } else {
+        created += 1;
+      }
+    }
+    await refetch();
+    void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
+    void queryClient.invalidateQueries({ queryKey: ["/api/stock-items"] });
+    void queryClient.invalidateQueries({ queryKey: getListStockItemsQueryKey() });
+    return { created, errors };
+  }
+
+  async function handleImportFile(file: File, kind: "excel" | "pdf") {
+    const lower = file.name.toLowerCase();
+    const excelOk = /\.(xlsx|xls|xlsm|csv)$/.test(lower);
+    const pdfOk = lower.endsWith(".pdf") || file.type === "application/pdf";
+    if (kind === "excel" && !excelOk) {
+      toast({ title: "Excel file required", description: "Choose an .xlsx or .xls file.", variant: "destructive" });
+      return;
+    }
+    if (kind === "pdf" && !pdfOk) {
+      toast({ title: "PDF file required", description: "Choose a .pdf file.", variant: "destructive" });
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const parsed = await parseItemMasterFile(file);
+      if (parsed.items.length === 0) {
+        toast({
+          title: "No items found",
+          description: parsed.warnings[0] || "The file does not contain an item table.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setImportRowFocus(null);
+      setImportDeleteIndex(null);
+      setImportPreview({
+        fileName: file.name,
+        kind,
+        items: parsed.items,
+        warnings: parsed.warnings || [],
+      });
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e?.message || "Could not read the file.", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function removeImportRow(index: number) {
+    setImportPreview((current) => {
+      if (!current) return current;
+      return { ...current, items: current.items.filter((_, i) => i !== index) };
+    });
+    setImportDeleteIndex(null);
+    setImportRowFocus(null);
+  }
+
+  async function confirmImport() {
+    if (!importPreview || importing) return;
+    setImporting(true);
+    try {
+      const { created, errors } = await saveImportedItems(importPreview.items);
+      if (created === 0) {
+        toast({
+          title: "Import failed",
+          description: errors[0] || "Items could not be saved.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setImportPreview(null);
+      toast({
+        title: "Imported",
+        description: errors.length
+          ? `${created} item${created === 1 ? "" : "s"} added. ${errors.length} row${errors.length === 1 ? "" : "s"} skipped.`
+          : `${created} item${created === 1 ? "" : "s"} added to Item Master.`,
+      });
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e?.message || "Could not save the items.", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
@@ -453,14 +672,78 @@ export default function StockList() {
                 <SelectItem value="others">Others</SelectItem>
               </SelectContent>
             </Select>
-            <Button type="button" variant="outline" className="h-10 gap-2" onClick={exportCsv}>
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-            <Button type="button" variant="outline" className="h-10 gap-2" disabled title="Filters applied above">
-              <SlidersHorizontal className="h-4 w-4" />
-              Filter
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" className="h-10 gap-2">
+                  <Download className="h-4 w-4" />
+                  Export
+                  <ChevronDown className="h-4 w-4 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem className="gap-2" onSelect={exportExcel}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem className="gap-2" onSelect={() => void exportPdf()}>
+                  <FileText className="h-4 w-4" />
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" className="h-10 gap-2" disabled={importing}>
+                  <Upload className="h-4 w-4" />
+                  {importing ? "Importing..." : "Import"}
+                  <ChevronDown className="h-4 w-4 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="gap-2"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    excelInputRef.current?.click();
+                  }}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    pdfInputRef.current?.click();
+                  }}
+                >
+                  <FileText className="h-4 w-4" />
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,.xls,.xlsm,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void handleImportFile(file, "excel");
+              }}
+            />
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void handleImportFile(file, "pdf");
+              }}
+            />
           </div>
         </div>
       </div>
@@ -697,6 +980,131 @@ export default function StockList() {
         </div>
         <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
+
+      <Dialog
+        open={!!importPreview}
+        onOpenChange={(open) => {
+          if (!open && !importing) {
+            setImportPreview(null);
+            setImportRowFocus(null);
+            setImportDeleteIndex(null);
+          }
+        }}
+      >
+        <DialogContent className="flex max-h-[85vh] w-[min(1100px,calc(100vw-2rem))] max-w-none flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle>Confirm import</DialogTitle>
+            <DialogDescription>
+              {importPreview
+                ? `${importPreview.items.length} item${importPreview.items.length === 1 ? "" : "s"} from ${importPreview.fileName} will be added to Item Master after you confirm.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {importPreview && importPreview.warnings.length > 0 && (
+            <p className="text-sm text-amber-700">{importPreview.warnings[0]}</p>
+          )}
+          <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-gray-200">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-gray-50">
+                <tr className="border-b border-gray-200">
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Item Code</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Item Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Barcode</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Category</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Brand</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">UOM</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Purchase Price</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Effective from</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Selling Price</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Stock Qty</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                  <th className="w-12 px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {importPreview?.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
+                      No items left to import.
+                    </td>
+                  </tr>
+                ) : importPreview?.items.map((row, index) => (
+                  <tr
+                    key={`${row.code}-${row.name}-${index}`}
+                    className={cn(
+                      "group cursor-pointer border-b border-gray-100 last:border-0 hover:bg-blue-50/60",
+                      importRowFocus === index && "bg-blue-50/60",
+                    )}
+                    onClick={() => setImportRowFocus(index)}
+                  >
+                    <td className="px-3 py-2 whitespace-nowrap">{row.code || "—"}</td>
+                    <td className="px-3 py-2">{row.name}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{row.barcode || "—"}</td>
+                    <td className="px-3 py-2">{row.category || "—"}</td>
+                    <td className="px-3 py-2">{row.brand || "—"}</td>
+                    <td className="px-3 py-2">{row.uom || "—"}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{fmtMoney(row.purchasePrice)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatPriceDate(row.purchasePriceDate) || "—"}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{fmtMoney(row.sellingPrice)}</td>
+                    <td className="px-3 py-2 text-right">{row.stockQty ?? 0}</td>
+                    <td className="px-3 py-2">{row.isActive ? "Active" : "Inactive"}</td>
+                    <td className="px-2 py-2 text-center">
+                      <button
+                        type="button"
+                        className={cn(
+                          "inline-flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-50",
+                          importRowFocus === index ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                        )}
+                        aria-label={`Remove ${row.name || "item"} from import`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setImportRowFocus(index);
+                          setImportDeleteIndex(index);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportPreview(null)} disabled={importing}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void confirmImport()} disabled={importing || !importPreview?.items.length}>
+              {importing ? "Importing..." : "Import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={importDeleteIndex != null} onOpenChange={(open) => !open && setImportDeleteIndex(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this item from the import?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {importDeleteIndex != null && importPreview?.items[importDeleteIndex]
+                ? `${importPreview.items[importDeleteIndex].name || "This item"} will not be added to Item Master.`
+                : "This item will not be added to Item Master."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault();
+                if (importDeleteIndex != null) removeImportRow(importDeleteIndex);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>

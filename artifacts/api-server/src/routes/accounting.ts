@@ -5,6 +5,7 @@ import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
 import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
 import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
+import { backfillVendorInvoiceJEs } from "../lib/vendor-invoice-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
 import { assertPeriodWritable } from "../lib/financial-year.js";
 
@@ -143,6 +144,11 @@ router.get("/journal-entries", async (req, res): Promise<void> => {
   if (!(await requireSingapore(req, res))) return;
 
   const companyId = req.session.companyId!;
+  try {
+    await backfillVendorInvoiceJEs(companyId, req.session.userId!);
+  } catch (err) {
+    req.log?.warn?.({ err }, "vendor invoice journal backfill failed");
+  }
   const entries = await db.select()
     .from(journalEntriesTable)
     .where(eq(journalEntriesTable.companyId, companyId))

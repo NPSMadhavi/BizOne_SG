@@ -189,6 +189,18 @@ const OPERATIONS_TABLE_MIGRATIONS = [
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS ir8a_employers (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL,
+    employer_name TEXT NOT NULL,
+    uen TEXT NOT NULL,
+    address TEXT NOT NULL,
+    signatory_name TEXT NOT NULL,
+    designation TEXT NOT NULL,
+    declaration_date DATE,
+    signature TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
   `CREATE TABLE IF NOT EXISTS employee_documents (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL,
@@ -292,6 +304,7 @@ const OPERATIONS_INDEX_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS payroll_records_employee_period_idx ON payroll_records (company_id, employee_id, pay_period_start, pay_period_end)`,
   `CREATE INDEX IF NOT EXISTS assets_company_id_idx ON assets (company_id)`,
   `CREATE INDEX IF NOT EXISTS licenses_company_id_idx ON licenses (company_id)`,
+  `CREATE INDEX IF NOT EXISTS ir8a_employers_company_id_idx ON ir8a_employers (company_id)`,
   `CREATE INDEX IF NOT EXISTS service_reports_company_id_idx ON service_reports (company_id)`,
   `CREATE INDEX IF NOT EXISTS employee_documents_company_id_idx ON employee_documents (company_id)`,
 ];

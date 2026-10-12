@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
@@ -18,6 +18,8 @@ import logo from "@assets/bizone_logo_optimized.webp";
 import Advanced from "@assets/Advanced.png";
 import SecureBusiness from "@assets/SecureBusiness.png";
 import Multitenant from "@assets/Multitenant.png";
+import keyTypeUrl from "@/assets/sounds/key-type.wav";
+import signInDoorUrl from "@/assets/sounds/sign-in-door.wav";
 
 const slides = [
   {
@@ -40,6 +42,50 @@ const slides = [
 const SIGN_IN_SUBTITLE =
   "Welcome back! Sign in to access your account with your registered username or email address";
 
+type DoorPhase = "closed" | "opening" | "walking" | "entering" | "closing" | "done";
+
+function playKeyClick() {
+  const audio = new Audio(keyTypeUrl);
+  audio.volume = 0.85;
+  void audio.play().catch(() => {});
+}
+
+function isTypingKey(event: React.KeyboardEvent<HTMLInputElement>) {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return false;
+  if (event.key === "Backspace" || event.key === "Delete") return true;
+  return event.key.length === 1;
+}
+
+function SignInDoor({ phase, snap = false }: { phase: DoorPhase; snap?: boolean }) {
+  const open = phase === "opening" || phase === "walking" || phase === "entering";
+  const stepping = phase === "walking" || phase === "entering";
+  const inside = phase === "entering" || phase === "closing" || phase === "done";
+
+  return (
+    <span
+      className={`bizone-door${open ? " is-open" : ""}${stepping ? " is-stepping" : ""}${phase === "walking" ? " is-walking" : ""}${inside ? " is-inside" : ""}${snap ? " is-snap" : ""}`}
+      aria-hidden="true"
+    >
+      <svg className="bizone-stick" viewBox="0 0 20 44">
+        <circle cx="10" cy="6.2" r="4.3" fill="#fff" />
+        <path d="M10 11.2V23.5" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+        <g className="leg leg-back">
+          <path d="M10 23.5 6.1 40" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+        </g>
+        <g className="leg leg-front">
+          <path d="M10 23.5 13.9 40" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+        </g>
+      </svg>
+      <span className="bizone-door-frame">
+        <span className="bizone-door-glow" />
+        <span className="bizone-door-panel">
+          <span className="bizone-door-handle" />
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function useAuthPageFont() {
   useEffect(() => {
     document.documentElement.classList.add("auth-page");
@@ -60,6 +106,13 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
+  const [door, setDoor] = useState<DoorPhase>("closed");
+  const [doorSnap, setDoorSnap] = useState(false);
+  const [entering, setEntering] = useState(false);
+  const holdRedirect = useRef(false);
+  const doorDone = useRef<Promise<void> | null>(null);
+  const doorTimers = useRef<number[]>([]);
+  const doorAudio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -69,13 +122,54 @@ export default function Login() {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && user) {
+    if (!isLoading && user && !holdRedirect.current) {
       setLocation("/dashboard");
     }
   }, [isLoading, user, setLocation]);
 
+  function stopDoorSound() {
+    const audio = doorAudio.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+  }
+
+  function clearDoorTimers() {
+    doorTimers.current.forEach((id) => window.clearTimeout(id));
+    doorTimers.current = [];
+  }
+
+  function startDoor() {
+    clearDoorTimers();
+    stopDoorSound();
+    setDoor("opening");
+
+    const audio = doorAudio.current ?? new Audio(signInDoorUrl);
+    doorAudio.current = audio;
+    audio.volume = 1;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
+
+    const later = (ms: number, fn: () => void) => {
+      doorTimers.current.push(window.setTimeout(fn, ms));
+    };
+
+    doorDone.current = new Promise((resolve) => {
+      later(380, () => setDoor("walking"));
+      later(1000, () => setDoor("entering"));
+      later(1320, () => setDoor("closing"));
+      later(1680, () => setDoor("done"));
+      later(2350, resolve);
+    });
+  }
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    if (name === "password") {
+      setForm((prev) => ({ ...prev, password: value.replace(/\D/g, "").slice(0, 8) }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,6 +180,14 @@ export default function Login() {
       return;
     }
 
+    if (!/^\d{8}$/.test(form.password)) {
+      toast({ title: "Password must be 8 digits", variant: "destructive" });
+      return;
+    }
+
+    if (door !== "closed" || loginMutation.isPending) return;
+    startDoor();
+
     loginMutation.mutate(
       {
         data: {
@@ -95,6 +197,8 @@ export default function Login() {
       },
       {
         onSuccess: async (data) => {
+          holdRedirect.current = true;
+          setEntering(true);
           const sessionId = (data as { sessionId?: string }).sessionId;
           if (sessionId) markBrowserSessionLive(sessionId);
           queryClient.clear();
@@ -128,9 +232,17 @@ export default function Login() {
             localStorage.removeItem("bizone_remember");
           }
           toast({ title: "Login Successful" });
+          await doorDone.current;
+          holdRedirect.current = false;
           setLocation("/dashboard");
         },
         onError: (error: Error & { message?: string }) => {
+          clearDoorTimers();
+          stopDoorSound();
+          setDoorSnap(true);
+          setDoor("closed");
+          doorDone.current = null;
+          window.setTimeout(() => setDoorSnap(false), 60);
           const message =
             error.message === "Network Error"
               ? "Server connect avvadam ledu. Backend run avutunda check cheyandi."
@@ -141,7 +253,7 @@ export default function Login() {
     );
   };
 
-  if (isLoading || user) {
+  if ((isLoading || user) && !entering) {
     return null;
   }
 
@@ -158,6 +270,9 @@ export default function Login() {
           placeholder="Enter your email address"
           value={form.email}
           onChange={handleChange}
+          onKeyDown={(event) => {
+            if (isTypingKey(event)) playKeyClick();
+          }}
           autoComplete="email"
           data-allow-autofill="true"
           className={authMobileInputClass}
@@ -171,9 +286,14 @@ export default function Login() {
           <input
             type={showPassword ? "text" : "password"}
             name="password"
+            inputMode="numeric"
+            maxLength={8}
             placeholder="Type your password"
             value={form.password}
             onChange={handleChange}
+            onKeyDown={(event) => {
+              if (isTypingKey(event)) playKeyClick();
+            }}
             autoComplete="current-password"
             data-allow-autofill="true"
             className={authMobilePasswordInputClass}
@@ -208,14 +328,22 @@ export default function Login() {
         </button>
       </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="h-11 w-full cursor-pointer rounded-[10px] border-0 bg-blue-600 text-[0.95rem] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
-        style={{ fontFamily: "Poppins, sans-serif" }}
-      >
-        {loading ? "Signing in..." : "Sign in"}
-      </button>
+      <div>
+        <button
+          type="submit"
+          disabled={loading || door !== "closed"}
+          className="relative flex h-14 w-full cursor-pointer items-center rounded-[10px] border-0 bg-blue-600 pl-4 pr-2 text-[0.95rem] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-90"
+          style={{ fontFamily: "Poppins, sans-serif" }}
+        >
+          <span className="flex-1 text-center">Sign in</span>
+          <SignInDoor phase={door} snap={doorSnap} />
+        </button>
+        {door === "done" ? (
+          <p className="mb-0 mt-2 text-center text-sm font-medium text-gray-500">Welcome back!</p>
+        ) : door !== "closed" ? (
+          <p className="mb-0 mt-2 text-center text-sm font-medium text-blue-600">Signing you in...</p>
+        ) : null}
+      </div>
 
       <p className="mb-0 mt-1 text-center text-[0.9rem] text-gray-600">
         Don&apos;t Have an account?{" "}
@@ -228,6 +356,107 @@ export default function Login() {
 
   return (
     <>
+      <style>{`
+        .bizone-door.is-snap .bizone-stick,
+        .bizone-door.is-snap .bizone-door-panel,
+        .bizone-door.is-snap .bizone-door-glow {
+          transition: none;
+        }
+        .bizone-door {
+          position: absolute;
+          right: 12px;
+          bottom: 8px;
+          display: block;
+          width: 58px;
+          height: 40px;
+          pointer-events: none;
+        }
+        .bizone-stick {
+          position: absolute;
+          left: 0;
+          bottom: 0;
+          z-index: 3;
+          width: 16px;
+          height: 36px;
+          overflow: visible;
+          transform: translateX(0);
+          opacity: 1;
+          transition: transform 0.62s linear, opacity 0.22s linear;
+        }
+        .bizone-door.is-walking .bizone-stick {
+          transform: translateX(12px);
+        }
+        .bizone-door.is-inside .bizone-stick {
+          transform: translateX(30px);
+          opacity: 0;
+        }
+        .bizone-stick .leg {
+          transform-box: fill-box;
+          transform-origin: 50% 0%;
+        }
+        .bizone-door.is-stepping .leg-front {
+          animation: bizone-thigh-front 0.46s linear infinite;
+        }
+        .bizone-door.is-stepping .leg-back {
+          animation: bizone-thigh-back 0.46s linear infinite;
+        }
+        @keyframes bizone-thigh-front {
+          0% { transform: rotate(26deg); }
+          50% { transform: rotate(-34deg); }
+          100% { transform: rotate(26deg); }
+        }
+        @keyframes bizone-thigh-back {
+          0% { transform: rotate(-22deg); }
+          50% { transform: rotate(30deg); }
+          100% { transform: rotate(-22deg); }
+        }
+        .bizone-door-frame {
+          position: absolute;
+          right: 0;
+          bottom: 0;
+          display: block;
+          width: 28px;
+          height: 38px;
+          overflow: hidden;
+          border-radius: 8px;
+          background: #0b1020;
+          perspective: 140px;
+          box-shadow: 0 0 0 1px rgba(255,255,255,0.28);
+        }
+        .bizone-door-glow {
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(circle at 42% 48%, rgba(255,214,130,0.98) 0%, rgba(190,120,40,0.55) 26%, rgba(20,16,12,0.2) 58%, #070b14 78%);
+          opacity: 0;
+          transition: opacity 0.32s ease;
+        }
+        .bizone-door.is-open .bizone-door-glow {
+          opacity: 0.95;
+        }
+        .bizone-door-panel {
+          position: absolute;
+          inset: 0;
+          border-radius: 7px;
+          background: linear-gradient(165deg, rgba(255,255,255,0.97) 0%, rgba(219,234,254,0.9) 46%, rgba(147,197,253,0.94) 100%);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.75);
+          transform-origin: right center;
+          transition: transform 0.38s ease;
+          backface-visibility: hidden;
+        }
+        .bizone-door.is-open .bizone-door-panel {
+          transform: rotateY(72deg);
+        }
+        .bizone-door-handle {
+          position: absolute;
+          left: 7px;
+          top: 50%;
+          width: 3px;
+          height: 11px;
+          margin-top: -5.5px;
+          border-radius: 2px;
+          background: #fff;
+        }
+      `}</style>
       <AuthMobileShell
         title="Sign in"
         subtitle={SIGN_IN_SUBTITLE}

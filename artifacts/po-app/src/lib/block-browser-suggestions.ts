@@ -10,7 +10,10 @@ const SUGGESTION_TRIGGER =
   /^(on|off)$|address|email|tel|username|password|name|postal|street|organization|country|honorific|given-name|family-name|cc-|bday|shipping|billing|contact|person|phone|vendor|customer|emp|pin|code|search/i;
 
 function isAutofillAllowed(el: HTMLElement): boolean {
-  return el.dataset.allowAutofill === "true";
+  if (el.dataset.allowAutofill === "true") return true;
+  // Auth signup/login forms mark the <form> — children must inherit that opt-out.
+  const form = el.closest?.("form");
+  return !!form && form instanceof HTMLElement && form.dataset.allowAutofill === "true";
 }
 
 function skipField(el: HTMLInputElement | HTMLTextAreaElement) {

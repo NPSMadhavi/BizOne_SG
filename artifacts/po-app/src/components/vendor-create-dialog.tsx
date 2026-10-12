@@ -129,7 +129,7 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
             <AddressAutocomplete
               value={form.address}
               onChange={v => setField("address", v)}
-              onPostalCodeChange={v => setField("postalCode", v)}
+              onPostalCodeChange={v => setField("postalCode", v.replace(/\D/g, "").slice(0, 6))}
               country={form.country || undefined}
               placeholder=""
             />
@@ -138,7 +138,12 @@ export function VendorCreateDialog({ open, onOpenChange, onSuccess, initialName 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Postal Code</Label>
-              <Input value={form.postalCode} onChange={e => setField("postalCode", e.target.value)} />
+              <Input
+                value={form.postalCode}
+                inputMode="numeric"
+                maxLength={6}
+                onChange={e => setField("postalCode", e.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Default Currency</Label>

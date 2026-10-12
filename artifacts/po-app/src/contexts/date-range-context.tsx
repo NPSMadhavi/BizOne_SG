@@ -1,8 +1,9 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import {
   type PeriodPreset,
-  startOfMonth,
-  endOfMonth,
+  startOfYear,
+  endOfYear,
+  fromInputDate,
   toInputDate,
 } from "@/lib/date-range";
 
@@ -17,7 +18,8 @@ type DateRangeContextValue = {
 
 const DateRangeContext = createContext<DateRangeContextValue | null>(null);
 
-const STORAGE_KEY = "bizone.dashboard.dateRange";
+/** v2: default period is This Year (SG FY = calendar year), not empty current month. */
+const STORAGE_KEY = "bizone.dashboard.dateRange.v2";
 
 function loadStored(): { preset: PeriodPreset; from: string; to: string } | null {
   try {
@@ -31,12 +33,12 @@ function loadStored(): { preset: PeriodPreset; from: string; to: string } | null
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
   const stored = typeof window !== "undefined" ? loadStored() : null;
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>(stored?.preset || "this-month");
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>(stored?.preset || "this-year");
   const [rangeFrom, setRangeFrom] = useState(() =>
-    stored?.from ? new Date(stored.from + "T00:00:00") : startOfMonth(),
+    (stored?.from && fromInputDate(stored.from)) || startOfYear(),
   );
   const [rangeTo, setRangeTo] = useState(() =>
-    stored?.to ? new Date(stored.to + "T00:00:00") : endOfMonth(),
+    (stored?.to && fromInputDate(stored.to)) || endOfYear(),
   );
 
   function applyDateRange(preset: PeriodPreset, from: Date, to: Date) {
@@ -76,12 +78,12 @@ export function useDateRange() {
   return ctx;
 }
 
-/** Safe hook when provider may be absent — falls back to this month. */
+/** Safe hook when provider may be absent — falls back to this year (SG FY). */
 export function useDateRangeOptional(): DateRangeContextValue {
   const ctx = useContext(DateRangeContext);
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("this-month");
-  const [rangeFrom, setRangeFrom] = useState(() => startOfMonth());
-  const [rangeTo, setRangeTo] = useState(() => endOfMonth());
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("this-year");
+  const [rangeFrom, setRangeFrom] = useState(() => startOfYear());
+  const [rangeTo, setRangeTo] = useState(() => endOfYear());
   if (ctx) return ctx;
   return {
     periodPreset,

@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Search, Loader2, FileText, Users, Package, LayoutDashboard, FolderKanban, BookOpen, X } from "lucide-react";
+import {
+  Search,
+  Loader2,
+  FileText,
+  Users,
+  Package,
+  LayoutDashboard,
+  FolderKanban,
+  BookOpen,
+  Briefcase,
+  Settings,
+  X,
+} from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import type { AppModule } from "@/contexts/auth-modules";
 import { cn } from "@/lib/utils";
@@ -9,6 +21,7 @@ type SearchHit = {
   type: string;
   category: string;
   id: number | string;
+  /** Full breadcrumb shown in the suggestion row (Module > Page > …) */
   title: string;
   subtitle?: string;
   href: string;
@@ -19,69 +32,128 @@ type PageEntry = {
   label: string;
   href: string;
   keywords: string[];
+  /** Sidebar module group — used as suggestion section header */
+  category: string;
+  /** Path segments after the module group, e.g. ["Sales", "Tax Invoices"] */
+  path: string[];
   module?: AppModule | AppModule[];
   singaporeOnly?: boolean;
 };
 
 const PAGES: PageEntry[] = [
-  { label: "Dashboard", href: "/dashboard", keywords: ["home", "overview"], module: "dashboard" },
-  { label: "Invoices", href: "/invoices", keywords: ["sales invoice", "bill"], module: "invoices" },
-  { label: "Quotations", href: "/quotations", keywords: ["quote", "sales quotation"], module: "quotations" },
-  { label: "Sales Orders", href: "/sales-orders", keywords: ["so", "order"], module: "sales_orders" },
-  { label: "Delivery Orders", href: "/delivery-orders", keywords: ["do", "delivery"], module: "delivery_orders" },
-  { label: "Credit Notes", href: "/credit-notes", keywords: ["cn", "credit"], module: "credit_notes" },
-  { label: "Proforma Invoices", href: "/proforma-invoices", keywords: ["proforma"], module: "proforma_invoices" },
-  { label: "Point of Sale", href: "/point-of-sale", keywords: ["pos", "retail"], module: "point_of_sale" },
-  { label: "Purchase Orders", href: "/purchase-orders", keywords: ["po", "purchase"], module: "purchase_orders" },
-  { label: "Purchase Quotations", href: "/purchase-quotations", keywords: ["pq", "rfq"], module: "purchase_quotations" },
-  { label: "Vendor Invoices", href: "/vendor-invoices", keywords: ["pi", "bill", "payable"], module: "vendor_invoices" },
-  { label: "GRN", href: "/grn", keywords: ["goods receipt", "receiving"], module: "grn" },
-  { label: "Debit Notes", href: "/debit-notes", keywords: ["dn", "debit"], module: "debit_notes" },
-  { label: "Customers", href: "/customers", keywords: ["client", "buyer"], module: "customers" },
-  { label: "Vendors", href: "/vendors", keywords: ["supplier"], module: "vendors" },
-  { label: "Sales Persons", href: "/sales-persons", keywords: ["salesperson"], module: "customers" },
-  { label: "Address Book", href: "/address-book", keywords: ["contacts", "email"], module: "address_book" },
-  { label: "Item Master", href: "/stock", keywords: ["stock", "inventory", "product"], module: "stock_items" },
-  { label: "Warehouses", href: "/inventory/warehouses", keywords: ["warehouse"], module: "warehouses" },
-  { label: "Stock Transfer", href: "/inventory/stock-transfer", keywords: ["transfer"], module: "stock_transfer" },
-  { label: "Stock Reports", href: "/inventory/reports", keywords: ["inventory report"], module: "inventory_reports" },
-  { label: "Projects", href: "/projects", keywords: ["project"], module: "projects" },
-  { label: "Assets", href: "/assets", keywords: ["fixed asset"], module: "assets" },
-  { label: "Licenses", href: "/licenses", keywords: ["licence"], module: "licenses" },
-  { label: "Employees", href: "/employees", keywords: ["staff", "hr"], module: "employees" },
-  { label: "Payroll", href: "/payroll", keywords: ["salary"], module: "payroll" },
-  { label: "Chart of Accounts", href: "/accounting/chart-of-accounts", keywords: ["coa", "ledger"], module: "accounting_coa", singaporeOnly: true },
-  { label: "Journal Entries", href: "/accounting/journal-entries", keywords: ["je", "journal"], module: "accounting_je", singaporeOnly: true },
-  { label: "General Ledger", href: "/accounting/general-ledger", keywords: ["gl", "ledger"], module: "accounting_gl", singaporeOnly: true },
-  { label: "Trial Balance", href: "/accounting/trial-balance", keywords: ["tb"], module: "accounting_tb", singaporeOnly: true },
-  { label: "Balance Sheet", href: "/accounting/balance-sheet", keywords: ["bs"], module: "accounting_bs", singaporeOnly: true },
-  { label: "Profit & Loss", href: "/accounting/profit-loss", keywords: ["p&l", "income statement"], module: "accounting_pl", singaporeOnly: true },
-  { label: "Cash Flow", href: "/accounting/cash-flow", keywords: ["cf"], module: "accounting_cf", singaporeOnly: true },
-  { label: "Income", href: "/accounting/income", keywords: ["non-trade income"], module: "accounting_income", singaporeOnly: true },
-  { label: "Expenses", href: "/accounting/expenses", keywords: ["expense"], module: "accounting_expenses", singaporeOnly: true },
-  { label: "GST F5 Return", href: "/accounting/gst-f5", keywords: ["gst", "f5", "iras"], module: "accounting_gst_f5", singaporeOnly: true },
-  { label: "GST F7 Amended", href: "/accounting/gst-f7", keywords: ["gst", "f7"], module: "accounting_gst_f7", singaporeOnly: true },
-  { label: "GST IO Listing", href: "/accounting/gst-io", keywords: ["input", "output tax"], module: "accounting_gst_io", singaporeOnly: true },
-  { label: "Withholding Tax", href: "/accounting/wht", keywords: ["wht", "section 45"], module: "accounting_wht", singaporeOnly: true },
-  { label: "ECI", href: "/accounting/eci", keywords: ["estimated chargeable"], module: "accounting_eci", singaporeOnly: true },
-  { label: "Form C-S", href: "/accounting/form-cs", keywords: ["corporate tax"], module: "accounting_formcs", singaporeOnly: true },
-  { label: "IRAS Audit File", href: "/accounting/iaf", keywords: ["iaf"], module: "accounting_iaf", singaporeOnly: true },
-  { label: "AR Collections", href: "/accounting/ar", keywords: ["receivable", "collection"], module: "accounting_ar", singaporeOnly: true },
-  { label: "AR Aging", href: "/accounting/ar-aging", keywords: ["aging receivable"], module: "accounting_ar_aging", singaporeOnly: true },
-  { label: "Customer Statement", href: "/accounting/customer-statement", keywords: ["statement"], module: "accounting_cust_stmt", singaporeOnly: true },
-  { label: "AP Payments", href: "/accounting/ap", keywords: ["payable", "payment"], module: "accounting_ap", singaporeOnly: true },
-  { label: "AP Aging", href: "/accounting/ap-aging", keywords: ["aging payable"], module: "accounting_ap_aging", singaporeOnly: true },
-  { label: "Vendor Statement", href: "/accounting/vendor-statement", keywords: ["vendor statement"], module: "accounting_vendor_stmt", singaporeOnly: true },
-  { label: "Bank Reconciliation", href: "/accounting/bank-reconciliation", keywords: ["bank recon"], module: "accounting_bank_recon", singaporeOnly: true },
-  { label: "Settings", href: "/settings", keywords: ["config"], module: "settings" },
-  { label: "User Management", href: "/admin", keywords: ["users", "roles"], module: "user_management" },
-  { label: "Audit Log", href: "/audit-log", keywords: ["audit"], module: "audit_log" },
+  { label: "Dashboard", href: "/dashboard", keywords: ["home", "overview"], category: "General", path: ["Dashboard"], module: "dashboard" },
+
+  { label: "Fixed Assets", href: "/assets", keywords: ["assets", "fixed asset"], category: "Administration", path: ["Fixed Assets"], module: "assets" },
+  { label: "Licenses", href: "/licenses", keywords: ["licence"], category: "Administration", path: ["Licenses"], module: "licenses" },
+  { label: "Employees", href: "/employees", keywords: ["staff", "hr"], category: "Administration", path: ["Employees"], module: "employees" },
+  { label: "Payroll", href: "/payroll", keywords: ["salary"], category: "Administration", path: ["Payroll"], module: "payroll" },
+  { label: "IR8A / AIS", href: "/payroll/ir8a", keywords: ["ir8a", "ais", "tax", "cpf"], category: "Administration", path: ["Payroll", "IR8A / AIS"], module: "payroll" },
+  { label: "Employer's (IR8A)", href: "/payroll/ir8a/employers", keywords: ["ir8a", "employer", "uen", "declaration"], category: "Administration", path: ["Payroll", "IR8A / AIS", "Employer's (IR8A)"], module: "payroll" },
+
+  { label: "Purchase Quotations", href: "/purchase-quotations", keywords: ["pq", "rfq"], category: "Transactions", path: ["Purchases", "Purchase Quotations"], module: "purchase_quotations" },
+  { label: "Purchase Orders", href: "/purchase-orders", keywords: ["po", "purchase"], category: "Transactions", path: ["Purchases", "Purchase Orders"], module: "purchase_orders" },
+  { label: "Goods Receipt Note", href: "/grn", keywords: ["grn", "goods receipt", "receiving"], category: "Transactions", path: ["Purchases", "Goods Receipt Note"], module: "grn" },
+  { label: "Vendor Invoices", href: "/vendor-invoices", keywords: ["pi", "bill", "payable"], category: "Transactions", path: ["Purchases", "Vendor Invoices"], module: "vendor_invoices" },
+  { label: "Debit Notes", href: "/debit-notes", keywords: ["dn", "debit"], category: "Transactions", path: ["Purchases", "Debit Notes"], module: "debit_notes" },
+
+  { label: "Quotations", href: "/quotations", keywords: ["quote", "sales quotation"], category: "Transactions", path: ["Sales", "Quotations"], module: "quotations" },
+  { label: "Sales Orders", href: "/sales-orders", keywords: ["so", "order"], category: "Transactions", path: ["Sales", "Sales Orders"], module: "sales_orders" },
+  { label: "Proforma Invoices", href: "/proforma-invoices", keywords: ["proforma"], category: "Transactions", path: ["Sales", "Proforma Invoices"], module: "proforma_invoices" },
+  { label: "Tax Invoices", href: "/invoices", keywords: ["invoice", "sales invoice", "bill"], category: "Transactions", path: ["Sales", "Tax Invoices"], module: "invoices" },
+  { label: "Delivery Orders", href: "/delivery-orders", keywords: ["do", "delivery"], category: "Transactions", path: ["Sales", "Delivery Orders"], module: "delivery_orders" },
+  { label: "Credit Notes", href: "/credit-notes", keywords: ["cn", "credit"], category: "Transactions", path: ["Sales", "Credit Notes"], module: "credit_notes" },
+  { label: "Restaurants", href: "/point-of-sale/restaurants", keywords: ["pos", "restaurant"], category: "Point of Sale", path: ["Point of Sale", "Restaurants"], module: "point_of_sale" },
+  { label: "Bill of Materials", href: "/bill-of-materials", keywords: ["bom"], category: "Bill of Materials", path: ["Bill of Materials"], module: "bill_of_materials" },
+
+  { label: "Warehouses", href: "/inventory/warehouses", keywords: ["warehouse"], category: "Inventory", path: ["Warehouses"], module: "warehouses" },
+  { label: "Item Master", href: "/stock", keywords: ["stock", "inventory", "product", "item"], category: "Inventory", path: ["Item Master"], module: "stock_items" },
+  { label: "Stock Transfer", href: "/inventory/stock-transfer", keywords: ["transfer"], category: "Inventory", path: ["Stock Transfer"], module: "stock_transfer" },
+  { label: "Stock Reports", href: "/inventory/reports", keywords: ["inventory report"], category: "Inventory", path: ["Stock Reports"], module: "inventory_reports" },
+  { label: "Sales Person Wise Report", href: "/inventory/sales-person-wise-report", keywords: ["salesperson report"], category: "Inventory", path: ["Sales Person Wise Report"], module: "sales_person_wise_report" },
+
+  { label: "Vendors", href: "/vendors", keywords: ["supplier"], category: "Directory", path: ["Vendors"], module: "vendors" },
+  { label: "Customers", href: "/customers", keywords: ["client", "buyer"], category: "Directory", path: ["Customers"], module: "customers" },
+  { label: "Sales Person", href: "/sales-persons", keywords: ["salesperson", "sales persons"], category: "Directory", path: ["Sales Person"], module: "customers" },
+  { label: "Address Book", href: "/address-book", keywords: ["contacts", "email"], category: "Directory", path: ["Address Book"], module: "address_book" },
+
+  { label: "Projects", href: "/projects", keywords: ["project"], category: "Projects", path: ["Projects"], module: "projects" },
+
+  { label: "Bank Reconciliation", href: "/accounting/bank-reconciliation", keywords: ["bank recon"], category: "Accounting", path: ["Bank Reconciliation"], module: "accounting_bank_recon", singaporeOnly: true },
+  { label: "Chart of Accounts", href: "/accounting/chart-of-accounts", keywords: ["coa", "ledger"], category: "Accounting", path: ["Core Books", "Chart of Accounts"], module: "accounting_coa", singaporeOnly: true },
+  { label: "Journal Entries", href: "/accounting/journal-entries", keywords: ["je", "journal"], category: "Accounting", path: ["Core Books", "Journal Entries"], module: "accounting_je", singaporeOnly: true },
+  { label: "General Ledger", href: "/accounting/general-ledger", keywords: ["gl", "ledger"], category: "Accounting", path: ["Core Books", "General Ledger"], module: "accounting_gl", singaporeOnly: true },
+  { label: "Trial Balance", href: "/accounting/trial-balance", keywords: ["tb"], category: "Accounting", path: ["Core Books", "Trial Balance"], module: "accounting_tb", singaporeOnly: true },
+  { label: "Balance Sheet", href: "/accounting/balance-sheet", keywords: ["bs"], category: "Accounting", path: ["Core Books", "Balance Sheet"], module: "accounting_bs", singaporeOnly: true },
+  { label: "Profit & Loss", href: "/accounting/profit-loss", keywords: ["p&l", "income statement"], category: "Accounting", path: ["Core Books", "Profit & Loss"], module: "accounting_pl", singaporeOnly: true },
+  { label: "Cash Flow", href: "/accounting/cash-flow", keywords: ["cf"], category: "Accounting", path: ["Core Books", "Cash Flow"], module: "accounting_cf", singaporeOnly: true },
+  { label: "Income", href: "/accounting/income", keywords: ["non-trade income"], category: "Accounting", path: ["Income & Expenses", "Income"], module: "accounting_income", singaporeOnly: true },
+  { label: "Expenses", href: "/accounting/expenses", keywords: ["expense"], category: "Accounting", path: ["Income & Expenses", "Expenses"], module: "accounting_expenses", singaporeOnly: true },
+  { label: "GST F5 Return", href: "/accounting/gst-f5", keywords: ["gst", "f5", "iras"], category: "Accounting", path: ["Tax & Compliance", "GST F5 Return"], module: "accounting_gst_f5", singaporeOnly: true },
+  { label: "GST F7 Amended", href: "/accounting/gst-f7", keywords: ["gst", "f7"], category: "Accounting", path: ["Tax & Compliance", "GST F7 Amended"], module: "accounting_gst_f7", singaporeOnly: true },
+  { label: "GST IO Listing", href: "/accounting/gst-io", keywords: ["input", "output tax"], category: "Accounting", path: ["Tax & Compliance", "GST IO Listing"], module: "accounting_gst_io", singaporeOnly: true },
+  { label: "Withholding Tax", href: "/accounting/wht", keywords: ["wht", "section 45"], category: "Accounting", path: ["Tax & Compliance", "Withholding Tax"], module: "accounting_wht", singaporeOnly: true },
+  { label: "ECI", href: "/accounting/eci", keywords: ["estimated chargeable"], category: "Accounting", path: ["Tax & Compliance", "ECI"], module: "accounting_eci", singaporeOnly: true },
+  { label: "Form C-S", href: "/accounting/form-cs", keywords: ["corporate tax"], category: "Accounting", path: ["Tax & Compliance", "Form C-S"], module: "accounting_formcs", singaporeOnly: true },
+  { label: "IRAS Audit File", href: "/accounting/iaf", keywords: ["iaf"], category: "Accounting", path: ["Tax & Compliance", "IRAS Audit File"], module: "accounting_iaf", singaporeOnly: true },
+  { label: "AR Collections", href: "/accounting/ar", keywords: ["receivable", "collection"], category: "Accounting", path: ["Receivables", "AR Collections"], module: "accounting_ar", singaporeOnly: true },
+  { label: "AR Aging", href: "/accounting/ar-aging", keywords: ["aging receivable"], category: "Accounting", path: ["Receivables", "AR Aging"], module: "accounting_ar_aging", singaporeOnly: true },
+  { label: "Customer Statement", href: "/accounting/customer-statement", keywords: ["statement"], category: "Accounting", path: ["Receivables", "Customer Statement"], module: "accounting_cust_stmt", singaporeOnly: true },
+  { label: "AP Payments", href: "/accounting/ap", keywords: ["payable", "payment"], category: "Accounting", path: ["Payables", "AP Payments"], module: "accounting_ap", singaporeOnly: true },
+  { label: "AP Aging", href: "/accounting/ap-aging", keywords: ["aging payable"], category: "Accounting", path: ["Payables", "AP Aging"], module: "accounting_ap_aging", singaporeOnly: true },
+  { label: "Vendor Statement", href: "/accounting/vendor-statement", keywords: ["vendor statement"], category: "Accounting", path: ["Payables", "Vendor Statement"], module: "accounting_vendor_stmt", singaporeOnly: true },
+
+  { label: "User Management", href: "/admin", keywords: ["users", "roles"], category: "System", path: ["User Management"], module: "user_management" },
+  { label: "Audit Log", href: "/audit-log", keywords: ["audit"], category: "System", path: ["Audit Log"], module: "audit_log" },
+  { label: "Settings", href: "/settings", keywords: ["config"], category: "System", path: ["Settings"], module: "settings" },
+  { label: "Backup & Restore", href: "/settings/backups", keywords: ["backup", "restore"], category: "System", path: ["Backup & Restore"], module: "settings", singaporeOnly: true },
+  { label: "Year End Process", href: "/settings/year-end", keywords: ["financial year", "close year", "year end"], category: "System", path: ["Year End Process"], module: "settings", singaporeOnly: true },
+  { label: "Report Design", href: "/report-templates", keywords: ["report templates", "template"], category: "System", path: ["Report Design"], module: "report_templates" },
+];
+
+/** Map API document types → module breadcrumb prefix */
+const DOC_PATH: Record<string, { category: string; path: string[] }> = {
+  invoice: { category: "Transactions", path: ["Sales", "Tax Invoices"] },
+  quotation: { category: "Transactions", path: ["Sales", "Quotations"] },
+  sales_order: { category: "Transactions", path: ["Sales", "Sales Orders"] },
+  delivery_order: { category: "Transactions", path: ["Sales", "Delivery Orders"] },
+  credit_note: { category: "Transactions", path: ["Sales", "Credit Notes"] },
+  purchase_order: { category: "Transactions", path: ["Purchases", "Purchase Orders"] },
+  purchase_quotation: { category: "Transactions", path: ["Purchases", "Purchase Quotations"] },
+  vendor_invoice: { category: "Transactions", path: ["Purchases", "Vendor Invoices"] },
+  grn: { category: "Transactions", path: ["Purchases", "Goods Receipt Note"] },
+  debit_note: { category: "Transactions", path: ["Purchases", "Debit Notes"] },
+  customer: { category: "Directory", path: ["Customers"] },
+  vendor: { category: "Directory", path: ["Vendors"] },
+  stock_item: { category: "Inventory", path: ["Item Master"] },
+  project: { category: "Projects", path: ["Projects"] },
+};
+
+const CATEGORY_ORDER = [
+  "General",
+  "Administration",
+  "Transactions",
+  "Point of Sale",
+  "Bill of Materials",
+  "Inventory",
+  "Directory",
+  "Projects",
+  "Accounting",
+  "System",
+  "Sales",
+  "Purchases",
+  "Pages",
 ];
 
 function categoryIcon(category: string) {
   switch (category) {
-    case "Pages":
+    case "General":
       return LayoutDashboard;
+    case "Administration":
+      return Briefcase;
+    case "Transactions":
+    case "Sales":
+    case "Purchases":
+      return FileText;
     case "Directory":
       return Users;
     case "Inventory":
@@ -90,6 +162,8 @@ function categoryIcon(category: string) {
       return FolderKanban;
     case "Accounting":
       return BookOpen;
+    case "System":
+      return Settings;
     default:
       return FileText;
   }
@@ -116,9 +190,50 @@ function typeLabel(type: string) {
   return map[type] || type;
 }
 
+function breadcrumb(category: string, path: string[], leaf?: string) {
+  const parts = [category, ...path];
+  if (leaf) parts.push(leaf);
+  return parts.join(" > ");
+}
+
+/** Highlight every occurrence of the typed query (case-insensitive), Wave-style blue bold. */
+function highlightMatch(text: string, query: string): ReactNode {
+  const q = query.trim();
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const qLower = q.toLowerCase();
+  const nodes: ReactNode[] = [];
+  let start = 0;
+  let idx = lower.indexOf(qLower);
+  let key = 0;
+  while (idx >= 0) {
+    if (idx > start) nodes.push(text.slice(start, idx));
+    nodes.push(
+      <span key={key++} className="text-blue-600 font-semibold">
+        {text.slice(idx, idx + q.length)}
+      </span>,
+    );
+    start = idx + q.length;
+    idx = lower.indexOf(qLower, start);
+  }
+  if (start < text.length) nodes.push(text.slice(start));
+  return nodes.length === 1 && typeof nodes[0] === "string" ? nodes[0] : <>{nodes}</>;
+}
+
+function normalizeApiHit(hit: SearchHit): SearchHit {
+  const meta = DOC_PATH[hit.type];
+  if (!meta) return hit;
+  return {
+    ...hit,
+    category: meta.category,
+    title: breadcrumb(meta.category, meta.path, hit.title),
+    subtitle: hit.subtitle,
+  };
+}
+
 export function GlobalSearch() {
   const [, setLocation] = useLocation();
-  const { hasModuleAccess, isAdmin, selectedCompany } = useAuth();
+  const { hasModuleAccess, selectedCompany } = useAuth();
   const isSingapore =
     selectedCompany?.country?.toLowerCase() === "singapore" ||
     selectedCompany?.country === "SG";
@@ -137,11 +252,10 @@ export function GlobalSearch() {
   const canAccess = useCallback(
     (module?: AppModule | AppModule[]) => {
       if (!module) return true;
-      if (isAdmin) return true;
       const mods = Array.isArray(module) ? module : [module];
       return mods.some((m) => hasModuleAccess(m));
     },
-    [hasModuleAccess, isAdmin],
+    [hasModuleAccess],
   );
 
   const pageHits = useMemo(() => {
@@ -150,43 +264,47 @@ export function GlobalSearch() {
     const matched = PAGES.filter((p) => {
       if (p.singaporeOnly && !isSingapore) return false;
       if (!canAccess(p.module)) return false;
-      const hay = `${p.label} ${p.keywords.join(" ")}`.toLowerCase();
+      const hay = `${p.label} ${p.path.join(" ")} ${p.category} ${p.keywords.join(" ")}`.toLowerCase();
       return hay.includes(q);
     }).map(
       (p): SearchHit => ({
         type: "page",
-        category: "Pages",
+        category: p.category,
         id: p.href,
-        title: p.label,
-        subtitle: "Go to page",
+        title: breadcrumb(p.category, p.path),
         href: p.href,
       }),
     );
-    // Exact / starts-with first so Enter picks the right one
     matched.sort((a, b) => {
       const al = a.title.toLowerCase();
       const bl = b.title.toLowerCase();
-      const aExact = al === q ? 0 : al.startsWith(q) ? 1 : 2;
-      const bExact = bl === q ? 0 : bl.startsWith(q) ? 1 : 2;
+      const aExact = al.endsWith(q) || al.split(" > ").pop() === q ? 0 : al.includes(q) ? 1 : 2;
+      const bExact = bl.endsWith(q) || bl.split(" > ").pop() === q ? 0 : bl.includes(q) ? 1 : 2;
       return aExact - bExact;
     });
-    return matched.slice(0, 8);
+    return matched.slice(0, 12);
   }, [query, isSingapore, canAccess]);
 
   const allHits = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const merged = [...pageHits, ...apiHits];
+    const docs = apiHits.map(normalizeApiHit);
+    // Pages first (module navigation), then matching documents — same from every route
+    const merged = [...pageHits, ...docs];
     if (!q) return merged;
-    // Prefer exact doc number / name match first (what user typed)
     return [...merged].sort((a, b) => {
-      const al = a.title.toLowerCase();
-      const bl = b.title.toLowerCase();
-      const score = (t: string) => (t === q ? 0 : t.startsWith(q) ? 1 : t.includes(q) ? 2 : 3);
-      const d = score(al) - score(bl);
+      // Keep pages ahead of docs when relevance is similar
+      const leaf = (t: string) => t.split(" > ").pop()?.toLowerCase() || t.toLowerCase();
+      const score = (t: string) => {
+        const l = leaf(t);
+        if (l === q) return 0;
+        if (l.startsWith(q)) return 1;
+        if (t.toLowerCase().includes(q)) return 2;
+        return 3;
+      };
+      const d = score(a.title) - score(b.title);
       if (d !== 0) return d;
-      // pages after documents when scores equal
-      if (a.type === "page" && b.type !== "page") return 1;
-      if (b.type === "page" && a.type !== "page") return -1;
+      if (a.type === "page" && b.type !== "page") return -1;
+      if (b.type === "page" && a.type !== "page") return 1;
       return 0;
     });
   }, [pageHits, apiHits, query]);
@@ -306,40 +424,30 @@ export function GlobalSearch() {
   }
 
   const grouped = useMemo(() => {
-    const order = ["Sales", "Purchases", "Directory", "Inventory", "Projects", "Pages", "Accounting"];
     const map = new Map<string, SearchHit[]>();
     for (const hit of allHits) {
       const list = map.get(hit.category) || [];
       list.push(hit);
       map.set(hit.category, list);
     }
-    return order
-      .filter((c) => map.has(c))
+    const known = CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => ({
+      category: c,
+      hits: map.get(c)!,
+    }));
+    const extras = [...map.keys()]
+      .filter((c) => !CATEGORY_ORDER.includes(c))
       .map((c) => ({ category: c, hits: map.get(c)! }));
+    return [...known, ...extras];
   }, [allHits]);
 
   const showPanel = open && query.trim().length > 0;
-
-  function highlightTitle(title: string) {
-    const q = query.trim();
-    if (!q) return title;
-    const idx = title.toLowerCase().indexOf(q.toLowerCase());
-    if (idx < 0) return title;
-    return (
-      <>
-        {title.slice(0, idx)}
-        <mark className="bg-amber-100 text-foreground rounded px-0.5">{title.slice(idx, idx + q.length)}</mark>
-        {title.slice(idx + q.length)}
-      </>
-    );
-  }
 
   return (
     <div
       ref={wrapRef}
       className="sticky top-0 z-40 -mx-4 md:-mx-6 xl:-mx-8 px-4 md:px-6 xl:px-8 pt-0 pb-2 mb-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
     >
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full max-w-lg">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         <input
           ref={inputRef}
@@ -350,7 +458,7 @@ export function GlobalSearch() {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search…"
+          placeholder="Search pages & records…"
           className="flex h-9 w-full rounded-lg border border-border/80 bg-card pl-9 pr-16 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
           autoComplete="off"
           autoCorrect="off"
@@ -396,7 +504,8 @@ export function GlobalSearch() {
                 const Icon = categoryIcon(category);
                 return (
                   <div key={category}>
-                    <div className="sticky top-0 z-10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground bg-muted/60 border-b">
+                    <div className="sticky top-0 z-10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground bg-muted/60 border-b flex items-center gap-1.5">
+                      <Icon className="h-3 w-3" />
                       {category}
                     </div>
                     {hits.map((hit) => {
@@ -416,11 +525,12 @@ export function GlobalSearch() {
                             goTo(hit);
                           }}
                         >
-                          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <div className="min-w-0 flex-1">
-                            <div className="font-medium truncate">{highlightTitle(hit.title)}</div>
+                            <div className="truncate">{highlightMatch(hit.title, query)}</div>
                             {hit.subtitle && (
-                              <div className="text-xs text-muted-foreground truncate">{hit.subtitle}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {highlightMatch(hit.subtitle, query)}
+                              </div>
                             )}
                           </div>
                           <div className="shrink-0 text-right">
@@ -440,7 +550,7 @@ export function GlobalSearch() {
             )}
             {allHits.length > 0 && (
               <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-t bg-muted/30">
-                Enter → open highlighted · ↑↓ to move
+                Enter → open · ↑↓ to move · same from any page
               </div>
             )}
           </div>

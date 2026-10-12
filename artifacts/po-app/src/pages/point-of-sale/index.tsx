@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent } from "react";
+import { useLocation } from "wouter";
 import { useListStockItems, getListStockItemsQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePagination } from "@/hooks/use-pagination";
@@ -34,8 +35,13 @@ import {
   Barcode,
   LogIn,
   LogOut,
+  Eye,
+  EyeOff,
+  User,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generatePOS_PDF } from "@/lib/pdf";
 import { amountFromWeight, getScaleService, parseSubUomFactor, parseWeightInputToKg, roundMoney } from "@/lib/pos-scale-service";
@@ -87,6 +93,8 @@ import { useAuth } from "@/contexts/auth-context";
 import {
   loginSalesPerson,
   createSalesPersonAccount,
+  updateSalesPersonAccount,
+  useSalesPersons,
   loadPosEmployeeSession,
   savePosEmployeeSession,
   clearPosEmployeeSession,
@@ -108,6 +116,12 @@ type CartLine = {
   weight?: number;
   unit?: string;
   isWeightBased?: boolean;
+  tag?: string;
+  discPct?: number;
+  taxPct?: number;
+  cessPct?: number;
+  serialNo?: string;
+  description?: string;
 };
 
 type PosProduct = {
@@ -128,13 +142,17 @@ type PosProduct = {
   packFactor?: number;
   imageUrl?: string | null;
   isWeightBased?: boolean;
+  category?: string;
 };
 
 function lineAmount(line: CartLine): number {
   if (line.isWeightBased) {
     return amountFromWeight(Number(line.weight) || 0, Number(line.unitPrice) || 0);
   }
-  return roundMoney((Number(line.unitPrice) || 0) * (Number(line.qty) || 0));
+  const price = Number(line.unitPrice) || 0;
+  const qty = Number(line.qty) || 0;
+  const disc = Number(line.discPct) || 0;
+  return roundMoney(price * (1 - disc / 100) * qty);
 }
 
 type PaymentTender = {
@@ -254,6 +272,11 @@ function KpiCard({
 export default function PointOfSalePage() {
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
+  const { salesPersons } = useSalesPersons();
+  const [location] = useLocation();
+  const isRestaurant = location.startsWith("/point-of-sale/restaurants");
+  const isRetail = location.startsWith("/point-of-sale/retail");
+  const isSupermarket = location.startsWith("/point-of-sale/supermarket");
   const [mode, setMode] = useState<"list" | "pos">("list");
   const [salesList, setSalesList] = useState<PosSaleRecord[]>(() => loadPosSales());
   const [listSearch, setListSearch] = useState("");
@@ -263,6 +286,28 @@ export default function PointOfSalePage() {
   const [page, setPage] = useState(1);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [salesPerson, setSalesPerson] = useState("");
+  const [retailItemQuery, setRetailItemQuery] = useState("");
+  const [retailPickMode, setRetailPickMode] = useState<"tag" | "code">("code");
+  const [retailDraft, setRetailDraft] = useState<{
+    productKey: string;
+    stockItemId: number;
+    code: string;
+    name: string;
+    barcode: string;
+    unit: string;
+    qty: string;
+    salePrice: string;
+    mrp: string;
+    disc: string;
+    tax: string;
+    cess: string;
+    description: string;
+    serialNo: string;
+    purchasePrice: number;
+  } | null>(null);
+  const [supermarketCategory, setSupermarketCategory] = useState("all");
+  const [invoiceDate, setInvoiceDate] = useState<Date | null>(null);
+  const [dueDate, setDueDate] = useState<Date | null>(null);
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState("manual");
   const [note, setNote] = useState("");
@@ -293,6 +338,7 @@ export default function PointOfSalePage() {
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [employeeLoginError, setEmployeeLoginError] = useState("");
   const [employeeLoggingIn, setEmployeeLoggingIn] = useState(false);
+  const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const employeeIdRef = useRef<HTMLInputElement>(null);
   const [posEmployee, setPosEmployee] = useState<PosEmployeeSession | null>(() => loadPosEmployeeSession());
 
@@ -405,6 +451,7 @@ export default function PointOfSalePage() {
             uom,
             imageUrl,
             isWeightBased,
+            category: String(i.category || "").trim(),
           },
           subUoms,
         );
@@ -424,12 +471,35 @@ export default function PointOfSalePage() {
           uom,
           imageUrl,
           isWeightBased,
+          category: String(i.category || "").trim(),
         },
         subUoms,
       );
     }
     return out;
   }, [stockItems]);
+
+  const supermarketCategories = useMemo(() => {
+    const names = new Set<string>();
+    for (const product of products) {
+      if (product.category) names.add(product.category);
+    }
+    return Array.from(names).sort();
+  }, [products]);
+
+  const supermarketProducts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products.filter((product) => {
+      if (product.packFactor) return false;
+      if (supermarketCategory !== "all" && product.category !== supermarketCategory) return false;
+      if (!q) return true;
+      return (
+        product.name.toLowerCase().includes(q) ||
+        product.code.toLowerCase().includes(q) ||
+        product.barcode.toLowerCase().includes(q)
+      );
+    });
+  }, [products, search, supermarketCategory]);
 
   const filtered = useMemo(() => {
     let rows = products;
@@ -459,17 +529,50 @@ export default function PointOfSalePage() {
     setPage(1);
   }, [tab, search]);
 
-  const subtotal = cart.reduce((sum, line) => sum + lineAmount(line), 0);
-  // Manual = flat SGD amount; Percent = % of subtotal
+  const lineGross = cart.reduce((sum, line) => {
+    if (line.isWeightBased) return sum + amountFromWeight(Number(line.weight) || 0, Number(line.unitPrice) || 0);
+    return sum + (Number(line.unitPrice) || 0) * (Number(line.qty) || 0);
+  }, 0);
+  const lineDiscount = cart.reduce((sum, line) => {
+    const gross = line.isWeightBased
+      ? amountFromWeight(Number(line.weight) || 0, Number(line.unitPrice) || 0)
+      : (Number(line.unitPrice) || 0) * (Number(line.qty) || 0);
+    return sum + gross * ((Number(line.discPct) || 0) / 100);
+  }, 0);
+  const lineTaxable = Math.max(0, lineGross - lineDiscount);
+  const lineTax = cart.reduce((sum, line) => {
+    const gross = line.isWeightBased
+      ? amountFromWeight(Number(line.weight) || 0, Number(line.unitPrice) || 0)
+      : (Number(line.unitPrice) || 0) * (Number(line.qty) || 0);
+    const taxableLine = gross * (1 - (Number(line.discPct) || 0) / 100);
+    const rate = line.taxPct != null ? Number(line.taxPct) || 0 : gstRate;
+    return sum + taxableLine * (rate / 100);
+  }, 0);
+  const lineCess = cart.reduce((sum, line) => {
+    const gross = line.isWeightBased
+      ? amountFromWeight(Number(line.weight) || 0, Number(line.unitPrice) || 0)
+      : (Number(line.unitPrice) || 0) * (Number(line.qty) || 0);
+    const taxableLine = gross * (1 - (Number(line.discPct) || 0) / 100);
+    return sum + taxableLine * ((Number(line.cessPct) || 0) / 100);
+  }, 0);
+  const catalogSubtotal = cart.reduce((sum, line) => sum + lineAmount(line), 0);
   const rawDiscount = Math.max(0, Number(discount) || 0);
-  const discountAmt =
+  const catalogDiscount =
     discountType === "percent"
-      ? Math.min(subtotal, (subtotal * rawDiscount) / 100)
-      : Math.min(subtotal, rawDiscount);
-  const taxable = Math.max(0, subtotal - discountAmt);
-  // GST exclusive: tax is added on top of taxable amount
-  const gstAmt = (taxable * gstRate) / 100;
-  const total = taxable + gstAmt;
+      ? Math.min(catalogSubtotal, (catalogSubtotal * rawDiscount) / 100)
+      : Math.min(catalogSubtotal, rawDiscount);
+  const subtotal = isRetail ? lineGross : catalogSubtotal;
+  const discountAmt = isRetail ? lineDiscount : catalogDiscount;
+  const taxable = isRetail ? lineTaxable : Math.max(0, catalogSubtotal - catalogDiscount);
+  const gstAmt = isRetail ? lineTax : (taxable * gstRate) / 100;
+  const cessAmt = isRetail ? lineCess : 0;
+  const total = taxable + gstAmt + cessAmt;
+  const retailTaxRate = isRetail && cart.length > 0
+    ? (cart.every((line) => (line.taxPct != null ? Number(line.taxPct) : gstRate) === (cart[0].taxPct != null ? Number(cart[0].taxPct) : gstRate))
+      ? (cart[0].taxPct != null ? Number(cart[0].taxPct) : gstRate)
+      : null)
+    : gstRate;
+  const taxLabel = retailTaxRate == null ? "Tax" : `GST ${retailTaxRate}%`;
   const baselinePaid = baselinePayments.reduce((s, t) => s + t.amount, 0);
   const sessionPaid = tenders.reduce((s, t) => s + t.amount, 0);
   const paidSoFar = baselinePaid + sessionPaid;
@@ -777,6 +880,92 @@ export default function PointOfSalePage() {
     setPendingPayByMethod({});
   }
 
+  useEffect(() => {
+    if (!isRetail) return;
+    window.dispatchEvent(new CustomEvent("bizone-sidebar-hidden", { detail: false }));
+    window.dispatchEvent(new CustomEvent("bizone-sidebar-collapsed", { detail: mode === "pos" }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("bizone-sidebar-collapsed", { detail: false }));
+    };
+  }, [isRetail, mode]);
+
+  function fillRetailFromCode() {
+    const q = retailItemQuery.trim().toLowerCase();
+    if (!q) {
+      toast({ title: "Enter item code", description: "Type an item code, then press the barcode.", variant: "destructive" });
+      return;
+    }
+    const match = products.find((p) => {
+      if (p.packFactor) return false;
+      if (retailPickMode === "tag") {
+        return p.barcode.toLowerCase() === q || p.name.toLowerCase() === q;
+      }
+      return p.code.toLowerCase() === q || p.barcode.toLowerCase() === q;
+    });
+    if (!match) {
+      toast({ title: "Item not found", description: "No stock item matches that code.", variant: "destructive" });
+      return;
+    }
+    const source = (stockItems as any[]).find((item) => item.id === match.stockItemId);
+    const mrp = parseFloat(String(source?.mrpPrice ?? match.unitPrice)) || match.unitPrice;
+    setRetailDraft({
+      productKey: match.key,
+      stockItemId: match.stockItemId,
+      code: match.code,
+      name: match.subUomLabel ? `${match.name} (${match.subUomLabel})` : match.name,
+      barcode: match.barcode,
+      unit: match.uom || "",
+      qty: "1",
+      salePrice: (match.unitPrice > 0 ? match.unitPrice : 0).toFixed(2),
+      mrp: mrp.toFixed(2),
+      disc: "0",
+      tax: String(gstRate),
+      cess: "0",
+      description: String(source?.description || ""),
+      serialNo: "",
+      purchasePrice: match.purchasePrice,
+    });
+  }
+
+  function commitRetailItem() {
+    if (!retailDraft) {
+      toast({ title: "Select an item", description: "Enter the item code and press the barcode first.", variant: "destructive" });
+      return;
+    }
+    const qty = Number(retailDraft.qty);
+    const price = Number(retailDraft.salePrice);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast({ title: "Enter quantity", description: "Quantity must be more than 0.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      toast({ title: "Enter sale price", description: "Sale price cannot be empty.", variant: "destructive" });
+      return;
+    }
+    setCart((prev) => [
+      ...prev,
+      {
+        key: `${retailDraft.productKey}-${Date.now()}`,
+        id: retailDraft.stockItemId,
+        code: retailDraft.code,
+        name: retailDraft.name,
+        barcode: retailDraft.barcode,
+        unitPrice: price,
+        purchasePrice: retailDraft.purchasePrice,
+        qty,
+        unit: retailDraft.unit,
+        tag: retailPickMode === "tag" ? retailItemQuery.trim() : retailDraft.code,
+        discPct: Number(retailDraft.disc) || 0,
+        taxPct: Number(retailDraft.tax) || 0,
+        cessPct: Number(retailDraft.cess) || 0,
+        serialNo: retailDraft.serialNo,
+        description: retailDraft.description,
+      },
+    ]);
+    setRetailDraft(null);
+    setRetailItemQuery("");
+  }
+
   function startNewPos() {
     if (!posEmployee) {
       toast({
@@ -806,6 +995,10 @@ export default function PointOfSalePage() {
   function handleEmployeeLogout() {
     clearPosEmployeeSession();
     setPosEmployee(null);
+    setEmployeeIdInput("");
+    setEmployeePassword("");
+    setConfirmPassword("");
+    setEmployeeLoginError("");
     toast({ title: "Employee logged out" });
   }
 
@@ -818,6 +1011,10 @@ export default function PointOfSalePage() {
     savePosEmployeeSession(session);
     setPosEmployee(session);
     setEmployeeLoginOpen(false);
+    setEmployeeIdInput("");
+    setEmployeePassword("");
+    setConfirmPassword("");
+    setEmployeeLoginError("");
     toast({
       title: created ? "Account created" : "Logged in",
       description: person.name,
@@ -829,16 +1026,35 @@ export default function PointOfSalePage() {
     setEmployeeLoggingIn(true);
     setEmployeeLoginError("");
     try {
+      const selectedPerson = salesPersons.find((person) => person.id === employeeIdInput);
+      const salesPersonCode = selectedPerson?.employmentCode?.trim() || selectedPerson?.name || employeeIdInput;
       if (creatingAccount) {
-        const result = createSalesPersonAccount(employeeIdInput, employeePassword, confirmPassword);
+        const alreadyHasAccount = Boolean((selectedPerson?.password || "").trim());
+        const result = alreadyHasAccount
+          ? updateSalesPersonAccount(salesPersonCode, employeePassword, confirmPassword)
+          : createSalesPersonAccount(salesPersonCode, employeePassword, confirmPassword);
         if (!result.ok) {
           setEmployeeLoginError(result.error);
           return;
         }
-        finishEmployeeSession(result.person, true);
+        setCreatingAccount(false);
+        setEmployeeIdInput(result.person.name);
+        setEmployeePassword("");
+        setConfirmPassword("");
+        toast({
+          title: alreadyHasAccount ? "Account updated" : "Account created",
+          description: `${result.person.name} is ready. Enter the password to login.`,
+        });
         return;
       }
-      const result = loginSalesPerson(employeeIdInput, employeePassword);
+      const typed = employeeIdInput.trim().toLowerCase();
+      const matched = salesPersons.find(
+        (person) =>
+          Boolean((person.password || "").trim()) &&
+          (person.name.trim().toLowerCase() === typed ||
+            person.employmentCode.trim().toLowerCase() === typed),
+      );
+      const result = loginSalesPerson(matched?.employmentCode?.trim() || matched?.name || "", employeePassword);
       if (!result.ok) {
         setEmployeeLoginError(result.error);
         return;
@@ -880,8 +1096,9 @@ export default function PointOfSalePage() {
 
   function switchToPayMethod(nextMethod: PaymentMethod) {
     if (nextMethod === payMethod) return;
-    payAmountEdited.current = false;
-    setPayAmount(0);
+    const nextAmount = pendingPayByMethod[nextMethod] || 0;
+    payAmountEdited.current = nextAmount > 0;
+    setPayAmount(nextAmount);
     setShowAmountZero(false);
     setPayMethod(nextMethod);
   }
@@ -1056,7 +1273,8 @@ export default function PointOfSalePage() {
   }
 
   function savePayment() {
-    if (!payAmountEdited.current) {
+    const hasPending = pendingPayByMethodHasValue();
+    if (!payAmountEdited.current && !hasPending) {
       const committedRemaining = Math.max(0, Math.round((total - paidSoFar) * 100) / 100);
       if (committedRemaining <= 0.001 && paidSoFar > 0) {
         setPayOpen(false);
@@ -1150,33 +1368,191 @@ export default function PointOfSalePage() {
 
   const { page: salesPage, setPage: setSalesPage, totalPages: salesTotalPages, paginatedItems: paginatedSales } = usePagination(filteredSales);
 
+  if ((isRestaurant || isRetail || isSupermarket) && !posEmployee) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
+        <div className="w-[530px] min-h-[437px] rounded-[20px] border border-[#E5E7EB] bg-white px-8 py-8 shadow-sm">
+          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-[#F3F4F6] p-1">
+            <button
+              type="button"
+              className={`h-10 rounded-lg text-sm font-semibold ${!creatingAccount ? "bg-[#2563EB] text-white" : "text-[#6B7280]"}`}
+              onClick={() => {
+                setCreatingAccount(false);
+                setEmployeeIdInput("");
+                setConfirmPassword("");
+                setEmployeeLoginError("");
+              }}
+            >
+              Sales person login
+            </button>
+            <button
+              type="button"
+              className={`h-10 rounded-lg text-sm font-semibold ${creatingAccount ? "bg-[#2563EB] text-white" : "text-[#6B7280]"}`}
+              onClick={() => {
+                setCreatingAccount(true);
+                setEmployeeIdInput("");
+                setEmployeeLoginError("");
+              }}
+            >
+              Create account
+            </button>
+          </div>
+          <form onSubmit={handleEmployeeLogin} className="space-y-5" autoComplete="off">
+            {creatingAccount ? (
+              <div className="space-y-2">
+                <Label>Sales person</Label>
+                <Select value={employeeIdInput || undefined} onValueChange={setEmployeeIdInput}>
+                  <SelectTrigger className="h-11" aria-label="Sales person">
+                    <SelectValue placeholder="Select sales person" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {salesPersons.length === 0 ? (
+                      <SelectItem value="__none" disabled>
+                        No sales persons in Sales Person
+                      </SelectItem>
+                    ) : (
+                      salesPersons.map((person) => (
+                        <SelectItem key={person.id} value={person.id}>
+                          {person.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Sales person</Label>
+                <Input
+                  value={employeeIdInput}
+                  onChange={(e) => setEmployeeIdInput(e.target.value)}
+                  placeholder="Enter sales person"
+                  aria-label="Sales person"
+                  className="h-11"
+                />
+              </div>
+            )}
+            <div className={creatingAccount ? "grid grid-cols-2 gap-3" : "space-y-2"}>
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <div className="relative">
+                  <Input
+                    type={showEmployeePassword ? "text" : "password"}
+                    value={employeePassword}
+                    onChange={(e) =>
+                      setEmployeePassword(
+                        creatingAccount ? e.target.value.replace(/\D/g, "").slice(0, 8) : e.target.value,
+                      )
+                    }
+                    placeholder={creatingAccount ? undefined : "Enter your password"}
+                    aria-label="Password"
+                    inputMode={creatingAccount ? "numeric" : undefined}
+                    maxLength={creatingAccount ? 8 : undefined}
+                    className="h-11 pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]"
+                    onClick={() => setShowEmployeePassword((open) => !open)}
+                    aria-label={showEmployeePassword ? "Hide password" : "Show password"}
+                  >
+                    {showEmployeePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              {creatingAccount && (
+                <div className="space-y-2">
+                  <Label>Confirm Password</Label>
+                  <Input
+                    type={showEmployeePassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    aria-label="Confirm Password"
+                    inputMode="numeric"
+                    maxLength={8}
+                    className="h-11"
+                  />
+                </div>
+              )}
+            </div>
+            {creatingAccount && employeePassword.length > 0 && !/^\d{8}$/.test(employeePassword) ? (
+              <p className="text-sm text-red-600">Password must be 8 digits.</p>
+            ) : creatingAccount && confirmPassword.length > 0 && employeePassword !== confirmPassword ? (
+              <p className="text-sm text-red-600">Password and confirm password do not match.</p>
+            ) : employeeLoginError ? (
+              <p className="text-sm text-red-600">{employeeLoginError}</p>
+            ) : null}
+            <Button
+              type="submit"
+              className="h-11 w-full bg-[#2563EB] text-base hover:bg-[#1D4ED8]"
+              disabled={
+                employeeLoggingIn ||
+                !employeeIdInput.trim() ||
+                !employeePassword.trim() ||
+                (creatingAccount && !/^\d{8}$/.test(employeePassword)) ||
+                (creatingAccount && !/^\d{8}$/.test(confirmPassword))
+              }
+            >
+              {employeeLoggingIn
+                ? creatingAccount ? "Saving..." : "Logging in..."
+                : creatingAccount
+                  ? (salesPersons.some((person) => person.id === employeeIdInput && (person.password || "").trim())
+                    ? "Update account"
+                    : "Create account")
+                  : "Login"}
+              {!employeeLoggingIn && !creatingAccount ? <ArrowRight className="ml-1 h-4 w-4" /> : null}
+            </Button>
+            {!creatingAccount && (
+              <button
+                type="button"
+                className="w-full text-center text-sm text-[#374151]"
+                onClick={() => toast({ title: "Forgot password", description: "Ask an administrator to reset the sales person password." })}
+              >
+                Forgot password ?
+              </button>
+            )}
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "list") {
     return (
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Point of Sale</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {!isRetail && (
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Point of Sale</h1>
+            </div>
+          )}
+          <div className={`flex flex-wrap items-center gap-2 ${isRetail ? "ml-auto" : ""}`}>
             {posEmployee ? (
               <>
-                <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800">
-                  {posEmployee.employmentCode} · {posEmployee.name}
+                <span className={isRetail
+                  ? "inline-flex h-9 items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-4 text-sm font-medium text-[#111827]"
+                  : "rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800"}>
+                  {isRetail ? <User className="h-4 w-4 shrink-0 text-[#6B7280]" /> : null}
+                  {isRetail ? posEmployee.name : `${posEmployee.employmentCode} · ${posEmployee.name}`}
                 </span>
                 <Button
                   type="button"
                   variant="outline"
-                  className="gap-2"
+                  className={isRetail
+                    ? "h-9 min-h-9 w-auto gap-2 rounded-md border border-[#E5E7EB] px-4 py-2 text-sm font-medium shadow-none"
+                    : "gap-2"}
                   onClick={handleEmployeeLogout}
                 >
                   <LogOut className="h-4 w-4" /> Logout
                 </Button>
                 <Button
                   type="button"
-                  className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"
+                  className={isRetail
+                    ? "h-9 min-h-9 w-auto gap-2 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#2563EB]"
+                    : "gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"}
                   onClick={startNewPos}
                 >
-                  <Plus className="h-4 w-4" /> Create New POS
+                  <Plus className="h-4 w-4" /> {isRetail ? "Create POS" : "Create New POS"}
                 </Button>
               </>
             ) : (
@@ -1426,9 +1802,11 @@ export default function PointOfSalePage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
+            {!isSupermarket && (
             <h1 className="truncate text-2xl font-bold tracking-tight text-[#2563EB] sm:text-3xl">
-              {editingSale ? `Edit ${editingSale.posNumber}` : "Create New POS"}
+              {editingSale ? `Edit ${editingSale.posNumber}` : isRetail ? "Create POS" : "Create New POS"}
             </h1>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -1459,6 +1837,13 @@ export default function PointOfSalePage() {
               </AlertDialog>
             )}
 
+            {isRetail && posEmployee ? (
+              <span className="inline-flex h-9 items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-4 text-sm font-medium text-[#111827]">
+                <User className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                {posEmployee.name}
+              </span>
+            ) : null}
+            {!isRetail && (
             <form
               onSubmit={handleBarcodeSubmit}
               className="flex h-9 w-full max-w-[360px] items-center gap-1.5 rounded-lg border border-[#2563EB] bg-white px-2 shadow-sm sm:w-[340px]"
@@ -1481,9 +1866,297 @@ export default function PointOfSalePage() {
                 Scan / Add
               </button>
             </form>
+            )}
           </div>
         </div>
 
+        {isRetail ? (
+          <div className="space-y-4">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold text-[#111827]">Invoice Information</h2>
+              <div className="grid gap-4 md:grid-cols-4">
+                {["Invoice Type", "Invoice No"].map((label) => (
+                  <label key={label} className="space-y-1.5 text-sm text-[#6B7280]">
+                    {label}
+                    <Input className="h-10" />
+                  </label>
+                ))}
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Date
+                  <SimpleDatePicker date={invoiceDate} setDate={(date) => setInvoiceDate(date ?? null)} />
+                </label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Due Date
+                  <SimpleDatePicker date={dueDate} setDate={(date) => setDueDate(date ?? null)} />
+                </label>
+                {["Contact No", "Customer", "Address", "Customer GSTN"].map((label) => (
+                  <label key={label} className="space-y-1.5 text-sm text-[#6B7280]">
+                    {label}
+                    <Input className="h-10" />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center gap-6 text-sm text-[#374151]">
+                <span>Bill To</span>
+                <label className="inline-flex items-center gap-2">
+                  <input type="radio" name="bill-to" checked={billTo === "cash"} onChange={() => setBillTo("cash")} />
+                  Cash A/C
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input type="radio" name="bill-to" checked={billTo === "customer"} onChange={() => setBillTo("customer")} />
+                  Customer A/C
+                </label>
+              </div>
+            </section>
+
+            <section
+              className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm"
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || !retailDraft) return;
+                e.preventDefault();
+                commitRetailItem();
+              }}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-[#111827]">Particulars</h2>
+                <Button type="button" className="h-9 gap-1 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={commitRetailItem}>
+                  <Plus className="h-4 w-4" /> Add Item
+                </Button>
+              </div>
+              <p className="mb-1.5 text-sm text-[#6B7280]">Item Code</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  value={retailItemQuery}
+                  onChange={(e) => setRetailItemQuery(e.target.value)}
+                  placeholder="Search or select item"
+                  className="h-10 max-w-xl flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      fillRetailFromCode();
+                    }
+                  }}
+                />
+                <button type="button" className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#2563EB] text-[#2563EB]" onClick={fillRetailFromCode} aria-label="Scan item">
+                  <Barcode className="h-4 w-4" />
+                </button>
+                <label className="inline-flex items-center gap-2 text-sm text-[#374151]">
+                  <input type="radio" name="pick-mode" checked={retailPickMode === "tag"} onChange={() => setRetailPickMode("tag")} />
+                  Item Tag
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-[#374151]">
+                  <input type="radio" name="pick-mode" checked={retailPickMode === "code"} onChange={() => setRetailPickMode("code")} />
+                  Item Code
+                </label>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Item Name<Input className="h-10" value={retailDraft?.name || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, name: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Unit<Input className="h-10" value={retailDraft?.unit || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, unit: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Quantity<Input className="h-10" value={retailDraft?.qty || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, qty: e.target.value } : prev)} /></label>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-6">
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Sale Price<Input className="h-10" value={retailDraft?.salePrice || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, salePrice: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">M.R.P<Input className="h-10" value={retailDraft?.mrp || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, mrp: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Disc (%)<Input className="h-10" value={retailDraft?.disc || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, disc: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Tax (%)<Input className="h-10" value={retailDraft?.tax || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, tax: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Cess (%)<Input className="h-10" value={retailDraft?.cess || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, cess: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Amount<Input className="h-10" readOnly value={retailDraft ? (() => {
+                  const taxableLine = (Number(retailDraft.salePrice) || 0) * (1 - (Number(retailDraft.disc) || 0) / 100) * (Number(retailDraft.qty) || 0);
+                  const tax = taxableLine * ((Number(retailDraft.tax) || 0) / 100);
+                  const cess = taxableLine * ((Number(retailDraft.cess) || 0) / 100);
+                  return roundMoney(taxableLine + tax + cess).toFixed(2);
+                })() : ""} /></label>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Item Description<Input className="h-10" value={retailDraft?.description || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Serial No<Input className="h-10" value={retailDraft?.serialNo || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, serialNo: e.target.value } : prev)} /></label>
+              </div>
+            </section>
+
+            <div className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#2563EB] text-left text-xs text-white">
+                    {["S.No", "Item Name", "Tag", "Quantity", "Unit", "Unit Price", "Disc (%)", "Tax (%)", "Cess (%)", "Net Price", "Amount Before Tax"].map((col) => (
+                      <th key={col} className="px-3 py-2.5 font-medium">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="px-3 py-8 text-center text-[#6B7280]">Add an item to start this sale.</td>
+                    </tr>
+                  ) : cart.map((line, index) => {
+                    const amount = lineAmount(line);
+                    const disc = Number(line.discPct) || 0;
+                    const net = (Number(line.unitPrice) || 0) * (1 - disc / 100);
+                    return (
+                      <tr key={line.key} className="border-b border-[#E5E7EB] text-[#111827]">
+                        <td className="px-3 py-2.5">{index + 1}</td>
+                        <td className="px-3 py-2.5">{line.name}</td>
+                        <td className="px-3 py-2.5">{line.tag || "—"}</td>
+                        <td className="px-3 py-2.5">{line.qty}</td>
+                        <td className="px-3 py-2.5">{line.unit || "PCS"}</td>
+                        <td className="px-3 py-2.5">{line.unitPrice.toFixed(2)}</td>
+                        <td className="px-3 py-2.5">{disc}</td>
+                        <td className="px-3 py-2.5">{line.taxPct ?? gstRate}</td>
+                        <td className="px-3 py-2.5">{line.cessPct ?? "—"}</td>
+                        <td className="px-3 py-2.5">{net.toFixed(2)}</td>
+                        <td className="px-3 py-2.5">{amount.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end">
+              <div className="flex w-full max-w-[320px] flex-col gap-3">
+                <div className="rounded-xl border border-[#E5E7EB] bg-white px-5 py-4 text-sm">
+                  {[
+                    ["Subtotal", money(subtotal)],
+                    ["Discount", money(discountAmt)],
+                    ["Taxable amount", money(taxable)],
+                    [`${taxLabel}`, money(gstAmt)],
+                    ...(cessAmt > 0 ? [["Cess", money(cessAmt)] as [string, string]] : []),
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex items-center justify-between border-b border-[#F3F4F6] py-2.5 text-[#374151]">
+                      <span>{label}</span>
+                      <span>{value}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between py-3 text-base font-semibold text-[#111827]">
+                    <span>Total Amount</span>
+                    <span>{money(total)}</span>
+                  </div>
+                </div>
+                <Button type="button" className="h-14 rounded-xl bg-[#2563EB] text-lg font-semibold hover:bg-[#1D4ED8]" onClick={completeSale}>
+                  Pay {money(balanceDue > 0 && balanceDue < total ? balanceDue : total)}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 gap-2 rounded-xl"
+                  onClick={() => {
+                    setEditingSale(null);
+                    clearCart();
+                    setMode("list");
+                  }}
+                >
+                  <X className="h-4 w-4" /> Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isSupermarket ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_380px]">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-[#111827]">Products</h2>
+                  <p className="text-sm text-[#6B7280]">Browse and add items to the cart</p>
+                </div>
+                <Select value={supermarketCategory} onValueChange={setSupermarketCategory}>
+                  <SelectTrigger className="h-9 w-[180px]">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {supermarketCategories.map((category) => (
+                      <SelectItem key={category} value={category}>{category}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {isLoading ? (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <div key={index} className="h-44 animate-pulse rounded-xl bg-[#F3F4F6]" />
+                  ))}
+                </div>
+              ) : supermarketProducts.length === 0 ? (
+                <p className="py-16 text-center text-sm text-[#6B7280]">No products found.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                  {supermarketProducts.map((product) => (
+                    <button
+                      key={product.key}
+                      type="button"
+                      onClick={() => requestAddProduct(product)}
+                      className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white text-left transition hover:border-[#93C5FD] hover:shadow-sm"
+                    >
+                      <div className="flex h-28 items-center justify-center bg-[#F8FAFC]">
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <Package className="h-10 w-10 text-[#CBD5E1]" />
+                        )}
+                      </div>
+                      <div className="space-y-1 p-3">
+                        <p className="line-clamp-2 text-sm font-medium text-[#111827]">{product.name}</p>
+                        <p className="text-base font-semibold text-[#111827]">
+                          {money(product.unitPrice)}
+                          {product.isWeightBased ? <span className="text-xs font-medium text-[#6B7280]"> / {product.uom || "kg"}</span> : null}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="flex flex-col rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-[#111827]">Cart</h2>
+                <span className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#2563EB]">
+                  {cart.reduce((count, line) => count + (line.isWeightBased ? 1 : Number(line.qty) || 0), 0)} Items
+                </span>
+              </div>
+              <div className="min-h-[180px] flex-1 space-y-3">
+                {cart.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-[#6B7280]">Tap a product to add it here.</p>
+                ) : cart.map((line) => {
+                  const image = products.find((product) => product.stockItemId === line.id)?.imageUrl;
+                  return (
+                    <div key={line.key} className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] p-2">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#F8FAFC]">
+                        {image ? <img src={image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-[#CBD5E1]" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-[#111827]">{line.name}</p>
+                        <p className="text-xs text-[#6B7280]">{money(line.unitPrice)}{line.isWeightBased ? ` / ${line.unit || "kg"}` : ""}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E5E7EB]" onClick={() => updateQty(line.key, line.qty - 1, true)} aria-label="Decrease quantity">
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-6 text-center text-sm">{line.isWeightBased ? (line.weight || 0).toFixed(2) : line.qty}</span>
+                        <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E5E7EB]" onClick={() => updateQty(line.key, line.qty + 1)} aria-label="Increase quantity">
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 space-y-2 border-t border-[#E5E7EB] pt-3 text-sm text-[#374151]">
+                <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+                <div className="flex justify-between"><span>Discount Sales</span><span className="text-[#16A34A]">-{money(discountAmt)}</span></div>
+                <div className="flex justify-between"><span>Total Sales Tax</span><span>{money(gstAmt)}</span></div>
+                <div className="flex justify-between pt-1 text-base font-semibold text-[#111827]"><span>Total Amount</span><span>{money(total)}</span></div>
+              </div>
+              <Button type="button" className="mt-4 h-11 w-full bg-[#2563EB] text-base hover:bg-[#1D4ED8]" onClick={completeSale}>
+                Pay Now
+              </Button>
+            </section>
+          </div>
+        ) : null}
+
+        {!isRetail && !isSupermarket && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)]">
           {/* Catalog */}
           <div className="flex min-h-[560px] flex-col rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
@@ -1871,6 +2544,7 @@ export default function PointOfSalePage() {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
@@ -1884,11 +2558,11 @@ export default function PointOfSalePage() {
 
           <div className="space-y-4 py-1">
             {(() => {
-              const { thisPayApplied, displayedPaid, remainingAfter } =
-                paymentDisplayTotals();
-              const typedAmount = payAmountEdited.current ? Math.max(0, Number(payAmount) || 0) : 0;
-              const refundToCustomer = Math.max(0, Math.round((typedAmount - remainingAfter) * 100) / 100);
-              const shownRemaining = refundToCustomer > 0.001 ? 0 : remainingAfter;
+              const { displayedPaid, remainingAfter } = paymentDisplayTotals();
+              const enteredTotal = PAYMENT_METHODS.reduce((sum, { method }) => sum + (pendingPayByMethod[method] || 0), 0);
+              const refundToCustomer = Math.max(0, Math.round((paidSoFar + enteredTotal - total) * 100) / 100);
+              const shownRemaining = remainingAfter;
+              const shownPaid = Math.round((displayedPaid - refundToCustomer) * 100) / 100;
 
               return (
             <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 space-y-2.5 text-sm">
@@ -1898,20 +2572,21 @@ export default function PointOfSalePage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-[#4B5563]">Paid Payment</span>
-                <span className="font-semibold text-[#16A34A]">{money(displayedPaid)}</span>
+                <span className="font-semibold text-[#16A34A]">{money(shownPaid)}</span>
               </div>
               <div className="space-y-1 rounded-md border border-[#E5E7EB] bg-white px-2.5 py-2 text-xs text-[#6B7280]">
                 {PAYMENT_METHODS.map(({ label, method }) => {
-                  const amt = amountForMethod(method, thisPayApplied);
-                  const isActive = method === payMethod && thisPayApplied > 0;
-                  const isPending = (pendingPayByMethod[method] || 0) > 0;
+                  const saved = amountForMethod(method, 0);
+                  const entered = pendingPayByMethod[method] || 0;
+                  const amt = Math.round((saved + entered) * 100) / 100;
+                  const isActive = entered > 0;
                   return (
                     <div
                       key={method}
                       className={cn(
                         "flex justify-between",
-                        (isActive || isPending) && "font-medium text-[#2563EB]",
-                        amt > 0 && !isActive && !isPending && "text-[#16A34A]",
+                        isActive && "font-medium text-[#2563EB]",
+                        amt > 0 && !isActive && "text-[#16A34A]",
                       )}
                     >
                       <span>{label}</span>
@@ -2013,9 +2688,17 @@ export default function PointOfSalePage() {
                   value={payAmount === 0 ? (showAmountZero ? "0.00" : "") : payAmount}
                   placeholder="0.00"
                   onChange={(e) => {
-                    payAmountEdited.current = true;
+                    const value = parseFloat(e.target.value);
+                    const amount = Number.isFinite(value) && value > 0 ? value : 0;
+                    payAmountEdited.current = amount > 0;
                     setShowAmountZero(false);
-                    setPayAmount(parseFloat(e.target.value) || 0);
+                    setPayAmount(amount);
+                    setPendingPayByMethod((prev) => {
+                      const next = { ...prev };
+                      if (amount > 0) next[payMethod] = amount;
+                      else delete next[payMethod];
+                      return next;
+                    });
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {

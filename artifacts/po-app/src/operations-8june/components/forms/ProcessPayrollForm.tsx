@@ -126,12 +126,7 @@ function buildEmployeePreview(config: any, employee: any): SyncBridgePayrollPrev
     citizenshipStatus: mapNationalityToCitizenship(employee.nationality),
     prStatus: employee.prStatus,
     overtimePay,
-    allowances: {
-      transport: Number(allowances.transport) || 0,
-      meal: Number(allowances.meal) || 0,
-      phone: Number(allowances.phone) || 0,
-      others: Number(allowances.others) || 0,
-    },
+    allowances,
     deductions,
   });
 
@@ -251,6 +246,10 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         monthlySalary: sum((p) => p.monthlySalary),
         annualSalary: sum((p) => p.annualSalary),
         allowancesTotal: sum((p) => p.allowancesTotal),
+        bonusTotal: sum((p) => p.bonusTotal),
+        otherIncomeTotal: sum((p) => p.otherIncomeTotal),
+        incomeTaxBorneByEmployee: sum((p) => p.incomeTaxBorneByEmployee),
+        overtimePay: sum((p) => p.overtimePay),
         deductionsTotal: sum((p) => p.deductionsTotal),
         grossBeforeDeductions: sum((p) => p.grossBeforeDeductions),
         grossPay: sum((p) => p.grossPay),
@@ -657,6 +656,26 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     {formatCurrency(calculationPreview.allowancesTotal)}
                   </span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Bonus</span>
+                  <span className="font-medium text-[#111827]">
+                    {formatCurrency(calculationPreview.bonusTotal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Other Income / Benefits</span>
+                  <span className="font-medium text-[#111827]">
+                    {formatCurrency(calculationPreview.otherIncomeTotal)}
+                  </span>
+                </div>
+                {calculationPreview.overtimePay > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-[#6B7280]">Overtime</span>
+                    <span className="font-medium text-[#111827]">
+                      {formatCurrency(calculationPreview.overtimePay)}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
                   <span className="font-semibold text-[#111827]">Gross Salary</span>
                   <span className="font-semibold text-[#111827]">

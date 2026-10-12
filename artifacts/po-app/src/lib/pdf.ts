@@ -72,7 +72,9 @@ function attachPdfFonts(doc: jsPDF): void {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getLogoUrl(company: Company | null | undefined): string {
+function getLogoUrl(company: (Company & { logoUrl?: string | null }) | null | undefined): string {
+  const custom = company?.logoUrl?.trim();
+  if (custom) return custom;
   if (!company || company.id === 1) return logoRsvUrl;
   return logoNetopsysUrl;
 }
@@ -780,14 +782,21 @@ function downscaleLogo(img: HTMLImageElement, maxEdge = 480): LogoData {
 async function getLogoData(imageUrl: string): Promise<LogoData> {
   const cached = _logoCache.get(imageUrl);
   if (cached) return cached;
-  const res = await fetch(imageUrl);
-  const blob = await res.blob();
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+
+  const dataUrl = imageUrl.startsWith("data:")
+    ? imageUrl
+    : await new Promise<string>((resolve, reject) => {
+        fetch(imageUrl)
+          .then((res) => res.blob())
+          .then((blob) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          })
+          .catch(reject);
+      });
+
   const logo = await new Promise<LogoData>((resolve) => {
     const img = new Image();
     img.onload = () => resolve(downscaleLogo(img));

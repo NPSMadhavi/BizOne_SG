@@ -1,7 +1,7 @@
 import { useAuth } from "@/contexts/auth-context";
-import { MODULE_LABELS, MODULE_GROUPS, ALL_MODULES, type AppModule, type ModuleGroup } from "@/contexts/auth-modules";
+import { MODULE_LABELS, MODULE_GROUPS, ALL_MODULES, modulesForBusinessType, type AppModule, type ModuleGroup } from "@/contexts/auth-modules";
 import {
-  useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser,
+  useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser, useListCompanies,
   type User, type Company,
 } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -112,7 +112,14 @@ function SidebarStyleModules({
   onChange: (next: string[]) => void;
 }) {
   const isSg = company.country?.toLowerCase() === "singapore" || company.country?.toUpperCase() === "SG";
-  const visibleGroups = MODULE_GROUPS.filter((g: ModuleGroup) => !g.sgOnly || isSg);
+  const allowed = modulesForBusinessType((company as { businessType?: string | null }).businessType);
+  const visibleGroups = MODULE_GROUPS
+    .filter((g: ModuleGroup) => !g.sgOnly || isSg)
+    .map((group) => ({
+      ...group,
+      modules: allowed ? group.modules.filter((mod) => allowed.includes(mod)) : group.modules,
+    }))
+    .filter((group) => group.modules.length > 0);
 
   const toggleModule = (mod: string) => {
     onChange(
@@ -131,15 +138,7 @@ function SidebarStyleModules({
   };
 
   return (
-    <div className="space-y-5 rounded-xl border border-[#E5E7EB] bg-white p-4">
-      <div className="flex items-center gap-2 text-sm font-semibold text-[#111827]">
-        <Building2 className="h-4 w-4 text-[#2563EB]" />
-        Modules for {company.name}
-      </div>
-      <p className="text-xs text-[#6B7280] -mt-3">
-        Same groups as the sidebar. Tick what this user can see.
-      </p>
-
+    <div className="space-y-5 pl-6 pt-1">
       {visibleGroups.map((group) => {
         const groupMods = group.modules as string[];
         const allIn = groupMods.every((m) => modules.includes(m));
@@ -185,24 +184,50 @@ function SidebarStyleModules({
 }
 
 function CompanyModuleSelector({
-  company,
-  modules,
-  onChange,
+  companies,
+  companyAccess,
+  onToggleCompany,
+  onChangeModules,
 }: {
-  company: Company;
-  modules: string[];
-  onChange: (modules: string[]) => void;
+  companies: Company[];
+  companyAccess: CompanyAccessEntry[];
+  onToggleCompany: (companyId: number, checked: boolean) => void;
+  onChangeModules: (companyId: number, modules: string[]) => void;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="rounded-lg border border-[#2563EB]/30 bg-[#2563EB]/5 px-3 py-2.5 flex items-center gap-2">
-        <Building2 className="h-4 w-4 text-[#2563EB] shrink-0" />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[#1D4ED8] truncate">{company.name}</p>
-          <p className="text-xs text-[#6B7280]">Active company — module access for this company only</p>
-        </div>
+    <div className="space-y-3 rounded-xl border border-[#E5E7EB] bg-white p-4">
+      <div>
+        <p className="text-sm font-semibold text-[#111827]">Companies</p>
+        <p className="text-xs text-[#6B7280] mt-0.5">Tick a company, then choose the modules this user can see.</p>
       </div>
-      <SidebarStyleModules company={company} modules={modules} onChange={onChange} />
+      {companies.length === 0 ? (
+        <p className="text-sm text-[#6B7280]">No companies available.</p>
+      ) : (
+        companies.map((company) => {
+          const entry = companyAccess.find((c) => c.companyId === company.id);
+          const checked = !!entry;
+          return (
+            <div key={company.id} className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-[#2563EB] accent-[#2563EB]"
+                  checked={checked}
+                  onChange={(e) => onToggleCompany(company.id, e.target.checked)}
+                />
+                <span className="text-sm font-medium text-[#111827]">{company.name}</span>
+              </label>
+              {checked && (
+                <SidebarStyleModules
+                  company={company}
+                  modules={entry?.modules ?? []}
+                  onChange={(modules) => onChangeModules(company.id, modules)}
+                />
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -217,6 +242,7 @@ export default function Admin() {
   const [formError, setFormError] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [creatingRole, setCreatingRole] = useState(false);
+  const moduleMemory = useRef<Record<number, string[]>>({});
 
   const canView = isAdmin || hasPermission("user_management:view");
   const canCreate = isAdmin || hasPermission("user_management:create");
@@ -230,7 +256,19 @@ export default function Admin() {
     query: { queryKey: getListUsersQueryKey(), enabled: canView },
   });
 
+  const { data: assignableCompanies = [] } = useListCompanies({
+    query: { enabled: canView && (mode === "create" || mode === "edit") },
+  });
+
   const userList = users ?? [];
+  const companyOptions = useMemo(() => {
+    const byId = new Map<number, Company>();
+    for (const company of assignableCompanies) byId.set(company.id, company);
+    for (const company of editingUser?.companies ?? []) {
+      if (!byId.has(company.id)) byId.set(company.id, company as Company);
+    }
+    return [...byId.values()];
+  }, [assignableCompanies, editingUser]);
   const { page, setPage, totalPages, paginatedItems: paginatedUsers } = usePagination(userList);
 
   const { data: companyRoles = [] } = useQuery<CompanyRole[]>({
@@ -252,11 +290,6 @@ export default function Admin() {
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
 
-  const activeModules = useMemo(() => {
-    if (!activeCompanyId) return [] as string[];
-    return form.companyAccess.find((c) => c.companyId === activeCompanyId)?.modules ?? [];
-  }, [form.companyAccess, activeCompanyId]);
-
   if (!canView) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
@@ -267,16 +300,39 @@ export default function Admin() {
     );
   }
 
-  function setActiveModules(modules: string[]) {
-    if (!activeCompanyId) return;
+  function setCompanyModules(companyId: number, modules: string[]) {
+    moduleMemory.current[companyId] = modules;
     setForm((f) => {
-      const others = f.companyAccess.filter((c) => c.companyId !== activeCompanyId);
-      return { ...f, companyAccess: [...others, { companyId: activeCompanyId, modules }] };
+      const others = f.companyAccess.filter((c) => c.companyId !== companyId);
+      return { ...f, companyAccess: [...others, { companyId, modules }] };
     });
+  }
+
+  function toggleCompany(companyId: number, checked: boolean) {
+    setForm((f) => {
+      if (checked) {
+        if (f.companyAccess.some((c) => c.companyId === companyId)) return f;
+        const modules = moduleMemory.current[companyId] ?? [];
+        return { ...f, companyAccess: [...f.companyAccess, { companyId, modules }] };
+      }
+      const existing = f.companyAccess.find((c) => c.companyId === companyId);
+      if (existing) moduleMemory.current[companyId] = existing.modules;
+      return { ...f, companyAccess: f.companyAccess.filter((c) => c.companyId !== companyId) };
+    });
+  }
+
+  function savedCompanyAccess(user: User): CompanyAccessEntry[] {
+    return (user.companies ?? []).map((c) => ({
+      companyId: c.id,
+      modules: Array.isArray((c as { modules?: string[] }).modules)
+        ? (c as { modules: string[] }).modules.filter((m) => (ALL_MODULES as readonly string[]).includes(m))
+        : [],
+    }));
   }
 
   function openCreate() {
     setEditingUser(null);
+    moduleMemory.current = {};
     setForm({
       ...EMPTY_FORM,
       username: "",
@@ -285,9 +341,7 @@ export default function Admin() {
       roleId: null,
       showCreateRole: false,
       newRoleName: "",
-      companyAccess: activeCompanyId
-        ? [{ companyId: activeCompanyId, modules: [] }]
-        : [],
+      companyAccess: [],
     });
     setFormError("");
     setMode("create");
@@ -299,12 +353,8 @@ export default function Admin() {
 
   function openEdit(user: User) {
     setEditingUser(user);
-    const existingForActive = user.companies?.find((c) => c.id === activeCompanyId);
-    const existingMods = Array.isArray((existingForActive as any)?.modules)
-      ? ((existingForActive as any).modules as string[]).filter((m) =>
-          (ALL_MODULES as readonly string[]).includes(m),
-        )
-      : [];
+    const saved = savedCompanyAccess(user);
+    moduleMemory.current = Object.fromEntries(saved.map((entry) => [entry.companyId, entry.modules]));
     const userRoleId = (user as any).roleId as number | null | undefined;
     const userRoleName = (user as any).roleName as string | null | undefined;
     const useCustomRole =
@@ -319,9 +369,7 @@ export default function Admin() {
       roleId: useCustomRole ? userRoleId! : null,
       showCreateRole: false,
       newRoleName: "",
-      companyAccess: activeCompanyId
-        ? [{ companyId: activeCompanyId, modules: existingMods }]
-        : [],
+      companyAccess: saved,
     });
     setFormError("");
     setMode("edit");
@@ -330,6 +378,7 @@ export default function Admin() {
   function backToList() {
     setMode("list");
     setEditingUser(null);
+    moduleMemory.current = {};
     setForm(EMPTY_FORM);
     setFormError("");
   }
@@ -339,31 +388,20 @@ export default function Admin() {
     if (!isEmail(form.username)) return "Enter a valid email address.";
     if (mode === "create" && form.password.length < 6) return "Password must be at least 6 characters.";
     if (mode === "edit" && form.password && form.password.length < 6) return "Password must be at least 6 characters.";
-    if (!activeCompanyId) return "Select a company from the sidebar first.";
     if (form.role !== "admin") {
-      if (activeModules.length === 0) return "Select at least one module for this company.";
+      if (form.companyAccess.length === 0) return "Select a company.";
+      if (form.companyAccess.every((c) => c.modules.length === 0)) return "Select at least one module for the selected company.";
     }
     return null;
   }
 
-  /** Build companyAccess: active company from form + preserve other companies on edit. */
   function buildCompanyAccessPayload(): CompanyAccessEntry[] {
     if (form.role === "admin") return [];
     const sanitize = (mods: string[]) =>
       mods.filter((m) => (ALL_MODULES as readonly string[]).includes(m));
-    const activeEntry = {
-      companyId: activeCompanyId!,
-      modules: sanitize(activeModules),
-    };
-    if (mode !== "edit" || !editingUser) return [activeEntry];
-
-    const preserved = (editingUser.companies ?? [])
-      .filter((c) => c.id !== activeCompanyId)
-      .map((c) => ({
-        companyId: c.id,
-        modules: sanitize(Array.isArray((c as any).modules) ? ((c as any).modules as string[]) : []),
-      }));
-    return [...preserved, activeEntry];
+    return form.companyAccess
+      .map((entry) => ({ companyId: entry.companyId, modules: sanitize(entry.modules) }))
+      .filter((entry) => entry.modules.length > 0);
   }
 
   function onSave() {
@@ -611,17 +649,12 @@ export default function Admin() {
           </div>
 
           {form.role !== "admin" && (
-            activeCompany ? (
-              <CompanyModuleSelector
-                company={activeCompany}
-                modules={activeModules}
-                onChange={setActiveModules}
-              />
-            ) : (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                No active company selected. Switch company from the sidebar, then assign modules.
-              </p>
-            )
+            <CompanyModuleSelector
+              companies={companyOptions}
+              companyAccess={form.companyAccess}
+              onToggleCompany={toggleCompany}
+              onChangeModules={setCompanyModules}
+            />
           )}
 
           {formError && (

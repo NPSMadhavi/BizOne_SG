@@ -131,6 +131,8 @@ export default function IncomeNew() {
   const deductiblePct      = watch("deductiblePct");
   const watchedCurrency    = watch("currency");
   const watchedDate        = watch("incomeDate");
+  const payerName          = watch("payerName");
+  const description        = watch("description");
 
   const fetchExchangeRateIncome = async (curr: string, date: string) => {
     if (curr === "SGD") { setExchangeRate("1.000000"); return; }
@@ -294,8 +296,12 @@ export default function IncomeNew() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="incomeDate">Income Date <span className="text-destructive">*</span></Label>
-                    <Input id="incomeDate" type="date" {...register("incomeDate", { required: true })} />
-                    {errors.incomeDate && <p className="text-xs text-destructive">Date is required</p>}
+                    <Input
+                      id="incomeDate"
+                      type="date"
+                      value={watchedDate || ""}
+                      onChange={(e) => setValue("incomeDate", e.target.value, { shouldDirty: true, shouldValidate: true })}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="currency">Currency</Label>
@@ -334,9 +340,13 @@ export default function IncomeNew() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="payerName">Payer Name <span className="text-destructive">*</span></Label>
-                    <Input id="payerName" placeholder="Who paid you?" {...register("payerName", { required: true })} />
-                    {errors.payerName && <p className="text-xs text-destructive">Payer name is required</p>}
+                    <Label htmlFor="payerName">Payer Name</Label>
+                    <Input
+                      id="payerName"
+                      placeholder="Who paid you?"
+                      value={payerName}
+                      onChange={(e) => setValue("payerName", e.target.value, { shouldDirty: true })}
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -346,9 +356,13 @@ export default function IncomeNew() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="description">Description <span className="text-destructive">*</span></Label>
-                  <Input id="description" placeholder="Brief description of income" {...register("description", { required: true })} />
-                  {errors.description && <p className="text-xs text-destructive">Description is required</p>}
+                  <Label htmlFor="description">Description</Label>
+                  <Input
+                    id="description"
+                    placeholder="Brief description of income"
+                    value={description}
+                    onChange={(e) => setValue("description", e.target.value, { shouldDirty: true })}
+                  />
                 </div>
               </CardContent>
             </Card>

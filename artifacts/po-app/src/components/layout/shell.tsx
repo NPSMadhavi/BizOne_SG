@@ -50,10 +50,13 @@ import {
   Warehouse,
   BarChart3,
   Store,
+  UtensilsCrossed,
+  Pill,
   Hourglass,
   Boxes,
   ShoppingBag,
   ArrowLeftRight,
+  CalendarClock,
   Landmark,
   LayoutTemplate,
   Sparkles,
@@ -85,10 +88,10 @@ import {
 import bizoneLogo from "@assets/bizone_logo_optimized.webp";
 import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
 import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
-import singaporeFlag from "../../assets/flag-for-singapore.png";
 import { AgentPanel } from "@/components/agent-panel";
 import { cn } from "@/lib/utils";
 import { GlobalSearch } from "@/components/global-search";
+import { ClosedPeriodWriteGuard } from "@/components/financial-year-controls";
 
 // ── Sidebar collapse context ──────────────────────────────────────────────────
 // true = collapsed icon-rail; false = full expanded sidebar
@@ -98,6 +101,7 @@ const SidebarCtx = React.createContext(false);
 
 function getGroupForRoute(loc: string): string | null {
   if (loc.startsWith("/accounting/bank-reconciliation")) return null;
+  if (loc.startsWith("/assets")) return null;
   if (
     loc.startsWith("/purchase-quotations") ||
     loc.startsWith("/purchase-orders") ||
@@ -106,8 +110,6 @@ function getGroupForRoute(loc: string): string | null {
     loc.startsWith("/sales-orders") ||
     loc.startsWith("/invoices") ||
     loc.startsWith("/delivery-orders") ||
-    loc.startsWith("/point-of-sale") ||
-    loc.startsWith("/bill-of-materials") ||
     loc.startsWith("/multi-price-level") ||
     loc.startsWith("/grn")
   ) return "documents";
@@ -118,11 +120,11 @@ function getGroupForRoute(loc: string): string | null {
   ) return "documents";
   if (loc.startsWith("/projects")) return "projects";
   if (
-    loc.startsWith("/assets") ||
     loc.startsWith("/licenses") ||
     loc.startsWith("/employees") ||
     loc.startsWith("/payroll")
   ) return "operations";
+  if (loc.startsWith("/point-of-sale")) return "point_of_sale";
   if (loc.startsWith("/stock") || loc.startsWith("/inventory")) return "inventory";
   if (
     loc.startsWith("/vendors") ||
@@ -282,8 +284,7 @@ function CompanyBadge() {
   const { selectedCompany } = useAuth();
   const collapsed = React.useContext(SidebarCtx);
   if (!selectedCompany) return null;
-  const isSingapore = selectedCompany.country?.toLowerCase() === "singapore" || selectedCompany.country?.toUpperCase() === "SG";
-  const country = isSingapore ? "Singapore" : selectedCompany.country;
+  const companyName = selectedCompany.name?.trim() || "Company";
 
   if (collapsed) {
     return (
@@ -293,20 +294,16 @@ function CompanyBadge() {
             <Building2 className="h-3.5 w-3.5 text-primary/70" />
           </div>
         </TooltipTrigger>
-        <TooltipContent side="right">{country}</TooltipContent>
+        <TooltipContent side="right">{companyName}</TooltipContent>
       </Tooltip>
     );
   }
 
   return (
     <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/15">
-      <div className="flex items-center gap-2">
-        {isSingapore ? (
-          <img src={singaporeFlag} alt="" className="h-3.5 w-5 rounded-sm object-cover shrink-0" />
-        ) : (
-          <Building2 className="h-3 w-3 text-primary shrink-0" />
-        )}
-        <p className="text-xs text-muted-foreground">{country}</p>
+      <div className="flex items-center gap-2 min-w-0">
+        <Building2 className="h-3 w-3 text-primary shrink-0" />
+        <p className="text-xs text-muted-foreground truncate" title={companyName}>{companyName}</p>
       </div>
     </div>
   );
@@ -410,12 +407,39 @@ function UserMenu() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, isAdmin, hasModuleAccess, selectedCompany } = useAuth();
+  const { user, hasModuleAccess, selectedCompany } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [openGroup, setOpenGroup] = React.useState<string | null>(null);
   const [collapsed, setCollapsed] = React.useState(() => {
     try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
   });
+  const [sidebarHidden, setSidebarHidden] = React.useState(false);
+  const collapsedBeforeForce = React.useRef<boolean | null>(null);
+
+  React.useEffect(() => {
+    const onHide = (event: Event) => {
+      setSidebarHidden(Boolean((event as CustomEvent<boolean>).detail));
+    };
+    const onCollapse = (event: Event) => {
+      const force = Boolean((event as CustomEvent<boolean>).detail);
+      if (force) {
+        setCollapsed((current) => {
+          if (collapsedBeforeForce.current === null) collapsedBeforeForce.current = current;
+          return true;
+        });
+        return;
+      }
+      const previous = collapsedBeforeForce.current;
+      collapsedBeforeForce.current = null;
+      if (previous !== null) setCollapsed(previous);
+    };
+    window.addEventListener("bizone-sidebar-hidden", onHide);
+    window.addEventListener("bizone-sidebar-collapsed", onCollapse);
+    return () => {
+      window.removeEventListener("bizone-sidebar-hidden", onHide);
+      window.removeEventListener("bizone-sidebar-collapsed", onCollapse);
+    };
+  }, []);
 
   const toggleCollapsed = () => {
     setCollapsed(prev => {
@@ -442,11 +466,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  const businessType = (selectedCompany as { businessType?: string | null } | null)?.businessType ?? null;
   const isSingapore = selectedCompany?.country?.toLowerCase() === "singapore" || selectedCompany?.country === "SG";
   const isIndia = selectedCompany?.country?.toLowerCase() === "india" || selectedCompany?.country === "IN";
   const activeLogo = isSingapore ? bizoneSgLogo : isIndia ? bizoneIndiaLogo : bizoneLogo;
   const accountingGroupModules = MODULE_GROUPS.find(g => g.id === "accounting")?.modules ?? [];
-  const hasAnyAccounting = isAdmin || accountingGroupModules.some(m => hasModuleAccess(m as AppModule));
+  const hasAnyAccounting = accountingGroupModules.some(m => hasModuleAccess(m as AppModule));
   const hasDocuments =
     hasModuleAccess("purchase_quotations") ||
     hasModuleAccess("purchase_orders") ||
@@ -458,29 +483,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
     hasModuleAccess("credit_notes") ||
     hasModuleAccess("debit_notes") ||
     hasModuleAccess("delivery_orders") ||
-    hasModuleAccess("point_of_sale") ||
-    hasModuleAccess("bill_of_materials") ||
     hasModuleAccess("multi_price_level") ||
     hasModuleAccess("grn");
   const directoryModules = ["vendors", "customers", "address_book"] as const;
   // Directory ONLY for these three — never via PO/Invoice/Documents access
-  const hasDirectory =
-    isAdmin || directoryModules.some((m) => hasModuleAccess(m as AppModule));
+  const hasDirectory = directoryModules.some((m) => hasModuleAccess(m as AppModule));
   const hasOperations =
-    isAdmin ||
-    hasModuleAccess("assets") ||
     hasModuleAccess("licenses") ||
     hasModuleAccess("employees") ||
     hasModuleAccess("payroll");
   const inventoryModules = ["warehouses", "stock_items", "stock_transfer", "inventory_reports", "sales_person_wise_report", "batch_expiry"] as const;
   // Inventory ONLY when one of these is explicitly assigned — never via Documents / GRN / defaults
-  const hasInventory =
-    isAdmin || inventoryModules.some((m) => hasModuleAccess(m as AppModule));
+  const hasInventory = inventoryModules.some((m) => hasModuleAccess(m as AppModule));
   const systemGroupModules = MODULE_GROUPS.find(g => g.id === "system")?.modules ?? [];
-  const hasSystem = isAdmin || systemGroupModules.some(m => hasModuleAccess(m as AppModule));
+  const hasSystem = systemGroupModules.some(m => hasModuleAccess(m as AppModule));
   const navItems = (
     <div className="space-y-0.5">
-      {(isAdmin || hasModuleAccess("dashboard")) && (
+      {(hasModuleAccess("dashboard")) && (
         <NavItem
           href="/dashboard"
           icon={LayoutDashboard}
@@ -492,42 +511,60 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <NavGroup
         id="operations"
-        label="Operations"
+        label="Administration"
         icon={Briefcase}
         isOpen={openGroup === "operations"}
         onToggle={toggleGroup}
         visible={hasOperations}
         hasActive={
-          location.startsWith("/assets") ||
           location.startsWith("/licenses") ||
           location.startsWith("/employees") ||
           location.startsWith("/payroll")
         }
       >
-        {(isAdmin || hasModuleAccess("assets")) && (
-          <NavItem href="/assets" icon={Monitor} active={location.startsWith("/assets")} inGroup>
-            Fixed Assets
-          </NavItem>
-        )}
-        {(isAdmin || hasModuleAccess("licenses")) && (
+        {(hasModuleAccess("licenses")) && (
           <NavItem href="/licenses" icon={KeyRound} active={location.startsWith("/licenses")} inGroup>
             Licenses
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("employees")) && (
+        {(hasModuleAccess("employees")) && (
           <NavItem href="/employees" icon={Users} active={location.startsWith("/employees")} inGroup>
             Employees
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("payroll")) && (
-          <NavItem href="/payroll" icon={DollarSign} active={location.startsWith("/payroll")} inGroup>
+        {(hasModuleAccess("payroll")) && (
+          <NavItem
+            href="/payroll"
+            icon={DollarSign}
+            active={
+              location === "/payroll" ||
+              location.startsWith("/payroll/config") ||
+              location.startsWith("/payroll/process")
+            }
+            inGroup
+          >
             Payroll
+          </NavItem>
+        )}
+        {(hasModuleAccess("payroll")) && (
+          <NavItem
+            href="/payroll/ir8a"
+            icon={FileText}
+            active={location === "/payroll/ir8a"}
+            inGroup
+          >
+            IR8A / AIS
+          </NavItem>
+        )}
+        {(hasModuleAccess("payroll")) && (
+          <NavItem href="/payroll/ir8a/employers" icon={Building2} active={location.startsWith("/payroll/ir8a/employers")} inGroup>
+            Employer's (IR8A)
           </NavItem>
         )}
       </NavGroup>
 
       {/* Projects — hidden from sidebar; routes/functionality kept */}
-      {/* {(isAdmin || hasModuleAccess("projects")) && (
+      {/* {(hasModuleAccess("projects")) && (
         <NavItem
           href="/projects"
           icon={FolderKanban}
@@ -539,7 +576,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <NavGroup
         id="documents"
-        label="Documents"
+        label="Transactions"
         icon={FileText}
         isOpen={openGroup === "documents"}
         onToggle={toggleGroup}
@@ -587,7 +624,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ── Sales ── */}
-        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("point_of_sale") || hasModuleAccess("bill_of_materials") || hasModuleAccess("multi_price_level")) && (
+        {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("multi_price_level")) && (
           <div className="px-3 pt-3 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Sales</span>
           </div>
@@ -622,16 +659,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Credit Notes
           </NavItem>
         )}
-        {hasModuleAccess("point_of_sale") && (
-          <NavItem href="/point-of-sale" icon={Store} active={location.startsWith("/point-of-sale")} inGroup>
-            Point of Sale
-          </NavItem>
-        )}
-        {hasModuleAccess("bill_of_materials") && (
-          <NavItem href="/bill-of-materials" icon={Boxes} active={location.startsWith("/bill-of-materials")} inGroup>
-            Bill of Materials
-          </NavItem>
-        )}
         {/* Hidden from sidebar — keep route/module access intact */}
         {false && hasModuleAccess("multi_price_level") && (
         <NavItem href="/multi-price-level" icon={DollarSign} active={location.startsWith("/multi-price-level")} inGroup>
@@ -639,6 +666,37 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </NavItem>
         )}
       </NavGroup>
+
+      <NavGroup
+        id="point_of_sale"
+        label="Point of Sale"
+        icon={Store}
+        isOpen={openGroup === "point_of_sale"}
+        onToggle={toggleGroup}
+        visible={hasModuleAccess("point_of_sale")}
+        hasActive={location.startsWith("/point-of-sale")}
+      >
+        <NavItem href="/point-of-sale/retail" icon={Store} active={location.startsWith("/point-of-sale/retail")} inGroup>
+          Retail
+        </NavItem>
+        <NavItem href="/point-of-sale/supermarket" icon={ShoppingBag} active={location.startsWith("/point-of-sale/supermarket")} inGroup>
+          Supermarket
+        </NavItem>
+        <NavItem href="/point-of-sale/restaurants" icon={UtensilsCrossed} active={location.startsWith("/point-of-sale/restaurants")} inGroup>
+          Restaurants
+        </NavItem>
+        <NavItem href="/point-of-sale/pharmacy" icon={Pill} active={location.startsWith("/point-of-sale/pharmacy")} inGroup>
+          Pharmacy
+        </NavItem>
+        <NavItem href="/point-of-sale/electronics" icon={Monitor} active={location.startsWith("/point-of-sale/electronics")} inGroup>
+          Electronics
+        </NavItem>
+      </NavGroup>
+      {hasModuleAccess("bill_of_materials") && (
+        <NavItem href="/bill-of-materials" icon={Boxes} active={location.startsWith("/bill-of-materials")}>
+          Bill of Materials
+        </NavItem>
+      )}
 
       <NavGroup
         id="inventory"
@@ -687,16 +745,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </NavGroup>
 
-      {(isSingapore && hasModuleAccess("accounting_bank_recon")) && (
-        <NavItem
-          href="/accounting/bank-reconciliation"
-          icon={Landmark}
-          active={location.startsWith("/accounting/bank-reconciliation")}
-        >
-          Bank Reconciliation
-        </NavItem>
-      )}
-
       <NavGroup
         id="directory"
         label="Directory"
@@ -716,7 +764,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Customers
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("customers") || hasModuleAccess("sales_persons")) && (
+        {hasModuleAccess("customers") && businessType !== "non_trading" && (
           <NavItem href="/sales-persons" icon={UserCheck} active={location.startsWith("/sales-persons")} inGroup>
             Sales Person
           </NavItem>
@@ -854,6 +902,26 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
       </NavGroup>
 
+      {hasModuleAccess("assets") && (
+        <NavItem
+          href="/assets"
+          icon={Monitor}
+          active={location.startsWith("/assets")}
+        >
+          Fixed Assets
+        </NavItem>
+      )}
+
+      {(isSingapore && hasModuleAccess("accounting_bank_recon")) && (
+        <NavItem
+          href="/accounting/bank-reconciliation"
+          icon={Landmark}
+          active={location.startsWith("/accounting/bank-reconciliation")}
+        >
+          Bank Reconciliation
+        </NavItem>
+      )}
+
       <NavGroup
         id="system"
         label="System"
@@ -863,27 +931,32 @@ export function Shell({ children }: { children: React.ReactNode }) {
         visible={hasSystem}
         hasActive={location.startsWith("/admin") || location.startsWith("/audit-log") || location.startsWith("/settings") || location.startsWith("/report-templates")}
       >
-        {(isAdmin || hasModuleAccess("user_management")) && (
+        {(hasModuleAccess("user_management")) && (
           <NavItem href="/admin" icon={Users} active={location === "/admin"} inGroup>
             User Management
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("audit_log")) && (
+        {(hasModuleAccess("audit_log")) && (
           <NavItem href="/audit-log" icon={ShieldCheck} active={location === "/audit-log"} inGroup>
             Audit Log
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("settings")) && (
+        {(hasModuleAccess("settings")) && (
           <NavItem href="/settings" icon={Settings} active={location === "/settings"} inGroup>
             Settings
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("settings")) && isSingapore && (
+        {(hasModuleAccess("settings")) && isSingapore && (
           <NavItem href="/settings/backups" icon={Archive} active={location.startsWith("/settings/backups")} inGroup>
             Backup & Restore
           </NavItem>
         )}
-        {(isAdmin || hasModuleAccess("report_templates")) && (
+        {(hasModuleAccess("settings")) && isSingapore && (
+          <NavItem href="/settings/year-end" icon={CalendarClock} active={location.startsWith("/settings/year-end")} inGroup>
+            Year End Process
+          </NavItem>
+        )}
+        {(hasModuleAccess("report_templates")) && (
           <NavItem href="/report-templates" icon={LayoutTemplate} active={location.startsWith("/report-templates")} inGroup>
             Report Design
           </NavItem>
@@ -990,7 +1063,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       {/* ── Desktop sidebar ───────────────────────────────────── */}
       <aside
-        className={`hidden md:flex flex-col border-r bg-card h-screen sticky top-0 shrink-0 transition-all duration-300 ${
+        className={`${sidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r bg-card h-screen sticky top-0 shrink-0 transition-all duration-300 ${
           collapsed ? "w-14" : "w-64"
         }`}
       >
@@ -1000,7 +1073,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* ── Main content ─────────────────────────────────────── */}
       <main className="flex-1 min-w-0 p-4 md:p-6 xl:p-8 overflow-auto">
         <GlobalSearch />
-        {children}
+        <ClosedPeriodWriteGuard>
+          {children}
+        </ClosedPeriodWriteGuard>
       </main>
       <AgentPanel />
     </div>

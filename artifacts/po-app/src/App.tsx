@@ -139,6 +139,7 @@ const IncomeNew          = lazy(() => import("@/pages/accounting/income-new"));
 const IncomeEdit         = lazy(() => import("@/pages/accounting/income-edit"));
 const IncomeView         = lazy(() => import("@/pages/accounting/income-view"));
 const AccountingBackups  = lazy(() => import("@/pages/settings/backups"));
+const YearEndProcess = lazy(() => import("@/pages/settings/year-end"));
 
 const AssetsPage         = lazy(() => import("@/operations-8june/pages/assets"));
 const AssetNewPage       = lazy(() => import("@/operations-8june/pages/asset-new"));
@@ -150,6 +151,8 @@ const EmployeesPage      = lazy(() => import("@/operations-8june/pages/employees
 const EmployeeNewPage    = lazy(() => import("@/operations-8june/pages/employee-new"));
 const EmployeeEditPage   = lazy(() => import("@/operations-8june/pages/employee-edit"));
 const PayrollPage        = lazy(() => import("@/operations-8june/pages/payroll"));
+const Ir8aPage           = lazy(() => import("@/operations-8june/pages/ir8a"));
+const Ir8aEmployersPage  = lazy(() => import("@/operations-8june/pages/ir8a-employers"));
 const PayrollConfigNewPage = lazy(() => import("@/operations-8june/pages/payroll-config-new"));
 const PayrollConfigEditPage = lazy(() => import("@/operations-8june/pages/payroll-config-edit"));
 const PayrollProcessPage = lazy(() => import("@/operations-8june/pages/payroll-process"));
@@ -196,6 +199,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/employees": "Employees",
   "/employees/new": "Create Employee",
   "/payroll": "Payroll",
+  "/payroll/ir8a": "IR8A / AIS",
+  "/payroll/ir8a/employers": "Employer's (IR8A)",
   "/payroll/config/new": "Add Payroll Configuration",
   "/payroll/process": "Process Payroll",
   "/accounting/chart-of-accounts": "Chart of Accounts",
@@ -222,6 +227,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/admin": "User Management",
   "/settings": "Settings",
   "/settings/backups": "Backup & Restore",
+  "/settings/year-end": "Year End Process",
   "/report-templates": "Report Templates",
   "/select-company": "Select Company",
   "/login": "Sign In",
@@ -274,8 +280,8 @@ interface ProtectedRouteProps {
   anyOf?: AppModule[];
 }
 
-function getFirstAccessiblePath(isAdmin: boolean, hasModuleAccess: (m: any) => boolean): string {
-  if (isAdmin || hasModuleAccess("dashboard")) return "/dashboard";
+function getFirstAccessiblePath(hasModuleAccess: (m: any) => boolean): string {
+  if (hasModuleAccess("dashboard")) return "/dashboard";
   if (hasModuleAccess("purchase_quotations")) return "/purchase-quotations";
   if (hasModuleAccess("purchase_orders")) return "/purchase-orders";
   if (hasModuleAccess("invoices")) return "/invoices";
@@ -293,7 +299,7 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
   const hasMultipleCompanies = (user.companies?.length ?? 0) > 1;
   if (!selectedCompany && hasMultipleCompanies) return <Redirect to="/select-company" />;
 
-  if (adminOnly && !isAdmin) return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
+  if (adminOnly && !isAdmin) return <Redirect to={getFirstAccessiblePath(hasModuleAccess)} />;
 
   // Veda can unlock modules for the session so "go to invoices" etc. actually open
   const vedaUnlock = typeof window !== "undefined" && (
@@ -301,20 +307,20 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
     || (() => { try { return sessionStorage.getItem("veda_module_unlock") === "1"; } catch { return false; } })()
   );
 
-  if (module && !isAdmin && !hasModuleAccess(module) && !vedaUnlock) return <AccessDenied />;
+  if (module && !hasModuleAccess(module) && !vedaUnlock) return <AccessDenied />;
 
-  if (anyOf && !isAdmin && !anyOf.some((m) => hasModuleAccess(m)) && !vedaUnlock) return <AccessDenied />;
+  if (anyOf && !anyOf.some((m) => hasModuleAccess(m)) && !vedaUnlock) return <AccessDenied />;
 
   return <Component />;
 }
 
 function SmartHomeRedirect() {
-  const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
+  const { user, isLoading, selectedCompany, hasModuleAccess } = useAuth();
   if (isLoading) return <LoadingSpinner />;
   if (!user) return <Redirect to="/login" />;
   const hasMultiple = (user.companies?.length ?? 0) > 1;
   if (!selectedCompany && hasMultiple) return <Redirect to="/select-company" />;
-  return <Redirect to={getFirstAccessiblePath(isAdmin, hasModuleAccess)} />;
+  return <Redirect to={getFirstAccessiblePath(hasModuleAccess)} />;
 }
 
 function Router() {
@@ -344,6 +350,8 @@ function Router() {
           <Route path="/payroll/config/new">{() => <ProtectedRoute component={PayrollConfigNewPage} module="payroll" />}</Route>
           <Route path="/payroll/config/:id/edit">{() => <ProtectedRoute component={PayrollConfigEditPage} module="payroll" />}</Route>
           <Route path="/payroll/process">{() => <ProtectedRoute component={PayrollProcessPage} module="payroll" />}</Route>
+          <Route path="/payroll/ir8a/employers">{() => <ProtectedRoute component={Ir8aEmployersPage} module="payroll" />}</Route>
+          <Route path="/payroll/ir8a">{() => <ProtectedRoute component={Ir8aPage} module="payroll" />}</Route>
           <Route path="/payroll">{() => <ProtectedRoute component={PayrollPage} module="payroll" />}</Route>
 
           {/* Projects & Vouchers */}
@@ -410,6 +418,7 @@ function Router() {
           <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
           {/* Point of Sale */}
+          <Route path="/point-of-sale/:kind">{() => <ProtectedRoute component={PointOfSalePage} module="point_of_sale" />}</Route>
           <Route path="/point-of-sale">{() => <ProtectedRoute component={PointOfSalePage} module="point_of_sale" />}</Route>
           <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} module="bill_of_materials" />}</Route>
           <Route path="/multi-price-level">{() => <ProtectedRoute component={MultiPriceLevelPage} module="multi_price_level" />}</Route>
@@ -480,6 +489,7 @@ function Router() {
           {/* System — admin only */}
           <Route path="/admin">{() => <ProtectedRoute component={Admin} adminOnly={true} />}</Route>
           <Route path="/settings/backups">{() => <ProtectedRoute component={AccountingBackups} adminOnly={true} />}</Route>
+          <Route path="/settings/year-end">{() => <ProtectedRoute component={YearEndProcess} adminOnly={true} />}</Route>
           <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
           <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
           <Route path="/report-templates/:id/edit">{() => <ProtectedRoute component={ReportDesignerPage} module="report_templates" />}</Route>

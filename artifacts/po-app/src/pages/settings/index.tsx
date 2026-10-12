@@ -8,12 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2, Users, Barcode } from "lucide-react";
+import { LogOut, User, Shield, Percent, Save, Mail, CheckCircle2, XCircle, Wifi, Hash, Building2, FileText, Wrench, ToggleLeft, ToggleRight, AlertTriangle, Info, Plus, Trash2, Barcode } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Switch } from "@/components/ui/switch";
-import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey } from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey, useListCompanies, getListCompaniesQueryKey, getGetMeQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 type RunningNumberConfig = {
@@ -22,6 +22,20 @@ type RunningNumberConfig = {
   suffix: string;
 };
 
+function formatFinancialYear(fy: { startDate?: string; endDate?: string } | null | undefined) {
+  if (!fy?.startDate || !fy?.endDate) return "";
+  const fmt = (iso: string) => {
+    const [year, month, day] = iso.slice(0, 10).split("-").map(Number);
+    if (!year || !month || !day) return iso;
+    return new Date(year, month - 1, day).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+  return `${fmt(fy.startDate)} – ${fmt(fy.endDate)}`;
+}
+
 export default function Settings() {
   const { user, logout, isAdmin, selectedCompany } = useAuth();
   const { toast } = useToast();
@@ -29,6 +43,9 @@ export default function Settings() {
 
   const [gstInput, setGstInput] = useState<string>("");
   const [gstEditing, setGstEditing] = useState(false);
+  const [gstPasswordOpen, setGstPasswordOpen] = useState(false);
+  const [gstPassword, setGstPassword] = useState("");
+  const [gstSaving, setGstSaving] = useState(false);
 
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
@@ -45,6 +62,7 @@ export default function Settings() {
   const [savingCompany, setSavingCompany] = useState<number | null>(null);
   const [deletingCompany, setDeletingCompany] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
 
   const [addCompanyOpen, setAddCompanyOpen] = useState(false);
   const [newCompany, setNewCompany] = useState({ name: "", country: "SG", registrationNo: "", gstRegistered: false, gstRegNo: "", address: "", email: "", phone: "", logoUrl: "" });
@@ -84,6 +102,7 @@ export default function Settings() {
       });
       if (!res.ok) throw new Error("Failed to save");
       queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
       queryClient.invalidateQueries({ queryKey: ["report-company-data"] });
       toast({ title: "Saved", description: "Company info updated successfully." });
     } catch {
@@ -120,18 +139,32 @@ export default function Settings() {
   };
 
   const handleDeleteCompany = async (id: number) => {
+    if (!deletePassword) {
+      toast({ title: "Password required", description: "Enter your login password to delete this company.", variant: "destructive" });
+      return;
+    }
     setDeletingCompany(id);
     try {
-      const res = await fetch(`/api/companies/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/companies/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "Failed to delete");
       }
       queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
       setDeleteConfirmId(null);
+      setDeletePassword("");
       toast({ title: "Company deleted", description: "The company and all its data have been removed." });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({
+        title: err?.message === "Incorrect password" ? "Incorrect password" : "Error",
+        description: err.message,
+        variant: "destructive",
+      });
     } finally {
       setDeletingCompany(null);
     }
@@ -170,10 +203,6 @@ export default function Settings() {
   const [maintSaving, setMaintSaving] = useState(false);
   const [maintLoaded, setMaintLoaded] = useState(false);
 
-  const [workflowVerifierId, setWorkflowVerifierId] = useState<string>("");
-  const [workflowApproverId, setWorkflowApproverId] = useState<string>("");
-  const [workflowPaidById, setWorkflowPaidById] = useState<string>("");
-  const [workflowSaving, setWorkflowSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/maintenance", { credentials: "include" })
@@ -256,23 +285,9 @@ export default function Settings() {
       setTermsAndConditions((settings as any).termsAndConditions ?? "");
       setQuotationTerms((settings as any).quotationTerms ?? "");
     }
-    if (settings) {
-      if ((settings as any).defaultVerifierId) setWorkflowVerifierId(String((settings as any).defaultVerifierId));
-      if ((settings as any).defaultApproverId) setWorkflowApproverId(String((settings as any).defaultApproverId));
-      if ((settings as any).defaultPaidById) setWorkflowPaidById(String((settings as any).defaultPaidById));
-    }
   }, [settings]);
 
   const updateSettings = useUpdateSettings();
-
-  const { data: companyUsers = [] } = useQuery<any[]>({
-    queryKey: ["company-users"],
-    queryFn: async () => {
-      const r = await fetch("/api/company-users", { credentials: "include" });
-      if (!r.ok) return [];
-      return r.json();
-    },
-  });
 
   const handleSaveGst = () => {
     const rate = parseFloat(gstInput);
@@ -280,17 +295,44 @@ export default function Settings() {
       toast({ title: "Invalid rate", description: "GST rate must be between 0 and 100.", variant: "destructive" });
       return;
     }
-    updateSettings.mutate({ data: { gstRate: rate } }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: ["report-company-data"] });
-        setGstEditing(false);
-        toast({ title: "Saved", description: "GST rate updated successfully." });
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to update settings.", variant: "destructive" });
-      },
-    });
+    setGstPassword("");
+    setGstPasswordOpen(true);
+  };
+
+  const confirmGstSave = async () => {
+    const rate = parseFloat(gstInput);
+    if (!gstPassword) {
+      toast({ title: "Password required", description: "Enter your login password to update GST.", variant: "destructive" });
+      return;
+    }
+    setGstSaving(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ gstRate: rate, password: gstPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast({
+          title: response.status === 401 ? "Incorrect password" : "Error",
+          description: data.error || "GST was not updated.",
+          variant: "destructive",
+        });
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["report-company-data"] });
+      setGstEditing(false);
+      setGstPassword("");
+      setGstPasswordOpen(false);
+      toast({ title: "Saved", description: "GST rate updated successfully." });
+    } catch {
+      toast({ title: "Error", description: "Failed to update settings.", variant: "destructive" });
+    } finally {
+      setGstSaving(false);
+    }
   };
 
   const handleSaveSmtp = () => {
@@ -373,29 +415,6 @@ export default function Settings() {
         },
       }
     );
-  };
-
-  const handleSaveWorkflow = async () => {
-    setWorkflowSaving(true);
-    try {
-      const r = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          defaultVerifierId: workflowVerifierId ? Number(workflowVerifierId) : null,
-          defaultApproverId: workflowApproverId ? Number(workflowApproverId) : null,
-          defaultPaidById: workflowPaidById ? Number(workflowPaidById) : null,
-        }),
-      });
-      if (!r.ok) throw new Error("Failed");
-      queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
-      toast({ title: "Saved", description: "Default workflow signatories updated." });
-    } catch {
-      toast({ title: "Error", description: "Failed to save workflow settings.", variant: "destructive" });
-    } finally {
-      setWorkflowSaving(false);
-    }
   };
 
   const handleSaveDocs = () => {
@@ -485,15 +504,6 @@ export default function Settings() {
           </TabsTrigger>
           {isAdmin && (
             <TabsTrigger
-              value="workflow"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
-            >
-              <Users className="h-4 w-4" />
-              Workflow
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger
               value="companies"
               className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 pb-3 pt-1 text-sm font-medium gap-2"
             >
@@ -577,9 +587,9 @@ export default function Settings() {
                       </div>
                     </div>
                     {isAdmin && (
-                      <Button onClick={handleSaveGst} disabled={updateSettings.isPending} className="gap-2">
+                      <Button onClick={handleSaveGst} disabled={gstSaving} className="gap-2">
                         <Save className="h-4 w-4" />
-                        {updateSettings.isPending ? "Saving..." : "Save"}
+                        {gstSaving ? "Saving..." : "Save"}
                       </Button>
                     )}
                   </div>
@@ -692,88 +702,33 @@ export default function Settings() {
           </Card>
         </TabsContent>
 
-        {/* WORKFLOW */}
-        <TabsContent value="workflow">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                Approval Workflow Defaults
-              </CardTitle>
-              <CardDescription>
-                Set the default signatories for new payment vouchers in this company.
-                These can be overridden per-voucher at creation time.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <div>
-                  <Label className="text-sm font-medium">Default Verifier</Label>
-                  <p className="text-xs text-muted-foreground mb-2">User who verifies vouchers before approval</p>
-                  <Select value={workflowVerifierId || "none"} onValueChange={v => setWorkflowVerifierId(v === "none" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— None (skip verification step) —</SelectItem>
-                      {(companyUsers as any[]).map((u: any) => (
-                        <SelectItem key={u.id} value={String(u.id)}>
-                          {u.username}{u.role === "admin" ? " (admin)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium">Default Approver</Label>
-                  <p className="text-xs text-muted-foreground mb-2">User who approves vouchers for payment</p>
-                  <Select value={workflowApproverId || "none"} onValueChange={v => setWorkflowApproverId(v === "none" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— None (skip approval step) —</SelectItem>
-                      {(companyUsers as any[]).map((u: any) => (
-                        <SelectItem key={u.id} value={String(u.id)}>
-                          {u.username}{u.role === "admin" ? " (admin)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium">Default Paid By</Label>
-                  <p className="text-xs text-muted-foreground mb-2">User responsible for processing payment</p>
-                  <Select value={workflowPaidById || "none"} onValueChange={v => setWorkflowPaidById(v === "none" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— None —</SelectItem>
-                      {(companyUsers as any[]).map((u: any) => (
-                        <SelectItem key={u.id} value={String(u.id)}>
-                          {u.username}{u.role === "admin" ? " (admin)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-muted/40 border border-border p-4 text-sm text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground">How the workflow works:</p>
-                <ol className="list-decimal list-inside space-y-0.5 ml-1">
-                  <li>Voucher is created → assigned status based on signatories</li>
-                  <li>Verifier reviews → clicks Verify → moves to Pending Approval</li>
-                  <li>Approver reviews → clicks Approve → moves to Approved</li>
-                  <li>Paid By user marks payment → voucher becomes Paid</li>
-                </ol>
-                <p className="mt-2 text-xs">Steps are skipped automatically when the signatory is the same as the creator or not set.</p>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={handleSaveWorkflow} disabled={workflowSaving} className="gap-2">
-                  <Save className="h-4 w-4" />
-                  {workflowSaving ? "Saving…" : "Save Workflow Defaults"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <Dialog open={gstPasswordOpen} onOpenChange={(open) => { if (!gstSaving) setGstPasswordOpen(open); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Confirm GST update</DialogTitle>
+              <DialogDescription>
+                Enter your login password. GST changes only when the password is correct.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-1.5">
+              <Label htmlFor="gst-password">Password</Label>
+              <Input
+                id="gst-password"
+                type="password"
+                autoComplete="current-password"
+                value={gstPassword}
+                onChange={(e) => setGstPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") confirmGstSave(); }}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setGstPasswordOpen(false)} disabled={gstSaving}>Cancel</Button>
+              <Button onClick={confirmGstSave} disabled={gstSaving || !gstPassword}>
+                {gstSaving ? "Saving..." : "Update GST"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* EMAIL */}
         <TabsContent value="email">
@@ -952,17 +907,25 @@ export default function Settings() {
                           {company.country === "SG" ? "🇸🇬 Singapore" : company.country === "IN" ? "🇮🇳 India" : company.country}
                         </CardDescription>
                       </div>
-                      {isAdmin && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">
+                          Financial Year: {formatFinancialYear((company as { financialYear?: { startDate?: string; endDate?: string } | null }).financialYear) || "—"}
+                        </span>
+                        {isAdmin && (
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
-                          onClick={() => setDeleteConfirmId(company.id)}
+                          size="icon"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          aria-label="Delete company"
+                          onClick={() => {
+                            setDeletePassword("");
+                            setDeleteConfirmId(company.id);
+                          }}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Delete
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -1234,7 +1197,7 @@ export default function Settings() {
           </Dialog>
 
           {/* Delete Confirmation Dialog */}
-          <Dialog open={deleteConfirmId !== null} onOpenChange={open => { if (!open) setDeleteConfirmId(null); }}>
+          <Dialog open={deleteConfirmId !== null} onOpenChange={open => { if (!open && deletingCompany === null) { setDeleteConfirmId(null); setDeletePassword(""); } }}>
             <DialogContent className="max-w-sm">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-destructive">
@@ -1242,19 +1205,32 @@ export default function Settings() {
                   Delete Company
                 </DialogTitle>
                 <DialogDescription>
-                  This will permanently delete <strong>{(companies || []).find(c => c.id === deleteConfirmId)?.name}</strong> and all its documents, settings, vendors, customers, and stock data. This cannot be undone.
+                  This will permanently delete <strong>{(companies || []).find(c => c.id === deleteConfirmId)?.name}</strong> and all its documents, settings, vendors, customers, and stock data. Enter your login password to confirm.
                 </DialogDescription>
               </DialogHeader>
+              <div className="space-y-1.5">
+                <Label htmlFor="delete-company-password">Password</Label>
+                <Input
+                  id="delete-company-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && deleteConfirmId && deletePassword) handleDeleteCompany(deleteConfirmId);
+                  }}
+                  placeholder="Enter your login password"
+                />
+              </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDeleteConfirmId(null)} disabled={deletingCompany !== null}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setDeleteConfirmId(null); setDeletePassword(""); }} disabled={deletingCompany !== null}>Cancel</Button>
                 <Button
                   variant="destructive"
                   onClick={() => deleteConfirmId && handleDeleteCompany(deleteConfirmId)}
-                  disabled={deletingCompany !== null}
+                  disabled={deletingCompany !== null || !deletePassword}
                   className="gap-2"
                 >
-                  <Trash2 className="h-4 w-4" />
-                  {deletingCompany !== null ? "Deleting..." : "Yes, Delete"}
+                  {deletingCompany !== null ? "Deleting..." : "OK"}
                 </Button>
               </DialogFooter>
             </DialogContent>

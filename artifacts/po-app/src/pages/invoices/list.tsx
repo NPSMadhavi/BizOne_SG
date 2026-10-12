@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useListInvoices, getListInvoicesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
 import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent, fetchDocJson } from "@/components/bulk-email-bar";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
+import { deliveryOrderAttachmentNames, deliveryOrderPdfAttachments, deliveryOrdersForInvoice, markDeliveryOrdersSent } from "@/lib/invoice-delivery-order-email";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
 
 function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
@@ -111,6 +113,26 @@ export default function InvoiceList() {
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
   const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
   const companyName = (selectedCompany as any)?.name || "RSV Infotech";
+  const selectedInvoiceKey = bulk.selectedDocs.map((doc) => doc.id).join(",");
+  const { data: emailDeliveryOrders = [] } = useQuery({
+    queryKey: ["invoice-email-delivery-orders", selectedCompany?.id, selectedInvoiceKey],
+    enabled: bulk.emailOpen && bulk.selectedDocs.length > 0,
+    queryFn: async () => {
+      const found: any[] = [];
+      for (const doc of bulk.selectedDocs) {
+        const rows = await deliveryOrdersForInvoice({
+          id: doc.id,
+          invNumber: doc.invNumber,
+          soId: (doc as any).soId,
+        });
+        for (const row of rows) {
+          if (!found.some((existing) => existing.id === row.id)) found.push(row);
+        }
+      }
+      return found;
+    },
+  });
+  const deliveryOrderFilenames = deliveryOrderAttachmentNames(emailDeliveryOrders, bulk.selectedDocs);
 
   // Multi-currency stats from date-filtered set
   const stats = useMemo(() => {
@@ -406,6 +428,7 @@ export default function InvoiceList() {
         email={bulk.selectedDocs.find(d => (d as any).customerContactEmail)?.customerContactEmail || ""}
         docLabel="Tax Invoices"
         numbers={bulk.selectedDocs.map(d => d.invNumber)}
+        extraFilenames={deliveryOrderFilenames}
         generateAttachments={async () => {
           const attachments: { filename: string; content: string }[] = [];
           for (const doc of bulk.selectedDocs) {
@@ -417,11 +440,16 @@ export default function InvoiceList() {
             );
             if (typeof content !== "string" || !content) throw new Error(`Could not generate PDF for ${doc.invNumber}.`);
             attachments.push({ filename: `${doc.invNumber}.pdf`, content });
+            const deliveryOrders = await deliveryOrderPdfAttachments(full, selectedCompany);
+            attachments.push(...deliveryOrders);
           }
           return attachments;
         }}
         onSuccess={async (recipients) => {
           await markDocsSent("invoices", bulk.selectedDocs.map(d => d.id), recipients);
+          await Promise.all(bulk.selectedDocs.map((doc) =>
+            markDeliveryOrdersSent({ id: doc.id, invNumber: doc.invNumber, soId: (doc as any).soId }, recipients),
+          ));
           await queryClient.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
           bulk.setSelectedIds(new Set());
         }}

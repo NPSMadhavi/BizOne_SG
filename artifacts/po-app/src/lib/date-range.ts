@@ -64,10 +64,19 @@ export function fmtRangeLabel(from: Date, to: Date) {
   return `${from.toLocaleDateString("en-GB", opts)} - ${to.toLocaleDateString("en-GB", opts)}`;
 }
 
+/** Parse YYYY-MM-DD (or ISO datetime) as a local calendar date — avoids UTC off-by-one. */
+export function parseLocalDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const day = iso.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function inRange(iso: string | null | undefined, from: Date, to: Date) {
-  if (!iso) return false;
-  const d = new Date(iso.slice(0, 10));
-  if (Number.isNaN(d.getTime())) return false;
+  const d = parseLocalDate(iso);
+  if (!d) return false;
   const t = d.getTime();
   const start = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
   const end = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).getTime();

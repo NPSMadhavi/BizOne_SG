@@ -7,6 +7,7 @@ import {
   calculateAgeFromDob,
   mapEmployeeResidency,
 } from "@shared/singapore-payroll";
+import { resolvePayrollEarnings } from "./payroll-earnings";
 
 export type PayrollProcessAction = "created" | "updated" | "skipped";
 
@@ -119,15 +120,15 @@ function calculatePayrollAmounts(params: {
   nationality?: string | null;
   prStatus?: string | null;
 }) {
-  const allowancesTotal = Object.values(params.allowances || {}).reduce(
-    (sum, v) => sum + (Number(v) || 0),
-    0
-  );
+  const earnings = resolvePayrollEarnings({
+    allowances: params.allowances,
+    overtimeHours: params.overtimeHours,
+    overtimeRate: params.overtimeRate,
+  });
   const deductionsTotal = Object.values(params.deductions || {}).reduce(
     (sum, v) => sum + (Number(v) || 0),
     0
   );
-  const overtimePay = params.overtimeHours * params.overtimeRate;
   const { residencyType, prYear } = mapEmployeeResidency({
     nationality: params.nationality,
     prStatus: params.prStatus,
@@ -138,9 +139,9 @@ function calculatePayrollAmounts(params: {
     age: params.age,
     residencyType,
     prYear,
-    monthlyAllowances: allowancesTotal,
+    monthlyAllowances: earnings.taxableEarnings,
     monthlyDeductions: deductionsTotal,
-    overtimePay,
+    overtimePay: earnings.overtimePay,
   });
 
   return {
@@ -148,8 +149,10 @@ function calculatePayrollAmounts(params: {
     employeeCpf: calc.monthlyEmployeeCpf,
     employerCpf: calc.monthlyEmployerCpf,
     netPay: calc.netSalary,
-    overtimePay: calc.overtimePay,
-    allowancesTotal: calc.allowancesTotal,
+    overtimePay: earnings.overtimePay,
+    allowancesTotal: earnings.allowances,
+    bonusTotal: earnings.bonus,
+    otherIncomeTotal: earnings.otherIncome,
     deductionsTotal: calc.deductionsTotal,
     employeeCpfRate: calc.employeeCpfRate,
     employerCpfRate: calc.employerCpfRate,

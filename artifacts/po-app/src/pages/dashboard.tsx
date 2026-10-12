@@ -23,7 +23,7 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { fmtDate } from "@/lib/utils";
 import { DateRangeFilter } from "@/components/date-range-filter";
-import { FinancialYearControls, CloseFyStartNextWizard } from "@/components/financial-year-controls";
+import { CloseFyStartNextWizard } from "@/components/financial-year-controls";
 import { useDateRangeOptional } from "@/contexts/date-range-context";
 import { PERIOD_PRESETS, inRange } from "@/lib/date-range";
 
@@ -520,7 +520,6 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <FinancialYearControls />
           <DateRangeFilter
             preset={periodPreset}
             rangeFrom={rangeFrom}

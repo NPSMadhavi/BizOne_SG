@@ -63,6 +63,7 @@ export default function ExpenseNew() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [triedSave, setTriedSave] = useState(false);
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
   const [selectedBank, setSelectedBank] = useState("");
 
@@ -99,8 +100,11 @@ export default function ExpenseNew() {
     },
   });
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = form;
+  const { register, handleSubmit, watch, setValue } = form;
   const accountId = watch("accountId");
+  const expenseDate = watch("expenseDate");
+  const vendorName = watch("vendorName");
+  const description = watch("description");
   const gstClaimable = watch("gstClaimable");
   const isDeductible = watch("isDeductible");
   const deductiblePct = watch("deductiblePct");
@@ -173,6 +177,9 @@ export default function ExpenseNew() {
   }
 
   async function onSubmit(data: ExpenseForm, statusOverride?: string) {
+    const vendorMissing = !data.vendorName.trim();
+    const descriptionMissing = !data.description.trim();
+    if (vendorMissing || descriptionMissing) return;
     if (!data.accountId) { toast({ title: "Please select a ledger", variant: "destructive" }); return; }
     setSaving(true);
     try {
@@ -223,7 +230,12 @@ export default function ExpenseNew() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="expenseDate">Expense Date <span className="text-destructive">*</span></Label>
-                  <Input id="expenseDate" type="date" {...register("expenseDate", { required: true })} />
+                  <Input
+                    id="expenseDate"
+                    type="date"
+                    value={expenseDate || ""}
+                    onChange={(e) => setValue("expenseDate", e.target.value, { shouldDirty: true, shouldValidate: true })}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Currency</Label>
@@ -235,8 +247,13 @@ export default function ExpenseNew() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="vendorName">Vendor / Payee Name <span className="text-destructive">*</span></Label>
-                  <Input id="vendorName" placeholder="Type to search category…" {...register("vendorName", { required: true })} />
-                  {errors.vendorName && <p className="text-xs text-destructive">Required</p>}
+                  <Input
+                    id="vendorName"
+                    placeholder="Type to search category…"
+                    value={vendorName}
+                    onChange={(e) => setValue("vendorName", e.target.value, { shouldDirty: true })}
+                  />
+                  {triedSave && !vendorName.trim() && <p className="text-xs text-destructive">Required</p>}
                 </div>
 
                 <div className="space-y-1.5">
@@ -255,8 +272,13 @@ export default function ExpenseNew() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="description">Description <span className="text-destructive">*</span></Label>
-                <Input id="description" placeholder="e.g. ACME Pte. Ltd." {...register("description", { required: true })} />
-                {errors.description && <p className="text-xs text-destructive">Required</p>}
+                <Input
+                  id="description"
+                  placeholder="e.g. ACME Pte. Ltd."
+                  value={description}
+                  onChange={(e) => setValue("description", e.target.value, { shouldDirty: true })}
+                />
+                {triedSave && !description.trim() && <p className="text-xs text-destructive">Required</p>}
               </div>
             </CardContent>
           </Card>
@@ -387,11 +409,11 @@ export default function ExpenseNew() {
 
           <div className="flex flex-col gap-2">
             <Button type="button" variant="outline" disabled={saving}
-              onClick={handleSubmit(d => onSubmit(d, "draft"))}>
+              onClick={() => { setTriedSave(true); void handleSubmit(d => onSubmit(d, "draft"))(); }}>
               Save as Draft
             </Button>
             <Button type="button" disabled={saving}
-              onClick={handleSubmit(d => onSubmit(d, "confirmed"))}>
+              onClick={() => { setTriedSave(true); void handleSubmit(d => onSubmit(d, "confirmed"))(); }}>
               Save & Confirm
             </Button>
           </div>

@@ -1,8 +1,12 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
 
 const { Pool } = pg;
+
+/** When set, queries on `db` / `pool` use that company's database instead of the shared one. */
+export const companyDbContext = new AsyncLocalStorage<pg.Pool>();
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -26,7 +30,17 @@ function buildPoolConfig(): pg.PoolConfig {
   return config;
 }
 
-export const pool = new Pool(buildPoolConfig());
+const masterPool = new Pool(buildPoolConfig());
+
+/** Shared pool that follows companyDbContext so each company reads its own database. */
+export const pool = new Proxy(masterPool, {
+  get(target, prop) {
+    const current = companyDbContext.getStore() ?? target;
+    const value = Reflect.get(current, prop, current);
+    return typeof value === "function" ? value.bind(current) : value;
+  },
+}) as pg.Pool;
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

@@ -168,10 +168,13 @@ export default function JournalEntriesList() {
                     <td className="px-4 py-3 text-muted-foreground">{fmtDate(entry.entryDate)}</td>
                     <td className="px-4 py-3 font-medium max-w-xs truncate">{entry.description}</td>
                     <td className="px-4 py-3">
-                      {entry.refType === "manual"
+                      {entry.refType === "manual" || !entry.refType
                         ? <Badge variant="secondary" className="text-xs">Manual</Badge>
                         : <Badge className="text-xs bg-violet-100 text-violet-700 hover:bg-violet-100">
-                            {entry.refType}
+                            {entry.refType === "vendor_invoice" ? "Vendor Invoice"
+                              : entry.refType === "vendor_payment" ? "Vendor Payment"
+                              : entry.refType === "invoice" ? "Invoice"
+                              : entry.refType.replace(/_/g, " ")}
                           </Badge>
                       }
                     </td>

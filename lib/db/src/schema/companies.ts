@@ -10,6 +10,9 @@ export const companiesTable = pgTable("companies", {
   email: text("email"),
   phone: text("phone"),
   domain: text("domain"),
+  businessType: text("business_type"),
+  slug: text("slug"),
+  databaseName: text("database_name"),
   logoUrl: text("logo_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

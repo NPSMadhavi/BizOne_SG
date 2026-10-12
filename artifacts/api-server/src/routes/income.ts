@@ -94,16 +94,14 @@ router.post("/income", async (req, res): Promise<void> => {
   if (!incomeDate) { res.status(400).json({ error: "Income date is required" }); return; }
   const periodCheck = await assertPeriodWritable(companyId, incomeDate);
   if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
-  if (!payerName?.trim()) { res.status(400).json({ error: "Payer name is required" }); return; }
-  if (!description?.trim()) { res.status(400).json({ error: "Description is required" }); return; }
   if (!category) { res.status(400).json({ error: "Category is required" }); return; }
   if (!amount || isNaN(parseFloat(amount))) { res.status(400).json({ error: "Amount is required" }); return; }
 
   const [created] = await db.insert(incomeRecordsTable).values({
     companyId,
     incomeDate,
-    payerName:    payerName.trim(),
-    description:  description.trim(),
+    payerName:    String(payerName ?? "").trim(),
+    description:  String(description ?? "").trim(),
     category,
     amount:       parseFloat(amount).toFixed(2),
     gstAmount:    (parseFloat(gstAmount) || 0).toFixed(2),
@@ -154,8 +152,8 @@ router.put("/income/:id", async (req, res): Promise<void> => {
 
   const updateData: any = { updatedAt: new Date() };
   if (incomeDate !== undefined)     updateData.incomeDate    = incomeDate;
-  if (payerName !== undefined)      updateData.payerName     = payerName.trim();
-  if (description !== undefined)    updateData.description   = description.trim();
+  if (payerName !== undefined)      updateData.payerName     = String(payerName ?? "").trim();
+  if (description !== undefined)    updateData.description   = String(description ?? "").trim();
   if (category !== undefined)       updateData.category      = category;
   if (amount !== undefined)         updateData.amount        = parseFloat(amount).toFixed(2);
   if (gstAmount !== undefined)      updateData.gstAmount     = (parseFloat(gstAmount) || 0).toFixed(2);

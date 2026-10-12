@@ -368,6 +368,10 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS gst_reg_no text`,
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text`,
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS slug text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS database_name text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS business_type text`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS companies_slug_unique ON companies (slug) WHERE slug IS NOT NULL`,
 
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS category text`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sub_category text`,

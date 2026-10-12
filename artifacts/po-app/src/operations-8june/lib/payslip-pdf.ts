@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { asEarningMap, splitEarnings } from "@/operations-8june/lib/payroll-earnings";
 
 export type PayslipPdfData = {
   companyName: string;
@@ -18,6 +19,8 @@ export type PayslipPdfData = {
   basicPay: number;
   overtime: number;
   allowance: number;
+  bonus: number;
+  otherIncome: number;
   grossPay: number;
   employeeCpf: number;
   netPay: number;
@@ -179,7 +182,7 @@ export async function generatePayslip_PDF(
   doc.text("Deduction", x3 + 3, y + 7);
   y += empH;
 
-  const payH = 58;
+  const payH = 74;
   const otherH = 8;
   const leftPayH = payH + otherH;
   drawBox(doc, tableX, y, col12, leftPayH);
@@ -193,8 +196,10 @@ export async function generatePayslip_PDF(
     { label: "Basic Rate", value: money(data.basicRate) },
     { label: "Working Days", value: workingDays(data.workingDays) },
     { label: "Basic Pay", value: money(data.basicPay) },
-    { label: "Overtime", value: money(data.overtime), gapBefore: 16 },
+    { label: "Overtime", value: money(data.overtime), gapBefore: 8 },
     { label: "Allowance", value: money(data.allowance) },
+    { label: "Bonus", value: money(data.bonus) },
+    { label: "Other Income / Benefits", value: money(data.otherIncome) },
   ];
   let payY = y + 16;
   for (const item of payItems) {
@@ -279,8 +284,8 @@ export async function generatePayslip_PDF(
 
 function sumComponentMap(value: unknown): number {
   if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
-  return Object.values(value as Record<string, unknown>).reduce(
-    (sum: number, item) => sum + (Number(item) || 0),
+  return Object.values(value as Record<string, unknown>).reduce<number>(
+    (sum, item) => sum + (Number(item) || 0),
     0,
   );
 }
@@ -333,7 +338,10 @@ export function buildPayslipPdfData(input: {
   payPeriodEnd: string;
 }): PayslipPdfData {
   const { config, employee, record, company, month, year, payPeriodStart, payPeriodEnd } = input;
-  const baseSalary = Number(record.baseSalary ?? config.baseSalary) || 0;
+  const baseSalary = Number(config.baseSalary) || Number(record.baseSalary) || 0;
+  const recordEarnings = asEarningMap(record.allowances);
+  const earnings = splitEarnings(Object.keys(recordEarnings).length > 0 ? recordEarnings : config.allowances);
+  const recordOvertime = Number(record.overtimePay) || 0;
   return {
     companyName: company?.name || "",
     companyAddress: company?.address || "",
@@ -347,11 +355,13 @@ export function buildPayslipPdfData(input: {
     year,
     payPeriodStart: String(record.payPeriodStart || payPeriodStart).slice(0, 10),
     payPeriodEnd: String(record.payPeriodEnd || payPeriodEnd).slice(0, 10),
-    basicRate: Number(config.baseSalary) || baseSalary,
+    basicRate: baseSalary,
     workingDays: null,
     basicPay: baseSalary,
-    overtime: Number(record.overtimePay) || 0,
-    allowance: sumComponentMap(record.allowances ?? config.allowances),
+    overtime: recordOvertime > 0 ? recordOvertime : earnings.overtime,
+    allowance: earnings.allowances,
+    bonus: earnings.bonus,
+    otherIncome: earnings.otherIncome,
     grossPay: Number(record.grossPay) || 0,
     employeeCpf: Number(record.cpfDeduction ?? record.cpfEmployee) || Number(config.cpfAmount) || 0,
     netPay: Number(record.netPay) || 0,

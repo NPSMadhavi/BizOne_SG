@@ -5,6 +5,7 @@ import {
   calculateAgeFromDob,
   mapEmployeeResidency,
 } from "./singapore-payroll-shared";
+import { resolvePayrollEarnings, splitEarnings } from "./payroll-earnings";
 import {
   derivePayrollMonthYear,
   getBatchZipNameFromPeriod,
@@ -120,9 +121,12 @@ function calculatePayrollAmounts(params: {
   nationality?: string | null;
   prStatus?: string | null;
 }) {
-  const allowancesTotal = sumJsonValues(params.allowances);
+  const earnings = resolvePayrollEarnings({
+    allowances: params.allowances,
+    overtimeHours: params.overtimeHours,
+    overtimeRate: params.overtimeRate,
+  });
   const deductionsTotal = sumJsonValues(params.deductions);
-  const overtimePay = round2(params.overtimeHours * params.overtimeRate);
   const { residencyType, prYear } = mapEmployeeResidency({
     nationality: params.nationality,
     prStatus: params.prStatus,
@@ -133,9 +137,9 @@ function calculatePayrollAmounts(params: {
     age: params.age,
     residencyType,
     prYear,
-    monthlyAllowances: allowancesTotal,
+    monthlyAllowances: earnings.taxableEarnings,
     monthlyDeductions: deductionsTotal,
-    overtimePay,
+    overtimePay: earnings.overtimePay,
   });
 
   return {
@@ -143,8 +147,10 @@ function calculatePayrollAmounts(params: {
     employeeCpf: calc.cpfEmployeeAmount,
     employerCpf: calc.cpfEmployerAmount,
     netPay: calc.netSalary,
-    overtimePay: calc.overtimePay,
-    allowancesTotal: calc.allowancesTotal,
+    overtimePay: earnings.overtimePay,
+    allowancesTotal: earnings.allowances,
+    bonusTotal: earnings.bonus,
+    otherIncomeTotal: earnings.otherIncome,
     deductionsTotal: calc.deductionsTotal,
     employeeCpfRate: calc.cpfEmployeeRate,
     employerCpfRate: calc.cpfEmployerRate,
@@ -340,6 +346,8 @@ function buildPayslipData(
     basicPay: baseSalary,
     overtime: amounts.overtimePay,
     allowance: amounts.allowancesTotal,
+    bonus: amounts.bonusTotal,
+    otherIncome: amounts.otherIncomeTotal,
     grossPay: amounts.grossPay,
     employeeCpf: amounts.employeeCpf,
     netPay: amounts.netPay,
@@ -827,6 +835,7 @@ function buildPayslipDataFromRecord(
   const baseSalary = Number(config.base_salary) || 0;
   const allowances = parsePayrollComponents(config.allowances);
   const deductions = parsePayrollComponents(config.deductions);
+  const earnings = splitEarnings(allowances);
 
   return {
     companyName: company.name,
@@ -844,8 +853,10 @@ function buildPayslipDataFromRecord(
     basicRate: baseSalary,
     workingDays: null,
     basicPay: baseSalary,
-    overtime: 0,
-    allowance: sumJsonValues(allowances),
+    overtime: earnings.overtime,
+    allowance: earnings.allowances,
+    bonus: earnings.bonus,
+    otherIncome: earnings.otherIncome,
     grossPay: Number(record.gross_pay) || 0,
     employeeCpf: Number(record.cpf_employee) || 0,
     netPay: Number(record.net_pay) || 0,

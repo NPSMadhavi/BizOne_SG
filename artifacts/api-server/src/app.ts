@@ -12,6 +12,8 @@ import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { sanitizeErrorMessage, logServerError } from "./lib/safe-error.js";
+import { companyDbContext } from "@workspace/db";
+import { openCompanyPool } from "./lib/company-database";
 
 // cookie-signature may be CJS; ensure .sign exists
 const signCookie = (sid: string, secret: string) =>
@@ -212,6 +214,32 @@ app.use(
     },
   }),
 );
+
+app.use(async (req, res, next) => {
+  const companyId = req.session?.companyId;
+  if (
+    !companyId ||
+    !req.path.startsWith("/api") ||
+    req.path.startsWith("/api/auth") ||
+    req.path.startsWith("/api/health")
+  ) {
+    next();
+    return;
+  }
+
+  try {
+    const tenantPool = await openCompanyPool(companyId);
+    if (!tenantPool) {
+      next();
+      return;
+    }
+    companyDbContext.run(tenantPool, () => next());
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "failed";
+    req.log.error({ companyId, message }, "company database unavailable, using shared database");
+    next();
+  }
+});
 
 /**
  * ---------------------------------------------------------

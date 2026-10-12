@@ -66,6 +66,12 @@ export function loginSalesPerson(
   return { ok: true, person: existing };
 }
 
+function accountPasswordError(pass: string, confirm: string): string | null {
+  if (!/^\d{8}$/.test(pass)) return "Password must be 8 digits.";
+  if (pass !== confirm) return "Password and confirm password do not match.";
+  return null;
+}
+
 export function createSalesPersonAccount(
   salesPersonId: string,
   password: string,
@@ -77,13 +83,12 @@ export function createSalesPersonAccount(
   if (!code || !pass || !confirm) {
     return { ok: false, error: "Sales Person ID, password, and confirm password are required." };
   }
-  if (pass !== confirm) {
-    return { ok: false, error: "Password and confirm password do not match." };
-  }
+  const passwordError = accountPasswordError(pass, confirm);
+  if (passwordError) return { ok: false, error: passwordError };
 
   const existing = findSalesPersonByCode(code);
   if (existing && (existing.password || "").trim()) {
-    return { ok: false, error: "An account already exists for this Sales Person ID. Please login." };
+    return { ok: false, error: "An account already exists for this Sales Person. Use Edit on the login screen to change it." };
   }
 
   if (existing) {
@@ -105,6 +110,28 @@ export function createSalesPersonAccount(
   if (!person) {
     return { ok: false, error: "Could not create the account. Try again." };
   }
+  return { ok: true, person };
+}
+
+export function updateSalesPersonAccount(
+  salesPersonId: string,
+  password: string,
+  confirmPassword: string,
+): { ok: true; person: SalesPerson } | { ok: false; error: string } {
+  const code = salesPersonId.trim();
+  const pass = password.trim();
+  const confirm = confirmPassword.trim();
+  if (!code || !pass || !confirm) {
+    return { ok: false, error: "Sales person, password, and confirm password are required." };
+  }
+  const passwordError = accountPasswordError(pass, confirm);
+  if (passwordError) return { ok: false, error: passwordError };
+  const existing = findSalesPersonByCode(code);
+  if (!existing) {
+    return { ok: false, error: "Sales person was not found." };
+  }
+  const updated = saveSalesPerson({ ...existing, id: existing.id, password: pass });
+  const person = updated.find((p) => p.id === existing.id) || { ...existing, password: pass };
   return { ok: true, person };
 }
 

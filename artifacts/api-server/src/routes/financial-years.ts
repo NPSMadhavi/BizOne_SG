@@ -157,7 +157,7 @@ router.post("/financial-years/:id/close", async (req, res): Promise<void> => {
   }
 
   const fy = checklist.financialYear;
-  const next = nextFyBounds(fy.startDate);
+  const next = nextFyBounds(fy.startDate, fy.endDate);
 
   const result = await db.transaction(async (tx) => {
     const [closed] = await tx

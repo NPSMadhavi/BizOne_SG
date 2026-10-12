@@ -32,7 +32,6 @@ import {
   EmployeeUploadedDocuments,
 } from "@/operations-8june/components/employees/EmployeeFiles";
 import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
-import { cn } from "@/lib/utils";
 import { formFieldGridClass, formFieldGrid2Class } from "@/lib/form-ui";
 import {
   Dialog,
@@ -115,6 +114,17 @@ const employeeFormSchema = insertEmployeeSchema.extend({
 });
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
+
+function DisabledDashField() {
+  return (
+    <div
+      aria-disabled="true"
+      className="flex h-10 w-full items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F3F4F6] text-sm text-[#6B7280] select-none"
+    >
+      --
+    </div>
+  );
+}
 
 export type CreatedEmployeeInfo = { name: string; id?: number };
 
@@ -445,8 +455,13 @@ export default function EmployeeForm({
   }, [createMutation.isPending, updateMutation.isPending, onPendingChange]);
 
   const formLabelClass = "text-sm font-medium text-[#111827]";
-  const selectedNationality = form.watch("nationality");
-  const isPrNationality = selectedNationality === "PR";
+  const watchedNationality = form.watch("nationality");
+  const [nationality, setNationality] = useState<string>(watchedNationality || "");
+  useEffect(() => {
+    setNationality(watchedNationality || "");
+  }, [watchedNationality, isOpen, employee?.id]);
+  const isPrNationality = nationality === "PR";
+  const isForeigner = nationality === "Foreigner";
 
   const formBody = (
     <TooltipProvider>
@@ -591,6 +606,7 @@ export default function EmployeeForm({
                       <Select
                         onValueChange={(value) => {
                           field.onChange(value);
+                          setNationality(value);
                           if (value !== "PR") {
                             form.setValue("prStatus", "");
                           }
@@ -616,22 +632,25 @@ export default function EmployeeForm({
                       <FormLabel className={formLabelClass}>
                         PR Status{isPrNationality ? <> <span className="text-[#DC2626]">*</span></> : null}
                       </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value || undefined}
-                        disabled={!isPrNationality}
-                      >
-                        <FormControl>
-                          <SelectTrigger className={cn("w-full", !isPrNationality && "bg-[#F8FAFC]")}>
-                            <SelectValue placeholder="" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="1 Year">1 Year</SelectItem>
-                          <SelectItem value="2 Years">2 Years</SelectItem>
-                          <SelectItem value="3 Years and Above">3 Years and Above</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {isPrNationality ? (
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="--" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="1 Year">1 Year</SelectItem>
+                            <SelectItem value="2 Years">2 Years</SelectItem>
+                            <SelectItem value="3 Years and Above">3 Years and Above</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <DisabledDashField />
+                      )}
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -650,22 +669,50 @@ export default function EmployeeForm({
                     <FormMessage />
                   </FormItem>
                 )} />
-                  <FormField control={form.control} name="passportNumber" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Passport Number</FormLabel>
-                      <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="passportExpiry" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Passport Expiry</FormLabel>
-                      <FormControl>
-                        <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
+                  {!isForeigner && (
+                    <FormField control={form.control} name="passportNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Passport Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {!isForeigner && (
+                    <FormField control={form.control} name="passportExpiry" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Passport Expiry</FormLabel>
+                        <FormControl>
+                          <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {!isForeigner && (
+                    <FormField control={form.control} name="nricNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>NRIC Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {!isForeigner && (
+                    <FormField control={form.control} name="nricExpiry" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>NRIC Expiry Date</FormLabel>
+                        <FormControl>
+                          <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
                 <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Date of Birth <span className="text-[#DC2626]">*</span></FormLabel>
@@ -681,29 +728,70 @@ export default function EmployeeForm({
                     <FormMessage />
                   </FormItem>
                 )} />
-                  <FormField control={form.control} name="visaType" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Visa Type</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                  {isForeigner && (
+                    <FormField control={form.control} name="nricNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>FIN Number</FormLabel>
+                        <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {isForeigner && (
+                    <FormField control={form.control} name="nricExpiry" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>FIN Expiry</FormLabel>
                         <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="" />
-                          </SelectTrigger>
+                          <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="s_pass">S Pass</SelectItem>
-                          <SelectItem value="work_permit">Work Permit</SelectItem>
-                          <SelectItem value="employment_pass">Employment Pass</SelectItem>
-                          <SelectItem value="pr">Permanent Resident</SelectItem>
-                          <SelectItem value="dependent_pass">Dependent Pass</SelectItem>
-                          <SelectItem value="ltvp">Long Term Visit Pass</SelectItem>
-                          <SelectItem value="student_pass">Student Pass</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {isForeigner && (
+                    <FormField control={form.control} name="visaType" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Visa Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || undefined}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="s_pass">S Pass</SelectItem>
+                            <SelectItem value="work_permit">Work Permit</SelectItem>
+                            <SelectItem value="employment_pass">Employment Pass</SelectItem>
+                            <SelectItem value="dependent_pass">Dependent Pass</SelectItem>
+                            <SelectItem value="ltvp">Long Term Visit Pass</SelectItem>
+                            <SelectItem value="student_pass">Student Pass</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {isForeigner && (
+                    <FormField control={form.control} name="visaNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Work Permit Number</FormLabel>
+                        <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  {isForeigner && (
+                    <FormField control={form.control} name="visaExpiry" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={formLabelClass}>Visa Expiry</FormLabel>
+                        <FormControl>
+                          <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
                   <FormField control={form.control} name="status" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Status</FormLabel>
@@ -737,38 +825,6 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                  <FormField control={form.control} name="nricNumber" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>NRIC/IC Number</FormLabel>
-                      <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                    <FormField control={form.control} name="visaNumber" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={formLabelClass}>Visa Permit Number</FormLabel>
-                        <FormControl><Input placeholder="" {...field} value={field.value || ""} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name="visaExpiry" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={formLabelClass}>Visa Expiry</FormLabel>
-                        <FormControl>
-                          <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  <FormField control={form.control} name="nricExpiry" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>NRIC Expiry Date</FormLabel>
-                      <FormControl>
-                        <SimpleDatePicker date={field.value} setDate={field.onChange} placeholder="" min="1900-01-01" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
             </div>
             <div className={formFieldGrid2Class}>
                 <FormField control={form.control} name="address" render={({ field }) => (
@@ -778,13 +834,15 @@ export default function EmployeeForm({
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="visaRemarks" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className={formLabelClass}>Visa Remarks</FormLabel>
-                    <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} value={field.value || ""} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+                {isForeigner && (
+                  <FormField control={form.control} name="visaRemarks" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className={formLabelClass}>Visa Remarks</FormLabel>
+                      <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} value={field.value || ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                )}
             </div>
           </section>
 
@@ -836,7 +894,7 @@ export default function EmployeeForm({
                         )}
                       />
 
-                      {/* Visa Scan */}
+                      {isForeigner && (
                       <FormField
                         control={form.control}
                         name="visaScan"
@@ -881,14 +939,15 @@ export default function EmployeeForm({
                           </FormItem>
                         )}
                       />
+                      )}
 
-                      {/* NRIC Scan */}
+                      {!isForeigner && (
                       <FormField
                         control={form.control}
                         name="nricScan"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>NRIC/ID Scan (Optional)</FormLabel>
+                            <FormLabel>NRIC/ID Scan</FormLabel>
                             <FormControl>
                               <div className="flex flex-col gap-2">
                                 <input
@@ -927,6 +986,7 @@ export default function EmployeeForm({
                           </FormItem>
                         )}
                       />
+                      )}
             </div>
             {employee?.id ? <EmployeeUploadedDocuments employeeId={employee.id} /> : null}
           </section>

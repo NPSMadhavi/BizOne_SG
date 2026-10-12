@@ -6,6 +6,8 @@ import {
 } from "react-icons/fi";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth-context";
+import { BUSINESS_TYPES } from "@/contexts/auth-modules";
+import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useToast } from "@/hooks/use-toast";
 import { clearBrowserSessionLive, setTabSessionId } from "@/lib/browser-session";
 import {
@@ -62,6 +64,13 @@ const registerMobileTextareaClass =
 const registerDesktopTextareaClass =
   "w-full min-h-[72px] resize-none rounded-[10px] border border-gray-200 bg-white px-3 py-2.5 text-[0.85rem] text-[#101828] outline-none placeholder:text-gray-400 focus:border-blue-300 focus:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]";
 
+function setFinancialYear(field: "fy_from" | "fy_to", value: string, current: CompanyForm): Pick<CompanyForm, "fy_from" | "fy_to"> {
+  if (field === "fy_from") {
+    return { fy_from: value, fy_to: current.fy_to };
+  }
+  return { fy_from: current.fy_from, fy_to: value };
+}
+
 function useAuthPageFont() {
   useEffect(() => {
     document.documentElement.classList.add("auth-page");
@@ -72,7 +81,6 @@ function useAuthPageFont() {
 type RegisterStep = 1 | 2;
 
 interface PersonalForm {
-  full_name: string;
   email: string;
   phone_number: string;
   password: string;
@@ -82,33 +90,34 @@ interface PersonalForm {
 interface CompanyForm {
   company_name: string;
   gst_registration_no: string;
-  company_email: string;
+  slug: string;
   company_address: string;
-  company_domain: string;
+  business_type: string;
+  fy_from: string;
+  fy_to: string;
 }
 
-function validatePersonalDetails(form: PersonalForm): string | null {
-  if (!form.full_name.trim()) return "Full name is required";
-  if (!form.email.trim()) return "Email is required";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return "Enter a valid email address";
-  const phoneError = validateSingaporePhoneDigits(form.phone_number.trim());
+function validateAccountStep(personal: PersonalForm, company: CompanyForm): string | null {
+  if (!company.company_name.trim() || company.company_name.trim().length < 2) return "Company name is required";
+  const phoneError = validateSingaporePhoneDigits(personal.phone_number.trim());
   if (phoneError) return phoneError;
-  if (!form.password) return "Password is required";
-  if (form.password.length < 6) return "Password must be at least 6 characters";
-  if (form.password !== form.confirm_password) return "Passwords do not match";
+  if (!personal.email.trim()) return "Email address is required";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personal.email.trim())) return "Enter a valid email address";
+  if (!company.company_address.trim()) return "Address is required";
+  if (company.company_address.trim().length < 5) return "Address is too short";
   return null;
 }
 
-function validateCompanyDetails(form: CompanyForm): string | null {
-  if (!form.company_name.trim()) return "Company name is required";
-  if (!form.company_email.trim()) return "Company email is required";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.company_email.trim())) {
-    return "Enter a valid company email address";
-  }
-  if (!form.company_address.trim()) return "Company address is required";
-  if (form.company_address.trim().length < 5) return "Company address is too short";
-  if (!form.company_domain.trim()) return "Company domain is required";
-  if (form.company_domain.trim().length < 3) return "Company domain is too short";
+function validateSecurityStep(personal: PersonalForm, company: CompanyForm): string | null {
+  if (!company.slug.trim()) return "Slug is required";
+  if (company.slug.trim().length < 3) return "Slug must be at least 3 letters or numbers";
+  if (!company.business_type.trim()) return "Select a business type";
+  if (!company.fy_from || !company.fy_to) return "Select the financial year";
+  if (company.fy_to < company.fy_from) return "Financial year end date must be on or after the start date";
+  if (!personal.password) return "Password is required";
+  if (personal.password.length !== 8) return "Password must be 8 characters";
+  if (personal.confirm_password.length !== 8) return "Confirmation password must be 8 characters";
+  if (personal.password !== personal.confirm_password) return "Passwords do not match";
   return null;
 }
 
@@ -126,7 +135,6 @@ export default function Register() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [personalForm, setPersonalForm] = useState<PersonalForm>({
-    full_name: "",
     email: "",
     phone_number: "",
     password: "",
@@ -135,9 +143,11 @@ export default function Register() {
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
     company_name: "",
     gst_registration_no: "",
-    company_email: "",
+    slug: "",
     company_address: "",
-    company_domain: "",
+    business_type: "",
+    fy_from: "",
+    fy_to: "",
   });
 
   useEffect(() => {
@@ -153,22 +163,34 @@ export default function Register() {
     }
   }, [isLoading, user, setLocation]);
 
-  const handlePersonalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    if (name === "phone_number") {
+  /** Bind by field key — never e.target.name (autofill blocker may rewrite DOM name). */
+  const setPersonalField = (field: keyof PersonalForm, value: string) => {
+    if (field === "phone_number") {
       setPersonalForm((prev) => ({ ...prev, phone_number: parseSingaporePhoneDigits(value) }));
       return;
     }
-    setPersonalForm((prev) => ({ ...prev, [name]: value }));
+    if (field === "password" || field === "confirm_password") {
+      setPersonalForm((prev) => ({ ...prev, [field]: value.slice(0, 8) }));
+      return;
+    }
+    setPersonalForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleCompanyChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setCompanyForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const setCompanyField = (field: keyof CompanyForm, value: string) => {
+    if (field === "slug") {
+      setCompanyForm((prev) => ({ ...prev, slug: value.toLowerCase().replace(/[^a-z0-9]/g, "") }));
+      return;
+    }
+    if (field === "fy_from" || field === "fy_to") {
+      setCompanyForm((prev) => ({ ...prev, ...setFinancialYear(field, value, prev) }));
+      return;
+    }
+    setCompanyForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleNext = (e: React.FormEvent) => {
     e.preventDefault();
-    const error = validatePersonalDetails(personalForm);
+    const error = validateAccountStep(personalForm, companyForm);
     if (error) {
       toast({ title: error, variant: "destructive" });
       return;
@@ -179,16 +201,16 @@ export default function Register() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const personalError = validatePersonalDetails(personalForm);
-    if (personalError) {
-      toast({ title: personalError, variant: "destructive" });
+    const accountError = validateAccountStep(personalForm, companyForm);
+    if (accountError) {
+      toast({ title: accountError, variant: "destructive" });
       setStep(1);
       return;
     }
 
-    const companyError = validateCompanyDetails(companyForm);
-    if (companyError) {
-      toast({ title: companyError, variant: "destructive" });
+    const securityError = validateSecurityStep(personalForm, companyForm);
+    if (securityError) {
+      toast({ title: securityError, variant: "destructive" });
       return;
     }
 
@@ -199,15 +221,18 @@ export default function Register() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          fullName: personalForm.full_name.trim(),
+          fullName: companyForm.company_name.trim(),
           email: personalForm.email.trim().toLowerCase(),
           phoneNumber: formatSingaporePhoneForApi(personalForm.phone_number.trim()),
           password: personalForm.password,
           companyName: companyForm.company_name.trim(),
-          companyEmail: companyForm.company_email.trim().toLowerCase(),
+          companyEmail: personalForm.email.trim().toLowerCase(),
           companyAddress: companyForm.company_address.trim(),
-          companyDomain: companyForm.company_domain.trim().toLowerCase(),
+          businessType: companyForm.business_type,
           gstRegistrationNo: companyForm.gst_registration_no.trim() || undefined,
+          financialYearFrom: companyForm.fy_from,
+          financialYearTo: companyForm.fy_to,
+          slug: companyForm.slug.trim(),
         }),
       });
 
@@ -267,14 +292,52 @@ export default function Register() {
 
   const personalFormMobile = (
     <form className="flex flex-col gap-4" onSubmit={handleNext} data-allow-autofill="true" autoComplete="on">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex min-w-0 flex-col gap-2">
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Company Name<RequiredMark /></span>
+          <input
+            type="text"
+            name="company_name"
+            placeholder="Enter company name"
+            value={companyForm.company_name}
+            onChange={(e) => setCompanyField("company_name", e.target.value)}
+            className={`${registerMobileInputClass} h-10 text-[0.85rem]`}
+            style={{ fontFamily: "Poppins, sans-serif" }}
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-2">
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Contact Number<RequiredMark /></span>
+          <div className="flex">
+            <span
+              className="flex h-10 shrink-0 items-center rounded-l-[10px] border border-r-0 border-gray-200 bg-gray-50 px-2 text-[0.8rem] font-medium text-[#101828]"
+              style={{ fontFamily: "Poppins, sans-serif" }}
+            >
+              {SG_PHONE_PREFIX}
+            </span>
+            <input
+              type="tel"
+              name="phone_number"
+              placeholder="9123 4567"
+              value={personalForm.phone_number}
+              onChange={(e) => setPersonalField("phone_number", e.target.value)}
+              autoComplete="tel-national" data-allow-autofill="true"
+              inputMode="numeric"
+              maxLength={SG_PHONE_DIGITS}
+              className={`${registerMobileInputClass} h-10 rounded-l-none text-[0.85rem]`}
+              style={{ fontFamily: "Poppins, sans-serif" }}
+            />
+          </div>
+        </label>
+      </div>
+
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Email<RequiredMark /></span>
+        <span className={authMobileLabelClass}>Email Address<RequiredMark /></span>
         <input
           type="email"
           name="email"
-          placeholder="Enter company email"
+          placeholder="Enter your email address"
           value={personalForm.email}
-          onChange={handlePersonalChange}
+          onChange={(e) => setPersonalField("email", e.target.value)}
           autoComplete="email" data-allow-autofill="true"
           className={registerMobileInputClass}
           style={{ fontFamily: "Poppins, sans-serif" }}
@@ -282,89 +345,16 @@ export default function Register() {
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Full Name<RequiredMark /></span>
-        <input
-          type="text"
-          name="full_name"
-          placeholder="Enter your full name"
-          value={personalForm.full_name}
-          onChange={handlePersonalChange}
-          autoComplete="name" data-allow-autofill="true"
-          className={registerMobileInputClass}
+        <span className={authMobileLabelClass}>Address<RequiredMark /></span>
+        <textarea
+          name="company_address"
+          placeholder="Enter company address"
+          value={companyForm.company_address}
+          onChange={(e) => setCompanyField("company_address", e.target.value)}
+          rows={3}
+          className={registerMobileTextareaClass}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
-      </label>
-
-      <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Phone Number<RequiredMark /></span>
-        <div className="flex">
-          <span
-            className="flex h-11 shrink-0 items-center rounded-l-[10px] border border-r-0 border-gray-200 bg-gray-50 px-3 text-[0.9rem] font-medium text-[#101828]"
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          >
-            {SG_PHONE_PREFIX}
-          </span>
-          <input
-            type="tel"
-            name="phone_number"
-            placeholder="9123 4567"
-            value={personalForm.phone_number}
-            onChange={handlePersonalChange}
-            autoComplete="tel-national" data-allow-autofill="true"
-            inputMode="numeric"
-            maxLength={SG_PHONE_DIGITS}
-            className={`${registerMobileInputClass} rounded-l-none`}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          />
-        </div>
-      </label>
-
-      <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Password<RequiredMark /></span>
-        <div className="relative flex items-center">
-          <input
-            type={showPassword ? "text" : "password"}
-            name="password"
-            placeholder="Type your password"
-            value={personalForm.password}
-            onChange={handlePersonalChange}
-            autoComplete="new-password" data-allow-autofill="true"
-            className={registerMobilePasswordInputClass}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          />
-          <button
-            type="button"
-            className="absolute right-3 cursor-pointer border-0 bg-transparent p-1 text-[1.1rem] text-gray-400 hover:text-gray-500"
-            onClick={() => setShowPassword((prev) => !prev)}
-            aria-label={showPassword ? "Hide password" : "Show password"}
-          >
-            {showPassword ? <FiEyeOff /> : <FiEye />}
-          </button>
-        </div>
-      </label>
-
-      <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Confirm Password<RequiredMark /></span>
-        <div className="relative flex items-center">
-          <input
-            type={showConfirm ? "text" : "password"}
-            name="confirm_password"
-            placeholder="Confirm your password"
-            value={personalForm.confirm_password}
-            onChange={handlePersonalChange}
-            autoComplete="new-password" data-allow-autofill="true"
-            className={registerMobilePasswordInputClass}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          />
-          <button
-            type="button"
-            className="absolute right-3 cursor-pointer border-0 bg-transparent p-1 text-[1.1rem] text-gray-400 hover:text-gray-500"
-            onClick={() => setShowConfirm((prev) => !prev)}
-            aria-label={showConfirm ? "Hide password" : "Show password"}
-          >
-            {showConfirm ? <FiEyeOff /> : <FiEye />}
-          </button>
-        </div>
       </label>
 
       <div className="mt-2 flex gap-3">
@@ -380,7 +370,7 @@ export default function Register() {
           className="h-11 flex-[1.4] cursor-pointer rounded-[10px] border-0 bg-blue-600 text-[0.95rem] font-semibold text-white hover:bg-blue-700"
           style={{ fontFamily: "Poppins, sans-serif" }}
         >
-          Sign up
+          Next
         </button>
       </div>
       {signUpLink}
@@ -388,73 +378,121 @@ export default function Register() {
   );
 
   const companyFormMobile = (
-    <form className="flex flex-col gap-4" onSubmit={handleSignUp}>
+    <form className="flex flex-col gap-4" onSubmit={handleSignUp} data-allow-autofill="true" autoComplete="on">
       <div className="grid grid-cols-2 gap-3">
         <label className="flex min-w-0 flex-col gap-2">
-          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Name<RequiredMark /></span>
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Slug<RequiredMark /></span>
           <input
             type="text"
-            name="company_name"
-            placeholder="Enter company name"
-            value={companyForm.company_name}
-            onChange={handleCompanyChange}
+            name="slug"
+            value={companyForm.slug}
+            onChange={(e) => setCompanyField("slug", e.target.value)}
             className={`${registerMobileInputClass} h-10 text-[0.85rem]`}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />
         </label>
-
         <label className="flex min-w-0 flex-col gap-2">
-          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Domain<RequiredMark /></span>
-          <input
-            type="text"
-            name="company_domain"
-            placeholder="Example.com"
-            value={companyForm.company_domain}
-            onChange={handleCompanyChange}
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Business Type<RequiredMark /></span>
+          <select
+            name="business_type"
+            value={companyForm.business_type}
+            onChange={(e) => setCompanyField("business_type", e.target.value)}
             className={`${registerMobileInputClass} h-10 text-[0.85rem]`}
             style={{ fontFamily: "Poppins, sans-serif" }}
-          />
+          >
+            <option value="">Select business type</option>
+            {BUSINESS_TYPES.map((type) => (
+              <option key={type.id} value={type.id}>{type.label}</option>
+            ))}
+          </select>
         </label>
       </div>
 
       <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Email<RequiredMark /></span>
-        <input
-          type="email"
-          name="company_email"
-          placeholder="Enter company email"
-          value={companyForm.company_email}
-          onChange={handleCompanyChange}
-          className={registerMobileInputClass}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
-      </label>
-
-      <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>GST Registration (Optional)</span>
+        <span className={authMobileLabelClass}>GST Registration</span>
         <input
           type="text"
           name="gst_registration_no"
-          placeholder="Enter GST registration number"
           value={companyForm.gst_registration_no}
-          onChange={handleCompanyChange}
+          onChange={(e) => setCompanyField("gst_registration_no", e.target.value)}
           className={registerMobileInputClass}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
       </label>
 
-      <label className="flex min-w-0 flex-col gap-2">
-        <span className={authMobileLabelClass}>Address<RequiredMark /></span>
-        <textarea
-          name="company_address"
-          placeholder="Enter company address"
-          value={companyForm.company_address}
-          onChange={handleCompanyChange}
-          rows={3}
-          className={registerMobileTextareaClass}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
-      </label>
+      <div className="flex min-w-0 flex-col gap-2">
+        <span className={authMobileLabelClass}>Financial Year<RequiredMark /></span>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className={`${authMobileLabelClass} text-[0.82rem]`}>From<RequiredMark /></span>
+            <SyncBridgeDatePicker
+              value={companyForm.fy_from}
+              onChange={(value) => setCompanyField("fy_from", value)}
+              placeholder="DD/MM/YYYY"
+              className="rounded-[10px] border-gray-200 bg-[#f8fafc] text-[0.85rem]"
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className={`${authMobileLabelClass} text-[0.82rem]`}>To<RequiredMark /></span>
+            <SyncBridgeDatePicker
+              value={companyForm.fy_to}
+              onChange={(value) => setCompanyField("fy_to", value)}
+              placeholder="DD/MM/YYYY"
+              min={companyForm.fy_from || undefined}
+              className="rounded-[10px] border-gray-200 bg-[#f8fafc] text-[0.85rem]"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex min-w-0 flex-col gap-2">
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Password<RequiredMark /></span>
+          <div className="relative flex items-center">
+            <input
+              type={showPassword ? "text" : "password"}
+              name="password"
+              maxLength={8}
+              value={personalForm.password}
+              onChange={(e) => setPersonalField("password", e.target.value)}
+              autoComplete="new-password" data-allow-autofill="true"
+              className={`${registerMobilePasswordInputClass} h-10 text-[0.85rem]`}
+              style={{ fontFamily: "Poppins, sans-serif" }}
+            />
+            <button
+              type="button"
+              className="absolute right-3 cursor-pointer border-0 bg-transparent p-1 text-[1.1rem] text-gray-400 hover:text-gray-500"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <FiEyeOff /> : <FiEye />}
+            </button>
+          </div>
+        </label>
+        <label className="flex min-w-0 flex-col gap-2">
+          <span className={`${authMobileLabelClass} text-[0.82rem]`}>Confirmation Password<RequiredMark /></span>
+          <div className="relative flex items-center">
+            <input
+              type={showConfirm ? "text" : "password"}
+              name="confirm_password"
+              maxLength={8}
+              value={personalForm.confirm_password}
+              onChange={(e) => setPersonalField("confirm_password", e.target.value)}
+              autoComplete="new-password" data-allow-autofill="true"
+              className={`${registerMobilePasswordInputClass} h-10 text-[0.85rem]`}
+              style={{ fontFamily: "Poppins, sans-serif" }}
+            />
+            <button
+              type="button"
+              className="absolute right-3 cursor-pointer border-0 bg-transparent p-1 text-[1.1rem] text-gray-400 hover:text-gray-500"
+              onClick={() => setShowConfirm((prev) => !prev)}
+              aria-label={showConfirm ? "Hide password" : "Show password"}
+            >
+              {showConfirm ? <FiEyeOff /> : <FiEye />}
+            </button>
+          </div>
+        </label>
+      </div>
 
       <div className="mt-2 flex gap-3">
         <button
@@ -481,37 +519,22 @@ export default function Register() {
 
   const personalFormDesktop = (
     <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleNext} data-allow-autofill="true" autoComplete="on">
-      <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">Email<RequiredMark /></span>
-        <input
-          type="email"
-          name="email"
-          placeholder="Enter your email address"
-          value={personalForm.email}
-          onChange={handlePersonalChange}
-          autoComplete="email" data-allow-autofill="true"
-          className={desktopInputClassName}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
-      </label>
-
       <div className="grid grid-cols-2 gap-3.5">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Full Name<RequiredMark /></span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Company Name<RequiredMark /></span>
           <input
             type="text"
-            name="full_name"
-            placeholder="Enter your full name"
-            value={personalForm.full_name}
-            onChange={handlePersonalChange}
-            autoComplete="name" data-allow-autofill="true"
+            name="company_name"
+            placeholder="Enter company name"
+            value={companyForm.company_name}
+            onChange={(e) => setCompanyField("company_name", e.target.value)}
             className={desktopInputClassName}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />
         </label>
 
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Phone Number<RequiredMark /></span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Contact Number<RequiredMark /></span>
           <div className="flex">
             <span
               className="flex h-10 shrink-0 items-center rounded-l-[10px] border border-r-0 border-gray-200 bg-gray-50 px-3 text-[0.85rem] font-medium text-[#101828]"
@@ -524,7 +547,7 @@ export default function Register() {
               name="phone_number"
               placeholder="9123 4567"
               value={personalForm.phone_number}
-              onChange={handlePersonalChange}
+              onChange={(e) => setPersonalField("phone_number", e.target.value)}
               autoComplete="tel-national" data-allow-autofill="true"
               inputMode="numeric"
               maxLength={SG_PHONE_DIGITS}
@@ -535,6 +558,112 @@ export default function Register() {
         </label>
       </div>
 
+      <label className="flex min-w-0 flex-col gap-1">
+        <span className="text-[0.82rem] font-semibold text-[#101828]">Email Address<RequiredMark /></span>
+        <input
+          type="email"
+          name="email"
+          placeholder="Enter your email address"
+          value={personalForm.email}
+          onChange={(e) => setPersonalField("email", e.target.value)}
+          autoComplete="email" data-allow-autofill="true"
+          className={desktopInputClassName}
+          style={{ fontFamily: "Poppins, sans-serif" }}
+        />
+      </label>
+
+      <label className="flex min-w-0 flex-col gap-1">
+        <span className="text-[0.82rem] font-semibold text-[#101828]">Address<RequiredMark /></span>
+        <textarea
+          name="company_address"
+          placeholder="Enter company address"
+          value={companyForm.company_address}
+          onChange={(e) => setCompanyField("company_address", e.target.value)}
+          rows={3}
+          className={registerDesktopTextareaClass}
+          style={{ fontFamily: "Poppins, sans-serif" }}
+        />
+      </label>
+
+      <button
+        type="submit"
+        className="mt-6 h-10 w-full cursor-pointer rounded-[10px] border-0 bg-blue-600 text-[0.95rem] text-white hover:bg-blue-700"
+        style={{ fontFamily: "Poppins, sans-serif" }}
+      >
+        Next
+      </button>
+    </form>
+  );
+
+  const companyFormDesktop = (
+    <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleSignUp} data-allow-autofill="true" autoComplete="on">
+      <div className="grid grid-cols-2 gap-3.5">
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Slug<RequiredMark /></span>
+          <input
+            type="text"
+            name="slug"
+            value={companyForm.slug}
+            onChange={(e) => setCompanyField("slug", e.target.value)}
+            className={desktopInputClassName}
+            style={{ fontFamily: "Poppins, sans-serif" }}
+          />
+        </label>
+
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Business Type<RequiredMark /></span>
+          <select
+            name="business_type"
+            value={companyForm.business_type}
+            onChange={(e) => setCompanyField("business_type", e.target.value)}
+            className={desktopInputClassName}
+            style={{ fontFamily: "Poppins, sans-serif" }}
+          >
+            <option value="">Select business type</option>
+            {BUSINESS_TYPES.map((type) => (
+              <option key={type.id} value={type.id}>{type.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <label className="flex min-w-0 flex-col gap-1">
+        <span className="text-[0.82rem] font-semibold text-[#101828]">GST Registration</span>
+        <input
+          type="text"
+          name="gst_registration_no"
+          value={companyForm.gst_registration_no}
+          onChange={(e) => setCompanyField("gst_registration_no", e.target.value)}
+          className={desktopInputClassName}
+          style={{ fontFamily: "Poppins, sans-serif" }}
+        />
+      </label>
+
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-[0.82rem] font-semibold text-[#101828]">Financial Year<RequiredMark /></span>
+        <div className="grid grid-cols-2 gap-3.5">
+          <label className="flex min-w-0 flex-col gap-1">
+            <span className="text-[0.82rem] font-semibold text-[#101828]">From<RequiredMark /></span>
+            <SyncBridgeDatePicker
+              value={companyForm.fy_from}
+              onChange={(value) => setCompanyField("fy_from", value)}
+              placeholder="DD/MM/YYYY"
+              className="rounded-[10px] border-gray-200 bg-white text-[0.85rem]"
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1">
+            <span className="text-[0.82rem] font-semibold text-[#101828]">To<RequiredMark /></span>
+            <SyncBridgeDatePicker
+              value={companyForm.fy_to}
+              onChange={(value) => setCompanyField("fy_to", value)}
+              placeholder="DD/MM/YYYY"
+              min={companyForm.fy_from || undefined}
+              className="rounded-[10px] border-gray-200 bg-white text-[0.85rem]"
+            />
+          </label>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3.5">
         <label className="flex min-w-0 flex-col gap-1">
           <span className="text-[0.82rem] font-semibold text-[#101828]">Password<RequiredMark /></span>
@@ -542,9 +671,9 @@ export default function Register() {
             <input
               type={showPassword ? "text" : "password"}
               name="password"
-              placeholder="Type your password"
+              maxLength={8}
               value={personalForm.password}
-              onChange={handlePersonalChange}
+              onChange={(e) => setPersonalField("password", e.target.value)}
               autoComplete="new-password" data-allow-autofill="true"
               className={desktopPasswordInputClassName}
               style={{ fontFamily: "Poppins, sans-serif" }}
@@ -561,14 +690,14 @@ export default function Register() {
         </label>
 
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Confirm Password<RequiredMark /></span>
+          <span className="text-[0.82rem] font-semibold text-[#101828]">Confirmation Password<RequiredMark /></span>
           <div className="relative flex items-center">
             <input
               type={showConfirm ? "text" : "password"}
               name="confirm_password"
-              placeholder="Confirm your password"
+              maxLength={8}
               value={personalForm.confirm_password}
-              onChange={handlePersonalChange}
+              onChange={(e) => setPersonalField("confirm_password", e.target.value)}
               autoComplete="new-password" data-allow-autofill="true"
               className={desktopPasswordInputClassName}
               style={{ fontFamily: "Poppins, sans-serif" }}
@@ -584,85 +713,6 @@ export default function Register() {
           </div>
         </label>
       </div>
-
-      <button
-        type="submit"
-        className="mt-6 h-10 w-full cursor-pointer rounded-[10px] border-0 bg-blue-600 text-[0.95rem] text-white hover:bg-blue-700"
-        style={{ fontFamily: "Poppins, sans-serif" }}
-      >
-        Next
-      </button>
-    </form>
-  );
-
-  const companyFormDesktop = (
-    <form className="flex min-h-0 flex-1 flex-col gap-3.5" onSubmit={handleSignUp}>
-      <div className="grid grid-cols-2 gap-3.5">
-        <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Name<RequiredMark /></span>
-          <input
-            type="text"
-            name="company_name"
-            placeholder="Enter company name"
-            value={companyForm.company_name}
-            onChange={handleCompanyChange}
-            className={desktopInputClassName}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          />
-        </label>
-
-        <label className="flex min-w-0 flex-col gap-1">
-          <span className="text-[0.82rem] font-semibold text-[#101828]">Domain<RequiredMark /></span>
-          <input
-            type="text"
-            name="company_domain"
-            placeholder="example.com"
-            value={companyForm.company_domain}
-            onChange={handleCompanyChange}
-            className={desktopInputClassName}
-            style={{ fontFamily: "Poppins, sans-serif" }}
-          />
-        </label>
-      </div>
-
-      <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">Email<RequiredMark /></span>
-        <input
-          type="email"
-          name="company_email"
-          placeholder="Enter company email"
-          value={companyForm.company_email}
-          onChange={handleCompanyChange}
-          className={desktopInputClassName}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
-      </label>
-
-      <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">GST Registration</span>
-        <input
-          type="text"
-          name="gst_registration_no"
-          placeholder="Enter GST registration number (optional)"
-          value={companyForm.gst_registration_no}
-          onChange={handleCompanyChange}
-          className={desktopInputClassName}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
-      </label>
-
-      <label className="flex min-w-0 flex-col gap-1">
-        <span className="text-[0.82rem] font-semibold text-[#101828]">Address<RequiredMark /></span>
-        <textarea
-          name="company_address"
-          placeholder="Enter company address"
-          value={companyForm.company_address}
-          onChange={handleCompanyChange}
-          rows={2}
-          className={registerDesktopTextareaClass}
-          style={{ fontFamily: "Poppins, sans-serif" }}
-        />
-      </label>
 
       <div className="mt-3 flex gap-3">
         <button

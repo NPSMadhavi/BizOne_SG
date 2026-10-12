@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Lock,
@@ -496,15 +496,22 @@ export function CloseFyStartNextWizard({
  * Financial year status + close/activate actions.
  * Reuses the existing Dashboard date range (no separate FY management screen).
  */
-export function FinancialYearControls() {
+export function FinancialYearControls({
+  showCloseButton = true,
+  closeOnly = false,
+}: {
+  showCloseButton?: boolean;
+  closeOnly?: boolean;
+} = {}) {
   const { toast } = useToast();
   const { canManage, isAdmin, selectedCompany } = useAuth();
-  const { rangeFrom, rangeTo } = useDateRangeOptional();
+  const { rangeFrom, rangeTo, periodPreset, applyDateRange } = useDateRangeOptional();
   const qc = useQueryClient();
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
   const [checklist, setChecklist] = useState<any>(null);
   const [preview, setPreview] = useState<any>(null);
+  const fySyncedRef = useRef(false);
 
   const countryRaw = String((selectedCompany as any)?.country || "").trim();
   const enabled =
@@ -519,6 +526,27 @@ export function FinancialYearControls() {
 
   const years: Fy[] = data?.years || [];
   const active: Fy | null = data?.active || null;
+
+  // Align dashboard KPIs with the active FY when the filter is still on a bare calendar month
+  // (common cause of Total Income / Expenses / Net Profit showing $0 mid-year).
+  useEffect(() => {
+    if (closeOnly) return;
+    if (!enabled || !active || fySyncedRef.current) return;
+    const sameMonth =
+      rangeFrom.getFullYear() === rangeTo.getFullYear() &&
+      rangeFrom.getMonth() === rangeTo.getMonth() &&
+      rangeFrom.getDate() === 1 &&
+      rangeTo.getDate() === new Date(rangeTo.getFullYear(), rangeTo.getMonth() + 1, 0).getDate();
+    if (periodPreset !== "this-month" && !sameMonth) {
+      fySyncedRef.current = true;
+      return;
+    }
+    const from = fromInputDate(active.startDate);
+    const to = fromInputDate(active.endDate);
+    if (!from || !to) return;
+    fySyncedRef.current = true;
+    applyDateRange("this-year", from, to);
+  }, [closeOnly, enabled, active, periodPreset, rangeFrom, rangeTo, applyDateRange]);
 
   const rangeMid = useMemo(() => {
     const t = (rangeFrom.getTime() + rangeTo.getTime()) / 2;
@@ -612,6 +640,20 @@ export function FinancialYearControls() {
 
   return (
     <>
+      {closeOnly ? (
+        canManage && selectedFy && selectedFy.status !== "closed" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1 shrink-0"
+            onClick={() => openChecklist(selectedFy.id)}
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Close Financial Year
+          </Button>
+        ) : null
+      ) : (
       <div className="flex flex-wrap items-center gap-2">
         <div
           className={`inline-flex flex-col rounded-xl border px-3 py-2 text-[12px] shadow-sm ${
@@ -643,7 +685,7 @@ export function FinancialYearControls() {
           </span>
         </div>
 
-        {canManage && selectedFy && selectedFy.status !== "closed" && (
+        {showCloseButton && canManage && selectedFy && selectedFy.status !== "closed" && (
           <Button
             type="button"
             variant="outline"
@@ -682,6 +724,7 @@ export function FinancialYearControls() {
           </Button>
         )}
       </div>
+      )}
 
       <Dialog open={checklistOpen} onOpenChange={setChecklistOpen}>
         <DialogContent className="max-w-lg">
@@ -816,9 +859,18 @@ export function ClosedYearBanner() {
           Financial Year: {fy?.label} · Status: CLOSED · Access: VIEW ONLY
         </p>
         <p className="text-xs mt-0.5">
-          Create, Edit, Delete, and Post are blocked for this year. Reports and ledgers remain available.
+          Records dated in this year cannot be saved. Choose a date in the open financial year to add Income or Expenses.
         </p>
       </div>
+    </div>
+  );
+}
+
+export function ClosedPeriodWriteGuard({ children }: { children: React.ReactNode }) {
+  return (
+    <div>
+      <ClosedYearBanner />
+      {children}
     </div>
   );
 }

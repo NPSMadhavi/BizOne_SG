@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Sparkles } from "lucide-react";
-import { EmailSendDialog, type EmailDocInfo } from "@/components/email-send-dialog";
+import { EmailSendDialog, type EmailDocInfo, type EmailPdfAttachment } from "@/components/email-send-dialog";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -106,13 +106,83 @@ function PdfCanvasRenderer({ base64 }: { base64: string }) {
   }, [base64]);
 
   return (
-    <div className="relative w-full h-full overflow-y-auto bg-muted/40 p-4">
-      {rendering && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/40 z-10">
-          <AiPreloader />
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#eef0f3]">
+      <style>{`
+        @keyframes bizone-paper-feed {
+          from { transform: translateY(-105%); }
+          to { transform: translateY(0); }
+        }
+        .bizone-printer-head {
+          position: relative;
+          z-index: 30;
+          width: min(820px, calc(100% - 36px));
+          height: 46px;
+          margin: 0 auto;
+          border-radius: 23px;
+          background: linear-gradient(180deg, #ffffff 0%, #fbfbfc 58%, #e7ebf0 100%);
+          box-shadow:
+            0 12px 20px rgba(15, 23, 42, 0.14),
+            inset 0 1px 0 #fff,
+            inset 0 -3px 5px rgba(15, 23, 42, 0.06);
+        }
+        .bizone-printer-slot {
+          position: absolute;
+          z-index: 0;
+          left: 50%;
+          top: 0;
+          width: min(760px, calc(100% - 64px));
+          height: 10px;
+          border-radius: 2px;
+          transform: translateX(-50%);
+          background: #151922;
+        }
+        .bizone-printer-tray {
+          position: absolute;
+          z-index: 0;
+          left: 50%;
+          top: 6px;
+          width: min(790px, calc(100% - 48px));
+          height: 22px;
+          border-radius: 0 0 16px 16px;
+          transform: translateX(-50%);
+          background: linear-gradient(180deg, #f5f6f8 0%, #e3e6eb 100%);
+          box-shadow: 0 8px 14px rgba(15, 23, 42, 0.08);
+        }
+        .bizone-paper-window {
+          position: relative;
+          z-index: 10;
+          min-height: 0;
+          flex: 1;
+          margin-top: -16px;
+          overflow: hidden;
+        }
+        .bizone-paper-sheet {
+          width: min(660px, calc(100% - 120px));
+          margin: 0 auto 28px;
+          transform: translateY(-105%);
+        }
+        .bizone-paper-sheet.is-feeding {
+          animation: bizone-paper-feed 1.8s linear forwards;
+        }
+      `}</style>
+      <div className="relative z-30 shrink-0 px-4 pb-0 pt-4">
+        <div className="bizone-printer-head" aria-hidden="true" />
+      </div>
+      <div className="bizone-paper-window">
+        <div className="bizone-printer-slot" aria-hidden="true" />
+        <div className="bizone-printer-tray" aria-hidden="true" />
+        {rendering && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center">
+            <AiPreloader />
+          </div>
+        )}
+        <div className="relative z-10 h-full overflow-x-hidden overflow-y-auto">
+          <div
+            ref={containerRef}
+            className={`bizone-paper-sheet ${rendering ? "" : "is-feeding"}`}
+          />
         </div>
-      )}
-      <div ref={containerRef} className="max-w-[820px] mx-auto" />
+      </div>
     </div>
   );
 }
@@ -123,6 +193,8 @@ interface PdfPreviewModalProps {
   title: string;
   generatePdf: (opts?: { returnBase64?: boolean }) => Promise<string | void>;
   pdfFilename: string;
+  pdfFilenames?: string[];
+  generateAttachments?: () => Promise<EmailPdfAttachment[]>;
   defaultEmailTo?: string;
   defaultEmailSubject?: string;
   defaultEmailBody?: string;
@@ -139,6 +211,8 @@ export function PdfPreviewModal({
   title,
   generatePdf,
   pdfFilename,
+  pdfFilenames,
+  generateAttachments,
   defaultEmailTo = "",
   defaultEmailSubject = "",
   defaultEmailBody = "",
@@ -231,7 +305,9 @@ export function PdfPreviewModal({
                 defaultSubject={defaultEmailSubject}
                 defaultBody={defaultEmailBody}
                 pdfFilename={pdfFilename}
+                pdfFilenames={pdfFilenames}
                 generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
+                generateAttachments={generateAttachments}
                 triggerSize="sm"
                 onSuccess={(recipients) => onEmailSent?.(recipients)}
                 poId={poId}

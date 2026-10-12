@@ -45,6 +45,7 @@ import {
   type PayslipPdfData,
 } from "@/operations-8june/lib/payslip-pdf";
 import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
+import { splitEarnings } from "@/operations-8june/lib/payroll-earnings";
 import {
   getLastCompletedPayPeriod,
   derivePayrollMonthYear,
@@ -1484,6 +1485,14 @@ export default function PayrollPage() {
             <EntityViewField
               label="Food Allowance"
               value={formatCurrency(selectedConfig.allowances?.meal || 0)}
+            />
+            <EntityViewField
+              label="Bonus"
+              value={formatCurrency(splitEarnings(selectedConfig.allowances).bonus)}
+            />
+            <EntityViewField
+              label="Other Income / Benefits"
+              value={formatCurrency(splitEarnings(selectedConfig.allowances).otherIncome)}
             />
             <EntityViewField
               label="Medical Insurance"

@@ -9,20 +9,27 @@ const VOUCHER_TYPE_LABELS: Record<string, string> = {
   "petty-cash": "PETTY CASH VOUCHER",
 };
 
-function getLogoUrl(companyId?: number | null): string {
-  if (!companyId || companyId === 1) return logoRsvUrl;
+function getLogoUrl(company?: { id?: number | null; logoUrl?: string | null } | null): string {
+  const custom = company?.logoUrl?.trim();
+  if (custom) return custom;
+  if (!company?.id || company.id === 1) return logoRsvUrl;
   return logoNetopsysUrl;
 }
 
 async function getLogoData(url: string): Promise<{ dataUrl: string; natW: number; natH: number }> {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  const dataUrl = url.startsWith("data:")
+    ? url
+    : await new Promise<string>((resolve, reject) => {
+        fetch(url)
+          .then((res) => res.blob())
+          .then((blob) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          })
+          .catch(reject);
+      });
   const dims = await new Promise<{ natW: number; natH: number }>((resolve) => {
     const img = new Image();
     img.onload = () => resolve({ natW: img.naturalWidth, natH: img.naturalHeight });
@@ -86,7 +93,7 @@ export async function generateVoucherPDF(
   const pageW = 210;
   const isPaid = voucher.status === "paid";
 
-  const logo = await getLogoData(getLogoUrl(company?.id)).catch(() => null);
+  const logo = await getLogoData(getLogoUrl(company)).catch(() => null);
 
   // ── TOP HEADER ─────────────────────────────────────────────────────────────
   let y = 14;

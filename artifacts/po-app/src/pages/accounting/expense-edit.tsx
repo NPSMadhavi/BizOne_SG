@@ -129,6 +129,7 @@ export default function ExpenseEdit() {
   });
 
   const { register, handleSubmit, watch, setValue, reset } = form;
+  const expenseDate = watch("expenseDate");
 
   useEffect(() => {
     if (!expense || loaded) return;
@@ -280,7 +281,12 @@ export default function ExpenseEdit() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="expenseDate">Expense Date <span className="text-destructive">*</span></Label>
-                  <Input id="expenseDate" type="date" {...register("expenseDate", { required: true })} />
+                  <Input
+                    id="expenseDate"
+                    type="date"
+                    value={expenseDate || ""}
+                    onChange={(e) => setValue("expenseDate", e.target.value, { shouldDirty: true, shouldValidate: true })}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Currency</Label>

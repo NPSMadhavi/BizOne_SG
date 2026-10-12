@@ -351,6 +351,28 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
   }
 
   logAudit({ req, action: "update", entityType: "vendor_invoice", entityId: id, entityLabel: updated?.piNumber });
+  if (updated && req.session.userId) {
+    try {
+      await postVendorInvoiceJE(
+        {
+          id: updated.id,
+          companyId: updated.companyId,
+          piNumber: updated.piNumber,
+          vendorName: updated.vendorName,
+          piDate: updated.piDate,
+          totalAmount: updated.totalAmount,
+          gstAmount: updated.gstAmount,
+          gstTreatment: updated.gstTreatment ?? undefined,
+          expenseAccountId: updated.expenseAccountId,
+          items: (updated.items as Array<{ stockItemId?: number | null }> | null) ?? null,
+        },
+        req.session.userId,
+        req.log,
+      );
+    } catch (jeErr: any) {
+      req.log?.warn?.({ err: jeErr }, "Vendor invoice journal post failed on update");
+    }
+  }
   res.json(parsePI(updated));
 });
 

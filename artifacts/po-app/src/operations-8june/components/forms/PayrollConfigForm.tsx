@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -50,6 +50,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { calculateSyncBridgePayrollPreview, CPF_WAGE_CEILING } from "@/operations-8june/lib/payroll-utils";
+import { earningDisplayGroup } from "@/operations-8june/lib/payroll-earnings";
 import {
   payrollCancelButtonClass,
   payrollPrimaryButtonClass,
@@ -222,13 +223,24 @@ const BUILTIN_EARNINGS: Payhead[] = [
   { id: "meal", label: "Food Allowance" },
   { id: "phone", label: "Mobile Allowance" },
   { id: "others", label: "Other Allowance" },
+  { id: "bonus", label: "Bonus / AWS" },
+  { id: "income_tax_borne_by_employee", label: "Income Tax Borne by Employee" },
 ];
 const BUILTIN_DEDUCTIONS: Payhead[] = [
   { id: "medical", label: "Medical Insurance" },
   { id: "advance", label: "Advanced / Loan Recovery" },
   { id: "others", label: "Other Deductions" },
 ];
-const RESERVED_EARNING_IDS = new Set(["transport", "meal", "phone", "others", "overtime"]);
+const RESERVED_EARNING_IDS = new Set([
+  "transport",
+  "meal",
+  "phone",
+  "others",
+  "overtime",
+  "bonus",
+  "income_tax_borne_by_employee",
+]);
+const SEPARATE_EARNING_IDS = new Set(["bonus", "income_tax_borne_by_employee"]);
 const RESERVED_DEDUCTION_IDS = new Set(["medical", "advance", "others"]);
 const EARNING_FORM_FIELDS: Record<string, "allowanceTransport" | "allowanceMeal" | "allowancePhone" | "allowanceOthers"> = {
   transport: "allowanceTransport",
@@ -273,12 +285,13 @@ function savePayheadStore(kind: PayheadKind, store: PayheadStore) {
 
 function visiblePayheads(kind: PayheadKind, store: PayheadStore): Payhead[] {
   const builtins = kind === "earning" ? BUILTIN_EARNINGS : BUILTIN_DEDUCTIONS;
+  const reserved = kind === "earning" ? RESERVED_EARNING_IDS : RESERVED_DEDUCTION_IDS;
   const hidden = new Set(store.hidden);
   const builtinItems = builtins
     .filter((item) => !hidden.has(item.id))
     .map((item) => ({ id: item.id, label: store.renames[item.id] || item.label }));
   const customItems = store.custom
-    .filter((item) => !hidden.has(item.id))
+    .filter((item) => !hidden.has(item.id) && !reserved.has(item.id))
     .map((item) => ({ id: item.id, label: store.renames[item.id] || item.label }));
   return [...builtinItems, ...customItems];
 }
@@ -476,7 +489,9 @@ function buildPayrollConfigPayload(
   if (earningIncluded.has("phone")) allowances.phone = allowancePhone || 0;
   if (earningIncluded.has("others")) allowances.others = allowanceOthers || 0;
   for (const [key, value] of Object.entries(extraAllowances)) {
-    if (!RESERVED_EARNING_IDS.has(key)) allowances[key] = Number(value) || 0;
+    if (!RESERVED_EARNING_IDS.has(key) || SEPARATE_EARNING_IDS.has(key)) {
+      allowances[key] = Number(value) || 0;
+    }
   }
 
   const deductions: Record<string, number> = {};
@@ -652,7 +667,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     if (visible.has("phone")) map.phone = allowancePhone;
     if (visible.has("others")) map.others = allowanceOthers;
     for (const item of earningCatalog) {
-      if (RESERVED_EARNING_IDS.has(item.id)) continue;
+      if (RESERVED_EARNING_IDS.has(item.id) && !SEPARATE_EARNING_IDS.has(item.id)) continue;
       map[item.id] = Number(customEarningAmounts[item.id]) || 0;
     }
     return map;
@@ -751,7 +766,9 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     const extraEarnings: Record<string, number | undefined> = {};
     const extraDeductions: Record<string, number | undefined> = {};
     for (const [key, value] of Object.entries(savedAllowances)) {
-      if (!RESERVED_EARNING_IDS.has(key)) extraEarnings[key] = Number(value) || undefined;
+      if (!RESERVED_EARNING_IDS.has(key) || SEPARATE_EARNING_IDS.has(key)) {
+        extraEarnings[key] = Number(value) || undefined;
+      }
     }
     for (const [key, value] of Object.entries(savedDeductions)) {
       if (!RESERVED_DEDUCTION_IDS.has(key)) extraDeductions[key] = Number(value) || undefined;
@@ -780,7 +797,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
       const extraAllowances: Record<string, number> = {};
       const extraDeductions: Record<string, number> = {};
       for (const item of earningCatalog) {
-        if (!RESERVED_EARNING_IDS.has(item.id)) {
+        if (!RESERVED_EARNING_IDS.has(item.id) || SEPARATE_EARNING_IDS.has(item.id)) {
           extraAllowances[item.id] = Number(customEarningAmounts[item.id]) || 0;
         }
       }
@@ -955,13 +972,13 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
 
   const hasPayrollPreview = Boolean(baseSalary && age);
 
-  const allowancesOnly = Object.values(allowancePreview).reduce((sum, value) => sum + value, 0);
-  const allowancesTotal =
-    (calculationPreview?.allowancesTotal ?? allowancesOnly) + overtimePay;
+  const allowancesTotal = calculationPreview?.allowancesTotal ?? 0;
+  const bonusTotal = calculationPreview?.bonusTotal ?? 0;
+  const otherIncomeTotal = calculationPreview?.otherIncomeTotal ?? 0;
   const deductionsTotal = calculationPreview?.deductionsTotal ?? 0;
   const grossSalary =
     calculationPreview?.grossPay ??
-    (hasPayrollPreview ? basicSalaryForCpf + allowancesTotal : 0);
+    (hasPayrollPreview ? basicSalaryForCpf + allowancesTotal + bonusTotal + otherIncomeTotal + overtimePay : 0);
   const employeeCpf = calculationPreview?.employeeCpf ?? 0;
   const employerCpf = calculationPreview?.employerCpf ?? 0;
   const totalCpf = calculationPreview?.totalCpf ?? 0;
@@ -969,7 +986,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
   const employerCpfRate = calculationPreview?.employerRate ?? 0;
   const netSalary =
     calculationPreview?.netPay ??
-    (hasPayrollPreview ? baseSalary + allowancesTotal - deductionsTotal - employeeCpf : 0);
+    (hasPayrollPreview ? baseSalary + allowancesTotal + bonusTotal + otherIncomeTotal + overtimePay - deductionsTotal - employeeCpf : 0);
 
   return (
     <TooltipProvider>
@@ -1126,6 +1143,20 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                         <span className="text-[#6B7280]">Allowances</span>
                         <span className="font-medium text-[#111827]">{formatCurrency(allowancesTotal)}</span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Bonus</span>
+                        <span className="font-medium text-[#111827]">{formatCurrency(bonusTotal)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Other Income / Benefits</span>
+                        <span className="font-medium text-[#111827]">{formatCurrency(otherIncomeTotal)}</span>
+                      </div>
+                      {overtimePay > 0 ? (
+                        <div className="flex justify-between">
+                          <span className="text-[#6B7280]">Overtime</span>
+                          <span className="font-medium text-[#111827]">{formatCurrency(overtimePay)}</span>
+                        </div>
+                      ) : null}
                       <div className="flex justify-between border-t border-[#E5E7EB] pt-1.5">
                         <span className="font-semibold text-[#111827]">Gross Salary</span>
                         <span className="font-semibold text-[#111827]">{formatCurrency(grossSalary)}</span>
@@ -1291,38 +1322,51 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       </FormItem>
                     )}
                   />
-                  {earningCatalog.map((item) => {
-                    const fieldName = EARNING_FORM_FIELDS[item.id];
-                    if (fieldName) {
-                      return (
-                        <FormField
-                          key={item.id}
-                          control={form.control}
-                          name={fieldName}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
-                              <FormControl>
-                                <OptionalAmountInput field={field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      );
-                    }
+                  {([
+                    ["allowance", "Allowances"],
+                    ["bonus", "Bonus"],
+                    ["other", "Other Income / Benefits"],
+                  ] as const).map(([group, label]) => {
+                    const items = earningCatalog.filter((item) => earningDisplayGroup(item.id) === group);
+                    if (items.length === 0) return null;
                     return (
-                      <FormItem key={item.id}>
-                        <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
-                        <OptionalAmountInput
-                          field={{
-                            name: item.id,
-                            value: customEarningAmounts[item.id],
-                            onChange: (value) =>
-                              setCustomEarningAmounts((current) => ({ ...current, [item.id]: value })),
-                          }}
-                        />
-                      </FormItem>
+                      <Fragment key={group}>
+                        <p className="col-span-full pt-2 text-sm font-semibold text-[#374151]">{label}</p>
+                        {items.map((item) => {
+                          const fieldName = EARNING_FORM_FIELDS[item.id];
+                          if (fieldName) {
+                            return (
+                              <FormField
+                                key={item.id}
+                                control={form.control}
+                                name={fieldName}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                                    <FormControl>
+                                      <OptionalAmountInput field={field} />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            );
+                          }
+                          return (
+                            <FormItem key={item.id}>
+                              <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                              <OptionalAmountInput
+                                field={{
+                                  name: item.id,
+                                  value: customEarningAmounts[item.id],
+                                  onChange: (value) =>
+                                    setCustomEarningAmounts((current) => ({ ...current, [item.id]: value })),
+                                }}
+                              />
+                            </FormItem>
+                          );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </div>

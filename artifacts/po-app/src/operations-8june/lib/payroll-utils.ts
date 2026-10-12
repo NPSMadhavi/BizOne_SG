@@ -9,6 +9,7 @@ import {
   mapPrStatusToYear,
   type ResidencyType,
 } from "@/operations-8june/types/singapore-payroll";
+import { resolvePayrollEarnings } from "@/operations-8june/lib/payroll-earnings";
 
 export const CPF_ORDINARY_WAGE_CEILING = CPF_WAGE_CEILING;
 
@@ -63,6 +64,10 @@ export interface SyncBridgePayrollPreview {
   monthlySalary: number;
   annualSalary: number;
   allowancesTotal: number;
+  bonusTotal: number;
+  otherIncomeTotal: number;
+  incomeTaxBorneByEmployee: number;
+  overtimePay: number;
   deductionsTotal: number;
   grossBeforeDeductions: number;
   grossPay: number;
@@ -90,15 +95,14 @@ export function calculateSyncBridgePayrollPreview(params: {
   deductions?: Record<string, number | undefined>;
 }): SyncBridgePayrollPreview {
   const monthlySalary = Number(params.monthlySalary) || 0;
-  const allowancesTotal = Object.values(params.allowances || {}).reduce(
+  const earnings = resolvePayrollEarnings({
+    allowances: params.allowances,
+    overtimePay: params.overtimePay,
+  });
+  const deductionsTotal = Object.values(params.deductions || {}).reduce<number>(
     (sum, value) => sum + (Number(value) || 0),
-    0
+    0,
   );
-  const deductionsTotal = Object.values(params.deductions || {}).reduce(
-    (sum, value) => sum + (Number(value) || 0),
-    0
-  );
-  const overtimePay = Number(params.overtimePay) || 0;
   const { residencyType, prYear } = resolveResidency(
     params.citizenshipStatus,
     params.prStatus
@@ -109,18 +113,22 @@ export function calculateSyncBridgePayrollPreview(params: {
     age: params.age,
     residencyType,
     prYear,
-    monthlyAllowances: allowancesTotal,
+    monthlyAllowances: earnings.taxableEarnings,
     monthlyDeductions: deductionsTotal,
-    overtimePay,
+    overtimePay: earnings.overtimePay,
   });
 
-  const grossBeforeDeductions = monthlySalary + allowancesTotal + overtimePay;
+  const grossBeforeDeductions = monthlySalary + earnings.taxableEarnings + earnings.overtimePay;
   const grossPay = grossBeforeDeductions;
 
   return {
     monthlySalary: snapshot.monthlySalary,
     annualSalary: snapshot.annualSalary,
-    allowancesTotal,
+    allowancesTotal: earnings.allowances,
+    bonusTotal: earnings.bonus,
+    otherIncomeTotal: earnings.otherIncome,
+    incomeTaxBorneByEmployee: earnings.incomeTaxBorneByEmployee,
+    overtimePay: earnings.overtimePay,
     deductionsTotal,
     grossBeforeDeductions,
     grossPay,

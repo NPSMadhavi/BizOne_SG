@@ -122,6 +122,7 @@ export function ListBulkEmailDialog({
   email,
   docLabel,
   numbers,
+  extraFilenames = [],
   generateAttachments,
   onSuccess,
 }: {
@@ -133,11 +134,13 @@ export function ListBulkEmailDialog({
   email?: string;
   docLabel: string;
   numbers: string[];
+  extraFilenames?: string[];
   generateAttachments: () => Promise<{ filename: string; content: string }[]>;
   onSuccess: (recipients: string[]) => Promise<void> | void;
 }) {
   const count = numbers.length;
   const plural = count === 1 ? docLabel.replace(/s$/, "") : docLabel;
+  const listed = [...numbers, ...extraFilenames.map((name) => name.replace(/\.pdf$/i, ""))];
   if (!open) return null;
   return (
     <EmailSendDialog
@@ -146,8 +149,8 @@ export function ListBulkEmailDialog({
       onOpenChange={onOpenChange}
       defaultTo={email || ""}
       defaultSubject={`${docLabel} for ${partyName} (${count}) | ${companyName}`}
-      defaultBody={`Dear ${contactName || "Sir/Madam"},\n\nPlease find attached ${count} ${plural} for ${partyName}:\n${numbers.map(n => `• ${n}`).join("\n")}\n\nThank you.`}
-      pdfFilenames={numbers.map(n => `${n}.pdf`)}
+      defaultBody={`Dear ${contactName || "Sir/Madam"},\n\nPlease find attached the following for ${partyName}:\n${listed.map(n => `• ${n}`).join("\n")}\n\nThank you.`}
+      pdfFilenames={[...numbers.map(n => `${n}.pdf`), ...extraFilenames]}
       generateAttachments={generateAttachments}
       onSuccess={onSuccess}
       docInfo={{

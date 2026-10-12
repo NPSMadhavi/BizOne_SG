@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, companiesTable, userCompaniesTable, settingsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable } from "@workspace/db";
+import { db, usersTable, companiesTable, userCompaniesTable, settingsTable, financialYearsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable, modulesForBusinessType } from "@workspace/db";
 import { eq, or, sql } from "drizzle-orm";
 import { LoginBody, RegisterBody, SelectCompanyBody } from "@workspace/api-zod";
 import { seedRolesForCompany } from "../seed";
+import { openCompanyPool } from "../lib/company-database";
+import { dropCompanyDatabase, normalizeCompanySlug, provisionCompanyDatabase } from "../lib/provision-company-database";
 
 declare module "express-session" {
   interface SessionData {
@@ -60,14 +62,9 @@ async function ensureUserCompanyAccess(userId: number, role: string): Promise<nu
   return assignDefaultCompanyAccess(userId);
 }
 
-async function getUserCompanies(userId: number) {
+export async function getUserCompanies(userId: number) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user) return [];
-
-  if (user.role === "admin") {
-    const allCompanies = await db.select().from(companiesTable);
-    return allCompanies.map(c => ({ ...c, modules: ALL_MODULES }));
-  }
 
   const rows = await db
     .select({ company: companiesTable, uc: userCompaniesTable })
@@ -75,11 +72,23 @@ async function getUserCompanies(userId: number) {
     .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
     .where(eq(userCompaniesTable.userId, userId));
 
-  return rows.map(r => ({
+  const companies = rows.map(r => ({
     ...r.company,
     // Strict: never invent modules (esp. Directory) when DB value is missing
     modules: Array.isArray(r.uc.modules) ? (r.uc.modules as string[]) : [],
   }));
+
+  if (user.companyId && !companies.some((company) => company.id === user.companyId)) {
+    const [own] = await db.select().from(companiesTable).where(eq(companiesTable.id, user.companyId)).limit(1);
+    if (own) {
+      companies.unshift({
+        ...own,
+        modules: user.role === "admin" ? ALL_MODULES : [],
+      });
+    }
+  }
+
+  return companies;
 }
 
 function formatUser(user: any, companies: any[], selectedCompanyId?: number | null, permissions: string[] = []) {
@@ -129,11 +138,27 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       companyAddress,
       companyDomain,
       gstRegistrationNo,
+      slug: rawSlug,
+      businessType,
+      financialYearFrom,
+      financialYearTo,
     } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedCompanyEmail = companyEmail.trim().toLowerCase();
-    const normalizedDomain = companyDomain.trim().toLowerCase();
+    const normalizedDomain = companyDomain?.trim().toLowerCase() || null;
+    const signupModules = modulesForBusinessType(businessType) ?? [];
+    const slug = normalizeCompanySlug(rawSlug);
     const username = normalizedEmail;
+
+    if (financialYearTo < financialYearFrom) {
+      res.status(400).json({ error: "Financial year end must be the same year or later" });
+      return;
+    }
+
+    if (slug.length < 3) {
+      res.status(400).json({ error: "Company slug is required" });
+      return;
+    }
 
     const [existing] = await db
       .select()
@@ -150,9 +175,30 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       return;
     }
 
+    const [existingSlug] = await db
+      .select({ id: companiesTable.id })
+      .from(companiesTable)
+      .where(eq(companiesTable.slug, slug))
+      .limit(1);
+    if (existingSlug) {
+      res.status(400).json({ error: "This slug is already used. Choose another slug." });
+      return;
+    }
+
+    let databaseName = "";
+    try {
+      databaseName = await provisionCompanyDatabase(slug);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Company database could not be created";
+      res.status(400).json({ error: message });
+      return;
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const result = await db.transaction(async (tx) => {
+    let result;
+    try {
+      result = await db.transaction(async (tx) => {
       const [company] = await tx
         .insert(companiesTable)
         .values({
@@ -162,11 +208,28 @@ router.post("/auth/register", async (req, res): Promise<void> => {
           email: normalizedCompanyEmail,
           phone: phoneNumber.trim(),
           domain: normalizedDomain,
+          businessType,
           registrationNo: gstRegistrationNo?.trim() || null,
+          gstRegNo: gstRegistrationNo?.trim() || null,
+          slug,
+          databaseName,
         })
         .returning();
 
-      await seedRolesForCompany(company.id, tx);
+      const fromYear = financialYearFrom.slice(0, 4);
+      const toYear = financialYearTo.slice(0, 4);
+      const fyLabel = fromYear === toYear ? `FY ${fromYear}` : `FY ${fromYear}-${toYear}`;
+      await tx.insert(financialYearsTable).values({
+        companyId: company.id,
+        label: fyLabel,
+        startDate: financialYearFrom,
+        endDate: financialYearTo,
+        status: "active",
+        auditStatus: "pending",
+        activatedAt: new Date(),
+      });
+
+      await seedRolesForCompany(company.id, tx, signupModules);
 
       const [adminRole] = await tx
         .select()
@@ -196,7 +259,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       await tx.insert(userCompaniesTable).values({
         userId: user.id,
         companyId: company.id,
-        modules: ALL_MODULES,
+        modules: [...signupModules],
       });
 
       await tx.insert(settingsTable).values({
@@ -221,8 +284,19 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
       return { user, company, adminRole };
     });
+    } catch (err) {
+      await dropCompanyDatabase(databaseName);
+      throw err;
+    }
 
     const { user, company, adminRole } = result;
+
+    try {
+      await openCompanyPool(company.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Company database could not be prepared";
+      console.error("[signup] company database was created but its data was not copied:", message);
+    }
 
     req.session.userId = user.id;
     req.session.username = user.username;
@@ -293,11 +367,12 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   req.session.roleId = user.roleId || undefined;
   req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
 
-  const defaultCompanyId = await ensureUserCompanyAccess(user.id, user.role);
+  await ensureUserCompanyAccess(user.id, user.role);
   const companies = await getUserCompanies(user.id);
 
-  const sessionCompanyId =
-    user.companyId ?? defaultCompanyId ?? (companies.length === 1 ? companies[0].id : undefined);
+  const sessionCompanyId = companies.some((company) => company.id === user.companyId)
+    ? user.companyId
+    : companies[0]?.id;
 
   if (sessionCompanyId) {
     req.session.companyId = sessionCompanyId;
@@ -346,6 +421,10 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   }
 
   const companies = await getUserCompanies(user.id);
+  if (!req.session.companyId || !companies.some((company) => company.id === req.session.companyId)) {
+    req.session.companyId = companies[0]?.id;
+  }
+
   res.json(formatUser(user, companies, req.session.companyId, req.session.permissions));
 });
 

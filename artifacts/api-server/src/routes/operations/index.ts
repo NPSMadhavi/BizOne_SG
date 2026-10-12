@@ -482,6 +482,10 @@ const DEPENDENT_COLUMNS = [
   "visa_number", "visa_expiry", "visa_type",
 ];
 
+const IR8A_EMPLOYER_COLUMNS = [
+  "employer_name", "uen", "address", "signatory_name", "designation", "declaration_date", "signature",
+];
+
 const LICENSE_COLUMNS = [
   "asset_id", "name", "license_key", "type", "seats", "vendor_id", "purchase_date",
   "expiry_date", "cost", "renewal_cycle", "status", "notes",
@@ -786,6 +790,46 @@ router.put("/licenses/:id", async (req, res): Promise<void> => {
     res.json(formatRow(result.rows[0]));
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to update license" });
+  }
+});
+
+router.get("/ir8a/employers", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM ir8a_employers WHERE company_id = $1 ORDER BY id DESC`,
+      [req.session.companyId],
+    );
+    res.json(formatRows(result.rows));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch IR8A employers" });
+  }
+});
+
+router.post("/ir8a/employers", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  try {
+    const { sql, values } = buildInsert("ir8a_employers", req.session.companyId!, req.body, IR8A_EMPLOYER_COLUMNS);
+    const result = await pool.query(sql, values);
+    res.status(201).json(formatRow(result.rows[0]));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to create IR8A employer" });
+  }
+});
+
+router.delete("/ir8a/employers/:id", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  const id = parseId(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
+  try {
+    const result = await pool.query(
+      `DELETE FROM ir8a_employers WHERE id = $1 AND company_id = $2 RETURNING id`,
+      [id, req.session.companyId],
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: "Employer not found" }); return; }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to delete IR8A employer" });
   }
 });
 

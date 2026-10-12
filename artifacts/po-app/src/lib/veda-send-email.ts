@@ -1,4 +1,5 @@
 import { generatePO_PDF, generateInvoice_PDF, generateQuotation_PDF, generateDO_PDF } from "@/lib/pdf";
+import { deliveryOrderPdfAttachments, markDeliveryOrdersSent } from "@/lib/invoice-delivery-order-email";
 
 export type VedaEmailDocType = "inv" | "qt" | "po" | "do";
 
@@ -107,6 +108,16 @@ export async function vedaAutoSendDocumentEmail(options: {
     const companyName = options.companyName || company?.name || "BizOne";
     const copy = buildEmailCopy(docType, doc, companyName);
     const pdfBase64 = await generatePdfBase64(docType, doc, company);
+    const deliveryOrders = docType === "inv"
+      ? await deliveryOrderPdfAttachments({ id: doc.id, invNumber: doc.invNumber, soId: doc.soId }, company)
+      : [];
+    if (deliveryOrders.length > 0) {
+      const names = deliveryOrders.map((file) => file.filename.replace(/\.pdf$/i, "")).join(", ");
+      copy.body = copy.body.replace(
+        `Please find attached Invoice ${doc.invNumber || `INV-${doc.id}`} for your records.`,
+        `Please find attached Invoice ${doc.invNumber || `INV-${doc.id}`} and Delivery Order ${names}.`,
+      );
+    }
 
     const form = new FormData();
     form.append("to", recipients.join(", "));
@@ -115,6 +126,9 @@ export async function vedaAutoSendDocumentEmail(options: {
     form.append("filename", copy.filename);
     if (docType === "po") form.append("poId", String(id));
     form.append("pdf", base64ToBlob(pdfBase64, "application/pdf"), copy.filename);
+    for (const file of deliveryOrders) {
+      form.append("attachments", base64ToBlob(file.content, "application/pdf"), file.filename);
+    }
 
     const sendRes = await fetch("/api/send-email", {
       method: "POST",
@@ -132,6 +146,9 @@ export async function vedaAutoSendDocumentEmail(options: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sentTo: recipients }),
     });
+    if (docType === "inv") {
+      await markDeliveryOrdersSent({ id: doc.id, invNumber: doc.invNumber, soId: doc.soId }, recipients);
+    }
 
     const docNumber =
       doc.poNumber || doc.invNumber || doc.qtNumber || doc.doNumber || String(id);

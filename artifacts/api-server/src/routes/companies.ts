@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db, companiesTable, userCompaniesTable, usersTable, settingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, companiesTable, userCompaniesTable, usersTable, settingsTable, financialYearsTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import pg from "pg";
+import { getUserCompanies } from "./auth";
 
 declare module "express-session" {
   interface SessionData {
@@ -11,6 +13,21 @@ declare module "express-session" {
 }
 
 const router: IRouter = Router();
+
+async function loginPasswordMatches(userId: number, password: string): Promise<boolean> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return false;
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const result = await client.query("SELECT password_hash FROM users WHERE id = $1", [userId]);
+    const hash = result.rows[0]?.password_hash as string | undefined;
+    if (!hash) return false;
+    return bcrypt.compare(password, hash);
+  } finally {
+    await client.end();
+  }
+}
 
 export const COMPANIES_SEED = [
   {
@@ -103,9 +120,19 @@ router.delete("/companies/:id", async (req, res): Promise<void> => {
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const accessible = await getUserCompanies(req.session.userId);
+  if (!accessible.some((company) => company.id === id)) {
+    res.status(403).json({ error: "You can only change your own company" });
+    return;
+  }
 
   const [existing] = await db.select().from(companiesTable).where(eq(companiesTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Company not found" }); return; }
+
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!password) { res.status(400).json({ error: "Password is required" }); return; }
+  const passwordOk = await loginPasswordMatches(req.session.userId, password);
+  if (!passwordOk) { res.status(401).json({ error: "Incorrect password" }); return; }
 
   // Clean related rows that may not cascade (settings has no FK)
   await db.delete(settingsTable).where(eq(settingsTable.companyId, id));
@@ -128,6 +155,11 @@ router.put("/companies/:id", async (req, res): Promise<void> => {
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const accessible = await getUserCompanies(req.session.userId);
+  if (!accessible.some((company) => company.id === id)) {
+    res.status(403).json({ error: "You can only change your own company" });
+    return;
+  }
 
   const { name, address, phone, email, registrationNo, gstRegNo, logoUrl } = req.body;
   const updateData: Record<string, any> = {};
@@ -153,19 +185,22 @@ router.get("/companies", async (req, res): Promise<void> => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user) { res.status(401).json({ error: "User not found" }); return; }
 
-  if (user.role === "admin") {
-    const companies = await db.select().from(companiesTable);
-    res.json(companies);
-    return;
-  }
-
-  const userCompanies = await db
-    .select({ company: companiesTable })
-    .from(userCompaniesTable)
-    .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
-    .where(eq(userCompaniesTable.userId, req.session.userId));
-
-  res.json(userCompanies.map(uc => uc.company));
+  const companies = await getUserCompanies(req.session.userId);
+  const ids = companies.map((company) => company.id);
+  const years = ids.length
+    ? await db.select().from(financialYearsTable).where(inArray(financialYearsTable.companyId, ids))
+    : [];
+  res.json(companies.map(({ modules: _modules, ...company }) => {
+    const companyYears = years.filter((year) => year.companyId === company.id);
+    const active = companyYears.find((year) => year.status === "active")
+      ?? [...companyYears].sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+    return {
+      ...company,
+      financialYear: active
+        ? { label: active.label, startDate: active.startDate, endDate: active.endDate }
+        : null,
+    };
+  }));
 });
 
 export default router;

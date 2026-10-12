@@ -34,6 +34,38 @@ import { Badge } from "@/components/ui/badge";
 import { Calculator, FileText, DollarSign, CheckCircle, Clock, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/operations-8june/lib/queryClient";
+import { classifyEarningKey, splitEarnings } from "@/operations-8june/lib/payroll-earnings";
+
+function EarningBreakdown({
+  amounts,
+  formatCurrency,
+}: {
+  amounts: Record<string, number> | null | undefined;
+  formatCurrency: (amount: string | number) => string;
+}) {
+  const split = splitEarnings(amounts);
+  const allowanceEntries = Object.entries(amounts || {}).filter(
+    ([key, amount]) => classifyEarningKey(key) === "allowances" && Number(amount),
+  );
+  return (
+    <>
+      {allowanceEntries.map(([name, amount]) => (
+        <div key={name} className="flex justify-between">
+          <span className="text-muted-foreground">{name}:</span>
+          <span className="font-medium">{formatCurrency(amount)}</span>
+        </div>
+      ))}
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">Bonus:</span>
+        <span className="font-medium">{formatCurrency(split.bonus)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-muted-foreground">Other Income / Benefits:</span>
+        <span className="font-medium">{formatCurrency(split.otherIncome)}</span>
+      </div>
+    </>
+  );
+}
 
 const payrollRecordSchema = z.object({
   employeeId: z.number().min(1, "Please select an employee"),
@@ -227,15 +259,15 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
     const overtimeRate = parseFloat(selectedEmployee.overtimeRate || "0");
     const taxRate = parseFloat(selectedEmployee.taxRate || "0");
 
-    const overtimePay = overtimeHours * overtimeRate;
-    const allowancesTotal = Object.values(selectedEmployee.allowances || {}).reduce(
-      (sum, amount) => sum + amount, 0
-    );
+    const hoursOvertime = overtimeHours * overtimeRate;
+    const earnings = splitEarnings(selectedEmployee.allowances);
+    const overtimePay = hoursOvertime > 0 ? hoursOvertime : earnings.overtime;
+    const allowancesTotal = earnings.allowances;
     const deductionsTotal = Object.values(selectedEmployee.deductions || {}).reduce(
       (sum, amount) => sum + amount, 0
     );
 
-    const grossPay = baseSalary + overtimePay + allowancesTotal - deductionsTotal;
+    const grossPay = baseSalary + overtimePay + allowancesTotal + earnings.bonus + earnings.otherIncome - deductionsTotal;
     const taxDeduction = (grossPay * taxRate) / 100;
     const netPay = grossPay - taxDeduction;
 
@@ -243,6 +275,8 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
       baseSalary,
       overtimePay,
       allowancesTotal,
+      bonus: earnings.bonus,
+      otherIncome: earnings.otherIncome,
       deductionsTotal,
       grossPay,
       taxDeduction,
@@ -486,12 +520,7 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
                                 <span className="font-medium">{formatCurrency(record!.overtimePay)}</span>
                               </div>
                             )}
-                            {Object.entries(record!.allowances || {}).map(([name, amount]) => (
-                              <div key={name} className="flex justify-between">
-                                <span className="text-muted-foreground">{name}:</span>
-                                <span className="font-medium">{formatCurrency(amount)}</span>
-                              </div>
-                            ))}
+                            <EarningBreakdown amounts={record!.allowances} formatCurrency={formatCurrency} />
                           </div>
                           <div className="space-y-2">
                             <div className="flex justify-between">
@@ -534,12 +563,7 @@ export function PayrollRecordForm({ isOpen, onClose, record }: PayrollRecordForm
                                 <span className="font-medium">{formatCurrency(projectedPay.overtimePay)}</span>
                               </div>
                             )}
-                            {Object.entries(selectedEmployee?.allowances || {}).map(([name, amount]) => (
-                              <div key={name} className="flex justify-between">
-                                <span className="text-muted-foreground">{name}:</span>
-                                <span className="font-medium">{formatCurrency(amount)}</span>
-                              </div>
-                            ))}
+                            <EarningBreakdown amounts={selectedEmployee?.allowances} formatCurrency={formatCurrency} />
                           </div>
                           <div className="space-y-2">
                             <div className="flex justify-between">

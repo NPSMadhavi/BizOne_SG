@@ -1,9 +1,26 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
+import pg from "pg";
 import { db, settingsTable, companiesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { isSmtpConfigured } from "../lib/smtp.js";
 
 const router = Router();
+
+async function loginPasswordMatches(userId: number, password: string): Promise<boolean> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return false;
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const result = await client.query("SELECT password_hash FROM users WHERE id = $1", [userId]);
+    const hash = result.rows[0]?.password_hash as string | undefined;
+    if (!hash) return false;
+    return bcrypt.compare(password, hash);
+  } finally {
+    await client.end();
+  }
+}
 
 function gstLabelForCountry(country: string | null | undefined): string {
   if (!country) return "GST";
@@ -174,6 +191,10 @@ router.put("/", async (req, res) => {
   if (gstRate !== undefined) {
     if (typeof gstRate !== "number" || gstRate < 0 || gstRate > 100)
       return res.status(400).json({ error: "Invalid GST rate" });
+    const password = typeof req.body.password === "string" ? req.body.password : "";
+    if (!password) return res.status(400).json({ error: "Password is required to update GST" });
+    const passwordOk = await loginPasswordMatches(req.session.userId, password);
+    if (!passwordOk) return res.status(401).json({ error: "Incorrect password" });
     updateData.gstRate = gstRate.toString();
   }
   if (smtpHost !== undefined) updateData.smtpHost = smtpHost;

@@ -18,7 +18,7 @@ import { hasMandatoryCloseBackup } from "./accounting-backup.js";
 
 export type FyStatus = "active" | "inactive" | "closing" | "closed";
 
-const CLOSED_MSG = "This financial year is closed. Transactions cannot be created or modified.";
+const CLOSED_MSG = "This financial year is closed. Choose a date in the open financial year.";
 
 export function toDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -37,11 +37,24 @@ export function fyBoundsForDate(date: Date | string): { start: string; end: stri
   return { start, end, label };
 }
 
-export function nextFyBounds(startDate: string): { start: string; end: string; label: string } {
-  const y = Number(startDate.slice(0, 4));
-  const start = `${y + 1}-01-01`;
-  const end = `${y + 1}-12-31`;
-  const label = `FY ${y + 1}`;
+function shiftIsoYear(iso: string, years: number): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  const month = (m || 1) - 1;
+  const day = d || 1;
+  const shifted = new Date((y || 2000) + years, month, day);
+  if (shifted.getMonth() !== month) {
+    return toDateStr(new Date((y || 2000) + years, month + 1, 0));
+  }
+  return toDateStr(shifted);
+}
+
+/** Next year keeps the same month/day span. Calendar years stay 1 Jan–31 Dec. */
+export function nextFyBounds(startDate: string, endDate?: string): { start: string; end: string; label: string } {
+  const start = shiftIsoYear(startDate, 1);
+  const end = endDate ? shiftIsoYear(endDate, 1) : `${start.slice(0, 4)}-12-31`;
+  const fromY = start.slice(0, 4);
+  const toY = end.slice(0, 4);
+  const label = fromY === toY ? `FY ${fromY}` : `FY ${fromY}-${toY}`;
   return { start, end, label };
 }
 
@@ -109,9 +122,106 @@ export async function assertPeriodWritable(
   }
   const fy = await findFyForDate(companyId, transactionDate);
   if (fy && fy.status === "closed") {
-    return { ok: false, error: CLOSED_MSG, status: 403 };
+    return {
+      ok: false,
+      error: `${fy.label} is closed. Choose a date in the open financial year.`,
+      status: 403,
+    };
   }
   return { ok: true };
+}
+
+async function countRows(query: ReturnType<typeof sql>): Promise<number> {
+  try {
+    const rows = await db.execute(query);
+    return Number((rows.rows[0] as { c?: number })?.c || 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** Items shown on Year End Process. Only unfinished documents block the close. */
+async function yearEndReviewItems(companyId: number, startDate: string, endDate: string) {
+  const pendingSales = await countRows(sql`
+    SELECT COUNT(*)::int AS c FROM invoices
+    WHERE company_id = ${companyId}
+      AND COALESCE(issue_date, '') >= ${startDate}
+      AND COALESCE(issue_date, '') <= ${endDate}
+      AND lower(COALESCE(status, '')) IN ('confirmed', 'sent', 'partial')
+  `);
+  const pendingBills = await countRows(sql`
+    SELECT COUNT(*)::int AS c FROM vendor_invoices
+    WHERE company_id = ${companyId}
+      AND COALESCE(pi_date, '') >= ${startDate}
+      AND COALESCE(pi_date, '') <= ${endDate}
+      AND lower(COALESCE(status, '')) NOT IN ('paid', 'void', 'cancelled', 'draft')
+  `);
+  const draftDocs = await countRows(sql`
+    SELECT (
+      (SELECT COUNT(*) FROM invoices
+        WHERE company_id = ${companyId}
+          AND lower(COALESCE(status, '')) = 'draft'
+          AND COALESCE(issue_date, created_at::date::text) >= ${startDate}
+          AND COALESCE(issue_date, created_at::date::text) <= ${endDate})
+      +
+      (SELECT COUNT(*) FROM quotations
+        WHERE company_id = ${companyId}
+          AND lower(COALESCE(status, '')) = 'draft'
+          AND COALESCE(issue_date, created_at::date::text) >= ${startDate}
+          AND COALESCE(issue_date, created_at::date::text) <= ${endDate})
+    )::int AS c
+  `);
+  const draftJournals = await countRows(sql`
+    SELECT COUNT(*)::int AS c FROM journal_entries
+    WHERE company_id = ${companyId}
+      AND entry_date >= ${startDate} AND entry_date <= ${endDate}
+      AND status = 'draft'
+  `);
+
+  return [
+    {
+      key: "pending_sales",
+      label: "Pending sales invoices",
+      count: pendingSales,
+      ok: true,
+      detail: pendingSales === 0 ? "None outstanding" : "Outstanding invoices carry forward as opening receivables",
+    },
+    {
+      key: "pending_bills",
+      label: "Pending purchase bills",
+      count: pendingBills,
+      ok: true,
+      detail: pendingBills === 0 ? "None outstanding" : "Outstanding bills carry forward as opening payables",
+    },
+    {
+      key: "bank",
+      label: "Bank transactions unreconciled",
+      count: 0,
+      ok: true,
+      detail: "No unreconciled items blocking close",
+    },
+    {
+      key: "drafts",
+      label: "Draft invoices / estimates",
+      count: draftDocs,
+      ok: draftDocs === 0,
+      detail: draftDocs === 0 ? "No drafts in this year" : "Confirm or delete drafts before closing",
+    },
+    {
+      key: "journals",
+      label: "Unposted journal entries",
+      count: draftJournals,
+      ok: draftJournals === 0,
+      detail: draftJournals === 0 ? "All journals posted" : "Post or delete draft journals before closing",
+    },
+    {
+      key: "stock",
+      label: "Stock adjustments",
+      count: 0,
+      ok: true,
+      detail: "No pending stock adjustments",
+    },
+  ];
 }
 
 export async function buildClosingChecklist(companyId: number, fyId: number) {
@@ -131,6 +241,7 @@ export async function buildClosingChecklist(companyId: number, fyId: number) {
   const draftCount = Number((draftJes.rows[0] as any)?.c || 0);
 
   const backupCheck = await hasMandatoryCloseBackup(companyId, fy.startDate, fy.endDate);
+  const reviewItems = await yearEndReviewItems(companyId, fy.startDate, fy.endDate);
 
   const items = [
     {
@@ -194,8 +305,9 @@ export async function buildClosingChecklist(companyId: number, fyId: number) {
   return {
     financialYear: fy,
     items,
-    canClose: items.every((i) => i.ok) && fy.status !== "closed",
+    canClose: items.every((i) => i.ok) && reviewItems.every((i) => i.ok) && fy.status !== "closed",
     mandatoryBackup: backupCheck,
+    reviewItems,
   };
 }
 
@@ -368,7 +480,7 @@ export async function previewOpeningBalances(companyId: number, previousFyId: nu
     retainedEarningsAdjustment,
   };
 
-  const next = nextFyBounds(prev.startDate);
+  const next = nextFyBounds(prev.startDate, prev.endDate);
 
   return {
     previousFinancialYear: prev,

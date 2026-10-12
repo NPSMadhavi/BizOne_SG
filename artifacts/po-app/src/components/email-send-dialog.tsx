@@ -146,6 +146,7 @@ export function EmailSendDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedBodyRef = useRef(defaultBody);
 
   const handleOpen = (isOpen: boolean) => {
     if (sending && !isOpen) return;
@@ -171,6 +172,7 @@ export function EmailSendDialog({
     setInputValue(defaultTo && !initial.length ? defaultTo : "");
     setSubject(defaultSubject);
     setBody(defaultBody);
+    appliedBodyRef.current = defaultBody;
     setSuggestions([]);
     setShowSuggestions(false);
     setActiveSuggestion(-1);
@@ -178,6 +180,17 @@ export function EmailSendDialog({
     // Intentionally only when `open` becomes true, so typing is not overwritten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setBody((current) => {
+      if (current === appliedBodyRef.current) {
+        appliedBodyRef.current = defaultBody;
+        return defaultBody;
+      }
+      return current;
+    });
+  }, [open, defaultBody]);
 
   const handleFilesPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files || []);

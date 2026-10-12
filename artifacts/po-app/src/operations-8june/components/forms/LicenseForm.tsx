@@ -144,7 +144,10 @@ const createLicenseFormSchema = (hasLicenseKey: boolean) => {
   const baseSchema = insertLicenseSchema.extend({
     name: z.string().min(1, "Name is required"),
     licenseKey: hasLicenseKey
-      ? z.string().min(1, "License key is required")
+      ? z.string().min(1, "License key is required").refine(
+          (val) => val.replace(/\D/g, "").length <= 16,
+          "License key can be at most 16 digits",
+        )
       : z.string().optional().nullable(),
     type: z.string().min(1, "License type is required"),
     assetId: z.number().nullable().optional(),
@@ -546,16 +549,17 @@ export default function LicenseForm({
                                         {...field}
                                         type="text"
                                         name="license_key_value"
+                                        inputMode="numeric"
                                         autoComplete="nope"
                                         placeholder=""
+                                        maxLength={19}
                                         value={field.value || ""}
                                         className={`w-full pr-10 font-mono text-sm ${showLicenseKey ? "" : "[-webkit-text-security:disc]"}`}
                                         onChange={(e) => {
-                                          // Auto-format license key to uppercase and add hyphens
-                                          let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                                          if (value.length > 4) {
-                                            value = value.match(/.{1,4}/g)?.join('-') || value;
-                                          }
+                                          const digits = e.target.value.replace(/\D/g, "").slice(0, 16);
+                                          const value = digits.length > 4
+                                            ? digits.match(/.{1,4}/g)?.join("-") || digits
+                                            : digits;
                                           field.onChange(value);
                                         }}
                                       />
@@ -816,11 +820,11 @@ export default function LicenseForm({
                             <FormLabel>Vendor</FormLabel>
                               <Select
                                 onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))}
-                                value={field.value?.toString() || "none"}
+                                value={field.value != null ? field.value.toString() : undefined}
                               >
                                 <FormControl>
                                   <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="" />
+                                    <SelectValue placeholder="vendor name" />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>

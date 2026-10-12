@@ -9,7 +9,7 @@ function sgPhoneDigits(value: string): string {
 export const RegisterBody = zod.object({
   fullName: zod.string().min(2, "Full name is required"),
   email: zod.string().email("Valid email is required"),
-  password: zod.string().min(6, "Password must be at least 6 characters"),
+  password: zod.string().length(8, "Password must be 8 characters"),
   phoneNumber: zod
     .string()
     .min(1, "Phone number is required")
@@ -19,6 +19,15 @@ export const RegisterBody = zod.object({
   companyName: zod.string().min(2, "Company name is required"),
   companyEmail: zod.string().email("Valid company email is required"),
   companyAddress: zod.string().min(5, "Company address is required"),
-  companyDomain: zod.string().min(3, "Company domain is required"),
+  companyDomain: zod.string().min(3).optional(),
+  businessType: zod.enum(["trading", "non_trading", "shopping_malls", "manufacturing"], {
+    errorMap: () => ({ message: "Select a business type" }),
+  }),
   gstRegistrationNo: zod.string().optional(),
+  financialYearFrom: zod.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Select the financial year start date"),
+  financialYearTo: zod.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Select the financial year end date"),
+  slug: zod
+    .string()
+    .min(3, "Company slug is required")
+    .regex(/^[a-z0-9]+$/, "Slug can contain only letters and numbers"),
 });
