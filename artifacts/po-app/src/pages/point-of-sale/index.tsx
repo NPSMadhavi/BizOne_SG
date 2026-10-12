@@ -306,6 +306,7 @@ export default function PointOfSalePage() {
     purchasePrice: number;
   } | null>(null);
   const [supermarketCategory, setSupermarketCategory] = useState("all");
+  const [billTo, setBillTo] = useState<"cash" | "customer">("cash");
   const [invoiceDate, setInvoiceDate] = useState<Date | null>(null);
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [discount, setDiscount] = useState(0);
@@ -875,6 +876,7 @@ export default function PointOfSalePage() {
     setDiscount(0);
     setDiscountType("manual");
     setNote("");
+    setBillTo("cash");
     setTenders([]);
     setBaselinePayments([]);
     setPendingPayByMethod({});
