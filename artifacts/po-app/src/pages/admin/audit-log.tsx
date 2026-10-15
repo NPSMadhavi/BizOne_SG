@@ -6,8 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShieldCheck, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
-import { fmtDate } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ShieldCheck, Search, ChevronLeft, ChevronRight, Download, ChevronDown } from "lucide-react";
 
 interface AuditLog {
   id: number;
@@ -55,6 +60,59 @@ function actionBadge(action: string) {
 }
 
 const PAGE_SIZE = 12;
+const EXPORT_HEADERS = ["Timestamp", "User", "Action", "Type", "Reference", "Details"];
+
+function formatStamp(value: string) {
+  return new Date(value).toLocaleString("en-SG", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+function detailText(details: unknown) {
+  if (details == null || details === "") return "";
+  if (typeof details === "string") return details;
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return String(details);
+  }
+}
+
+function exportCells(log: AuditLog) {
+  return [
+    formatStamp(log.createdAt),
+    log.username || "",
+    log.action || "",
+    ENTITY_LABELS[log.entityType] ?? log.entityType ?? "",
+    log.entityLabel || log.entityId || "",
+    detailText(log.details),
+  ];
+}
+
+function downloadFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows: string[][]) {
+  return rows
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+}
+
+function toTxt(rows: string[][]) {
+  const widths = EXPORT_HEADERS.map((header, index) =>
+    Math.max(header.length, ...rows.map((row) => String(row[index] ?? "").length)),
+  );
+  const line = (cells: string[]) => cells.map((cell, index) => String(cell ?? "").padEnd(widths[index])).join("  ");
+  return [line(EXPORT_HEADERS), line(widths.map((width) => "-".repeat(width))), ...rows.map(line)].join("\r\n");
+}
 
 async function fetchAuditLogs(params: Record<string, string>): Promise<{ total: number; rows: AuditLog[] }> {
   const qs = new URLSearchParams(params).toString();
@@ -68,6 +126,7 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("all");
   const [entityFilter, setEntityFilter] = useState("all");
   const [page, setPage] = useState(0);
+  const [exporting, setExporting] = useState<"csv" | "txt" | null>(null);
 
   const params: Record<string, string> = {
     limit: String(PAGE_SIZE),
@@ -77,7 +136,7 @@ export default function AuditLogPage() {
   if (actionFilter !== "all") params.action = actionFilter;
   if (entityFilter !== "all") params.entityType = entityFilter;
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["audit-logs", params],
     queryFn: () => fetchAuditLogs(params),
     staleTime: 30_000,
@@ -91,18 +150,33 @@ export default function AuditLogPage() {
   const handleAction = (v: string) => { setActionFilter(v); setPage(0); };
   const handleEntity = (v: string) => { setEntityFilter(v); setPage(0); };
 
+  const exportLogs = async (format: "csv" | "txt") => {
+    setExporting(format);
+    try {
+      const exportParams: Record<string, string> = { limit: "10000", offset: "0" };
+      if (search) exportParams.search = search;
+      if (actionFilter !== "all") exportParams.action = actionFilter;
+      if (entityFilter !== "all") exportParams.entityType = entityFilter;
+      const result = await fetchAuditLogs(exportParams);
+      const cells = result.rows.map(exportCells);
+      const stamp = new Date().toISOString().slice(0, 10);
+      if (format === "csv") {
+        downloadFile(`audit-log-${stamp}.csv`, `\uFEFF${toCsv([EXPORT_HEADERS, ...cells])}`, "text/csv;charset=utf-8");
+      } else {
+        downloadFile(`audit-log-${stamp}.txt`, toTxt(cells), "text/plain;charset=utf-8");
+      }
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] flex items-center gap-2">
-            <ShieldCheck className="h-8 w-8 text-primary" />
-            Audit Log
-          </h1>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] flex items-center gap-2">
+          <ShieldCheck className="h-8 w-8 text-primary" />
+          Audit Log
+        </h1>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -142,6 +216,23 @@ export default function AuditLogPage() {
             <SelectItem value="payment:delete">Payment Delete</SelectItem>
           </SelectContent>
         </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2" disabled={exporting !== null}>
+              <Download className="h-4 w-4" />
+              {exporting ? "Exporting…" : "Export"}
+              <ChevronDown className="h-4 w-4 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={exporting !== null} onSelect={() => exportLogs("csv")}>
+              CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={exporting !== null} onSelect={() => exportLogs("txt")}>
+              TXT
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <Card>
@@ -177,10 +268,7 @@ export default function AuditLogPage() {
                   {rows.map(log => (
                     <tr key={log.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleString("en-SG", {
-                          day: "2-digit", month: "short", year: "numeric",
-                          hour: "2-digit", minute: "2-digit", second: "2-digit",
-                        })}
+                        {formatStamp(log.createdAt)}
                       </td>
                       <td className="px-4 py-2.5 font-medium whitespace-nowrap">
                         {log.username ?? <span className="text-muted-foreground">—</span>}

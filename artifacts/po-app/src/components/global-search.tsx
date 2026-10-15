@@ -9,12 +9,14 @@ import {
   LayoutDashboard,
   FolderKanban,
   BookOpen,
-  Briefcase,
+  Banknote,
+  Monitor,
+  KeyRound,
   Settings,
   X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import type { AppModule } from "@/contexts/auth-modules";
+import { hasPosChannelAccess, POS_CHANNEL_MODULES, type AppModule } from "@/contexts/auth-modules";
 import { cn } from "@/lib/utils";
 
 type SearchHit = {
@@ -43,12 +45,12 @@ type PageEntry = {
 const PAGES: PageEntry[] = [
   { label: "Dashboard", href: "/dashboard", keywords: ["home", "overview"], category: "General", path: ["Dashboard"], module: "dashboard" },
 
-  { label: "Fixed Assets", href: "/assets", keywords: ["assets", "fixed asset"], category: "Administration", path: ["Fixed Assets"], module: "assets" },
-  { label: "Licenses", href: "/licenses", keywords: ["licence"], category: "Administration", path: ["Licenses"], module: "licenses" },
-  { label: "Employees", href: "/employees", keywords: ["staff", "hr"], category: "Administration", path: ["Employees"], module: "employees" },
-  { label: "Payroll", href: "/payroll", keywords: ["salary"], category: "Administration", path: ["Payroll"], module: "payroll" },
-  { label: "IR8A / AIS", href: "/payroll/ir8a", keywords: ["ir8a", "ais", "tax", "cpf"], category: "Administration", path: ["Payroll", "IR8A / AIS"], module: "payroll" },
-  { label: "Employer's (IR8A)", href: "/payroll/ir8a/employers", keywords: ["ir8a", "employer", "uen", "declaration"], category: "Administration", path: ["Payroll", "IR8A / AIS", "Employer's (IR8A)"], module: "payroll" },
+  { label: "Employees", href: "/employees", keywords: ["staff", "hr"], category: "Payroll", path: ["Employees"], module: "employees" },
+  { label: "Payroll", href: "/payroll", keywords: ["salary"], category: "Payroll", path: ["Payroll"], module: "payroll" },
+  { label: "IR8A / AIS", href: "/payroll/ir8a", keywords: ["ir8a", "ais", "tax", "cpf"], category: "Payroll", path: ["IR8A / AIS"], module: "payroll" },
+  { label: "Employer's (IR8A)", href: "/payroll/ir8a/employers", keywords: ["ir8a", "employer", "uen", "declaration"], category: "Payroll", path: ["Employer's (IR8A)"], module: "payroll" },
+  { label: "Fixed Assets", href: "/assets", keywords: ["assets", "fixed asset"], category: "Fixed Assets", path: ["Fixed Assets"], module: "assets" },
+  { label: "Licenses", href: "/licenses", keywords: ["licence"], category: "Licenses", path: ["Licenses"], module: "licenses" },
 
   { label: "Purchase Quotations", href: "/purchase-quotations", keywords: ["pq", "rfq"], category: "Transactions", path: ["Purchases", "Purchase Quotations"], module: "purchase_quotations" },
   { label: "Purchase Orders", href: "/purchase-orders", keywords: ["po", "purchase"], category: "Transactions", path: ["Purchases", "Purchase Orders"], module: "purchase_orders" },
@@ -62,7 +64,15 @@ const PAGES: PageEntry[] = [
   { label: "Tax Invoices", href: "/invoices", keywords: ["invoice", "sales invoice", "bill"], category: "Transactions", path: ["Sales", "Tax Invoices"], module: "invoices" },
   { label: "Delivery Orders", href: "/delivery-orders", keywords: ["do", "delivery"], category: "Transactions", path: ["Sales", "Delivery Orders"], module: "delivery_orders" },
   { label: "Credit Notes", href: "/credit-notes", keywords: ["cn", "credit"], category: "Transactions", path: ["Sales", "Credit Notes"], module: "credit_notes" },
-  { label: "Restaurants", href: "/point-of-sale/restaurants", keywords: ["pos", "restaurant"], category: "Point of Sale", path: ["Point of Sale", "Restaurants"], module: "point_of_sale" },
+  { label: "Retail", href: "/point-of-sale/retail", keywords: ["pos", "retail"], category: "Point of Sale", path: ["Point of Sale", "Retail"], module: "pos_retail" },
+  { label: "Supermarket", href: "/point-of-sale/supermarket", keywords: ["pos", "supermarket"], category: "Point of Sale", path: ["Point of Sale", "Supermarket"], module: "pos_supermarket" },
+  { label: "Restaurants", href: "/point-of-sale/restaurants", keywords: ["pos", "restaurant"], category: "Point of Sale", path: ["Point of Sale", "Restaurants"], module: "pos_restaurants" },
+  { label: "Pharmacy", href: "/point-of-sale/pharmacy", keywords: ["pos", "pharmacy"], category: "Point of Sale", path: ["Point of Sale", "Pharmacy"], module: "pos_pharmacy" },
+  { label: "Electronics", href: "/point-of-sale/electronics", keywords: ["pos", "electronics"], category: "Point of Sale", path: ["Point of Sale", "Electronics"], module: "pos_electronics" },
+  { label: "Reports", href: "/point-of-sale/reports", keywords: ["pos", "report", "overview", "sales"], category: "Point of Sale", path: ["Point of Sale", "Reports"], module: ["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"] },
+  { label: "Daily Closing Z Report", href: "/point-of-sale/reports/closing", keywords: ["pos", "z report", "closing"], category: "Point of Sale", path: ["Point of Sale", "Reports", "Daily Closing"], module: ["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"] },
+  { label: "Payment Collection Details", href: "/point-of-sale/reports/collections", keywords: ["pos", "collection", "payment"], category: "Point of Sale", path: ["Point of Sale", "Reports", "Collections"], module: ["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"] },
+  { label: "Salesperson Daily Report", href: "/point-of-sale/reports/salesperson", keywords: ["pos", "salesperson", "daily"], category: "Point of Sale", path: ["Point of Sale", "Reports", "Salesperson"], module: ["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"] },
   { label: "Bill of Materials", href: "/bill-of-materials", keywords: ["bom"], category: "Bill of Materials", path: ["Bill of Materials"], module: "bill_of_materials" },
 
   { label: "Warehouses", href: "/inventory/warehouses", keywords: ["warehouse"], category: "Inventory", path: ["Warehouses"], module: "warehouses" },
@@ -130,7 +140,9 @@ const DOC_PATH: Record<string, { category: string; path: string[] }> = {
 
 const CATEGORY_ORDER = [
   "General",
-  "Administration",
+  "Payroll",
+  "Fixed Assets",
+  "Licenses",
   "Transactions",
   "Point of Sale",
   "Bill of Materials",
@@ -148,8 +160,12 @@ function categoryIcon(category: string) {
   switch (category) {
     case "General":
       return LayoutDashboard;
-    case "Administration":
-      return Briefcase;
+    case "Payroll":
+      return Banknote;
+    case "Fixed Assets":
+      return Monitor;
+    case "Licenses":
+      return KeyRound;
     case "Transactions":
     case "Sales":
     case "Purchases":
@@ -233,7 +249,7 @@ function normalizeApiHit(hit: SearchHit): SearchHit {
 
 export function GlobalSearch() {
   const [, setLocation] = useLocation();
-  const { hasModuleAccess, selectedCompany } = useAuth();
+  const { hasModuleAccess, selectedCompany, isAdmin } = useAuth();
   const isSingapore =
     selectedCompany?.country?.toLowerCase() === "singapore" ||
     selectedCompany?.country === "SG";
@@ -263,7 +279,10 @@ export function GlobalSearch() {
     if (q.length < 1) return [] as SearchHit[];
     const matched = PAGES.filter((p) => {
       if (p.singaporeOnly && !isSingapore) return false;
-      if (!canAccess(p.module)) return false;
+      if (isAdmin && p.href === "/point-of-sale/reports") return false;
+      if (typeof p.module === "string" && p.module.startsWith("pos_") && p.module !== "pos_reports") {
+        if (!hasPosChannelAccess(hasModuleAccess, p.module as (typeof POS_CHANNEL_MODULES)[number])) return false;
+      } else if (!canAccess(p.module)) return false;
       const hay = `${p.label} ${p.path.join(" ")} ${p.category} ${p.keywords.join(" ")}`.toLowerCase();
       return hay.includes(q);
     }).map(

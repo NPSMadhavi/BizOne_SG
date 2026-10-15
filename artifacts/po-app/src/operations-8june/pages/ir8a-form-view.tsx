@@ -85,7 +85,7 @@ function ensurePrintStyle() {
       }
       #ir8a-print-root .ir8a-head {
         display: grid !important;
-        grid-template-columns: 250px minmax(0, 1fr) 250px !important;
+        grid-template-columns: minmax(0, 280px) minmax(0, 1fr) 210px !important;
         align-items: center !important;
       }
       #ir8a-print-root .ir8a-split,
@@ -229,22 +229,9 @@ export function printIr8aForm() {
 
 function IrasMark() {
   return (
-    <div className="flex items-center gap-3">
-      <svg viewBox="0 0 80 80" className="h-16 w-16 shrink-0" aria-hidden>
-        <defs>
-          <clipPath id="iras-logo-clip">
-            <circle cx="40" cy="40" r="38" />
-          </clipPath>
-        </defs>
-        <g clipPath="url(#iras-logo-clip)">
-          <rect width="80" height="80" fill="#F3F5F8" />
-          <rect x="-20" y="22" width="120" height="18" transform="rotate(-42 40 40)" fill="#C5CBD3" />
-          <rect x="-20" y="40" width="120" height="20" transform="rotate(-42 40 40)" fill="#2F6FED" />
-          <rect x="24" y="24" width="32" height="32" rx="4" fill="#FFFFFF" />
-        </g>
-        <circle cx="40" cy="40" r="38" fill="none" stroke="#E6EAF0" strokeWidth="1" />
-      </svg>
-      <div className="text-[13px] font-semibold leading-tight tracking-[0.03em] text-[#6B7280]">
+    <div className="flex min-w-0 items-center gap-2.5">
+      <img src="/iras-logo.png" alt="" className="h-20 w-20 shrink-0 object-contain" />
+      <div className="min-w-0 text-[13px] font-semibold leading-snug tracking-[0.02em] text-[#6B7280]">
         <div>INLAND REVENUE</div>
         <div>AUTHORITY</div>
         <div>OF SINGAPORE</div>
@@ -344,22 +331,23 @@ export function Ir8aFormView({
         <div className="overflow-y-auto px-4 py-4 sm:px-6">
           {data && (
             <article id="ir8a-official-form" className="ir8a-sheet mx-auto overflow-hidden rounded-xl border border-[#D7E3F0] bg-white shadow-sm">
-              <header className="ir8a-head grid items-center gap-4 border-b border-[#D7E3F0] px-5 py-4 grid-cols-[250px_minmax(0,1fr)_250px]">
+              <header className="ir8a-head grid items-center gap-3 border-b border-[#D7E3F0] px-5 py-4 grid-cols-[minmax(0,280px)_minmax(0,1fr)_210px]">
                 <IrasMark />
-                <div className="text-center">
-                  <h1 className="text-[30px] font-bold leading-none tracking-wide text-[#1E3A5F]">FORM IR8A</h1>
-                  <p className="mt-2 whitespace-nowrap text-[14px] font-semibold text-[#1E293B]">
+                <div className="min-w-0 overflow-hidden px-1 text-center">
+                  <h1 className="text-[26px] font-bold leading-none tracking-wide text-[#1E3A5F]">FORM IR8A</h1>
+                  <p className="mt-2 whitespace-nowrap text-[12px] font-semibold leading-5 text-[#1E293B]">
                     Return of Employee&apos;s Remuneration for the Year Ended 31 Dec {data.year}
                   </p>
-                  <p className="mt-1 whitespace-nowrap text-[13px] italic text-[#64748B]">
+                  <p className="mt-1 whitespace-nowrap text-[11px] italic leading-5 text-[#64748B]">
                     This form will be provided to the employee and submitted to IRAS.
                   </p>
                 </div>
-                <div className="rounded-lg border border-[#D3E4F7] bg-[#E8F3FC] px-3 py-3 text-center">
+                <div className="relative z-10 min-w-0 overflow-hidden rounded-lg border border-[#D3E4F7] bg-[#E8F3FC] px-3 py-3 text-center">
                   <p className="text-[13px] font-medium text-[#64748B]">Year of Assessment</p>
-                  <p className="mt-1 text-[34px] font-bold leading-none text-[#1E3A8A]">{data.year}</p>
-                  <p className="mt-2 whitespace-nowrap text-[12px] text-[#64748B]">
-                    Income Year: 1 Jan {incomeYearStart} – 31 Dec {incomeYearStart}
+                  <p className="mt-1 text-[30px] font-bold leading-none text-[#1E3A8A]">{data.year}</p>
+                  <p className="mt-2 text-[11px] leading-4 text-[#64748B]">Income Year</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-[#64748B]">
+                    1 Jan {incomeYearStart} – 31 Dec {incomeYearStart}
                   </p>
                 </div>
               </header>

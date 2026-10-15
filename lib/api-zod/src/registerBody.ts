@@ -9,7 +9,10 @@ function sgPhoneDigits(value: string): string {
 export const RegisterBody = zod.object({
   fullName: zod.string().min(2, "Full name is required"),
   email: zod.string().email("Valid email is required"),
-  password: zod.string().length(8, "Password must be 8 characters"),
+  password: zod.string().regex(
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8}$/,
+    "Password must be 8 characters with a capital letter, a small letter, a number, and a special character",
+  ),
   phoneNumber: zod
     .string()
     .min(1, "Phone number is required")
@@ -20,7 +23,7 @@ export const RegisterBody = zod.object({
   companyEmail: zod.string().email("Valid company email is required"),
   companyAddress: zod.string().min(5, "Company address is required"),
   companyDomain: zod.string().min(3).optional(),
-  businessType: zod.enum(["trading", "non_trading", "shopping_malls", "manufacturing"], {
+  businessType: zod.enum(["trading", "trading_services", "non_trading", "shopping_malls", "manufacturing"], {
     errorMap: () => ({ message: "Select a business type" }),
   }),
   gstRegistrationNo: zod.string().optional(),

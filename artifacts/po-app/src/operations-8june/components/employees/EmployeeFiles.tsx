@@ -59,7 +59,7 @@ function dataUrlToObjectUrl(dataUrl: string): { url: string; kind: "image" | "pd
   return { url: URL.createObjectURL(blob), kind };
 }
 
-function FilePreviewDialog({
+export function FilePreviewDialog({
   source,
   title,
   onClose,

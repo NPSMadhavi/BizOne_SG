@@ -99,7 +99,7 @@ export default function SalesPersonsPage() {
     setDialogOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) {
       toast({
@@ -118,30 +118,44 @@ export default function SalesPersonsPage() {
       return;
     }
     const phoneDigits = parseSingaporePhoneDigits(form.phone || "");
-    saveSalesPerson({
-      ...form,
-      phone: phoneDigits ? formatSingaporePhoneForApi(phoneDigits) : "",
-      id: editingId || undefined,
-    });
-
-    toast({
-      title: editingId ? "Sales Person Updated" : "Sales Person Created",
-      description: `${form.name} has been ${editingId ? "updated" : "created"} successfully.`,
-    });
-
-    setDialogOpen(false);
-    setEditingId(null);
-    setForm(blankForm());
+    try {
+      await saveSalesPerson({
+        ...form,
+        phone: phoneDigits ? formatSingaporePhoneForApi(phoneDigits) : "",
+        id: editingId || undefined,
+      });
+      toast({
+        title: editingId ? "Sales Person Updated" : "Sales Person Created",
+        description: `${form.name} has been ${editingId ? "updated" : "created"} successfully.`,
+      });
+      setDialogOpen(false);
+      setEditingId(null);
+      setForm(blankForm());
+    } catch (err) {
+      toast({
+        title: "Could not save",
+        description: err instanceof Error ? err.message : "Failed to save the sales person.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!deleteTargetId) return;
-    deleteSalesPerson(deleteTargetId);
-    toast({
-      title: "Sales Person Deleted",
-      description: "The sales person record has been deleted.",
-    });
-    setDeleteTargetId(null);
+    try {
+      await deleteSalesPerson(deleteTargetId);
+      toast({
+        title: "Sales Person Deleted",
+        description: "The sales person record has been deleted.",
+      });
+      setDeleteTargetId(null);
+    } catch (err) {
+      toast({
+        title: "Could not delete",
+        description: err instanceof Error ? err.message : "Failed to delete the sales person.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

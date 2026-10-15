@@ -30,7 +30,8 @@ function buildPoolConfig(): pg.PoolConfig {
   return config;
 }
 
-const masterPool = new Pool(buildPoolConfig());
+/** Always the shared database. Login reads this pool, even inside a company request. */
+export const masterPool = new Pool(buildPoolConfig());
 
 /** Shared pool that follows companyDbContext so each company reads its own database. */
 export const pool = new Proxy(masterPool, {
@@ -42,6 +43,9 @@ export const pool = new Proxy(masterPool, {
 }) as pg.Pool;
 
 export const db = drizzle(pool, { schema });
+
+/** Shared-database client. Does not follow companyDbContext. */
+export const masterDb = drizzle(masterPool, { schema });
 
 export * from "./schema";
 export * from "./modules";

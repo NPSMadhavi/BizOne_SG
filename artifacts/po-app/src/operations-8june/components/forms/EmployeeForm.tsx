@@ -811,6 +811,8 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
+            </div>
+            <div className={`${formFieldGridClass} items-start`}>
                   <FormField control={form.control} name="companyId" render={() => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Company</FormLabel>
@@ -819,31 +821,33 @@ export default function EmployeeForm({
                           readOnly
                           disabled
                           value={selectedCompany?.name ?? ""}
-                          className="bg-slate-50 text-slate-700"
+                          className="h-10 min-h-10 max-h-10 bg-slate-50 text-slate-700"
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
-            </div>
-            <div className={formFieldGrid2Class}>
                 <FormField control={form.control} name="address" render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="lg:col-span-2">
                     <FormLabel className={formLabelClass}>Address <span className="text-[#DC2626]">*</span></FormLabel>
-                    <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} /></FormControl>
+                    <FormControl>
+                      <Input className="h-10 min-h-10 max-h-10" placeholder="" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                {isForeigner && (
-                  <FormField control={form.control} name="visaRemarks" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className={formLabelClass}>Visa Remarks</FormLabel>
-                      <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} value={field.value || ""} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                )}
             </div>
+            {isForeigner ? (
+              <div className={formFieldGrid2Class}>
+                <FormField control={form.control} name="visaRemarks" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Visa Remarks</FormLabel>
+                    <FormControl><Textarea className="min-h-[100px]" placeholder="" {...field} value={field.value || ""} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+            ) : null}
           </section>
 
           <section className="space-y-4">

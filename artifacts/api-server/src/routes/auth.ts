@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, companiesTable, userCompaniesTable, settingsTable, financialYearsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable, modulesForBusinessType } from "@workspace/db";
+import { companyDbContext, db, usersTable, companiesTable, userCompaniesTable, settingsTable, financialYearsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable, modulesForBusinessType } from "@workspace/db";
 import { eq, or, sql } from "drizzle-orm";
 import { LoginBody, RegisterBody, SelectCompanyBody } from "@workspace/api-zod";
 import { seedRolesForCompany } from "../seed";
 import { openCompanyPool } from "../lib/company-database";
 import { dropCompanyDatabase, normalizeCompanySlug, provisionCompanyDatabase } from "../lib/provision-company-database";
+import { getSalesPersonSummary, loadAssignedModules } from "../lib/assigned-modules.js";
+import { mergeAssignedPermissions } from "../lib/module-access.js";
+import { publishAllCompanyUsersToMaster } from "../lib/login-account.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -30,6 +33,37 @@ async function getUserPermissions(roleId: number): Promise<string[]> {
     .where(eq(rolePermissionsTable.roleId, roleId));
 
   return rows.map(r => `${r.module}:${r.action}`);
+}
+
+async function salesPersonForLogin(userId: number, companyId: number | undefined) {
+  if (!companyId) return null;
+  try {
+    const tenantPool = await openCompanyPool(companyId);
+    if (!tenantPool) {
+      const [user] = await db.select({ salesPersonId: usersTable.salesPersonId }).from(usersTable).where(eq(usersTable.id, userId));
+      return getSalesPersonSummary(user?.salesPersonId);
+    }
+    return await companyDbContext.run(tenantPool, async () => {
+      const [user] = await db
+        .select({ salesPersonId: usersTable.salesPersonId })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId));
+      return getSalesPersonSummary(user?.salesPersonId);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function permissionsFor(
+  user: { id: number; role: string; roleId: number | null },
+  companyId: number | undefined,
+): Promise<string[]> {
+  const rolePerms = user.roleId ? await getUserPermissions(user.roleId) : [];
+  if (user.role === "admin") return rolePerms;
+  if (!companyId) return [];
+  const assigned = await loadAssignedModules(user.id, companyId);
+  return mergeAssignedPermissions(rolePerms, assigned, false);
 }
 
 const ALL_MODULES = [...APP_ALL_MODULES];
@@ -91,7 +125,13 @@ export async function getUserCompanies(userId: number) {
   return companies;
 }
 
-function formatUser(user: any, companies: any[], selectedCompanyId?: number | null, permissions: string[] = []) {
+function formatUser(
+  user: any,
+  companies: any[],
+  selectedCompanyId?: number | null,
+  permissions: string[] = [],
+  salesPerson: { id: number; name: string; employmentCode: string } | null = null,
+) {
   const roleRaw = String(user.role || "user").toLowerCase();
   const role =
     roleRaw === "administrator" || roleRaw === "admin" ? "admin"
@@ -111,6 +151,8 @@ function formatUser(user: any, companies: any[], selectedCompanyId?: number | nu
     isActive: user.isActive ?? true,
     companyId: user.companyId ?? null,
     roleId: user.roleId ?? null,
+    salesPersonId: salesPerson?.id ?? user.salesPersonId ?? null,
+    salesPerson,
     permissions,
     createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
     companies,
@@ -333,15 +375,23 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   const { username, password } = parsed.data;
   const loginId = username.trim().toLowerCase();
-  const [user] = await db
-    .select()
-    .from(usersTable)
-    .where(
-      or(
-        eq(usersTable.username, loginId),
-        sql`lower(${usersTable.email}) = ${loginId}`,
-      ),
-    );
+  const findLoginUser = () =>
+    db
+      .select()
+      .from(usersTable)
+      .where(
+        or(
+          sql`lower(${usersTable.username}) = ${loginId}`,
+          sql`lower(${usersTable.email}) = ${loginId}`,
+        ),
+      )
+      .limit(1);
+
+  let [user] = await findLoginUser();
+  if (!user) {
+    await publishAllCompanyUsersToMaster().catch(() => undefined);
+    [user] = await findLoginUser();
+  }
 
   if (!user) {
     res.status(401).json({ error: "Invalid email or password" });
@@ -365,7 +415,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   req.session.userRole = user.role;
   req.session.companyId = user.companyId || undefined;
   req.session.roleId = user.roleId || undefined;
-  req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
 
   await ensureUserCompanyAccess(user.id, user.role);
   const companies = await getUserCompanies(user.id);
@@ -377,6 +426,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   if (sessionCompanyId) {
     req.session.companyId = sessionCompanyId;
   }
+  req.session.permissions = await permissionsFor(user, req.session.companyId);
+  const salesPerson = await salesPersonForLogin(user.id, req.session.companyId);
 
   req.session.save((err) => {
     if (err) {
@@ -384,7 +435,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       return;
     }
     res.json({
-      user: formatUser(user, companies, req.session.companyId, req.session.permissions),
+      user: formatUser(user, companies, req.session.companyId, req.session.permissions, salesPerson),
       sessionId: req.sessionID,
     });
   });
@@ -410,7 +461,6 @@ router.get("/auth/me", async (req, res): Promise<void> => {
 
   // Keep the company chosen in the UI (/auth/select-company). Never reset it to users.companyId.
   req.session.roleId = user.roleId ?? req.session.roleId;
-  req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
 
   if (!req.session.companyId) {
     req.session.companyId = user.companyId ?? undefined;
@@ -424,8 +474,10 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   if (!req.session.companyId || !companies.some((company) => company.id === req.session.companyId)) {
     req.session.companyId = companies[0]?.id;
   }
+  req.session.permissions = await permissionsFor(user, req.session.companyId);
+  const salesPerson = await salesPersonForLogin(user.id, req.session.companyId);
 
-  res.json(formatUser(user, companies, req.session.companyId, req.session.permissions));
+  res.json(formatUser(user, companies, req.session.companyId, req.session.permissions, salesPerson));
 });
 
 router.post("/auth/select-company", async (req, res): Promise<void> => {
@@ -453,7 +505,7 @@ router.post("/auth/select-company", async (req, res): Promise<void> => {
   if (user) {
     req.session.companyId = companyId;
     req.session.roleId = user.roleId ?? undefined;
-    req.session.permissions = user.roleId ? await getUserPermissions(user.roleId) : [];
+    req.session.permissions = await permissionsFor(user, companyId);
   }
 
   res.json({ success: true });

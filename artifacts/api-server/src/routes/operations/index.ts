@@ -855,9 +855,23 @@ router.get("/employees", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     const result = await pool.query(
-      `SELECT * FROM employees
-       WHERE company_id = $1
-       ORDER BY COALESCE(created_at, join_date) DESC NULLS LAST, id DESC`,
+      `SELECT e.*,
+              COALESCE(docs.documents, '[]'::json) AS documents
+       FROM employees e
+       LEFT JOIN LATERAL (
+         SELECT json_agg(
+           json_build_object(
+             'id', d.id,
+             'documentType', d.document_type,
+             'filePath', d.file_path
+           )
+           ORDER BY d.created_at DESC
+         ) AS documents
+         FROM employee_documents d
+         WHERE d.employee_id = e.id AND d.company_id = e.company_id
+       ) docs ON true
+       WHERE e.company_id = $1
+       ORDER BY COALESCE(e.created_at, e.join_date) DESC NULLS LAST, e.id DESC`,
       [req.session.companyId],
     );
     res.json(formatRows(result.rows));

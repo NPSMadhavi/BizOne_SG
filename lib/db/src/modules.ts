@@ -18,6 +18,12 @@ export const APP_ALL_MODULES = [
   "credit_notes",
   "debit_notes",
   "point_of_sale",
+  "pos_retail",
+  "pos_supermarket",
+  "pos_restaurants",
+  "pos_pharmacy",
+  "pos_electronics",
+  "pos_reports",
   "bill_of_materials",
   "multi_price_level",
   "grn",
@@ -64,6 +70,7 @@ export type AppModuleKey = (typeof APP_ALL_MODULES)[number];
 
 export const BUSINESS_TYPES = [
   { id: "trading", label: "Trading Business" },
+  { id: "trading_services", label: "Trading & Services" },
   { id: "non_trading", label: "Non-Trading Business" },
   { id: "shopping_malls", label: "Shopping Malls" },
   { id: "manufacturing", label: "Manufacturing" },
@@ -125,6 +132,7 @@ export const BUSINESS_TYPE_MODULES: Record<BusinessTypeId, readonly AppModuleKey
     ...OPS_ALL,
     ...TRANSACTIONS,
     "point_of_sale",
+    "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics", "pos_reports",
     ...INVENTORY,
     ...DIRECTORY,
     ...ACCOUNTING,
@@ -140,6 +148,7 @@ export const BUSINESS_TYPE_MODULES: Record<BusinessTypeId, readonly AppModuleKey
     ...ACCOUNTING,
     ...SYSTEM,
   ],
+  trading_services: [...APP_ALL_MODULES],
 };
 
 export function modulesForBusinessType(value: string | null | undefined): readonly AppModuleKey[] | null {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import pg from "pg";
+import { applySalesPosSchema } from "../migrate-drizzle-columns.js";
 
 const prepared = new Map<string, Promise<pg.Pool | null>>();
 const pools = new Map<string, pg.Pool>();
@@ -252,5 +253,6 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ir8a_employers_company_id_idx ON ir8a_employers (company_id)`);
+  await applySalesPosSchema((statement) => pool.query(statement));
   return pool;
 }

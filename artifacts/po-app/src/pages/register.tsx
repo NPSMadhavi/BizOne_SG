@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { BUSINESS_TYPES } from "@/contexts/auth-modules";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useToast } from "@/hooks/use-toast";
+import { ACCOUNT_PASSWORD_MESSAGE, isValidAccountPassword } from "@/lib/account-password";
 import { clearBrowserSessionLive, setTabSessionId } from "@/lib/browser-session";
 import {
   formatSingaporePhoneForApi,
@@ -115,8 +116,8 @@ function validateSecurityStep(personal: PersonalForm, company: CompanyForm): str
   if (!company.fy_from || !company.fy_to) return "Select the financial year";
   if (company.fy_to < company.fy_from) return "Financial year end date must be on or after the start date";
   if (!personal.password) return "Password is required";
-  if (personal.password.length !== 8) return "Password must be 8 characters";
-  if (personal.confirm_password.length !== 8) return "Confirmation password must be 8 characters";
+  if (!isValidAccountPassword(personal.password)) return ACCOUNT_PASSWORD_MESSAGE;
+  if (!isValidAccountPassword(personal.confirm_password)) return ACCOUNT_PASSWORD_MESSAGE;
   if (personal.password !== personal.confirm_password) return "Passwords do not match";
   return null;
 }

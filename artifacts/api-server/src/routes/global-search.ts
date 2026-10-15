@@ -17,6 +17,8 @@ import {
   projectsTable,
 } from "@workspace/db";
 import { eq, and, or, ilike, desc, SQL } from "drizzle-orm";
+import { SEARCH_TYPE_MODULE } from "../lib/module-access.js";
+import { loadAssignedModules } from "../lib/assigned-modules.js";
 
 const router: IRouter = Router();
 
@@ -36,6 +38,20 @@ function requireAuth(req: any, res: any): boolean {
     return false;
   }
   return true;
+}
+
+async function filterSearchResults(req: any, results: SearchResult[]): Promise<SearchResult[]> {
+  if (req.session?.isAdmin || req.session?.userRole === "admin") return results;
+  const companyId = req.session?.companyId;
+  const userId = req.session?.userId;
+  if (!companyId || !userId) return [];
+  const assigned = new Set(await loadAssignedModules(userId, companyId));
+  return results.filter((result) => {
+    const moduleName = SEARCH_TYPE_MODULE[result.type];
+    if (!moduleName) return false;
+    if (moduleName === "stock_items" && assigned.has("point_of_sale")) return true;
+    return assigned.has(moduleName);
+  });
 }
 
 function requireCompany(req: any, res: any): number | null {
@@ -485,7 +501,9 @@ router.get("/search", async (req, res): Promise<void> => {
     });
   }
 
-  res.json({ results });
+  res.json({
+    results: await filterSearchResults(req, results),
+  });
 });
 
 export default router;

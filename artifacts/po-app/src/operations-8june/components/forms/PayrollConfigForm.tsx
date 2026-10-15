@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -50,7 +50,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { calculateSyncBridgePayrollPreview, CPF_WAGE_CEILING } from "@/operations-8june/lib/payroll-utils";
-import { earningDisplayGroup } from "@/operations-8june/lib/payroll-earnings";
 import {
   payrollCancelButtonClass,
   payrollPrimaryButtonClass,
@@ -1322,53 +1321,46 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       </FormItem>
                     )}
                   />
-                  {([
-                    ["allowance", "Allowances"],
-                    ["bonus", "Bonus"],
-                    ["other", "Other Income / Benefits"],
-                  ] as const).map(([group, label]) => {
-                    const items = earningCatalog.filter((item) => earningDisplayGroup(item.id) === group);
-                    if (items.length === 0) return null;
-                    return (
-                      <Fragment key={group}>
-                        <p className="col-span-full pt-2 text-sm font-semibold text-[#374151]">{label}</p>
-                        {items.map((item) => {
-                          const fieldName = EARNING_FORM_FIELDS[item.id];
-                          if (fieldName) {
-                            return (
-                              <FormField
-                                key={item.id}
-                                control={form.control}
-                                name={fieldName}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
-                                    <FormControl>
-                                      <OptionalAmountInput field={field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            );
-                          }
-                          return (
-                            <FormItem key={item.id}>
-                              <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
-                              <OptionalAmountInput
-                                field={{
-                                  name: item.id,
-                                  value: customEarningAmounts[item.id],
-                                  onChange: (value) =>
-                                    setCustomEarningAmounts((current) => ({ ...current, [item.id]: value })),
-                                }}
-                              />
-                            </FormItem>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
+                  {earningCatalog.length > 0 && (
+                    <div className="col-span-full grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {earningCatalog.map((item) => {
+                        const fieldName = EARNING_FORM_FIELDS[item.id];
+                        const fieldBody = fieldName ? (
+                          <FormField
+                            key={item.id}
+                            control={form.control}
+                            name={fieldName}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                                <FormControl>
+                                  <OptionalAmountInput field={field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <FormItem key={item.id}>
+                            <FormLabel className={payheadLabelClass}>{item.label}</FormLabel>
+                            <OptionalAmountInput
+                              field={{
+                                name: item.id,
+                                value: customEarningAmounts[item.id],
+                                onChange: (value) =>
+                                  setCustomEarningAmounts((current) => ({ ...current, [item.id]: value })),
+                              }}
+                            />
+                          </FormItem>
+                        );
+                        return (
+                          <div key={item.id} className="min-w-0">
+                            {fieldBody}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 

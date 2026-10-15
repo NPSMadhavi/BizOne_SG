@@ -21,6 +21,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { hasPosChannelAccess } from "@/contexts/auth-modules";
 import { fmtDate } from "@/lib/utils";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { CloseFyStartNextWizard } from "@/components/financial-year-controls";
@@ -146,7 +147,7 @@ function buildSparkline(values: number[], yMin = 10, yMax = 160): string {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, hasModuleAccess } = useAuth();
   const userName =
     (user?.fullName && user.fullName.trim()) ||
     "there";
@@ -157,14 +158,15 @@ export default function Dashboard() {
   const periodChipLabel = PERIOD_PRESETS.find((p) => p.id === periodPreset)?.label ?? "Custom Range";
 
   const { data: invoices = [] } = useListInvoices({
-    query: { queryKey: getListInvoicesQueryKey() },
+    query: { queryKey: getListInvoicesQueryKey(), enabled: hasModuleAccess("invoices") },
   });
   const { data: purchaseOrders = [] } = useListPurchaseOrders({
-    query: { queryKey: getListPurchaseOrdersQueryKey() },
+    query: { queryKey: getListPurchaseOrdersQueryKey(), enabled: hasModuleAccess("purchase_orders") },
   });
 
   const { data: expenses = [] } = useQuery({
     queryKey: ["dashboard-expenses"],
+    enabled: hasModuleAccess("accounting_expenses"),
     queryFn: async () => {
       const res = await fetch("/api/expenses", { credentials: "include" });
       if (!res.ok) return [];
@@ -174,6 +176,7 @@ export default function Dashboard() {
 
   const { data: incomeRecords = [] } = useQuery({
     queryKey: ["dashboard-income"],
+    enabled: hasModuleAccess("accounting_income"),
     queryFn: async () => {
       const res = await fetch("/api/income", { credentials: "include" });
       if (!res.ok) return [];
@@ -183,6 +186,7 @@ export default function Dashboard() {
 
   const { data: stockItems = [] } = useQuery({
     queryKey: ["stock-items-dashboard"],
+    enabled: hasModuleAccess("stock_items"),
     queryFn: async () => {
       const res = await fetch("/api/stock-items", { credentials: "include" });
       if (!res.ok) return [];
@@ -192,6 +196,7 @@ export default function Dashboard() {
 
   const { data: vendorInvoices = [] } = useQuery({
     queryKey: ["dashboard-vendor-invoices"],
+    enabled: hasModuleAccess("vendor_invoices"),
     queryFn: async () => {
       const res = await fetch("/api/vendor-invoices", { credentials: "include" });
       if (!res.ok) return [];
@@ -469,13 +474,18 @@ export default function Dashboard() {
   ];
 
   const quickActions = [
-    { label: "New Invoice", icon: FileText, bg: "bg-[#dbeafe]", color: "text-[#1a73e8]", href: "/invoices/new" },
-    { label: "New Receipt", icon: Receipt, bg: "bg-[#dcfce7]", color: "text-[#16a34a]", href: "/accounting/income/new" },
-    { label: "New Purchase Order", icon: ShoppingCart, bg: "bg-[#fee2e2]", color: "text-[#dc2626]", href: "/purchase-orders/new" },
-    { label: "New Payment", icon: CreditCard, bg: "bg-[#f3e8ff]", color: "text-[#9333ea]", href: "/accounting/expenses/new" },
-    { label: "New Product", icon: Package, bg: "bg-[#fef9c3]", color: "text-[#ca8a04]", href: "/stock" },
-    { label: "New credit Note", icon: RotateCcw, bg: "bg-[#ffedd5]", color: "text-[#ea580c]", href: "/credit-notes/new" },
-  ];
+    { label: "New Sale", icon: ShoppingCart, bg: "bg-[#dbeafe]", color: "text-[#1a73e8]", href: "/point-of-sale/retail", module: "point_of_sale" as const },
+    { label: "New Invoice", icon: FileText, bg: "bg-[#dbeafe]", color: "text-[#1a73e8]", href: "/invoices/new", module: "invoices" as const },
+    { label: "New Receipt", icon: Receipt, bg: "bg-[#dcfce7]", color: "text-[#16a34a]", href: "/accounting/income/new", module: "accounting_income" as const },
+    { label: "New Purchase Order", icon: ShoppingCart, bg: "bg-[#fee2e2]", color: "text-[#dc2626]", href: "/purchase-orders/new", module: "purchase_orders" as const },
+    { label: "New Payment", icon: CreditCard, bg: "bg-[#f3e8ff]", color: "text-[#9333ea]", href: "/accounting/expenses/new", module: "accounting_expenses" as const },
+    { label: "New Product", icon: Package, bg: "bg-[#fef9c3]", color: "text-[#ca8a04]", href: "/stock", module: "stock_items" as const },
+    { label: "New credit Note", icon: RotateCcw, bg: "bg-[#ffedd5]", color: "text-[#ea580c]", href: "/credit-notes/new", module: "credit_notes" as const },
+  ].filter((action) =>
+    action.href.startsWith("/point-of-sale")
+      ? hasPosChannelAccess(hasModuleAccess, "pos_retail")
+      : hasModuleAccess(action.module),
+  );
 
   const reminders = [
     {
@@ -485,7 +495,7 @@ export default function Dashboard() {
       color: "text-[#dc2626]",
       bg: "bg-[#fee2e2]",
       href: "/invoices",
-      show: metrics.overdueCount > 0,
+      show: hasModuleAccess("invoices") && metrics.overdueCount > 0,
     },
     {
       title: `${metrics.draftCount} Draft Invoice${metrics.draftCount === 1 ? "" : "s"}`,
@@ -494,7 +504,7 @@ export default function Dashboard() {
       color: "text-[#ca8a04]",
       bg: "bg-[#fef9c3]",
       href: "/invoices",
-      show: metrics.draftCount > 0,
+      show: hasModuleAccess("invoices") && metrics.draftCount > 0,
     },
     {
       title: `${metrics.lowStock} Low Stock Item${metrics.lowStock === 1 ? "" : "s"}`,
@@ -503,7 +513,7 @@ export default function Dashboard() {
       color: "text-[#9333ea]",
       bg: "bg-[#f3e8ff]",
       href: "/stock",
-      show: metrics.lowStock > 0,
+      show: hasModuleAccess("stock_items") && metrics.lowStock > 0,
     },
   ].filter((r) => r.show);
 
@@ -646,9 +656,11 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold text-[#101828]">
               Recent Transactions
             </h2>
-            <Link href="/invoices" className="text-[12px] font-semibold text-[#1a73e8] hover:underline">
-              View All
-            </Link>
+            {hasModuleAccess("invoices") ? (
+              <Link href="/invoices" className="text-[12px] font-semibold text-[#1a73e8] hover:underline">
+                View All
+              </Link>
+            ) : null}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-[12px]">
@@ -706,7 +718,9 @@ export default function Dashboard() {
         <div className="rounded-2xl border border-[#e8edf5] bg-white p-5 shadow-[0_2px_8px_rgba(15,28,51,0.04)] xl:col-span-4">
           <h2 className="mb-4 text-[15px] font-semibold text-[#101828]">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {quickActions.map((action) => {
+            {quickActions.length === 0 ? (
+              <p className="col-span-full text-[12px] text-[#94a3b8]">No actions for your assigned modules.</p>
+            ) : quickActions.map((action) => {
               const Icon = action.icon;
               return (
                 <Link

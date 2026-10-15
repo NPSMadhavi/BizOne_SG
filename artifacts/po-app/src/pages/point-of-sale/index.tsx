@@ -37,7 +37,6 @@ import {
   LogOut,
   Eye,
   EyeOff,
-  User,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,6 +44,7 @@ import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generatePOS_PDF } from "@/lib/pdf";
 import { amountFromWeight, getScaleService, parseSubUomFactor, parseWeightInputToKg, roundMoney } from "@/lib/pos-scale-service";
+import { createPosSale, deletePosSale, loadPosSalesFromServer, updatePosSale } from "@/lib/pos-sales-api";
 import {
   Dialog,
   DialogContent,
@@ -92,12 +92,14 @@ const STANDARD_PAYMENT_METHODS: {
 import { useAuth } from "@/contexts/auth-context";
 import {
   loginSalesPerson,
-  createSalesPersonAccount,
   updateSalesPersonAccount,
   useSalesPersons,
   loadPosEmployeeSession,
   savePosEmployeeSession,
   clearPosEmployeeSession,
+  posChannelFromLocation,
+  POS_CHANNEL_LABELS,
+  type PosChannel,
   type PosEmployeeSession,
 } from "@/hooks/use-sales-persons";
 
@@ -122,6 +124,10 @@ type CartLine = {
   cessPct?: number;
   serialNo?: string;
   description?: string;
+  counterNo?: string;
+  batchNo?: string;
+  expiry?: string;
+  manufacturing?: string;
 };
 
 type PosProduct = {
@@ -143,6 +149,9 @@ type PosProduct = {
   imageUrl?: string | null;
   isWeightBased?: boolean;
   category?: string;
+  brand?: string;
+  description?: string;
+  stockGroup?: string;
 };
 
 function lineAmount(line: CartLine): number {
@@ -172,35 +181,21 @@ type PosSaleRecord = {
   total: number;
   payments: PaymentTender[];
   salesPerson?: string;
+  salesPersonId?: string;
+  createdByUserId?: number;
+  channel?: string;
+  counter?: string;
   note: string;
   status: "paid";
 };
 
 const PAGE_SIZE = 12;
 const GST_FALLBACK = 9;
-const POS_SALES_KEY = "pos-sales-v1";
 
 function money(n: number) {
-  return `S$ ${n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function loadPosSales(): PosSaleRecord[] {
-  try {
-    const raw = localStorage.getItem(POS_SALES_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePosSales(list: PosSaleRecord[]) {
-  try {
-    localStorage.setItem(POS_SALES_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
-  }
+  const value = Number(n);
+  const safe = Number.isFinite(value) ? value : 0;
+  return `S$ ${safe.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatStamp(iso: string) {
@@ -218,13 +213,14 @@ function formatStamp(iso: string) {
 }
 
 function paymentsLabel(payments: PaymentTender[]) {
-  if (!payments.length) return "—";
-  return payments.map((p) => `${p.method} ${money(p.amount)}`).join(" · ");
+  const rows = payments || [];
+  if (!rows.length) return "—";
+  return rows.map((p) => `${p.method} ${money(p.amount)}`).join(" · ");
 }
 
 function paymentAmount(payments: PaymentTender[], methods: string | string[]) {
   const list = Array.isArray(methods) ? methods : [methods];
-  const sum = payments
+  const sum = (payments || [])
     .filter((p) => list.includes(p.method) || (list.includes("Voucher") && (p.method as string) === "Other"))
     .reduce((s, p) => s + p.amount, 0);
   return sum > 0 ? money(sum) : "—";
@@ -271,14 +267,18 @@ function KpiCard({
 
 export default function PointOfSalePage() {
   const { toast } = useToast();
-  const { selectedCompany } = useAuth();
+  const { user, selectedCompany } = useAuth();
   const { salesPersons } = useSalesPersons();
   const [location] = useLocation();
-  const isRestaurant = location.startsWith("/point-of-sale/restaurants");
-  const isRetail = location.startsWith("/point-of-sale/retail");
-  const isSupermarket = location.startsWith("/point-of-sale/supermarket");
-  const [mode, setMode] = useState<"list" | "pos">("list");
-  const [salesList, setSalesList] = useState<PosSaleRecord[]>(() => loadPosSales());
+  const posChannel = posChannelFromLocation(location);
+  const isRestaurant = posChannel === "restaurants";
+  const isElectronics = posChannel === "electronics";
+  const isPharmacy = posChannel === "pharmacy";
+  const isRetail = posChannel === "retail";
+  const isSupermarket = posChannel === "supermarket";
+  const invoicePos = isRetail || isPharmacy;
+  const [mode, setMode] = useState<"list" | "pos">("pos");
+  const [salesList, setSalesList] = useState<PosSaleRecord[]>([]);
   const [listSearch, setListSearch] = useState("");
   const [editingSale, setEditingSale] = useState<PosSaleRecord | null>(null);
   const [tab, setTab] = useState<CatalogTab>("all");
@@ -302,11 +302,32 @@ export default function PointOfSalePage() {
     tax: string;
     cess: string;
     description: string;
+    counterNo: string;
     serialNo: string;
     purchasePrice: number;
+    batchNo: string;
+    expiry: string;
+    manufacturing: string;
   } | null>(null);
   const [supermarketCategory, setSupermarketCategory] = useState("all");
   const [billTo, setBillTo] = useState<"cash" | "customer">("cash");
+  const [invoiceType, setInvoiceType] = useState<"GST" | "Non GST">("GST");
+  const [invoiceNo, setInvoiceNo] = useState("");
+  const [contactNo, setContactNo] = useState("");
+  const [customerName, setCustomerName] = useState("Cash");
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [customerGst, setCustomerGst] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerCreditLimit, setCustomerCreditLimit] = useState<number | null>(null);
+  const [retailCustomers, setRetailCustomers] = useState<Array<{
+    id: number;
+    name: string;
+    address?: string | null;
+    phone?: string | null;
+    gstNo?: string | null;
+    creditLimitEnabled?: boolean;
+    creditLimit?: string | number | null;
+  }>>([]);
   const [invoiceDate, setInvoiceDate] = useState<Date | null>(null);
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [discount, setDiscount] = useState(0);
@@ -341,13 +362,75 @@ export default function PointOfSalePage() {
   const [employeeLoggingIn, setEmployeeLoggingIn] = useState(false);
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const employeeIdRef = useRef<HTMLInputElement>(null);
-  const [posEmployee, setPosEmployee] = useState<PosEmployeeSession | null>(() => loadPosEmployeeSession());
+  const savingSale = useRef(false);
+  const editingSaleRef = useRef<PosSaleRecord | null>(null);
+  const [boundChannel, setBoundChannel] = useState<PosChannel | null>(posChannel);
+  const [posEmployee, setPosEmployee] = useState<PosEmployeeSession | null>(() =>
+    posChannel ? loadPosEmployeeSession(posChannel) : null,
+  );
+
+  const linkedSalesPerson = (user as { salesPerson?: { id: number | string; name: string; employmentCode?: string } | null } | null)?.salesPerson ?? null;
+
+  function retailOperator(): PosEmployeeSession | null {
+    if (!user) return null;
+    if (linkedSalesPerson?.name) {
+      return {
+        id: String(linkedSalesPerson.id),
+        name: linkedSalesPerson.name,
+        employmentCode: linkedSalesPerson.employmentCode || linkedSalesPerson.name,
+      };
+    }
+    const fullName = (user as { fullName?: string | null }).fullName;
+    const name = String(fullName || user.username || "Sales").trim() || "Sales";
+    return { id: `user-${user.id}`, name, employmentCode: user.username };
+  }
+
+  if (posChannel !== boundChannel) {
+    setBoundChannel(posChannel);
+    setEditingSale(null);
+    setCart([]);
+    setEmployeeLoginOpen(false);
+    setEmployeeIdInput("");
+    setEmployeePassword("");
+    setConfirmPassword("");
+    setCreatingAccount(false);
+    setEmployeeLoginError("");
+    setMode("pos");
+  }
+
+  editingSaleRef.current = editingSale;
 
   useEffect(() => {
-    const sync = () => setPosEmployee(loadPosEmployeeSession());
-    window.addEventListener("pos-employee-session-updated", sync);
-    return () => window.removeEventListener("pos-employee-session-updated", sync);
-  }, []);
+    if (!posChannel || !user) return;
+    const operator = retailOperator();
+    if (!operator) return;
+    setPosEmployee((current) => {
+      if (current?.id === operator.id) return current;
+      savePosEmployeeSession(posChannel, operator);
+      return operator;
+    });
+    if (!editingSaleRef.current) setSalesPerson(operator.name);
+  }, [posChannel, user?.id, linkedSalesPerson?.id, linkedSalesPerson?.name]);
+
+  useEffect(() => {
+    if (cart.length === 0) savingSale.current = false;
+  }, [cart]);
+
+  useEffect(() => {
+    let cancel = false;
+    loadPosSalesFromServer(posChannel)
+      .then((rows) => {
+        if (!cancel) setSalesList(rows as PosSaleRecord[]);
+      })
+      .catch(() => {
+        if (!cancel) {
+          toast({ title: "Could not load POS sales", variant: "destructive" });
+        }
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [posChannel, user?.id]);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const gstRate = Number((settings as any)?.gstRate ?? GST_FALLBACK) || GST_FALLBACK;
@@ -453,6 +536,9 @@ export default function PointOfSalePage() {
             imageUrl,
             isWeightBased,
             category: String(i.category || "").trim(),
+            brand: String(i.brand || "").trim(),
+            description: String(i.description || "").trim(),
+            stockGroup: String(i.stockGroup || "").trim(),
           },
           subUoms,
         );
@@ -473,20 +559,15 @@ export default function PointOfSalePage() {
           imageUrl,
           isWeightBased,
           category: String(i.category || "").trim(),
+          brand: String(i.brand || "").trim(),
+          description: String(i.description || "").trim(),
+          stockGroup: String(i.stockGroup || "").trim(),
         },
         subUoms,
       );
     }
     return out;
   }, [stockItems]);
-
-  const supermarketCategories = useMemo(() => {
-    const names = new Set<string>();
-    for (const product of products) {
-      if (product.category) names.add(product.category);
-    }
-    return Array.from(names).sort();
-  }, [products]);
 
   const supermarketProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -496,6 +577,7 @@ export default function PointOfSalePage() {
       if (!q) return true;
       return (
         product.name.toLowerCase().includes(q) ||
+        product.brand?.toLowerCase().includes(q) ||
         product.code.toLowerCase().includes(q) ||
         product.barcode.toLowerCase().includes(q)
       );
@@ -562,13 +644,13 @@ export default function PointOfSalePage() {
     discountType === "percent"
       ? Math.min(catalogSubtotal, (catalogSubtotal * rawDiscount) / 100)
       : Math.min(catalogSubtotal, rawDiscount);
-  const subtotal = isRetail ? lineGross : catalogSubtotal;
-  const discountAmt = isRetail ? lineDiscount : catalogDiscount;
-  const taxable = isRetail ? lineTaxable : Math.max(0, catalogSubtotal - catalogDiscount);
-  const gstAmt = isRetail ? lineTax : (taxable * gstRate) / 100;
-  const cessAmt = isRetail ? lineCess : 0;
+  const subtotal = invoicePos ? lineGross : catalogSubtotal;
+  const discountAmt = invoicePos ? lineDiscount : catalogDiscount;
+  const taxable = invoicePos ? lineTaxable : Math.max(0, catalogSubtotal - catalogDiscount);
+  const gstAmt = invoicePos ? lineTax : (taxable * gstRate) / 100;
+  const cessAmt = invoicePos ? lineCess : 0;
   const total = taxable + gstAmt + cessAmt;
-  const retailTaxRate = isRetail && cart.length > 0
+  const retailTaxRate = invoicePos && cart.length > 0
     ? (cart.every((line) => (line.taxPct != null ? Number(line.taxPct) : gstRate) === (cart[0].taxPct != null ? Number(cart[0].taxPct) : gstRate))
       ? (cart[0].taxPct != null ? Number(cart[0].taxPct) : gstRate)
       : null)
@@ -883,13 +965,61 @@ export default function PointOfSalePage() {
   }
 
   useEffect(() => {
-    if (!isRetail) return;
+    if (!invoicePos) return;
+    let cancel = false;
+    fetch("/api/customers", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => {
+        if (!cancel) setRetailCustomers(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancel) setRetailCustomers([]);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [invoicePos]);
+
+  function chooseCashAccount() {
+    setBillTo("cash");
+    setSelectedCustomerId("");
+    setCustomerName("Cash");
+    setCustomerAddress("");
+    setCustomerGst("");
+    setCustomerCreditLimit(null);
+  }
+
+  function chooseCustomerAccount() {
+    setBillTo("customer");
+    setCustomerName("");
+    setSelectedCustomerId("");
+    setCustomerAddress("");
+    setCustomerGst("");
+    setCustomerCreditLimit(null);
+  }
+
+  function applyRetailCustomer(id: string) {
+    setSelectedCustomerId(id);
+    const match = retailCustomers.find((customer) => String(customer.id) === id);
+    if (!match) return;
+    setCustomerName(match.name || "");
+    setCustomerAddress(match.address || "");
+    setCustomerGst(match.gstNo || "");
+    setContactNo(match.phone || "");
+    const limit = match.creditLimitEnabled && match.creditLimit != null && match.creditLimit !== ""
+      ? Number(match.creditLimit)
+      : null;
+    setCustomerCreditLimit(Number.isFinite(limit as number) ? (limit as number) : null);
+  }
+
+  useEffect(() => {
+    const collapse = mode === "pos" && (posChannel === "retail" || posChannel === "supermarket" || posChannel === "restaurants" || posChannel === "pharmacy" || posChannel === "electronics");
     window.dispatchEvent(new CustomEvent("bizone-sidebar-hidden", { detail: false }));
-    window.dispatchEvent(new CustomEvent("bizone-sidebar-collapsed", { detail: mode === "pos" }));
+    window.dispatchEvent(new CustomEvent("bizone-sidebar-collapsed", { detail: collapse }));
     return () => {
       window.dispatchEvent(new CustomEvent("bizone-sidebar-collapsed", { detail: false }));
     };
-  }, [isRetail, mode]);
+  }, [mode, posChannel]);
 
   function fillRetailFromCode() {
     const q = retailItemQuery.trim().toLowerCase();
@@ -921,11 +1051,15 @@ export default function PointOfSalePage() {
       salePrice: (match.unitPrice > 0 ? match.unitPrice : 0).toFixed(2),
       mrp: mrp.toFixed(2),
       disc: "0",
-      tax: String(gstRate),
+      tax: invoiceType === "GST" ? String(gstRate) : "0",
       cess: "0",
       description: String(source?.description || ""),
+      counterNo: "",
       serialNo: "",
       purchasePrice: match.purchasePrice,
+      batchNo: String(source?.batchNo || ""),
+      expiry: String(source?.expiryDate || ""),
+      manufacturing: String(source?.manufacturingDate || ""),
     });
   }
 
@@ -962,6 +1096,10 @@ export default function PointOfSalePage() {
         cessPct: Number(retailDraft.cess) || 0,
         serialNo: retailDraft.serialNo,
         description: retailDraft.description,
+        counterNo: retailDraft.counterNo.trim(),
+        batchNo: retailDraft.batchNo,
+        expiry: retailDraft.expiry,
+        manufacturing: retailDraft.manufacturing,
       },
     ]);
     setRetailDraft(null);
@@ -969,17 +1107,15 @@ export default function PointOfSalePage() {
   }
 
   function startNewPos() {
-    if (!posEmployee) {
-      toast({
-        title: "Employee login required",
-        description: "Please login with Employee ID first.",
-        variant: "destructive",
-      });
-      return;
-    }
+    const operatorName = posEmployee?.name || retailOperator()?.name || "";
     setEditingSale(null);
     clearCart();
-    setSalesPerson(posEmployee.name);
+    setInvoiceDate(null);
+    setDueDate(null);
+    setRetailDraft(null);
+    setRetailItemQuery("");
+    setBarcodeInput("");
+    setSalesPerson(operatorName);
     setMode("pos");
   }
 
@@ -995,22 +1131,25 @@ export default function PointOfSalePage() {
   }
 
   function handleEmployeeLogout() {
-    clearPosEmployeeSession();
+    if (!posChannel) return;
+    clearPosEmployeeSession(posChannel);
     setPosEmployee(null);
     setEmployeeIdInput("");
     setEmployeePassword("");
     setConfirmPassword("");
     setEmployeeLoginError("");
-    toast({ title: "Employee logged out" });
+    setMode("list");
+    toast({ title: `${POS_CHANNEL_LABELS[posChannel]} logged out` });
   }
 
   function finishEmployeeSession(person: { id: string; name: string; employmentCode: string }, created: boolean) {
+    if (!posChannel) return;
     const session: PosEmployeeSession = {
       id: person.id,
       name: person.name,
       employmentCode: person.employmentCode,
     };
-    savePosEmployeeSession(session);
+    savePosEmployeeSession(posChannel, session);
     setPosEmployee(session);
     setEmployeeLoginOpen(false);
     setEmployeeIdInput("");
@@ -1023,7 +1162,7 @@ export default function PointOfSalePage() {
     });
   }
 
-  function handleEmployeeLogin(e?: FormEvent) {
+  async function handleEmployeeLogin(e?: FormEvent) {
     e?.preventDefault();
     setEmployeeLoggingIn(true);
     setEmployeeLoginError("");
@@ -1031,10 +1170,11 @@ export default function PointOfSalePage() {
       const selectedPerson = salesPersons.find((person) => person.id === employeeIdInput);
       const salesPersonCode = selectedPerson?.employmentCode?.trim() || selectedPerson?.name || employeeIdInput;
       if (creatingAccount) {
-        const alreadyHasAccount = Boolean((selectedPerson?.password || "").trim());
-        const result = alreadyHasAccount
-          ? updateSalesPersonAccount(salesPersonCode, employeePassword, confirmPassword)
-          : createSalesPersonAccount(salesPersonCode, employeePassword, confirmPassword);
+        if (!selectedPerson) {
+          setEmployeeLoginError("Select a sales person.");
+          return;
+        }
+        const result = await updateSalesPersonAccount(selectedPerson.id, employeePassword, confirmPassword);
         if (!result.ok) {
           setEmployeeLoginError(result.error);
           return;
@@ -1044,7 +1184,7 @@ export default function PointOfSalePage() {
         setEmployeePassword("");
         setConfirmPassword("");
         toast({
-          title: alreadyHasAccount ? "Account updated" : "Account created",
+          title: selectedPerson.hasPassword ? "Account updated" : "Account created",
           description: `${result.person.name} is ready. Enter the password to login.`,
         });
         return;
@@ -1052,11 +1192,11 @@ export default function PointOfSalePage() {
       const typed = employeeIdInput.trim().toLowerCase();
       const matched = salesPersons.find(
         (person) =>
-          Boolean((person.password || "").trim()) &&
+          person.hasPassword &&
           (person.name.trim().toLowerCase() === typed ||
             person.employmentCode.trim().toLowerCase() === typed),
       );
-      const result = loginSalesPerson(matched?.employmentCode?.trim() || matched?.name || "", employeePassword);
+      const result = await loginSalesPerson(matched?.employmentCode?.trim() || matched?.name || salesPersonCode, employeePassword);
       if (!result.ok) {
         setEmployeeLoginError(result.error);
         return;
@@ -1085,15 +1225,23 @@ export default function PointOfSalePage() {
     setMode("pos");
   }
 
-  function deleteEditingSale() {
+  async function deleteEditingSale() {
     if (!editingSale) return;
-    const next = salesList.filter((x) => x.id !== editingSale.id);
-    setSalesList(next);
-    savePosSales(next);
-    toast({ title: "POS sale deleted" });
-    setEditingSale(null);
-    clearCart();
-    setMode("list");
+    try {
+      await deletePosSale(editingSale.id);
+      setSalesList((prev) => prev.filter((sale) => sale.id !== editingSale.id));
+      toast({ title: "POS sale deleted" });
+      setEditingSale(null);
+      clearCart();
+      setSalesPerson(posEmployee?.name || "");
+      setMode("list");
+    } catch (err) {
+      toast({
+        title: "Could not delete",
+        description: err instanceof Error ? err.message : "The sale was not deleted.",
+        variant: "destructive",
+      });
+    }
   }
 
   function switchToPayMethod(nextMethod: PaymentMethod) {
@@ -1141,9 +1289,11 @@ export default function PointOfSalePage() {
   function buildSaleRecord(allTenders: PaymentTender[], existing?: PosSaleRecord | null): PosSaleRecord {
     const itemsSold = cart.reduce((s, l) => s + (l.isWeightBased ? 1 : l.qty), 0);
     return {
-      id: existing?.id || `pos-${Date.now()}`,
+      id: existing?.id || `pos-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       posNumber: existing?.posNumber || `POS-${String(salesList.length + 1).padStart(4, "0")}`,
       createdAt: existing?.createdAt || new Date().toISOString(),
+      channel: existing?.channel || posChannel || "retail",
+      counter: cart.map((line) => String(line.counterNo || "").trim()).find(Boolean) || existing?.counter,
       items: cart.map((c) => ({ ...c })),
       itemCount: itemsSold,
       subtotal,
@@ -1151,46 +1301,51 @@ export default function PointOfSalePage() {
       tax: gstAmt,
       total,
       payments: allTenders,
-      salesPerson: salesPerson || undefined,
+      salesPerson: salesPerson || posEmployee?.name || existing?.salesPerson,
+      salesPersonId: existing?.salesPersonId || (linkedSalesPerson ? String(linkedSalesPerson.id) : undefined),
+      createdByUserId: existing?.createdByUserId || user?.id,
       note,
       status: "paid",
     };
   }
 
-  function finalizeSale(allTenders: PaymentTender[], options?: { showPreview?: boolean }) {
+  async function finalizeSale(allTenders: PaymentTender[], options?: { showPreview?: boolean }) {
+    if (savingSale.current) return;
+    savingSale.current = true;
     const existing = editingSale;
-    let record: PosSaleRecord;
-
-    if (existing) {
-      record = buildSaleRecord(allTenders, existing);
-      const nextList = salesList.map((s) => (s.id === existing.id ? record : s));
-      setSalesList(nextList);
-      savePosSales(nextList);
-      if (!options?.showPreview) {
+    const record = buildSaleRecord(allTenders, existing);
+    try {
+      const saved = (existing ? await updatePosSale(record) : await createPosSale(record)) as PosSaleRecord;
+      setSalesList((prev) => {
+        const without = prev.filter((sale) => sale.id !== saved.id);
+        return [saved, ...without];
+      });
+      if (!options?.showPreview && existing) {
         toast({
           title: "POS updated",
-          description: `${record.posNumber} · ${paymentsLabel(allTenders)}`,
+          description: `${saved.posNumber} · ${paymentsLabel(saved.payments || allTenders)}`,
         });
       }
-    } else {
-      record = buildSaleRecord(allTenders, null);
-      const nextList = [record, ...salesList];
-      setSalesList(nextList);
-      savePosSales(nextList);
-    }
-
-    setEditingSale(null);
-    clearCart();
-    setBaselinePayments([]);
-    setTenders([]);
-    setPendingPayByMethod({});
-    setPayOpen(false);
-
-    if (options?.showPreview) {
-      setPreviewSale(record);
-      setPreviewOpen(true);
-    } else {
-      setMode("list");
+      setEditingSale(null);
+      clearCart();
+      setSalesPerson(posEmployee?.name || linkedSalesPerson?.name || "");
+      setBaselinePayments([]);
+      setTenders([]);
+      setPendingPayByMethod({});
+      setPayOpen(false);
+      if (options?.showPreview) {
+        setPreviewSale(saved);
+        setPreviewOpen(true);
+      } else {
+        setMode("list");
+      }
+    } catch (err) {
+      savingSale.current = false;
+      toast({
+        title: "Could not save the sale",
+        description: err instanceof Error ? err.message : "Try again.",
+        variant: "destructive",
+      });
     }
   }
 
@@ -1370,213 +1525,23 @@ export default function PointOfSalePage() {
 
   const { page: salesPage, setPage: setSalesPage, totalPages: salesTotalPages, paginatedItems: paginatedSales } = usePagination(filteredSales);
 
-  if ((isRestaurant || isRetail || isSupermarket) && !posEmployee) {
-    return (
-      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
-        <div className="w-[530px] min-h-[437px] rounded-[20px] border border-[#E5E7EB] bg-white px-8 py-8 shadow-sm">
-          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-[#F3F4F6] p-1">
-            <button
-              type="button"
-              className={`h-10 rounded-lg text-sm font-semibold ${!creatingAccount ? "bg-[#2563EB] text-white" : "text-[#6B7280]"}`}
-              onClick={() => {
-                setCreatingAccount(false);
-                setEmployeeIdInput("");
-                setConfirmPassword("");
-                setEmployeeLoginError("");
-              }}
-            >
-              Sales person login
-            </button>
-            <button
-              type="button"
-              className={`h-10 rounded-lg text-sm font-semibold ${creatingAccount ? "bg-[#2563EB] text-white" : "text-[#6B7280]"}`}
-              onClick={() => {
-                setCreatingAccount(true);
-                setEmployeeIdInput("");
-                setEmployeeLoginError("");
-              }}
-            >
-              Create account
-            </button>
-          </div>
-          <form onSubmit={handleEmployeeLogin} className="space-y-5" autoComplete="off">
-            {creatingAccount ? (
-              <div className="space-y-2">
-                <Label>Sales person</Label>
-                <Select value={employeeIdInput || undefined} onValueChange={setEmployeeIdInput}>
-                  <SelectTrigger className="h-11" aria-label="Sales person">
-                    <SelectValue placeholder="Select sales person" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {salesPersons.length === 0 ? (
-                      <SelectItem value="__none" disabled>
-                        No sales persons in Sales Person
-                      </SelectItem>
-                    ) : (
-                      salesPersons.map((person) => (
-                        <SelectItem key={person.id} value={person.id}>
-                          {person.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Sales person</Label>
-                <Input
-                  value={employeeIdInput}
-                  onChange={(e) => setEmployeeIdInput(e.target.value)}
-                  placeholder="Enter sales person"
-                  aria-label="Sales person"
-                  className="h-11"
-                />
-              </div>
-            )}
-            <div className={creatingAccount ? "grid grid-cols-2 gap-3" : "space-y-2"}>
-              <div className="space-y-2">
-                <Label>Password</Label>
-                <div className="relative">
-                  <Input
-                    type={showEmployeePassword ? "text" : "password"}
-                    value={employeePassword}
-                    onChange={(e) =>
-                      setEmployeePassword(
-                        creatingAccount ? e.target.value.replace(/\D/g, "").slice(0, 8) : e.target.value,
-                      )
-                    }
-                    placeholder={creatingAccount ? undefined : "Enter your password"}
-                    aria-label="Password"
-                    inputMode={creatingAccount ? "numeric" : undefined}
-                    maxLength={creatingAccount ? 8 : undefined}
-                    className="h-11 pr-10"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]"
-                    onClick={() => setShowEmployeePassword((open) => !open)}
-                    aria-label={showEmployeePassword ? "Hide password" : "Show password"}
-                  >
-                    {showEmployeePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-              {creatingAccount && (
-                <div className="space-y-2">
-                  <Label>Confirm Password</Label>
-                  <Input
-                    type={showEmployeePassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                    aria-label="Confirm Password"
-                    inputMode="numeric"
-                    maxLength={8}
-                    className="h-11"
-                  />
-                </div>
-              )}
-            </div>
-            {creatingAccount && employeePassword.length > 0 && !/^\d{8}$/.test(employeePassword) ? (
-              <p className="text-sm text-red-600">Password must be 8 digits.</p>
-            ) : creatingAccount && confirmPassword.length > 0 && employeePassword !== confirmPassword ? (
-              <p className="text-sm text-red-600">Password and confirm password do not match.</p>
-            ) : employeeLoginError ? (
-              <p className="text-sm text-red-600">{employeeLoginError}</p>
-            ) : null}
-            <Button
-              type="submit"
-              className="h-11 w-full bg-[#2563EB] text-base hover:bg-[#1D4ED8]"
-              disabled={
-                employeeLoggingIn ||
-                !employeeIdInput.trim() ||
-                !employeePassword.trim() ||
-                (creatingAccount && !/^\d{8}$/.test(employeePassword)) ||
-                (creatingAccount && !/^\d{8}$/.test(confirmPassword))
-              }
-            >
-              {employeeLoggingIn
-                ? creatingAccount ? "Saving..." : "Logging in..."
-                : creatingAccount
-                  ? (salesPersons.some((person) => person.id === employeeIdInput && (person.password || "").trim())
-                    ? "Update account"
-                    : "Create account")
-                  : "Login"}
-              {!employeeLoggingIn && !creatingAccount ? <ArrowRight className="ml-1 h-4 w-4" /> : null}
-            </Button>
-            {!creatingAccount && (
-              <button
-                type="button"
-                className="w-full text-center text-sm text-[#374151]"
-                onClick={() => toast({ title: "Forgot password", description: "Ask an administrator to reset the sales person password." })}
-              >
-                Forgot password ?
-              </button>
-            )}
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   if (mode === "list") {
     return (
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          {!isRetail && (
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Point of Sale</h1>
-            </div>
-          )}
-          <div className={`flex flex-wrap items-center gap-2 ${isRetail ? "ml-auto" : ""}`}>
-            {posEmployee ? (
-              <>
-                <span className={isRetail
-                  ? "inline-flex h-9 items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-4 text-sm font-medium text-[#111827]"
-                  : "rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-800"}>
-                  {isRetail ? <User className="h-4 w-4 shrink-0 text-[#6B7280]" /> : null}
-                  {isRetail ? posEmployee.name : `${posEmployee.employmentCode} · ${posEmployee.name}`}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={isRetail
-                    ? "h-9 min-h-9 w-auto gap-2 rounded-md border border-[#E5E7EB] px-4 py-2 text-sm font-medium shadow-none"
-                    : "gap-2"}
-                  onClick={handleEmployeeLogout}
-                >
-                  <LogOut className="h-4 w-4" /> Logout
-                </Button>
-                <Button
-                  type="button"
-                  className={isRetail
-                    ? "h-9 min-h-9 w-auto gap-2 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#2563EB]"
-                    : "gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"}
-                  onClick={startNewPos}
-                >
-                  <Plus className="h-4 w-4" /> {isRetail ? "Create POS" : "Create New POS"}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2 border-[#2563EB] text-[#2563EB] hover:bg-[#EFF6FF]"
-                  onClick={openEmployeeLogin}
-                >
-                  <LogIn className="h-4 w-4" /> Employee Login
-                </Button>
-                <Button
-                  type="button"
-                  className="gap-2 bg-[#2563EB]/50 text-white cursor-not-allowed"
-                  disabled
-                  title="Login as employee first"
-                >
-                  <Plus className="h-4 w-4" /> Create New POS
-                </Button>
-              </>
-            )}
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+              {invoicePos ? "Transaction History" : "Point of Sale"}
+            </h1>
+          </div>
+          <div className={`flex flex-wrap items-center gap-2 ${invoicePos ? "ml-auto" : ""}`}>
+            <Button
+              type="button"
+              className="h-9 min-h-9 w-auto gap-2 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#1D4ED8]"
+              onClick={startNewPos}
+            >
+              <Plus className="h-4 w-4" /> Create New POS
+            </Button>
           </div>
         </div>
 
@@ -1622,7 +1587,7 @@ export default function PointOfSalePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-[#F9FAFB] text-left text-xs uppercase text-[#6B7280]">
-                  <th className="px-4 py-3">POS No.</th>
+                  <th className="px-4 py-3">Receipt No.</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Items</th>
                   <th className="px-4 py-3 text-right">Total</th>
@@ -1675,121 +1640,20 @@ export default function PointOfSalePage() {
           </div>
         </div>
 
-        <Dialog
-          open={employeeLoginOpen}
-          onOpenChange={(open) => {
-            setEmployeeLoginOpen(open);
-            if (open) {
-              setEmployeeIdInput("");
-              setEmployeePassword("");
-              setConfirmPassword("");
-              setCreatingAccount(false);
-              setEmployeeLoginError("");
-            }
-          }}
-        >
-          <DialogContent className="sm:max-w-lg gap-5 p-8">
-            <DialogHeader className="space-y-2">
-              <DialogTitle className="text-xl">Sales Person Login</DialogTitle>
-            </DialogHeader>
-            {/* Remount on open so Chrome cannot reuse prior form-history for these fields */}
-            <form
-              key={employeeLoginOpen ? "pos-login-open" : "pos-login-closed"}
-              onSubmit={handleEmployeeLogin}
-              className="space-y-5"
-              autoComplete="off"
-            >
-              <div className="space-y-2">
-                <Label>Sales Person ID</Label>
-                <Input
-                  ref={employeeIdRef}
-                  value={employeeIdInput}
-                  onChange={(e) => setEmployeeIdInput(e.target.value)}
-                  aria-label="Sales Person ID"
-                  className="h-11 font-mono text-sm"
-                />
-              </div>
-              {creatingAccount ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Password</Label>
-                    <Input
-                      type="text"
-                      value={employeePassword}
-                      onChange={(e) => setEmployeePassword(e.target.value)}
-                      aria-label="Password"
-                      className="h-11 text-sm [-webkit-text-security:disc]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Confirm Password</Label>
-                    <Input
-                      type="text"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      aria-label="Confirm Password"
-                      className="h-11 text-sm [-webkit-text-security:disc]"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input
-                    type="text"
-                    value={employeePassword}
-                    onChange={(e) => setEmployeePassword(e.target.value)}
-                    aria-label="Password"
-                    className="h-11 text-sm [-webkit-text-security:disc]"
-                  />
-                </div>
-              )}
-              {employeeLoginError ? (
-                <p className="text-sm text-red-600">{employeeLoginError}</p>
-              ) : null}
-              <DialogFooter className="flex-row items-center justify-between gap-2 pt-2 sm:justify-between sm:space-x-0">
-                <Button
-                  type="button"
-                  className="h-10 bg-[#2563EB] px-5 text-white hover:bg-[#1D4ED8]"
-                  onClick={() => {
-                    setCreatingAccount((open) => !open);
-                    setConfirmPassword("");
-                    setEmployeeLoginError("");
-                  }}
-                >
-                  {creatingAccount ? "Login" : "Create account"}
-                </Button>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" className="h-10 px-5" onClick={() => setEmployeeLoginOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="h-10 bg-[#2563EB] px-6 hover:bg-[#1D4ED8]"
-                    disabled={
-                      employeeLoggingIn ||
-                      !employeeIdInput.trim() ||
-                      !employeePassword.trim() ||
-                      (creatingAccount && !confirmPassword.trim())
-                    }
-                  >
-                    {employeeLoggingIn
-                      ? creatingAccount ? "Creating..." : "Logging in..."
-                      : creatingAccount ? "Create account" : "Login"}
-                  </Button>
-                </div>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+
       </div>
     );
   }
 
   return (
-    <div className="-mx-4 -mb-6 flex min-h-[calc(100vh-4rem)] flex-col bg-[#F3F4F6] px-4 pb-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-      <div className="flex-1 space-y-4 py-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className={cn(
+      "flex flex-col",
+      isSupermarket || isRestaurant || isElectronics
+        ? "-mx-4 mt-4 h-[calc(100dvh-8.75rem)] min-h-0 overflow-hidden px-4 md:-mx-6 md:h-[calc(100dvh-9.75rem)] xl:-mx-8 xl:h-[calc(100dvh-10.75rem)]"
+        : "-mx-4 -mb-6 min-h-[calc(100vh-4rem)] px-4 pb-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8",
+    )}>
+      <div className={cn("flex flex-col gap-4", isSupermarket || isRestaurant || isElectronics ? "min-h-0 flex-1 pb-1" : "flex-1 py-4")}>
+        <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <Button
               type="button"
@@ -1799,16 +1663,16 @@ export default function PointOfSalePage() {
               onClick={() => {
                 setEditingSale(null);
                 clearCart();
+                setSalesPerson(posEmployee?.name || linkedSalesPerson?.name || "");
                 setMode("list");
               }}
+              aria-label="Back to POS"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            {!isSupermarket && (
             <h1 className="truncate text-2xl font-bold tracking-tight text-[#2563EB] sm:text-3xl">
-              {editingSale ? `Edit ${editingSale.posNumber}` : isRetail ? "Create POS" : "Create New POS"}
+              {editingSale ? `Edit ${editingSale.posNumber}` : "Create New POS"}
             </h1>
-            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -1839,13 +1703,37 @@ export default function PointOfSalePage() {
               </AlertDialog>
             )}
 
-            {isRetail && posEmployee ? (
-              <span className="inline-flex h-9 items-center gap-2 rounded-md border border-[#E5E7EB] bg-white px-4 text-sm font-medium text-[#111827]">
-                <User className="h-4 w-4 shrink-0 text-[#6B7280]" />
-                {posEmployee.name}
-              </span>
-            ) : null}
-            {!isRetail && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 gap-2"
+              onClick={() => {
+                setEditingSale(null);
+                clearCart();
+                setSalesPerson(posEmployee?.name || linkedSalesPerson?.name || "");
+                setMode("list");
+              }}
+            >
+              <FileText className="h-4 w-4" /> Transaction History
+            </Button>
+            {(isSupermarket || isRestaurant || isElectronics) && (
+              <form
+                onSubmit={handleBarcodeSubmit}
+                className="flex h-9 w-[320px] items-center gap-2 rounded-lg border border-[#D6DEEA] bg-white px-3"
+              >
+                <Barcode className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                <input
+                  ref={barcodeInputRef}
+                  type="text"
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  placeholder="Scan Barcode"
+                  autoComplete="off"
+                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-[#111827] outline-none placeholder:text-[#9CA3AF] focus:ring-0"
+                />
+              </form>
+            )}
+            {!isRetail && !isSupermarket && !isRestaurant && !isElectronics && !isPharmacy && (
             <form
               onSubmit={handleBarcodeSubmit}
               className="flex h-9 w-full max-w-[360px] items-center gap-1.5 rounded-lg border border-[#2563EB] bg-white px-2 shadow-sm sm:w-[340px]"
@@ -1872,17 +1760,27 @@ export default function PointOfSalePage() {
           </div>
         </div>
 
-        {isRetail ? (
+        {invoicePos ? (
           <div className="space-y-4">
             <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-base font-semibold text-[#111827]">Invoice Information</h2>
               <div className="grid gap-4 md:grid-cols-4">
-                {["Invoice Type", "Invoice No"].map((label) => (
-                  <label key={label} className="space-y-1.5 text-sm text-[#6B7280]">
-                    {label}
-                    <Input className="h-10" />
-                  </label>
-                ))}
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Invoice Type
+                  <Select value={invoiceType} onValueChange={(value) => setInvoiceType(value === "Non GST" ? "Non GST" : "GST")}>
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="GST" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GST">GST</SelectItem>
+                      <SelectItem value="Non GST">Non GST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Invoice No
+                  <Input className="h-10" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
+                </label>
                 <label className="space-y-1.5 text-sm text-[#6B7280]">
                   Date
                   <SimpleDatePicker date={invoiceDate} setDate={(date) => setInvoiceDate(date ?? null)} />
@@ -1891,21 +1789,49 @@ export default function PointOfSalePage() {
                   Due Date
                   <SimpleDatePicker date={dueDate} setDate={(date) => setDueDate(date ?? null)} />
                 </label>
-                {["Contact No", "Customer", "Address", "Customer GSTN"].map((label) => (
-                  <label key={label} className="space-y-1.5 text-sm text-[#6B7280]">
-                    {label}
-                    <Input className="h-10" />
-                  </label>
-                ))}
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Contact No
+                  <Input className="h-10" value={contactNo} onChange={(e) => setContactNo(e.target.value)} />
+                </label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Customer
+                  {billTo === "cash" ? (
+                    <Input className="h-10" value="Cash" readOnly />
+                  ) : (
+                    <Select value={selectedCustomerId} onValueChange={applyRetailCustomer}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select customer" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {retailCustomers.map((customer) => (
+                          <SelectItem key={customer.id} value={String(customer.id)}>{customer.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {billTo === "customer" && selectedCustomerId ? (
+                    <p className="text-xs text-[#2563EB]">
+                      Credit limit: {customerCreditLimit == null ? "Not set" : money(customerCreditLimit)}
+                    </p>
+                  ) : null}
+                </label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Address
+                  <Input className="h-10" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+                </label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">
+                  Customer GST
+                  <Input className="h-10" value={customerGst} onChange={(e) => setCustomerGst(e.target.value)} />
+                </label>
               </div>
               <div className="mt-4 flex items-center gap-6 text-sm text-[#374151]">
                 <span>Bill To</span>
                 <label className="inline-flex items-center gap-2">
-                  <input type="radio" name="bill-to" checked={billTo === "cash"} onChange={() => setBillTo("cash")} />
+                  <input type="radio" name="bill-to" checked={billTo === "cash"} onChange={chooseCashAccount} />
                   Cash A/C
                 </label>
                 <label className="inline-flex items-center gap-2">
-                  <input type="radio" name="bill-to" checked={billTo === "customer"} onChange={() => setBillTo("customer")} />
+                  <input type="radio" name="bill-to" checked={billTo === "customer"} onChange={chooseCustomerAccount} />
                   Customer A/C
                 </label>
               </div>
@@ -1952,27 +1878,32 @@ export default function PointOfSalePage() {
                   Item Code
                 </label>
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-4 grid gap-3 md:grid-cols-5">
                 <label className="space-y-1.5 text-sm text-[#6B7280]">Item Name<Input className="h-10" value={retailDraft?.name || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, name: e.target.value } : prev)} /></label>
                 <label className="space-y-1.5 text-sm text-[#6B7280]">Unit<Input className="h-10" value={retailDraft?.unit || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, unit: e.target.value } : prev)} /></label>
                 <label className="space-y-1.5 text-sm text-[#6B7280]">Quantity<Input className="h-10" value={retailDraft?.qty || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, qty: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Sale Price<Input className="h-10" value={retailDraft?.salePrice || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, salePrice: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Disc (%)<Input className="h-10" value={retailDraft?.disc || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, disc: e.target.value } : prev)} /></label>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-6">
-                <label className="space-y-1.5 text-sm text-[#6B7280]">Sale Price<Input className="h-10" value={retailDraft?.salePrice || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, salePrice: e.target.value } : prev)} /></label>
-                <label className="space-y-1.5 text-sm text-[#6B7280]">M.R.P<Input className="h-10" value={retailDraft?.mrp || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, mrp: e.target.value } : prev)} /></label>
-                <label className="space-y-1.5 text-sm text-[#6B7280]">Disc (%)<Input className="h-10" value={retailDraft?.disc || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, disc: e.target.value } : prev)} /></label>
-                <label className="space-y-1.5 text-sm text-[#6B7280]">Tax (%)<Input className="h-10" value={retailDraft?.tax || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, tax: e.target.value } : prev)} /></label>
-                <label className="space-y-1.5 text-sm text-[#6B7280]">Cess (%)<Input className="h-10" value={retailDraft?.cess || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, cess: e.target.value } : prev)} /></label>
-                <label className="space-y-1.5 text-sm text-[#6B7280]">Amount<Input className="h-10" readOnly value={retailDraft ? (() => {
+                <label className="space-y-1.5 text-sm text-[#6B7280]">GST<Input className="h-10" value={invoiceType === "Non GST" ? "0" : (retailDraft?.tax || "")} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, tax: e.target.value } : prev)} readOnly={invoiceType === "Non GST"} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">GST value<Input className="h-10" readOnly value={retailDraft ? (() => {
                   const taxableLine = (Number(retailDraft.salePrice) || 0) * (1 - (Number(retailDraft.disc) || 0) / 100) * (Number(retailDraft.qty) || 0);
-                  const tax = taxableLine * ((Number(retailDraft.tax) || 0) / 100);
-                  const cess = taxableLine * ((Number(retailDraft.cess) || 0) / 100);
-                  return roundMoney(taxableLine + tax + cess).toFixed(2);
+                  const rate = invoiceType === "Non GST" ? 0 : (Number(retailDraft.tax) || 0);
+                  return roundMoney(taxableLine * (rate / 100)).toFixed(2);
                 })() : ""} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Total value<Input className="h-10" readOnly value={retailDraft ? (() => {
+                  const taxableLine = (Number(retailDraft.salePrice) || 0) * (1 - (Number(retailDraft.disc) || 0) / 100) * (Number(retailDraft.qty) || 0);
+                  const rate = invoiceType === "Non GST" ? 0 : (Number(retailDraft.tax) || 0);
+                  return roundMoney(taxableLine + taxableLine * (rate / 100)).toFixed(2);
+                })() : ""} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Batch No<Input className="h-10" value={retailDraft?.batchNo || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, batchNo: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Expiry<Input className="h-10" value={retailDraft?.expiry || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, expiry: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Manufacturing<Input className="h-10" value={retailDraft?.manufacturing || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, manufacturing: e.target.value } : prev)} /></label>
               </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
+              <div className="mt-3 grid items-end gap-3 md:grid-cols-[1fr_150px]">
                 <label className="space-y-1.5 text-sm text-[#6B7280]">Item Description<Input className="h-10" value={retailDraft?.description || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, description: e.target.value } : prev)} /></label>
-                <label className="space-y-1.5 text-sm text-[#6B7280]">Serial No<Input className="h-10" value={retailDraft?.serialNo || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, serialNo: e.target.value } : prev)} /></label>
+                <label className="space-y-1.5 text-sm text-[#6B7280]">Counter No<Input className="h-10" value={retailDraft?.counterNo || ""} onChange={(e) => setRetailDraft((prev) => prev ? { ...prev, counterNo: e.target.value } : prev)} /></label>
               </div>
             </section>
 
@@ -1980,15 +1911,15 @@ export default function PointOfSalePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#2563EB] text-left text-xs text-white">
-                    {["S.No", "Item Name", "Tag", "Quantity", "Unit", "Unit Price", "Disc (%)", "Tax (%)", "Cess (%)", "Net Price", "Amount Before Tax"].map((col) => (
-                      <th key={col} className="px-3 py-2.5 font-medium">{col}</th>
+                    {["S.No", "Item Name", "Tag", "Quantity", "Unit", "Unit Price", "Disc (%)", "Tax (%)", "Cess (%)", "Net Price", "Amount Before Tax", ""].map((col, colIndex) => (
+                      <th key={`${col}-${colIndex}`} className="px-3 py-2.5 font-medium">{col}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {cart.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="px-3 py-8 text-center text-[#6B7280]">Add an item to start this sale.</td>
+                      <td colSpan={12} className="px-3 py-8 text-center text-[#6B7280]">Add an item to start this sale.</td>
                     </tr>
                   ) : cart.map((line, index) => {
                     const amount = lineAmount(line);
@@ -2007,6 +1938,11 @@ export default function PointOfSalePage() {
                         <td className="px-3 py-2.5">{line.cessPct ?? "—"}</td>
                         <td className="px-3 py-2.5">{net.toFixed(2)}</td>
                         <td className="px-3 py-2.5">{amount.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[#DC2626] hover:bg-[#FEF2F2]" onClick={() => removeLine(line.key)} aria-label={`Remove ${line.name}`}>
+                            <X className="h-4 w-4" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -2014,7 +1950,19 @@ export default function PointOfSalePage() {
               </table>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex items-end justify-between gap-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12 gap-2 rounded-xl"
+                onClick={() => {
+                  setEditingSale(null);
+                  clearCart();
+                  setMode("list");
+                }}
+              >
+                <X className="h-4 w-4" /> Cancel Voucher
+              </Button>
               <div className="flex w-full max-w-[320px] flex-col gap-3">
                 <div className="rounded-xl border border-[#E5E7EB] bg-white px-5 py-4 text-sm">
                   {[
@@ -2037,72 +1985,52 @@ export default function PointOfSalePage() {
                 <Button type="button" className="h-14 rounded-xl bg-[#2563EB] text-lg font-semibold hover:bg-[#1D4ED8]" onClick={completeSale}>
                   Pay {money(balanceDue > 0 && balanceDue < total ? balanceDue : total)}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-12 gap-2 rounded-xl"
-                  onClick={() => {
-                    setEditingSale(null);
-                    clearCart();
-                    setMode("list");
-                  }}
-                >
-                  <X className="h-4 w-4" /> Cancel
-                </Button>
               </div>
             </div>
           </div>
         ) : null}
 
         {isSupermarket ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_380px]">
-            <section className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-sm">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="grid min-h-0 flex-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:grid-rows-[minmax(0,1fr)]">
+            <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-2xl border border-[#E6EAF0] bg-white p-6">
+              <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-[#111827]">Products</h2>
-                  <p className="text-sm text-[#6B7280]">Browse and add items to the cart</p>
+                  <p className="mt-0.5 text-sm text-[#9CA3AF]">Browse and add items to the cart</p>
                 </div>
-                <Select value={supermarketCategory} onValueChange={setSupermarketCategory}>
-                  <SelectTrigger className="h-9 w-[180px]">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {supermarketCategories.map((category) => (
-                      <SelectItem key={category} value={category}>{category}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               {isLoading ? (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                <div className="grid min-h-0 flex-1 content-start justify-start gap-4 overflow-y-auto [grid-template-columns:repeat(auto-fill,136px)]">
                   {Array.from({ length: 8 }).map((_, index) => (
-                    <div key={index} className="h-44 animate-pulse rounded-xl bg-[#F3F4F6]" />
+                    <div key={index} className="h-44 animate-pulse rounded-2xl bg-[#F3F4F6]" />
                   ))}
                 </div>
               ) : supermarketProducts.length === 0 ? (
-                <p className="py-16 text-center text-sm text-[#6B7280]">No products found.</p>
+                <p className="flex flex-1 items-center justify-center text-sm text-[#6B7280]">No products found.</p>
               ) : (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                <div className="grid min-h-0 flex-1 content-start justify-start gap-4 overflow-y-auto [grid-template-columns:repeat(auto-fill,136px)]">
                   {supermarketProducts.map((product) => (
                     <button
                       key={product.key}
                       type="button"
                       onClick={() => requestAddProduct(product)}
-                      className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white text-left transition hover:border-[#93C5FD] hover:shadow-sm"
+                      className="w-[136px] overflow-hidden rounded-2xl border border-[#E8ECF1] bg-white text-left transition hover:border-[#BFDBFE] hover:shadow-sm"
                     >
-                      <div className="flex h-28 items-center justify-center bg-[#F8FAFC]">
+                      <div className="flex h-24 items-center justify-center bg-white px-2 pt-2">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-contain" />
                         ) : (
                           <Package className="h-10 w-10 text-[#CBD5E1]" />
                         )}
                       </div>
-                      <div className="space-y-1 p-3">
-                        <p className="line-clamp-2 text-sm font-medium text-[#111827]">{product.name}</p>
-                        <p className="text-base font-semibold text-[#111827]">
+                      <div className="space-y-0.5 px-3 pb-3 pt-2">
+                        {product.brand ? (
+                          <p className="truncate text-xs text-[#9CA3AF]">{product.brand}</p>
+                        ) : null}
+                        <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-[#111827]">{product.name}</p>
+                        <p className="pt-1 text-sm font-semibold text-[#2563EB]">
                           {money(product.unitPrice)}
-                          {product.isWeightBased ? <span className="text-xs font-medium text-[#6B7280]"> / {product.uom || "kg"}</span> : null}
+                          {product.isWeightBased ? <span className="font-medium">/{product.uom || "kg"}</span> : null}
                         </p>
                       </div>
                     </button>
@@ -2111,57 +2039,110 @@ export default function PointOfSalePage() {
               )}
             </section>
 
-            <section className="flex flex-col rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
+            <section className="flex h-full min-h-0 flex-col rounded-2xl border border-[#E6EAF0] bg-white p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-[#111827]">Cart</h2>
-                <span className="rounded-full bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#2563EB]">
+                <span className="rounded-full bg-[#E8F1FF] px-2.5 py-1 text-xs font-medium text-[#2563EB]">
                   {cart.reduce((count, line) => count + (line.isWeightBased ? 1 : Number(line.qty) || 0), 0)} Items
                 </span>
               </div>
-              <div className="min-h-[180px] flex-1 space-y-3">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
                 {cart.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-[#6B7280]">Tap a product to add it here.</p>
+                  <p className="flex h-full items-center justify-center text-center text-sm text-[#6B7280]">Tap a product to add it here.</p>
                 ) : cart.map((line) => {
                   const image = products.find((product) => product.stockItemId === line.id)?.imageUrl;
                   return (
-                    <div key={line.key} className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] p-2">
+                    <div key={line.key} className="flex items-center gap-3 rounded-2xl border border-[#EEF1F5] p-2.5">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#F8FAFC]">
-                        {image ? <img src={image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-[#CBD5E1]" />}
+                        {image ? <img src={image} alt="" className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-[#CBD5E1]" />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-[#111827]">{line.name}</p>
-                        <p className="text-xs text-[#6B7280]">{money(line.unitPrice)}{line.isWeightBased ? ` / ${line.unit || "kg"}` : ""}</p>
+                        <p className="text-xs text-[#9CA3AF]">
+                          {money(line.unitPrice)}
+                          {line.isWeightBased ? ` / ${line.unit || "kg"}` : ""}
+                        </p>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E5E7EB]" onClick={() => updateQty(line.key, line.qty - 1, true)} aria-label="Decrease quantity">
+                      <div className="flex h-8 items-center rounded-lg border border-[#E5E7EB] bg-white">
+                        <button type="button" className="flex h-8 w-7 items-center justify-center text-[#6B7280]" onClick={() => updateQty(line.key, line.qty - 1, true)} aria-label="Decrease quantity">
                           <Minus className="h-3.5 w-3.5" />
                         </button>
-                        <span className="w-6 text-center text-sm">{line.isWeightBased ? (line.weight || 0).toFixed(2) : line.qty}</span>
-                        <button type="button" className="flex h-7 w-7 items-center justify-center rounded-md border border-[#E5E7EB]" onClick={() => updateQty(line.key, line.qty + 1)} aria-label="Increase quantity">
+                        <span className="w-5 text-center text-sm text-[#111827]">{line.isWeightBased ? (line.weight || 0).toFixed(2) : line.qty}</span>
+                        <button type="button" className="flex h-8 w-7 items-center justify-center text-[#6B7280]" onClick={() => updateQty(line.key, line.qty + 1)} aria-label="Increase quantity">
                           <Plus className="h-3.5 w-3.5" />
                         </button>
                       </div>
+                      <button
+                        type="button"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#EF4444] hover:bg-[#FEF2F2]"
+                        onClick={() => removeLine(line.key)}
+                        aria-label={`Remove ${line.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   );
                 })}
               </div>
-              <div className="mt-4 space-y-2 border-t border-[#E5E7EB] pt-3 text-sm text-[#374151]">
-                <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-                <div className="flex justify-between"><span>Discount Sales</span><span className="text-[#16A34A]">-{money(discountAmt)}</span></div>
-                <div className="flex justify-between"><span>Total Sales Tax</span><span>{money(gstAmt)}</span></div>
-                <div className="flex justify-between pt-1 text-base font-semibold text-[#111827]"><span>Total Amount</span><span>{money(total)}</span></div>
+              <div className="mt-4 rounded-2xl border border-[#E8ECF1] bg-white px-4 py-3 text-sm text-[#6B7280]">
+                <div className="flex items-center justify-between py-2">
+                  <span>Subtotal</span>
+                  <span className="font-medium text-[#111827]">{money(subtotal)}</span>
+                </div>
+                <div className="py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0">Discount</span>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Select value={discountType} onValueChange={setDiscountType}>
+                        <SelectTrigger className="h-8 w-[92px] shrink-0 px-2 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manual">Manual</SelectItem>
+                          <SelectItem value="percent">Percent %</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={discount || ""}
+                        onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                        className="h-8 w-14 shrink-0 px-1 text-right text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1 text-right text-xs font-medium text-[#16A34A]">– {money(discountAmt)}</p>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span>Total Sales Tax</span>
+                  <span className="font-medium text-[#111827]">{money(gstAmt)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between border-t border-[#E5E7EB] pt-3 text-base font-semibold text-[#111827]">
+                  <span>Total Amount</span>
+                  <span className="text-lg">{money(total)}</span>
+                </div>
               </div>
-              <Button type="button" className="mt-4 h-11 w-full bg-[#2563EB] text-base hover:bg-[#1D4ED8]" onClick={completeSale}>
+              <Button type="button" className="mt-4 h-12 w-full rounded-xl bg-[#2563EB] text-base font-semibold hover:bg-[#1D4ED8]" onClick={completeSale}>
                 Pay Now
               </Button>
             </section>
           </div>
         ) : null}
 
-        {!isRetail && !isSupermarket && (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)]">
+        {!invoicePos && !isSupermarket && (
+        <div className={cn(
+          "grid gap-4",
+          isRestaurant || isElectronics || isPharmacy
+            ? "min-h-0 flex-1 items-stretch xl:grid-cols-[minmax(0,1fr)_360px] xl:grid-rows-[minmax(0,1fr)]"
+            : "xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)]",
+        )}>
           {/* Catalog */}
-          <div className="flex min-h-[560px] flex-col rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+          <div className={cn(
+            "flex flex-col rounded-xl border border-[#E5E7EB] bg-white shadow-sm",
+            isRestaurant || isElectronics || isPharmacy ? "h-full min-h-0 overflow-hidden" : "min-h-[560px]",
+          )}>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] p-4">
               <div className="flex flex-wrap gap-1.5">
                 {tabs.map((t) => (
@@ -2191,7 +2172,7 @@ export default function PointOfSalePage() {
               </div>
             </div>
 
-            <div className="flex-1 p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {isLoading ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {Array.from({ length: 10 }).map((_, i) => (
@@ -2204,8 +2185,127 @@ export default function PointOfSalePage() {
                   <p className="mt-2">No stock items found. Add products in Stock Items.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                  {pageRows.map((p) => (
+                <div className={cn(
+                  "grid gap-4",
+                  isRestaurant
+                    ? "content-start justify-start [grid-template-columns:repeat(auto-fill,220px)]"
+                    : isElectronics
+                      ? "grid-cols-1 content-start gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                      : isPharmacy
+                        ? "grid-cols-1 content-start gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                        : "grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
+                )}>
+                  {pageRows.map((p) => isRestaurant ? (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => requestAddProduct(p)}
+                      className="w-[220px] overflow-hidden rounded-2xl border border-[#E8ECF1] bg-white text-left"
+                    >
+                      <div className="relative h-24 w-full bg-[#F3F4F6]">
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <Package className="h-10 w-10 text-[#CBD5E1]" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <p className="line-clamp-1 text-sm font-semibold text-[#111827]">{p.name}</p>
+                        <p className="mt-0.5 line-clamp-1 text-xs text-[#6B7280]">
+                          {[p.category, p.brand || p.description].filter(Boolean).join(" · ") || p.uom}
+                        </p>
+                        <p className="mt-3 text-base font-semibold text-[#111827]">
+                          {p.isWeightBased && p.packFactor
+                            ? money(amountFromWeight(p.packFactor, p.unitPrice))
+                            : money(p.unitPrice)}
+                        </p>
+                      </div>
+                    </button>
+                  ) : isElectronics ? (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => requestAddProduct(p)}
+                      className="overflow-hidden rounded-2xl border border-[#E8ECF1] bg-white text-left"
+                    >
+                      <div className="flex h-32 items-center justify-center bg-[#EEF2F6] px-3">
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt={p.name} className="h-full w-full object-contain" />
+                        ) : (
+                          <Package className="h-12 w-12 text-[#CBD5E1]" />
+                        )}
+                      </div>
+                      <div className="px-4 pb-4 pt-3">
+                        <p className="line-clamp-2 text-sm font-semibold text-[#111827]">{p.name}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-[#6B7280]">
+                          {[p.description, p.brand].filter(Boolean).join(" · ") || p.category || p.uom}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-[#16A34A]">
+                          {p.stockQty.toLocaleString("en-SG", { maximumFractionDigits: 3 })} in stock
+                          {p.stockGroup ? ` · ${p.stockGroup}` : ""}
+                        </p>
+                        <p className="mt-2 text-lg font-bold text-[#111827]">
+                          {p.isWeightBased && p.packFactor
+                            ? money(amountFromWeight(p.packFactor, p.unitPrice))
+                            : money(p.unitPrice)}
+                        </p>
+                      </div>
+                    </button>
+                  ) : isPharmacy ? (
+                    (() => {
+                      const out = p.stockQty <= 0;
+                      const low = !out && p.stockQty <= 10;
+                      const qtyLabel = p.stockQty.toLocaleString("en-SG", { maximumFractionDigits: 3 });
+                      return (
+                        <div
+                          key={p.key}
+                          role="button"
+                          tabIndex={out ? -1 : 0}
+                          onClick={() => { if (!out) requestAddProduct(p); }}
+                          onKeyDown={(e) => {
+                            if (!out && (e.key === "Enter" || e.key === " ")) {
+                              e.preventDefault();
+                              requestAddProduct(p);
+                            }
+                          }}
+                          className={cn(
+                            "flex flex-col overflow-hidden rounded-2xl border border-[#E4E7EC] bg-white text-left",
+                            out ? "opacity-60" : "cursor-pointer",
+                          )}
+                        >
+                          <div className="flex h-28 items-center justify-center bg-[#F6F4F1] px-3">
+                            {p.imageUrl ? (
+                              <img src={p.imageUrl} alt={p.name} className="h-full w-full object-contain" />
+                            ) : (
+                              <Package className="h-10 w-10 text-[#CBD5E1]" />
+                            )}
+                          </div>
+                          <div className="flex flex-1 flex-col px-3 pb-3 pt-2.5">
+                            <p className="line-clamp-1 text-sm font-semibold text-[#111827]">{p.name}</p>
+                            <p className="mt-0.5 line-clamp-1 text-xs text-[#6B7280]">
+                              {[p.description, p.brand, p.uom].filter(Boolean).join(" · ") || p.category || p.uom}
+                            </p>
+                            <p className={cn(
+                              "mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium",
+                              out ? "text-[#9CA3AF]" : low ? "text-[#D97706]" : "text-[#16A34A]",
+                            )}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full", out ? "bg-[#9CA3AF]" : low ? "bg-[#D97706]" : "bg-[#16A34A]")} />
+                              {out ? "Out of stock" : low ? `${qtyLabel} in stock · Low stock` : `${qtyLabel} in stock`}
+                            </p>
+                            <div className="mt-3">
+                              <p className="text-base font-bold text-[#111827]">
+                                {p.isWeightBased && p.packFactor
+                                  ? money(amountFromWeight(p.packFactor, p.unitPrice))
+                                  : money(p.unitPrice)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
                     <button
                       key={p.key}
                       type="button"
@@ -2272,12 +2372,13 @@ export default function PointOfSalePage() {
                         ) : null}
                       </div>
                     </button>
-                  ))}
+                  )
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-[#E5E7EB] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-auto flex flex-col gap-3 border-t border-[#E5E7EB] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-[#6B7280]">
                 Showing {showingFrom} to {showingTo} of {filtered.length} items
               </p>
@@ -2323,7 +2424,97 @@ export default function PointOfSalePage() {
             </div>
           </div>
 
-          {/* Current Sale */}
+          {isRestaurant || isElectronics || isPharmacy ? (
+            <section className="flex h-full min-h-0 flex-col rounded-2xl border border-[#E6EAF0] bg-white p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-[#111827]">Cart</h2>
+                <span className="rounded-full bg-[#E8F1FF] px-2.5 py-1 text-xs font-medium text-[#2563EB]">
+                  {cart.reduce((count, line) => count + (line.isWeightBased ? 1 : Number(line.qty) || 0), 0)} Items
+                </span>
+              </div>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+                {cart.length === 0 ? (
+                  <p className="flex h-full items-center justify-center text-center text-sm text-[#6B7280]">Tap a product to add it here.</p>
+                ) : cart.map((line) => {
+                  const image = products.find((product) => product.stockItemId === line.id)?.imageUrl;
+                  return (
+                    <div key={line.key} className="flex items-center gap-3 rounded-2xl border border-[#EEF1F5] p-2.5">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#F8FAFC]">
+                        {image ? <img src={image} alt="" className="h-full w-full object-contain" /> : <Package className="h-5 w-5 text-[#CBD5E1]" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-[#111827]">{line.name}</p>
+                        <p className="text-xs text-[#9CA3AF]">
+                          {money(line.unitPrice)}
+                          {line.isWeightBased ? ` / ${line.unit || "kg"}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex h-8 items-center rounded-lg border border-[#E5E7EB] bg-white">
+                        <button type="button" className="flex h-8 w-7 items-center justify-center text-[#6B7280]" onClick={() => updateQty(line.key, line.qty - 1, true)} aria-label="Decrease quantity">
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-5 text-center text-sm text-[#111827]">{line.isWeightBased ? (line.weight || 0).toFixed(2) : line.qty}</span>
+                        <button type="button" className="flex h-8 w-7 items-center justify-center text-[#6B7280]" onClick={() => updateQty(line.key, line.qty + 1)} aria-label="Increase quantity">
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#EF4444] hover:bg-[#FEF2F2]"
+                        onClick={() => removeLine(line.key)}
+                        aria-label={`Remove ${line.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 rounded-2xl border border-[#E8ECF1] bg-white px-4 py-3 text-sm text-[#6B7280]">
+                <div className="flex items-center justify-between py-2">
+                  <span>Subtotal</span>
+                  <span className="font-medium text-[#111827]">{money(subtotal)}</span>
+                </div>
+                <div className="py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0">Discount</span>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Select value={discountType} onValueChange={setDiscountType}>
+                        <SelectTrigger className="h-8 w-[92px] shrink-0 px-2 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manual">Manual</SelectItem>
+                          <SelectItem value="percent">Percent %</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={discount || ""}
+                        onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                        className="h-8 w-14 shrink-0 px-1 text-right text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1 text-right text-xs font-medium text-[#16A34A]">– {money(discountAmt)}</p>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span>Total Sales Tax</span>
+                  <span className="font-medium text-[#111827]">{money(gstAmt)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between border-t border-[#E5E7EB] pt-3 text-base font-semibold text-[#111827]">
+                  <span>Total Amount</span>
+                  <span className="text-lg">{money(total)}</span>
+                </div>
+              </div>
+              <Button type="button" className="mt-4 h-12 w-full rounded-xl bg-[#2563EB] text-base font-semibold hover:bg-[#1D4ED8]" onClick={completeSale}>
+                Pay Now
+              </Button>
+            </section>
+          ) : (
           <div className="flex min-h-0 flex-col self-start rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
             <div className="flex items-center justify-between gap-2 border-b border-[#E5E7EB] px-4 py-3">
               <h2 className="text-base font-semibold text-[#111827]">Current Sale</h2>
@@ -2545,6 +2736,7 @@ export default function PointOfSalePage() {
               )}
             </div>
           </div>
+          )}
         </div>
         )}
       </div>

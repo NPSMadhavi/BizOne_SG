@@ -3,6 +3,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Sparkles } from "lucide-react";
 import { EmailSendDialog, type EmailDocInfo, type EmailPdfAttachment } from "@/components/email-send-dialog";
+import { useAuth } from "@/contexts/auth-context";
+import bizoneLogo from "@assets/bizone_logo_optimized.webp";
+import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
+import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -56,7 +60,24 @@ function AiPreloader() {
   );
 }
 
-function PdfCanvasRenderer({ base64 }: { base64: string }) {
+function printingCaption(title: string) {
+  const base = title
+    .replace(/\s+[A-Z0-9][A-Z0-9./-]*$/i, "")
+    .replace(/\s+preview$/i, "")
+    .trim();
+  if (/^(sales\s+)?invoice$/i.test(base)) return "Tax Invoice Printing";
+  if (!base) return "Printing";
+  return `${base} Printing`;
+}
+
+function PdfCanvasRenderer({ base64, title }: { base64: string; title: string }) {
+  const { selectedCompany } = useAuth();
+  const country = selectedCompany?.country?.toLowerCase();
+  const logo = country === "singapore" || country === "sg"
+    ? bizoneSgLogo
+    : country === "india" || country === "in"
+      ? bizoneIndiaLogo
+      : bizoneLogo;
   const containerRef = useRef<HTMLDivElement>(null);
   const [rendering, setRendering] = useState(true);
 
@@ -116,7 +137,7 @@ function PdfCanvasRenderer({ base64 }: { base64: string }) {
           position: relative;
           z-index: 30;
           width: min(820px, calc(100% - 36px));
-          height: 46px;
+          height: 64px;
           margin: 0 auto;
           border-radius: 23px;
           background: linear-gradient(180deg, #ffffff 0%, #fbfbfc 58%, #e7ebf0 100%);
@@ -166,7 +187,10 @@ function PdfCanvasRenderer({ base64 }: { base64: string }) {
         }
       `}</style>
       <div className="relative z-30 shrink-0 px-4 pb-0 pt-4">
-        <div className="bizone-printer-head" aria-hidden="true" />
+        <div className="bizone-printer-head flex items-center justify-between gap-3 px-5">
+          <img src={logo} alt="BizOne" className="h-11 w-auto max-w-[210px] object-contain object-left" />
+          <span className="truncate text-lg font-semibold tracking-wide text-[#2563EB]">{printingCaption(title)}</span>
+        </div>
       </div>
       <div className="bizone-paper-window">
         <div className="bizone-printer-slot" aria-hidden="true" />
@@ -320,7 +344,7 @@ export function PdfPreviewModal({
           {loading ? (
             <AiPreloader />
           ) : pdfBase64 ? (
-            <PdfCanvasRenderer base64={pdfBase64} />
+            <PdfCanvasRenderer base64={pdfBase64} title={title} />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               PDF preview not available. Use the Download button above.

@@ -27,6 +27,12 @@ const MODULE_LABELS: Record<string, string> = {
   debit_notes: "Debit Note",
   delivery_orders: "Delivery Order",
   point_of_sale: "Point of Sale",
+  pos_retail: "Retail",
+  pos_supermarket: "Supermarket",
+  pos_restaurants: "Restaurants",
+  pos_pharmacy: "Pharmacy",
+  pos_electronics: "Electronics",
+  pos_reports: "Reports",
   bill_of_materials: "Bill of Materials",
   multi_price_level: "Multi Price Level",
   grn: "GRN",
@@ -119,6 +125,12 @@ const PATH_PREFIXES: { prefix: string; module: string }[] = [
   { prefix: "/delivery-orders", module: "delivery_orders" },
   { prefix: "/invoices", module: "invoices" },
   { prefix: "/grn", module: "grn" },
+  { prefix: "/point-of-sale/reports", module: "pos_reports" },
+  { prefix: "/point-of-sale/retail", module: "pos_retail" },
+  { prefix: "/point-of-sale/supermarket", module: "pos_supermarket" },
+  { prefix: "/point-of-sale/restaurants", module: "pos_restaurants" },
+  { prefix: "/point-of-sale/pharmacy", module: "pos_pharmacy" },
+  { prefix: "/point-of-sale/electronics", module: "pos_electronics" },
   { prefix: "/point-of-sale", module: "point_of_sale" },
   { prefix: "/bill-of-materials", module: "bill_of_materials" },
   { prefix: "/multi-price-level", module: "multi_price_level" },
@@ -266,9 +278,19 @@ export async function loadAgentAuthContext(
   };
 }
 
+const POS_CHANNEL_MODULES = new Set([
+  "pos_retail",
+  "pos_supermarket",
+  "pos_restaurants",
+  "pos_pharmacy",
+  "pos_electronics",
+]);
+
 export function hasModuleAccess(auth: AgentAuthContext, module: string): boolean {
   if (auth.isAdmin) return true;
-  return Array.isArray(auth.modules) && auth.modules.includes(module);
+  if (!Array.isArray(auth.modules)) return false;
+  if (auth.modules.includes(module)) return true;
+  return POS_CHANNEL_MODULES.has(module) && auth.modules.includes("point_of_sale");
 }
 
 export function hasPermission(auth: AgentAuthContext, module: string, action: string): boolean {

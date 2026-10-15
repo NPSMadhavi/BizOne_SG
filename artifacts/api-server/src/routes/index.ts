@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import authRouter from "./auth";
+import passwordResetRouter from "./password-reset";
 import usersRouter from "./users";
 import rolesRouter from "./roles";
 import companiesRouter from "./companies";
@@ -45,11 +46,16 @@ import operationsRouter from "./operations";
 import inventoryRouter from "./inventory";
 import reportsRouter from "./reports";
 import globalSearchRouter from "./global-search";
+import salesPersonsRouter from "./sales-persons";
+import posSalesRouter from "./pos-sales";
+import { enforceAssignedModules } from "../lib/module-guard.js";
 
 const router: IRouter = Router();
 
+router.use(enforceAssignedModules);
 router.use(healthRouter);
 router.use(authRouter);
+router.use(passwordResetRouter);
 router.use(globalSearchRouter);
 router.use(usersRouter);
 router.use(rolesRouter);
@@ -70,6 +76,8 @@ router.use(posScaleRouter);
 router.use(stockSerialsRouter);
 router.use(vendorsRouter);
 router.use(customersRouter);
+router.use(salesPersonsRouter);
+router.use(posSalesRouter);
 router.use(emailContactsRouter);
 router.use(maintenanceRouter);
 router.use(vendorInvoicesRouter);

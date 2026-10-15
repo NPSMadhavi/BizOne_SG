@@ -6,6 +6,7 @@ import {
   companiesTable,
   userCompaniesTable,
   rolesTable,
+  salesPersonsTable,
   APP_ALL_MODULES,
 } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
@@ -13,6 +14,15 @@ import { z } from "zod";
 import { UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
 import { logAudit } from "../lib/audit.js";
 import { requirePermission } from "../lib/auth-middleware.js";
+import { getSalesPersonSummary } from "../lib/assigned-modules.js";
+import {
+  deleteLoginUser,
+  insertLoginUser,
+  loginNameTaken,
+  publishCompanyUsersToMaster,
+  saveUserCompanyAccess,
+  updateLoginUser,
+} from "../lib/login-account.js";
 
 const router: IRouter = Router();
 
@@ -29,6 +39,7 @@ const CreateUserPayload = z.object({
   password: z.string().min(1),
   role: UserRoleSchema,
   companyAccess: CompanyAccessSchema,
+  salesPersonId: z.number().int().positive().nullable().optional(),
 });
 
 const UpdateUserPayload = z.object({
@@ -36,6 +47,7 @@ const UpdateUserPayload = z.object({
   password: z.string().min(1).optional(),
   role: UserRoleSchema.optional(),
   companyAccess: CompanyAccessSchema,
+  salesPersonId: z.number().int().positive().nullable().optional(),
 });
 
 type AppRole = "admin" | "user" | "external" | "accountant";
@@ -95,13 +107,24 @@ async function resolveCompanyRole(companyId: number, role: AppRole) {
   return { roleId: dbRole.id as number, usersRole: role };
 }
 
+async function salesPersonForCompany(companyId: number, salesPersonId: number | null | undefined) {
+  if (salesPersonId == null) return null;
+  const [row] = await db
+    .select({ id: salesPersonsTable.id })
+    .from(salesPersonsTable)
+    .where(and(eq(salesPersonsTable.id, salesPersonId), eq(salesPersonsTable.companyId, companyId)))
+    .limit(1);
+  return row?.id ?? undefined;
+}
+
 function modulesForRole(
   role: AppRole,
   companyAccess: { companyId: number; modules: string[] }[] | undefined,
   companyId: number,
 ): string[] {
   if (role === "admin") return [...APP_ALL_MODULES];
-  const entry = companyAccess?.find((c) => c.companyId === companyId);
+  const wanted = Number(companyId);
+  const entry = companyAccess?.find((c) => Number(c.companyId) === wanted);
   const allowed = new Set<string>(APP_ALL_MODULES as unknown as string[]);
   // Exact checkbox selection only — never invent Inventory / Directory / defaults
   return (Array.isArray(entry?.modules) ? entry!.modules : []).filter((m) => allowed.has(m));
@@ -121,6 +144,8 @@ async function getUserWithCompaniesAndRole(userId: number, currentCompanyId: num
     ? await db.select().from(rolesTable).where(eq(rolesTable.id, user.roleId))
     : [];
 
+  const salesPerson = await getSalesPersonSummary(user.salesPersonId);
+
   return {
     id: user.id,
     username: user.username,
@@ -128,6 +153,8 @@ async function getUserWithCompaniesAndRole(userId: number, currentCompanyId: num
     role: toAppRole(userRole?.name || user.role),
     roleId: user.roleId,
     roleName: userRole?.name ?? null,
+    salesPersonId: salesPerson?.id ?? null,
+    salesPerson,
     companyId: user.companyId,
     createdAt: user.createdAt.toISOString(),
     companies: ucRows.map((r) => ({
@@ -144,6 +171,8 @@ router.get("/users", requirePermission("user_management:view"), async (req, res)
     res.status(403).json({ error: "Active company context required" });
     return;
   }
+
+  await publishCompanyUsersToMaster(companyId);
 
   const users = await db
     .select()
@@ -168,15 +197,15 @@ router.post("/users", requirePermission("user_management:create"), async (req, r
     return;
   }
 
-  const { username, password, role: rawRole, companyAccess } = parsed.data;
+  const { password, role: rawRole, companyAccess, salesPersonId } = parsed.data;
+  const username = parsed.data.username.trim().toLowerCase();
   const role = toAppRole(rawRole);
   const roleId =
     typeof req.body?.roleId === "number" && Number.isFinite(req.body.roleId)
       ? Number(req.body.roleId)
       : undefined;
 
-  const [existing] = await db.select().from(usersTable).where(eq(usersTable.username, username));
-  if (existing) {
+  if (await loginNameTaken(username)) {
     res.status(400).json({ error: "Username already exists" });
     return;
   }
@@ -189,39 +218,27 @@ router.post("/users", requirePermission("user_management:create"), async (req, r
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const [user] = await db
-    .insert(usersTable)
-    .values({
-      username,
-      passwordHash,
-      role: resolved.usersRole,
-      companyId,
-      roleId: resolved.roleId,
-    })
-    .returning();
+  const linkedSalesPersonId = await salesPersonForCompany(companyId, salesPersonId);
+  if (salesPersonId != null && linkedSalesPersonId == null) {
+    res.status(400).json({ error: "Selected Sales Person was not found." });
+    return;
+  }
+  const user = await insertLoginUser({
+    username,
+    passwordHash,
+    role: resolved.usersRole,
+    companyId,
+    roleId: resolved.roleId,
+    salesPersonId: linkedSalesPersonId ?? null,
+  });
 
   const modules = modulesForRole(role, companyAccess, companyId);
-  await db
-    .insert(userCompaniesTable)
-    .values({
-      userId: user.id,
-      companyId,
-      modules,
-    })
-    .onConflictDoNothing();
+  await saveUserCompanyAccess(user.id, companyId, modules);
 
-  // Optional: assign extra companies from payload (other than active)
   if (companyAccess?.length) {
     for (const ca of companyAccess) {
-      if (ca.companyId === companyId) continue;
-      await db
-        .insert(userCompaniesTable)
-        .values({
-          userId: user.id,
-          companyId: ca.companyId,
-          modules: Array.isArray(ca.modules) ? ca.modules : [],
-        })
-        .onConflictDoNothing();
+      if (Number(ca.companyId) === Number(companyId)) continue;
+      await saveUserCompanyAccess(user.id, ca.companyId, Array.isArray(ca.modules) ? ca.modules : []);
     }
   }
 
@@ -264,7 +281,10 @@ router.put("/users/:id", requirePermission("user_management:edit"), async (req, 
     return;
   }
 
-  const { username, password, role: rawRole, companyAccess } = parsed.data;
+  await publishCompanyUsersToMaster(companyId);
+
+  const { password, role: rawRole, companyAccess, salesPersonId } = parsed.data;
+  const username = parsed.data.username?.trim().toLowerCase();
   const role = rawRole != null ? toAppRole(rawRole) : toAppRole(targetUser.role);
   const roleId =
     typeof req.body?.roleId === "number" && Number.isFinite(req.body.roleId)
@@ -274,7 +294,10 @@ router.put("/users/:id", requirePermission("user_management:edit"), async (req, 
         : undefined;
 
   const updates: Record<string, unknown> = {};
-  if (username) updates.username = username;
+  if (username) {
+    updates.username = username;
+    if (username.includes("@")) updates.email = username;
+  }
   if (password) updates.passwordHash = await bcrypt.hash(password, 12);
 
   if (rawRole != null || roleId !== undefined) {
@@ -288,41 +311,26 @@ router.put("/users/:id", requirePermission("user_management:edit"), async (req, 
     updates.roleId = resolved.roleId;
   }
 
-  if (Object.keys(updates).length > 0) {
-    await db.update(usersTable).set(updates).where(eq(usersTable.id, targetUser.id));
+  if (salesPersonId !== undefined) {
+    const linkedSalesPersonId = await salesPersonForCompany(companyId, salesPersonId);
+    if (salesPersonId != null && linkedSalesPersonId == null) {
+      res.status(400).json({ error: "Selected Sales Person was not found." });
+      return;
+    }
+    updates.salesPersonId = linkedSalesPersonId;
   }
 
-  // Update active-company mapping; preserve other companies unless payload replaces them
-  const modules = modulesForRole(role, companyAccess, companyId);
-  await db
-    .delete(userCompaniesTable)
-    .where(and(eq(userCompaniesTable.userId, targetUser.id), eq(userCompaniesTable.companyId, companyId)));
+  if (Object.keys(updates).length > 0) {
+    await updateLoginUser(targetUser.id, companyId, updates);
+  }
 
-  await db
-    .insert(userCompaniesTable)
-    .values({
-      userId: targetUser.id,
-      companyId,
-      modules,
-    })
-    .onConflictDoNothing();
+  const modules = modulesForRole(role, companyAccess, companyId);
+  await saveUserCompanyAccess(targetUser.id, companyId, modules);
 
   if (companyAccess?.length) {
     for (const ca of companyAccess) {
-      if (ca.companyId === companyId) continue;
-      await db
-        .delete(userCompaniesTable)
-        .where(
-          and(
-            eq(userCompaniesTable.userId, targetUser.id),
-            eq(userCompaniesTable.companyId, ca.companyId),
-          ),
-        );
-      await db.insert(userCompaniesTable).values({
-        userId: targetUser.id,
-        companyId: ca.companyId,
-        modules: Array.isArray(ca.modules) ? ca.modules : [],
-      });
+      if (Number(ca.companyId) === Number(companyId)) continue;
+      await saveUserCompanyAccess(targetUser.id, ca.companyId, Array.isArray(ca.modules) ? ca.modules : []);
     }
   }
 
@@ -375,7 +383,7 @@ router.delete("/users/:id", requirePermission("user_management:delete"), async (
     return;
   }
 
-  await db.delete(usersTable).where(eq(usersTable.id, targetUser.id));
+  await deleteLoginUser(targetUser.id, targetUser.username);
 
   logAudit({
     req,

@@ -9,7 +9,10 @@ export const ALL_MODULES = [
   "purchase_quotations", "purchase_orders", "vendor_invoices", "grn", "debit_notes",
   "quotations", "sales_orders", "invoices",
   "proforma_invoices", "delivery_orders", "credit_notes",
-  "point_of_sale", "bill_of_materials", "multi_price_level",
+  "point_of_sale",
+  "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics",
+  "pos_reports",
+  "bill_of_materials", "multi_price_level",
   "stock_items", "warehouses", "stock_transfer", "inventory_reports", "sales_person_wise_report", "batch_expiry",
   "vendors", "customers", "address_book",
   "projects",
@@ -31,6 +34,7 @@ export type AppModule = typeof ALL_MODULES[number];
 
 export const BUSINESS_TYPES = [
   { id: "trading", label: "Trading Business" },
+  { id: "trading_services", label: "Trading & Services" },
   { id: "non_trading", label: "Non-Trading Business" },
   { id: "shopping_malls", label: "Shopping Malls" },
   { id: "manufacturing", label: "Manufacturing" },
@@ -92,6 +96,7 @@ export const BUSINESS_TYPE_MODULES: Record<BusinessTypeId, readonly AppModule[]>
     ...OPS_ALL,
     ...TRANSACTIONS,
     "point_of_sale",
+    "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics", "pos_reports",
     ...INVENTORY,
     ...DIRECTORY,
     ...ACCOUNTING,
@@ -107,6 +112,7 @@ export const BUSINESS_TYPE_MODULES: Record<BusinessTypeId, readonly AppModule[]>
     ...ACCOUNTING,
     ...SYSTEM,
   ],
+  trading_services: [...ALL_MODULES],
 };
 
 export function modulesForBusinessType(value: string | null | undefined): readonly AppModule[] | null {
@@ -115,6 +121,27 @@ export function modulesForBusinessType(value: string | null | undefined): readon
     return BUSINESS_TYPE_MODULES[value as BusinessTypeId];
   }
   return null;
+}
+
+export const POS_CHANNEL_MODULES = [
+  "pos_retail",
+  "pos_supermarket",
+  "pos_restaurants",
+  "pos_pharmacy",
+  "pos_electronics",
+] as const satisfies readonly AppModule[];
+
+/**
+ * A channel is visible only when that channel was ticked.
+ * Older rows that stored only point_of_sale, with no channel keys, still open every channel.
+ */
+export function hasPosChannelAccess(
+  hasModuleAccess: (module: AppModule) => boolean,
+  channel: (typeof POS_CHANNEL_MODULES)[number],
+): boolean {
+  const explicit = POS_CHANNEL_MODULES.some((key) => hasModuleAccess(key));
+  if (explicit) return hasModuleAccess(channel);
+  return hasModuleAccess("point_of_sale");
 }
 
 export const MODULE_LABELS: Record<AppModule, string> = {
@@ -134,6 +161,12 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   debit_notes: "Debit Notes",
   delivery_orders: "Delivery Orders",
   point_of_sale: "Point of Sale",
+  pos_retail: "Retail",
+  pos_supermarket: "Supermarket",
+  pos_restaurants: "Restaurants",
+  pos_pharmacy: "Pharmacy",
+  pos_electronics: "Electronics",
+  pos_reports: "Reports",
   bill_of_materials: "Bill of Materials",
   multi_price_level: "Multi Price Level",
   grn: "Goods Receipt Note",
@@ -191,9 +224,19 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     modules: ["dashboard"],
   },
   {
-    id: "operations",
-    label: "Administration",
-    modules: ["assets", "licenses", "employees", "payroll"],
+    id: "payroll",
+    label: "Payroll",
+    modules: ["employees", "payroll"],
+  },
+  {
+    id: "assets",
+    label: "Fixed Assets",
+    modules: ["assets"],
+  },
+  {
+    id: "licenses",
+    label: "Licenses",
+    modules: ["licenses"],
   },
   {
     id: "documents",
@@ -208,7 +251,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     id: "point_of_sale",
     label: "Point of Sale",
-    modules: ["point_of_sale"],
+    modules: ["pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics", "pos_reports"],
   },
   {
     id: "bill_of_materials",
@@ -274,6 +317,12 @@ const PATH_MODULE_PREFIXES: { prefix: string; module: AppModule }[] = [
   { prefix: "/debit-notes", module: "debit_notes" },
   { prefix: "/invoices", module: "invoices" },
   { prefix: "/grn", module: "grn" },
+  { prefix: "/point-of-sale/reports", module: "pos_reports" },
+  { prefix: "/point-of-sale/retail", module: "pos_retail" },
+  { prefix: "/point-of-sale/supermarket", module: "pos_supermarket" },
+  { prefix: "/point-of-sale/restaurants", module: "pos_restaurants" },
+  { prefix: "/point-of-sale/pharmacy", module: "pos_pharmacy" },
+  { prefix: "/point-of-sale/electronics", module: "pos_electronics" },
   { prefix: "/point-of-sale", module: "point_of_sale" },
   { prefix: "/bill-of-materials", module: "bill_of_materials" },
   { prefix: "/multi-price-level", module: "multi_price_level" },

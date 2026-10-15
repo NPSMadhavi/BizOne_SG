@@ -455,7 +455,56 @@ function isBenignSchemaError(err: unknown): boolean {
   );
 }
 
+/** Sales person directory, user link, and POS sales. Idempotent. */
+export const SALES_POS_SCHEMA_SQL: string[] = [
+  `CREATE TABLE IF NOT EXISTS sales_persons (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    employment_code text NOT NULL,
+    password_hash text NOT NULL DEFAULT '',
+    department text NOT NULL DEFAULT '',
+    phone text NOT NULL DEFAULT '',
+    country text NOT NULL DEFAULT 'Singapore',
+    address text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS sales_persons_company_code_idx ON sales_persons (company_id, employment_code)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS sales_person_id integer REFERENCES sales_persons(id) ON DELETE SET NULL`,
+  `CREATE TABLE IF NOT EXISTS pos_sales (
+    id text PRIMARY KEY,
+    company_id integer NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    channel text NOT NULL DEFAULT 'retail',
+    pos_number text NOT NULL,
+    sales_person_id integer REFERENCES sales_persons(id) ON DELETE SET NULL,
+    sales_person_name text,
+    created_by integer REFERENCES users(id) ON DELETE SET NULL,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS pos_sales_company_number_idx ON pos_sales (company_id, pos_number)`,
+  `CREATE INDEX IF NOT EXISTS pos_sales_company_channel_idx ON pos_sales (company_id, channel)`,
+];
+
+export async function applySalesPosSchema(
+  query: (statement: string) => Promise<unknown>,
+): Promise<void> {
+  for (const statement of SALES_POS_SCHEMA_SQL) {
+    try {
+      await query(statement);
+    } catch (err) {
+      if (isBenignSchemaError(err)) continue;
+      logger.error({ err, statement: statement.slice(0, 120) }, "[schema-migrate] sales/POS schema failed");
+      throw err;
+    }
+  }
+}
+
 export async function migrateDrizzleColumns(): Promise<void> {
+  await applySalesPosSchema((statement) => pool.query(statement));
+
   for (const statement of DRIZZLE_TABLE_CREATES) {
     try {
       await pool.query(statement);

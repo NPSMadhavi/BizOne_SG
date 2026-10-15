@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { db, rolePermissionsTable, permissionsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { loadAssignedModules } from "./assigned-modules.js";
 
 async function fetchUserPermissions(roleId: number): Promise<string[]> {
   const rows = await db
@@ -60,7 +61,24 @@ export function requirePermission(permission: string) {
     }
 
     const userPermissions = req.session.permissions || [];
-    if (!userPermissions.includes(permission)) {
+    const [moduleName, action] = permission.split(":");
+    const isAdmin = Boolean(req.session.isAdmin || req.session.userRole === "admin");
+    if (!isAdmin && moduleName) {
+      const assigned = await loadAssignedModules(req.session.userId, companyId);
+      if (!assigned.includes(moduleName)) {
+        res.status(403).json({ error: `Permission denied: ${permission}` });
+        return;
+      }
+      if (!userPermissions.includes(permission)) {
+        const roleDefinesModule = userPermissions.some((entry) => entry.startsWith(`${moduleName}:`));
+        if (!roleDefinesModule && (action === "view" || action === "create" || action === "edit")) {
+          next();
+          return;
+        }
+        res.status(403).json({ error: `Permission denied: ${permission}` });
+        return;
+      }
+    } else if (!userPermissions.includes(permission)) {
       res.status(403).json({ error: `Permission denied: ${permission}` });
       return;
     }

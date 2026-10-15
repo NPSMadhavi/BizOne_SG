@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { ACCOUNT_PASSWORD_MESSAGE, isValidAccountPassword } from "@/lib/account-password";
 import { markBrowserSessionLive } from "@/lib/browser-session";
 import {
   AuthMobileShell,
@@ -14,6 +15,7 @@ import {
   authMobileLabelClass,
   authMobilePasswordInputClass,
 } from "@/components/auth/AuthMobileShell";
+import { ForgotPasswordForm } from "@/components/auth/ForgotPasswordForm";
 import logo from "@assets/bizone_logo_optimized.webp";
 import Advanced from "@assets/Advanced.png";
 import SecureBusiness from "@assets/SecureBusiness.png";
@@ -106,6 +108,14 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
+  const [panel, setPanel] = useState<"login" | "forgot">("login");
+  const [forgotHeading, setForgotHeading] = useState({
+    title: "Forgot Password",
+    subtitle: "Choose email or contact number to get a verification code",
+  });
+  const setForgotHeadingStable = useCallback((heading: { title: string; subtitle: string }) => {
+    setForgotHeading(heading);
+  }, []);
   const [door, setDoor] = useState<DoorPhase>("closed");
   const [doorSnap, setDoorSnap] = useState(false);
   const [entering, setEntering] = useState(false);
@@ -123,7 +133,7 @@ export default function Login() {
 
   useEffect(() => {
     if (!isLoading && user && !holdRedirect.current) {
-      setLocation("/dashboard");
+      setLocation("/");
     }
   }, [isLoading, user, setLocation]);
 
@@ -166,7 +176,7 @@ export default function Login() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (name === "password") {
-      setForm((prev) => ({ ...prev, password: value.replace(/\D/g, "").slice(0, 8) }));
+      setForm((prev) => ({ ...prev, password: value.slice(0, 8) }));
       return;
     }
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -180,8 +190,8 @@ export default function Login() {
       return;
     }
 
-    if (!/^\d{8}$/.test(form.password)) {
-      toast({ title: "Password must be 8 digits", variant: "destructive" });
+    if (!isValidAccountPassword(form.password)) {
+      toast({ title: ACCOUNT_PASSWORD_MESSAGE, variant: "destructive" });
       return;
     }
 
@@ -234,7 +244,7 @@ export default function Login() {
           toast({ title: "Login Successful" });
           await doorDone.current;
           holdRedirect.current = false;
-          setLocation("/dashboard");
+          setLocation("/");
         },
         onError: (error: Error & { message?: string }) => {
           clearDoorTimers();
@@ -259,6 +269,7 @@ export default function Login() {
 
   const slide = slides[active];
   const loading = loginMutation.isPending;
+  const pageSubtitle = panel === "login" ? SIGN_IN_SUBTITLE : forgotHeading.subtitle;
 
   const loginForm = (
     <form className="flex flex-col gap-5" onSubmit={handleSubmit} data-allow-autofill="true" autoComplete="on">
@@ -286,7 +297,6 @@ export default function Login() {
           <input
             type={showPassword ? "text" : "password"}
             name="password"
-            inputMode="numeric"
             maxLength={8}
             placeholder="Type your password"
             value={form.password}
@@ -323,6 +333,7 @@ export default function Login() {
         <button
           type="button"
           className="cursor-pointer border-0 bg-transparent p-0 text-[0.88rem] font-semibold text-blue-600 hover:underline"
+          onClick={() => setPanel("forgot")}
         >
           Forgot Password
         </button>
@@ -353,6 +364,22 @@ export default function Login() {
       </p>
     </form>
   );
+
+  const formBody =
+    panel === "login" ? (
+      loginForm
+    ) : (
+      <ForgotPasswordForm
+        onHeading={setForgotHeadingStable}
+        onBack={() => setPanel("login")}
+        onReset={(email) => {
+          if (email) setForm((prev) => ({ ...prev, email, password: "" }));
+          else setForm((prev) => ({ ...prev, password: "" }));
+          setPanel("login");
+          toast({ title: "Password reset. Sign in with your new 8-digit password." });
+        }}
+      />
+    );
 
   return (
     <>
@@ -458,13 +485,13 @@ export default function Login() {
         }
       `}</style>
       <AuthMobileShell
-        title="Sign in"
-        subtitle={SIGN_IN_SUBTITLE}
+        title={panel === "login" ? "Sign in" : forgotHeading.title}
+        subtitle={pageSubtitle}
         footer={
           <AuthSlideDots count={slides.length} active={active} onSelect={setActive} />
         }
       >
-        {loginForm}
+        {formBody}
       </AuthMobileShell>
 
       <div
@@ -507,7 +534,7 @@ export default function Login() {
           </aside>
 
           <section className="flex items-center justify-center p-4">
-            <div className="flex h-[620px] w-full max-w-[520px] flex-col rounded-[22px] bg-white px-10 py-9 shadow-[0_24px_60px_rgba(2,12,40,0.28)]">
+            <div className={`flex w-full max-w-[520px] flex-col overflow-y-auto rounded-[22px] bg-white px-10 py-9 shadow-[0_24px_60px_rgba(2,12,40,0.28)] ${panel === "login" ? "h-[620px]" : ""}`}>
               <div className="mb-6">
                 <Link href="/">
                   <img
@@ -519,13 +546,13 @@ export default function Login() {
               </div>
 
               <h1 className="text-Poppins m-0 mb-2 text-[1.85rem] tracking-tight text-[#101828]">
-                Sign In
+                {panel === "login" ? "Sign In" : forgotHeading.title}
               </h1>
               <p className="m-0 mb-6 text-[0.9rem] leading-relaxed text-gray-500">
-                {SIGN_IN_SUBTITLE}
+                {pageSubtitle}
               </p>
 
-              {loginForm}
+              {formBody}
             </div>
           </section>
         </div>

@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { lazy, Suspense, useEffect } from "react";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import { DateRangeProvider } from "@/contexts/date-range-context";
-import type { AppModule } from "@/contexts/auth-modules";
+import { hasPosChannelAccess, POS_CHANNEL_MODULES, type AppModule } from "@/contexts/auth-modules";
 import { Shell } from "@/components/layout/shell";
 import { MaintenanceGuard } from "@/components/maintenance-guard";
 
@@ -74,6 +74,7 @@ const DeliveryOrderView = lazy(() => import("@/pages/delivery-orders/view"));
 const DeliveryOrderEdit = lazy(() => import("@/pages/delivery-orders/edit"));
 
 const PointOfSalePage = lazy(() => import("@/pages/point-of-sale/index"));
+const PosSalesReportPage = lazy(() => import("@/pages/point-of-sale/sales-report"));
 const BillOfMaterialsPage = lazy(() => import("@/pages/bill-of-materials/index"));
 const MultiPriceLevelPage = lazy(() => import("@/pages/multi-price-level/index"));
 const NewMultiPriceLevelPage = lazy(() => import("@/pages/multi-price-level/new"));
@@ -169,6 +170,10 @@ const ROUTE_TITLES: Record<string, string> = {
   "/credit-notes": "Credit Notes",
   "/debit-notes": "Debit Notes",
   "/delivery-orders": "Delivery Orders",
+  "/point-of-sale/reports/closing": "Daily Closing Z Report",
+  "/point-of-sale/reports/collections": "Payment Collection Details",
+  "/point-of-sale/reports/salesperson": "Salesperson Daily Report",
+  "/point-of-sale/reports": "Reports Overview",
   "/point-of-sale": "Point of Sale",
   "/bill-of-materials": "Bill of Materials",
   "/multi-price-level": "Multi Price Level",
@@ -281,16 +286,35 @@ interface ProtectedRouteProps {
 }
 
 function getFirstAccessiblePath(hasModuleAccess: (m: any) => boolean): string {
-  if (hasModuleAccess("dashboard")) return "/dashboard";
-  if (hasModuleAccess("purchase_quotations")) return "/purchase-quotations";
-  if (hasModuleAccess("purchase_orders")) return "/purchase-orders";
-  if (hasModuleAccess("invoices")) return "/invoices";
-  if (hasModuleAccess("quotations")) return "/quotations";
-  if (hasModuleAccess("delivery_orders")) return "/delivery-orders";
-  return "/login";
+  const homes: [string, string][] = [
+    ["dashboard", "/dashboard"],
+    ["pos_retail", "/point-of-sale/retail"],
+    ["pos_supermarket", "/point-of-sale/supermarket"],
+    ["pos_restaurants", "/point-of-sale/restaurants"],
+    ["pos_pharmacy", "/point-of-sale/pharmacy"],
+    ["pos_electronics", "/point-of-sale/electronics"],
+    ["pos_reports", "/point-of-sale/reports"],
+    ["invoices", "/invoices"],
+    ["quotations", "/quotations"],
+    ["sales_orders", "/sales-orders"],
+    ["customers", "/customers"],
+    ["purchase_orders", "/purchase-orders"],
+    ["purchase_quotations", "/purchase-quotations"],
+    ["stock_items", "/stock"],
+    ["vendors", "/vendors"],
+  ];
+  for (const [moduleName, path] of homes) {
+    if ((POS_CHANNEL_MODULES as readonly string[]).includes(moduleName)) {
+      if (hasPosChannelAccess(hasModuleAccess, moduleName as (typeof POS_CHANNEL_MODULES)[number])) return path;
+      continue;
+    }
+    if (hasModuleAccess(moduleName)) return path;
+  }
+  return "/dashboard";
 }
 
 function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf }: ProtectedRouteProps) {
+  const [location] = useLocation();
   const { user, isLoading, isAdmin, selectedCompany, hasModuleAccess } = useAuth();
 
   if (isLoading) return <LoadingSpinner />;
@@ -307,11 +331,35 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
     || (() => { try { return sessionStorage.getItem("veda_module_unlock") === "1"; } catch { return false; } })()
   );
 
-  if (module && !hasModuleAccess(module) && !vedaUnlock) return <AccessDenied />;
+  const openAllowedModule = () => {
+    const next = getFirstAccessiblePath(hasModuleAccess);
+    const here = location.split("?")[0];
+    if (next !== here) return <Redirect to={next} />;
+    return <AccessDenied />;
+  };
 
-  if (anyOf && !anyOf.some((m) => hasModuleAccess(m)) && !vedaUnlock) return <AccessDenied />;
+  if (module && !hasModuleAccess(module) && !vedaUnlock) return openAllowedModule();
+
+  if (anyOf && !anyOf.some((m) => hasModuleAccess(m)) && !vedaUnlock) return openAllowedModule();
 
   return <Component />;
+}
+
+function PointOfSaleRoute() {
+  const [location] = useLocation();
+  const { hasModuleAccess } = useAuth();
+  const kind = location.split("?")[0].split("/").filter(Boolean)[1];
+  const channelModule: (typeof POS_CHANNEL_MODULES)[number] | null =
+    kind === "retail" ? "pos_retail"
+    : kind === "supermarket" ? "pos_supermarket"
+    : kind === "restaurants" ? "pos_restaurants"
+    : kind === "pharmacy" ? "pos_pharmacy"
+    : kind === "electronics" ? "pos_electronics"
+    : null;
+  const anyOf: AppModule[] = channelModule
+    ? (hasPosChannelAccess(hasModuleAccess, channelModule) ? [channelModule, "point_of_sale"] : [channelModule])
+    : POS_CHANNEL_MODULES.filter((channel) => hasPosChannelAccess(hasModuleAccess, channel));
+  return <ProtectedRoute component={PointOfSalePage} anyOf={anyOf.length ? anyOf : ["pos_retail"]} />;
 }
 
 function SmartHomeRedirect() {
@@ -418,8 +466,12 @@ function Router() {
           <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
           {/* Point of Sale */}
-          <Route path="/point-of-sale/:kind">{() => <ProtectedRoute component={PointOfSalePage} module="point_of_sale" />}</Route>
-          <Route path="/point-of-sale">{() => <ProtectedRoute component={PointOfSalePage} module="point_of_sale" />}</Route>
+          <Route path="/point-of-sale/reports/closing">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
+          <Route path="/point-of-sale/reports/collections">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
+          <Route path="/point-of-sale/reports/salesperson">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
+          <Route path="/point-of-sale/reports">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
+          <Route path="/point-of-sale/:kind">{() => <PointOfSaleRoute />}</Route>
+          <Route path="/point-of-sale">{() => <PointOfSaleRoute />}</Route>
           <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} module="bill_of_materials" />}</Route>
           <Route path="/multi-price-level">{() => <ProtectedRoute component={MultiPriceLevelPage} module="multi_price_level" />}</Route>
           <Route path="/multi-price-level/new">{() => <ProtectedRoute component={NewMultiPriceLevelPage} module="multi_price_level" />}</Route>

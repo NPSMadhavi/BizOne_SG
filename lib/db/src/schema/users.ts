@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
 import { rolesTable } from "./roles-permissions";
+import { salesPersonsTable } from "./sales-persons";
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -15,6 +16,7 @@ export const usersTable = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }),
   roleId: integer("role_id").references(() => rolesTable.id, { onDelete: "set null" }),
+  salesPersonId: integer("sales_person_id").references(() => salesPersonsTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

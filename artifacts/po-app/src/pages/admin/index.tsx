@@ -1,5 +1,28 @@
 import { useAuth } from "@/contexts/auth-context";
-import { MODULE_LABELS, MODULE_GROUPS, ALL_MODULES, modulesForBusinessType, type AppModule, type ModuleGroup } from "@/contexts/auth-modules";
+import { MODULE_LABELS, MODULE_GROUPS, ALL_MODULES, POS_CHANNEL_MODULES, modulesForBusinessType, type AppModule, type ModuleGroup } from "@/contexts/auth-modules";
+
+/**
+ * Older users stored one Point of Sale grant and no channel keys.
+ * That still means every channel. A list that already names channels stays as ticked.
+ */
+function expandLegacyPosModules(modules: string[]): string[] {
+  const named = POS_CHANNEL_MODULES.filter((channel) => modules.includes(channel));
+  if (named.length > 0) return [...modules];
+  if (!modules.includes("point_of_sale")) return [...modules];
+  return [...new Set([...modules, ...POS_CHANNEL_MODULES])];
+}
+
+/**
+ * Keep the ticks the user just changed.
+ * point_of_sale is only a parent flag: it must not turn a cleared channel back on.
+ */
+function syncPosParent(modules: string[]): string[] {
+  const selected = new Set(modules);
+  const allChannels = POS_CHANNEL_MODULES.every((channel) => selected.has(channel));
+  if (allChannels) selected.add("point_of_sale");
+  else selected.delete("point_of_sale");
+  return [...selected];
+}
 import {
   useListUsers, getListUsersQueryKey, useCreateUser, useDeleteUser, useUpdateUser, useListCompanies,
   type User, type Company,
@@ -9,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +42,8 @@ import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, UserPlus, ShieldAlert, Edit, Building2, ArrowLeft, Plus } from "lucide-react";
+import { useSalesPersons } from "@/hooks/use-sales-persons";
+import { Trash2, UserPlus, ShieldAlert, Edit, Building2, ArrowLeft, Plus, ChevronDown } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +77,8 @@ type FormState = {
   role: "admin" | "user" | "external" | "accountant";
   roleId: number | null;
   companyAccess: CompanyAccessEntry[];
+  salesPersonId: number | null;
+  salesPersonName: string;
   showCreateRole: boolean;
   newRoleName: string;
 };
@@ -63,6 +89,8 @@ const EMPTY_FORM: FormState = {
   role: "user",
   roleId: null,
   companyAccess: [],
+  salesPersonId: null,
+  salesPersonName: "",
   showCreateRole: false,
   newRoleName: "",
 };
@@ -97,6 +125,13 @@ function toFormRole(value: string | null | undefined): FormState["role"] {
   return "user";
 }
 
+function salesPersonOptionLabel(person: { name?: string; employmentCode?: string }) {
+  const name = String(person.name || "").trim();
+  const code = String(person.employmentCode || "").trim();
+  if (name && code) return `${name} (${code})`;
+  return name || code || "Sales person";
+}
+
 function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -122,19 +157,17 @@ function SidebarStyleModules({
     .filter((group) => group.modules.length > 0);
 
   const toggleModule = (mod: string) => {
-    onChange(
-      modules.includes(mod)
-        ? modules.filter((m) => m !== mod)
-        : [...modules, mod],
-    );
+    const next = modules.includes(mod)
+      ? modules.filter((m) => m !== mod)
+      : [...modules, mod];
+    onChange(next);
   };
 
   const toggleGroup = (groupMods: string[], checked: boolean) => {
-    onChange(
-      checked
-        ? [...new Set([...modules, ...groupMods])]
-        : modules.filter((m) => !groupMods.includes(m)),
-    );
+    const next = checked
+      ? [...new Set([...modules, ...groupMods])]
+      : modules.filter((m) => !groupMods.includes(m) && m !== "point_of_sale");
+    onChange(next);
   };
 
   return (
@@ -147,15 +180,18 @@ function SidebarStyleModules({
         return (
           <div key={group.id} className="space-y-2">
             <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-[#2563EB] accent-[#2563EB]"
-                checked={allIn}
-                ref={(el) => {
-                  if (el) el.indeterminate = someIn && !allIn;
-                }}
-                onChange={(e) => toggleGroup(groupMods, e.target.checked)}
-              />
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-[#2563EB] accent-[#2563EB]"
+                  checked={allIn}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someIn && !allIn;
+                  }}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    toggleGroup(groupMods, e.target.checked);
+                  }}
+                />
               <span className="text-[11px] font-bold uppercase tracking-widest text-[#6B7280]">
                 {group.label}
               </span>
@@ -168,7 +204,10 @@ function SidebarStyleModules({
                     type="checkbox"
                     className="h-3.5 w-3.5 rounded border-slate-300 text-[#2563EB] accent-[#2563EB]"
                     checked={modules.includes(mod)}
-                    onChange={() => toggleModule(mod)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggleModule(mod);
+                    }}
                   />
                   <span className="text-sm text-[#111827]">
                     {MODULE_LABELS[mod as AppModule] ?? mod}
@@ -204,7 +243,7 @@ function CompanyModuleSelector({
         <p className="text-sm text-[#6B7280]">No companies available.</p>
       ) : (
         companies.map((company) => {
-          const entry = companyAccess.find((c) => c.companyId === company.id);
+          const entry = companyAccess.find((c) => Number(c.companyId) === Number(company.id));
           const checked = !!entry;
           return (
             <div key={company.id} className="space-y-2">
@@ -240,6 +279,8 @@ export default function Admin() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
+  const [salesPersonOpen, setSalesPersonOpen] = useState(false);
+  const salesPersonBoxRef = useRef<HTMLDivElement>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [creatingRole, setCreatingRole] = useState(false);
   const moduleMemory = useRef<Record<number, string[]>>({});
@@ -286,7 +327,17 @@ export default function Admin() {
     [companyRoles],
   );
 
+  const { salesPersons } = useSalesPersons();
   const createMutation = useCreateUser();
+
+  useEffect(() => {
+    if (!salesPersonOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!salesPersonBoxRef.current?.contains(event.target as Node)) setSalesPersonOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [salesPersonOpen]);
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
 
@@ -301,31 +352,33 @@ export default function Admin() {
   }
 
   function setCompanyModules(companyId: number, modules: string[]) {
-    moduleMemory.current[companyId] = modules;
+    const id = Number(companyId);
+    moduleMemory.current[id] = syncPosParent(modules);
     setForm((f) => {
-      const others = f.companyAccess.filter((c) => c.companyId !== companyId);
-      return { ...f, companyAccess: [...others, { companyId, modules }] };
+      const others = f.companyAccess.filter((c) => Number(c.companyId) !== id);
+      return { ...f, companyAccess: [...others, { companyId: id, modules: moduleMemory.current[id] }] };
     });
   }
 
   function toggleCompany(companyId: number, checked: boolean) {
+    const id = Number(companyId);
     setForm((f) => {
       if (checked) {
-        if (f.companyAccess.some((c) => c.companyId === companyId)) return f;
-        const modules = moduleMemory.current[companyId] ?? [];
-        return { ...f, companyAccess: [...f.companyAccess, { companyId, modules }] };
+        if (f.companyAccess.some((c) => Number(c.companyId) === id)) return f;
+        const modules = moduleMemory.current[id] ?? [];
+        return { ...f, companyAccess: [...f.companyAccess, { companyId: id, modules }] };
       }
-      const existing = f.companyAccess.find((c) => c.companyId === companyId);
-      if (existing) moduleMemory.current[companyId] = existing.modules;
-      return { ...f, companyAccess: f.companyAccess.filter((c) => c.companyId !== companyId) };
+      const existing = f.companyAccess.find((c) => Number(c.companyId) === id);
+      if (existing) moduleMemory.current[id] = existing.modules;
+      return { ...f, companyAccess: f.companyAccess.filter((c) => Number(c.companyId) !== id) };
     });
   }
 
   function savedCompanyAccess(user: User): CompanyAccessEntry[] {
     return (user.companies ?? []).map((c) => ({
-      companyId: c.id,
+      companyId: Number(c.id),
       modules: Array.isArray((c as { modules?: string[] }).modules)
-        ? (c as { modules: string[] }).modules.filter((m) => (ALL_MODULES as readonly string[]).includes(m))
+        ? expandLegacyPosModules((c as { modules: string[] }).modules.filter((m) => (ALL_MODULES as readonly string[]).includes(m)))
         : [],
     }));
   }
@@ -342,8 +395,11 @@ export default function Admin() {
       showCreateRole: false,
       newRoleName: "",
       companyAccess: [],
+      salesPersonId: null,
+      salesPersonName: "",
     });
     setFormError("");
+    setSalesPersonOpen(false);
     setMode("create");
     // Clear any browser autofill that may land after mount
     requestAnimationFrame(() => {
@@ -370,8 +426,20 @@ export default function Admin() {
       showCreateRole: false,
       newRoleName: "",
       companyAccess: saved,
+      salesPersonId: (() => {
+        const raw = (user as { salesPersonId?: number | string | null }).salesPersonId
+          ?? (user as { salesPerson?: { id?: number | string | null } | null }).salesPerson?.id;
+        const id = Number(raw);
+        return Number.isFinite(id) && id > 0 ? id : null;
+      })(),
+      salesPersonName: (() => {
+        const person = (user as { salesPerson?: { name?: string; employmentCode?: string } | null }).salesPerson;
+        if (!person?.name && !person?.employmentCode) return "";
+        return salesPersonOptionLabel(person);
+      })(),
     });
     setFormError("");
+    setSalesPersonOpen(false);
     setMode("edit");
   }
 
@@ -421,6 +489,7 @@ export default function Admin() {
             password: form.password,
             role: form.role,
             companyAccess,
+            salesPersonId: form.salesPersonId,
             ...(form.roleId != null ? { roleId: form.roleId } : {}),
           } as any,
         },
@@ -443,6 +512,7 @@ export default function Admin() {
       username: form.username.trim().toLowerCase(),
       role: form.role,
       companyAccess,
+      salesPersonId: form.salesPersonId,
       roleId: form.roleId,
     };
     if (form.password) payload.password = form.password;
@@ -551,7 +621,7 @@ export default function Admin() {
         >
           {/* Hidden decoys removed — they primed Chrome password/history UI */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5">
               <Label htmlFor="user-email">Email</Label>
               <Input
                 id="user-email"
@@ -562,6 +632,68 @@ export default function Admin() {
                 onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
                 autoFocus
               />
+            </div>
+
+            <div className="space-y-1.5" ref={salesPersonBoxRef}>
+              <Label htmlFor="user-sales-person">Sales Person</Label>
+              <button
+                id="user-sales-person"
+                type="button"
+                aria-label="Sales Person"
+                aria-expanded={salesPersonOpen}
+                className="flex h-10 w-full items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 text-left text-sm outline-none focus:ring-1 focus:ring-ring"
+                onClick={() => setSalesPersonOpen((open) => !open)}
+              >
+                <span className={form.salesPersonName ? "truncate text-[#111827]" : "truncate text-[#6B7280]"}>
+                  {form.salesPersonName || "Select sales person"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-[#6B7280]" />
+              </button>
+              {salesPersonOpen && (
+                <div className="relative z-30">
+                  <div className="absolute mt-1 max-h-60 w-full overflow-auto rounded-md border border-[#E5E7EB] bg-white py-1 shadow-md">
+                    <button
+                      type="button"
+                      className="block w-full px-3 py-2 text-left text-sm text-[#111827] hover:bg-[#F3F4F6]"
+                      onClick={() => {
+                        setForm((current) => ({ ...current, salesPersonId: null, salesPersonName: "" }));
+                        setSalesPersonOpen(false);
+                      }}
+                    >
+                      None
+                    </button>
+                    {salesPersons.map((person) => {
+                      const label = salesPersonOptionLabel(person);
+                      const id = Number(person.id);
+                      return (
+                        <button
+                          key={person.id || label}
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-sm text-[#111827] hover:bg-[#F3F4F6]"
+                          onClick={() => {
+                            setForm((current) => ({
+                              ...current,
+                              salesPersonId: Number.isFinite(id) && id > 0 ? id : current.salesPersonId,
+                              salesPersonName: label,
+                            }));
+                            setSalesPersonOpen(false);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {salesPersons.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-[#6B7280]">No sales persons yet.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {salesPersons.length === 0 && !salesPersonOpen && (
+                <p className="text-xs text-[#6B7280]">
+                  No sales persons yet. Create them under Directory → Sales Person.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
