@@ -36,6 +36,10 @@ export const UPLOAD_SUBDIRS = [
   "payslips",
   "payslip-zips",
   "accounting-backups",
+  "purchase orders",
+  "vendor invoice",
+  "debit note",
+  "sales order",
 ] as const;
 
 export type EnsureUploadsResult =

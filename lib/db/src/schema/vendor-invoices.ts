@@ -41,6 +41,8 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   // Exchange rate to SGD at invoice date (1.000000 for SGD invoices)
   exchangeRate: decimal("exchange_rate", { precision: 10, scale: 6 }).notNull().default("1.000000"),
   createdBy: integer("created_by").notNull(),
+  attachmentPath: text("attachment_path"),
+  attachmentName: text("attachment_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -150,7 +150,6 @@ export default function EmployeeForm({
   const isEditMode = !!employee;
   const passportInputRef = useRef<HTMLInputElement>(null);
   const visaInputRef = useRef<HTMLInputElement>(null);
-  const nricInputRef = useRef<HTMLInputElement>(null);
   const pendingScans = useRef(0);
   const [scanNames, setScanNames] = useState<Record<string, string>>({});
   
@@ -384,7 +383,7 @@ export default function EmployeeForm({
     reader.readAsDataURL(file);
   };
 
-  const handleScanRemove = (fieldName: "passportScan" | "visaScan" | "nricScan") => {
+  const handleScanRemove = (fieldName: "passportScan" | "visaScan") => {
     form.setValue(fieldName, "", { shouldDirty: true });
     setScanNames((current) => ({ ...current, [fieldName]: "" }));
   };
@@ -936,53 +935,6 @@ export default function EmployeeForm({
                                       : undefined
                                   }
                                   onRemove={() => handleScanRemove("visaScan")}
-                                />
-                              </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      )}
-
-                      {!isForeigner && (
-                      <FormField
-                        control={form.control}
-                        name="nricScan"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>NRIC/ID Scan</FormLabel>
-                            <FormControl>
-                              <div className="flex flex-col gap-2">
-                                <input
-                                  ref={nricInputRef}
-                                  type="file"
-                                  accept=".pdf,.jpg,.jpeg,.png"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleFileUpload(file, "nricScan");
-                                    e.target.value = "";
-                                  }}
-                                />
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  onClick={() => nricInputRef.current?.click()}
-                                  className="border-[#E5E7EB] text-[#111827]"
-                                >
-                                  <Upload className="mr-2 h-4 w-4" />
-                                  Upload
-                                </Button>
-                                <EmployeeScanFile
-                                  value={field.value}
-                                  pickedName={scanNames.nricScan}
-                                  href={
-                                    employee?.id && field.value && !String(field.value).startsWith("data:")
-                                      ? `/api/employees/${employee.id}/files/nric`
-                                      : undefined
-                                  }
-                                  onRemove={() => handleScanRemove("nricScan")}
                                 />
                               </div>
                             </FormControl>

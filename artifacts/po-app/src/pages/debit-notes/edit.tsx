@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Trash2, Save, Eye, Lock, Plus, Layers, ArrowLeft, FileInput, Package } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { InvoiceRefPicker, type InvoiceRefOption } from "@/components/invoice-ref-picker";
 import { cn } from "@/lib/utils";
@@ -131,6 +132,11 @@ export default function DebitNoteEdit() {
       if (!r.ok) throw new Error("Not found");
       return r.json();
     },
+  });
+  const attachment = useVoucherAttachment({
+    storedPath: doc?.attachmentPath,
+    storedName: doc?.attachmentName,
+    viewHref: id ? `/api/debit-notes/${id}/attachment` : undefined,
   });
 
   const form = useForm<FormValues>({
@@ -298,6 +304,7 @@ export default function DebitNoteEdit() {
             amount: item.type === "section" ? 0 : calcAmount(item.qty, item.unitPrice, item.discount),
           })),
           subtotal, tax, totalAmount: total, status,
+          ...attachment.payload,
         }),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
@@ -608,6 +615,8 @@ export default function DebitNoteEdit() {
               )} />
             </CardContent>
           </Card>
+
+          {attachment.node}
 
           <FormStickyActions className="justify-between">
             <div>

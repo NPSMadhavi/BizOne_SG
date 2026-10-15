@@ -15,6 +15,7 @@ import {
   syncVendorInvoiceStock,
 } from "../lib/vendor-invoice-stock.js";
 import { syncVendorInvoicePurchasePrices, recomputePriceLotsAfterVendorInvoiceRemoved } from "../lib/stock-purchase-price.js";
+import { applyVoucherAttachment, sendVoucherFile, VOUCHER_UPLOAD_FOLDERS } from "../lib/operations-upload.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -151,6 +152,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   const normalizedItems = normalizeViItems(items);
 
   try {
+    const attachment = await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.vendorInvoice);
     const [doc] = await db.insert(vendorInvoicesTable).values({
       companyId,
       piNumber: resolvedPiNumber,
@@ -185,6 +187,7 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
       gstInclusive: !!gstInclusive,
       exchangeRate: parseFloat(String(exchangeRate ?? "1")).toFixed(6) as any,
       createdBy: userId,
+      ...attachment,
     }).returning();
 
     logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
@@ -240,6 +243,15 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     const message = err?.cause?.message || err?.message || "Failed to create vendor invoice";
     res.status(500).json({ error: message });
   }
+});
+
+router.get("/vendor-invoices/:id/attachment", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const [doc] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  if (!doc) { res.status(404).json({ error: "Vendor invoice not found" }); return; }
+  sendVoucherFile(res, doc.attachmentPath, VOUCHER_UPLOAD_FOLDERS.vendorInvoice, doc.attachmentName);
 });
 
 router.get("/vendor-invoices/:id", async (req, res): Promise<void> => {
@@ -312,6 +324,7 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
       ? null
       : Number(expenseAccountId);
   }
+  Object.assign(updates, await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.vendorInvoice, existing.attachmentPath));
 
   await db.update(vendorInvoicesTable).set(updates).where(eq(vendorInvoicesTable.id, id));
   await recalcPI(id, existing.companyId);

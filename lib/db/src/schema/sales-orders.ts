@@ -33,6 +33,8 @@ export const salesOrdersTable = pgTable("sales_orders", {
   customerNote: text("customer_note"),
   authorisedSignature: text("authorised_signature"),
   createdBy: integer("created_by").notNull(),
+  attachmentPath: text("attachment_path"),
+  attachmentName: text("attachment_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

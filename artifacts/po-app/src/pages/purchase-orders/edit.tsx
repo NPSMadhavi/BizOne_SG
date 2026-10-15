@@ -35,6 +35,7 @@ import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { Trash2, Save, ArrowLeft, Eye, Lock, Users, Plus, Layers, AlignCenter, AlignLeft, Package, Upload } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { cn, plainText } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -111,6 +112,11 @@ export default function PurchaseOrderEdit() {
       queryKey: getGetPurchaseOrderQueryKey(id),
       enabled: !!id,
     },
+  });
+  const attachment = useVoucherAttachment({
+    storedPath: (po as any)?.attachmentPath,
+    storedName: (po as any)?.attachmentName,
+    viewHref: id ? `/api/purchase-orders/${id}/attachment` : undefined,
   });
 
   const { data: customers = [] } = useQuery<any[]>({
@@ -299,7 +305,7 @@ export default function PurchaseOrderEdit() {
     }));
 
     updateMutation.mutate(
-      { id, data: { ...values, status: "draft", items: itemsWithAmount, customerId: values.customerId ?? undefined } },
+      { id, data: { ...values, status: "draft", items: itemsWithAmount, customerId: values.customerId ?? undefined, ...attachment.payload } as any },
       {
         onSuccess: async (data) => {
           queryClient.setQueryData(getListPurchaseOrdersQueryKey(), (old: any) =>
@@ -343,7 +349,7 @@ export default function PurchaseOrderEdit() {
       warehouseName: (i as any).warehouseName || undefined,
     }));
     updateMutation.mutate(
-      { id, data: { ...values, status: "confirmed", items: itemsWithAmount, customerId: values.customerId ?? undefined } },
+      { id, data: { ...values, status: "confirmed", items: itemsWithAmount, customerId: values.customerId ?? undefined, ...attachment.payload } as any },
       {
         onSuccess: async (data) => {
           queryClient.setQueryData(getListPurchaseOrdersQueryKey(), (old: any) =>
@@ -960,6 +966,8 @@ export default function PurchaseOrderEdit() {
               </div>
             </div>
           </Card>
+
+          {attachment.node}
 
           <FormStickyActions>
             <Button

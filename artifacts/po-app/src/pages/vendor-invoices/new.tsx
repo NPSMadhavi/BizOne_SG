@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useLocation, useSearch } from "wouter";
 import { Check, BookOpen, AlertTriangle, RefreshCw, Plus, ArrowLeft, Eye } from "lucide-react";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateVendorInvoice_PDF } from "@/lib/pdf";
 import { Switch } from "@/components/ui/switch";
@@ -73,6 +74,7 @@ export default function VendorInvoiceNew() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [currency, setCurrency] = useState(prefillCurrency || (selectedCompany as any)?.currency || "SGD");
   const [lineItems, setLineItems] = useState<VendorInvoiceLineItem[]>([emptyViLineItem()]);
+  const attachment = useVoucherAttachment();
   const [notes, setNotes] = useState("");
   const [customerNote, setCustomerNote] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
@@ -317,6 +319,7 @@ export default function VendorInvoiceNew() {
           authorisedSignature: authorisedSignature || null,
           discountAmount,
           salesPerson: null,
+          ...attachment.payload,
           expenseAccountId: (expenseAccountId && expenseAccountId !== "none") ? parseInt(expenseAccountId) : null,
         }),
       });
@@ -831,6 +834,8 @@ export default function VendorInvoiceNew() {
           />
         </CardContent>
       </Card>
+
+      {attachment.node}
 
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" onClick={handleCancel}>Cancel</Button>

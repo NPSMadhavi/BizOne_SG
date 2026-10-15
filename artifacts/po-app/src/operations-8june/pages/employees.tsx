@@ -55,85 +55,7 @@ import DocumentForm from "@/operations-8june/components/forms/DocumentForm";
 import {
   EmployeeScanFile,
   EmployeeUploadedDocuments,
-  FilePreviewDialog,
 } from "@/operations-8june/components/employees/EmployeeFiles";
-
-type EmployeeDocumentLink = {
-  id?: number;
-  documentType?: string;
-  filePath?: string;
-};
-
-const DOCUMENT_LABELS: Record<string, string> = {
-  passport: "Passport",
-  visa: "Visa",
-  contract: "Contract",
-  certification: "Certification",
-  warranty: "Warranty",
-  purchase_order: "Purchase order",
-  other: "Other",
-};
-
-function employeeDocuments(employee: Employee): EmployeeDocumentLink[] {
-  const raw = (employee as Employee & { documents?: unknown }).documents;
-  if (Array.isArray(raw)) return raw as EmployeeDocumentLink[];
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function EmployeeDocumentLinks({
-  employee,
-  onOpen,
-}: {
-  employee: Employee;
-  onOpen: (file: { source: string; title: string }) => void;
-}) {
-  const scans = [
-    (employee as Employee & { passportScan?: string }).passportScan
-      ? { title: "Passport scan", source: `/api/employees/${employee.id}/files/passport` }
-      : null,
-    (employee as Employee & { visaScan?: string }).visaScan
-      ? { title: "Visa scan", source: `/api/employees/${employee.id}/files/visa` }
-      : null,
-    (employee as Employee & { nricScan?: string }).nricScan
-      ? { title: "NRIC scan", source: `/api/employees/${employee.id}/files/nric` }
-      : null,
-  ].filter((item): item is { title: string; source: string } => Boolean(item));
-
-  const uploaded = employeeDocuments(employee).map((document) => {
-    const title = DOCUMENT_LABELS[document.documentType || ""] || document.documentType || "Document";
-    const filename = document.filePath?.split("/").pop();
-    return {
-      title: filename ? `${title} · ${filename}` : title,
-      source: `/api/documents/${document.id}/file`,
-    };
-  });
-
-  const files = [...scans, ...uploaded];
-  if (files.length === 0) return <span>—</span>;
-
-  return (
-    <div className="flex flex-col gap-1">
-      {files.map((file) => (
-        <button
-          key={file.source}
-          type="button"
-          className="max-w-[220px] truncate text-left text-xs font-medium text-[#2563EB] hover:underline"
-          onClick={() => onOpen(file)}
-        >
-          {file.title}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export default function EmployeesPage() {
   const { toast } = useToast();
@@ -143,7 +65,6 @@ export default function EmployeesPage() {
   const [documentFormPending, setDocumentFormPending] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
-  const [documentPreview, setDocumentPreview] = useState<{ source: string; title: string } | null>(null);
   
   // Fetch employees
   const { data: employees = [], isLoading } = useQuery<Employee[]>({
@@ -173,6 +94,7 @@ export default function EmployeesPage() {
         employee.name,
         employee.department,
         employee.designation,
+        employee.nationality,
         employee.passportNumber,
         employee.visaNumber,
         employee.status,
@@ -289,7 +211,7 @@ export default function EmployeesPage() {
                     <TableHead>Department</TableHead>
                     <TableHead>Designation</TableHead>
                     <TableHead>Joining Date</TableHead>
-                    <TableHead>Documents</TableHead>
+                    <TableHead>Nationality</TableHead>
                     <TableHead className="w-px text-left">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -314,10 +236,7 @@ export default function EmployeesPage() {
                           : "—"}
                       </TableCell>
                       <TableCell className="text-[#444651]">
-                        <EmployeeDocumentLinks
-                          employee={employee}
-                          onOpen={setDocumentPreview}
-                        />
+                        {employee.nationality?.trim() || "—"}
                       </TableCell>
                       <TableCell className="w-px whitespace-nowrap">
                         <div className="flex items-center justify-start gap-2">
@@ -411,12 +330,6 @@ export default function EmployeesPage() {
           />
         </FormModalShell>
       </Dialog>
-
-      <FilePreviewDialog
-        source={documentPreview?.source ?? null}
-        title={documentPreview?.title ?? "Document"}
-        onClose={() => setDocumentPreview(null)}
-      />
 
       <EntityViewDialog
         open={isViewDialogOpen}
@@ -584,17 +497,6 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
             <EmployeeScanFile
               value={employee.visaScan}
               href={`/api/employees/${employee.id}/files/visa`}
-            />
-          }
-        />
-      ) : null}
-      {employee.nricScan ? (
-        <EntityViewField
-          label="NRIC scan"
-          value={
-            <EmployeeScanFile
-              value={employee.nricScan}
-              href={`/api/employees/${employee.id}/files/nric`}
             />
           }
         />

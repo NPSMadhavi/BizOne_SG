@@ -5,6 +5,7 @@ import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { logServerError, sanitizeErrorMessage } from "../lib/safe-error.js";
+import { applyVoucherAttachment, sendVoucherFile, VOUCHER_UPLOAD_FOLDERS } from "../lib/operations-upload.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -127,6 +128,7 @@ router.post("/sales-orders", async (req, res): Promise<void> => {
   let salesOrderId: number | undefined;
   try {
     soNumber = await nextDocNumber("so", companyId);
+    const attachment = await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.salesOrder);
 
     const [doc] = await db.insert(salesOrdersTable).values({
       soNumber,
@@ -155,6 +157,7 @@ router.post("/sales-orders", async (req, res): Promise<void> => {
       deliveryInstructions,
       customerNote,
       authorisedSignature,
+      ...attachment,
     }).returning();
     salesOrderId = doc.id;
     await upsertCustomerByName(companyId, customerName, customerAddress, customerContact, customerContactEmail);
@@ -172,6 +175,15 @@ router.post("/sales-orders", async (req, res): Promise<void> => {
       res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to create sales order") });
     }
   }
+});
+
+router.get("/sales-orders/:id/attachment", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const [doc] = await db.select().from(salesOrdersTable).where(eq(salesOrdersTable.id, id));
+  if (!doc) { res.status(404).json({ error: "Sales order not found" }); return; }
+  sendVoucherFile(res, doc.attachmentPath, VOUCHER_UPLOAD_FOLDERS.salesOrder, doc.attachmentName);
 });
 
 router.get("/sales-orders/:id", async (req, res): Promise<void> => {
@@ -225,6 +237,8 @@ router.put("/sales-orders/:id", async (req, res): Promise<void> => {
   if (currency !== undefined) updateData.currency = currency;
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
+  const [existingSo] = await db.select({ attachmentPath: salesOrdersTable.attachmentPath }).from(salesOrdersTable).where(eq(salesOrdersTable.id, id));
+  Object.assign(updateData, await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.salesOrder, existingSo?.attachmentPath));
 
   const [updated] = await db.update(salesOrdersTable).set(updateData).where(eq(salesOrdersTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Sales order not found" }); return; }

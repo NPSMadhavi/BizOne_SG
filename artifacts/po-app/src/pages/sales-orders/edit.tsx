@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useParams, useLocation } from "wouter";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
 import { useGetSalesOrder, useUpdateSalesOrder, getGetSalesOrderQueryKey, useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,11 @@ export default function SalesOrderEdit() {
 
   const { data: doc } = useGetSalesOrder(id, {
     query: { queryKey: getGetSalesOrderQueryKey(id), enabled: !!id },
+  });
+  const attachment = useVoucherAttachment({
+    storedPath: (doc as any)?.attachmentPath,
+    storedName: (doc as any)?.attachmentName,
+    viewHref: id ? `/api/sales-orders/${id}/attachment` : undefined,
   });
 
   const { data: docSettings } = useGetSettings({
@@ -244,7 +250,7 @@ export default function SalesOrderEdit() {
     });
     const isCancelled = values.status === "cancelled";
     const newStatus = isCancelled ? "cancelled" : (openPreview ? "confirmed" : "draft");
-    updateMutation.mutate({ id, data: { ...values, qtId: linkedQt.current.qtId, qtNumber: values.qtNumber?.trim() || null, status: newStatus, discountAmount: values.discountAmount, items: itemsWithAmount } as any }, {
+    updateMutation.mutate({ id, data: { ...values, qtId: linkedQt.current.qtId, qtNumber: values.qtNumber?.trim() || null, status: newStatus, discountAmount: values.discountAmount, items: itemsWithAmount, ...attachment.payload } as any }, {
       onSuccess: async () => {
         await queryClient.refetchQueries({ queryKey: getGetSalesOrderQueryKey(id) });
         await invalidateDocumentList(queryClient, "sales-orders");
@@ -766,6 +772,8 @@ export default function SalesOrderEdit() {
               <DocumentAdditionalInfoFields control={form.control} />
             </CardContent>
           </Card>
+
+          {attachment.node}
 
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation(`/sales-orders/${id}`)}>Cancel</Button>

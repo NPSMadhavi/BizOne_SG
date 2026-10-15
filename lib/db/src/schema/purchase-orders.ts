@@ -30,6 +30,8 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   ackAt: text("ack_at"),
   ackNote: text("ack_note"),
   createdBy: integer("created_by").notNull(),
+  attachmentPath: text("attachment_path"),
+  attachmentName: text("attachment_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

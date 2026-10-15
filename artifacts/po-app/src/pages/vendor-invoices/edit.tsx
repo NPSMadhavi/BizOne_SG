@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useLocation, useParams } from "wouter";
 import { Check, AlertTriangle, RefreshCw, Plus, ArrowLeft, Eye, BookOpen } from "lucide-react";
 import { VendorCreateDialog } from "@/components/vendor-create-dialog";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateVendorInvoice_PDF } from "@/lib/pdf";
 import { Switch } from "@/components/ui/switch";
@@ -106,6 +107,11 @@ export default function VendorInvoiceEdit() {
       return res.json();
     },
     enabled: !!id,
+  });
+  const attachment = useVoucherAttachment({
+    storedPath: pi?.attachmentPath,
+    storedName: pi?.attachmentName,
+    viewHref: id ? `/api/vendor-invoices/${id}/attachment` : undefined,
   });
 
   const { data: vendors = [] } = useQuery<any[]>({
@@ -369,6 +375,7 @@ export default function VendorInvoiceEdit() {
           authorisedSignature: authorisedSignature || null,
           discountAmount,
           salesPerson: salesPerson || null,
+          ...attachment.payload,
           expenseAccountId: (expenseAccountId && expenseAccountId !== "none") ? parseInt(expenseAccountId) : null,
         }),
       });
@@ -854,6 +861,8 @@ export default function VendorInvoiceEdit() {
           />
         </CardContent>
       </Card>
+
+      {attachment.node}
 
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" onClick={handleCancel}>Cancel</Button>

@@ -31,6 +31,8 @@ export const debitNotesTable = pgTable("debit_notes", {
   customerNote: text("customer_note"),
   authorisedSignature: text("authorised_signature"),
   createdBy: integer("created_by").notNull(),
+  attachmentPath: text("attachment_path"),
+  attachmentName: text("attachment_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   companyDnUnique: unique("debit_notes_company_dn_number_unique").on(t.companyId, t.dnNumber),

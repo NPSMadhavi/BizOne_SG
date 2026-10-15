@@ -4,6 +4,7 @@ import { eq, desc, and, inArray, ilike } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { autoCreateGrn, autoDeleteGrnIfEmpty, mergePurchaseOrderStockMeta, postPurchaseOrderWarehouseStock } from "./grn.js";
 import { logAudit } from "../lib/audit.js";
+import { applyVoucherAttachment, sendVoucherFile, VOUCHER_UPLOAD_FOLDERS } from "../lib/operations-upload.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -170,6 +171,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
   const totalAmount = subtotal + taxAmount;
 
   const poNumber = await nextDocNumber("po", companyId);
+  const attachment = await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.purchaseOrders);
 
   const [po] = await db.insert(purchaseOrdersTable).values({
     poNumber,
@@ -186,6 +188,7 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
     totalAmount: totalAmount.toFixed(2),
     status: status || "draft",
     createdBy: req.session.userId!,
+    ...attachment,
   }).returning();
   await upsertVendorByName(companyId, vendorName, vendorAddress, vendorContact, vendorContactEmail);
 
@@ -208,6 +211,15 @@ router.post("/purchase-orders", async (req, res): Promise<void> => {
 
   logAudit({ req, action: "create", entityType: "purchase_order", entityId: po.id, entityLabel: po.poNumber });
   res.status(201).json(parsePO(po));
+});
+
+router.get("/purchase-orders/:id/attachment", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  sendVoucherFile(res, po.attachmentPath, VOUCHER_UPLOAD_FOLDERS.purchaseOrders, po.attachmentName);
 });
 
 router.get("/purchase-orders/:id", async (req, res): Promise<void> => {
@@ -276,6 +288,7 @@ router.put("/purchase-orders/:id", async (req, res): Promise<void> => {
   if (currency !== undefined) updateData.currency = currency;
   if (isPrivate !== undefined) updateData.isPrivate = isPrivate === true;
   if (status) updateData.status = status;
+  Object.assign(updateData, await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.purchaseOrders, existing[0].attachmentPath));
 
   const previousStatus = existing[0].status;
   const [updated] = await db.update(purchaseOrdersTable).set(updateData).where(eq(purchaseOrdersTable.id, id)).returning();

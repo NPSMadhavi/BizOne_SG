@@ -41,6 +41,7 @@ import { StockItemPickerDialog, type StockItemSelection } from "@/components/sto
 import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
@@ -101,6 +102,7 @@ export default function PurchaseOrderNew() {
   const [importOpen, setImportOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [qtPrefilled, setQtPrefilled] = useState(false);
+  const attachment = useVoucherAttachment();
 
   const { data: urlSourceQt } = useGetQuotation(urlQtIdNum ?? 0, {
     query: { queryKey: getGetQuotationQueryKey(urlQtIdNum ?? 0), enabled: !!urlQtIdNum },
@@ -370,7 +372,7 @@ export default function PurchaseOrderNew() {
 
     return new Promise<any>((resolve, reject) => {
       createMutation.mutate(
-        { data: { ...values, items: itemsWithAmount, status, customerId: values.customerId ?? undefined } },
+        { data: { ...values, items: itemsWithAmount, status, customerId: values.customerId ?? undefined, ...attachment.payload } as any },
         {
           onSuccess: async (data) => {
             // Show the new PO in the list immediately (no manual refresh).
@@ -1004,6 +1006,8 @@ export default function PurchaseOrderNew() {
               </div>
             </div>
           </Card>
+
+          {attachment.node}
 
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/purchase-orders")}>

@@ -3,6 +3,7 @@ import { db, debitNotesTable, usersTable, vendorsTable, settingsTable } from "@w
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
+import { applyVoucherAttachment, sendVoucherFile, VOUCHER_UPLOAD_FOLDERS } from "../lib/operations-upload.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -116,6 +117,7 @@ router.post("/debit-notes", async (req, res): Promise<void> => {
   if (!customerName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
 
   const dnNumber = await nextDocNumber("dn", companyId);
+  const attachment = await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.debitNote);
 
   const [doc] = await db.insert(debitNotesTable).values({
     dnNumber,
@@ -141,11 +143,21 @@ router.post("/debit-notes", async (req, res): Promise<void> => {
     totalAmount: String(totalAmount ?? 0),
     status: status === "confirmed" ? "confirmed" : "draft",
     createdBy: userId,
+    ...attachment,
   }).returning();
 
   await upsertVendor(companyId, customerName, customerAddress, contactPerson, contactEmail);
   logAudit({ req, action: "create", entityType: "debit_note", entityId: doc.id, entityLabel: doc.dnNumber });
   res.status(201).json(parseDoc(doc));
+});
+
+router.get("/debit-notes/:id/attachment", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const [doc] = await db.select().from(debitNotesTable).where(eq(debitNotesTable.id, id));
+  if (!doc) { res.status(404).json({ error: "Debit note not found" }); return; }
+  sendVoucherFile(res, doc.attachmentPath, VOUCHER_UPLOAD_FOLDERS.debitNote, doc.attachmentName);
 });
 
 // ── GET /debit-notes/:id ─────────────────────────────────────────────────────
@@ -194,6 +206,7 @@ router.put("/debit-notes/:id", async (req, res): Promise<void> => {
   } = req.body;
 
   if (!customerName?.trim()) { res.status(400).json({ error: "Vendor name is required" }); return; }
+  const attachment = await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.debitNote, existing.attachmentPath);
 
   const [doc] = await db.update(debitNotesTable).set({
     customerName: customerName.trim(),
@@ -214,6 +227,7 @@ router.put("/debit-notes/:id", async (req, res): Promise<void> => {
     tax: String(tax ?? 0),
     totalAmount: String(totalAmount ?? 0),
     status: status === "confirmed" ? "confirmed" : (status === "void" ? "void" : "draft"),
+    ...attachment,
   }).where(eq(debitNotesTable.id, id)).returning();
 
   await upsertVendor(existing.companyId, customerName, customerAddress, contactPerson, contactEmail);

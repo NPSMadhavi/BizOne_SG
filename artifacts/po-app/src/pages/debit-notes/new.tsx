@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { Trash2, Save, Eye, Lock, Plus, Layers, FileInput, Package, ArrowLeft } from "lucide-react";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { InvoiceRefPicker, type InvoiceRefOption } from "@/components/invoice-ref-picker";
 import { cn } from "@/lib/utils";
@@ -115,6 +116,7 @@ export default function DebitNoteNew() {
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState(false);
   const lastLoadedRef = useRef("");
+  const attachment = useVoucherAttachment();
 
   const { data: settings } = useGetSettings();
 
@@ -258,6 +260,7 @@ export default function DebitNoteNew() {
             amount: item.type === "section" ? 0 : calcAmount(item.qty, item.unitPrice, item.discount),
           })),
           subtotal, tax, totalAmount: total, status,
+          ...attachment.payload,
         }),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Failed"); }
@@ -579,6 +582,8 @@ export default function DebitNoteNew() {
               )} />
             </CardContent>
           </Card>
+
+          {attachment.node}
 
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/debit-notes")}>Cancel</Button>

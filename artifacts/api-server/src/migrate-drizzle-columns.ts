@@ -231,6 +231,14 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS total_amount numeric(15,2) NOT NULL DEFAULT 0`,
   `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'SGD'`,
   `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft'`,
+  `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS attachment_name text`,
+  `ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS attachment_name text`,
+  `ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS attachment_name text`,
+  `ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS attachment_name text`,
 
   // ── invoices ──────────────────────────────────────────────────────────────
   `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS so_id integer`,
@@ -486,6 +494,14 @@ export const SALES_POS_SCHEMA_SQL: string[] = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS pos_sales_company_number_idx ON pos_sales (company_id, pos_number)`,
   `CREATE INDEX IF NOT EXISTS pos_sales_company_channel_idx ON pos_sales (company_id, channel)`,
+  `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS attachment_name text`,
+  `ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS attachment_name text`,
+  `ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS attachment_name text`,
+  `ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS attachment_path text`,
+  `ALTER TABLE debit_notes ADD COLUMN IF NOT EXISTS attachment_name text`,
 ];
 
 export async function applySalesPosSchema(

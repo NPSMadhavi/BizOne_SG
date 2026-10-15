@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCreateSalesOrder, useGetSettings, getGetSettingsQueryKey, getListSalesOrdersQueryKey, useGetQuotation, getGetQuotationQueryKey } from "@workspace/api-client-react";
 import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
 import { ContactAutocomplete } from "@/components/contact-autocomplete";
+import { useVoucherAttachment } from "@/components/voucher-document-upload";
 import { Button } from "@/components/ui/button";
 import { FormStickyActions } from "@/components/form-sticky-actions";
 import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
@@ -100,6 +101,7 @@ export default function SalesOrderNew() {
   const [qtPrefilled, setQtPrefilled] = useState(false);
   const [discountPct, setDiscountPct] = useState(0);
   const submittingRef = useRef(false);
+  const attachment = useVoucherAttachment();
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
 
@@ -392,6 +394,7 @@ export default function SalesOrderNew() {
           status: openPreview ? "confirmed" : "draft",
           discountAmount: values.discountAmount,
           items: itemsWithAmount,
+          ...attachment.payload,
         } as any,
       });
       queryClient.setQueryData(getListSalesOrdersQueryKey(), (old: any) =>
@@ -907,6 +910,8 @@ export default function SalesOrderNew() {
               <DocumentAdditionalInfoFields control={form.control} />
             </CardContent>
           </Card>
+
+          {attachment.node}
 
           <FormStickyActions>
             <Button type="button" variant="outline" onClick={() => setLocation("/sales-orders")}>Cancel</Button>
