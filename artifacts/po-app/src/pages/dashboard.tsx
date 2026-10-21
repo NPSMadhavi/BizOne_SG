@@ -223,7 +223,6 @@ export default function Dashboard() {
   const {
     data: invoices = [],
     isError: invoicesError,
-    error: invoicesErr,
     isFetched: invoicesFetched,
   } = useListInvoices({
     query: {
@@ -234,7 +233,6 @@ export default function Dashboard() {
   const {
     data: purchaseOrders = [],
     isError: purchaseOrdersError,
-    error: purchaseOrdersErr,
     isFetched: purchaseOrdersFetched,
   } = useListPurchaseOrders({
     query: {
@@ -273,15 +271,6 @@ export default function Dashboard() {
   const stockItems = stockQuery.data ?? [];
   const vendorInvoices = vendorInvoicesQuery.data ?? [];
 
-  const fetchErrors = [
-    invoicesError && (invoicesErr instanceof Error ? invoicesErr.message : "Invoices could not be loaded"),
-    expensesQuery.isError && (expensesQuery.error instanceof Error ? expensesQuery.error.message : "Expenses could not be loaded"),
-    incomeQuery.isError && (incomeQuery.error instanceof Error ? incomeQuery.error.message : "Income could not be loaded"),
-    vendorInvoicesQuery.isError && (vendorInvoicesQuery.error instanceof Error ? vendorInvoicesQuery.error.message : "Vendor invoices could not be loaded"),
-    purchaseOrdersError && (purchaseOrdersErr instanceof Error ? purchaseOrdersErr.message : "Purchase orders could not be loaded"),
-    stockQuery.isError && (stockQuery.error instanceof Error ? stockQuery.error.message : "Stock items could not be loaded"),
-  ].filter(Boolean) as string[];
-
   /** KPI list sources only — stock is not used for income/expense/AR/AP/recent. */
   const kpiSourceEnabled =
     invoicesEnabled ||
@@ -289,12 +278,13 @@ export default function Dashboard() {
     incomeEnabled ||
     vendorInvoicesEnabled ||
     purchaseOrdersEnabled;
+  /** Treat settled as fetched OR errored so a dead proxy does not block empty-state logic forever. */
   const kpiSourcesSettled =
-    (!invoicesEnabled || invoicesFetched) &&
-    (!purchaseOrdersEnabled || purchaseOrdersFetched) &&
-    (!expensesEnabled || expensesQuery.isFetched) &&
-    (!incomeEnabled || incomeQuery.isFetched) &&
-    (!vendorInvoicesEnabled || vendorInvoicesQuery.isFetched);
+    (!invoicesEnabled || invoicesFetched || invoicesError) &&
+    (!purchaseOrdersEnabled || purchaseOrdersFetched || purchaseOrdersError) &&
+    (!expensesEnabled || expensesQuery.isFetched || expensesQuery.isError) &&
+    (!incomeEnabled || incomeQuery.isFetched || incomeQuery.isError) &&
+    (!vendorInvoicesEnabled || vendorInvoicesQuery.isFetched || vendorInvoicesQuery.isError);
 
   const metrics = useMemo(() => {
     const invList = (invoices as any[]) || [];
@@ -527,14 +517,13 @@ export default function Dashboard() {
   }, [invoices, expenses, incomeRecords, purchaseOrders, vendorInvoices, stockItems, rangeFrom, rangeTo]);
 
   const showEmptyPeriodBanner =
-    metrics.hasSourceActivity && !metrics.hasPeriodActivity && fetchErrors.length === 0;
+    metrics.hasSourceActivity && !metrics.hasPeriodActivity;
 
-  /** Requests succeeded with empty KPI lists — not a fetch failure and not an empty date period. */
+  /** Requests settled with empty KPI lists — not an empty date period. */
   const showEmptyCompanyDataBanner =
     !!selectedCompany &&
     kpiSourceEnabled &&
     kpiSourcesSettled &&
-    fetchErrors.length === 0 &&
     !metrics.hasSourceActivity;
 
   const summaryCards = [
@@ -662,20 +651,6 @@ export default function Dashboard() {
         openRequest={fyRolloverRequest}
         onOpenRequestHandled={() => setFyRolloverRequest(null)}
       />
-
-      {fetchErrors.length > 0 && (
-        <div className="rounded-xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#991b1b]">
-          <p className="font-semibold">Some dashboard data could not be loaded</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[13px]">
-            {fetchErrors.slice(0, 4).map((msg) => (
-              <li key={msg}>{msg}</li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[12px] text-[#b91c1c]">
-            Totals may be incomplete. Refresh the page or check your company access.
-          </p>
-        </div>
-      )}
 
       {showEmptyCompanyDataBanner && selectedCompany && (
         <div className="rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155]">
