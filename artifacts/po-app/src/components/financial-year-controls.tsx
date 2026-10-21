@@ -264,7 +264,10 @@ export function CloseFyStartNextWizard({
       if (next?.id) {
         await api(`/api/financial-years/${next.id}/activate`, { method: "POST", body: "{}" });
         const refreshed = await api("/api/financial-years");
-        next = (refreshed.years as Fy[]).find((y) => y.id === next.id) || next;
+        next =
+          (refreshed.years as Fy[]).find((y) => y.id === next.id) ||
+          (refreshed.active as Fy | null) ||
+          next;
       }
 
       await advance(10);
@@ -274,7 +277,8 @@ export function CloseFyStartNextWizard({
       qc.invalidateQueries({ queryKey: ["financial-years"] });
       qc.invalidateQueries({ queryKey: ["financial-years-for-date"] });
 
-      if (next?.startDate && next?.endDate) {
+      // Only move Dashboard when the next year is confirmed active — never jump to an empty inactive FY.
+      if (next?.status === "active" && next.startDate && next.endDate) {
         const from = fromInputDate(next.startDate);
         const to = fromInputDate(next.endDate);
         if (from && to) applyDateRange("custom", from, to);

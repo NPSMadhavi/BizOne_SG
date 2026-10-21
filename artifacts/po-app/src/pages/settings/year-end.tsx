@@ -173,13 +173,19 @@ export default function YearEndProcessPage() {
       }
       const closeRes = await api(`/api/financial-years/${active.id}/close`, { method: "POST", body: "{}" });
       setStep(3);
-      const next = closeRes.next as Fy | undefined;
+      let next = closeRes.next as Fy | undefined;
       if (next?.id) {
         await api(`/api/financial-years/${next.id}/activate`, { method: "POST", body: "{}" });
+        const refreshed = await api("/api/financial-years");
+        next =
+          (refreshed.years as Fy[] | undefined)?.find((y) => y.id === next!.id) ||
+          (refreshed.active as Fy | null) ||
+          next;
       }
       setStep(4);
       setDone({ closed: closeRes.closed?.label || active.label, next: next?.label || nextSpan });
-      if (next?.startDate && next?.endDate) {
+      // Only move Dashboard when the next year is confirmed active — keep prior range otherwise.
+      if (next?.status === "active" && next.startDate && next.endDate) {
         const from = fromInputDate(next.startDate);
         const to = fromInputDate(next.endDate);
         if (from && to) applyDateRange("custom", from, to);

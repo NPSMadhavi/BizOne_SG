@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useListInvoices, getListInvoicesQueryKey,
@@ -25,8 +25,25 @@ import { hasPosChannelAccess } from "@/contexts/auth-modules";
 import { fmtDate } from "@/lib/utils";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { CloseFyStartNextWizard } from "@/components/financial-year-controls";
-import { useDateRangeOptional } from "@/contexts/date-range-context";
-import { PERIOD_PRESETS, inRange } from "@/lib/date-range";
+import {
+  useDateRangeOptional,
+  type FinancialYearSummary,
+} from "@/contexts/date-range-context";
+import { PERIOD_PRESETS, fmtRangeLabel, inRange } from "@/lib/date-range";
+import { Button } from "@/components/ui/button";
+
+async function fetchJsonList(path: string): Promise<any[]> {
+  const res = await fetch(path, { credentials: "include" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({} as { error?: string }));
+    const msg =
+      typeof body?.error === "string" && body.error.trim()
+        ? body.error
+        : `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return res.json() as Promise<any[]>;
+}
 
 const money = (v: number) =>
   new Intl.NumberFormat("en-SG", {
@@ -147,62 +164,137 @@ function buildSparkline(values: number[], yMin = 10, yMax = 160): string {
 }
 
 export default function Dashboard() {
-  const { user, hasModuleAccess } = useAuth();
+  const { user, hasModuleAccess, selectedCompany } = useAuth();
+  const companyId = selectedCompany?.id ?? null;
+  // Generated User schema exposes username; some sessions may also carry fullName.
   const userName =
-    (user?.fullName && user.fullName.trim()) ||
+    String((user as { fullName?: string | null } | null)?.fullName || user?.username || "there").trim() ||
     "there";
 
-  const { periodPreset, rangeFrom, rangeTo, applyDateRange } = useDateRangeOptional();
+  const {
+    periodPreset,
+    rangeFrom,
+    rangeTo,
+    applyDateRange,
+    applyThisYear,
+    applyFinancialYear,
+    reconcileAgainstFinancialYears,
+  } = useDateRangeOptional();
   const [fyRolloverRequest, setFyRolloverRequest] = useState<{ from: string; to: string } | null>(null);
 
   const periodChipLabel = PERIOD_PRESETS.find((p) => p.id === periodPreset)?.label ?? "Custom Range";
+  const periodLabel = fmtRangeLabel(rangeFrom, rangeTo);
 
-  const { data: invoices = [] } = useListInvoices({
-    query: { queryKey: getListInvoicesQueryKey(), enabled: hasModuleAccess("invoices") },
-  });
-  const { data: purchaseOrders = [] } = useListPurchaseOrders({
-    query: { queryKey: getListPurchaseOrdersQueryKey(), enabled: hasModuleAccess("purchase_orders") },
-  });
-
-  const { data: expenses = [] } = useQuery({
-    queryKey: ["dashboard-expenses"],
-    enabled: hasModuleAccess("accounting_expenses"),
+  const fyQuery = useQuery({
+    queryKey: ["financial-years", companyId],
+    enabled: !!companyId,
     queryFn: async () => {
-      const res = await fetch("/api/expenses", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json() as Promise<any[]>;
+      const res = await fetch("/api/financial-years", { credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(
+          typeof body?.error === "string" && body.error.trim()
+            ? body.error
+            : `Financial years request failed (${res.status})`,
+        );
+      }
+      return res.json() as Promise<{
+        years: FinancialYearSummary[];
+        active: FinancialYearSummary | null;
+      }>;
+    },
+    retry: false,
+  });
+
+  const activeFy = fyQuery.data?.active?.status === "active" ? fyQuery.data.active : null;
+
+  useEffect(() => {
+    if (!fyQuery.data?.years) return;
+    reconcileAgainstFinancialYears(fyQuery.data.years, fyQuery.data.active ?? null);
+  }, [fyQuery.data, reconcileAgainstFinancialYears]);
+
+  const invoicesEnabled = hasModuleAccess("invoices") && !!companyId;
+  const purchaseOrdersEnabled = hasModuleAccess("purchase_orders") && !!companyId;
+  const expensesEnabled = hasModuleAccess("accounting_expenses") && !!companyId;
+  const incomeEnabled = hasModuleAccess("accounting_income") && !!companyId;
+  const vendorInvoicesEnabled = hasModuleAccess("vendor_invoices") && !!companyId;
+  const stockEnabled = hasModuleAccess("stock_items") && !!companyId;
+
+  const {
+    data: invoices = [],
+    isError: invoicesError,
+    error: invoicesErr,
+    isFetched: invoicesFetched,
+  } = useListInvoices({
+    query: {
+      queryKey: [...getListInvoicesQueryKey(), companyId],
+      enabled: invoicesEnabled,
+    },
+  });
+  const {
+    data: purchaseOrders = [],
+    isError: purchaseOrdersError,
+    error: purchaseOrdersErr,
+    isFetched: purchaseOrdersFetched,
+  } = useListPurchaseOrders({
+    query: {
+      queryKey: [...getListPurchaseOrdersQueryKey(), companyId],
+      enabled: purchaseOrdersEnabled,
     },
   });
 
-  const { data: incomeRecords = [] } = useQuery({
-    queryKey: ["dashboard-income"],
-    enabled: hasModuleAccess("accounting_income"),
-    queryFn: async () => {
-      const res = await fetch("/api/income", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json() as Promise<any[]>;
-    },
+  const expensesQuery = useQuery({
+    queryKey: ["dashboard-expenses", companyId],
+    enabled: expensesEnabled,
+    queryFn: () => fetchJsonList("/api/expenses"),
+    retry: false,
+  });
+  const incomeQuery = useQuery({
+    queryKey: ["dashboard-income", companyId],
+    enabled: incomeEnabled,
+    queryFn: () => fetchJsonList("/api/income"),
+    retry: false,
+  });
+  const stockQuery = useQuery({
+    queryKey: ["stock-items-dashboard", companyId],
+    enabled: stockEnabled,
+    queryFn: () => fetchJsonList("/api/stock-items"),
+    retry: false,
+  });
+  const vendorInvoicesQuery = useQuery({
+    queryKey: ["dashboard-vendor-invoices", companyId],
+    enabled: vendorInvoicesEnabled,
+    queryFn: () => fetchJsonList("/api/vendor-invoices"),
+    retry: false,
   });
 
-  const { data: stockItems = [] } = useQuery({
-    queryKey: ["stock-items-dashboard"],
-    enabled: hasModuleAccess("stock_items"),
-    queryFn: async () => {
-      const res = await fetch("/api/stock-items", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json() as Promise<{ id: number; name: string; stockQty: string }[]>;
-    },
-  });
+  const expenses = expensesQuery.data ?? [];
+  const incomeRecords = incomeQuery.data ?? [];
+  const stockItems = stockQuery.data ?? [];
+  const vendorInvoices = vendorInvoicesQuery.data ?? [];
 
-  const { data: vendorInvoices = [] } = useQuery({
-    queryKey: ["dashboard-vendor-invoices"],
-    enabled: hasModuleAccess("vendor_invoices"),
-    queryFn: async () => {
-      const res = await fetch("/api/vendor-invoices", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json() as Promise<any[]>;
-    },
-  });
+  const fetchErrors = [
+    invoicesError && (invoicesErr instanceof Error ? invoicesErr.message : "Invoices could not be loaded"),
+    expensesQuery.isError && (expensesQuery.error instanceof Error ? expensesQuery.error.message : "Expenses could not be loaded"),
+    incomeQuery.isError && (incomeQuery.error instanceof Error ? incomeQuery.error.message : "Income could not be loaded"),
+    vendorInvoicesQuery.isError && (vendorInvoicesQuery.error instanceof Error ? vendorInvoicesQuery.error.message : "Vendor invoices could not be loaded"),
+    purchaseOrdersError && (purchaseOrdersErr instanceof Error ? purchaseOrdersErr.message : "Purchase orders could not be loaded"),
+    stockQuery.isError && (stockQuery.error instanceof Error ? stockQuery.error.message : "Stock items could not be loaded"),
+  ].filter(Boolean) as string[];
+
+  /** KPI list sources only — stock is not used for income/expense/AR/AP/recent. */
+  const kpiSourceEnabled =
+    invoicesEnabled ||
+    expensesEnabled ||
+    incomeEnabled ||
+    vendorInvoicesEnabled ||
+    purchaseOrdersEnabled;
+  const kpiSourcesSettled =
+    (!invoicesEnabled || invoicesFetched) &&
+    (!purchaseOrdersEnabled || purchaseOrdersFetched) &&
+    (!expensesEnabled || expensesQuery.isFetched) &&
+    (!incomeEnabled || incomeQuery.isFetched) &&
+    (!vendorInvoicesEnabled || vendorInvoicesQuery.isFetched);
 
   const metrics = useMemo(() => {
     const invList = (invoices as any[]) || [];
@@ -400,6 +492,18 @@ export default function Dashboard() {
     }
     txns.sort((a, b) => b.sort - a.sort);
 
+    const hasSourceActivity =
+      invList.length > 0 ||
+      expList.length > 0 ||
+      incomeList.length > 0 ||
+      viList.length > 0 ||
+      poList.length > 0;
+    const hasPeriodActivity =
+      monthInvoices.length > 0 ||
+      monthExpenses.length > 0 ||
+      monthIncomeExtra.length > 0 ||
+      monthVendorInvoices.length > 0;
+
     return {
       totalIncome,
       totalExpenses,
@@ -417,8 +521,21 @@ export default function Dashboard() {
       draftCount,
       lowStock,
       transactions: txns.slice(0, 5),
+      hasSourceActivity,
+      hasPeriodActivity,
     };
   }, [invoices, expenses, incomeRecords, purchaseOrders, vendorInvoices, stockItems, rangeFrom, rangeTo]);
+
+  const showEmptyPeriodBanner =
+    metrics.hasSourceActivity && !metrics.hasPeriodActivity && fetchErrors.length === 0;
+
+  /** Requests succeeded with empty KPI lists — not a fetch failure and not an empty date period. */
+  const showEmptyCompanyDataBanner =
+    !!selectedCompany &&
+    kpiSourceEnabled &&
+    kpiSourcesSettled &&
+    fetchErrors.length === 0 &&
+    !metrics.hasSourceActivity;
 
   const summaryCards = [
     {
@@ -545,6 +662,61 @@ export default function Dashboard() {
         openRequest={fyRolloverRequest}
         onOpenRequestHandled={() => setFyRolloverRequest(null)}
       />
+
+      {fetchErrors.length > 0 && (
+        <div className="rounded-xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#991b1b]">
+          <p className="font-semibold">Some dashboard data could not be loaded</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[13px]">
+            {fetchErrors.slice(0, 4).map((msg) => (
+              <li key={msg}>{msg}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[12px] text-[#b91c1c]">
+            Totals may be incomplete. Refresh the page or check your company access.
+          </p>
+        </div>
+      )}
+
+      {showEmptyCompanyDataBanner && selectedCompany && (
+        <div className="rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155]">
+          <p className="text-[13px] leading-relaxed">
+            No documents found for {selectedCompany.name} (Company ID {selectedCompany.id}). Check
+            the company&apos;s data setup.
+          </p>
+        </div>
+      )}
+
+      {showEmptyPeriodBanner && (
+        <div className="rounded-xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          <p className="font-semibold">No activity in the selected period</p>
+          <p className="mt-1 text-[13px]">
+            {periodLabel} has no income or expense documents, but this company has transactions
+            outside that range. Income, expenses, and charts are filtered to the selected dates;
+            outstanding balances and recent transactions are not.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-[#f59e0b] bg-white text-[#92400e] hover:bg-[#fff7ed]"
+              onClick={() => applyThisYear()}
+            >
+              Use This Year
+            </Button>
+            {activeFy && (
+              <Button
+                type="button"
+                size="sm"
+                className="bg-[#2563EB] text-white hover:bg-[#1d4ed8]"
+                onClick={() => applyFinancialYear(activeFy)}
+              >
+                Use Active FY{activeFy.label ? ` (${activeFy.label})` : ""}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-5 xl:gap-4">
