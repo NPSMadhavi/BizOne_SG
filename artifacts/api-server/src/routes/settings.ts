@@ -36,14 +36,15 @@ function defaultGstForCountry(country: string | null | undefined): string {
 }
 
 async function ensureSettings(companyId: number) {
-  const existing = await db.select().from(settingsTable).where(eq(settingsTable.companyId, companyId)).limit(1);
+  const cid = Number(companyId);
+  const existing = await db.select().from(settingsTable).where(eq(settingsTable.companyId, cid)).limit(1);
   if (existing.length > 0) return existing[0];
 
-  const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+  const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, cid)).limit(1);
   const defaultGst = defaultGstForCountry(company?.country);
 
   const [created] = await db.insert(settingsTable).values({
-    companyId,
+    companyId: cid,
     gstRate: defaultGst,
     poPrefix: "PO",  poCounter: 0,  poSuffix: "",
     pqPrefix: "PQ",  pqCounter: 0,  pqSuffix: "",
@@ -68,17 +69,28 @@ async function ensureSettings(companyId: number) {
   return created;
 }
 
+function num(value: unknown, fallback = 0): number {
+  const n = typeof value === "number" ? value : parseFloat(String(value ?? ""));
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function formatSettings(s: typeof settingsTable.$inferSelect, country?: string | null) {
   return {
     id: s.id,
     companyId: s.companyId,
-    gstRate: parseFloat(s.gstRate),
+    gstRate: num(s.gstRate, 9),
     taxLabel: gstLabelForCountry(country),
     smtpHost: s.smtpHost || "",
     smtpPort: s.smtpPort || "587",
     smtpUser: s.smtpUser || "",
     smtpFrom: s.smtpFrom || "",
-    smtpConfigured: isSmtpConfigured(s),
+    smtpConfigured: isSmtpConfigured({
+      smtpHost: s.smtpHost,
+      smtpPort: s.smtpPort,
+      smtpUser: s.smtpUser,
+      smtpPass: s.smtpPass,
+      smtpFrom: s.smtpFrom,
+    }),
     poPrefix: s.poPrefix ?? "PO",
     poCounter: s.poCounter ?? 0,
     poSuffix: s.poSuffix ?? "",
@@ -138,7 +150,7 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     bcSuffix: s.bcSuffix ?? "",
     allowNegativeStock: s.allowNegativeStock ?? false,
     autoDeductOnDo: s.autoDeductOnDo ?? false,
-    lowStockWarning: parseFloat(s.lowStockWarning ?? "0"),
+    lowStockWarning: num(s.lowStockWarning, 0),
     defaultUom: s.defaultUom ?? "pcs",
     bankDetails: s.bankDetails ?? "",
     termsAndConditions: s.termsAndConditions ?? "",
@@ -152,13 +164,21 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
 
 router.get("/", async (req, res) => {
   try {
-    const companyId = (req.session as any).companyId;
-    if (!companyId) return res.status(400).json({ error: "No company selected" });
+    const companyId = Number((req.session as any).companyId);
+    if (!companyId || Number.isNaN(companyId)) {
+      return res.status(400).json({ error: "No company selected" });
+    }
     const settings = await ensureSettings(companyId);
+    if (!settings) {
+      return res.status(500).json({ error: "Failed to create settings for company" });
+    }
     const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
     return res.json(formatSettings(settings, company?.country));
   } catch (err) {
-    return res.status(500).json({ error: "Failed to get settings" });
+    req.log?.error?.({ err }, "GET /api/settings failed");
+    console.error("[settings] GET failed:", err);
+    const message = err instanceof Error ? err.message : "Failed to get settings";
+    return res.status(500).json({ error: "Failed to get settings", detail: message });
   }
 });
 

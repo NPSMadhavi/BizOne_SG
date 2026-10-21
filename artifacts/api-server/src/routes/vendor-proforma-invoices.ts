@@ -117,17 +117,24 @@ async function upsertVendorByName(companyId: number, name: string, address?: str
 // ── List ───────────────────────────────────────────────────────────────────────
 router.get("/vendor-proforma-invoices", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const companyId = req.session.companyId;
-  const userId = req.session.userId!;
-  const isAdmin = req.session.isAdmin ?? false;
+  try {
+    const companyId = req.session.companyId;
+    const userId = req.session.userId!;
+    const isAdmin = req.session.isAdmin ?? false;
 
-  const all = companyId
-    ? await db.select().from(vendorProformaInvoicesTable).where(eq(vendorProformaInvoicesTable.companyId, companyId)).orderBy(desc(vendorProformaInvoicesTable.createdAt))
-    : await db.select().from(vendorProformaInvoicesTable).orderBy(desc(vendorProformaInvoicesTable.createdAt));
+    const all = companyId
+      ? await db.select().from(vendorProformaInvoicesTable).where(eq(vendorProformaInvoicesTable.companyId, companyId)).orderBy(desc(vendorProformaInvoicesTable.createdAt))
+      : await db.select().from(vendorProformaInvoicesTable).orderBy(desc(vendorProformaInvoicesTable.createdAt));
 
-  const visible = visibilityFilter(all, userId, isAdmin);
-  const withNames = await withUsernames(visible);
-  res.json(withNames.map(withComputedTotals));
+    const visible = visibilityFilter(all, userId, isAdmin);
+    const withNames = await withUsernames(visible);
+    res.json(withNames.map(withComputedTotals));
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /api/vendor-proforma-invoices failed");
+    console.error("[vendor-proforma-invoices] list failed:", err);
+    const message = err instanceof Error ? err.message : "Failed to list vendor proforma invoices";
+    res.status(500).json({ error: "Failed to list vendor proforma invoices", detail: message });
+  }
 });
 
 // ── Get one ────────────────────────────────────────────────────────────────────
