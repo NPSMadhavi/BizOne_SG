@@ -714,14 +714,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   icon={Store}
   isOpen={openGroup === "point_of_sale"}
   onToggle={toggleGroup}
-  visible={
-    hasPosChannelAccess(hasModuleAccess, "pos_retail") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_supermarket") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_restaurants") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_pharmacy") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_electronics") ||
-    hasModuleAccess("pos_reports")
-  }
+  visible={false}
   hasActive={location.startsWith("/point-of-sale")}
 >
   {hasPosChannelAccess(hasModuleAccess, "pos_retail") && (

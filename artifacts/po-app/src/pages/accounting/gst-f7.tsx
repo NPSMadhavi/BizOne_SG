@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -256,8 +256,8 @@ export default function GstF7Page() {
                     { section: "PART II — PURCHASES & IMPORTS", boxes: [4] },
                     { section: "PART III — GST COMPUTATION", boxes: [6, 7, 8] },
                   ].map(({ section, boxes: sboxes }) => (
-                    <>
-                      <tr key={section}>
+                    <Fragment key={section}>
+                      <tr>
                         <td colSpan={5} className="px-4 py-2.5 bg-[#1a365d] text-white text-xs font-bold uppercase tracking-wider">{section}</td>
                       </tr>
                       {sboxes.map(n => {
@@ -280,7 +280,7 @@ export default function GstF7Page() {
                           </tr>
                         );
                       })}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
                 <tfoot>

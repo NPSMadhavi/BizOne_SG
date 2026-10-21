@@ -558,6 +558,7 @@ function Router() {
           <Route path="/settings">{() => <ProtectedRoute component={Settings} adminOnly={true} />}</Route>
           <Route path="/audit-log">{() => <ProtectedRoute component={AuditLog} adminOnly={true} />}</Route>
           <Route path="/report-templates/:id/edit">{() => <ProtectedRoute component={ReportDesignerPage} module="report_templates" />}</Route>
+          <Route path="/report-templates">{() => <ProtectedRoute component={ReportTemplateList} module="report_templates" />}</Route>
           {/* Aliases & friendly redirects for sidebar menu items */}
           <Route path="/warehouses">{() => <Redirect to="/inventory/warehouses" />}</Route>
           <Route path="/warehouse">{() => <Redirect to="/inventory/warehouses" />}</Route>

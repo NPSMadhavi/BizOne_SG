@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { Fragment, useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -226,9 +226,8 @@ export default function ArAgingPage() {
                   <tr><td colSpan={8} className="text-center py-16 text-sm text-gray-400">No outstanding receivables as of {fmtDate(asOf)}.</td></tr>
                 )}
                 {paginatedItems.map(c => (
-                  <>
+                  <Fragment key={c.customerName}>
                     <tr
-                      key={c.customerName}
                       className="border-b border-gray-100 hover:bg-gray-50/70 cursor-pointer"
                       onClick={() => toggle(c.customerName)}
                     >
@@ -257,7 +256,7 @@ export default function ArAgingPage() {
                         <td className="text-right px-4 py-2 text-xs font-mono tabular-nums text-gray-500">S$ {fmt(inv.amount) ?? "0.00"}</td>
                       </tr>
                     ))}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
               {filteredCustomers.length > 0 && t && (

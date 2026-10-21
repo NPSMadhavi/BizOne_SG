@@ -1,10 +1,72 @@
 import { Router, type IRouter } from "express";
-import { db, vendorProformaInvoicesTable, usersTable, vendorsTable } from "@workspace/db";
+import { companyDbContext, db, pool, vendorProformaInvoicesTable, usersTable, vendorsTable } from "@workspace/db";
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 
 const router: IRouter = Router();
+
+/**
+ * Per-pool ensure: each company database has its own pg.Pool via companyDbContext.
+ * A single process-wide Promise would skip CREATE on other tenant DBs.
+ */
+const vpiReadyByPool = new WeakMap<object, Promise<void>>();
+const VPI_SHARED_SENTINEL = { kind: "shared-vpi-ensure" };
+
+async function ensureVendorProformaTable(): Promise<void> {
+  const cacheKey = companyDbContext.getStore() ?? VPI_SHARED_SENTINEL;
+  let ready = vpiReadyByPool.get(cacheKey);
+  if (!ready) {
+    ready = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS vendor_proforma_invoices (
+          id serial PRIMARY KEY,
+          vpi_number text NOT NULL,
+          company_id integer NOT NULL DEFAULT 1,
+          vendor_name text NOT NULL,
+          vendor_address text,
+          vendor_contact text,
+          vendor_contact_email text,
+          delivery_address text,
+          issue_date text,
+          delivery_date text,
+          payment_terms text,
+          notes text,
+          is_private boolean NOT NULL DEFAULT false,
+          items jsonb NOT NULL DEFAULT '[]',
+          subtotal numeric(15,2) NOT NULL DEFAULT 0,
+          discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+          tax numeric(15,2) NOT NULL DEFAULT 0,
+          total_amount numeric(15,2) NOT NULL DEFAULT 0,
+          currency text NOT NULL DEFAULT 'SGD',
+          pq_ref_no text,
+          status text NOT NULL DEFAULT 'draft',
+          email_sent_to text,
+          terms_and_conditions text,
+          delivery_instructions text,
+          customer_note text,
+          authorised_signature text,
+          created_by integer NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )`);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS vendor_proforma_invoices_company_vpi_number_unique
+        ON vendor_proforma_invoices (company_id, vpi_number)`);
+      for (const stmt of [
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_prefix text DEFAULT 'VPI'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_suffix text DEFAULT ''`,
+      ]) {
+        try { await pool.query(stmt); } catch { /* ignore */ }
+      }
+    })().catch((err) => {
+      vpiReadyByPool.delete(cacheKey);
+      throw err;
+    });
+    vpiReadyByPool.set(cacheKey, ready);
+  }
+  await ready;
+}
 
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return false; }
@@ -113,6 +175,16 @@ async function upsertVendorByName(companyId: number, name: string, address?: str
     await db.insert(vendorsTable).values({ companyId, name: name.trim(), address: address || null, contactPerson: contactPerson || null, contactEmail: contactEmail || null });
   }
 }
+
+router.use(async (_req, res, next) => {
+  try {
+    await ensureVendorProformaTable();
+    next();
+  } catch (err) {
+    console.error("[vendor-proforma-invoices] schema ensure failed:", err);
+    res.status(500).json({ error: "Vendor proforma schema is not ready" });
+  }
+});
 
 // ── List ───────────────────────────────────────────────────────────────────────
 router.get("/vendor-proforma-invoices", async (req, res): Promise<void> => {

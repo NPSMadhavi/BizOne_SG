@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -120,8 +120,8 @@ export default function TrialBalancePage() {
                 )}
                 {TYPE_ORDER.map(type =>
                   grouped[type].length > 0 ? (
-                    <>
-                      <tr key={`hdr-${type}`}>
+                    <Fragment key={type}>
+                      <tr>
                         <td colSpan={5} className="px-4 py-2.5 border-b border-t border-gray-100 bg-gray-50">
                           <div className="flex items-center gap-2.5">
                             <div className="w-0.5 h-3.5 bg-gray-400 rounded-full" />
@@ -146,7 +146,7 @@ export default function TrialBalancePage() {
                           </td>
                         </tr>
                       ))}
-                    </>
+                    </Fragment>
                   ) : null
                 )}
               </tbody>

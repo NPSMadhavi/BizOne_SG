@@ -1,11 +1,40 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import pg from "pg";
-import { db, settingsTable, companiesTable } from "@workspace/db";
+import { db, pool, settingsTable, companiesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { isSmtpConfigured } from "../lib/smtp.js";
 
 const router = Router();
+
+/** One-shot schema heal — prevents /api/settings 500 when vpi_* cols were never migrated. */
+let settingsSchemaReady: Promise<void> | null = null;
+
+async function ensureSettingsSchema(): Promise<void> {
+  if (!settingsSchemaReady) {
+    settingsSchemaReady = (async () => {
+      const stmts = [
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_prefix text DEFAULT 'VPI'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_prefix text DEFAULT 'PV'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_verifier_id integer`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_approver_id integer`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_paid_by_id integer`,
+      ];
+      for (const stmt of stmts) {
+        try {
+          await pool.query(stmt);
+        } catch {
+          // ignore — column may already exist under race
+        }
+      }
+    })();
+  }
+  await settingsSchemaReady;
+}
 
 async function loginPasswordMatches(userId: number, password: string): Promise<boolean> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -36,6 +65,7 @@ function defaultGstForCountry(country: string | null | undefined): string {
 }
 
 async function ensureSettings(companyId: number) {
+  await ensureSettingsSchema();
   const cid = Number(companyId);
   const existing = await db.select().from(settingsTable).where(eq(settingsTable.companyId, cid)).limit(1);
   if (existing.length > 0) return existing[0];

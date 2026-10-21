@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import pg from "pg";
-import { applySalesPosSchema } from "../migrate-drizzle-columns.js";
+import { applySalesPosSchema, DRIZZLE_TABLE_CREATES } from "../migrate-drizzle-columns.js";
 
 const prepared = new Map<string, Promise<pg.Pool | null>>();
 const pools = new Map<string, pg.Pool>();
@@ -254,5 +254,25 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
   )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ir8a_employers_company_id_idx ON ir8a_employers (company_id)`);
   await applySalesPosSchema((statement) => pool.query(statement));
+  // Keep tenant DBs aligned with shared-schema document tables (e.g. vendor_proforma_invoices).
+  for (const statement of DRIZZLE_TABLE_CREATES) {
+    try {
+      await pool.query(statement);
+    } catch {
+      /* IF NOT EXISTS / already-aligned — ignore benign failures */
+    }
+  }
+  for (const stmt of [
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_prefix text DEFAULT 'VPI'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_suffix text DEFAULT ''`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS vendor_proforma_invoices_company_vpi_number_unique ON vendor_proforma_invoices (company_id, vpi_number)`,
+  ]) {
+    try {
+      await pool.query(stmt);
+    } catch {
+      /* ignore */
+    }
+  }
   return pool;
 }

@@ -495,6 +495,10 @@ const CRITICAL_COLUMNS: Array<{ table: string; column: string }> = [
   { table: "vendor_invoices", column: "delivery_instructions" },
   { table: "vendor_invoices", column: "customer_note" },
   { table: "vendor_invoices", column: "authorised_signature" },
+  { table: "settings", column: "vpi_prefix" },
+  { table: "settings", column: "vpi_counter" },
+  { table: "settings", column: "vpi_suffix" },
+  { table: "vendor_proforma_invoices", column: "vpi_number" },
 ];
 
 /** Postgres codes that are safe to ignore (idempotent / race / table not yet created). */
