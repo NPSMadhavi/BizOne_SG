@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Trash2, Pencil, Eye, Lock, Mail, FileText, Receipt, ShoppingBag, Copy } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { generateQuotation_PDF } from "@/lib/pdf";
-import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PdfPreviewModal, isSentToExternal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
@@ -19,6 +19,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -222,8 +223,8 @@ export default function QuotationView() {
   const qtColCount = 2 + (hasQtPartNo ? 1 : 0) + (hasQtUom ? 1 : 0) + (hasItemDiscount ? 1 : 0) + 3;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      <StickyPageHeader className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/quotations")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
@@ -235,7 +236,7 @@ export default function QuotationView() {
             {(doc as any).emailSentTo && (
               <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
                 <Mail className="h-3 w-3 shrink-0" />
-                <span>Emailed to: {(doc as any).emailSentTo}</span>
+                <span>{isSentToExternal((doc as any).emailSentTo) ? "Sent to External" : `Emailed to: ${(doc as any).emailSentTo}`}</span>
               </div>
             )}
           </div>
@@ -321,7 +322,7 @@ export default function QuotationView() {
             </AlertDialog>
           )}
         </div>
-      </div>
+      </StickyPageHeader>
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
@@ -458,6 +459,12 @@ export default function QuotationView() {
           totalAmount: Number(doc.totalAmount) || 0,
         }}
         onEdit={(doc as any).status === "sent" ? undefined : () => { setPreviewOpen(false); setLocation(`/quotations/${id}/edit`); }}
+        askMarkSentOnClose
+        markSentUrl={`/api/quotations/${id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          await qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() });
+          await refetch();
+        }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await qc.invalidateQueries({ queryKey: getListQuotationsQueryKey() });

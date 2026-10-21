@@ -27,6 +27,7 @@ import { BankAccountField } from "@/components/bank-account-field";
 import { calcViLineAmount, stripHtml } from "@/lib/vendor-invoice-items";
 import { invalidateInventoryQueries } from "@/lib/invalidate-inventory";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 function statusBadge(status: string) {
   switch (status) {
@@ -214,8 +215,8 @@ export default function VendorInvoiceView() {
   const fmtAmt = (n: number) => new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-4">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <StickyPageHeader className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => setLocation("/vendor-invoices")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -259,7 +260,7 @@ export default function VendorInvoiceView() {
             </AlertDialog>
           )}
         </div>
-      </div>
+      </StickyPageHeader>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

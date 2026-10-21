@@ -6,7 +6,7 @@
 export const ALL_MODULES = [
   "dashboard",
   "assets", "licenses", "employees", "payroll",
-  "purchase_quotations", "purchase_orders", "vendor_invoices", "grn", "debit_notes",
+  "purchase_quotations", "purchase_orders", "vendor_invoices", "vendor_proforma_invoices", "grn", "debit_notes",
   "quotations", "sales_orders", "invoices",
   "proforma_invoices", "delivery_orders", "credit_notes",
   "point_of_sale",
@@ -43,7 +43,7 @@ export const BUSINESS_TYPES = [
 export type BusinessTypeId = (typeof BUSINESS_TYPES)[number]["id"];
 
 const TRANSACTIONS: AppModule[] = [
-  "purchase_quotations", "purchase_orders", "vendor_invoices", "grn", "debit_notes",
+  "purchase_quotations", "purchase_orders", "vendor_invoices", "vendor_proforma_invoices", "grn", "debit_notes",
   "quotations", "sales_orders", "invoices", "proforma_invoices", "delivery_orders", "credit_notes",
   "multi_price_level",
 ];
@@ -153,6 +153,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   purchase_quotations: "Purchase Quotations",
   purchase_orders: "Purchase Orders",
   vendor_invoices: "Vendor Invoices",
+  vendor_proforma_invoices: "Vendor Proforma Invoice",
   quotations: "Quotations",
   sales_orders: "Sales Orders",
   invoices: "Tax Invoices",
@@ -242,7 +243,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     id: "documents",
     label: "Transactions",
     modules: [
-      "purchase_quotations", "purchase_orders", "vendor_invoices", "grn", "debit_notes",
+      "purchase_quotations", "purchase_orders", "vendor_proforma_invoices", "vendor_invoices", "grn", "debit_notes",
       "quotations", "sales_orders", "proforma_invoices", "invoices",
       "delivery_orders", "credit_notes",
       "multi_price_level",
@@ -309,6 +310,7 @@ const PATH_MODULE_PREFIXES: { prefix: string; module: AppModule }[] = [
   { prefix: "/purchase-quotations", module: "purchase_quotations" },
   { prefix: "/purchase-orders", module: "purchase_orders" },
   { prefix: "/vendor-invoices", module: "vendor_invoices" },
+  { prefix: "/vendor-proforma-invoices", module: "vendor_proforma_invoices" },
   { prefix: "/quotations", module: "quotations" },
   { prefix: "/sales-orders", module: "sales_orders" },
   { prefix: "/proforma-invoices", module: "proforma_invoices" },

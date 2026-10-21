@@ -13,6 +13,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { ArrowLeft, PackageCheck, PackagePlus, Plus, Trash2 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 
@@ -32,6 +36,9 @@ interface GrnItem {
   warehouseName?: string;
   warehouseId?: number;
   stockItemId?: number;
+  batchNo?: string;
+  expiryDate?: string;
+  manufacturingDate?: string;
 }
 
 interface WarehouseOption {
@@ -115,6 +122,8 @@ export default function GrnNew() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [batchDialogIndex, setBatchDialogIndex] = useState<number | null>(null);
+  const [batchDraft, setBatchDraft] = useState({ batchNo: "", expiryDate: "", manufacturingDate: "" });
   const poInputRef = useRef<HTMLInputElement>(null);
   const poDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -333,6 +342,32 @@ export default function GrnNew() {
       };
       return next;
     });
+    setIsDirty(true);
+  };
+
+  const openBatchDialog = (index: number) => {
+    const item = items[index];
+    setBatchDraft({
+      batchNo: item?.batchNo || "",
+      expiryDate: item?.expiryDate || "",
+      manufacturingDate: item?.manufacturingDate || "",
+    });
+    setBatchDialogIndex(index);
+  };
+
+  const saveBatchDialog = () => {
+    if (batchDialogIndex === null) return;
+    setItems((prev) => {
+      const next = [...prev];
+      next[batchDialogIndex] = {
+        ...next[batchDialogIndex],
+        batchNo: batchDraft.batchNo.trim(),
+        expiryDate: batchDraft.expiryDate.trim(),
+        manufacturingDate: batchDraft.manufacturingDate.trim(),
+      };
+      return next;
+    });
+    setBatchDialogIndex(null);
     setIsDirty(true);
   };
 
@@ -708,21 +743,33 @@ export default function GrnNew() {
                     </td>
                     <td className="px-3 py-2 text-left align-middle">
                       {warehouses.length > 0 ? (
-                        <Select
-                          value={item.warehouseId ? String(item.warehouseId) : undefined}
-                          onValueChange={(value) => handleWarehouseChange(index, value)}
-                        >
-                          <SelectTrigger className="h-9 w-full min-w-[200px] border-gray-200 bg-white text-sm">
-                            <SelectValue placeholder="" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {warehouses.map((warehouse) => (
-                              <SelectItem key={warehouse.id} value={String(warehouse.id)}>
-                                {warehouse.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-1.5">
+                          <Select
+                            value={item.warehouseId ? String(item.warehouseId) : undefined}
+                            onValueChange={(value) => handleWarehouseChange(index, value)}
+                          >
+                            <SelectTrigger className="h-9 w-full min-w-[160px] border-gray-200 bg-white text-sm">
+                              <SelectValue placeholder="" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {warehouses.map((warehouse) => (
+                                <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                                  {warehouse.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-9 shrink-0 px-2.5 text-xs"
+                            title="Batch No / expiry / manufacturing"
+                            onClick={() => openBatchDialog(index)}
+                          >
+                            Batch No
+                          </Button>
+                        </div>
                       ) : item.warehouseName ? (
                         <p className="truncate text-sm text-muted-foreground">
                           → {item.warehouseName}
@@ -732,6 +779,13 @@ export default function GrnNew() {
                           Select warehouse *
                         </p>
                       )}
+                      {item.batchNo ? (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          Batch: {item.batchNo}
+                          {item.expiryDate ? ` · Exp ${item.expiryDate}` : ""}
+                          {item.manufacturingDate ? ` · Mfg ${item.manufacturingDate}` : ""}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-2 py-2 text-center align-middle">
                       {linkedFromPo ? (
@@ -853,6 +907,47 @@ export default function GrnNew() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={batchDialogIndex !== null} onOpenChange={(open) => { if (!open) setBatchDialogIndex(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Batch details</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="grn-new-batch-no">Batch Number</Label>
+              <Input
+                id="grn-new-batch-no"
+                value={batchDraft.batchNo}
+                onChange={(e) => setBatchDraft((d) => ({ ...d, batchNo: e.target.value }))}
+                placeholder="Enter batch number"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grn-new-expiry">Expiry Date</Label>
+              <Input
+                id="grn-new-expiry"
+                type="date"
+                value={batchDraft.expiryDate}
+                onChange={(e) => setBatchDraft((d) => ({ ...d, expiryDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grn-new-mfg">Manufacturing Date</Label>
+              <Input
+                id="grn-new-mfg"
+                type="date"
+                value={batchDraft.manufacturingDate}
+                onChange={(e) => setBatchDraft((d) => ({ ...d, manufacturingDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBatchDialogIndex(null)}>Cancel</Button>
+            <Button type="button" onClick={saveBatchDialog}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

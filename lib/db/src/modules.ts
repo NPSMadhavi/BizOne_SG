@@ -10,6 +10,7 @@ export const APP_ALL_MODULES = [
   "purchase_quotations",
   "purchase_orders",
   "vendor_invoices",
+  "vendor_proforma_invoices",
   "quotations",
   "sales_orders",
   "invoices",
@@ -79,7 +80,7 @@ export const BUSINESS_TYPES = [
 export type BusinessTypeId = (typeof BUSINESS_TYPES)[number]["id"];
 
 const TRANSACTIONS: AppModuleKey[] = [
-  "purchase_quotations", "purchase_orders", "vendor_invoices", "grn", "debit_notes",
+  "purchase_quotations", "purchase_orders", "vendor_invoices", "vendor_proforma_invoices", "grn", "debit_notes",
   "quotations", "sales_orders", "invoices", "proforma_invoices", "delivery_orders", "credit_notes",
   "multi_price_level",
 ];

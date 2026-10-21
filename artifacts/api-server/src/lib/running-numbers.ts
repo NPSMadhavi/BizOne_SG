@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 export type DocType =
-  | "po" | "pq" | "inv" | "qt" | "so" | "do" | "grn" | "cn" | "dn" | "pi" | "pv"
+  | "po" | "pq" | "inv" | "qt" | "so" | "do" | "grn" | "cn" | "dn" | "pi" | "vpi" | "pv"
   | "igr" | "gin" | "st" | "sa" | "si" | "fa" | "bc";
 
 type TableCol = { table: string; col: string };
@@ -17,11 +17,12 @@ const TABLE_MAP: Record<DocType, TableCol[]> = {
   grn: [{ table: "grn",               col: "grn_number" }],
   cn:  [{ table: "credit_notes",      col: "cn_number" }],
   dn:  [{ table: "debit_notes",       col: "dn_number" }],
-  // Sales PI and Vendor PI share the same settings counter
+  // Sales PI and Vendor Invoice share the same settings counter
   pi:  [
     { table: "proforma_invoices", col: "pi_number" },
     { table: "vendor_invoices",   col: "pi_number" },
   ],
+  vpi: [{ table: "vendor_proforma_invoices", col: "vpi_number" }],
   pv:  [{ table: "vouchers",          col: "voucher_number" }],
   igr: [{ table: "goods_receipts",    col: "grn_number" }],
   gin: [{ table: "goods_issues",      col: "gin_number" }],
@@ -46,6 +47,7 @@ const COL_MAP: Record<DocType, { prefix: string; counter: string; suffix: string
   cn:  { prefix: "cn_prefix",  counter: "cn_counter",  suffix: "cn_suffix",  fallbackPrefix: "CN" },
   dn:  { prefix: "dn_prefix",  counter: "dn_counter",  suffix: "dn_suffix",  fallbackPrefix: "DN" },
   pi:  { prefix: "pi_prefix",  counter: "pi_counter",  suffix: "pi_suffix",  fallbackPrefix: "PI" },
+  vpi: { prefix: "vpi_prefix", counter: "vpi_counter", suffix: "vpi_suffix", fallbackPrefix: "VPI" },
   pv:  { prefix: "pv_prefix",  counter: "pv_counter",  suffix: "pv_suffix",  fallbackPrefix: "PV" },
   igr: { prefix: "igr_prefix", counter: "igr_counter", suffix: "igr_suffix", fallbackPrefix: "IGR" },
   gin: { prefix: "gin_prefix", counter: "gin_counter", suffix: "gin_suffix", fallbackPrefix: "GIN" },

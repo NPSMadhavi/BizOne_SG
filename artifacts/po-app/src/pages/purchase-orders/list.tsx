@@ -27,6 +27,16 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
   const emails = emailSentTo.split(",").map(e => e.trim()).filter(Boolean);
   if (emails.length === 0) return <span className="text-muted-foreground">—</span>;
+  const isExternal = emails.some((e) => /^sent to external$/i.test(e));
+  if (isExternal) {
+    return (
+      <div className="flex items-center gap-1.5" title="Sent to External">
+        <MailCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+        <span className="truncate max-w-[160px] text-xs font-medium text-emerald-700">Sent to External</span>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1.5" title={emails.join(", ")}>
       <MailCheck className="h-3.5 w-3.5 text-violet-500 shrink-0" />
@@ -336,7 +346,7 @@ export default function PurchaseOrderList() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {getStatusBadge(po.status)}
                           {pis.length > 0 && (
-                            <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700">Convert to VI</Badge>
+                            <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700">Converted VI</Badge>
                           )}
                         </div>
                       </td>

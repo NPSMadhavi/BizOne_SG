@@ -35,7 +35,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
-import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PdfPreviewModal, SENT_TO_EXTERNAL } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart } from "@/lib/report-designer/api";
@@ -533,7 +533,7 @@ export default function InvoiceEdit() {
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/invoices/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
@@ -1481,6 +1481,16 @@ export default function InvoiceEdit() {
  defaultEmailSubject={doc ? `Invoice ${doc.invNumber}` : "Invoice"}
  defaultEmailBody={doc ? invoiceEmailBody((doc as any).customerContact, doc.invNumber, deliveryOrderAttachmentNames(linkedDos, [doc]).map((name) => name.replace(/\.pdf$/i, ""))) : ""}
  onEdit={() => { setPreviewOpen(false); }}
+ askMarkSentOnClose
+ onMarkAsSentExternal={async () => {
+          await fetch(`/api/invoices/${id}/mark-sent`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
+          });
+          await queryClient.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+        }}
  onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           if (doc) await markDeliveryOrdersSent({ id: doc.id, invNumber: doc.invNumber, soId: (doc as any).soId }, recipients);

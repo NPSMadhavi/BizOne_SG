@@ -8,7 +8,7 @@ import { ArrowLeft, Trash2, Pencil, Calendar, MapPin, Building, CreditCard, Tag,
 import { Progress } from "@/components/ui/progress";
 import { fmtDate } from "@/lib/utils";
 import { generatePO_PDF } from "@/lib/pdf";
-import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PdfPreviewModal, isSentToExternal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { useState, useEffect } from "react";
@@ -20,6 +20,7 @@ import {
   AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 function shouldUseCompactPoHeader() {
   if (typeof window === "undefined") return false;
@@ -183,7 +184,7 @@ export default function PurchaseOrderView() {
     const size = compact ? "text-xs py-0 px-1.5" : "text-sm py-1";
     return (
       <Badge variant="outline" className={`border-blue-300 bg-blue-50 text-blue-700 ${size}`}>
-        Convert to VI
+        Converted VI
       </Badge>
     );
   };
@@ -225,21 +226,12 @@ export default function PurchaseOrderView() {
 
     return (
     <>
-      {linkedGrn ? (
+      {(linkedGrn || ["confirmed", "sent"].includes(po.status)) && (
         <Button
           variant="outline"
           className={`${btnClass} border-emerald-300 text-emerald-700 hover:bg-emerald-50`}
-          onClick={() => setLocation(`/grn/${linkedGrn.id}`)}
-        >
-          <ClipboardList className={iconClass} />
-          Convert to GRN
-        </Button>
-      ) : ["confirmed", "sent"].includes(po.status) && (
-        <Button
-          variant="outline"
-          className={`${btnClass} border-amber-300 text-amber-700 hover:bg-amber-50`}
           onClick={() => createGrnMutation.mutate()}
-          disabled={createGrnMutation.isPending}
+          disabled={!!linkedGrn || createGrnMutation.isPending}
         >
           <ClipboardList className={iconClass} />
           {createGrnMutation.isPending ? "Creating..." : "Convert to GRN"}
@@ -297,7 +289,8 @@ export default function PurchaseOrderView() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <StickyPageHeader>
       {compactHeader ? (
         /* 150% scale — two lines */
         <div className="space-y-2 min-w-0">
@@ -319,7 +312,7 @@ export default function PurchaseOrderView() {
                 {(po as any).emailSentTo && (
                   <div className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 shrink-0 max-w-[200px]">
                     <Mail className="h-3 w-3 shrink-0" />
-                    <span className="truncate">Emailed to: {(po as any).emailSentTo}</span>
+                    <span className="truncate">{isSentToExternal((po as any).emailSentTo) ? "Sent to External" : `Emailed to: ${(po as any).emailSentTo}`}</span>
                   </div>
                 )}
                 {(po as any).ackAt && (
@@ -358,7 +351,7 @@ export default function PurchaseOrderView() {
               {(po as any).emailSentTo && (
                 <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 shrink-0">
                   <Mail className="h-3 w-3 shrink-0" />
-                  <span>Emailed to: {(po as any).emailSentTo}</span>
+                  <span>{isSentToExternal((po as any).emailSentTo) ? "Sent to External" : `Emailed to: ${(po as any).emailSentTo}`}</span>
                 </div>
               )}
               {(po as any).ackAt && (
@@ -377,6 +370,7 @@ export default function PurchaseOrderView() {
           </div>
         </div>
       )}
+      </StickyPageHeader>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -690,6 +684,12 @@ export default function PurchaseOrderView() {
         }}
         onEdit={() => { setPreviewOpen(false); setLocation(`/purchase-orders/${id}/edit`); }}
         poId={po.id}
+        askMarkSentOnClose
+        markSentUrl={`/api/purchase-orders/${id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          await queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+          await refetchPO();
+        }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/purchase-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });

@@ -102,6 +102,9 @@ export default function PurchaseOrderNew() {
   const [importOpen, setImportOpen] = useState(false);
   const [poUploadOpen, setPoUploadOpen] = useState(false);
   const [qtPrefilled, setQtPrefilled] = useState(false);
+  const [copiedFromPo, setCopiedFromPo] = useState(
+    () => Boolean((window as any).__vedaPrefill?.sourcePoNumber),
+  );
   const attachment = useVoucherAttachment();
 
   const { data: urlSourceQt } = useGetQuotation(urlQtIdNum ?? 0, {
@@ -201,6 +204,7 @@ export default function PurchaseOrderNew() {
   useEffect(() => {
     const prefill = (window as any).__vedaPrefill;
     if (!prefill) return;
+    if (prefill.sourcePoNumber) setCopiedFromPo(true);
 
     const needsCustomerMatch = !prefill.customerId && prefill.customerName && customers.length === 0;
     if (needsCustomerMatch) return;
@@ -472,7 +476,7 @@ export default function PurchaseOrderNew() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
@@ -485,7 +489,9 @@ export default function PurchaseOrderNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Create Purchase Order</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+              {copiedFromPo ? "Copy to New Purchase Order" : "Create Purchase Order"}
+            </h1>
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -1127,6 +1133,11 @@ export default function PurchaseOrderNew() {
             totalAmount: Number(savedPo.totalAmount) || 0,
           }}
  poId={savedPo.id}
+        askMarkSentOnClose
+        markSentUrl={`/api/purchase-orders/${savedPo.id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          setSavedPo((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: "Sent to External" } : prev);
+        }}
  onEmailSent={async (recipients) => {
             await fetch(`/api/purchase-orders/${savedPo.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           }}

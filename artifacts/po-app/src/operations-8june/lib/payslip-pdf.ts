@@ -338,10 +338,20 @@ export function buildPayslipPdfData(input: {
   payPeriodEnd: string;
 }): PayslipPdfData {
   const { config, employee, record, company, month, year, payPeriodStart, payPeriodEnd } = input;
-  const baseSalary = Number(config.baseSalary) || Number(record.baseSalary) || 0;
+  const storedBasic = Number(record.baseSalary);
+  const hasStoredBasic =
+    record.baseSalary != null &&
+    String(record.baseSalary).trim() !== "" &&
+    Number.isFinite(storedBasic) &&
+    storedBasic > 0;
   const recordEarnings = asEarningMap(record.allowances);
-  const earnings = splitEarnings(Object.keys(recordEarnings).length > 0 ? recordEarnings : config.allowances);
-  const recordOvertime = Number(record.overtimePay) || 0;
+  const hasRecordEarnings = Object.values(recordEarnings).some((value) => Number(value) > 0);
+  const earnings = splitEarnings(
+    hasStoredBasic || hasRecordEarnings ? recordEarnings : config.allowances || {},
+  );
+  const overtime = Number(record.overtimePay) || 0;
+  const baseSalary = hasStoredBasic ? storedBasic : Number(config.baseSalary) || 0;
+  const recordOvertime = overtime;
   return {
     companyName: company?.name || "",
     companyAddress: company?.address || "",
@@ -363,9 +373,15 @@ export function buildPayslipPdfData(input: {
     bonus: earnings.bonus,
     otherIncome: earnings.otherIncome,
     grossPay: Number(record.grossPay) || 0,
-    employeeCpf: Number(record.cpfDeduction ?? record.cpfEmployee) || Number(config.cpfAmount) || 0,
+    employeeCpf:
+      record.cpfDeduction != null || record.cpfEmployee != null
+        ? Number(record.cpfDeduction ?? record.cpfEmployee) || 0
+        : Number(config.cpfAmount) || 0,
     netPay: Number(record.netPay) || 0,
-    employerCpf: Number(record.cpfEmployer) || Number(config.employerCpfAmount) || 0,
-    otherDeductions: sumComponentMap(record.deductions ?? config.deductions),
+    employerCpf:
+      record.cpfEmployer != null
+        ? Number(record.cpfEmployer) || 0
+        : Number(config.employerCpfAmount) || 0,
+    otherDeductions: sumComponentMap(record.deductions != null ? record.deductions : {}),
   };
 }

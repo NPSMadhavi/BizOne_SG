@@ -54,6 +54,7 @@ const PAGES: PageEntry[] = [
 
   { label: "Purchase Quotations", href: "/purchase-quotations", keywords: ["pq", "rfq"], category: "Transactions", path: ["Purchases", "Purchase Quotations"], module: "purchase_quotations" },
   { label: "Purchase Orders", href: "/purchase-orders", keywords: ["po", "purchase"], category: "Transactions", path: ["Purchases", "Purchase Orders"], module: "purchase_orders" },
+  { label: "Vendor Proforma Invoice", href: "/vendor-proforma-invoices", keywords: ["vpi", "vendor proforma"], category: "Transactions", path: ["Purchases", "Vendor Proforma Invoice"], module: "vendor_proforma_invoices" },
   { label: "Goods Receipt Note", href: "/grn", keywords: ["grn", "goods receipt", "receiving"], category: "Transactions", path: ["Purchases", "Goods Receipt Note"], module: "grn" },
   { label: "Vendor Invoices", href: "/vendor-invoices", keywords: ["pi", "bill", "payable"], category: "Transactions", path: ["Purchases", "Vendor Invoices"], module: "vendor_invoices" },
   { label: "Debit Notes", href: "/debit-notes", keywords: ["dn", "debit"], category: "Transactions", path: ["Purchases", "Debit Notes"], module: "debit_notes" },
@@ -130,6 +131,7 @@ const DOC_PATH: Record<string, { category: string; path: string[] }> = {
   purchase_order: { category: "Transactions", path: ["Purchases", "Purchase Orders"] },
   purchase_quotation: { category: "Transactions", path: ["Purchases", "Purchase Quotations"] },
   vendor_invoice: { category: "Transactions", path: ["Purchases", "Vendor Invoices"] },
+  vendor_proforma_invoice: { category: "Transactions", path: ["Purchases", "Vendor Proforma Invoice"] },
   grn: { category: "Transactions", path: ["Purchases", "Goods Receipt Note"] },
   debit_note: { category: "Transactions", path: ["Purchases", "Debit Notes"] },
   customer: { category: "Directory", path: ["Customers"] },
@@ -194,6 +196,7 @@ function typeLabel(type: string) {
     purchase_order: "Purchase Order",
     purchase_quotation: "Purchase Quotation",
     vendor_invoice: "Vendor Invoice",
+    vendor_proforma_invoice: "Vendor Proforma Invoice",
     delivery_order: "Delivery Order",
     grn: "GRN",
     credit_note: "Credit Note",
@@ -464,7 +467,7 @@ export function GlobalSearch() {
   return (
     <div
       ref={wrapRef}
-      className="sticky top-0 z-40 -mx-4 md:-mx-6 xl:-mx-8 px-4 md:px-6 xl:px-8 pt-0 pb-2 mb-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      className="pt-0 pb-2 bg-background"
     >
       <div className="relative w-full max-w-lg">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />

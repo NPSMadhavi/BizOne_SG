@@ -1,3 +1,5 @@
+import { splitEarnings } from "@/operations-8june/lib/payroll-earnings";
+
 export function formatLocalDate(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
@@ -91,6 +93,136 @@ export function derivePayrollMonthYear(payPeriodStart: string) {
         ? formatPayrollMonthLabel(year, month)
         : "",
   };
+}
+
+export type EmployeePayrollMonth = {
+  id: number;
+  year: number;
+  month: number;
+  label: string;
+  basic: number;
+  transport: number;
+  meal: number;
+  phone: number;
+  bonus: number;
+  other: number;
+  gross: number;
+  employeeCpf: number;
+  employerCpf: number;
+  allowances: Record<string, number>;
+  deductions: Record<string, number>;
+};
+
+function payrollAmount(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+export function listEmployeePayrollMonths(
+  records: Array<{
+    id?: number;
+    employeeId?: number;
+    payrollYear?: number | string | null;
+    payrollMonth?: number | string | null;
+    payPeriodStart?: string | null;
+    baseSalary?: string | number | null;
+    grossPay?: string | number | null;
+    overtimePay?: string | number | null;
+    allowances?: unknown;
+    deductions?: unknown;
+    cpfDeduction?: string | number | null;
+    cpfEmployer?: string | number | null;
+  }>,
+  employeeId: number,
+): EmployeePayrollMonth[] {
+  const byMonth = new Map<string, (typeof records)[number]>();
+  for (const record of records) {
+    if (Number(record.employeeId) !== Number(employeeId)) continue;
+    const period = recordPayrollMonthYear(record);
+    if (period.year <= 0 || period.month < 1 || period.month > 12) continue;
+    const key = `${period.year}-${String(period.month).padStart(2, "0")}`;
+    const current = byMonth.get(key);
+    if (!current || Number(record.id) >= Number(current.id)) byMonth.set(key, record);
+  }
+
+  return [...byMonth.values()]
+    .map((record) => {
+      const period = recordPayrollMonthYear(record);
+      const earnings = splitEarnings(record.allowances);
+      const allowances =
+        record.allowances && typeof record.allowances === "object"
+          ? (record.allowances as Record<string, number>)
+          : {};
+      const deductions =
+        record.deductions && typeof record.deductions === "object"
+          ? (record.deductions as Record<string, number>)
+          : {};
+      const overtime = payrollAmount(record.overtimePay) > 0 ? payrollAmount(record.overtimePay) : earnings.overtime;
+      const classified =
+        earnings.allowances +
+        earnings.bonus +
+        earnings.directorsFees +
+        earnings.fees +
+        earnings.otherPayments +
+        earnings.benefitsInKind +
+        earnings.shareOption +
+        earnings.retirementBenefits +
+        earnings.incomeTaxBorneByEmployee +
+        earnings.genericOtherIncome +
+        overtime;
+      const storedBasic = payrollAmount(record.baseSalary);
+      const grossPay = payrollAmount(record.grossPay);
+      const basic =
+        storedBasic > 0
+          ? storedBasic
+          : grossPay > 0 && classified > 0 && grossPay + 0.009 >= classified
+            ? Math.max(0, grossPay - classified)
+            : grossPay;
+      return {
+        id: Number(record.id) || 0,
+        year: period.year,
+        month: period.month,
+        label: formatPayrollMonthLabel(period.year, period.month),
+        basic,
+        transport: payrollAmount(allowances.transport),
+        meal: payrollAmount(allowances.meal),
+        phone: payrollAmount(allowances.phone),
+        bonus: earnings.bonus,
+        other: earnings.otherIncome,
+        gross: storedBasic > 0 ? storedBasic + classified : grossPay || basic + classified,
+        employeeCpf: payrollAmount(record.cpfDeduction),
+        employerCpf: payrollAmount(record.cpfEmployer),
+        allowances,
+        deductions,
+      };
+    })
+    .sort((left, right) => left.year - right.year || left.month - right.month);
+}
+
+export function recordPayrollMonthYear(record: {
+  payrollYear?: number | string | null;
+  payrollMonth?: number | string | null;
+  payPeriodStart?: string | null;
+}): { year: number; month: number } {
+  const year = Number(record?.payrollYear);
+  const month = Number(record?.payrollMonth);
+  if (year > 0 && month >= 1 && month <= 12) return { year, month };
+
+  const raw = String(record?.payPeriodStart || "");
+  if (raw.includes("T")) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Singapore",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(parsed);
+      const [y, m] = parts.split("-");
+      return { year: Number(y), month: Number(m) };
+    }
+  }
+  return { year: Number(raw.slice(0, 4)) || 0, month: Number(raw.slice(5, 7)) || 0 };
 }
 
 export function formatPayrollMonthLabel(year: number, month: number) {

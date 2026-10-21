@@ -3315,7 +3315,7 @@ export function AgentPanel() {
             /* Desktop: Docked right sidebar (decreased width so dashboard numbers never cramp) */
             <aside
               aria-label="Veda AI Assistant Panel"
-              className="flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-screen sticky top-0 shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
+              className="flex flex-col w-[320px] sm:w-[350px] xl:w-[370px] h-full min-h-0 max-h-full overflow-hidden shrink-0 border-l border-border bg-card z-30 shadow-sm transition-all duration-300"
             >
               {panelInner}
             </aside>

@@ -401,13 +401,19 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
       <EntityViewField label="Email" value={(employee as any).email} />
       <EntityViewField label="Phone" value={(employee as any).phone} />
       <EntityViewField label="Gender" value={(employee as any).gender} />
-      <EntityViewField label="Address" value={(employee as any).address} fullWidth />
-      <EntityViewField label="Department" value={employee.department} />
-      <EntityViewField label="Designation" value={employee.designation} />
+      <EntityViewField
+        label="Date of Birth"
+        value={(employee as any).dateOfBirth ? formatViewDate((employee as any).dateOfBirth) : "-"}
+      />
       <EntityViewField
         label="Joining Date"
         value={employee.joinDate ? formatViewDate(employee.joinDate) : "-"}
       />
+      <EntityViewField label="Department" value={employee.department} />
+      <EntityViewField label="Designation" value={employee.designation} />
+      <EntityViewField label="Monthly Salary" value={(employee as any).salary || "-"} />
+      <EntityViewField label="Annual Salary" value={(employee as any).annualSalary || "-"} />
+      <EntityViewField label="Address" value={(employee as any).address} fullWidth />
       <EntityViewField
         label="Status"
         value={

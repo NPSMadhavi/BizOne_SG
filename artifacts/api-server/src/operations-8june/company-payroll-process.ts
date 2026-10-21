@@ -69,6 +69,11 @@ interface DbPayrollRecord {
   payroll_config_id: number | null;
   pay_period_start: string | Date;
   pay_period_end: string | Date;
+  base_salary?: string | number | null;
+  overtime_hours?: string | number | null;
+  overtime_pay?: string | number | null;
+  allowances?: unknown;
+  deductions?: unknown;
   gross_pay: string | number;
   net_pay: string | number;
   cpf_employee: string | number;
@@ -212,13 +217,19 @@ export async function syncPayrollConfigFromEmployee(
        base_salary = $1,
        cpf_employee_rate = $2,
        cpf_employer_rate = $3,
+       cpf_amount = $4,
+       employer_cpf_amount = $5,
+       net_salary = $6,
        updated_at = NOW()
-     WHERE id = $4 AND company_id = $5
+     WHERE id = $7 AND company_id = $8
      RETURNING *`,
     [
       monthlySalary,
       amounts.employeeCpfRate,
       amounts.employerCpfRate,
+      amounts.employeeCpf,
+      amounts.employerCpf,
+      amounts.netPay,
       config.id,
       companyId,
     ],
@@ -253,6 +264,30 @@ async function getActivePayrollConfig(
 ): Promise<DbPayrollConfig> {
   const synced = await syncPayrollConfigFromEmployee(pool, companyId, employee, config.id);
   return synced ?? config;
+}
+
+async function findPayrollRecordForMonth(
+  pool: Pool,
+  companyId: number,
+  employeeId: number,
+  year: number,
+  month: number,
+): Promise<DbPayrollRecord | null> {
+  if (!year || month < 1 || month > 12) return null;
+  try {
+    const exact = await pool.query<DbPayrollRecord>(
+      `SELECT * FROM payroll_records
+       WHERE company_id = $1 AND employee_id = $2
+         AND payroll_year = $3 AND payroll_month = $4
+       ORDER BY id DESC
+       LIMIT 1`,
+      [companyId, employeeId, year, month],
+    );
+    if (exact.rows[0]) return exact.rows[0];
+  } catch {
+    // payroll_year / payroll_month are added when a month salary is saved.
+  }
+  return null;
 }
 
 async function findPayrollRecordForPeriod(
@@ -426,9 +461,11 @@ async function upsertPayrollRecord(
       `INSERT INTO payroll_records (
          company_id, employee_id, payroll_config_id,
          pay_period_start, pay_period_end,
+         base_salary, overtime_hours, overtime_pay,
+         allowances, deductions,
          gross_pay, net_pay, cpf_employee, cpf_employer,
          status, processed_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW())
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14, 'pending', NOW())
        RETURNING *`,
       [
         companyId,
@@ -436,6 +473,11 @@ async function upsertPayrollRecord(
         activeConfig.id,
         payPeriodStart,
         payPeriodEnd,
+        baseSalary,
+        overtimeHours,
+        amounts.overtimePay,
+        JSON.stringify(allowances),
+        JSON.stringify(deductions),
         amounts.grossPay,
         amounts.netPay,
         amounts.employeeCpf,
@@ -824,17 +866,235 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-function buildPayslipDataFromRecord(
+function snapshotBasicSalary(record: DbPayrollRecord): number {
+  const stored = Number(record.base_salary);
+  if (
+    record.base_salary != null &&
+    String(record.base_salary).trim() !== "" &&
+    Number.isFinite(stored) &&
+    stored > 0
+  ) {
+    return stored;
+  }
+
+  const gross = Number(record.gross_pay) || 0;
+  const overtime = Number(record.overtime_pay) || 0;
+  const allowanceSum = sumJsonValues(parsePayrollComponents(record.allowances));
+  const derived = round2(gross - overtime - allowanceSum);
+  return derived > 0 ? derived : gross;
+}
+
+export async function repairPayrollMonthSnapshots(pool: Pool): Promise<void> {
+  await pool.query(`ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS payroll_month INTEGER`);
+  await pool.query(`ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS payroll_year INTEGER`);
+  await pool.query(
+    `UPDATE payroll_records
+     SET payroll_year = EXTRACT(YEAR FROM (pay_period_start AT TIME ZONE 'Asia/Singapore'))::int,
+         payroll_month = EXTRACT(MONTH FROM (pay_period_start AT TIME ZONE 'Asia/Singapore'))::int
+     WHERE payroll_month IS NULL OR payroll_year IS NULL`,
+  );
+  await pool.query(
+    `UPDATE payroll_records pr
+     SET allowances = ep.allowances,
+         deductions = COALESCE(ep.deductions, pr.deductions),
+         base_salary = COALESCE(NULLIF(pr.base_salary, 0), ep.base_salary),
+         gross_pay = CASE
+           WHEN COALESCE(pr.gross_pay, 0) <= COALESCE(NULLIF(pr.base_salary, 0), ep.base_salary, 0)
+             THEN COALESCE(NULLIF(pr.base_salary, 0), ep.base_salary, 0) + sums.allowance_sum
+           ELSE pr.gross_pay
+         END,
+         cpf_employee = CASE
+           WHEN COALESCE(pr.gross_pay, 0) <= COALESCE(NULLIF(pr.base_salary, 0), ep.base_salary, 0)
+             THEN ep.cpf_amount
+           ELSE pr.cpf_employee
+         END,
+         cpf_employer = CASE
+           WHEN COALESCE(pr.gross_pay, 0) <= COALESCE(NULLIF(pr.base_salary, 0), ep.base_salary, 0)
+             THEN ep.employer_cpf_amount
+           ELSE pr.cpf_employer
+         END,
+         net_pay = CASE
+           WHEN COALESCE(pr.gross_pay, 0) <= COALESCE(NULLIF(pr.base_salary, 0), ep.base_salary, 0)
+             THEN ep.net_salary
+           ELSE pr.net_pay
+         END
+     FROM employee_payroll ep
+     JOIN LATERAL (
+       SELECT COALESCE(SUM(
+         CASE
+           WHEN value ~ '^-?[0-9]+(\\.[0-9]+)?$' AND value::numeric > 0 THEN value::numeric
+           ELSE 0
+         END
+       ), 0) AS allowance_sum
+       FROM jsonb_each_text(COALESCE(ep.allowances, '{}'::jsonb))
+     ) sums ON true
+     WHERE pr.payroll_config_id = ep.id
+       AND pr.company_id = ep.company_id
+       AND sums.allowance_sum > 0
+       AND NOT EXISTS (
+         SELECT 1
+         FROM jsonb_each_text(COALESCE(pr.allowances, '{}'::jsonb)) cur(key, value)
+         WHERE value ~ '^-?[0-9]+(\\.[0-9]+)?$'
+           AND value::numeric > 0
+       )`,
+  );
+}
+
+export async function savePayrollMonthSnapshot(
+  pool: Pool,
+  companyId: number,
+  payrollConfigId: number,
+  employeeId: number,
+  month: number,
+  year: number,
+  baseSalary: number,
+  allowancesInput: unknown,
+  deductionsInput: unknown,
+): Promise<void> {
+  if (!employeeId || !payrollConfigId || month < 1 || month > 12 || !year) return;
+  await repairPayrollMonthSnapshots(pool);
+  const employeeResult = await pool.query<DbEmployee>(
+    `SELECT * FROM employees WHERE id = $1 AND company_id = $2`,
+    [employeeId, companyId],
+  );
+  const employee = employeeResult.rows[0];
+  if (!employee) return;
+
+  const allowances = parsePayrollComponents(allowancesInput);
+  const deductions = parsePayrollComponents(deductionsInput);
+  const amounts = calculatePayrollAmounts({
+    baseSalary,
+    overtimeHours: 0,
+    overtimeRate: resolveOvertimeRate(baseSalary),
+    allowances,
+    deductions,
+    age: calculateAgeFromDob(employee.date_of_birth),
+    nationality: employee.nationality,
+    prStatus: employee.pr_status,
+  });
+  const payPeriodStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const payPeriodEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  const existing = await pool.query<{ id: number }>(
+    `SELECT id FROM payroll_records
+     WHERE company_id = $1 AND employee_id = $2
+       AND (
+         (payroll_year = $3 AND payroll_month = $4)
+         OR (
+           EXTRACT(YEAR FROM (pay_period_start AT TIME ZONE 'Asia/Singapore')) = $3
+           AND EXTRACT(MONTH FROM (pay_period_start AT TIME ZONE 'Asia/Singapore')) = $4
+         )
+       )
+     ORDER BY id DESC
+     LIMIT 1`,
+    [companyId, employeeId, year, month],
+  );
+
+  if (!existing.rows[0]) {
+    await pool.query(
+      `INSERT INTO payroll_records (
+         company_id, employee_id, payroll_config_id,
+         pay_period_start, pay_period_end,
+         payroll_year, payroll_month,
+         base_salary, overtime_hours, overtime_pay,
+         allowances, deductions,
+         gross_pay, net_pay, cpf_employee, cpf_employer,
+         status, processed_at
+       ) VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, 0, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, 'pending', NOW())`,
+      [
+        companyId,
+        employeeId,
+        payrollConfigId,
+        payPeriodStart,
+        payPeriodEnd,
+        year,
+        month,
+        baseSalary,
+        amounts.overtimePay,
+        JSON.stringify(allowances),
+        JSON.stringify(deductions),
+        amounts.grossPay,
+        amounts.netPay,
+        amounts.employeeCpf,
+        amounts.employerCpf,
+      ],
+    );
+    return;
+  }
+
+  await pool.query(
+    `UPDATE payroll_records SET
+       payroll_config_id = $1,
+       payroll_year = $2,
+       payroll_month = $3,
+       pay_period_start = $4::date,
+       pay_period_end = $5::date,
+       base_salary = $6,
+       overtime_pay = $7,
+       allowances = $8::jsonb,
+       deductions = $9::jsonb,
+       gross_pay = $10,
+       net_pay = $11,
+       cpf_employee = $12,
+       cpf_employer = $13,
+       updated_at = NOW()
+     WHERE id = $14 AND company_id = $15`,
+    [
+      payrollConfigId,
+      year,
+      month,
+      payPeriodStart,
+      payPeriodEnd,
+      baseSalary,
+      amounts.overtimePay,
+      JSON.stringify(allowances),
+      JSON.stringify(deductions),
+      amounts.grossPay,
+      amounts.netPay,
+      amounts.employeeCpf,
+      amounts.employerCpf,
+      existing.rows[0].id,
+      companyId,
+    ],
+  );
+}
+
+function payslipSalaryForMonth(config: DbPayrollConfig, record: DbPayrollRecord | null) {
+  const stored = Number(record?.base_salary);
+  const hasStored = record?.base_salary != null && String(record.base_salary).trim() !== "" && stored > 0;
+  const recordAllowances = parsePayrollComponents(record?.allowances);
+  const recordDeductions = parsePayrollComponents(record?.deductions);
+  return {
+    baseSalary: hasStored ? stored : Number(config.base_salary) || 0,
+    allowances: hasStored ? recordAllowances : parsePayrollComponents(config.allowances),
+    deductions: hasStored ? recordDeductions : parsePayrollComponents(config.deductions),
+  };
+}
+
+function buildPayslipDataFromConfig(
   employee: DbEmployee,
   company: { name: string; address: string | null },
   config: DbPayrollConfig,
-  record: DbPayrollRecord,
+  month: number,
+  year: number,
+  payPeriodStart: string,
+  payPeriodEnd: string,
+  record?: DbPayrollRecord | null,
 ): PayslipData {
-  const payPeriodStart = normalizePayPeriodDate(record.pay_period_start);
-  const payPeriodEnd = normalizePayPeriodDate(record.pay_period_end);
-  const baseSalary = Number(config.base_salary) || 0;
-  const allowances = parsePayrollComponents(config.allowances);
-  const deductions = parsePayrollComponents(config.deductions);
+  const saved = payslipSalaryForMonth(config, record ?? null);
+  const baseSalary = saved.baseSalary;
+  const allowances = saved.allowances;
+  const deductions = saved.deductions;
+  const amounts = calculatePayrollAmounts({
+    baseSalary,
+    overtimeHours: 0,
+    overtimeRate: resolveOvertimeRate(baseSalary),
+    allowances,
+    deductions,
+    age: calculateAgeFromDob(employee.date_of_birth),
+    nationality: employee.nationality,
+    prStatus: employee.pr_status,
+  });
   const earnings = splitEarnings(allowances);
 
   return {
@@ -846,22 +1106,22 @@ function buildPayslipDataFromRecord(
     icNo: employee.nric_number || employee.passport_number || "",
     department: employee.department,
     jobTitle: employee.designation,
-    month: derivePayrollMonthYear(payPeriodStart).month,
-    year: derivePayrollMonthYear(payPeriodStart).year,
+    month,
+    year,
     payPeriodStart,
     payPeriodEnd,
     basicRate: baseSalary,
     workingDays: null,
     basicPay: baseSalary,
-    overtime: earnings.overtime,
+    overtime: amounts.overtimePay,
     allowance: earnings.allowances,
     bonus: earnings.bonus,
     otherIncome: earnings.otherIncome,
-    grossPay: Number(record.gross_pay) || 0,
-    employeeCpf: Number(record.cpf_employee) || 0,
-    netPay: Number(record.net_pay) || 0,
-    employerCpf: Number(record.cpf_employer) || 0,
-    otherDeductions: sumJsonValues(deductions),
+    grossPay: amounts.grossPay,
+    employeeCpf: amounts.employeeCpf,
+    netPay: amounts.netPay,
+    employerCpf: amounts.employerCpf,
+    otherDeductions: amounts.deductionsTotal,
   };
 }
 
@@ -881,26 +1141,19 @@ async function generatePayslipForPeriod(
   }
 
   const { config, employee, company } = ctx;
-  const record = await findPayrollRecordForPeriod(
-    pool,
-    companyId,
-    employee.id,
+  const { month, year } = derivePayrollMonthYear(payPeriodStart);
+  const record = await findPayrollRecordForMonth(pool, companyId, employee.id, year, month);
+  const payslipData = buildPayslipDataFromConfig(
+    employee,
+    company,
+    config,
+    month,
+    year,
     payPeriodStart,
     payPeriodEnd,
+    record,
   );
-
-  if (!record) {
-    return {
-      error: {
-        status: 404,
-        message: "No processed payroll found for this period. Please process payroll first.",
-      },
-    };
-  }
-
-  const payslipData = buildPayslipDataFromRecord(employee, company, config, record);
   const pdfBuffer = await generatePayslipPdf(payslipData);
-  const { month, year } = derivePayrollMonthYear(payPeriodStart);
   const downloadFilename = getPayslipDownloadFileName(employee.name, month, year);
   return { pdfBuffer, downloadFilename, payslipData };
 }
@@ -930,22 +1183,17 @@ export async function previewPayslipCompany(
     }
 
     const { config, employee, company } = ctx;
-    const record = await findPayrollRecordForPeriod(
-      pool,
-      companyId,
-      employee.id,
+    const record = await findPayrollRecordForMonth(pool, companyId, employee.id, yearNum, monthNum);
+    const payslipData = buildPayslipDataFromConfig(
+      employee,
+      company,
+      config,
+      monthNum,
+      yearNum,
       payPeriodStart,
       payPeriodEnd,
+      record,
     );
-
-    if (!record) {
-      res.status(404).json({
-        message: "No processed payroll found for this period. Please process payroll first.",
-      });
-      return;
-    }
-
-    const payslipData = buildPayslipDataFromRecord(employee, company, config, record);
     const html = buildPayslipHtml(payslipData);
     const monthLabel = MONTH_NAMES[monthNum - 1] ?? `Month ${monthNum}`;
     const title = `Payslip — ${employee.name} — ${monthLabel} ${yearNum}`;

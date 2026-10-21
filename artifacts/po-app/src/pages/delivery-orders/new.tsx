@@ -181,7 +181,7 @@ export default function DeliveryOrderNew() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
@@ -477,6 +477,11 @@ export default function DeliveryOrderNew() {
             currency: "SGD",
             totalAmount: 0,
           }}
+        askMarkSentOnClose
+        markSentUrl={`/api/delivery-orders/${savedDoc.id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: "Sent to External" } : prev);
+        }}
  onEmailSent={async (recipients) => {
             await fetch(`/api/delivery-orders/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
             await queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });

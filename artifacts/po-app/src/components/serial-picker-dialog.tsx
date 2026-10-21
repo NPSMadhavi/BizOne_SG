@@ -12,6 +12,9 @@ interface Serial {
   serialNumber: string;
   status: string;
   grnNumber?: string;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  manufacturingDate?: string | null;
   invoiceNumber?: string;
   reservedByUser?: string;
 }
@@ -86,7 +89,7 @@ export function SerialPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>
             Select Serials
@@ -134,8 +137,11 @@ export function SerialPickerDialog({
                 <TableRow className="bg-muted/50">
                   <TableHead className="w-10"></TableHead>
                   <TableHead>Serial Number</TableHead>
-                  <TableHead className="w-28">GRN #</TableHead>
-                  <TableHead className="w-48">Status</TableHead>
+                  <TableHead className="w-24">GRN #</TableHead>
+                  <TableHead className="w-28">Batch No</TableHead>
+                  <TableHead className="w-28">Expiry</TableHead>
+                  <TableHead className="w-28">Manufacturing</TableHead>
+                  <TableHead className="w-40">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -161,6 +167,9 @@ export function SerialPickerDialog({
                       </TableCell>
                       <TableCell className="font-mono text-sm">{s.serialNumber}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{s.grnNumber || "—"}</TableCell>
+                      <TableCell className="text-xs font-medium">{s.batchNo || "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{s.expiryDate || "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{s.manufacturingDate || "—"}</TableCell>
                       <TableCell>
                         {isReservedByOther ? (
                           <div>

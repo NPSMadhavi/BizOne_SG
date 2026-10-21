@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { isVedaGatewayConfigured, vedaChat } from "../../lib/veda-gateway.js";
 
 const router = Router();
 
@@ -36,19 +37,25 @@ router.post("/ai/format-invoice", async (req: any, res: any) => {
   }
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5",
-      max_completion_tokens: 4096,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: JSON.stringify(items) },
-      ],
-    });
-
-    const raw = (completion.choices[0]?.message?.content || "").trim();
+    let raw = "";
+    if (isVedaGatewayConfigured()) {
+      raw = (await vedaChat(`${SYSTEM_PROMPT}\n\n---\n\nItems JSON:\n${JSON.stringify(items)}`)).trim();
+    } else {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5",
+        max_completion_tokens: 4096,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: JSON.stringify(items) },
+        ],
+      });
+      raw = (completion.choices[0]?.message?.content || "").trim();
+    }
     let formattedItems: any[];
     try {
-      formattedItems = JSON.parse(raw);
+      const start = raw.indexOf("[");
+      const end = raw.lastIndexOf("]");
+      formattedItems = JSON.parse(start >= 0 ? raw.slice(start, end + 1) : raw);
       if (!Array.isArray(formattedItems)) throw new Error("Not an array");
     } catch {
       return res.status(500).json({ error: "AI returned invalid JSON" });

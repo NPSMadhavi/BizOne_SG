@@ -3618,6 +3618,25 @@ export async function generatePI_PDF(pi: any, company?: Company | null, settings
   return generateInvoice_PDF(invShape, company, settings, { returnBase64: options?.returnBase64, titleOverride: "PROFORMA INVOICE" });
 }
 
+export async function generateVendorProformaInvoice_PDF(vpi: any, company?: Company | null, settings?: { bankDetails?: string; termsAndConditions?: string } | null, options?: { returnBase64?: boolean }): Promise<string | void> {
+  const mapped = {
+    ...vpi,
+    piNumber: vpi.vpiNumber || vpi.piNumber,
+    customerName: vpi.vendorName || vpi.customerName || "",
+    customerAddress: vpi.vendorAddress || vpi.customerAddress || "",
+    customerContact: vpi.vendorContact || vpi.customerContact || "",
+    customerContactEmail: vpi.vendorContactEmail || vpi.customerContactEmail || "",
+    qtRefNo: vpi.pqRefNo || vpi.qtRefNo || null,
+  };
+  const normalized = normalizeProformaDoc(mapped);
+  const invShape: Invoice = {
+    ...normalized,
+    invNumber: normalized.piNumber,
+    poRefNo: mapped.qtRefNo || null,
+  } as unknown as Invoice;
+  return generateInvoice_PDF(invShape, company, settings, { returnBase64: options?.returnBase64, titleOverride: "VENDOR PROFORMA INVOICE" });
+}
+
 export async function generateVendorInvoice_PDF(pi: any, company?: Company | null, options?: { returnBase64?: boolean }): Promise<string | void> {
   const rawItems = Array.isArray(pi?.items)
     ? pi.items

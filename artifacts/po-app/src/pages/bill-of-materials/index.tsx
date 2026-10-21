@@ -163,8 +163,14 @@ function managedCostsFromBom(bom: Pick<BomRecord, "labourCost" | "machineCost" |
   ];
 }
 
-const STORAGE_KEY = "bom-records-v1";
+const STORAGE_KEY_PREFIX = "bom-records-v1";
 const DRAFT_KEY = "bom-draft-v1";
+
+function bomStorageKey(companyId: number | string | null | undefined) {
+  return companyId != null && companyId !== ""
+    ? `${STORAGE_KEY_PREFIX}:c${companyId}`
+    : `${STORAGE_KEY_PREFIX}:none`;
+}
 
 function money(n: number) {
   return `SGD ${n.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -198,9 +204,11 @@ function computeBomTotal(
   return round2(materialCost + wastageAmt + labourCost + machineCost + overhead + customSum);
 }
 
-function loadList(): BomRecord[] {
+function loadList(companyId: number | string | null | undefined): BomRecord[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    // Company-scoped only — do not read legacy unscoped `bom-records-v1`
+    // (that key held shared browser demo data like chocolate/cake across companies).
+    const raw = localStorage.getItem(bomStorageKey(companyId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -209,9 +217,9 @@ function loadList(): BomRecord[] {
   }
 }
 
-function saveList(list: BomRecord[]) {
+function saveList(companyId: number | string | null | undefined, list: BomRecord[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    localStorage.setItem(bomStorageKey(companyId), JSON.stringify(list));
   } catch {
     // ignore
   }
@@ -306,14 +314,21 @@ async function syncFinishedProductStock(record: BomRecord, stockOptions: StockIt
 }
 
 export default function BillOfMaterialsPage() {
-  const { user } = useAuth();
+  const { user, selectedCompany } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const userName = (user as any)?.fullName || user?.username || "User";
+  const companyId = selectedCompany?.id ?? null;
 
   const [mode, setMode] = useState<"form" | "list">("list");
-  const [bomList, setBomList] = useState<BomRecord[]>(() => loadList());
+  const [bomList, setBomList] = useState<BomRecord[]>(() => loadList(companyId));
   const { page, setPage, totalPages, paginatedItems } = usePagination(bomList);
+
+  useEffect(() => {
+    setBomList(loadList(companyId));
+    setMode("list");
+    setEditingId(null);
+  }, [companyId]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [productName, setProductName] = useState("");
@@ -712,7 +727,7 @@ export default function BillOfMaterialsPage() {
         ? bomList.map((b) => (b.id === editingId ? record : b))
         : [record, ...bomList];
       setBomList(next);
-      saveList(next);
+      saveList(companyId, next);
       setEditingId(record.id);
       setUpdatedBy(record.updatedBy);
       setUpdatedAt(record.updatedAt);
@@ -936,7 +951,7 @@ export default function BillOfMaterialsPage() {
               onClick={() => {
                 const next = bomList.filter((x) => x.id !== editingId);
                 setBomList(next);
-                saveList(next);
+                saveList(companyId, next);
                 toast({ title: "BOM deleted" });
                 resetForm();
                 setMode("list");

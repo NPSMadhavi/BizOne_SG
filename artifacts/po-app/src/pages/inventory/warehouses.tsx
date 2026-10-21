@@ -131,6 +131,14 @@ export default function WarehousesPage() {
       });
       return;
     }
+    if (!/^\d{6}$/.test(form.pinCode.trim())) {
+      toast({
+        title: "Invalid postal code",
+        description: "Postal code must be 6 digits.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -217,7 +225,6 @@ export default function WarehousesPage() {
                   <th className="py-3 pr-4">City</th>
                   <th className="py-3 pr-4">Contact</th>
                   <th className="py-3 pr-4">Contact Number</th>
-                  <th className="py-3 pr-4">Sales Person</th>
                   <th className="py-3 pr-4">Status</th>
                   <th className="py-3">Actions</th>
                 </tr>
@@ -237,7 +244,6 @@ export default function WarehousesPage() {
                     <td className="py-3 pr-4 text-[#444651]">{r.city || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.contactPerson || "-"}</td>
                     <td className="py-3 pr-4 text-[#444651]">{r.contactNumber || "-"}</td>
-                    <td className="py-3 pr-4 text-[#444651]">{r.salesPerson || "-"}</td>
                     <td className="py-3 pr-4">
                       <InventoryStatusBadge status={r.isActive ? "active" : "inactive"} />
                     </td>
@@ -294,8 +300,10 @@ export default function WarehousesPage() {
             <div className="space-y-1.5">
               <Label>Postal Code <span className="text-red-500">*</span></Label>
               <Input
+                inputMode="numeric"
+                maxLength={6}
                 value={form.pinCode}
-                onChange={(e) => updateField("pinCode", e.target.value)}
+                onChange={(e) => updateField("pinCode", e.target.value.replace(/\D/g, "").slice(0, 6))}
                 className="bg-[#F8FAFC] border-[#E5E7EB]"
               />
             </div>

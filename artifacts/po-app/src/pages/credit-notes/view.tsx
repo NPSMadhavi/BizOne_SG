@@ -16,6 +16,7 @@ import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { generateCreditNote_PDF } from "@/lib/pdf";
 import { cn } from "@/lib/utils";
 import { stripHtml } from "@/lib/vendor-invoice-items";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 interface CreditNote {
   id: number; cnNumber: string; customerName: string; customerAddress: string | null;
@@ -84,7 +85,7 @@ export default function CreditNoteView() {
   return (
     <div className="max-w-7xl mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4 pb-4 border-b border-gray-200">
+      <StickyPageHeader className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Button
             type="button"
@@ -120,7 +121,7 @@ export default function CreditNoteView() {
             </Button>
           )}
         </div>
-      </div>
+      </StickyPageHeader>
 
       {/* Void banner */}
       {doc.status === "void" && (
@@ -274,6 +275,21 @@ export default function CreditNoteView() {
             totalAmount: Number((doc as any).totalAmount) || 0,
           }}
           onEdit={doc.status === "draft" ? () => setLocation(`/credit-notes/${id}/edit`) : undefined}
+          askMarkSentOnClose
+          markSentUrl={`/api/credit-notes/${id}/mark-sent`}
+          onEmailSent={async (recipients) => {
+            await fetch(`/api/credit-notes/${id}/mark-sent`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sentTo: recipients }),
+            });
+            await refetch();
+          }}
+          onMarkAsSentExternal={async () => {
+            toast({ title: "Marked as sent", description: "Sent to External" });
+            await refetch();
+          }}
         />
       )}
     </div>

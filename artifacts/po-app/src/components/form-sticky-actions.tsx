@@ -10,7 +10,7 @@ export function FormStickyActions({
 }) {
   return (
     <>
-      <div className="h-16 shrink-0" aria-hidden />
+      <div className="h-14 shrink-0" aria-hidden />
       <div
         style={{
           right: "var(--app-veda-width, 0px)",

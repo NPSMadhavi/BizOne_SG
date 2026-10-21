@@ -51,6 +51,8 @@ function isHostOwnedKey(key: string): boolean {
 
 /** Local secrets that may safely replace empty/placeholder process env values. */
 const PREFER_FILE_KEYS = new Set([
+  "VEDA_GATEWAY_URL",
+  "VEDA_API_KEY",
   "AI_INTEGRATIONS_OPENAI_API_KEY",
   "AI_INTEGRATIONS_OPENAI_BASE_URL",
   "OPENAI_API_KEY",

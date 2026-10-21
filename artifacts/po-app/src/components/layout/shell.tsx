@@ -91,6 +91,7 @@ import { AgentPanel } from "@/components/agent-panel";
 import { cn } from "@/lib/utils";
 import { GlobalSearch } from "@/components/global-search";
 import { ClosedPeriodWriteGuard } from "@/components/financial-year-controls";
+import { StickyHeaderSlotContext } from "@/components/sticky-page-header";
 
 // ── Sidebar collapse context ──────────────────────────────────────────────────
 // true = collapsed icon-rail; false = full expanded sidebar
@@ -105,6 +106,7 @@ function getGroupForRoute(loc: string): string | null {
     loc.startsWith("/purchase-quotations") ||
     loc.startsWith("/purchase-orders") ||
     loc.startsWith("/vendor-invoices") ||
+    loc.startsWith("/vendor-proforma-invoices") ||
     loc.startsWith("/quotations") ||
     loc.startsWith("/sales-orders") ||
     loc.startsWith("/invoices") ||
@@ -412,7 +414,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
     try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
   });
   const [sidebarHidden, setSidebarHidden] = React.useState(false);
+  const [stickyHeaderSlot, setStickyHeaderSlot] = React.useState<HTMLElement | null>(null);
   const collapsedBeforeForce = React.useRef<boolean | null>(null);
+
+  React.useEffect(() => {
+    document.documentElement.classList.add("app-shell-lock");
+    return () => document.documentElement.classList.remove("app-shell-lock");
+  }, []);
 
   React.useEffect(() => {
     const onHide = (event: Event) => {
@@ -489,6 +497,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     hasModuleAccess("purchase_quotations") ||
     hasModuleAccess("purchase_orders") ||
     hasModuleAccess("vendor_invoices") ||
+    hasModuleAccess("vendor_proforma_invoices") ||
     hasModuleAccess("quotations") ||
     hasModuleAccess("sales_orders") ||
     hasModuleAccess("invoices") ||
@@ -609,6 +618,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         visible={hasDocuments}
         hasActive={
           location.startsWith("/purchase-quotations") || location.startsWith("/purchase-orders") || location.startsWith("/vendor-invoices") ||
+          location.startsWith("/vendor-proforma-invoices") ||
           location.startsWith("/quotations") || location.startsWith("/sales-orders") ||
           location.startsWith("/invoices") ||
           location.startsWith("/proforma-invoices") || location.startsWith("/credit-notes") ||
@@ -618,9 +628,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         }
       >
         {/* ── Purchases ── */}
-        {(hasModuleAccess("purchase_quotations") || hasModuleAccess("purchase_orders") || hasModuleAccess("vendor_invoices") || hasModuleAccess("grn") || hasModuleAccess("debit_notes")) && (
+        {(hasModuleAccess("purchase_quotations") || hasModuleAccess("purchase_orders") || hasModuleAccess("vendor_invoices") || hasModuleAccess("vendor_proforma_invoices") || hasModuleAccess("grn") || hasModuleAccess("debit_notes")) && (
           <div className="px-3 pt-2 pb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Purchases</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-[#334155] select-none">Purchases</span>
           </div>
         )}
         {hasModuleAccess("purchase_quotations") && (
@@ -631,6 +641,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {hasModuleAccess("purchase_orders") && (
           <NavItem href="/purchase-orders" icon={FileText} active={location.startsWith("/purchase-orders")} inGroup>
             Purchase Orders
+          </NavItem>
+        )}
+        {hasModuleAccess("vendor_proforma_invoices") && (
+          <NavItem href="/vendor-proforma-invoices" icon={FileMinus} active={location.startsWith("/vendor-proforma-invoices")} inGroup>
+            Vendor Proforma Invoice
           </NavItem>
         )}
         {hasModuleAccess("grn") && (
@@ -652,7 +667,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {/* ── Sales ── */}
         {(hasModuleAccess("quotations") || hasModuleAccess("sales_orders") || hasModuleAccess("invoices") || hasModuleAccess("proforma_invoices") || hasModuleAccess("credit_notes") || hasModuleAccess("delivery_orders") || hasModuleAccess("multi_price_level")) && (
           <div className="px-3 pt-3 pb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 select-none">Sales</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-[#334155] select-none">Sales</span>
           </div>
         )}
         {hasModuleAccess("quotations") && (
@@ -1030,7 +1045,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Nav */}
-        <div className={`flex-1 overflow-y-auto ${collapsed ? "p-1.5" : "p-3"}`}>
+        <div className={`flex-1 min-h-0 overflow-y-auto ${collapsed ? "p-1.5" : "p-3"}`}>
           {navItems}
         </div>
 
@@ -1059,7 +1074,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className="min-h-[100dvh] flex flex-col md:flex-row bg-muted/20"
+      className="h-[100dvh] max-h-[100dvh] flex flex-col md:flex-row bg-muted/20 overflow-hidden"
       style={{ ["--app-sidebar-width" as string]: sidebarHidden ? "0px" : collapsed ? "3.5rem" : "16rem" }}
     >
       {/* ── Mobile header ────────────────────────────────────── */}
@@ -1107,21 +1122,28 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </div>
     </header>
 
-      {/* ── Desktop sidebar ───────────────────────────────────── */}
+      {/* ── Desktop sidebar (fixed height; nav scrolls inside) ── */}
       <aside
-        className={`${sidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r bg-card h-screen sticky top-0 shrink-0 transition-all duration-300 ${
+        className={`${sidebarHidden ? "hidden" : "hidden md:flex"} flex-col border-r bg-card h-full min-h-0 max-h-full overflow-hidden shrink-0 transition-all duration-300 ${
           collapsed ? "w-14" : "w-64"
         }`}
       >
         {sidebarContent}
       </aside>
 
-      {/* ── Main content ─────────────────────────────────────── */}
-      <main className="flex-1 min-w-0 p-4 md:p-6 xl:p-8 overflow-auto">
-        <GlobalSearch />
-        <ClosedPeriodWriteGuard>
-          {children}
-        </ClosedPeriodWriteGuard>
+      {/* ── Main content: fixed top chrome + scrollable body ─── */}
+      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+        <StickyHeaderSlotContext.Provider value={stickyHeaderSlot}>
+          <div className="shrink-0 z-40 relative bg-background px-4 md:px-6 xl:px-8 pt-4 md:pt-6 xl:pt-8 border-b border-border/40">
+            <GlobalSearch />
+            <div ref={setStickyHeaderSlot} />
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 md:px-6 xl:px-8 py-4 md:py-6">
+            <ClosedPeriodWriteGuard>
+              {children}
+            </ClosedPeriodWriteGuard>
+          </div>
+        </StickyHeaderSlotContext.Provider>
       </main>
       <AgentPanel />
     </div>

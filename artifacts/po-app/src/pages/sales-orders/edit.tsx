@@ -51,6 +51,9 @@ const itemSchema = z.object({
   discount: z.coerce.number().min(0).max(100).default(0),
   isFoc: z.boolean().default(false),
   itemImage: z.string().default(""),
+  selectedSerials: z.array(z.string()).default([]),
+  selectedSerialIds: z.array(z.number()).default([]),
+  stockItemId: z.number().optional(),
 });
 
 const schema = z.object({
@@ -158,9 +161,26 @@ export default function SalesOrderEdit() {
         isPrivate: (doc as any).isPrivate ?? false,
         items: items.length > 0 ? items.map((i: any) => (
           i.type === "section"
-            ? { type: "section" as const, sectionLabel: i.sectionLabel || "", sectionAlign: i.sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }
-            : { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: i.partNumber || "", description: i.description || "", qty: Number(i.qty) || 1, uom: i.uom || "", unitPrice: Number(i.unitPrice) || 0, discount: Number(i.discount) || 0, isFoc: !!(i as any).isFoc, itemImage: (i as any).itemImage || "" }
-        )) : [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" }],
+            ? { type: "section" as const, sectionLabel: i.sectionLabel || "", sectionAlign: i.sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "", selectedSerials: [], selectedSerialIds: [] }
+            : {
+                type: "item" as const,
+                sectionLabel: "",
+                sectionAlign: "left" as const,
+                partNumber: i.partNumber || "",
+                description: i.description || "",
+                qty: Number(i.qty) || 1,
+                uom: i.uom || "",
+                unitPrice: Number(i.unitPrice) || 0,
+                discount: Number(i.discount) || 0,
+                isFoc: !!(i as any).isFoc,
+                itemImage: (i as any).itemImage || "",
+                selectedSerials: Array.isArray(i.selectedSerials)
+                  ? i.selectedSerials
+                  : String(i.serialNumbers || "").split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean),
+                selectedSerialIds: Array.isArray(i.selectedSerialIds) ? i.selectedSerialIds : [],
+                stockItemId: i.stockItemId ? Number(i.stockItemId) : undefined,
+              }
+        )) : [{ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "", selectedSerials: [], selectedSerialIds: [] }],
       });
       // Derive discount percentage from saved flat amount so the % input is
       // restored when the user comes back to edit a SalesOrder with a discount.
@@ -328,7 +348,7 @@ export default function SalesOrderEdit() {
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation(`/sales-orders/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
@@ -823,12 +843,24 @@ export default function SalesOrderEdit() {
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
         showWarehouse={false}
- onSelect={({ item, qty }: StockItemSelection) => {
+ onSelect={({ item, selectedSerials, selectedSerialIds, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          const serials = selectedSerials || [];
+          const serialRows: string[] = [];
+          for (let i = 0; i < serials.length; i += 3) {
+            serialRows.push(serials.slice(i, i + 3).join("&nbsp;&nbsp;&nbsp;"));
+          }
+          const serialHtml = serialRows.map((row) => `<p>${row}</p>`).join("");
+          const desc = serials.length > 0
+            ? `<p>${item.name}</p><p><strong>Serial Numbers:</strong></p>${serialHtml}`
+            : `<p>${item.name}</p>`;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
-          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "");
+          form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
+          form.setValue(`items.${stockPickerIndex}.selectedSerials`, serials);
+          form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds || []);
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}
@@ -881,6 +913,8 @@ export default function SalesOrderEdit() {
           currency: (doc as any).currency || "SGD",
           totalAmount: Number(doc.totalAmount) || 0,
         } : undefined}
+        askMarkSentOnClose
+        markSentUrl={`/api/sales-orders/${id}/mark-sent`}
  onEmailSent={async (recipients) => {
           await fetch(`/api/sales-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
         }}

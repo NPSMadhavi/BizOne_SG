@@ -95,10 +95,10 @@ export default function VendorInvoiceList() {
   const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
   const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
-  // Multi-currency stats from date-filtered set
+  // Multi-currency stats from the currently visible list (search + vendor + date)
   const stats = useMemo(() => {
     const byCurrency: Record<string, { total: number; outstanding: number; count: number }> = {};
-    for (const pi of filteredByDate) {
+    for (const pi of filtered) {
       const c = pi.currency || "SGD";
       if (!byCurrency[c]) byCurrency[c] = { total: 0, outstanding: 0, count: 0 };
       byCurrency[c].total += pi.totalAmount;
@@ -106,13 +106,13 @@ export default function VendorInvoiceList() {
       byCurrency[c].count += 1;
     }
     return Object.entries(byCurrency).sort((a, b) => b[1].total - a[1].total);
-  }, [filteredByDate]);
+  }, [filtered]);
 
   const statusCounts = useMemo(() => ({
-    pending: filteredByDate.filter(p => p.status === "pending").length,
-    partial: filteredByDate.filter(p => p.status === "partial").length,
-    paid: filteredByDate.filter(p => p.status === "paid").length,
-  }), [filteredByDate]);
+    pending: filtered.filter(p => p.status === "pending").length,
+    partial: filtered.filter(p => p.status === "partial").length,
+    paid: filtered.filter(p => p.status === "paid").length,
+  }), [filtered]);
 
   const currentYear = new Date().getFullYear();
 
@@ -198,7 +198,7 @@ export default function VendorInvoiceList() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-end justify-between">
-              <span className="text-3xl font-bold">{filteredByDate.length}</span>
+              <span className="text-3xl font-bold">{filtered.length}</span>
               <span className="text-sm text-muted-foreground mb-1">total PIs</span>
             </div>
             <div className="grid grid-cols-3 gap-2 pt-1 border-t">

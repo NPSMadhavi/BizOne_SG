@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ManagementTableCard, ManagementTableContainer, ManagementEmptyState, ManagementPageHeader, ManagementToolbarRow } from "@/operations-8june/components/layout/ManagementPageUI";
@@ -55,8 +56,11 @@ import {
   getUniquePayrollRecords,
   hasProcessedPayrollForEmployee,
   getAvailablePayslipMonthsForEmployee,
+  isPayslipMonthSelectable,
   isPayrollProcessedForPeriod,
   formatPayrollMonthLabel,
+  listEmployeePayrollMonths,
+  recordPayrollMonthYear,
   isPayPeriodEligibleForProcessing,
   PAYROLL_CURRENT_MONTH_ERROR,
   isPayPeriodDateDisabled,
@@ -187,9 +191,86 @@ function mapNationalityToCitizenship(nationality?: string): "citizen" | "pr" | "
   return "foreigner";
 }
 
+function PayrollMonthTable({
+  rows,
+  selectedMonth,
+  selectedYear,
+  onSelect,
+}: {
+  rows: ReturnType<typeof listEmployeePayrollMonths>;
+  selectedMonth?: number | null;
+  selectedYear?: number | null;
+  onSelect?: (month: number, year: number) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <p className="rounded-md border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-4 text-sm text-[#6B7280]">
+        No monthly payroll has been saved yet.
+      </p>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded-md border border-[#E5E7EB]">
+      <table className="min-w-full text-sm">
+        <thead className="bg-[#EFF6FF] text-left text-[#1D4ED8]">
+          <tr>
+            {["Month", "Basic", "Transport", "Food", "Bonus", "Other", "Gross", "Employee CPF", "Employer CPF"].map((heading) => (
+              <th key={heading} className="whitespace-nowrap px-3 py-2 font-medium">{heading}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const selected = selectedMonth === row.month && selectedYear === row.year;
+            return (
+              <tr
+                key={`${row.year}-${row.month}`}
+                className={cn("border-t border-[#E5E7EB]", onSelect && "cursor-pointer hover:bg-[#F8FAFC]", selected && "bg-[#EFF6FF]")}
+                onClick={onSelect ? () => onSelect(row.month, row.year) : undefined}
+              >
+                <td className="whitespace-nowrap px-3 py-2 font-medium text-[#111827]">{row.label}</td>
+                <td className="px-3 py-2">{formatCurrency(row.basic)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.transport)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.meal)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.bonus)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.other)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.gross)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.employeeCpf)}</td>
+                <td className="px-3 py-2">{formatCurrency(row.employerCpf)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function formatCurrency(amount: string | number) {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
   return new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(num || 0);
+}
+
+function onePayrollPerEmployee(configs: PayrollConfig[]): PayrollConfig[] {
+  const byEmployee = new Map<number, PayrollConfig>();
+  for (const config of configs) {
+    const key = Number(config.employeeId);
+    const current = byEmployee.get(key);
+    if (!current) {
+      byEmployee.set(key, config);
+      continue;
+    }
+    const currentActive = current.isActive !== false;
+    const nextActive = config.isActive !== false;
+    if (nextActive && !currentActive) {
+      byEmployee.set(key, config);
+      continue;
+    }
+    if (currentActive === nextActive && Number(config.id) > Number(current.id)) {
+      byEmployee.set(key, config);
+    }
+  }
+  return [...byEmployee.values()];
 }
 
 function formatPeriod(period: string) {
@@ -201,6 +282,79 @@ function formatPeriod(period: string) {
   return map[period] || period;
 }
 
+function buildPayslipFromSetSalary(args: {
+  config: PayrollConfig;
+  month: number;
+  year: number;
+  employees: any[];
+  payrollRecords?: any[];
+  company: { name?: string | null; address?: string | null } | null;
+}): { data: PayslipPdfData; title: string; filename: string } {
+  const { config, month, year, employees, company, payrollRecords = [] } = args;
+  const { payPeriodStart, payPeriodEnd } = getPayPeriodForMonth(year, month);
+  const employee = employees.find((item) => Number(item.id) === Number(config.employeeId));
+  const monthRecord = payrollRecords.find((item) => {
+    const period = recordPayrollMonthYear(item);
+    return (
+      Number(item.employeeId) === Number(config.employeeId) &&
+      period.year === year &&
+      period.month === month &&
+      Number(item.baseSalary) > 0
+    );
+  });
+  const baseSalary = Number(monthRecord?.baseSalary) || Number(config.baseSalary) || Number(employee?.salary) || 0;
+  const dob = employee?.dateOfBirth ? new Date(employee.dateOfBirth) : null;
+  const age = dob && !Number.isNaN(dob.getTime()) ? calculateAge(dob) : 30;
+  const allowances =
+    monthRecord?.allowances && typeof monthRecord.allowances === "object"
+      ? monthRecord.allowances
+      : config.allowances || {};
+  const deductions =
+    monthRecord?.deductions && typeof monthRecord.deductions === "object"
+      ? monthRecord.deductions
+      : config.deductions || {};
+  const preview = calculateSyncBridgePayrollPreview({
+    monthlySalary: baseSalary,
+    age,
+    citizenshipStatus: mapNationalityToCitizenship(employee?.nationality || config.nationality),
+    prStatus: employee?.prStatus,
+    allowances,
+    deductions,
+  });
+  const earnings = splitEarnings(allowances);
+  const monthLabel = formatPayrollMonthLabel(year, month);
+  return {
+    data: {
+      companyName: company?.name || "",
+      companyAddress: company?.address || "",
+      employeeName: employee?.name || config.employeeName,
+      employeeDbId: Number(employee?.id ?? config.employeeId),
+      employeeCode: employee?.employeeId || String(config.employeeId),
+      icNo: employee?.nricNumber || employee?.passportNumber || "",
+      department: employee?.department || config.department || "",
+      jobTitle: employee?.designation || config.designation || "",
+      month,
+      year,
+      payPeriodStart,
+      payPeriodEnd,
+      basicRate: baseSalary,
+      workingDays: null,
+      basicPay: baseSalary,
+      overtime: preview.overtimePay,
+      allowance: earnings.allowances,
+      bonus: earnings.bonus,
+      otherIncome: earnings.otherIncome,
+      grossPay: preview.grossPay,
+      employeeCpf: preview.employeeCpf,
+      netPay: preview.netPay,
+      employerCpf: preview.employerCpf,
+      otherDeductions: preview.deductionsTotal,
+    },
+    title: `${employee?.name || config.employeeName} - ${monthLabel}`,
+    filename: payslipPdfFilename(employee?.name || config.employeeName, month, year),
+  };
+}
+
 async function resolvePayslipPdfForMonth(args: {
   config: PayrollConfig;
   month: number;
@@ -209,54 +363,7 @@ async function resolvePayslipPdfForMonth(args: {
   payrollRecords: any[];
   company: { name?: string | null; address?: string | null } | null;
 }): Promise<{ data: PayslipPdfData; title: string; filename: string } | null> {
-  const { config, month, year, employees, payrollRecords, company } = args;
-  const { payPeriodStart, payPeriodEnd } = getPayPeriodForMonth(year, month);
-  const employee = employees.find((item) => Number(item.id) === Number(config.employeeId));
-  const record = findPayrollRecordForPeriod(config.employeeId, payrollRecords, payPeriodStart, payPeriodEnd);
-  const localData = record
-    ? buildPayslipPdfData({
-        config,
-        employee,
-        record,
-        company,
-        month,
-        year,
-        payPeriodStart,
-        payPeriodEnd,
-      })
-    : null;
-
-  try {
-    const res = await fetch("/api/payroll/payslips/preview", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        payrollConfigId: config.id,
-        year,
-        month,
-      }),
-    });
-    if (res.ok) {
-      const payload = await res.json().catch(() => null);
-      const data = isPayslipPdfData(payload?.data) ? payload.data : localData;
-      if (!data) return null;
-      return {
-        data,
-        title: payload?.title || `${config.employeeName} - ${formatPayrollMonthLabel(year, month)}`,
-        filename: payload?.downloadFilename || payslipPdfFilename(config.employeeName, month, year),
-      };
-    }
-  } catch {
-    // Fall back to processed payroll already loaded in the browser.
-  }
-
-  if (!localData) return null;
-  return {
-    data: localData,
-    title: `${config.employeeName} - ${formatPayrollMonthLabel(year, month)}`,
-    filename: payslipPdfFilename(config.employeeName, month, year),
-  };
+  return buildPayslipFromSetSalary(args);
 }
 
 function findLatestAvailablePayslipMonth(
@@ -291,6 +398,11 @@ export default function PayrollPage() {
   const [openDetail, setOpenDetail] = useState<null | "employees" | "gross" | "net" | "records">(null);
   const [payslipModalOpen, setPayslipModalOpen] = useState(false);
   const [payslipConfig, setPayslipConfig] = useState<PayrollConfig | null>(null);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printMode, setPrintMode] = useState<"bulk" | "individual">("individual");
+  const [printConfigs, setPrintConfigs] = useState<PayrollConfig[]>([]);
+  const [printFrom, setPrintFrom] = useState("");
+  const [printTo, setPrintTo] = useState("");
   const [selectedPayslipMonths, setSelectedPayslipMonths] = useState<number[]>([]);
   const [payslipYear, setPayslipYear] = useState(new Date().getFullYear());
   const [isPayslipDownloading, setIsPayslipDownloading] = useState(false);
@@ -390,9 +502,10 @@ export default function PayrollPage() {
     queryKey: ["/api/payroll/summary"],
   });
 
-  const { data: configs = [], isLoading: configsLoading } = useQuery<PayrollConfig[]>({
+  const { data: payrollConfigs = [], isLoading: configsLoading } = useQuery<PayrollConfig[]>({
     queryKey: ["/api/payroll/configs"],
   });
+  const configs = useMemo(() => onePayrollPerEmployee(payrollConfigs), [payrollConfigs]);
 
   const { data: employees = [] } = useQuery<any[]>({
     queryKey: ["/api/employees"],
@@ -649,63 +762,138 @@ export default function PayrollPage() {
     void handleQuickPayslipDownload(config);
   };
 
-  /** Bulk print: ZIP of payslips for selected rows (or all with processed payroll). */
-  const handleBulkPrint = async () => {
+  const openPrintDialog = (mode: "bulk" | "individual", targets: PayrollConfig[]) => {
+    setPrintMode(mode);
+    setPrintConfigs(targets);
+    setPrintFrom("");
+    setPrintTo("");
+    setPrintDialogOpen(true);
+  };
+
+  /** Bulk print and individual print open the same month picker. */
+  const handleBulkPrint = () => {
     const targets =
       selectedIds.length > 0
         ? configs.filter((c) => selectedIds.includes(c.id))
-        : configs.filter((c) =>
-            hasProcessedPayrollForEmployee(c.employeeId, payrollRecords)
-          );
+        : configs;
 
     if (targets.length === 0) {
       toast({
         title: "Nothing to print",
-        description: selectedIds.length
-          ? "Selected employees have no processed payslips. Process payroll first."
-          : "Select one or more employees, or process payroll first.",
+        description: "Select one or more employees first.",
         variant: "destructive",
       });
       return;
     }
 
-    const eligible = targets.filter((c) =>
-      hasProcessedPayrollForEmployee(c.employeeId, payrollRecords)
-    );
-    if (eligible.length === 0) {
+    openPrintDialog("bulk", targets);
+  };
+
+  /** Individual print uses the same month popup as bulk print. */
+  const handleIndividualPrint = () => {
+    if (selectedIds.length !== 1) {
       toast({
-        title: "Payslips unavailable",
-        description: "Process payroll first, then try bulk print.",
+        title: "Select one employee",
+        description: "Check exactly one employee row for individual print.",
         variant: "destructive",
       });
       return;
     }
 
-    const period = getLastCompletedPayPeriod();
+    const config = configs.find((c) => c.id === selectedIds[0]);
+    if (!config) return;
+
+    openPrintDialog("individual", [config]);
+  };
+
+  const printMonthOptions = useMemo(() => {
+    const from = printFrom && printTo && printFrom > printTo ? printTo : printFrom;
+    const to = printFrom && printTo && printFrom > printTo ? printFrom : printTo;
+    const startYear = from ? Number(from.slice(0, 4)) : new Date().getFullYear();
+    const endYear = to ? Number(to.slice(0, 4)) : startYear;
+    const months: { year: number; month: number }[] = [];
+    for (let year = startYear; year <= endYear; year += 1) {
+      for (let month = 1; month <= 12; month += 1) {
+        const period = getPayPeriodForMonth(year, month);
+        if (from && period.payPeriodEnd < from) continue;
+        if (to && period.payPeriodStart > to) continue;
+        months.push({ year, month });
+      }
+    }
+    return months;
+  }, [printFrom, printTo]);
+
+  const handlePrintMonth = async (year: number, month: number) => {
+    const period = getPayPeriodForMonth(year, month);
+    const targets = printConfigs;
+    if (targets.length === 0) {
+      toast({
+        title: "Payslip unavailable",
+        description: "Select an employee with a payroll salary first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (printMode === "individual" || targets.length === 1) {
+      const config = targets[0];
+      setIsPayslipViewing(true);
+      try {
+        const resolved = await resolvePayslipPdfForMonth({
+          config,
+          month,
+          year,
+          employees,
+          payrollRecords,
+          company: selectedCompany,
+        });
+        if (!resolved) {
+          toast({
+            title: "Print failed",
+            description: "Could not load payslip for printing.",
+            variant: "destructive",
+          });
+          return;
+        }
+        setPayslipViewerData(resolved.data);
+        setPayslipViewerTitle(resolved.title);
+        setPayslipViewerFilename(resolved.filename);
+        setPayslipViewerOpen(true);
+        setPrintDialogOpen(false);
+      } catch (error) {
+        toast({
+          title: "Print failed",
+          description: error instanceof Error ? error.message : "Failed to open payslip.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsPayslipViewing(false);
+      }
+      return;
+    }
+
     setIsPayslipDownloading(true);
     try {
       const zipResult = await downloadBatchPayslipsZip(
-        eligible,
+        targets,
         period.payPeriodStart,
         period.payPeriodEnd
       );
       if (zipResult.ok) {
         toast({
           title: "Bulk print ready",
-          description: `Downloaded ${eligible.length} payslip(s). Open the ZIP file to print.`,
+          description: `Downloaded ${targets.length} payslip(s) for ${formatPayrollMonthLabel(year, month)}. Open the ZIP file to print.`,
         });
+        setPrintDialogOpen(false);
         return;
       }
 
-      // Client-side ZIP fallback
       const zipEntries: Array<{ filename: string; data: Uint8Array }> = [];
-      for (const config of eligible) {
-        const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
-        if (!latest) continue;
+      for (const config of targets) {
         const resolved = await resolvePayslipPdfForMonth({
           config,
-          month: latest.month,
-          year: latest.year,
+          month,
+          year,
           employees,
           payrollRecords,
           company: selectedCompany,
@@ -731,11 +919,10 @@ export default function PayrollPage() {
       }
 
       const zipBlob = createPayslipZipBlob(zipEntries);
-      const { monthLabel } = derivePayrollMonthYear(period.payPeriodStart);
       const url = window.URL.createObjectURL(zipBlob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `Payslips_${(monthLabel || "batch").replace(/\s+/g, "_")}.zip`;
+      anchor.download = `Payslips_${formatPayrollMonthLabel(year, month).replace(/\s+/g, "_")}.zip`;
       anchor.rel = "noopener";
       anchor.style.display = "none";
       document.body.appendChild(anchor);
@@ -745,8 +932,9 @@ export default function PayrollPage() {
 
       toast({
         title: "Bulk print ready",
-        description: `Downloaded ${zipEntries.length} payslip(s). Open the ZIP file to print.`,
+        description: `Downloaded ${zipEntries.length} payslip(s) for ${formatPayrollMonthLabel(year, month)}. Open the ZIP file to print.`,
       });
+      setPrintDialogOpen(false);
     } catch (error) {
       toast({
         title: "Bulk print failed",
@@ -755,89 +943,6 @@ export default function PayrollPage() {
       });
     } finally {
       setIsPayslipDownloading(false);
-    }
-  };
-
-  /** Individual print: one selected employee → payslip picker / preview (with Print). */
-  const handleIndividualPrint = async () => {
-    if (selectedIds.length !== 1) {
-      toast({
-        title: "Select one employee",
-        description: "Check exactly one employee row for individual print.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const config = configs.find((c) => c.id === selectedIds[0]);
-    if (!config) return;
-
-    if (!hasProcessedPayrollForEmployee(config.employeeId, payrollRecords)) {
-      toast({
-        title: "Payslip unavailable",
-        description: "Process payroll first, then print the payslip.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const latest = findLatestAvailablePayslipMonth(config.employeeId, payrollRecords);
-    if (!latest) {
-      toast({
-        title: "Payslip unavailable",
-        description: "No processed payslip found for this employee.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Multiple months → picker; single month → open preview ready to Print
-    let availableCount = 0;
-    const currentYear = new Date().getFullYear();
-    for (let year = currentYear; year >= currentYear - 5; year -= 1) {
-      availableCount += getAvailablePayslipMonthsForEmployee(
-        config.employeeId,
-        year,
-        payrollRecords
-      ).length;
-      if (availableCount > 1) break;
-    }
-
-    if (availableCount > 1) {
-      openPayslipModal(config);
-      return;
-    }
-
-    setIsPayslipViewing(true);
-    try {
-      const resolved = await resolvePayslipPdfForMonth({
-        config,
-        month: latest.month,
-        year: latest.year,
-        employees,
-        payrollRecords,
-        company: selectedCompany,
-      });
-      if (!resolved) {
-        toast({
-          title: "Print failed",
-          description: "Could not load payslip for printing.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setPayslipViewerData(resolved.data);
-      setPayslipViewerTitle(resolved.title);
-      setPayslipViewerFilename(resolved.filename);
-      setPayslipViewerOpen(true);
-    } catch (error) {
-      toast({
-        title: "Print failed",
-        description: error instanceof Error ? error.message : "Failed to open payslip.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsPayslipViewing(false);
     }
   };
 
@@ -1093,7 +1198,8 @@ export default function PayrollPage() {
       const rows = configs.map((config) => {
         const preview = configPreviews.get(config.id);
         const employee = employees.find((e) => Number(e.id) === Number(config.employeeId));
-        const annualSalary = (parseFloat(config.baseSalary) || 0) * 12;
+        const monthlySalary = parseFloat(config.baseSalary) || 0;
+        const annualSalary = monthlySalary * 12;
         const employeeLabel = employee?.employeeId
           ? `${config.employeeName} (ID: ${employee.employeeId})`
           : config.employeeName;
@@ -1103,7 +1209,7 @@ export default function PayrollPage() {
           department: config.department || "—",
           designation: config.designation || "—",
           payrollPeriod: formatPeriod(config.payrollPeriod),
-          baseSalary: formatCurrency(config.baseSalary),
+          baseSalary: formatCurrency(monthlySalary),
           annualSalary: formatCurrency(annualSalary),
           cpfRateEmployee: preview ? `${preview.employeeRate.toFixed(2)}%` : "—",
           cpfAmountEmployee: preview ? formatCurrency(preview.employeeCpf) : "—",
@@ -1310,7 +1416,7 @@ export default function PayrollPage() {
                 {paginatedConfigs.map((config) => {
                   const preview = configPreviews.get(config.id);
                   const employee = employees.find((e) => Number(e.id) === Number(config.employeeId));
-                  const annualSalary = (parseFloat(config.baseSalary) || 0) * 12;
+                  const monthlySalary = parseFloat(config.baseSalary) || 0;
                   const processed = isConfigProcessed(config);
                   const canDownloadPayslip = hasProcessedPayrollForEmployee(
                     config.employeeId,
@@ -1341,10 +1447,10 @@ export default function PayrollPage() {
                         {formatPeriod(config.payrollPeriod)}
                       </TableCell>
                       <TableCell className="text-[#444651]">
-                        {formatCurrency(config.baseSalary)}
+                        {formatCurrency(monthlySalary)}
                       </TableCell>
                       <TableCell className="text-[#444651]">
-                        {formatCurrency(annualSalary)}
+                        {formatCurrency(monthlySalary * 12)}
                       </TableCell>
                       <TableCell className="text-[#444651]">
                         {preview ? `${preview.employeeRate.toFixed(2)}%` : "—"}
@@ -1416,98 +1522,29 @@ export default function PayrollPage() {
         onOpenChange={(open) => !open && closeDetails()}
         title="Payroll Details"
         onClose={closeDetails}
-        maxWidth="max-w-2xl"
+        maxWidth="max-w-5xl"
       >
         {selectedConfig && (
-          <EntityViewFieldGrid>
-            <EntityViewField label="Employee" value={selectedConfig.employeeName} />
-            <EntityViewField label="Department" value={selectedConfig.department} />
-            <EntityViewField label="Designation" value={selectedConfig.designation} />
-            <EntityViewField label="Payroll Period" value={formatPeriod(selectedConfig.payrollPeriod)} />
-            <EntityViewField label="Basic Salary" value={formatCurrency(selectedConfig.baseSalary)} />
-            <EntityViewField
-              label="Annual Salary"
-              value={formatCurrency((parseFloat(selectedConfig.baseSalary) || 0) * 12)}
+          <div className="space-y-5">
+            <EntityViewFieldGrid>
+              <EntityViewField label="Employee" value={selectedConfig.employeeName} />
+              <EntityViewField label="Department" value={selectedConfig.department} />
+              <EntityViewField label="Designation" value={selectedConfig.designation} />
+              <EntityViewField label="Payroll Period" value={formatPeriod(selectedConfig.payrollPeriod)} />
+              <EntityViewField
+                label="Status"
+                value={
+                  <EntityViewStatusBadge
+                    status={selectedConfig.isActive ? "Active" : "Inactive"}
+                    variant={selectedConfig.isActive ? "valid" : "neutral"}
+                  />
+                }
+              />
+            </EntityViewFieldGrid>
+            <PayrollMonthTable
+              rows={listEmployeePayrollMonths(payrollRecords, selectedConfig.employeeId)}
             />
-            <EntityViewField
-              label="Gross Salary"
-              value={formatCurrency(
-                configPreviews.get(selectedConfig.id)?.grossPay ??
-                  (parseFloat(selectedConfig.baseSalary) || 0)
-              )}
-            />
-            <EntityViewField
-              label="CPF Rate (Employee)"
-              value={
-                selectedConfig.nationality?.trim().toLowerCase() === "foreigner"
-                  ? "Not Applicable (Foreigner)"
-                  : `${configPreviews.get(selectedConfig.id)?.employeeRate ?? parseFloat(selectedConfig.cpfRate || "0")}%`
-              }
-            />
-            <EntityViewField
-              label="CPF Amount (Employee)"
-              value={formatCurrency(
-                configPreviews.get(selectedConfig.id)?.employeeCpf ??
-                  selectedConfig.cpfAmount ??
-                  0
-              )}
-            />
-            <EntityViewField
-              label="CPF Rate (Employer)"
-              value={
-                configPreviews.get(selectedConfig.id)?.employerRate
-                  ? `${configPreviews.get(selectedConfig.id)!.employerRate}%`
-                  : selectedConfig.employerCpfRate
-                    ? `${parseFloat(selectedConfig.employerCpfRate)}%`
-                    : "—"
-              }
-            />
-            <EntityViewField
-              label="CPF Amount (Employer)"
-              value={formatCurrency(
-                configPreviews.get(selectedConfig.id)?.employerCpf ??
-                  selectedConfig.employerCpfAmount ??
-                  0
-              )}
-            />
-            <EntityViewField
-              label="Net Salary (Monthly)"
-              value={formatCurrency(
-                configPreviews.get(selectedConfig.id)?.netPay ??
-                  selectedConfig.netSalary ??
-                  0
-              )}
-            />
-            <EntityViewField
-              label="Transport Allowance"
-              value={formatCurrency(selectedConfig.allowances?.transport || 0)}
-            />
-            <EntityViewField
-              label="Food Allowance"
-              value={formatCurrency(selectedConfig.allowances?.meal || 0)}
-            />
-            <EntityViewField
-              label="Bonus"
-              value={formatCurrency(splitEarnings(selectedConfig.allowances).bonus)}
-            />
-            <EntityViewField
-              label="Other Income / Benefits"
-              value={formatCurrency(splitEarnings(selectedConfig.allowances).otherIncome)}
-            />
-            <EntityViewField
-              label="Medical Insurance"
-              value={formatCurrency(selectedConfig.deductions?.medical || 0)}
-            />
-            <EntityViewField
-              label="Status"
-              value={
-                <EntityViewStatusBadge
-                  status={selectedConfig.isActive ? "Active" : "Inactive"}
-                  variant={selectedConfig.isActive ? "valid" : "neutral"}
-                />
-              }
-            />
-          </EntityViewFieldGrid>
+          </div>
         )}
       </EntityViewDialog>
 
@@ -1783,6 +1820,68 @@ export default function PayrollPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Print Payslip</DialogTitle>
+            <DialogDescription>
+              {printMode === "individual" && printConfigs[0]
+                ? `Select a month for ${printConfigs[0].employeeName}.`
+                : `Select a month to print payslips for ${printConfigs.length} employee${printConfigs.length === 1 ? "" : "s"}.`}
+              {" "}Use custom dates to narrow the months. Click a month to print that month.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>From</Label>
+                <StringDatePicker
+                  value={printFrom}
+                  onChange={(value) => setPrintFrom(value || "")}
+                  placeholder="Custom from"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>To</Label>
+                <StringDatePicker
+                  value={printTo}
+                  onChange={(value) => setPrintTo(value || "")}
+                  placeholder="Custom to"
+                />
+              </div>
+            </div>
+            {printMonthOptions.length === 0 ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                No months fall in this date range. Clear the custom dates to see every month.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {printMonthOptions.map((item) => (
+                  <button
+                    key={`${item.year}-${item.month}`}
+                    type="button"
+                    disabled={isPayslipDownloading || isPayslipViewing}
+                    onClick={() => void handlePrintMonth(item.year, item.month)}
+                    className="rounded-lg bg-[#f8fafc] px-3 py-2.5 text-left text-[13px] font-medium text-[#475569] transition hover:bg-[#f0f4ff] hover:text-[#1a73e8] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {formatPayrollMonthLabel(item.year, item.month)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPrintDialogOpen(false)}
+              className={payrollCancelButtonClass}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Payslip Download Dialog */}
       <Dialog open={payslipModalOpen} onOpenChange={setPayslipModalOpen}>

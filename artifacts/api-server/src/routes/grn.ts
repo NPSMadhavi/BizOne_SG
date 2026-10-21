@@ -816,6 +816,14 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
           continue;
         }
 
+        const batchNo = typeof item.batchNo === "string" ? item.batchNo.trim() : "";
+        const expiryDate =
+          typeof item.expiryDate === "string" && item.expiryDate.trim() ? item.expiryDate.trim() : null;
+        const manufacturingDate =
+          typeof item.manufacturingDate === "string" && item.manufacturingDate.trim()
+            ? item.manufacturingDate.trim()
+            : null;
+
         if (serialLines.length > 0) {
           for (const sn of serialLines) {
             const exists = await tx.select({ id: stockSerialsTable.id })
@@ -830,9 +838,56 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
               await tx.insert(stockSerialsTable).values({
                 companyId, stockItemId, serialNumber: sn,
                 status: "available", grnId: id, grnNumber: existing.grnNumber,
+                batchNo: batchNo || null,
+                expiryDate,
+                manufacturingDate,
               });
+            } else if (batchNo || expiryDate || manufacturingDate) {
+              // Keep batch details on re-receive / later edit of the same serial.
+              await tx.update(stockSerialsTable).set({
+                batchNo: batchNo || null,
+                expiryDate,
+                manufacturingDate,
+                grnId: id,
+                grnNumber: existing.grnNumber,
+              }).where(eq(stockSerialsTable.id, exists[0].id));
             }
           }
+        }
+
+        // Persist batch / expiry / manufacturing onto the stock item so pickers see it.
+        if (batchNo) {
+          let existingBatches: Array<{
+            batchNo: string;
+            expiryDate?: string | null;
+            manufacturingDate?: string | null;
+            createdAt?: string;
+          }> = [];
+          try {
+            const parsed = JSON.parse(String(stockItem.batchesJson || "[]"));
+            if (Array.isArray(parsed)) existingBatches = parsed;
+          } catch {
+            existingBatches = [];
+          }
+          const entry = {
+            batchNo,
+            expiryDate,
+            manufacturingDate,
+            createdAt: new Date().toISOString(),
+          };
+          const without = existingBatches.filter(
+            (b) => String(b?.batchNo || "").toLowerCase() !== batchNo.toLowerCase(),
+          );
+          await tx
+            .update(stockItemsTable)
+            .set({
+              batchNo,
+              expiryDate,
+              manufacturingDate,
+              batchesJson: JSON.stringify([entry, ...without]),
+              updatedAt: new Date(),
+            })
+            .where(eq(stockItemsTable.id, stockItemId));
         }
 
         // STOCK IN to selected warehouse only — never touches another warehouse.

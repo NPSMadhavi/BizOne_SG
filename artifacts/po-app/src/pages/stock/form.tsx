@@ -44,7 +44,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Camera, Info, Package, Plus, ScanLine, Trash2, X } from "lucide-react";
+import { Camera, Info, Package, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -449,6 +449,8 @@ export default function StockItemFormPage() {
   const [newItemTypeName, setNewItemTypeName] = useState("");
   const [createStockGroupOpen, setCreateStockGroupOpen] = useState(false);
   const [newStockGroupName, setNewStockGroupName] = useState("");
+  const [editingStockGroup, setEditingStockGroup] = useState<string | null>(null);
+  const [stockGroupOpen, setStockGroupOpen] = useState(false);
   const [createPriceLevelOpen, setCreatePriceLevelOpen] = useState(false);
   const [newPriceLevelName, setNewPriceLevelName] = useState("");
   const [loaded, setLoaded] = useState(!isEdit);
@@ -893,15 +895,46 @@ export default function StockItemFormPage() {
       toast({ title: "Name required", description: "Enter a stock group name.", variant: "destructive" });
       return;
     }
+    const previous = editingStockGroup;
+    const duplicate = stockGroups.some(
+      (g) => g.toLowerCase() === name.toLowerCase() && g.toLowerCase() !== (previous || "").toLowerCase(),
+    );
+    if (duplicate) {
+      toast({ title: "Already exists", description: "That stock group name is already in the list.", variant: "destructive" });
+      return;
+    }
     setStockGroups((current) => {
-      if (current.some((g) => g.toLowerCase() === name.toLowerCase())) return current;
-      const next = [...current, name];
+      const next = previous
+        ? current.map((g) => (g === previous ? name : g))
+        : [...current, name];
       saveStockGroups(next);
       return next;
     });
-    setField("stockGroup", name);
+    if (previous) {
+      if (form.stockGroup === previous) setField("stockGroup", name);
+    } else {
+      setField("stockGroup", name);
+    }
     setCreateStockGroupOpen(false);
     setNewStockGroupName("");
+    setEditingStockGroup(null);
+  }
+
+  function handleDeleteStockGroup(name: string) {
+    setStockGroups((current) => {
+      const next = current.filter((g) => g !== name);
+      saveStockGroups(next);
+      return next;
+    });
+    if (form.stockGroup === name) setField("stockGroup", "");
+    setStockGroupOpen(false);
+  }
+
+  function openEditStockGroup(name: string) {
+    setEditingStockGroup(name);
+    setNewStockGroupName(name);
+    setStockGroupOpen(false);
+    setCreateStockGroupOpen(true);
   }
 
   function flushActiveLevelPricing(f: typeof form): Record<string, LevelPricing> {
@@ -1197,6 +1230,8 @@ export default function StockItemFormPage() {
             <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Stock Group</Label>
               <Select
+                open={stockGroupOpen}
+                onOpenChange={setStockGroupOpen}
                 value={form.stockGroup || undefined}
                 onValueChange={(v) => setField("stockGroup", v)}
               >
@@ -1206,9 +1241,11 @@ export default function StockItemFormPage() {
                 <SelectContent className="max-h-60">
                   <div
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium text-primary hover:bg-accent"
-                    onClick={(e) => {
-                      e.preventDefault();
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setEditingStockGroup(null);
                       setNewStockGroupName("");
+                      setStockGroupOpen(false);
                       setCreateStockGroupOpen(true);
                     }}
                   >
@@ -1216,7 +1253,38 @@ export default function StockItemFormPage() {
                   </div>
                   <div className="my-1 border-t" />
                   {stockGroups.map((g) => (
-                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                    <div
+                      key={g}
+                      className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate text-left"
+                        onClick={() => {
+                          setField("stockGroup", g);
+                          setStockGroupOpen(false);
+                        }}
+                      >
+                        {g}
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#2563EB] hover:bg-blue-50"
+                        aria-label={`Edit ${g}`}
+                        onClick={() => openEditStockGroup(g)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-red-600 hover:bg-red-50"
+                        aria-label={`Delete ${g}`}
+                        onClick={() => handleDeleteStockGroup(g)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </SelectContent>
               </Select>
@@ -1305,18 +1373,18 @@ export default function StockItemFormPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-[#111827]">Expiry date</Label>
-              <SyncBridgeDatePicker
-                value={form.expiryDate || ""}
-                onChange={(v) => setField("expiryDate", v || "")}
-              />
-            </div>
-
-            <div className="space-y-1.5">
               <Label className="text-sm font-medium text-[#111827]">Manufacturing date</Label>
               <SyncBridgeDatePicker
                 value={form.manufacturingDate || ""}
                 onChange={(v) => setField("manufacturingDate", v || "")}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-[#111827]">Expiry date</Label>
+              <SyncBridgeDatePicker
+                value={form.expiryDate || ""}
+                onChange={(v) => setField("expiryDate", v || "")}
               />
             </div>
 
@@ -1819,9 +1887,15 @@ export default function StockItemFormPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={createStockGroupOpen} onOpenChange={setCreateStockGroupOpen}>
+      <Dialog open={createStockGroupOpen} onOpenChange={(open) => {
+        setCreateStockGroupOpen(open);
+        if (!open) {
+          setEditingStockGroup(null);
+          setNewStockGroupName("");
+        }
+      }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Create Stock Group</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingStockGroup ? "Edit Stock Group" : "Create Stock Group"}</DialogTitle></DialogHeader>
           <Input
             value={newStockGroupName}
             onChange={(e) => setNewStockGroupName(e.target.value)}
@@ -1835,7 +1909,7 @@ export default function StockItemFormPage() {
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateStockGroupOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateStockGroup}>Add</Button>
+            <Button onClick={handleCreateStockGroup}>{editingStockGroup ? "Save" : "Add"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

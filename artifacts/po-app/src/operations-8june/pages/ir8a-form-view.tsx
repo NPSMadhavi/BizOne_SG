@@ -58,19 +58,26 @@ function splitEmployeeCpf(employeeCpf: number, ordinaryBase: number, additionalB
 let printInProgress = false;
 
 function ensurePrintStyle() {
-  if (document.getElementById("ir8a-print-style")) return;
-  const style = document.createElement("style");
-  style.id = "ir8a-print-style";
+  let style = document.getElementById("ir8a-print-style");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "ir8a-print-style";
+    document.head.appendChild(style);
+  }
   style.textContent = `
     #ir8a-print-root { display: none; }
     @media print {
-      @page { size: A4 landscape; margin: 4mm; }
-      html, body { margin: 0 !important; background: #fff !important; height: auto !important; overflow: hidden !important; }
+      @page { size: A4 landscape; margin: 8mm; }
+      html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: auto !important; }
       body.ir8a-printing > *:not(#ir8a-print-root) { display: none !important; }
       #ir8a-print-root {
-        display: block !important;
+        display: flex !important;
+        justify-content: center !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
         position: static !important;
-        overflow: hidden !important;
+        overflow: visible !important;
         background: #fff !important;
         break-inside: avoid !important;
         page-break-inside: avoid !important;
@@ -78,6 +85,7 @@ function ensurePrintStyle() {
         page-break-after: avoid !important;
       }
       #ir8a-print-root .ir8a-sheet {
+        margin: 0 auto !important;
         box-shadow: none !important;
         border-radius: 0 !important;
         -webkit-print-color-adjust: exact !important;
@@ -101,13 +109,21 @@ function ensurePrintStyle() {
   document.head.appendChild(style);
 }
 
+const PRINT_MARGIN_MM = 8;
+
 function printablePagePx() {
   const pxPerMm = 96 / 25.4;
-  return { width: (297 - 8) * pxPerMm, height: (210 - 8) * pxPerMm };
+  return {
+    width: (297 - PRINT_MARGIN_MM * 2) * pxPerMm,
+    height: (210 - PRINT_MARGIN_MM * 2) * pxPerMm,
+  };
 }
 
-function layoutSheet(sheet: HTMLElement) {
-  sheet.style.width = "1120px";
+function layoutSheet(sheet: HTMLElement, widthPx = 1120) {
+  sheet.style.width = `${widthPx}px`;
+  sheet.style.maxWidth = "none";
+  sheet.style.margin = "0 auto";
+  sheet.style.boxSizing = "border-box";
   sheet.querySelectorAll<HTMLElement>(".ir8a-split, .ir8a-declare").forEach((section) => {
     section.style.display = "grid";
     section.style.gridTemplateColumns = "1fr 1fr";
@@ -115,14 +131,16 @@ function layoutSheet(sheet: HTMLElement) {
 }
 
 function fitSheetToOnePage(mount: HTMLElement, sheet: HTMLElement) {
-  layoutSheet(sheet);
-  const naturalWidth = sheet.scrollWidth;
-  const naturalHeight = sheet.scrollHeight;
   const page = printablePagePx();
-  const scale = Math.min(page.width / naturalWidth, page.height / naturalHeight, 1) * 0.98;
+  layoutSheet(sheet, page.width);
+  const naturalHeight = sheet.scrollHeight;
+  const scale = Math.min(1, page.height / naturalHeight);
   sheet.style.setProperty("zoom", String(scale));
-  mount.style.width = `${naturalWidth * scale}px`;
+  mount.style.display = "flex";
+  mount.style.justifyContent = "center";
+  mount.style.width = "100%";
   mount.style.height = `${naturalHeight * scale}px`;
+  mount.style.margin = "0 auto";
   mount.style.overflow = "hidden";
 }
 

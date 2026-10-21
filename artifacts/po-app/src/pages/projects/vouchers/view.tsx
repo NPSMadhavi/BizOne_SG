@@ -18,6 +18,7 @@ import { generateVoucherPDF } from "@/lib/voucher-pdf";
 import type { VoucherAttachment } from "@/lib/voucher-pdf";
 import { PdfPreviewModal } from "@/components/pdf-preview-modal";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 const TYPE_LABELS: Record<string, string> = {
   payment: "Payment Voucher",
@@ -270,7 +271,7 @@ export default function VoucherView() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <StickyPageHeader className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation(backPath)}>
             <ArrowLeft className="h-4 w-4" />
@@ -355,7 +356,7 @@ export default function VoucherView() {
             </Button>
           )}
         </div>
-      </div>
+      </StickyPageHeader>
 
       {/* Workflow status banner */}
       {status === "pending_verification" && (

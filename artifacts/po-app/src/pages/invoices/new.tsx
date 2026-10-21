@@ -37,7 +37,7 @@ import { DirectoryPickerButton } from "@/components/directory-picker-button";
 import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
 import { DeliveryDateField } from "@/components/delivery-date-field";
 import { IssueDateField, getToday } from "@/components/issue-date-field";
-import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PdfPreviewModal, SENT_TO_EXTERNAL } from "@/components/pdf-preview-modal";
 import { PORefSelect } from "@/components/po-ref-select";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { AiInvoiceDialog, type AiGeneratedInvoice } from "@/components/ai-invoice-dialog";
@@ -122,6 +122,9 @@ export default function InvoiceNew() {
   const [discountPct, setDiscountPct] = useState(0);
   const [exchangeRate, setExchangeRate] = useState("1.000000");
   const [fetchingRate, setFetchingRate] = useState(false);
+  const [copiedFromInvoice, setCopiedFromInvoice] = useState(
+    () => Boolean((window as any).__ariaPrefill?.sourceInvNumber),
+  );
 
   const allReservedIds = useRef<Set<number>>(new Set());
 
@@ -374,6 +377,7 @@ export default function InvoiceNew() {
     if (prefill.tax === 0) setIsOverseas(true);
 
     if (prefill.sourceInvNumber) {
+      setCopiedFromInvoice(true);
       toast({
         title: "Invoice copied",
         description: `Data from ${prefill.sourceInvNumber} loaded — save to create a new invoice number.`,
@@ -616,7 +620,7 @@ export default function InvoiceNew() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
@@ -630,7 +634,9 @@ export default function InvoiceNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Invoice</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+              {copiedFromInvoice ? "Copy New Invoice" : "New Invoice"}
+            </h1>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -1561,6 +1567,16 @@ export default function InvoiceNew() {
  defaultEmailSubject={`Invoice ${savedDoc.invNumber}`}
  defaultEmailBody={invoiceEmailBody(savedDoc.customerContact, savedDoc.invNumber, deliveryOrderAttachmentNames(linkedDos, [savedDoc]).map((name) => name.replace(/\.pdf$/i, "")))}
  onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${savedDoc.id}/edit`); }}
+ askMarkSentOnClose
+ onMarkAsSentExternal={async () => {
+            await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
+            });
+            setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: SENT_TO_EXTERNAL } : prev);
+          }}
  onEmailSent={async (recipients) => {
             await fetch(`/api/invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
             await markDeliveryOrdersSent({ id: savedDoc.id, invNumber: savedDoc.invNumber, soId: savedDoc.soId }, recipients);

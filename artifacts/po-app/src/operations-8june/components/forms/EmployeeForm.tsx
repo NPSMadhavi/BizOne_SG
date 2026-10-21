@@ -536,9 +536,46 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
+                <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Date of Birth <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl>
+                      <SimpleDatePicker
+                        date={field.value}
+                        setDate={field.onChange}
+                        placeholder=""
+                        max={new Date().toISOString().split("T")[0]}
+                        min="1900-01-01"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="joinDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Joining Date <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl>
+                      <SimpleDatePicker
+                        date={field.value}
+                        setDate={field.onChange}
+                        placeholder=""
+                        max={new Date().toISOString().split("T")[0]}
+                        min="1900-01-01"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="department" render={({ field }) => (
                   <FormItem>
                     <FormLabel className={formLabelClass}>Department <span className="text-[#DC2626]">*</span></FormLabel>
+                    <FormControl><Input placeholder="" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="designation" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Designation <span className="text-[#DC2626]">*</span></FormLabel>
                     <FormControl><Input placeholder="" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -592,13 +629,6 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                <FormField control={form.control} name="designation" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className={formLabelClass}>Designation <span className="text-[#DC2626]">*</span></FormLabel>
-                    <FormControl><Input placeholder="" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
                   <FormField control={form.control} name="nationality" render={({ field }) => (
                     <FormItem>
                       <FormLabel className={formLabelClass}>Nationality <span className="text-[#DC2626]">*</span></FormLabel>
@@ -653,21 +683,6 @@ export default function EmployeeForm({
                       <FormMessage />
                     </FormItem>
                   )} />
-                <FormField control={form.control} name="joinDate" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className={formLabelClass}>Joining Date <span className="text-[#DC2626]">*</span></FormLabel>
-                    <FormControl>
-                      <SimpleDatePicker
-                        date={field.value}
-                        setDate={field.onChange}
-                        placeholder=""
-                        max={new Date().toISOString().split("T")[0]}
-                        min="1900-01-01"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
                   {!isForeigner && (
                     <FormField control={form.control} name="passportNumber" render={({ field }) => (
                       <FormItem>
@@ -712,21 +727,6 @@ export default function EmployeeForm({
                       </FormItem>
                     )} />
                   )}
-                <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className={formLabelClass}>Date of Birth <span className="text-[#DC2626]">*</span></FormLabel>
-                    <FormControl>
-                      <SimpleDatePicker
-                        date={field.value}
-                        setDate={field.onChange}
-                        placeholder=""
-                        max={new Date().toISOString().split("T")[0]}
-                        min="1900-01-01"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
                   {isForeigner && (
                     <FormField control={form.control} name="nricNumber" render={({ field }) => (
                       <FormItem>

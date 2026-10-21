@@ -15,6 +15,8 @@ import {
   downloadPayslipsCompany,
   previewPayslipCompany,
   processIndividualPayrollCompany,
+  repairPayrollMonthSnapshots,
+  savePayrollMonthSnapshot,
   syncEmployeeSalaryFromPayrollConfig,
   syncPayrollConfigFromEmployee,
   viewPayslipCompany,
@@ -390,13 +392,40 @@ function mapPayrollConfigRow(row: Record<string, unknown>, emp?: Record<string, 
   };
 }
 
+function singaporeDateOnly(value: unknown): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Singapore",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(value);
+  }
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  if (raw.includes("T")) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Singapore",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(parsed);
+    }
+  }
+  return raw.slice(0, 10);
+}
+
 function mapPayrollRecordRow(row: Record<string, unknown>, emp?: Record<string, unknown>) {
   const camel = formatRow(row);
-  const payPeriodStart = String(camel.payPeriodStart ?? "").slice(0, 10);
-  const payPeriodEnd = String(camel.payPeriodEnd ?? "").slice(0, 10);
+  const payPeriodStart = singaporeDateOnly(camel.payPeriodStart);
+  const payPeriodEnd = singaporeDateOnly(camel.payPeriodEnd);
   const [yearStr, monthStr] = payPeriodStart.split("-");
-  const payrollYear = parseInt(yearStr, 10);
-  const payrollMonth = parseInt(monthStr, 10);
+  const derivedYear = parseInt(yearStr, 10);
+  const derivedMonth = parseInt(monthStr, 10);
+  const payrollYear = Number(camel.payrollYear) || derivedYear;
+  const payrollMonth = Number(camel.payrollMonth) || derivedMonth;
 
   return {
     id: camel.id,
@@ -410,11 +439,16 @@ function mapPayrollRecordRow(row: Record<string, unknown>, emp?: Record<string, 
     payPeriodEnd,
     payrollYear: Number.isFinite(payrollYear) ? payrollYear : undefined,
     payrollMonth: Number.isFinite(payrollMonth) ? payrollMonth : undefined,
-    baseSalary: String(camel.grossPay ?? "0"),
-    overtimeHours: "0.00",
-    overtimePay: "0.00",
-    allowances: {},
-    deductions: {},
+    baseSalary:
+      camel.baseSalary != null && String(camel.baseSalary).trim() !== ""
+        ? String(camel.baseSalary)
+        : null,
+    overtimeHours: String(camel.overtimeHours ?? "0.00"),
+    overtimePay: String(camel.overtimePay ?? "0.00"),
+    allowances:
+      camel.allowances && typeof camel.allowances === "object" ? camel.allowances : {},
+    deductions:
+      camel.deductions && typeof camel.deductions === "object" ? camel.deductions : {},
     grossPay: String(camel.grossPay ?? "0"),
     taxDeduction: "0.00",
     cpfDeduction: String(camel.cpfEmployee ?? "0"),
@@ -508,6 +542,7 @@ const PAYROLL_CONFIG_COLUMNS = [
 
 const PAYROLL_RECORD_COLUMNS = [
   "employee_id", "payroll_config_id", "pay_period_start", "pay_period_end",
+  "base_salary", "allowances", "deductions",
   "gross_pay", "net_pay", "cpf_employee", "cpf_employer", "status", "processed_at",
 ];
 
@@ -1161,11 +1196,12 @@ router.delete("/dependents/:id", async (req, res): Promise<void> => {
 
 async function listPayrollConfigs(companyId: number) {
   const result = await pool.query(
-    `SELECT ep.*, e.name, e.email, e.department, e.designation, e.nationality
+    `SELECT DISTINCT ON (ep.employee_id)
+       ep.*, e.name, e.email, e.department, e.designation, e.nationality
      FROM employee_payroll ep
      LEFT JOIN employees e ON e.id = ep.employee_id
      WHERE ep.company_id = $1
-     ORDER BY ep.id DESC`,
+     ORDER BY ep.employee_id, ep.is_active DESC, ep.id DESC`,
     [companyId],
   );
   return result.rows.map((row) => {
@@ -1192,16 +1228,82 @@ router.get("/payroll/configs", async (req, res): Promise<void> => {
   }
 });
 
+async function savePayrollConfig(companyId: number, body: Record<string, unknown>) {
+  if (body.isActive == null) body.isActive = true;
+  const employeeId = Number(body.employeeId);
+  const existing = Number.isFinite(employeeId)
+    ? await pool.query<{ id: number }>(
+        `SELECT id FROM employee_payroll
+         WHERE company_id = $1 AND employee_id = $2
+         ORDER BY is_active DESC, id DESC
+         LIMIT 1`,
+        [companyId, employeeId],
+      )
+    : { rows: [] as { id: number }[] };
+
+  let row: Record<string, unknown>;
+  if (existing.rows[0]) {
+    const id = existing.rows[0].id;
+    const built = buildUpdate("employee_payroll", id, companyId, body, PAYROLL_CONFIG_COLUMNS);
+    if (!built) throw new Error("No fields to update");
+    const sql = built.sql.replace(" SET ", " SET updated_at = NOW(), ");
+    const result = await pool.query(sql, built.values);
+    row = result.rows[0];
+    await pool.query(
+      `UPDATE employee_payroll
+       SET is_active = false, updated_at = NOW()
+       WHERE company_id = $1 AND employee_id = $2 AND id <> $3`,
+      [companyId, employeeId, id],
+    );
+  } else {
+    const { sql, values } = buildInsert("employee_payroll", companyId, body, PAYROLL_CONFIG_COLUMNS);
+    const result = await pool.query(sql, values);
+    row = result.rows[0];
+  }
+
+  if (body.baseSalary != null) {
+    try {
+      await syncEmployeeSalaryFromPayrollConfig(pool, companyId, row as { employee_id: number; base_salary: string | number });
+    } catch (syncErr) {
+      console.error("Failed to sync employee salary from payroll config:", syncErr);
+    }
+  }
+  await rememberPayrollMonth(companyId, row, body);
+  const empMap = await fetchEmployeeMap(companyId);
+  return mapPayrollConfigRow(row, empMap.get(row.employee_id as number));
+}
+
+async function rememberPayrollMonth(
+  companyId: number,
+  row: Record<string, unknown>,
+  body: Record<string, unknown>,
+) {
+  const month = Number(body.payrollMonth);
+  const year = Number(body.payrollYear) || new Date().getFullYear();
+  if (!Number.isInteger(month) || month < 1 || month > 12) return;
+  try {
+    await savePayrollMonthSnapshot(
+      pool,
+      companyId,
+      Number(row.id),
+      Number(row.employee_id),
+      month,
+      year,
+      Number(row.base_salary) || Number(body.baseSalary) || 0,
+      row.allowances ?? body.allowances,
+      row.deductions ?? body.deductions,
+    );
+  } catch (err) {
+    console.error("Failed to save payroll month snapshot:", err);
+  }
+}
+
 router.post("/employee-payroll", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     const companyId = req.session.companyId!;
-    const body = mapPayrollBody(req.body);
-    if (body.isActive == null) body.isActive = true;
-    const { sql, values } = buildInsert("employee_payroll", companyId, body, PAYROLL_CONFIG_COLUMNS);
-    const result = await pool.query(sql, values);
-    const empMap = await fetchEmployeeMap(companyId);
-    res.status(201).json(mapPayrollConfigRow(result.rows[0], empMap.get(result.rows[0].employee_id)));
+    const saved = await savePayrollConfig(companyId, mapPayrollBody(req.body));
+    res.status(201).json(saved);
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to create payroll config" });
   }
@@ -1211,12 +1313,8 @@ router.post("/payroll/configs", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     const companyId = req.session.companyId!;
-    const body = mapPayrollBody(req.body);
-    if (body.isActive == null) body.isActive = true;
-    const { sql, values } = buildInsert("employee_payroll", companyId, body, PAYROLL_CONFIG_COLUMNS);
-    const result = await pool.query(sql, values);
-    const empMap = await fetchEmployeeMap(companyId);
-    res.status(201).json(mapPayrollConfigRow(result.rows[0], empMap.get(result.rows[0].employee_id)));
+    const saved = await savePayrollConfig(companyId, mapPayrollBody(req.body));
+    res.status(201).json(saved);
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to create payroll config" });
   }
@@ -1241,6 +1339,7 @@ router.put("/employee-payroll/:id", async (req, res): Promise<void> => {
         console.error("Failed to sync employee salary from payroll config:", syncErr);
       }
     }
+    await rememberPayrollMonth(companyId, result.rows[0], body);
     const empMap = await fetchEmployeeMap(companyId);
     res.json(mapPayrollConfigRow(result.rows[0], empMap.get(result.rows[0].employee_id)));
   } catch (err: any) {
@@ -1267,6 +1366,7 @@ router.put("/payroll/configs/:id", async (req, res): Promise<void> => {
         console.error("Failed to sync employee salary from payroll config:", syncErr);
       }
     }
+    await rememberPayrollMonth(companyId, result.rows[0], body);
     const empMap = await fetchEmployeeMap(companyId);
     res.json(mapPayrollConfigRow(result.rows[0], empMap.get(result.rows[0].employee_id)));
   } catch (err: any) {
@@ -1356,6 +1456,11 @@ router.delete("/employee-payroll/:id", handleDeletePayrollConfig);
 // ── PAYROLL RECORDS ───────────────────────────────────────────────────────────
 
 async function listPayrollRecords(companyId: number) {
+  try {
+    await repairPayrollMonthSnapshots(pool);
+  } catch (err) {
+    console.error("Failed to repair payroll month snapshots:", err);
+  }
   const result = await pool.query(
     `SELECT pr.*, e.name, e.email, e.department, e.designation
      FROM payroll_records pr
@@ -1396,8 +1501,13 @@ async function createPayrollRecordFromBody(companyId: number, body: Record<strin
   );
   const config = configResult.rows[0];
   const baseSalary = config ? Number(config.base_salary) : 0;
+  const allowances = config?.allowances && typeof config.allowances === "object" ? config.allowances : {};
+  const allowanceSum = Object.values(allowances as Record<string, unknown>).reduce<number>(
+    (sum, value) => sum + (Number(value) || 0),
+    0,
+  );
   const calc = calculateSingaporeCpf({
-    grossSalary: baseSalary,
+    grossSalary: baseSalary + allowanceSum,
     employeeRate: config?.cpf_employee_rate ? Number(config.cpf_employee_rate) / 100 : undefined,
     employerRate: config?.cpf_employer_rate ? Number(config.cpf_employer_rate) / 100 : undefined,
   });
@@ -1407,6 +1517,9 @@ async function createPayrollRecordFromBody(companyId: number, body: Record<strin
     payrollConfigId: config?.id,
     payPeriodStart: body.payPeriodStart,
     payPeriodEnd: body.payPeriodEnd,
+    baseSalary,
+    allowances,
+    deductions: config?.deductions && typeof config.deductions === "object" ? config.deductions : {},
     grossPay: calc.grossPay,
     netPay: calc.netPay,
     cpfEmployee: calc.employeeCpf,

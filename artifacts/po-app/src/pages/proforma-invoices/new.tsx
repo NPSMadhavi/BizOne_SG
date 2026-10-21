@@ -313,7 +313,7 @@ export default function ProformaInvoiceNew() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
@@ -910,6 +910,11 @@ export default function ProformaInvoiceNew() {
             totalAmount: Number(savedDoc.totalAmount) || 0,
           }}
  onEdit={() => { setPreviewOpen(false); setLocation(`/proforma-invoices/${savedDoc.id}/edit`); }}
+        askMarkSentOnClose
+        markSentUrl={`/api/proforma-invoices/${savedDoc.id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: "Sent to External" } : prev);
+        }}
  onEmailSent={async (recipients) => {
             await fetch(`/api/proforma-invoices/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
             setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: recipients.join(", ") } : prev);

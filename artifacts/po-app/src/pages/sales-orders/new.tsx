@@ -51,6 +51,9 @@ const itemSchema = z.object({
   discount: z.coerce.number().min(0).max(100).default(0),
   isFoc: z.boolean().default(false),
   itemImage: z.string().default(""),
+  selectedSerials: z.array(z.string()).default([]),
+  selectedSerialIds: z.array(z.number()).default([]),
+  stockItemId: z.number().optional(),
 });
 
 const schema = z.object({
@@ -75,7 +78,7 @@ const schema = z.object({
   items: z.array(itemSchema).min(1, "At least one item is required"),
 });
 
-const blankItem = () => ({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" });
+const blankItem = () => ({ type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "", selectedSerials: [] as string[], selectedSerialIds: [] as number[] });
 
 export default function SalesOrderNew() {
   const [, setLocation] = useLocation();
@@ -444,7 +447,7 @@ export default function SalesOrderNew() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button
@@ -963,12 +966,24 @@ export default function SalesOrderNew() {
  onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
         ignoreStockLimit
         showWarehouse={false}
- onSelect={({ item, qty }: StockItemSelection) => {
+ onSelect={({ item, selectedSerials, selectedSerialIds, qty }: StockItemSelection) => {
           if (stockPickerIndex === null) return;
+          const serials = selectedSerials || [];
+          const serialRows: string[] = [];
+          for (let i = 0; i < serials.length; i += 3) {
+            serialRows.push(serials.slice(i, i + 3).join("&nbsp;&nbsp;&nbsp;"));
+          }
+          const serialHtml = serialRows.map((row) => `<p>${row}</p>`).join("");
+          const desc = serials.length > 0
+            ? `<p>${item.name}</p><p><strong>Serial Numbers:</strong></p>${serialHtml}`
+            : `<p>${item.name}</p>`;
           form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
-          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.description`, desc);
           form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
           form.setValue(`items.${stockPickerIndex}.uom`, item.uom || "");
+          form.setValue(`items.${stockPickerIndex}.stockItemId`, item.id);
+          form.setValue(`items.${stockPickerIndex}.selectedSerials`, serials);
+          form.setValue(`items.${stockPickerIndex}.selectedSerialIds`, selectedSerialIds || []);
           if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
           setStockPickerIndex(null);
         }}
@@ -1025,6 +1040,11 @@ export default function SalesOrderNew() {
             currency: (savedDoc as any).currency || "SGD",
             totalAmount: Number(savedDoc.totalAmount) || 0,
           }}
+        askMarkSentOnClose
+        markSentUrl={`/api/sales-orders/${savedDoc.id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          setSavedDoc((prev: any) => prev ? { ...prev, status: "sent", emailSentTo: "Sent to External" } : prev);
+        }}
  onEmailSent={async (recipients) => {
             await fetch(`/api/sales-orders/${savedDoc.id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           }}

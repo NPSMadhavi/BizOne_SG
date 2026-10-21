@@ -133,6 +133,19 @@ function buildEmployeePreview(config: any, employee: any): SyncBridgePayrollPrev
   return { ...preview, monthlySalary: baseSalary };
 }
 
+function oneActiveConfigPerEmployee(configs: any[]) {
+  const byEmployee = new Map<number, any>();
+  for (const config of configs) {
+    if (config?.isActive === false) continue;
+    const key = Number(config.employeeId);
+    const current = byEmployee.get(key);
+    if (!current || Number(config.id) > Number(current.id)) {
+      byEmployee.set(key, config);
+    }
+  }
+  return [...byEmployee.values()];
+}
+
 export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayrollFormProps) {
   const { toast } = useToast();
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
@@ -169,7 +182,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const dialogMonthLabel = derivePayrollMonthYear(dialogPayPeriodStart).monthLabel;
 
   const activeConfigs = useMemo(
-    () => payrollConfigs.filter((c: any) => c.isActive),
+    () => oneActiveConfigPerEmployee(payrollConfigs),
     [payrollConfigs]
   );
 
@@ -211,8 +224,8 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
     }
 
     const employee = employees.find((emp: any) => Number(emp.id) === Number(employeeId));
-    const config = payrollConfigs.find(
-      (c: any) => Number(c.employeeId) === Number(employeeId) && c.isActive
+    const config = activeConfigs.find(
+      (c: any) => Number(c.employeeId) === Number(employeeId)
     );
 
     if (employee && config) {
@@ -222,7 +235,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       setSelectedEmployee(null);
       setPayrollConfig(null);
     }
-  }, [employeeId, employees, payrollConfigs]);
+  }, [employeeId, employees, activeConfigs]);
 
   const calculationPreview = useMemo((): PreviewView | null => {
     if (isAllEmployees) {
@@ -427,8 +440,8 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
       return;
     }
 
-    const config = payrollConfigs.find(
-      (c: any) => Number(c.employeeId) === Number(data.employeeId) && c.isActive
+    const config = activeConfigs.find(
+      (c: any) => Number(c.employeeId) === Number(data.employeeId)
     );
     const existingRecord = findPayrollRecordForPeriod(
       data.employeeId,
@@ -683,6 +696,12 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                   </span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Deductions</span>
+                  <span className="font-medium text-[#DC2626]">
+                    -{formatCurrency(calculationPreview.deductionsTotal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-[#6B7280]">CPF Rate (Employee)</span>
                   <span className="text-[#111827]">{rateEmployeeLabel}</span>
                 </div>
@@ -702,7 +721,13 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
                     {formatCurrency(calculationPreview.employerCpf)}
                   </span>
                 </div>
-                <div className="flex justify-between border-t border-[#E5E7EB] pt-2">
+                <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Total CPF</span>
+                  <span className="text-[#111827]">
+                    {formatCurrency(calculationPreview.totalCpf)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-[#6B7280]">Total Deductions</span>
                   <span className="font-medium text-[#DC2626]">
                     -

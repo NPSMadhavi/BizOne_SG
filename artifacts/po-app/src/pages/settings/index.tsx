@@ -184,6 +184,7 @@ export default function Settings() {
   const [rnCN, setRnCN] = useState<RunningNumberConfig>({ prefix: "CN", counter: "0", suffix: "" });
   const [rnDN, setRnDN] = useState<RunningNumberConfig>({ prefix: "DN", counter: "0", suffix: "" });
   const [rnPI, setRnPI] = useState<RunningNumberConfig>({ prefix: "PI", counter: "0", suffix: "" });
+  const [rnVPI, setRnVPI] = useState<RunningNumberConfig>({ prefix: "VPI", counter: "0", suffix: "" });
   const [rnPV, setRnPV] = useState<RunningNumberConfig>({ prefix: "PV", counter: "0", suffix: "" });
   const [rnIGR, setRnIGR] = useState<RunningNumberConfig>({ prefix: "IGR", counter: "0", suffix: "" });
   const [rnGIN, setRnGIN] = useState<RunningNumberConfig>({ prefix: "GIN", counter: "0", suffix: "" });
@@ -269,6 +270,7 @@ export default function Settings() {
       setRnCN({ prefix: (settings as any).cnPrefix ?? "CN", counter: String((settings as any).cnCounter ?? 0), suffix: (settings as any).cnSuffix ?? "" });
       setRnDN({ prefix: (settings as any).dnPrefix ?? "DN", counter: String((settings as any).dnCounter ?? 0), suffix: (settings as any).dnSuffix ?? "" });
       setRnPI({ prefix: (settings as any).piPrefix ?? "PI", counter: String((settings as any).piCounter ?? 0), suffix: (settings as any).piSuffix ?? "" });
+      setRnVPI({ prefix: (settings as any).vpiPrefix ?? "VPI", counter: String((settings as any).vpiCounter ?? 0), suffix: (settings as any).vpiSuffix ?? "" });
       setRnPV({ prefix: (settings as any).pvPrefix ?? "PV", counter: String((settings as any).pvCounter ?? 0), suffix: (settings as any).pvSuffix ?? "" });
       setRnIGR({ prefix: (settings as any).igrPrefix ?? "IGR", counter: String((settings as any).igrCounter ?? 0), suffix: (settings as any).igrSuffix ?? "" });
       setRnGIN({ prefix: (settings as any).ginPrefix ?? "GIN", counter: String((settings as any).ginCounter ?? 0), suffix: (settings as any).ginSuffix ?? "" });
@@ -373,6 +375,7 @@ export default function Settings() {
           cnPrefix: rnCN.prefix, cnCounter: parseInt(rnCN.counter) || 0, cnSuffix: rnCN.suffix,
           dnPrefix: rnDN.prefix, dnCounter: parseInt(rnDN.counter) || 0, dnSuffix: rnDN.suffix,
           piPrefix: rnPI.prefix, piCounter: parseInt(rnPI.counter) || 0, piSuffix: rnPI.suffix,
+          vpiPrefix: rnVPI.prefix, vpiCounter: parseInt(rnVPI.counter) || 0, vpiSuffix: rnVPI.suffix,
           pvPrefix: rnPV.prefix, pvCounter: parseInt(rnPV.counter) || 0, pvSuffix: rnPV.suffix,
           igrPrefix: rnIGR.prefix, igrCounter: parseInt(rnIGR.counter) || 0, igrSuffix: rnIGR.suffix,
           ginPrefix: rnGIN.prefix, ginCounter: parseInt(rnGIN.counter) || 0, ginSuffix: rnGIN.suffix,
@@ -634,6 +637,7 @@ export default function Settings() {
                     { label: "Credit Note", state: rnCN, setter: setRnCN },
                     { label: "Debit Note", state: rnDN, setter: setRnDN },
                     { label: "Proforma Invoice / Vendor PI", state: rnPI, setter: setRnPI },
+                    { label: "Vendor Proforma Invoice", state: rnVPI, setter: setRnVPI },
                     { label: "Payment / Project Voucher", state: rnPV, setter: setRnPV },
                     { label: "Inventory Goods Receipt (IGR)", state: rnIGR, setter: setRnIGR },
                     { label: "Goods Issue Note (GIN)", state: rnGIN, setter: setRnGIN },

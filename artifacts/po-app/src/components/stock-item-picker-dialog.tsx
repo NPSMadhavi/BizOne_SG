@@ -156,6 +156,9 @@ interface Serial {
   serialNumber: string;
   status: string;
   grnNumber?: string;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  manufacturingDate?: string | null;
   invoiceNumber?: string;
   reservedByUser?: string;
 }
@@ -589,7 +592,7 @@ export function StockItemPickerDialog({
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); }}>
       <DialogContent
         style={{ animation: "none", transition: "none" }}
-        className={step === "qty" ? (showBatchFields ? "max-w-lg" : "max-w-md") : step === "serials" ? "max-w-3xl" : "max-w-xl"}
+        className={step === "qty" ? (showBatchFields ? "max-w-lg" : "max-w-md") : step === "serials" ? "max-w-5xl" : "max-w-xl"}
       >
 
         {step === "items" && (
@@ -947,13 +950,19 @@ export function StockItemPickerDialog({
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-10"></TableHead>
                         <TableHead>Serial Number</TableHead>
-                        <TableHead className="w-28">GRN #</TableHead>
-                        <TableHead className="w-48">Status</TableHead>
+                        <TableHead className="w-24">GRN #</TableHead>
+                        <TableHead className="w-28">Batch No</TableHead>
+                        <TableHead className="w-28">Expiry</TableHead>
+                        <TableHead className="w-28">Manufacturing</TableHead>
+                        <TableHead className="w-40">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredSerials.map(s => {
                         const isReserved = s.status === "reserved";
+                        const batchNo = s.batchNo || selectedItem.batchNo || "";
+                        const expiry = s.expiryDate || selectedItem.expiryDate || "";
+                        const mfg = s.manufacturingDate || selectedItem.manufacturingDate || "";
                         return (
                           <TableRow
                             key={s.id}
@@ -973,6 +982,9 @@ export function StockItemPickerDialog({
                             </TableCell>
                             <TableCell className="font-mono text-sm">{s.serialNumber}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{s.grnNumber || "—"}</TableCell>
+                            <TableCell className="text-xs font-medium">{batchNo || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{expiry || "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{mfg || "—"}</TableCell>
                             <TableCell>
                               {isReserved ? (
                                 <div>
@@ -983,7 +995,10 @@ export function StockItemPickerDialog({
                                   </div>
                                 </div>
                               ) : (
-                                <Badge variant="outline" className="text-xs text-green-600 border-green-300">Available</Badge>
+                                <span className="inline-flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs text-green-600 border-green-300">Available</Badge>
+                                  <span className="text-xs font-semibold text-[#111827]">1 {selectedItem.uom || "Pcs"}</span>
+                                </span>
                               )}
                             </TableCell>
                           </TableRow>

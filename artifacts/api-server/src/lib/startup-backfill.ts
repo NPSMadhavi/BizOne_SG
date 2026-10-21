@@ -354,6 +354,14 @@ export async function runStartupMigrations(): Promise<void> {
       `,
     },
     {
+      name: "stock_serials.batch_expiry_mfg",
+      sql: sql`
+        ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS batch_no text;
+        ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS expiry_date text;
+        ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS manufacturing_date text;
+      `,
+    },
+    {
       name: "stock_items.batches_json",
       sql: sql`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batches_json text`,
     },

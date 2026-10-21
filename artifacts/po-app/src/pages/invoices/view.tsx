@@ -14,7 +14,7 @@ import { fmtDate, cn } from "@/lib/utils";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart, listInvoiceReportTemplates } from "@/lib/report-designer/api";
 import { deliveryOrderAttachmentNames, deliveryOrderPdfAttachments, invoiceEmailBody, markDeliveryOrdersSent, useInvoiceDeliveryOrders } from "@/lib/invoice-delivery-order-email";
-import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PdfPreviewModal, SENT_TO_EXTERNAL } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { BankAccountField } from "@/components/bank-account-field";
@@ -30,6 +30,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -367,8 +368,8 @@ export default function InvoiceView() {
   const canRecordPayment = !isVoided && !isPaid && docStatus !== "draft";
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <>
+      <StickyPageHeader className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
@@ -383,7 +384,11 @@ export default function InvoiceView() {
             {(doc as any).emailSentTo && (
               <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
                 <Mail className="h-3 w-3 shrink-0" />
-                <span>Emailed to: {(doc as any).emailSentTo}</span>
+                <span>
+                  {/^sent to external$/i.test(String((doc as any).emailSentTo).trim())
+                    ? SENT_TO_EXTERNAL
+                    : `Emailed to: ${(doc as any).emailSentTo}`}
+                </span>
               </div>
             )}
           </div>
@@ -478,8 +483,9 @@ export default function InvoiceView() {
             </AlertDialog>
           )}
         </div>
-      </div>
+      </StickyPageHeader>
 
+      <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       {isVoided && (doc as any).voidReason && (
         <div className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
           <Ban className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -786,6 +792,18 @@ export default function InvoiceView() {
           totalAmount: Number(doc.totalAmount) || 0,
         }}
         onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
+        askMarkSentOnClose
+        onMarkAsSentExternal={async () => {
+          await fetch(`/api/invoices/${id}/mark-sent`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
+          });
+          await qc.invalidateQueries({ queryKey: getListInvoicesQueryKey() });
+          await qc.refetchQueries({ queryKey: getGetInvoiceQueryKey(id) });
+          toast({ title: "Marked as sent", description: SENT_TO_EXTERNAL });
+        }}
         onEmailSent={async (recipients) => {
           await fetch(`/api/invoices/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await markDeliveryOrdersSent({ id: doc.id, invNumber: doc.invNumber, soId: (doc as any).soId }, recipients);
@@ -919,6 +937,7 @@ export default function InvoiceView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   );
 }

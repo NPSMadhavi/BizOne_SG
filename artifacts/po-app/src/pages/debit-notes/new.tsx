@@ -63,8 +63,11 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 function calcAmount(qty: number, unitPrice: number, discount: number): number {
-  const base = qty * unitPrice;
-  return base - (base * discount / 100);
+  const q = Number(qty) || 0;
+  const p = Number(unitPrice) || 0;
+  const d = Number(discount) || 0;
+  const base = q * p;
+  return base - (base * d / 100);
 }
 
 function stripHtml(html: string): string {
@@ -132,7 +135,7 @@ export default function DebitNoteNew() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
+  const { fields, append, remove, replace } = useFieldArray({ control: form.control, name: "items" });
 
   // Pre-fill GST from settings
   useEffect(() => {
@@ -144,8 +147,7 @@ export default function DebitNoteNew() {
   const watchDiscount = form.watch("discountAmount");
 
   const subtotal = watchItems.filter(i => i.type !== "section").reduce((s, i) => {
-    const amt = i.amount || calcAmount(i.qty, i.unitPrice, i.discount);
-    return s + amt;
+    return s + calcAmount(i.qty, i.unitPrice, i.discount);
   }, 0);
   const docDiscount = Number(watchDiscount) || 0;
   const taxableAmount = subtotal - docDiscount;
@@ -154,9 +156,25 @@ export default function DebitNoteNew() {
 
   function updateItemAmount(idx: number) {
     const item = form.getValues(`items.${idx}`);
-    if (item.type === "section") return;
-    const amt = calcAmount(item.qty, item.unitPrice, item.discount);
-    form.setValue(`items.${idx}.amount`, amt);
+    if (!item || item.type === "section") return;
+    form.setValue(
+      `items.${idx}.amount`,
+      calcAmount(Number(item.qty) || 0, Number(item.unitPrice) || 0, Number(item.discount) || 0),
+      { shouldDirty: true },
+    );
+  }
+
+  /** Controlled line numeric fields — register alone was not updating qty into watch/amount. */
+  function setLineNumber(idx: number, field: "qty" | "unitPrice" | "discount", raw: string) {
+    const value = raw.trim() === "" ? 0 : Number(raw);
+    const n = Number.isFinite(value) ? value : 0;
+    form.setValue(`items.${idx}.${field}`, n as never, { shouldDirty: true, shouldTouch: true });
+    const item = form.getValues(`items.${idx}`);
+    if (!item || item.type === "section") return;
+    const qty = field === "qty" ? n : (Number(item.qty) || 0);
+    const unitPrice = field === "unitPrice" ? n : (Number(item.unitPrice) || 0);
+    const discount = field === "discount" ? n : (Number(item.discount) || 0);
+    form.setValue(`items.${idx}.amount`, calcAmount(qty, unitPrice, discount), { shouldDirty: true });
   }
 
   function applyInvoiceToForm(inv: InvoiceRefOption) {
@@ -178,7 +196,7 @@ export default function DebitNoteNew() {
     }
     if (disc > 0) form.setValue("discountAmount", disc);
 
-    form.setValue("items", mapInvoiceItemsToDn(inv.items || []));
+    replace(mapInvoiceItemsToDn(inv.items || []));
     lastLoadedRef.current = inv.invNumber || "";
     toast({
       title: "Vendor invoice loaded",
@@ -292,7 +310,7 @@ export default function DebitNoteNew() {
   })();
 
   return (
-    <div className="max-w-[1600px] mx-auto pb-20 space-y-6 animate-in fade-in duration-300">
+    <div className="max-w-[1600px] mx-auto space-y-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-4">
           <Button
@@ -519,13 +537,34 @@ export default function DebitNoteNew() {
                                 <Input {...form.register(`items.${idx}.description`)} className="text-xs h-8" />
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.qty`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  data-allow-autofill="true"
+                                  value={watchItems[idx]?.qty ?? ""}
+                                  onChange={(e) => setLineNumber(idx, "qty", e.target.value)}
+                                  className="text-xs h-8 text-right w-20 ml-auto"
+                                />
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.unitPrice`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} step={0.01} className="text-xs h-8 text-right w-28 ml-auto" />
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  data-allow-autofill="true"
+                                  value={watchItems[idx]?.unitPrice ?? ""}
+                                  onChange={(e) => setLineNumber(idx, "unitPrice", e.target.value)}
+                                  className="text-xs h-8 text-right w-28 ml-auto"
+                                />
                               </td>
                               <td className="px-3 py-2">
-                                <Input {...form.register(`items.${idx}.discount`, { onChange: () => updateItemAmount(idx) })} type="text" inputMode="decimal" min={0} max={100} step={0.01} className="text-xs h-8 text-right w-20 ml-auto" />
+                                <Input
+                                  type="text"
+                                  inputMode="decimal"
+                                  data-allow-autofill="true"
+                                  value={watchItems[idx]?.discount ?? ""}
+                                  onChange={(e) => setLineNumber(idx, "discount", e.target.value)}
+                                  className="text-xs h-8 text-right w-20 ml-auto"
+                                />
                               </td>
                               <td className="px-3 py-2 text-right font-mono text-xs text-gray-700 w-28">
                                 {fmt(calcAmount(watchItems[idx]?.qty || 0, watchItems[idx]?.unitPrice || 0, watchItems[idx]?.discount || 0))}
@@ -602,9 +641,9 @@ export default function DebitNoteNew() {
       <ImportItemsDialog
         open={importExcelOpen}
         onClose={() => setImportExcelOpen(false)}
-        onImport={(imported, replace) => {
-          const newItems = imported.map(it => ({ type: "item" as const, sectionLabel: "", partNumber: it.partNumber, description: it.description, qty: it.qty, unitPrice: it.unitPrice, discount: 0, amount: 0 }));
-          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        onImport={(imported, replaceItems) => {
+          const newItems = imported.map(it => ({ type: "item" as const, sectionLabel: "", partNumber: it.partNumber, description: it.description, qty: it.qty, unitPrice: it.unitPrice, discount: 0, amount: calcAmount(it.qty, it.unitPrice, 0) }));
+          if (replaceItems) { replace(newItems); } else { for (const item of newItems) append(item); }
         }}
       />
 
@@ -626,7 +665,7 @@ export default function DebitNoteNew() {
         <PdfPreviewModal
           open={showPreview}
           onOpenChange={(open) => { if (!open) { setShowPreview(false); setLocation(`/debit-notes`); } }}
-          title={savedDoc.dnNumber}
+          title={`Debit Note ${savedDoc.dnNumber}`}
           generatePdf={(opts) => generateDebitNote_PDF(savedDoc, selectedCompany, opts)}
           pdfFilename={`${savedDoc.dnNumber}.pdf`}
           defaultEmailTo={(savedDoc as any).contactEmail || ""}
@@ -642,6 +681,20 @@ export default function DebitNoteNew() {
             totalAmount: Number((savedDoc as any).totalAmount) || 0,
           }}
           onEdit={() => setLocation(`/debit-notes/${savedDoc.id}/edit`)}
+          askMarkSentOnClose
+          markSentUrl={`/api/debit-notes/${savedDoc.id}/mark-sent`}
+          onMarkAsSentExternal={async () => {
+            setSavedDoc((prev: any) => prev ? { ...prev, emailSentTo: "Sent to External" } : prev);
+          }}
+          onEmailSent={async (recipients) => {
+            await fetch(`/api/debit-notes/${savedDoc.id}/mark-sent`, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sentTo: recipients }),
+            });
+            setSavedDoc((prev: any) => prev ? { ...prev, emailSentTo: recipients.join(", ") } : prev);
+          }}
         />
       )}
     </div>

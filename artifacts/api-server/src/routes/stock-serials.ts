@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, stockSerialsTable, stockItemsTable } from "@workspace/db";
-import { eq, and, inArray, sql, ilike } from "drizzle-orm";
+import { db, stockSerialsTable, stockItemsTable, grnTable } from "@workspace/db";
+import { eq, and, inArray, ilike } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -30,6 +30,61 @@ router.get("/stock-serials", async (req, res): Promise<void> => {
 
   if (stockItemId) rows = rows.filter(r => r.stockItemId === stockItemId);
   if (status) rows = rows.filter(r => r.status === status);
+
+  // Enrich older serials that have no batch columns yet: GRN line → stock item master.
+  const needsBatch = rows.some((r) => !r.batchNo);
+  if (needsBatch) {
+    const grnIds = Array.from(new Set(rows.map((r) => r.grnId).filter((id): id is number => Number(id) > 0)));
+    const grnById = new Map<number, any>();
+    if (grnIds.length > 0) {
+      const grns = await db.select().from(grnTable).where(eq(grnTable.companyId, companyId));
+      for (const g of grns) {
+        if (grnIds.includes(g.id)) grnById.set(g.id, g);
+      }
+    }
+    const itemIds = Array.from(new Set(rows.map((r) => r.stockItemId)));
+    const itemBatch = new Map<number, { batchNo?: string | null; expiryDate?: string | null; manufacturingDate?: string | null }>();
+    if (itemIds.length > 0) {
+      const items = await db
+        .select({
+          id: stockItemsTable.id,
+          batchNo: stockItemsTable.batchNo,
+          expiryDate: stockItemsTable.expiryDate,
+          manufacturingDate: stockItemsTable.manufacturingDate,
+        })
+        .from(stockItemsTable)
+        .where(and(eq(stockItemsTable.companyId, companyId), inArray(stockItemsTable.id, itemIds)));
+      for (const it of items) itemBatch.set(it.id, it);
+    }
+
+    rows = rows.map((r) => {
+      if (r.batchNo) return r;
+      let batchNo: string | null = null;
+      let expiryDate: string | null = null;
+      let manufacturingDate: string | null = null;
+      if (r.grnId && grnById.has(r.grnId)) {
+        const items = (grnById.get(r.grnId).items as any[]) || [];
+        const line = items.find((it) =>
+          Number(it.stockItemId) === r.stockItemId
+          || String(it.serialNumbers || "").split(/[\n,]+/).map((s: string) => s.trim()).includes(r.serialNumber),
+        );
+        if (line) {
+          batchNo = typeof line.batchNo === "string" && line.batchNo.trim() ? line.batchNo.trim() : null;
+          expiryDate = typeof line.expiryDate === "string" && line.expiryDate.trim() ? line.expiryDate.trim() : null;
+          manufacturingDate = typeof line.manufacturingDate === "string" && line.manufacturingDate.trim()
+            ? line.manufacturingDate.trim()
+            : null;
+        }
+      }
+      if (!batchNo) {
+        const master = itemBatch.get(r.stockItemId);
+        batchNo = master?.batchNo || null;
+        expiryDate = expiryDate || master?.expiryDate || null;
+        manufacturingDate = manufacturingDate || master?.manufacturingDate || null;
+      }
+      return { ...r, batchNo, expiryDate, manufacturingDate };
+    });
+  }
 
   res.json(rows);
 });

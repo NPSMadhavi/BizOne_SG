@@ -58,6 +58,11 @@ const ProformaInvoiceNew  = lazy(() => import("@/pages/proforma-invoices/new"));
 const ProformaInvoiceView = lazy(() => import("@/pages/proforma-invoices/view"));
 const ProformaInvoiceEdit = lazy(() => import("@/pages/proforma-invoices/edit"));
 
+const VendorProformaInvoiceList = lazy(() => import("@/pages/vendor-proforma-invoices/list"));
+const VendorProformaInvoiceNew  = lazy(() => import("@/pages/vendor-proforma-invoices/new"));
+const VendorProformaInvoiceView = lazy(() => import("@/pages/vendor-proforma-invoices/view"));
+const VendorProformaInvoiceEdit = lazy(() => import("@/pages/vendor-proforma-invoices/edit"));
+
 const CreditNoteList = lazy(() => import("@/pages/credit-notes/list"));
 const CreditNoteNew  = lazy(() => import("@/pages/credit-notes/new"));
 const CreditNoteView = lazy(() => import("@/pages/credit-notes/view"));
@@ -167,6 +172,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/sales-orders": "Sales Orders",
   "/invoices": "Invoices",
   "/proforma-invoices": "Proforma Invoices",
+  "/vendor-proforma-invoices": "Vendor Proforma Invoices",
+  "/vendor-proforma-invoices/new": "New Vendor Proforma Invoice",
   "/credit-notes": "Credit Notes",
   "/debit-notes": "Debit Notes",
   "/delivery-orders": "Delivery Orders",
@@ -492,6 +499,12 @@ function Router() {
           <Route path="/inventory/sales-person-wise-report">{() => <ProtectedRoute component={SalesPersonWiseReportPage} module="sales_person_wise_report" />}</Route>
           <Route path="/inventory/batch-expiry">{() => <ProtectedRoute component={BatchExpiryPage} module="batch_expiry" />}</Route>
 
+          {/* Vendor Proforma Invoices */}
+          <Route path="/vendor-proforma-invoices">{() => <ProtectedRoute component={VendorProformaInvoiceList} module="vendor_proforma_invoices" />}</Route>
+          <Route path="/vendor-proforma-invoices/new">{() => <ProtectedRoute component={VendorProformaInvoiceNew} module="vendor_proforma_invoices" />}</Route>
+          <Route path="/vendor-proforma-invoices/:id/edit">{() => <ProtectedRoute component={VendorProformaInvoiceEdit} module="vendor_proforma_invoices" />}</Route>
+          <Route path="/vendor-proforma-invoices/:id">{() => <ProtectedRoute component={VendorProformaInvoiceView} module="vendor_proforma_invoices" />}</Route>
+
           {/* Vendor Invoices */}
           <Route path="/vendor-invoices">{() => <ProtectedRoute component={VendorInvoiceList} module="vendor_invoices" />}</Route>
           <Route path="/vendor-invoices/new">{() => <ProtectedRoute component={VendorInvoiceNew} module="vendor_invoices" />}</Route>
@@ -623,6 +636,7 @@ function Router() {
           <Route path="/purchase_quotations">{() => <Redirect to="/purchase-quotations" />}</Route>
           <Route path="/purchase_orders">{() => <Redirect to="/purchase-orders" />}</Route>
           <Route path="/vendor_invoices">{() => <Redirect to="/vendor-invoices" />}</Route>
+          <Route path="/vendor_proforma_invoices">{() => <Redirect to="/vendor-proforma-invoices" />}</Route>
           <Route path="/sales_orders">{() => <Redirect to="/sales-orders" />}</Route>
           <Route path="/proforma_invoices">{() => <Redirect to="/proforma-invoices" />}</Route>
           <Route path="/delivery_orders">{() => <Redirect to="/delivery-orders" />}</Route>

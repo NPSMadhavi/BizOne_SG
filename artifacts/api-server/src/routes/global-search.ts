@@ -7,6 +7,7 @@ import {
   purchaseOrdersTable,
   purchaseQuotationsTable,
   vendorInvoicesTable,
+  vendorProformaInvoicesTable,
   deliveryOrdersTable,
   grnTable,
   creditNotesTable,
@@ -99,6 +100,7 @@ router.get("/search", async (req, res): Promise<void> => {
     purchaseOrders,
     purchaseQuotations,
     vendorInvoices,
+    vendorProformaInvoices,
     deliveryOrders,
     grns,
     creditNotes,
@@ -214,6 +216,24 @@ router.get("/search", async (req, res): Promise<void> => {
           ),
         )
         .orderBy(desc(vendorInvoicesTable.createdAt))
+        .limit(limit),
+    ),
+    safe(() =>
+      db
+        .select({
+          id: vendorProformaInvoicesTable.id,
+          number: vendorProformaInvoicesTable.vpiNumber,
+          party: vendorProformaInvoicesTable.vendorName,
+          status: vendorProformaInvoicesTable.status,
+        })
+        .from(vendorProformaInvoicesTable)
+        .where(
+          and(
+            eq(vendorProformaInvoicesTable.companyId, companyId),
+            or(like(vendorProformaInvoicesTable.vpiNumber, q), like(vendorProformaInvoicesTable.vendorName, q)),
+          ),
+        )
+        .orderBy(desc(vendorProformaInvoicesTable.createdAt))
         .limit(limit),
     ),
     safe(() =>
@@ -435,6 +455,17 @@ router.get("/search", async (req, res): Promise<void> => {
       title: r.number,
       subtitle: r.party,
       href: `/vendor-invoices/${r.id}`,
+      status: r.status,
+    });
+  }
+  for (const r of vendorProformaInvoices) {
+    results.push({
+      type: "vendor_proforma_invoice",
+      category: "Purchases",
+      id: r.id,
+      title: r.number,
+      subtitle: r.party,
+      href: `/vendor-proforma-invoices/${r.id}`,
       status: r.status,
     });
   }

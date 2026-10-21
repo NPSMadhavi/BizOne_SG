@@ -207,7 +207,7 @@ export default function DeliveryOrderEdit() {
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setLocation(`/delivery-orders/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
@@ -497,6 +497,8 @@ export default function DeliveryOrderEdit() {
           currency: "SGD",
           totalAmount: 0,
         } : undefined}
+        askMarkSentOnClose
+        markSentUrl={`/api/delivery-orders/${id}/mark-sent`}
  onEmailSent={async (recipients) => {
           await fetch(`/api/delivery-orders/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
           await queryClient.invalidateQueries({ queryKey: getGetDeliveryOrderQueryKey(id) });

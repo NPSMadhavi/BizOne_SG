@@ -19,6 +19,7 @@ const MODULE_LABELS: Record<string, string> = {
   purchase_quotations: "Purchase Quotation",
   purchase_orders: "Purchase Order",
   vendor_invoices: "Vendor Invoice",
+  vendor_proforma_invoices: "Vendor Proforma Invoice",
   quotations: "Quotation",
   sales_orders: "Sales Order",
   invoices: "Invoice",
@@ -82,6 +83,7 @@ const DOC_TYPE_MODULE: Record<string, string> = {
   pq: "purchase_quotations",
   so: "sales_orders",
   pi: "vendor_invoices",
+  vpi: "vendor_proforma_invoices",
   grn: "grn",
 };
 
@@ -117,6 +119,7 @@ const PATH_PREFIXES: { prefix: string; module: string }[] = [
   { prefix: "/purchase-quotations", module: "purchase_quotations" },
   { prefix: "/purchase-orders", module: "purchase_orders" },
   { prefix: "/vendor-invoices", module: "vendor_invoices" },
+  { prefix: "/vendor-proforma-invoices", module: "vendor_proforma_invoices" },
   { prefix: "/quotations", module: "quotations" },
   { prefix: "/sales-orders", module: "sales_orders" },
   { prefix: "/proforma-invoices", module: "proforma_invoices" },

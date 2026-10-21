@@ -5,6 +5,7 @@ import { inventoryApi } from "@/lib/inventory-api";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -937,6 +938,34 @@ ${styles}
                 batchWise={displayedBatchWise}
                 expiryWise={expiryWiseRows}
                 generic={previewRows}
+                editablePhysicalQty={activeReport === "physical_verification"}
+                onPhysicalQtyChange={(rowIndex, raw) => {
+                  setPreviewRows((prev) => {
+                    const next = prev.map((row) => ({ ...row }));
+                    const row = next[rowIndex];
+                    if (!row) return prev;
+                    const systemQty = Number(row["System Qty"]) || 0;
+                    const trimmed = String(raw).trim();
+                    if (trimmed === "" || Number.isNaN(Number(trimmed))) {
+                      next[rowIndex] = {
+                        ...row,
+                        "Physical Qty": trimmed === "" ? "" : raw,
+                        Variance: "",
+                        Status: "Pending",
+                      };
+                      return next;
+                    }
+                    const physicalQty = Number(trimmed);
+                    const signed = Math.round((physicalQty - systemQty + Number.EPSILON) * 1000) / 1000;
+                    next[rowIndex] = {
+                      ...row,
+                      "Physical Qty": physicalQty,
+                      Variance: Math.abs(signed),
+                      Status: signed === 0 ? "Matched" : signed > 0 ? "Excess" : "Shortage",
+                    };
+                    return next;
+                  });
+                }}
               />
             )}
           </div>
@@ -1375,9 +1404,10 @@ async function buildReportData(
       "Item Name": r.itemName,
       UOM: r.uom,
       "System Qty": r.closing,
-      "Physical Qty": r.closing,
-      Variance: 0,
-      Status: "Matched",
+      // Blank until counted — enter Physical Qty manually in the preview table
+      "Physical Qty": "",
+      Variance: "",
+      Status: "Pending",
     }));
     return built;
   }
@@ -1514,6 +1544,8 @@ function ReportDocument({
   batchWise,
   expiryWise,
   generic,
+  editablePhysicalQty = false,
+  onPhysicalQtyChange,
 }: {
   meta: ReportMeta;
   layout: ReturnType<typeof resolveLayout>;
@@ -1521,6 +1553,8 @@ function ReportDocument({
   batchWise: BatchWiseRow[];
   expiryWise: ExpiryWiseRow[];
   generic: Record<string, string | number>[];
+  editablePhysicalQty?: boolean;
+  onPhysicalQtyChange?: (rowIndex: number, value: string) => void;
 }) {
   const stockTotals = stockWise.reduce(
     (a, r) => ({
@@ -1765,7 +1799,31 @@ function ReportDocument({
                   {generic.map((row, idx) => (
                     <tr key={idx} className={idx % 2 ? "bg-[#F9FAFB]" : "bg-white"}>
                       {Object.keys(generic[0]).map((k) => (
-                        <td key={k} className="px-2 py-1.5">{String(row[k] ?? "")}</td>
+                        <td key={k} className="px-2 py-1.5">
+                          {editablePhysicalQty && k === "Physical Qty" ? (
+                            <Input
+                              type="number"
+                              step="any"
+                              className="h-8 w-24 print:border-0"
+                              value={row[k] === "" || row[k] == null ? "" : String(row[k])}
+                              onChange={(e) => onPhysicalQtyChange?.(idx, e.target.value)}
+                            />
+                          ) : k === "Status" && editablePhysicalQty ? (
+                            <span
+                              className={cn(
+                                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                row[k] === "Matched" && "bg-[#DCFCE7] text-[#15803D]",
+                                row[k] === "Excess" && "bg-[#DBEAFE] text-[#1D4ED8]",
+                                row[k] === "Shortage" && "bg-[#FEE2E2] text-[#DC2626]",
+                                row[k] === "Pending" && "bg-[#F3F4F6] text-[#6B7280]",
+                              )}
+                            >
+                              {String(row[k] ?? "")}
+                            </span>
+                          ) : (
+                            String(row[k] ?? "")
+                          )}
+                        </td>
                       ))}
                     </tr>
                   ))}

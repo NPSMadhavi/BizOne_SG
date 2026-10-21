@@ -1,0 +1,969 @@
+import { useState, useEffect, useRef, Fragment } from "react";
+import { useForm, useFieldArray, type FieldErrors } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useParams, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
+import { invalidateDocumentList } from "@/lib/invalidate-document-lists";
+import { ContactAutocomplete } from "@/components/contact-autocomplete";
+import { Button } from "@/components/ui/button";
+import { FormStickyActions } from "@/components/form-sticky-actions";
+import { DocumentAdditionalInfoFields } from "@/components/document-additional-info-fields";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { ItemImageField } from "@/components/item-image-field";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { useVedaFormActions } from "@/hooks/useVedaFormActions";
+import { Trash2, Save, ArrowLeft, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter, FileInput, Upload, X } from "lucide-react";
+import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
+import { generateVendorProformaInvoice_PDF } from "@/lib/pdf";
+import { PaymentTermsSelect } from "@/components/payment-terms-select";
+import { DirectoryPickerButton } from "@/components/directory-picker-button";
+import { CurrencyMismatchDialog } from "@/components/currency-mismatch-dialog";
+import { DeliveryDateField } from "@/components/delivery-date-field";
+import { IssueDateField } from "@/components/issue-date-field";
+import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { useAuth } from "@/contexts/auth-context";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+
+const itemSchema = z.object({
+  type: z.enum(["item", "section"]).default("item"),
+  sectionLabel: z.string().default(""),
+  sectionAlign: z.enum(["left", "center"]).default("left"),
+  partNumber: z.string(),
+  description: z.string(),
+  qty: z.coerce.number().min(0).default(1),
+  uom: z.string().default(""),
+  unitPrice: z.coerce.number().min(0),
+  discount: z.coerce.number().min(0).max(100).default(0),
+  isFoc: z.boolean().default(false),
+  itemImage: z.string().default(""),
+});
+
+const schema = z.object({
+  vendorName: z.string().min(1, "Required"),
+  vendorAddress: z.string().optional(),
+  vendorContact: z.string().optional(),
+  vendorContactEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  deliveryAddress: z.string().optional(),
+  issueDate: z.string().optional(),
+  deliveryDate: z.string().optional(),
+  paymentTerms: z.string().optional(),
+  pqRefNo: z.string().optional(),
+  notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+  deliveryInstructions: z.string().optional(),
+  customerNote: z.string().optional(),
+  authorisedSignature: z.string().optional(),
+  currency: z.string().default("SGD"),
+  status: z.enum(["draft", "confirmed", "cancelled"]),
+  tax: z.coerce.number().min(0).max(100).default(9),
+  discountAmount: z.coerce.number().min(0).default(0),
+  isPrivate: z.boolean().default(false),
+  items: z.array(itemSchema).min(1),
+});
+
+const blankVpiItem = { type: "item" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+const blankSection = { type: "section" as const, sectionLabel: "", sectionAlign: "left" as const, partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+
+export default function VendorProformaInvoiceEdit() {
+  const params = useParams();
+  const id = Number(params.id);
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const { selectedCompany, canManage } = useAuth();
+  const queryClient = useQueryClient();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [isOverseas, setIsOverseas] = useState(false);
+  const initialized = useRef(false);
+  const [directoryCurrency, setDirectoryCurrency] = useState<string>("");
+  const [directoryCurrencyName, setDirectoryCurrencyName] = useState<string>("");
+  const [pendingConfirmValues, setPendingConfirmValues] = useState<z.infer<typeof schema> | null>(null);
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
+  const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
+  const [importExcelOpen, setImportExcelOpen] = useState(false);
+
+  const { data: doc } = useQuery<any>({
+    queryKey: ["vendor-proforma-invoices", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/vendor-proforma-invoices/${id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+    enabled: !!id,
+  });
+
+  const { data: docSettings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
+
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      vendorName: "", vendorAddress: "", vendorContact: "", vendorContactEmail: "",
+      issueDate: "", deliveryDate: "", paymentTerms: "", pqRefNo: "", notes: "",
+      termsAndConditions: "", deliveryInstructions: "", customerNote: "", authorisedSignature: "",
+      currency: "SGD", status: "draft", tax: 9,
+      discountAmount: 0, isPrivate: false,
+      items: [blankVpiItem],
+    },
+  });
+
+  useEffect(() => {
+    if (doc && !initialized.current) {
+      const items = (doc.items as any[]) || [];
+      const invTaxBase = Math.max(Number(doc.subtotal) - Number(doc.discountAmount || 0), 0);
+      const derivedTaxPct = invTaxBase > 0
+        ? Math.round((Number(doc.tax) / invTaxBase) * 1000) / 10
+        : (Number(doc.subtotal) > 0
+          ? Math.round((Number(doc.tax) / Number(doc.subtotal)) * 1000) / 10
+          : 9);
+      form.reset({
+        vendorName: doc.vendorName,
+        vendorAddress: doc.vendorAddress || "",
+        vendorContact: doc.vendorContact || "",
+        vendorContactEmail: doc.vendorContactEmail || "",
+        deliveryAddress: doc.deliveryAddress || "",
+        issueDate: doc.issueDate || "",
+        deliveryDate: doc.deliveryDate || "",
+        paymentTerms: doc.paymentTerms || "",
+        pqRefNo: doc.pqRefNo || "",
+        notes: doc.notes || "",
+        termsAndConditions: (doc as any).termsAndConditions || "",
+        deliveryInstructions: (doc as any).deliveryInstructions || "",
+        customerNote: (doc as any).customerNote || "",
+        authorisedSignature: (doc as any).authorisedSignature || "",
+        currency: doc.currency || "SGD",
+        status: doc.status as any,
+        tax: derivedTaxPct,
+        discountAmount: Number(doc.discountAmount) || 0,
+        isPrivate: doc.isPrivate ?? false,
+        items: items.length > 0 ? items.map((i: any) => ({
+          type: i.type || "item",
+          sectionLabel: i.sectionLabel || "",
+          sectionAlign: (i.sectionAlign as "left" | "center") || "left",
+          partNumber: i.partNumber || "",
+          description: i.description || "",
+          qty: Number(i.qty) || 1,
+          uom: i.uom || "",
+          unitPrice: Number(i.unitPrice) || 0,
+          discount: Number(i.discount) || 0,
+          isFoc: !!(i.isFoc),
+          itemImage: i.itemImage || "",
+        })) : [blankVpiItem],
+      });
+      const docDiscAmt = Number(doc.discountAmount) || 0;
+      if (docDiscAmt > 0) {
+        const subtot = items
+          .filter((i: any) => i.type !== "section" && !i.isFoc)
+          .reduce((s: number, i: any) => s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+        if (subtot > 0) setDiscountPct(parseFloat((docDiscAmt / subtot * 100).toFixed(2)));
+      }
+      initialized.current = true;
+    }
+  }, [doc]);
+
+  const { fields, append, remove, insert } = useFieldArray({ control: form.control, name: "items" });
+
+  const updateMutation = useMutation({
+    mutationFn: async (body: any) => {
+      const res = await fetch(`/api/vendor-proforma-invoices/${id}`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to update"); }
+      return res.json();
+    },
+  });
+
+  const markSentMutation = useMutation({
+    mutationFn: async (sentTo: string[]) => {
+      const res = await fetch(`/api/vendor-proforma-invoices/${id}/mark-sent`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sentTo }),
+      });
+      if (!res.ok) throw new Error("Failed to mark as sent");
+      return res.json();
+    },
+  });
+
+  const items = form.watch("items");
+  const taxPercent = form.watch("tax") || 0;
+
+  const appendLock = useRef(false);
+  useEffect(() => {
+    if (!initialized.current) return;
+    const sub = form.watch((values, { name }) => {
+      if (!name?.startsWith("items.")) return;
+      const match = name.match(/^items\.(\d+)\./);
+      if (!match) return;
+      const idx = parseInt(match[1], 10);
+      const allItems = values.items ?? [];
+      if (idx !== allItems.length - 1) return;
+      const last = allItems[idx];
+      if (!last) return;
+      const descText = String(last.description || "").replace(/<[^>]*>/g, "").trim();
+      const isEmpty =
+        (!last.partNumber || String(last.partNumber).trim() === "") &&
+        descText === "" &&
+        (Number(last.unitPrice) === 0) && (Number(last.qty) <= 1);
+      if ((last as any).type === "section") return;
+      if (!isEmpty && !appendLock.current) {
+        appendLock.current = true;
+        const focused = document.activeElement as HTMLElement | null;
+        append(blankVpiItem);
+        requestAnimationFrame(() => { focused?.focus(); appendLock.current = false; });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form, append]);
+
+  const rawCurrency = form.watch("currency") || "SGD";
+  const currency = normalizeCurrency(rawCurrency);
+  const subtotal = items.reduce((s, i) => ((i as any).type === "section" || (i as any).isFoc) ? s : s + (Number(i.qty) || 0) * (Number(i.unitPrice) || 0) * (1 - (Number(i.discount) || 0) / 100), 0);
+  const discountAmt = form.watch("discountAmount") || 0;
+  const taxableAmount = subtotal - discountAmt;
+  const [discountPct, setDiscountPct] = useState(0);
+  useEffect(() => {
+    if (discountPct > 0) form.setValue("discountAmount", parseFloat((subtotal * discountPct / 100).toFixed(2)));
+  }, [subtotal]);
+  const taxAmount = taxableAmount * (taxPercent / 100);
+  const totalAmount = taxableAmount + taxAmount;
+  const fmt = (v: number) => formatCurrencySafe(v, currency);
+
+  async function onSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    if (openPreview && directoryCurrency && values.currency !== directoryCurrency) {
+      setPendingConfirmValues(values);
+      setCurrencyDialogOpen(true);
+      return;
+    }
+    await doSubmit(values, openPreview);
+  }
+
+  async function doSubmit(values: z.infer<typeof schema>, openPreview = false) {
+    setIsSubmitting(true);
+    const filledItems = values.items.filter(i =>
+      (i as any).type === "section"
+        ? ((i as any).sectionLabel || "").trim() !== ""
+        : (i.partNumber || "").replace(/<[^>]*>/g, "").trim() !== "" || (i.description || "").replace(/<[^>]*>/g, "").trim() !== ""
+    );
+    const realItems = filledItems.filter((i: any) => i.type !== "section");
+    if (realItems.length === 0) {
+      toast({ title: "Error", description: "At least one line item required.", variant: "destructive" });
+      setIsSubmitting(false);
+      return;
+    }
+    const itemsWithAmount = filledItems.map(i => {
+      if ((i as any).type === "section") return { type: "section" as const, sectionLabel: (i as any).sectionLabel || "", sectionAlign: (i as any).sectionAlign || "left", partNumber: "", description: "", qty: 1, uom: "", unitPrice: 0, discount: 0, isFoc: false, itemImage: "" };
+      const disc = Number(i.discount) || 0;
+      return { ...i, discount: disc, isFoc: !!(i as any).isFoc, amount: (i.qty * i.unitPrice * (1 - disc / 100)).toFixed(2) };
+    });
+    const cleanAddress = (values.deliveryAddress || "")
+      .split("\n\n")
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
+    const isCancelled = values.status === "cancelled";
+    const newStatus = isCancelled
+      ? "cancelled"
+      : openPreview
+        ? "confirmed"
+        : values.status || "draft";
+
+    updateMutation.mutate({
+      ...values,
+      status: newStatus,
+      deliveryAddress: cleanAddress || null,
+      items: itemsWithAmount,
+    } as any, {
+      onSuccess: async (data) => {
+        if (data?.status) form.setValue("status", data.status as any);
+        queryClient.setQueryData(["vendor-proforma-invoices"], (old: any) =>
+          Array.isArray(old) ? old.map((d: any) => d.id === id ? data : d) : old,
+        );
+        queryClient.setQueryData(["vendor-proforma-invoices", id], data);
+        await invalidateDocumentList(queryClient, "vendor-proforma-invoices");
+        setIsSubmitting(false);
+        if (openPreview) { setPreviewOpen(true); }
+        else { toast({ title: "Vendor Proforma Invoice saved." }); setLocation(`/vendor-proforma-invoices/${id}`); }
+      },
+      onError: (err: any) => {
+        toast({ title: "Error", description: err?.message || "Update failed.", variant: "destructive" });
+        setIsSubmitting(false);
+      },
+    });
+  }
+
+  function firstErrorMessage(errors: FieldErrors): string | undefined {
+    for (const value of Object.values(errors)) {
+      if (!value) continue;
+      if ("message" in value && value.message) return String(value.message);
+      const nested = firstErrorMessage(value as FieldErrors);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function onFormInvalid(errors: FieldErrors<z.infer<typeof schema>>) {
+    toast({
+      title: "Cannot save",
+      description: firstErrorMessage(errors) || "Please fill in all required fields.",
+      variant: "destructive",
+    });
+  }
+
+  useVedaFormActions({
+    onSave: () => { void form.handleSubmit((v) => doSubmit(v, false), onFormInvalid)(); },
+    onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+    onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
+  });
+
+  if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => setLocation(`/vendor-proforma-invoices/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Vendor Proforma Invoice</h1>
+          <p className="text-muted-foreground mt-1">{doc.vpiNumber}</p>
+        </div>
+      </div>
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit((v) => onSubmit(v))} className="space-y-8">
+          <Card>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <CardTitle className="text-lg">Currency</CardTitle>
+              <div className="w-56">
+                <Select value={currency} onValueChange={(val) => form.setValue("currency", val)}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {CURRENCIES.map(c => (
+                      <SelectItem key={c.code} value={c.code} className="text-xs">
+                        {c.label} ({c.name})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {CURRENCIES.slice(0, 6).map(c => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => form.setValue("currency", c.code)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${currency === c.code ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"}`}
+                  >
+                    {c.code} – {c.symbol}
+                  </button>
+                ))}
+                {!CURRENCIES.slice(0, 6).some(c => c.code === currency) && (
+                  <button
+                    type="button"
+                    className="px-4 py-1.5 rounded-full text-sm font-medium border bg-primary text-primary-foreground border-primary"
+                  >
+                    {CURRENCIES.find(c => c.code === currency)?.label || currency}
+                  </button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Vendor Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <FormField control={form.control} name="vendorName" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex h-5 items-center justify-between gap-1.5">
+                      <FormLabel className="leading-none">Vendor Name <span className="text-destructive">*</span></FormLabel>
+                      <DirectoryPickerButton
+                        type="vendor"
+                        onSelect={(c) => {
+                          form.setValue("vendorName", c.name);
+                          form.setValue("vendorAddress", c.fullAddress);
+                          form.setValue("vendorContact", c.contactPerson);
+                          form.setValue("vendorContactEmail", c.contactEmail);
+                          if (c.shipToAddress) form.setValue("deliveryAddress", c.shipToAddress);
+                          if (c.effectiveGstRate !== undefined) { form.setValue("tax", c.effectiveGstRate); setIsOverseas(!!c.isOverseas); }
+                          if (c.currency) {
+                            form.setValue("currency", c.currency);
+                            setDirectoryCurrency(c.currency);
+                            setDirectoryCurrencyName(c.name);
+                          }
+                        }}
+                      />
+                    </div>
+                    <FormControl>
+                      <ContactAutocomplete
+                        type="vendor"
+                        value={field.value}
+                        onChange={field.onChange}
+                        onSelect={(c) => {
+                          form.setValue("vendorName", c.name);
+                          if (c.address) form.setValue("vendorAddress", c.address);
+                          if (c.contact) form.setValue("vendorContact", c.contact);
+                          if (c.email) form.setValue("vendorContactEmail", c.email);
+                          if (c.deliveryAddress) form.setValue("deliveryAddress", c.deliveryAddress);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="vendorContact" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex h-5 items-center leading-none">Contact Person</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="vendorContactEmail" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex h-5 items-center leading-none">Contact Email</FormLabel>
+                    <FormControl><Input type="email" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField control={form.control} name="vendorAddress" render={({ field }) => (
+                  <FormItem><FormLabel>Address</FormLabel>
+                    <FormControl><Textarea className="resize-none" rows={3} {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="deliveryAddress" render={({ field }) => {
+                  const addrs = (field.value || "").split("\n\n");
+                  if (addrs.length === 0 || (addrs.length === 1 && addrs[0] === "")) {
+                    addrs[0] = "";
+                  }
+                  return (
+                    <FormItem>
+                      <FormLabel>Ship To Address <span className="text-muted-foreground text-xs font-normal">(optional)</span></FormLabel>
+                      <div className="space-y-2">
+                        {addrs.map((addr, idx) => (
+                          <div key={idx} className="relative group">
+                            <FormControl>
+                              <Textarea
+ value={addr}
+ onChange={(e) => {
+                                  const newAddrs = [...addrs];
+                                  newAddrs[idx] = e.target.value;
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+ placeholder=""
+ className="resize-none pr-8 text-sm"
+ rows={2}
+                              />
+                            </FormControl>
+                            {addrs.length > 1 && (
+                              <button
+ type="button"
+ onClick={() => {
+                                  const newAddrs = addrs.filter((_, i) => i !== idx);
+                                  field.onChange(newAddrs.join("\n\n"));
+                                }}
+ className="absolute right-2 top-2 text-[#EF4444] opacity-0 group-hover:opacity-100 transition-opacity"
+ title="Remove Address"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <Button
+ type="button"
+ variant="outline"
+ size="sm"
+ className="w-full text-xs gap-1.5 py-1.5 h-auto text-[#2563EB] hover:text-[#1D4ED8]"
+ onClick={() => {
+                            const newAddrs = [...addrs, ""];
+                            field.onChange(newAddrs.join("\n\n"));
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add More Ship-To Address
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Auto-filled from vendor directory. Appears on the VPI PDF when set.</p>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }} />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-4"><CardTitle className="text-lg">Vendor Proforma Invoice Details</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <FormField control={form.control} name="issueDate" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <IssueDateField value={field.value || ""} onChange={field.onChange} label="Issue Date" />
+                    </FormControl><FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+                  <FormItem><FormLabel>Payment Terms</FormLabel>
+                    <FormControl><PaymentTermsSelect value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="pqRefNo" render={({ field }) => (
+                  <FormItem><FormLabel>PQ Ref No.</FormLabel>
+                    <FormControl><Input  {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem><FormLabel>Status</FormLabel>
+                    <select value={field.value} onChange={e => field.onChange(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="draft">Draft</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select></FormItem>
+                )} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <FormField control={form.control} name="isPrivate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Private Document</FormLabel>
+                    <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3">
+                      <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <p className="flex-1 text-xs text-muted-foreground">Only you &amp; admins</p>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </div>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="deliveryDate" render={({ field }) => (
+                  <FormItem className="sm:col-span-2"><FormLabel>Delivery Date</FormLabel>
+                    <FormControl><DeliveryDateField value={field.value} onChange={field.onChange} allowCustomText={false} /></FormControl><FormMessage /></FormItem>
+                )} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-4 bg-muted/20 border-b">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-lg">Line Items</CardTitle>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append(blankVpiItem)}>
+                    <Plus className="h-3 w-3" /> Add Item
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7" onClick={() => append(blankSection)}>
+                    <Layers className="h-3 w-3" /> Add Section
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs h-7 text-primary border-primary/30 hover:bg-primary/5" onClick={() => setImportExcelOpen(true)}>
+                    <FileInput className="h-3 w-3" /> Import from Excel / PDF
+                  </Button>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground">Overseas / Export</span>
+                    <Switch
+ checked={isOverseas}
+ onCheckedChange={(v) => {
+                        setIsOverseas(v);
+                        form.setValue("tax", v ? 0 : (docSettings?.gstRate ?? 0));
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-muted-foreground">GST:</span>
+                    <span className="text-sm font-medium">{taxPercent}%</span>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/30 text-xs text-muted-foreground uppercase border-b">
+                    <tr>
+                      <th className="px-2 py-3 text-left w-8">#</th>
+                      <th className="px-2 py-3 text-left w-28">Item / Part Number</th>
+                      <th className="px-2 py-3 text-left">Description</th>
+                      <th className="px-2 py-3 text-right w-16">Qty</th>
+                      <th className="px-2 py-3 text-center w-20">UOM</th>
+                      <th className="px-2 py-3 text-right w-28">Unit Price</th>
+                      <th className="px-2 py-3 text-right w-16">Disc %</th>
+                      <th className="px-2 py-3 text-right w-28">Amount</th>
+                      <th className="px-2 py-3 text-center w-12">FOC</th>
+                      <th className="px-2 py-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => { let _n = 0; return fields.map((field, index) => {
+                      const itemType = form.watch(`items.${index}.type`);
+                      const _itemNo = itemType !== "section" ? ++_n : null;
+                      const insertBar = (
+                        <tr className="group/ins border-0 h-5">
+                          <td colSpan={10} className="p-0 overflow-visible">
+                            <div className="relative flex items-center justify-center h-5">
+                              <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins:bg-primary/40 transition-colors" />
+                              <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => insert(index, blankVpiItem)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                  <Plus className="h-2.5 w-2.5" /> + line item here
+                                </button>
+                                <button type="button" onClick={() => insert(index, blankSection)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                                  <Layers className="h-2.5 w-2.5" /> + section here
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                      if (itemType === "section") {
+                        return (
+                          <Fragment key={field.id}>
+                            {insertBar}
+                            <tr className="border-b bg-muted/40">
+                              <td colSpan={10} className="px-2 py-2">
+                                <div className="flex items-start gap-2">
+                                  <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-2" />
+                                  <div className="flex-1 min-w-0">
+                                    <FormField control={form.control} name={`items.${index}.sectionLabel`} render={({ field: f }) => (
+                                      <FormItem><FormControl>
+                                        <RichTextEditor value={f.value} onChange={f.onChange}  />
+                                      </FormControl></FormItem>
+                                    )} />
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0 mt-1">
+                                    <FormField control={form.control} name={`items.${index}.sectionAlign`} render={({ field: f }) => (
+                                      <FormItem><FormControl>
+                                        <Button type="button" variant="ghost" size="icon" title={f.value === "center" ? "Switch to left-align" : "Switch to center-align"} className={cn("h-7 w-7", f.value === "center" ? "text-primary bg-primary/10" : "text-muted-foreground")} onClick={() => f.onChange(f.value === "center" ? "left" : "center")}>
+                                          {f.value === "center" ? <AlignCenter className="h-3.5 w-3.5" /> : <AlignLeft className="h-3.5 w-3.5" />}
+                                        </Button>
+                                      </FormControl></FormItem>
+                                    )} />
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          </Fragment>
+                        );
+                      }
+                      const qty = Number(form.watch(`items.${index}.qty`)) || 0;
+                      const price = Number(form.watch(`items.${index}.unitPrice`)) || 0;
+                      const disc = Number(form.watch(`items.${index}.discount`)) || 0;
+                      const isFoc = !!(form.watch(`items.${index}.isFoc`));
+                      const amount = qty * price * (1 - disc / 100);
+                      return (
+                        <Fragment key={field.id}>
+                          {insertBar}
+                          <tr className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="px-2 py-2 text-muted-foreground text-xs">{_itemNo}</td>
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.partNumber`} render={({ field }) => (
+                            <FormItem><FormControl>
+                              <div className="flex items-center gap-1">
+                                <Input className="h-8 text-sm border-0 bg-transparent focus:bg-background placeholder:text-muted-foreground/40"  {...field} />
+                                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => setStockPickerIndex(index)} title="Pick from stock">
+                                  <Package className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-2 py-2 align-top"><div className="flex gap-2 items-start"><FormField control={form.control} name={`items.${index}.description`} render={({ field }) => (
+                            <FormItem className="flex-1 min-w-0"><FormControl><RichTextEditor value={field.value} onChange={field.onChange}  /></FormControl></FormItem>
+                          )} /><FormField control={form.control} name={`items.${index}.itemImage`} render={({ field }) => (
+                            <FormItem><FormControl><ItemImageField value={field.value} onChange={field.onChange} /></FormControl></FormItem>
+                          )} /></div></td>
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.qty`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="numeric" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" {...field} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.uom`} render={({ field }) => (
+                            <FormItem><FormControl>
+                              <select className="h-8 text-sm w-full border-0 bg-transparent focus:outline-none cursor-pointer" {...field}>
+                                <option value="">—</option>
+                                <option value="Nos">Nos</option>
+                                <option value="Pcs">Pcs</option>
+                                <option value="Set">Set</option>
+                                <option value="Lot">Lot</option>
+                                <option value="Hr">Hr</option>
+                                <option value="Day">Day</option>
+                                <option value="Month">Month</option>
+                                <option value="Yr">Yr</option>
+                                <option value="Job">Job</option>
+                                <option value="kg">kg</option>
+                                <option value="m">m</option>
+                                <option value="L">L</option>
+                                <option value="Box">Box</option>
+                                <option value="Roll">Roll</option>
+                                <option value="Pair">Pair</option>
+                                <option value="Unit">Unit</option>
+                                <option value="ls">ls</option>
+                              </select>
+                            </FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.unitPrice`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0.00" {...field} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className="px-2 py-2"><FormField control={form.control} name={`items.${index}.discount`} render={({ field }) => (
+                            <FormItem><FormControl><Input inputMode="decimal" className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background" placeholder="0" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || ""} /></FormControl></FormItem>
+                          )} /></td>
+                          <td className={`px-2 py-2 text-right text-sm font-medium ${isFoc ? "text-amber-600" : "text-muted-foreground"}`}>{fmt(amount)}</td>
+                          <td className="px-2 py-2 text-center">
+                            <FormField control={form.control} name={`items.${index}.isFoc`} render={({ field }) => (
+                              <FormItem className="space-y-0"><FormControl>
+                                <Checkbox checked={!!field.value} onCheckedChange={field.onChange} title="Free of Charge — excluded from subtotal, shown in amber" />
+                              </FormControl></FormItem>
+                            )} />
+                          </td>
+                          <td className="px-2 py-2">{fields.length > 1 && (
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => remove(index)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}</td>
+                        </tr>
+                        </Fragment>
+                      );
+                    }); })()}
+                    <tr className="group/ins-tail border-0 h-5">
+                      <td colSpan={10} className="p-0 overflow-visible">
+                        <div className="relative flex items-center justify-center h-5">
+                          <div className="absolute inset-x-0 top-1/2 h-px bg-border/40 group-hover/ins-tail:bg-primary/40 transition-colors" />
+                          <div className="absolute flex items-center gap-2 opacity-0 group-hover/ins-tail:opacity-100 transition-opacity">
+                            <button type="button" onClick={() => append(blankVpiItem)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                              <Plus className="h-2.5 w-2.5" /> + line item here
+                            </button>
+                            <button type="button" onClick={() => append(blankSection)} className="flex items-center gap-1 text-[10px] text-primary bg-background border border-primary/30 rounded px-2 leading-5 whitespace-nowrap shadow-sm">
+                              <Layers className="h-2.5 w-2.5" /> + section here
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t bg-muted/20 p-4 flex justify-end">
+                <div className="w-72 space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground whitespace-nowrap">Discount</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative">
+                        <Input
+ inputMode="decimal"
+ maxLength={3}
+ placeholder="0"
+ className="h-7 w-14 text-sm text-center pr-5"
+ value={discountPct || ""}
+ onChange={e => {
+                            const raw = e.target.value.replace(/[^0-9.]/g, "");
+                            const n = Math.min(parseFloat(raw) || 0, 100);
+                            setDiscountPct(n);
+                            form.setValue("discountAmount", parseFloat((subtotal * n / 100).toFixed(2)));
+                          }}
+                        />
+                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
+                      </div>
+                      <FormField control={form.control} name="discountAmount" render={({ field }) => (
+                        <FormItem className="m-0 p-0"><FormControl>
+                          <Input inputMode="decimal" className="h-7 w-24 text-sm text-right" placeholder="0.00"
+ value={field.value || ""}
+ onChange={e => { setDiscountPct(0); field.onChange(parseFloat(e.target.value) || 0); }}
+                          />
+                        </FormControl></FormItem>
+                      )} />
+                    </div>
+                  </div>
+                  {discountAmt > 0 && <div className="flex justify-between text-xs text-muted-foreground"><span>Net Amount</span><span>{fmt(taxableAmount)}</span></div>}
+                  <div className="flex justify-between"><span className="text-muted-foreground">GST ({taxPercent}%)</span><span>{fmt(taxAmount)}</span></div>
+                  <div className="flex justify-between font-semibold text-base border-t pt-2"><span>Total</span><span>{fmt(totalAmount)}</span></div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-4"><CardTitle className="text-lg">Additional Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <FormField control={form.control} name="notes" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Internal Notes</FormLabel>
+                  <FormControl><RichTextEditor value={field.value ?? ""} onChange={field.onChange} className="min-h-[96px]" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              
+              <DocumentAdditionalInfoFields control={form.control} signatureHint="Appears at the bottom of the invoice PDF above the sign-off line." />
+            </CardContent>
+          </Card>
+
+          <FormStickyActions className="justify-between">
+            <div>
+              {canManage && doc?.status === "draft" && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+ type="button"
+ variant="outline"
+ size="icon"
+ className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+ title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete <strong>{doc.vpiNumber}</strong>. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+ className="bg-red-600 hover:bg-red-700"
+ onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/vendor-proforma-invoices/${id}`, { method: "DELETE", credentials: "include" });
+                            if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+                            queryClient.setQueryData(["vendor-proforma-invoices"], (old: any) =>
+                              Array.isArray(old) ? old.filter((d: any) => d.id !== id) : old,
+                            );
+                            await invalidateDocumentList(queryClient, "vendor-proforma-invoices");
+                            toast({ title: "Vendor Proforma Invoice deleted." });
+                            setLocation("/vendor-proforma-invoices");
+                          } catch (err: any) {
+                            toast({ title: "Error", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" onClick={() => setLocation(`/vendor-proforma-invoices/${id}`)}>Cancel</Button>
+              <Button
+ type="button"
+ variant="outline"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => doSubmit(v, false))}
+              >
+                <Save className="h-4 w-4" />
+                {isSubmitting ? "Saving..." : "Save Changes"}
+              </Button>
+              <Button
+ type="button"
+ disabled={isSubmitting}
+ className="gap-2"
+ onClick={form.handleSubmit(v => onSubmit(v, true))}
+              >
+                <Eye className="h-4 w-4" />
+                {isSubmitting ? "Saving..." : "Save & Preview"}
+              </Button>
+            </div>
+          </FormStickyActions>
+        </form>
+      </Form>
+
+      <StockItemPickerDialog
+ open={stockPickerIndex !== null}
+ onOpenChange={(open) => { if (!open) setStockPickerIndex(null); }}
+        ignoreStockLimit
+ onSelect={({ item, qty }: StockItemSelection) => {
+          if (stockPickerIndex === null) return;
+          form.setValue(`items.${stockPickerIndex}.partNumber`, item.code);
+          form.setValue(`items.${stockPickerIndex}.description`, `<p>${item.name}</p>`);
+          form.setValue(`items.${stockPickerIndex}.unitPrice`, Number(item.unitPrice) || 0);
+          if (qty && qty > 0) form.setValue(`items.${stockPickerIndex}.qty`, qty);
+          setStockPickerIndex(null);
+        }}
+      />
+
+      <CurrencyMismatchDialog
+ open={currencyDialogOpen}
+ entityName={directoryCurrencyName}
+ entityType="vendor"
+ defaultCurrency={directoryCurrency}
+ selectedCurrency={form.getValues("currency")}
+ onContinue={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) await doSubmit(pendingConfirmValues, true);
+          setPendingConfirmValues(null);
+        }}
+ onRevert={async () => {
+          setCurrencyDialogOpen(false);
+          if (pendingConfirmValues) {
+            const updated = { ...pendingConfirmValues, currency: directoryCurrency };
+            form.setValue("currency", directoryCurrency);
+            await doSubmit(updated, true);
+          }
+          setPendingConfirmValues(null);
+        }}
+      />
+
+      <ImportItemsDialog
+ open={importExcelOpen}
+ onClose={() => setImportExcelOpen(false)}
+ onImport={(imported, replace) => {
+          const newItems = imported.map(it => ({ ...blankVpiItem, partNumber: it.partNumber, description: it.description, qty: it.qty, uom: it.uom, unitPrice: it.unitPrice }));
+          if (replace) { form.setValue("items", newItems); } else { for (const item of newItems) append(item); }
+        }}
+      />
+      {doc && (
+        <PdfPreviewModal
+ open={previewOpen}
+ onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) setLocation(`/vendor-proforma-invoices`);
+          }}
+ title={`Vendor Proforma Invoice ${doc.vpiNumber}`}
+ generatePdf={(opts) => generateVendorProformaInvoice_PDF(doc, selectedCompany, undefined, opts)}
+ pdfFilename={`${doc.vpiNumber}.pdf`}
+ defaultEmailTo={doc.vendorContactEmail || ""}
+ defaultEmailSubject={`Vendor Proforma Invoice ${doc.vpiNumber}`}
+ defaultEmailBody={`Dear ${doc.vendorContact || "Sir/Madam"},\n\nPlease find attached our Vendor Proforma Invoice ${doc.vpiNumber} for your consideration.\n\nThank you.`}
+ docInfo={{
+            docType: "Vendor Proforma Invoice",
+            docNumber: doc.vpiNumber,
+            customerName: doc.vendorName,
+            companyName: (selectedCompany as any)?.name || "RSV Infotech",
+            items: ((doc.items as any[]) || []).filter((i: any) => i.type !== "section"),
+            currency: (doc as any).currency || "SGD",
+            totalAmount: Number(doc.totalAmount) || 0,
+          }}
+ onEdit={() => { setPreviewOpen(false); }}
+        askMarkSentOnClose
+        markSentUrl={`/api/vendor-proforma-invoices/${id}/mark-sent`}
+ onEmailSent={async (recipients) => {
+            await markSentMutation.mutateAsync(recipients);
+            await queryClient.invalidateQueries({ queryKey: ["vendor-proforma-invoices", id] });
+          }}
+        />
+      )}
+    </div>
+  );
+}

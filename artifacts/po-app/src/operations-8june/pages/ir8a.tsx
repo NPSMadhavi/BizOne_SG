@@ -20,12 +20,9 @@ import {
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
 import { useToast } from "@/hooks/use-toast";
-import { calculateSyncBridgePayrollPreview } from "@/operations-8june/lib/payroll-utils";
 import { emptyEarningsSplit, splitEarnings, type EarningsSplit } from "@/operations-8june/lib/payroll-earnings";
-import {
-  calculateAgeFromDob,
-  mapEmployeeResidency,
-} from "@/operations-8june/types/singapore-payroll";
+import { recordPayrollMonthYear } from "@/operations-8june/lib/payroll-batch-utils";
+import { mapEmployeeResidency } from "@/operations-8june/types/singapore-payroll";
 import {
   Users,
   DollarSign,
@@ -33,10 +30,8 @@ import {
   FileText,
   Search,
   Download,
-  Save,
   CheckCircle2,
   Send,
-  FileCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -70,6 +65,7 @@ type PayrollRecord = {
   overtimePay?: string | number | null;
   grossPay?: string | number | null;
   cpfDeduction?: string | number | null;
+  cpfEmployer?: string | number | null;
   netPay?: string | number | null;
   payrollMonth?: string | number | null;
 };
@@ -110,14 +106,6 @@ function money(value: number) {
   return value.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function recordYear(record: PayrollRecord) {
-  const year = Number(record.payrollYear);
-  if (Number.isFinite(year) && year > 0) return year;
-  const start = String(record.payPeriodStart || "");
-  const parsed = Number(start.slice(0, 4));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function addSplit(left: EarningsSplit, right: EarningsSplit): EarningsSplit {
   const next = emptyEarningsSplit();
   for (const key of Object.keys(next) as (keyof EarningsSplit)[]) {
@@ -126,62 +114,73 @@ function addSplit(left: EarningsSplit, right: EarningsSplit): EarningsSplit {
   return next;
 }
 
-function scaleSplit(split: EarningsSplit, factor: number): EarningsSplit {
-  const next = emptyEarningsSplit();
-  for (const key of Object.keys(next) as (keyof EarningsSplit)[]) {
-    next[key] = split[key] * factor;
+function monthPayrollAmount(record: PayrollRecord) {
+  const earnings = splitEarnings(record.allowances);
+  const overtime = num(record.overtimePay) > 0 ? num(record.overtimePay) : earnings.overtime;
+  const classified =
+    earnings.allowances +
+    earnings.bonus +
+    earnings.directorsFees +
+    earnings.fees +
+    earnings.otherPayments +
+    earnings.benefitsInKind +
+    earnings.shareOption +
+    earnings.retirementBenefits +
+    earnings.incomeTaxBorneByEmployee +
+    earnings.genericOtherIncome +
+    overtime;
+  const basic = num(record.baseSalary);
+  const grossPay = num(record.grossPay);
+  if (basic > 0) return { basic, overtime, earnings };
+  if (grossPay > 0 && classified > 0 && grossPay + 0.009 >= classified) {
+    return { basic: Math.max(0, grossPay - classified), overtime, earnings };
   }
-  return next;
+  return { basic: grossPay, overtime: 0, earnings: emptyEarningsSplit() };
 }
 
 function buildLine(
   employee: EmployeeRow,
   records: PayrollRecord[],
-  config: PayrollConfigRow | undefined,
+  _config: PayrollConfigRow | undefined,
   year: number,
   submitted: boolean,
 ): Ir8aLine {
-  const months = records.filter(
-    (record) => Number(record.employeeId) === Number(employee.id) && recordYear(record) === year,
-  );
-  const monthlySalary = num(employee.salary) || num(config?.baseSalary);
+  const byMonth = new Map<string, PayrollRecord>();
+  for (const record of records) {
+    if (Number(record.employeeId) !== Number(employee.id)) continue;
+    const period = recordPayrollMonthYear(record);
+    if (period.year !== year || period.month < 1 || period.month > 12) continue;
+    const key = `${period.year}-${period.month}`;
+    const current = byMonth.get(key);
+    if (!current || Number(record.id) >= Number(current.id)) byMonth.set(key, record);
+  }
+  const months = [...byMonth.values()];
   const { residencyType } = mapEmployeeResidency({
     nationality: employee.nationality,
     prStatus: employee.prStatus,
   });
-  const preview = calculateSyncBridgePayrollPreview({
-    monthlySalary,
-    age: calculateAgeFromDob(employee.dateOfBirth),
-    citizenshipStatus: residencyType,
-    prStatus: employee.prStatus,
-    allowances: (config?.allowances && typeof config.allowances === "object"
-      ? config.allowances
-      : {}) as Record<string, number>,
-  });
 
-  const hasRecords = months.length > 0;
-  const periods = hasRecords ? months.length : 12;
-  const recordComponents = hasRecords
-    ? months.reduce((total, record) => addSplit(total, splitEarnings(record.allowances)), emptyEarningsSplit())
-    : emptyEarningsSplit();
-  const recordHasBreakdown = recordComponents.allowances + recordComponents.bonus + recordComponents.fees + recordComponents.otherIncome + recordComponents.overtime > 0;
-  const components = recordHasBreakdown
-    ? recordComponents
-    : scaleSplit(splitEarnings(config?.allowances), periods);
-  const grossSalary = monthlySalary * periods + components.overtime;
+  let grossSalary = 0;
+  let components = emptyEarningsSplit();
+  let employeeCpf = 0;
+  let employerCpf = 0;
+  for (const record of months) {
+    const month = monthPayrollAmount(record);
+    grossSalary += month.basic + month.overtime;
+    components = addSplit(components, month.earnings);
+    employeeCpf += num(record.cpfDeduction);
+    employerCpf += num(record.cpfEmployer);
+  }
+  const monthlySalary = months.length > 0 ? grossSalary / months.length : num(employee.salary);
   const allowances = components.allowances;
   const bonus = components.bonus;
   const directorsFees = components.directorsFees;
   const fees = components.fees;
   const otherPayments = components.otherPayments;
   const gross = grossSalary + bonus + directorsFees + fees + allowances + otherPayments;
-  const employeeCpf = hasRecords
-    ? months.reduce((sum, record) => sum + num(record.cpfDeduction), 0)
-    : preview.employeeCpf * 12;
-  const employerCpf = preview.employerCpf * (hasRecords ? months.length : 12);
   const nric = String(employee.nricNumber || "").trim();
   const checks = [
-    { label: "Payroll records matched", ok: hasRecords || monthlySalary > 0 },
+    { label: "Payroll records matched", ok: months.length > 0 },
     { label: "CPF calculations completed", ok: employeeCpf > 0 || residencyType === "foreigner" || monthlySalary > 0 },
     { label: "Employee particulars available", ok: Boolean(employee.name && employee.employeeId && nric) },
     { label: "IR8A data ready", ok: Boolean(nric) && gross > 0 },
@@ -594,52 +593,24 @@ export default function Ir8aPage() {
                         View IR8A
                       </Button>
                     </div>
-                    <div className="rounded-xl border border-[#E5E7EB] p-4">
-                      <h3 className="mb-3 text-center text-sm font-semibold text-[#111827]">Quick Actions</h3>
-                      <div className="space-y-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-center gap-2"
-                          onClick={() => {
-                            toast({ title: "Draft saved" });
-                          }}
-                        >
-                          <Save className="h-4 w-4" /> Save Draft
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full justify-center gap-2"
-                          onClick={() => {
-                            const failed = selected.checks.filter((check) => !check.ok);
-                            toast({
-                              title: failed.length ? "Validation needs attention" : "Validated",
-                              description: failed.length ? failed.map((check) => check.label).join(", ") : "IR8A data is ready.",
-                              variant: failed.length ? "destructive" : "default",
-                            });
-                          }}
-                        >
-                          <FileCheck className="h-4 w-4" /> Validate
-                        </Button>
-                        <Button
-                          type="button"
-                          className="w-full justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"
-                          onClick={startGenerate}
-                        >
-                          <FileText className="h-4 w-4" /> Generate IR8A
-                        </Button>
-                        <Button
-                          type="button"
-                          className="w-full justify-center gap-2 bg-emerald-600 hover:bg-emerald-700"
-                          onClick={() => {
-                            setSubmittedIds((current) => current.includes(selected.employee.id) ? current : [...current, selected.employee.id]);
-                            toast({ title: "Submitted to AIS" });
-                          }}
-                        >
-                          <Send className="h-4 w-4" /> Submit AIS
-                        </Button>
-                      </div>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        className="w-full justify-center gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]"
+                        onClick={startGenerate}
+                      >
+                        <FileText className="h-4 w-4" /> Generate IR8A
+                      </Button>
+                      <Button
+                        type="button"
+                        className="w-full justify-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => {
+                          setSubmittedIds((current) => current.includes(selected.employee.id) ? current : [...current, selected.employee.id]);
+                          toast({ title: "Submitted to AIS" });
+                        }}
+                      >
+                        <Send className="h-4 w-4" /> Submit AIS
+                      </Button>
                     </div>
                     <Section title="Validation" source="" tone="amber">
                       <div className="space-y-2">
@@ -678,7 +649,6 @@ export default function Ir8aPage() {
         }}
         onView={() => openForm(false)}
         onDownload={() => openForm(true)}
-        onGenerateAll={startGenerate}
         onUpdate={(id) => {
           setGenerateOpen(false);
           setFormOpen(false);

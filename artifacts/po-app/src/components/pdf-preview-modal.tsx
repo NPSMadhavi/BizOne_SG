@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Download, Printer, Sparkles } from "lucide-react";
 import { EmailSendDialog, type EmailDocInfo, type EmailPdfAttachment } from "@/components/email-send-dialog";
@@ -8,6 +12,26 @@ import bizoneLogo from "@assets/bizone_logo_optimized.webp";
 import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
 import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
 import * as pdfjsLib from "pdfjs-dist";
+
+export const SENT_TO_EXTERNAL = "Sent to External";
+
+/** POST mark-sent with Sent To = "Sent to External" (preview close → Yes). */
+export async function markDocumentSentExternal(apiPath: string, id: number | string): Promise<void> {
+  const res = await fetch(`/api/${apiPath}/${id}/mark-sent`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({} as { error?: string }));
+    throw new Error(err.error || `Failed to mark as sent (${res.status})`);
+  }
+}
+
+export function isSentToExternal(value?: string | null): boolean {
+  return /^sent to external$/i.test(String(value || "").trim());
+}
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -224,6 +248,12 @@ interface PdfPreviewModalProps {
   defaultEmailBody?: string;
   onEdit?: () => void;
   onEmailSent?: (recipients: string[]) => void;
+  /** When closing preview (X), ask "Mark as sent?" Yes → markSentUrl and/or onMarkAsSentExternal */
+  askMarkSentOnClose?: boolean;
+  /** e.g. `/api/purchase-orders/12/mark-sent` — Yes posts Sent To = "Sent to External" */
+  markSentUrl?: string;
+  /** Called after a successful external mark (or alone if markSentUrl omitted, e.g. invoices). */
+  onMarkAsSentExternal?: () => void | Promise<void>;
   poId?: number;
   docInfo?: EmailDocInfo;
   showEmail?: boolean;
@@ -242,12 +272,61 @@ export function PdfPreviewModal({
   defaultEmailBody = "",
   onEdit,
   onEmailSent,
+  askMarkSentOnClose = false,
+  markSentUrl,
+  onMarkAsSentExternal,
   poId,
   docInfo,
   showEmail = true,
 }: PdfPreviewModalProps) {
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [markSentConfirmOpen, setMarkSentConfirmOpen] = useState(false);
+  const [markingSent, setMarkingSent] = useState(false);
+  const closingConfirmRef = useRef(false);
+
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
+      onOpenChange(true);
+      return;
+    }
+    if (askMarkSentOnClose) {
+      setMarkSentConfirmOpen(true);
+      return;
+    }
+    onOpenChange(false);
+  };
+
+  const finishClose = async (markExternal: boolean) => {
+    if (closingConfirmRef.current) return;
+    closingConfirmRef.current = true;
+    setMarkSentConfirmOpen(false);
+    try {
+      if (markExternal && (markSentUrl || onMarkAsSentExternal)) {
+        setMarkingSent(true);
+        try {
+          if (markSentUrl) {
+            const res = await fetch(markSentUrl, {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({} as { error?: string }));
+              throw new Error(err.error || `Failed to mark as sent (${res.status})`);
+            }
+          }
+          await onMarkAsSentExternal?.();
+        } finally {
+          setMarkingSent(false);
+        }
+      }
+      onOpenChange(false);
+    } finally {
+      closingConfirmRef.current = false;
+    }
+  };
 
   useEffect(() => {
     if (!open) {
@@ -305,53 +384,91 @@ export function PdfPreviewModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl w-full h-[90vh] flex flex-col p-0 gap-0">
-        <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between space-y-0">
-          <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
-          <div className="flex items-center gap-2 pr-8">
-            {onEdit && (
-              <Button variant="outline" size="sm" onClick={onEdit}>
-                Edit
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-w-4xl w-full h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 py-4 border-b flex-row items-center justify-between space-y-0">
+            <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
+            <div className="flex items-center gap-2 pr-8">
+              {onEdit && (
+                <Button variant="outline" size="sm" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="gap-2" onClick={handleDownload}>
+                <Download className="h-4 w-4" />
+                Download
               </Button>
-            )}
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleDownload}>
-              <Download className="h-4 w-4" />
-              Download
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint} disabled={!pdfBase64}>
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
-            {showEmail && (
-              <EmailSendDialog
-                defaultTo={defaultEmailTo}
-                defaultSubject={defaultEmailSubject}
-                defaultBody={defaultEmailBody}
-                pdfFilename={pdfFilename}
-                pdfFilenames={pdfFilenames}
-                generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
-                generateAttachments={generateAttachments}
-                triggerSize="sm"
-                onSuccess={(recipients) => onEmailSent?.(recipients)}
-                poId={poId}
-                docInfo={docInfo}
-              />
+              <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint} disabled={!pdfBase64}>
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+              {showEmail && (
+                <EmailSendDialog
+                  defaultTo={defaultEmailTo}
+                  defaultSubject={defaultEmailSubject}
+                  defaultBody={defaultEmailBody}
+                  pdfFilename={pdfFilename}
+                  pdfFilenames={pdfFilenames}
+                  generatePdf={() => generatePdf({ returnBase64: true }) as Promise<string>}
+                  generateAttachments={generateAttachments}
+                  triggerSize="sm"
+                  onSuccess={(recipients) => onEmailSent?.(recipients)}
+                  poId={poId}
+                  docInfo={docInfo}
+                />
+              )}
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {loading ? (
+              <AiPreloader />
+            ) : pdfBase64 ? (
+              <PdfCanvasRenderer base64={pdfBase64} title={title} />
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                PDF preview not available. Use the Download button above.
+              </div>
             )}
           </div>
-        </DialogHeader>
-        <div className="flex-1 overflow-hidden">
-          {loading ? (
-            <AiPreloader />
-          ) : pdfBase64 ? (
-            <PdfCanvasRenderer base64={pdfBase64} title={title} />
-          ) : (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              PDF preview not available. Use the Download button above.
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={markSentConfirmOpen}
+        onOpenChange={(v) => {
+          if (!v && !markingSent) void finishClose(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark as sent?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Yes will set Sent To as &quot;Sent to External&quot;. No keeps the current Sent To (including any emailed address).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={markingSent}
+              onClick={(e) => {
+                e.preventDefault();
+                void finishClose(false);
+              }}
+            >
+              No
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={markingSent}
+              onClick={(e) => {
+                e.preventDefault();
+                void finishClose(true);
+              }}
+            >
+              {markingSent ? "Saving..." : "Yes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -224,6 +224,16 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 
+  /* Shell locks the viewport so only the main content pane scrolls —
+     sidebar stays fixed and the document/body never gains a page scrollbar. */
+  html.app-shell-lock,
+  html.app-shell-lock body,
+  html.app-shell-lock #root {
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
   /* Keep header and cell text on the same left edge (Tailwind v4 th reverts to center). */
   table th,
   table td {

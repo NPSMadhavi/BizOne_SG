@@ -893,7 +893,7 @@ export default function VendorInvoiceEdit() {
               setLocation("/vendor-invoices");
             }
           }}
-          title={savedDoc.piNumber}
+          title={`Vendor Invoice ${savedDoc.piNumber}`}
           generatePdf={(opts) => generateVendorInvoice_PDF(savedDoc, selectedCompany, opts)}
           pdfFilename={`${savedDoc.piNumber}.pdf`}
           defaultEmailTo=""

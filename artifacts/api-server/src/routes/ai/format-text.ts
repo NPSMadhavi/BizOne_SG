@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { isVedaGatewayConfigured, vedaChat } from "../../lib/veda-gateway.js";
 
 const router = Router();
 
@@ -31,16 +32,20 @@ router.post("/ai/format-text", async (req: any, res: any) => {
   }
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5",
-      max_completion_tokens: 4096,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: html },
-      ],
-    });
-
-    const formatted = (completion.choices[0]?.message?.content || "").trim();
+    let formatted = "";
+    if (isVedaGatewayConfigured()) {
+      formatted = (await vedaChat(`${SYSTEM_PROMPT}\n\n---\n\nInput HTML:\n${html}`)).trim();
+    } else {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5",
+        max_completion_tokens: 4096,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: html },
+        ],
+      });
+      formatted = (completion.choices[0]?.message?.content || "").trim();
+    }
     if (!formatted) {
       return res.status(500).json({ error: "AI returned empty response" });
     }

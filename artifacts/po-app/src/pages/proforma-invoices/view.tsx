@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Pencil, Eye, Lock, Trash2, CheckCircle2, Mail } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
 import { generatePI_PDF } from "@/lib/pdf";
-import { PdfPreviewModal } from "@/components/pdf-preview-modal";
+import { PdfPreviewModal, isSentToExternal } from "@/components/pdf-preview-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
@@ -18,6 +18,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { StickyPageHeader } from "@/components/sticky-page-header";
 
 function isoToReadable(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -130,8 +131,8 @@ export default function ProformaInvoiceView() {
   const isConfirmed = docStatus === "confirmed";
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      <StickyPageHeader className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation("/proforma-invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
@@ -143,7 +144,7 @@ export default function ProformaInvoiceView() {
             {doc.emailSentTo && (
               <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1 w-fit mt-1">
                 <Mail className="h-3 w-3 shrink-0" />
-                <span>Emailed to: {doc.emailSentTo}</span>
+                <span>{isSentToExternal(doc.emailSentTo) ? "Sent to External" : `Emailed to: ${doc.emailSentTo}`}</span>
               </div>
             )}
           </div>
@@ -225,7 +226,7 @@ export default function ProformaInvoiceView() {
             </AlertDialog>
           )}
         </div>
-      </div>
+      </StickyPageHeader>
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
@@ -374,6 +375,12 @@ export default function ProformaInvoiceView() {
           totalAmount: Number(doc.totalAmount) || 0,
         }}
         onEdit={() => setLocation(`/proforma-invoices/${id}/edit`)}
+        askMarkSentOnClose
+        markSentUrl={`/api/proforma-invoices/${id}/mark-sent`}
+        onMarkAsSentExternal={async () => {
+          qc.invalidateQueries({ queryKey: ["proforma-invoices"] });
+          await refetch();
+        }}
         onEmailSent={(recipients) => markSentMutation.mutate(recipients)}
       />
     </div>

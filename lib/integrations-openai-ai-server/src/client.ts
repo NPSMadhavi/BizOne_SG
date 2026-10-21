@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 function resolveApiKey() {
+  // Veda gateway is NOT OpenAI-compatible — do not use VEDA_API_KEY here.
   return (
     process.env.AI_INTEGRATIONS_OPENAI_API_KEY ||
     process.env.OPENAI_API_KEY ||
@@ -9,6 +10,7 @@ function resolveApiKey() {
 }
 
 function resolveBaseUrl() {
+  // Veda gateway uses POST /chat, not /v1/chat/completions.
   return (
     process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.openai.com/v1"
   );

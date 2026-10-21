@@ -28,6 +28,7 @@ const PURCHASE_DOCS = [
   "purchase_orders",
   "purchase_quotations",
   "vendor_invoices",
+  "vendor_proforma_invoices",
   "grn",
   "debit_notes",
 ] as const;
@@ -102,6 +103,7 @@ const RULES: Rule[] = [
   { prefix: "/sales-orders", anyOf: ["sales_orders"] },
   { prefix: "/delivery-orders", anyOf: ["delivery_orders"] },
   { prefix: "/proforma-invoices", anyOf: ["proforma_invoices"] },
+  { prefix: "/vendor-proforma-invoices", anyOf: ["vendor_proforma_invoices"] },
   { prefix: "/credit-notes", anyOf: ["credit_notes"] },
   { prefix: "/debit-notes", anyOf: ["debit_notes"] },
   { prefix: "/purchase-orders", anyOf: ["purchase_orders"] },
@@ -217,6 +219,7 @@ export const SEARCH_TYPE_MODULE: Record<string, string> = {
   purchase_order: "purchase_orders",
   purchase_quotation: "purchase_quotations",
   vendor_invoice: "vendor_invoices",
+  vendor_proforma_invoice: "vendor_proforma_invoices",
   grn: "grn",
   debit_note: "debit_notes",
   customer: "customers",

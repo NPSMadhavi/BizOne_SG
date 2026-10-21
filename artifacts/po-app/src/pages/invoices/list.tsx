@@ -25,6 +25,15 @@ function SentToCell({ emailSentTo }: { emailSentTo?: string | null }) {
   if (!emailSentTo) return <span className="text-muted-foreground">—</span>;
   const emails = emailSentTo.split(",").map(e => e.trim()).filter(Boolean);
   if (emails.length === 0) return <span className="text-muted-foreground">—</span>;
+  const isExternal = emails.some((e) => /^sent to external$/i.test(e));
+  if (isExternal) {
+    return (
+      <div className="flex items-center gap-1.5" title="Sent to External">
+        <MailCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+        <span className="truncate max-w-[160px] text-xs font-medium text-emerald-700">Sent to External</span>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-1.5" title={emails.join(", ")}>
       <MailCheck className="h-3.5 w-3.5 text-violet-500 shrink-0" />
@@ -134,10 +143,10 @@ export default function InvoiceList() {
   });
   const deliveryOrderFilenames = deliveryOrderAttachmentNames(emailDeliveryOrders, bulk.selectedDocs);
 
-  // Multi-currency stats from date-filtered set
+  // Multi-currency stats from the currently visible list (search + customer + status + date)
   const stats = useMemo(() => {
     const byCurrency: Record<string, { total: number; outstanding: number }> = {};
-    for (const d of filteredByDate) {
+    for (const d of filtered) {
       if (["cancelled", "void"].includes(d.status)) continue;
       const c = (d as any).currency || "SGD";
       if (!byCurrency[c]) byCurrency[c] = { total: 0, outstanding: 0 };
@@ -145,13 +154,13 @@ export default function InvoiceList() {
       byCurrency[c].outstanding += Number((d as any).balance ?? 0);
     }
     return Object.entries(byCurrency).sort((a, b) => b[1].total - a[1].total);
-  }, [filteredByDate]);
+  }, [filtered]);
 
   const statusCounts = useMemo(() => ({
-    confirmed: filteredByDate.filter(d => ["confirmed", "sent"].includes(d.status)).length,
-    partial:   filteredByDate.filter(d => d.status === "partial").length,
-    paid:      filteredByDate.filter(d => d.status === "paid").length,
-  }), [filteredByDate]);
+    confirmed: filtered.filter(d => ["confirmed", "sent"].includes(d.status)).length,
+    partial:   filtered.filter(d => d.status === "partial").length,
+    paid:      filtered.filter(d => d.status === "paid").length,
+  }), [filtered]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -247,7 +256,7 @@ export default function InvoiceList() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-end justify-between">
-              <span className="text-3xl font-bold">{filteredByDate.length}</span>
+              <span className="text-3xl font-bold">{filtered.length}</span>
               <span className="text-sm text-muted-foreground mb-1">total invoices</span>
             </div>
             <div className="grid grid-cols-3 gap-2 pt-1 border-t">

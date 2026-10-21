@@ -288,11 +288,11 @@ export default function ExpenseNew() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="amount">Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="amount">Taxable Amount <span className="text-destructive">*</span></Label>
                   <Input
                     id="amount"
                     inputMode="decimal"
-                    placeholder="e.g. Office rental for October 2025"
+                    placeholder=""
                     value={amount}
                     onChange={e => onAmountChange(e.target.value)}
                     className="[appearance:textfield]"

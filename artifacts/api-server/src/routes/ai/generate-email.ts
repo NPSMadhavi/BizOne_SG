@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { isVedaGatewayConfigured, vedaChat } from "../../lib/veda-gateway.js";
 
 const router = Router();
 
@@ -54,13 +55,18 @@ Return ONLY valid JSON with this exact structure, no extra keys, no markdown fen
 {"subject":"...","body":"..."}`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 512,
-      messages: [{ role: "user", content: prompt }],
-    });
+    let raw = "";
+    if (isVedaGatewayConfigured()) {
+      raw = await vedaChat(prompt);
+    } else {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_completion_tokens: 512,
+        messages: [{ role: "user", content: prompt }],
+      });
+      raw = completion.choices[0]?.message?.content?.trim() || "";
+    }
 
-    const raw = completion.choices[0]?.message?.content?.trim() || "";
     let parsed: { subject: string; body: string };
     try {
       const jsonStart = raw.indexOf("{");

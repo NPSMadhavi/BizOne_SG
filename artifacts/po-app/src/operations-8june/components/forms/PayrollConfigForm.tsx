@@ -50,6 +50,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { calculateSyncBridgePayrollPreview, CPF_WAGE_CEILING } from "@/operations-8june/lib/payroll-utils";
+import { listEmployeePayrollMonths, recordPayrollMonthYear } from "@/operations-8june/lib/payroll-batch-utils";
 import {
   payrollCancelButtonClass,
   payrollPrimaryButtonClass,
@@ -636,6 +637,56 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     [employeeOptions, selectedEmployeeId, isAllEmployees]
   );
 
+  const { data: payrollRecords = [] } = useQuery<any[]>({
+    queryKey: ["/api/payroll/records"],
+  });
+
+  const [selectedPayrollYear, setSelectedPayrollYear] = useState<number>(new Date().getFullYear());
+  const savedMonths = useMemo(
+    () => listEmployeePayrollMonths(payrollRecords, Number(selectedEmployeeId) || 0),
+    [payrollRecords, selectedEmployeeId],
+  );
+
+  const applyMonthSelection = (month: number, year = new Date().getFullYear()) => {
+    setSelectedPayrollMonth(month);
+    setSelectedPayrollYear(year);
+    setMonthError("");
+    setMonthMenuOpen(false);
+    form.setValue("workingDays", getDaysInMonth(month, year), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    const saved = savedMonths.find((item) => item.year === year && item.month === month);
+    const record = payrollRecords.find((item) => {
+      const period = recordPayrollMonthYear(item);
+      return (
+        Number(item.employeeId) === Number(selectedEmployeeId) &&
+        period.year === year &&
+        period.month === month
+      );
+    });
+    const savedSalary = saved?.basic || Number(record?.baseSalary);
+    const employeeSalary = parseFloat(selectedEmployee?.salary || "0") || 0;
+    const salary = savedSalary > 0 ? savedSalary : employeeSalary;
+    if (salary > 0) {
+      form.setValue("baseSalary", salary, { shouldDirty: true, shouldValidate: true });
+    }
+    const allowances = (saved?.allowances || record?.allowances || {}) as Record<string, number>;
+    const deductions = (saved?.deductions || record?.deductions || {}) as Record<string, number>;
+    const amountOrEmpty = (value: unknown) => {
+      const amount = Number(value);
+      return amount > 0 ? amount : undefined;
+    };
+    form.setValue("allowanceTransport", amountOrEmpty(allowances.transport));
+    form.setValue("allowanceMeal", amountOrEmpty(allowances.meal));
+    form.setValue("allowancePhone", amountOrEmpty(allowances.phone));
+    form.setValue("allowanceOthers", amountOrEmpty(allowances.others));
+    form.setValue("deductionMedical", amountOrEmpty(deductions.medical));
+    form.setValue("deductionAdvance", amountOrEmpty(deductions.advance));
+    form.setValue("deductionOthers", amountOrEmpty(deductions.others));
+  };
+
   const baseSalary = Number(form.watch("baseSalary") || 0);
   const workingDaysRaw = form.watch("workingDays");
   const selectedMonthDays =
@@ -822,40 +873,48 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
           const dob = new Date(employee.dateOfBirth);
           const age = calculateAge(dob);
           const citizenship = mapNationalityToCitizenship(employee.nationality);
-          const payload = buildPayrollConfigPayload(
-            {
-              ...data,
-              employeeId: Number(employee.id),
+          const payload = {
+            ...buildPayrollConfigPayload(
+              {
+                ...data,
+                employeeId: Number(employee.id),
+                age,
+                dateOfBirth: toDateInputValue(dob),
+                citizenshipStatus: citizenship,
+              },
+              employee,
+              citizenship,
               age,
-              dateOfBirth: toDateInputValue(dob),
-              citizenshipStatus: citizenship,
-            },
-            employee,
-            citizenship,
-            age,
-            monthDays,
-            extraAllowances,
-            extraDeductions,
-            earningIds,
-            deductionIds,
-          );
+              monthDays,
+              extraAllowances,
+              extraDeductions,
+              earningIds,
+              deductionIds,
+            ),
+            payrollMonth: selectedPayrollMonth,
+            payrollYear: selectedPayrollYear,
+          };
           const res = await apiRequest("POST", "/api/employee-payroll", payload);
           created.push(await res.json());
         }
         return created;
       }
 
-      const payload = buildPayrollConfigPayload(
-        data,
-        selectedEmployee,
-        data.citizenshipStatus || "citizen",
-        resolvedAge,
-        monthDays,
-        extraAllowances,
-        extraDeductions,
-        earningIds,
-        deductionIds,
-      );
+      const payload = {
+        ...buildPayrollConfigPayload(
+          data,
+          selectedEmployee,
+          data.citizenshipStatus || "citizen",
+          resolvedAge,
+          monthDays,
+          extraAllowances,
+          extraDeductions,
+          earningIds,
+          deductionIds,
+        ),
+        payrollMonth: selectedPayrollMonth,
+        payrollYear: selectedPayrollYear,
+      };
 
       const res = editData?.id
         ? await apiRequest("PUT", `/api/employee-payroll/${editData.id}`, payload)
@@ -865,7 +924,9 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employee-payroll"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
       toast({
         title: "Success",
         description: editData?.id
@@ -1067,15 +1128,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                                 "rounded-md border border-[#BFDBFE] bg-white px-2 py-2 text-center text-sm text-[#111827] hover:bg-[#EFF6FF]",
                                 selected && "border-[#2563EB] bg-[#EFF6FF] font-medium text-[#1D4ED8]",
                               )}
-                              onClick={() => {
-                                setSelectedPayrollMonth(month.value);
-                                setMonthError("");
-                                setMonthMenuOpen(false);
-                                form.setValue("workingDays", getDaysInMonth(month.value), {
-                                  shouldDirty: true,
-                                  shouldValidate: true,
-                                });
-                              }}
+                              onClick={() => applyMonthSelection(month.value)}
                             >
                               {month.label}
                             </button>
@@ -1087,6 +1140,46 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                   {monthError ? <p className="text-sm font-medium text-destructive">{monthError}</p> : null}
                 </FormItem>
               </div>
+
+              {savedMonths.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-[#111827]">Saved months — click a month to edit it</p>
+                  <div className="overflow-x-auto rounded-md border border-[#E5E7EB]">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-[#EFF6FF] text-left text-[#1D4ED8]">
+                        <tr>
+                          {["Month", "Basic", "Transport", "Food", "Bonus", "Other", "Gross"].map((heading) => (
+                            <th key={heading} className="whitespace-nowrap px-3 py-2 font-medium">{heading}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {savedMonths.map((row) => {
+                          const selected = selectedPayrollMonth === row.month && selectedPayrollYear === row.year;
+                          return (
+                            <tr
+                              key={`${row.year}-${row.month}`}
+                              className={cn(
+                                "cursor-pointer border-t border-[#E5E7EB] hover:bg-[#F8FAFC]",
+                                selected && "bg-[#EFF6FF]",
+                              )}
+                              onClick={() => applyMonthSelection(row.month, row.year)}
+                            >
+                              <td className="whitespace-nowrap px-3 py-2 font-medium text-[#111827]">{row.label}</td>
+                              <td className="px-3 py-2">{formatCurrency(row.basic)}</td>
+                              <td className="px-3 py-2">{formatCurrency(row.transport)}</td>
+                              <td className="px-3 py-2">{formatCurrency(row.meal)}</td>
+                              <td className="px-3 py-2">{formatCurrency(row.bonus)}</td>
+                              <td className="px-3 py-2">{formatCurrency(row.other)}</td>
+                              <td className="px-3 py-2">{formatCurrency(row.gross)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {selectedEmployee && (
                 <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
@@ -1183,6 +1276,10 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                       <div className="flex justify-between">
                         <span className="text-[#6B7280]">Total CPF</span>
                         <span className="text-[#111827]">{formatCurrency(totalCpf)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#6B7280]">Total Deductions</span>
+                        <span className="font-medium text-[#DC2626]">-{formatCurrency(deductionsTotal + employeeCpf)}</span>
                       </div>
                       <div className="flex justify-between border-t border-[#E5E7EB] pt-1.5">
                         <span className="text-base font-semibold text-[#111827]">Net Salary</span>

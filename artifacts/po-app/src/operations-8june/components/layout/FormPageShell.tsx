@@ -53,7 +53,7 @@ export function FormPageShell({
       </div>
 
       {footer ? (
-        <div className="flex w-full items-center justify-end gap-3">{footer}</div>
+        <div className="flex w-full items-center justify-end gap-3 [&>div]:min-w-full [&>div]:w-full">{footer}</div>
       ) : null}
     </div>
   );

@@ -22,9 +22,8 @@ import { BankAccountField } from "@/components/bank-account-field";
 import { useToast } from "@/hooks/use-toast";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
 import {
-  derivePayrollMonthYear,
   formatPayrollMonthLabel,
-  getLastCompletedPayPeriod,
+  recordPayrollMonthYear,
 } from "@/operations-8june/lib/payroll-batch-utils";
 import {
   payrollCancelButtonClass,
@@ -66,9 +65,15 @@ type PayrollPaymentRecordDialogProps = {
     department?: string | null;
   }>;
   payrollRecords: Array<{
+    id?: number;
     employeeId?: number | string;
+    payrollYear?: number | string | null;
+    payrollMonth?: number | string | null;
     payPeriodStart?: string;
-    netPay?: string | number;
+    grossPay?: string | number | null;
+    netPay?: string | number | null;
+    cpfDeduction?: string | number | null;
+    deductions?: Record<string, number> | null;
   }>;
 };
 
@@ -78,10 +83,6 @@ function money(amount: number) {
 
 function today() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function defaultMonth() {
-  return getLastCompletedPayPeriod().payPeriodStart.slice(0, 7);
 }
 
 function paymentMarker(employeeId: number, month: string) {
@@ -103,7 +104,7 @@ export function PayrollPaymentRecordDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [employeeId, setEmployeeId] = useState<number | null>(null);
-  const [month, setMonth] = useState(defaultMonth);
+  const [month, setMonth] = useState("");
   const [paymentDate, setPaymentDate] = useState(today);
   const [amount, setAmount] = useState("");
   const [amountEdited, setAmountEdited] = useState(false);
@@ -147,16 +148,30 @@ export function PayrollPaymentRecordDialog({
     [employees]
   );
 
+  const recordNet = (record: (typeof payrollRecords)[number]) => {
+    const stored = Number(record.netPay);
+    if (stored > 0) return stored;
+    const deductions = Object.values(record.deductions || {}).reduce(
+      (sum, value) => sum + (Number(value) || 0),
+      0,
+    );
+    const computed = (Number(record.grossPay) || 0) - deductions - (Number(record.cpfDeduction) || 0);
+    return computed > 0 ? Math.round(computed * 100) / 100 : 0;
+  };
+
   const netForEmployee = (id: number) => {
     if (!month) return 0;
-    return payrollRecords.reduce((sum, record) => {
-      if (Number(record.employeeId) !== id) return sum;
-      const start = String(record.payPeriodStart || "");
-      const { year, month: recordMonth } = derivePayrollMonthYear(start);
-      const key = `${year}-${String(recordMonth).padStart(2, "0")}`;
-      if (key !== month) return sum;
-      return sum + (Number(record.netPay) || 0);
-    }, 0);
+    const [year, monthNumber] = month.split("-").map((part) => Number(part));
+    const matched = payrollRecords.filter((record) => {
+      if (Number(record.employeeId) !== id) return false;
+      const period = recordPayrollMonthYear(record);
+      return period.year === year && period.month === monthNumber;
+    });
+    if (matched.length === 0) return 0;
+    const latest = matched.reduce((best, record) =>
+      Number(record.id) >= Number(best.id) ? record : best,
+    );
+    return recordNet(latest);
   };
 
   const paidForEmployee = (id: number) => {
@@ -179,6 +194,25 @@ export function PayrollPaymentRecordDialog({
 
   const isAllEmployees = employeeId === ALL_EMPLOYEES_ID;
 
+  const monthOptions = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    for (const record of payrollRecords) {
+      const period = recordPayrollMonthYear(record);
+      if (period.year > 0) years.add(period.year);
+    }
+    return [...years]
+      .sort((left, right) => left - right)
+      .flatMap((year) =>
+        Array.from({ length: 12 }, (_, index) => {
+          const monthNumber = index + 1;
+          return {
+            key: `${year}-${String(monthNumber).padStart(2, "0")}`,
+            label: formatPayrollMonthLabel(year, monthNumber),
+          };
+        }),
+      );
+  }, [payrollRecords]);
+
   const computedTotal = useMemo(() => {
     if (employeeId === null || employeeId === undefined || !month) return 0;
     const ids = isAllEmployees ? employees.map((employee) => employee.id) : [employeeId];
@@ -198,7 +232,7 @@ export function PayrollPaymentRecordDialog({
   useEffect(() => {
     if (!open) return;
     setEmployeeId(null);
-    setMonth(defaultMonth());
+    setMonth("");
     setPaymentDate(today());
     setAmount("");
     setAmountEdited(false);
@@ -211,8 +245,12 @@ export function PayrollPaymentRecordDialog({
 
   useEffect(() => {
     if (!open || amountEdited) return;
-    setAmount(balanceDue > 0 ? balanceDue.toFixed(2) : "");
-  }, [open, amountEdited, balanceDue]);
+    if (employeeId === null || employeeId === undefined || !month) {
+      setAmount("");
+      return;
+    }
+    setAmount(balanceDue.toFixed(2));
+  }, [open, amountEdited, balanceDue, employeeId, month]);
 
   const selectedEmployee = isAllEmployees
     ? employeeOptions[0]
@@ -358,36 +396,67 @@ export function PayrollPaymentRecordDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-visible">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-visible">
         <DialogHeader>
           <DialogTitle>Payment Record</DialogTitle>
         </DialogHeader>
         <div className="max-h-[70vh] space-y-4 overflow-y-auto overscroll-contain py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
-          <div className="space-y-1.5">
-            <Label className={payrollFormLabelClass}>Employee *</Label>
-            <EmployeeCombobox
-              employees={employeeOptions}
-              value={employeeId}
-              onChange={(id) => {
-                setEmployeeId(id);
-                setAmountEdited(false);
-              }}
-              placeholder="Select employee or All Employees"
-              searchPlaceholder="Search employee..."
-            />
-          </div>
-
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className={payrollFormLabelClass}>Month *</Label>
-              <Input
-                type="month"
-                value={month}
-                onChange={(event) => {
-                  setMonth(event.target.value);
+              <Label className={payrollFormLabelClass}>Employee *</Label>
+              <EmployeeCombobox
+                employees={employeeOptions}
+                value={employeeId}
+                onChange={(id) => {
+                  setEmployeeId(id);
                   setAmountEdited(false);
                 }}
+                placeholder="Select employee"
+                searchPlaceholder="Search employee..."
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label className={payrollFormLabelClass}>Month *</Label>
+              <Select
+                value={month || undefined}
+                onValueChange={(value) => {
+                  setMonth(value);
+                  setAmountEdited(false);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select month" />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((item) => (
+                    <SelectItem key={item.key} value={item.key}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1 rounded-lg bg-muted/50 p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-medium">{money(totalValue)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Already Paid</span>
+              <span className="font-medium text-emerald-600">{money(alreadyPaid)}</span>
+            </div>
+            <div className="flex justify-between border-t pt-1 font-semibold">
+              <span>Balance Due</span>
+              <span className="text-orange-600">{money(balanceDue)}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className={payrollFormLabelClass}>Payment Date</Label>
+              <Input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className={payrollFormLabelClass}>
@@ -405,32 +474,6 @@ export function PayrollPaymentRecordDialog({
             </div>
           </div>
 
-          <div className="space-y-1 rounded-lg bg-muted/50 p-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Already Paid</span>
-              <span className="font-medium text-emerald-600">{money(alreadyPaid)}</span>
-            </div>
-            <div className="flex justify-between border-t pt-1 font-semibold">
-              <span>Balance Due</span>
-              <span className="text-orange-600">{money(balanceDue)}</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label className={payrollFormLabelClass}>Payment Date</Label>
-              <Input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className={payrollFormLabelClass}>Bank Reference / UTR</Label>
-              <Input
-                placeholder="Transaction reference number"
-                value={bankReference}
-                onChange={(event) => setBankReference(event.target.value)}
-              />
-            </div>
-          </div>
-
           <BankAccountField
             paymentMethod={paymentMethod}
             onPaymentMethodChange={setPaymentMethod}
@@ -438,6 +481,15 @@ export function PayrollPaymentRecordDialog({
             onBankAccountChange={setBankAccount}
             paymentMethods={PAYMENT_METHODS}
           />
+
+          <div className="space-y-1.5">
+            <Label className={payrollFormLabelClass}>Bank Reference / UTR</Label>
+            <Input
+              placeholder="Transaction reference number"
+              value={bankReference}
+              onChange={(event) => setBankReference(event.target.value)}
+            />
+          </div>
 
           <div className="space-y-1.5">
             <Label className={payrollFormLabelClass}>Ledger *</Label>

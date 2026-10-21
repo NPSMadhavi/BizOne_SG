@@ -154,6 +154,8 @@ const OPERATIONS_TABLE_MIGRATIONS = [
     overtime_pay NUMERIC(10,2) DEFAULT 0,
     allowances JSONB DEFAULT '{}'::jsonb,
     deductions JSONB DEFAULT '{}'::jsonb,
+    payroll_year INTEGER,
+    payroll_month INTEGER,
     gross_pay NUMERIC(12,2) NOT NULL,
     net_pay NUMERIC(12,2) NOT NULL,
     cpf_employee NUMERIC(12,2) DEFAULT 0,
@@ -268,6 +270,8 @@ const OPERATIONS_COLUMN_MIGRATIONS = [
 
   // payroll_records
   `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS payroll_config_id INTEGER`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS payroll_year INTEGER`,
+  `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS payroll_month INTEGER`,
   `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS base_salary NUMERIC(10,2)`,
   `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS overtime_hours NUMERIC(6,2) DEFAULT 0`,
   `ALTER TABLE payroll_records ADD COLUMN IF NOT EXISTS overtime_pay NUMERIC(10,2) DEFAULT 0`,

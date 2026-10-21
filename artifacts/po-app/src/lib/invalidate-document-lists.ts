@@ -16,6 +16,7 @@ export type DocumentListKind =
   | "sales-orders"
   | "delivery-orders"
   | "proforma-invoices"
+  | "vendor-proforma-invoices"
   | "credit-notes"
   | "debit-notes"
   | "grn";
@@ -28,6 +29,7 @@ const QUERY_KEYS: Record<DocumentListKind, readonly unknown[]> = {
   "sales-orders": getListSalesOrdersQueryKey(),
   "delivery-orders": getListDeliveryOrdersQueryKey(),
   "proforma-invoices": ["proforma-invoices"],
+  "vendor-proforma-invoices": ["vendor-proforma-invoices"],
   "credit-notes": ["credit-notes"],
   "debit-notes": ["debit-notes"],
   grn: ["grns"],

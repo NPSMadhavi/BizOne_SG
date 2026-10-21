@@ -55,6 +55,7 @@ async function ensureSettings(companyId: number) {
     cnPrefix: "CN",  cnCounter: 0,  cnSuffix: "",
     dnPrefix: "DN",  dnCounter: 0,  dnSuffix: "",
     piPrefix: "PI",  piCounter: 0,  piSuffix: "",
+    vpiPrefix: "VPI", vpiCounter: 0, vpiSuffix: "",
     pvPrefix: "PV",  pvCounter: 0,  pvSuffix: "",
     siPrefix: "STK", siCounter: 0,  siSuffix: "",
     igrPrefix: "IGR", igrCounter: 0, igrSuffix: "",
@@ -108,6 +109,9 @@ function formatSettings(s: typeof settingsTable.$inferSelect, country?: string |
     piPrefix: s.piPrefix ?? "PI",
     piCounter: s.piCounter ?? 0,
     piSuffix: s.piSuffix ?? "",
+    vpiPrefix: s.vpiPrefix ?? "VPI",
+    vpiCounter: s.vpiCounter ?? 0,
+    vpiSuffix: s.vpiSuffix ?? "",
     pvPrefix: s.pvPrefix ?? "PV",
     pvCounter: s.pvCounter ?? 0,
     pvSuffix: s.pvSuffix ?? "",
@@ -174,6 +178,7 @@ router.put("/", async (req, res) => {
     cnPrefix, cnCounter, cnSuffix,
     dnPrefix, dnCounter, dnSuffix,
     piPrefix, piCounter, piSuffix,
+    vpiPrefix, vpiCounter, vpiSuffix,
     pvPrefix, pvCounter, pvSuffix,
     siPrefix, siCounter, siSuffix,
     igrPrefix, igrCounter, igrSuffix,
@@ -229,6 +234,9 @@ router.put("/", async (req, res) => {
   if (piPrefix !== undefined) updateData.piPrefix = piPrefix;
   if (piCounter !== undefined) updateData.piCounter = Number(piCounter);
   if (piSuffix !== undefined) updateData.piSuffix = piSuffix;
+  if (vpiPrefix !== undefined) updateData.vpiPrefix = vpiPrefix;
+  if (vpiCounter !== undefined) updateData.vpiCounter = Number(vpiCounter);
+  if (vpiSuffix !== undefined) updateData.vpiSuffix = vpiSuffix;
   if (pvPrefix !== undefined) updateData.pvPrefix = pvPrefix;
   if (pvCounter !== undefined) updateData.pvCounter = Number(pvCounter);
   if (pvSuffix !== undefined) updateData.pvSuffix = pvSuffix;

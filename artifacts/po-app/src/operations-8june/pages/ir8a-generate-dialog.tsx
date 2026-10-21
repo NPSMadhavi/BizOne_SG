@@ -67,7 +67,6 @@ export function Ir8aGenerateDialog({
   onToggleAll,
   onView,
   onDownload,
-  onGenerateAll,
   onUpdate,
 }: {
   open: boolean;
@@ -85,17 +84,16 @@ export function Ir8aGenerateDialog({
   onToggleAll: (checked: boolean) => void;
   onView: () => void;
   onDownload: () => void;
-  onGenerateAll: () => void;
   onUpdate: (id: number) => void;
 }) {
   const allChecked = attention.length > 0 && attention.every((row) => checkedIds.includes(row.id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94vh] w-[min(980px,calc(100vw-1rem))] max-w-none overflow-y-auto border-[#E5E7EB] bg-[#F7F9FC] p-5 sm:p-7 [&>button]:hidden">
+      <DialogContent className="max-h-[94vh] w-[min(980px,calc(100vw-1rem))] max-w-none overflow-y-auto border-[#E5E7EB] bg-[#F7F9FC] p-5 sm:p-7 [&>button]:z-20 [&>button]:flex [&>button]:h-8 [&>button]:w-8 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-md [&>button]:bg-white [&>button]:text-[#334155] [&>button]:opacity-100 [&>button]:shadow-sm [&>button]:hover:bg-[#F1F5F9] [&>button>svg]:h-5 [&>button>svg]:w-5">
         {phase === "running" ? (
           <div className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-4 pr-10">
               <h2 className="text-[28px] font-bold tracking-tight text-[#1E3A5F]">Generate IR8A</h2>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-[#64748B]">Year of Assessment</span>
@@ -169,12 +167,6 @@ export function Ir8aGenerateDialog({
                 </Button>
                 <Button type="button" variant="outline" className="h-10 gap-2 border-[#2563EB] bg-white text-[#2563EB] hover:bg-[#EFF6FF]" onClick={onDownload}>
                   <Download className="h-4 w-4" /> Download PDF
-                </Button>
-                <Button type="button" className="h-10 gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={onGenerateAll}>
-                  <FileText className="h-4 w-4" /> Generate All
-                </Button>
-                <Button type="button" variant="outline" className="h-10 bg-white" onClick={() => onOpenChange(false)}>
-                  Close
                 </Button>
               </div>
             </div>

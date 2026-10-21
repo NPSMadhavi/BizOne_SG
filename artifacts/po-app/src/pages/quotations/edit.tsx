@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ItemImageField } from "@/components/item-image-field";
 import { ImportItemsDialog } from "@/components/import-items-dialog";
+import { StockItemPickerDialog, type StockItemSelection } from "@/components/stock-item-picker-dialog";
 import { ImportFromQuotationDialog } from "@/components/import-from-quotation-dialog";
 import { CustomerPoUploadDialog, type ExtractedPoData } from "@/components/customer-po-upload-dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -344,7 +345,7 @@ export default function QuotationEdit() {
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setLocation(`/quotations/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
@@ -909,6 +910,8 @@ export default function QuotationEdit() {
           currency: (doc as any).currency || "SGD",
           totalAmount: Number(doc.totalAmount) || 0,
         } : undefined}
+        askMarkSentOnClose
+        markSentUrl={`/api/quotations/${id}/mark-sent`}
  onEmailSent={async (recipients) => {
           await fetch(`/api/quotations/${id}/mark-sent`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentTo: recipients }) });
         }}
