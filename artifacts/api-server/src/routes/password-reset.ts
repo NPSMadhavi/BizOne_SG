@@ -277,14 +277,15 @@ router.post("/auth/forgot-password/reset", async (req, res): Promise<void> => {
     return;
   }
   if (
-    password.length !== 8 ||
-    !/[a-z]/.test(password) ||
-    !/[A-Z]/.test(password) ||
+    !password ||
+    !/^[A-Z]/.test(password) ||
     !/\d/.test(password) ||
     !/[^A-Za-z0-9]/.test(password)
   ) {
     res.status(400).json({
-      error: "Password must be 8 characters with a capital letter, a small letter, a number, and a special character",
+      error: !password || !/^[A-Z]/.test(password)
+        ? "Password must start with a capital letter"
+        : "Password must start with a capital letter and include a number and a special character",
     });
     return;
   }

@@ -5,7 +5,6 @@ import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import { ACCOUNT_PASSWORD_MESSAGE, isValidAccountPassword } from "@/lib/account-password";
 import { markBrowserSessionLive } from "@/lib/browser-session";
 import {
   AuthMobileShell,
@@ -108,6 +107,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [panel, setPanel] = useState<"login" | "forgot">("login");
   const [forgotHeading, setForgotHeading] = useState({
     title: "Forgot Password",
@@ -175,26 +175,23 @@ export default function Login() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    if (name === "password") {
-      setForm((prev) => ({ ...prev, password: value.slice(0, 8) }));
-      return;
-    }
     setForm((prev) => ({ ...prev, [name]: value }));
+    setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!form.email.trim() || !form.password) {
-      toast({ title: "Please enter email and password", variant: "destructive" });
+    const nextErrors: { email?: string; password?: string } = {};
+    if (!form.email.trim()) nextErrors.email = "Email is required";
+    if (!form.password) nextErrors.password = "Password is required";
+
+    if (nextErrors.email || nextErrors.password) {
+      setFieldErrors(nextErrors);
       return;
     }
 
-    if (!isValidAccountPassword(form.password)) {
-      toast({ title: ACCOUNT_PASSWORD_MESSAGE, variant: "destructive" });
-      return;
-    }
-
+    setFieldErrors({});
     if (door !== "closed" || loginMutation.isPending) return;
     startDoor();
 
@@ -253,11 +250,15 @@ export default function Login() {
           setDoor("closed");
           doorDone.current = null;
           window.setTimeout(() => setDoorSnap(false), 60);
-          const message =
-            error.message === "Network Error"
-              ? "Server connect avvadam ledu. Backend run avutunda check cheyandi."
-              : "Invalid email or password";
-          toast({ title: message, variant: "destructive" });
+          if (error.message === "Network Error") {
+            toast({
+              title: "Server connect avvadam ledu. Backend run avutunda check cheyandi.",
+              variant: "destructive",
+            });
+            return;
+          }
+          setFieldErrors({});
+          toast({ title: "Invalid email or password", variant: "destructive" });
         },
       },
     );
@@ -270,6 +271,9 @@ export default function Login() {
   const slide = slides[active];
   const loading = loginMutation.isPending;
   const pageSubtitle = panel === "login" ? SIGN_IN_SUBTITLE : forgotHeading.subtitle;
+
+  const fieldErrorClass = "mb-0 mt-1 text-[0.8rem] font-medium text-red-600";
+  const inputErrorRing = "border-red-500 focus:border-red-500 focus:ring-red-200";
 
   const loginForm = (
     <form className="flex flex-col gap-5" onSubmit={handleSubmit} data-allow-autofill="true" autoComplete="on">
@@ -286,9 +290,11 @@ export default function Login() {
           }}
           autoComplete="email"
           data-allow-autofill="true"
-          className={authMobileInputClass}
+          aria-invalid={Boolean(fieldErrors.email)}
+          className={`${authMobileInputClass}${fieldErrors.email ? ` ${inputErrorRing}` : ""}`}
           style={{ fontFamily: "Poppins, sans-serif" }}
         />
+        {fieldErrors.email ? <p className={fieldErrorClass}>{fieldErrors.email}</p> : null}
       </label>
 
       <label className="flex min-w-0 flex-col gap-2">
@@ -297,7 +303,6 @@ export default function Login() {
           <input
             type={showPassword ? "text" : "password"}
             name="password"
-            maxLength={8}
             placeholder="Type your password"
             value={form.password}
             onChange={handleChange}
@@ -306,7 +311,8 @@ export default function Login() {
             }}
             autoComplete="current-password"
             data-allow-autofill="true"
-            className={authMobilePasswordInputClass}
+            aria-invalid={Boolean(fieldErrors.password)}
+            className={`${authMobilePasswordInputClass}${fieldErrors.password ? ` ${inputErrorRing}` : ""}`}
             style={{ fontFamily: "Poppins, sans-serif" }}
           />
           <button
@@ -318,6 +324,7 @@ export default function Login() {
             {showPassword ? <FiEyeOff /> : <FiEye />}
           </button>
         </div>
+        {fieldErrors.password ? <p className={fieldErrorClass}>{fieldErrors.password}</p> : null}
       </label>
 
       <div className="flex items-center justify-between gap-3">

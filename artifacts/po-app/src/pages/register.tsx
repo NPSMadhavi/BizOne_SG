@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { BUSINESS_TYPES } from "@/contexts/auth-modules";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { useToast } from "@/hooks/use-toast";
-import { ACCOUNT_PASSWORD_MESSAGE, isValidAccountPassword } from "@/lib/account-password";
+import { getAccountPasswordError } from "@/lib/account-password";
 import { clearBrowserSessionLive, setTabSessionId } from "@/lib/browser-session";
 import {
   formatSingaporePhoneForApi,
@@ -115,11 +115,28 @@ function validateSecurityStep(personal: PersonalForm, company: CompanyForm): str
   if (!company.business_type.trim()) return "Select a business type";
   if (!company.fy_from || !company.fy_to) return "Select the financial year";
   if (company.fy_to < company.fy_from) return "Financial year end date must be on or after the start date";
-  if (!personal.password) return "Password is required";
-  if (!isValidAccountPassword(personal.password)) return ACCOUNT_PASSWORD_MESSAGE;
-  if (!isValidAccountPassword(personal.confirm_password)) return ACCOUNT_PASSWORD_MESSAGE;
-  if (personal.password !== personal.confirm_password) return "Passwords do not match";
   return null;
+}
+
+const CONFIRM_PASSWORD_MISMATCH = "does not match password";
+
+/** Live + submit validation for password / confirm fields. */
+function passwordFieldError(password: string, forSubmit = false): string | undefined {
+  if (!password) return forSubmit ? "Password is required" : undefined;
+  return getAccountPasswordError(password);
+}
+
+function confirmPasswordFieldError(password: string, confirm: string, forSubmit = false): string | undefined {
+  if (!confirm) return forSubmit ? "Confirm password is required" : undefined;
+  if (confirm !== password) return CONFIRM_PASSWORD_MISMATCH;
+  return undefined;
+}
+
+function validatePasswordFields(personal: PersonalForm): { password?: string; confirm_password?: string } {
+  return {
+    password: passwordFieldError(personal.password, true),
+    confirm_password: confirmPasswordFieldError(personal.password, personal.confirm_password, true),
+  };
 }
 
 export default function Register() {
@@ -135,6 +152,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState<{ password?: string; confirm_password?: string }>({});
   const [personalForm, setPersonalForm] = useState<PersonalForm>({
     email: "",
     phone_number: "",
@@ -164,14 +182,19 @@ export default function Register() {
     }
   }, [isLoading, user, setLocation]);
 
+  // Live password / confirm validation while typing (step 2 — Company Details)
+  useEffect(() => {
+    if (step !== 2) return;
+    setPasswordErrors({
+      password: passwordFieldError(personalForm.password),
+      confirm_password: confirmPasswordFieldError(personalForm.password, personalForm.confirm_password),
+    });
+  }, [step, personalForm.password, personalForm.confirm_password]);
+
   /** Bind by field key — never e.target.name (autofill blocker may rewrite DOM name). */
   const setPersonalField = (field: keyof PersonalForm, value: string) => {
     if (field === "phone_number") {
       setPersonalForm((prev) => ({ ...prev, phone_number: parseSingaporePhoneDigits(value) }));
-      return;
-    }
-    if (field === "password" || field === "confirm_password") {
-      setPersonalForm((prev) => ({ ...prev, [field]: value.slice(0, 8) }));
       return;
     }
     setPersonalForm((prev) => ({ ...prev, [field]: value }));
@@ -214,6 +237,13 @@ export default function Register() {
       toast({ title: securityError, variant: "destructive" });
       return;
     }
+
+    const pwErrors = validatePasswordFields(personalForm);
+    if (pwErrors.password || pwErrors.confirm_password) {
+      setPasswordErrors(pwErrors);
+      return;
+    }
+    setPasswordErrors({});
 
     try {
       setLoading(true);
@@ -453,11 +483,11 @@ export default function Register() {
             <input
               type={showPassword ? "text" : "password"}
               name="password"
-              maxLength={8}
               value={personalForm.password}
               onChange={(e) => setPersonalField("password", e.target.value)}
               autoComplete="new-password" data-allow-autofill="true"
-              className={`${registerMobilePasswordInputClass} h-10 text-[0.85rem]`}
+              aria-invalid={Boolean(passwordErrors.password)}
+              className={`${registerMobilePasswordInputClass} h-10 text-[0.85rem]${passwordErrors.password ? " border-red-500" : ""}`}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
             <button
@@ -469,6 +499,9 @@ export default function Register() {
               {showPassword ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
+          {passwordErrors.password ? (
+            <p className="mb-0 text-[0.72rem] font-medium leading-snug text-red-600">{passwordErrors.password}</p>
+          ) : null}
         </label>
         <label className="flex min-w-0 flex-col gap-2">
           <span className={`${authMobileLabelClass} text-[0.82rem]`}>Confirmation Password<RequiredMark /></span>
@@ -476,11 +509,11 @@ export default function Register() {
             <input
               type={showConfirm ? "text" : "password"}
               name="confirm_password"
-              maxLength={8}
               value={personalForm.confirm_password}
               onChange={(e) => setPersonalField("confirm_password", e.target.value)}
               autoComplete="new-password" data-allow-autofill="true"
-              className={`${registerMobilePasswordInputClass} h-10 text-[0.85rem]`}
+              aria-invalid={Boolean(passwordErrors.confirm_password)}
+              className={`${registerMobilePasswordInputClass} h-10 text-[0.85rem]${passwordErrors.confirm_password ? " border-red-500" : ""}`}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
             <button
@@ -492,6 +525,9 @@ export default function Register() {
               {showConfirm ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
+          {passwordErrors.confirm_password ? (
+            <p className="mb-0 text-[0.72rem] font-medium leading-snug text-red-600">{passwordErrors.confirm_password}</p>
+          ) : null}
         </label>
       </div>
 
@@ -672,11 +708,11 @@ export default function Register() {
             <input
               type={showPassword ? "text" : "password"}
               name="password"
-              maxLength={8}
               value={personalForm.password}
               onChange={(e) => setPersonalField("password", e.target.value)}
               autoComplete="new-password" data-allow-autofill="true"
-              className={desktopPasswordInputClassName}
+              aria-invalid={Boolean(passwordErrors.password)}
+              className={`${desktopPasswordInputClassName}${passwordErrors.password ? " border-red-500" : ""}`}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
             <button
@@ -688,6 +724,9 @@ export default function Register() {
               {showPassword ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
+          {passwordErrors.password ? (
+            <p className="mb-0 text-[0.72rem] font-medium leading-snug text-red-600">{passwordErrors.password}</p>
+          ) : null}
         </label>
 
         <label className="flex min-w-0 flex-col gap-1">
@@ -696,11 +735,11 @@ export default function Register() {
             <input
               type={showConfirm ? "text" : "password"}
               name="confirm_password"
-              maxLength={8}
               value={personalForm.confirm_password}
               onChange={(e) => setPersonalField("confirm_password", e.target.value)}
               autoComplete="new-password" data-allow-autofill="true"
-              className={desktopPasswordInputClassName}
+              aria-invalid={Boolean(passwordErrors.confirm_password)}
+              className={`${desktopPasswordInputClassName}${passwordErrors.confirm_password ? " border-red-500" : ""}`}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
             <button
@@ -712,6 +751,9 @@ export default function Register() {
               {showConfirm ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
+          {passwordErrors.confirm_password ? (
+            <p className="mb-0 text-[0.72rem] font-medium leading-snug text-red-600">{passwordErrors.confirm_password}</p>
+          ) : null}
         </label>
       </div>
 

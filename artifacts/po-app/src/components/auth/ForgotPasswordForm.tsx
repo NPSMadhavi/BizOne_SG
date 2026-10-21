@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { SingaporePhoneInput } from "@/components/singapore-phone-input";
 import { useToast } from "@/hooks/use-toast";
-import { ACCOUNT_PASSWORD_MESSAGE, isValidAccountPassword } from "@/lib/account-password";
+import { getAccountPasswordError } from "@/lib/account-password";
 import { parseSingaporePhoneDigits, validateSingaporePhoneDigits } from "@/lib/singapore-phone";
 import {
   RequiredMark,
@@ -57,6 +57,8 @@ export function ForgotPasswordForm({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
     if (step === "choose") onHeading(CHOOSE_HEADING);
@@ -70,7 +72,7 @@ export function ForgotPasswordForm({
     } else {
       onHeading({
         title: "Set new password",
-        subtitle: "Use 8 characters with a capital letter, a small letter, a number, and a special character",
+        subtitle: "Start with a capital letter; include a number and a special character",
       });
     }
   }, [step, masked, onHeading]);
@@ -143,12 +145,19 @@ export function ForgotPasswordForm({
 
   async function savePassword(event: React.FormEvent) {
     event.preventDefault();
-    if (!isValidAccountPassword(password)) {
-      toast({ title: ACCOUNT_PASSWORD_MESSAGE, variant: "destructive" });
+    setPasswordError(null);
+    setConfirmError(null);
+    if (!password) {
+      setPasswordError("Password is required");
+      return;
+    }
+    const pwErr = getAccountPasswordError(password);
+    if (pwErr) {
+      setPasswordError(pwErr);
       return;
     }
     if (password !== confirmPassword) {
-      toast({ title: "Password and confirm password do not match", variant: "destructive" });
+      setConfirmError("Password and confirm password do not match");
       return;
     }
     try {
@@ -224,12 +233,15 @@ export function ForgotPasswordForm({
           <div className="relative flex items-center">
             <input
               type={showPassword ? "text" : "password"}
-              maxLength={8}
-              placeholder="8 characters"
+              placeholder="Letters, number, and special character"
               value={password}
-              onChange={(event) => setPassword(event.target.value.slice(0, 8))}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setPasswordError(null);
+              }}
               autoComplete="new-password"
-              className={authMobilePasswordInputClass}
+              aria-invalid={Boolean(passwordError)}
+              className={`${authMobilePasswordInputClass}${passwordError ? " border-red-500" : ""}`}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
             <button
@@ -241,18 +253,22 @@ export function ForgotPasswordForm({
               {showPassword ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
+          {passwordError ? <p className="mb-0 mt-1 text-[0.8rem] font-medium text-red-600">{passwordError}</p> : null}
         </label>
         <label className="flex min-w-0 flex-col gap-2">
           <span className={authMobileLabelClass}>Confirm password<RequiredMark /></span>
           <div className="relative flex items-center">
             <input
               type={showConfirm ? "text" : "password"}
-              maxLength={8}
               placeholder="Confirm password"
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value.slice(0, 8))}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                setConfirmError(null);
+              }}
               autoComplete="new-password"
-              className={authMobilePasswordInputClass}
+              aria-invalid={Boolean(confirmError)}
+              className={`${authMobilePasswordInputClass}${confirmError ? " border-red-500" : ""}`}
               style={{ fontFamily: "Poppins, sans-serif" }}
             />
             <button
@@ -264,6 +280,7 @@ export function ForgotPasswordForm({
               {showConfirm ? <FiEyeOff /> : <FiEye />}
             </button>
           </div>
+          {confirmError ? <p className="mb-0 mt-1 text-[0.8rem] font-medium text-red-600">{confirmError}</p> : null}
         </label>
         <button type="submit" disabled={loading} className={nextButtonClass} style={{ fontFamily: "Poppins, sans-serif" }}>
           {loading ? "Saving..." : "Reset password"}
