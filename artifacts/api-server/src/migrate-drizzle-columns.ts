@@ -428,6 +428,14 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS business_type text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS companies_slug_unique ON companies (slug) WHERE slug IS NOT NULL`,
 
+  // ── users (master directory + company DB copies) ──────────────────────────
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`,
+  `CREATE TABLE IF NOT EXISTS login_credentials (
+    user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    password_hash text NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS category text`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sub_category text`,
   `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand text`,
@@ -569,7 +577,46 @@ export async function applySalesPosSchema(
   }
 }
 
+async function masterIsLeanDirectory(): Promise<boolean> {
+  const { isLeanMasterDirectory } = await import("./lib/master-schema.js");
+  return isLeanMasterDirectory();
+}
+
+/** Directory-only migrations for lean master (no business document tables). */
+const MASTER_DIRECTORY_MIGRATIONS: string[] = [
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS gst_reg_no text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS domain text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS slug text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS database_name text`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS business_type text`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS companies_slug_unique ON companies (slug) WHERE slug IS NOT NULL`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`,
+  `CREATE TABLE IF NOT EXISTS login_credentials (
+    user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    password_hash text NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+];
+
 export async function migrateDrizzleColumns(): Promise<void> {
+  const leanMaster = await masterIsLeanDirectory();
+  if (leanMaster) {
+    let applied = 0;
+    for (const statement of MASTER_DIRECTORY_MIGRATIONS) {
+      try {
+        await pool.query(statement);
+        applied++;
+      } catch (err) {
+        if (isBenignSchemaError(err)) continue;
+        logger.error({ err, statement: statement.slice(0, 120) }, "[schema-migrate] master directory migration failed");
+        throw err;
+      }
+    }
+    logger.info({ applied, mode: "lean-master" }, "[schema-migrate] master directory only — skipped business tables");
+    return;
+  }
+
   await applySalesPosSchema((statement) => pool.query(statement));
 
   for (const statement of DRIZZLE_TABLE_CREATES) {

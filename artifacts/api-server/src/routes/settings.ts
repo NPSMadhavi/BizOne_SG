@@ -1,9 +1,8 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
-import pg from "pg";
 import { db, pool, settingsTable, companiesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { isSmtpConfigured } from "../lib/smtp.js";
+import { loginPasswordMatches } from "../lib/login-password.js";
 
 const router = Router();
 
@@ -34,21 +33,6 @@ async function ensureSettingsSchema(): Promise<void> {
     })();
   }
   await settingsSchemaReady;
-}
-
-async function loginPasswordMatches(userId: number, password: string): Promise<boolean> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) return false;
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const result = await client.query("SELECT password_hash FROM users WHERE id = $1", [userId]);
-    const hash = result.rows[0]?.password_hash as string | undefined;
-    if (!hash) return false;
-    return bcrypt.compare(password, hash);
-  } finally {
-    await client.end();
-  }
 }
 
 function gstLabelForCountry(country: string | null | undefined): string {

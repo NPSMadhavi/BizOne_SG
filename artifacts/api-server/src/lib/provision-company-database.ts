@@ -85,6 +85,23 @@ export async function provisionCompanyDatabase(slug: string): Promise<string> {
   try {
     await tenant.connect();
     await tenant.query(ddlOnly(fs.readFileSync(schemaSqlPath(), "utf8")));
+    // schema-postgres.sql is a base dump — ensure login/directory columns exist for multi-tenant.
+    for (const stmt of [
+      `ALTER TABLE companies ADD COLUMN IF NOT EXISTS slug text`,
+      `ALTER TABLE companies ADD COLUMN IF NOT EXISTS database_name text`,
+      `ALTER TABLE companies ADD COLUMN IF NOT EXISTS business_type text`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS email text`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name text`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number text`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id integer`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id integer`,
+      `ALTER TABLE users ALTER COLUMN password_hash SET DEFAULT ''`,
+    ]) {
+      await tenant.query(stmt).catch(() => undefined);
+    }
   } catch (err) {
     // The database itself already exists. Schema copy must not remove it.
     console.error("[signup] company database created but schema copy failed:", safePgMessage(err));

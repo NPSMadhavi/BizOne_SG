@@ -1,4 +1,5 @@
 export * from "./users";
+export * from "./login-credentials";
 export * from "./sales-persons";
 export * from "./pos-sales";
 export * from "./companies";

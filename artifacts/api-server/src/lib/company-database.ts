@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { applySalesPosSchema, DRIZZLE_TABLE_CREATES } from "../migrate-drizzle-columns.js";
 
@@ -92,6 +94,83 @@ function bindValue(value: unknown, udt: string): unknown {
   return value;
 }
 
+/** Copy company users; fill password_hash from login_credentials (master lean directory). */
+async function copyUsersWithPasswords(
+  master: pg.Client,
+  tenant: pg.Client,
+  companyId: number,
+): Promise<void> {
+  const tenantHasPassword = await tenant.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password_hash'`,
+  );
+  const masterHasCreds = await master.query(
+    `SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_name = 'login_credentials'`,
+  );
+  const useCreds = (tenantHasPassword.rowCount ?? 0) > 0 && (masterHasCreds.rowCount ?? 0) > 0;
+
+  const masterCols = await tableColumns(master, "users");
+  const tenantCols = new Map((await tableColumns(tenant, "users")).map((c) => [c.name, c.udt]));
+  const columns = masterCols.filter((c) => tenantCols.has(c.name) && /^[a-z_][a-z0-9_]*$/i.test(c.name));
+  if (columns.length === 0) return;
+
+  const includePassword = useCreds && tenantCols.has("password_hash") && !columns.some((c) => c.name === "password_hash");
+  const insertCols = includePassword
+    ? [...columns, { name: "password_hash", udt: tenantCols.get("password_hash") ?? "text" }]
+    : columns;
+
+  const rows = await master.query(
+    `SELECT ${columns.map((c) => quoteIdent(c.name)).join(", ")} FROM users WHERE company_id = $1`,
+    [companyId],
+  );
+  const credMap = new Map<number, string>();
+  if (useCreds) {
+    const creds = await master.query(
+      `SELECT lc.user_id, lc.password_hash
+       FROM login_credentials lc
+       JOIN users u ON u.id = lc.user_id
+       WHERE u.company_id = $1`,
+      [companyId],
+    );
+    for (const row of creds.rows) {
+      credMap.set(row.user_id as number, String(row.password_hash ?? ""));
+    }
+  }
+
+  for (const row of rows.rows) {
+    const values = insertCols.map((column) => {
+      if (column.name === "password_hash" && includePassword) {
+        return credMap.get(row.id as number) ?? "";
+      }
+      return bindValue(row[column.name], tenantCols.get(column.name) ?? column.udt);
+    });
+    const placeholders = insertCols.map((_, index) => `$${index + 1}`).join(", ");
+    await tenant.query(
+      `INSERT INTO users (${insertCols.map((c) => quoteIdent(c.name)).join(", ")})
+       VALUES (${placeholders})
+       ON CONFLICT DO NOTHING`,
+      values,
+    );
+    // Also sync password by username when master/tenant user ids differ (restored tenants).
+    const hash = credMap.get(row.id as number);
+    if (hash && row.username) {
+      await tenant.query(
+        `UPDATE users SET password_hash = $1, company_id = $2
+         WHERE lower(username) = lower($3) AND (password_hash IS NULL OR btrim(password_hash) = '')`,
+        [hash, companyId, row.username],
+      );
+    }
+  }
+  if (insertCols.some((c) => c.name === "id")) {
+    await tenant
+      .query(
+        `SELECT setval(pg_get_serial_sequence('users', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM users), 1), 1), true)`,
+      )
+      .catch(() => undefined);
+  }
+}
+
 async function copyRows(
   master: pg.Client,
   tenant: pg.Client,
@@ -124,7 +203,36 @@ async function copyRows(
   }
 }
 
+function schemaSqlPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, "../../../../db-scripts/schema-postgres.sql"),
+    path.resolve(here, "../../../db-scripts/schema-postgres.sql"),
+    path.resolve(process.cwd(), "../../db-scripts/schema-postgres.sql"),
+    path.resolve(process.cwd(), "db-scripts/schema-postgres.sql"),
+  ];
+  return candidates.find((file) => fs.existsSync(file)) ?? null;
+}
+
+function ddlOnly(sql: string): string {
+  const insertAt = sql.search(/^INSERT\s/m);
+  return insertAt === -1 ? sql : sql.slice(0, insertAt);
+}
+
+/**
+ * Install the full app schema on a company database.
+ * Prefer the checked-in schema file so master can stay lean (company tables only).
+ * Fall back to pg_dump of the shared DB when the file is missing.
+ */
 async function installSchema(tenantUrl: string, databaseUrl: string): Promise<void> {
+  const schemaFile = schemaSqlPath();
+  if (schemaFile) {
+    const sql = ddlOnly(fs.readFileSync(schemaFile, "utf8"));
+    await withClient(tenantUrl, async (tenant) => {
+      await tenant.query(sql);
+    });
+    return;
+  }
   const sql = await dumpPublicSchema(databaseUrl);
   await withClient(tenantUrl, async (tenant) => {
     await tenant.query(sql);
@@ -154,7 +262,14 @@ async function copyCompany(masterUrl: string, tenantUrl: string, companyId: numb
       "role_id IN (SELECT id FROM roles WHERE company_id = $1)",
       [companyId],
     );
-    await copyRows(master, tenant, "users", "company_id = $1", [companyId]);
+    // Master users have no password_hash (login_credentials). Tenant still requires it.
+    await tenant
+      .query(`ALTER TABLE users ALTER COLUMN password_hash SET DEFAULT ''`)
+      .catch(() => undefined);
+    await tenant
+      .query(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`)
+      .catch(() => undefined);
+    await copyUsersWithPasswords(master, tenant, companyId);
     await copyRows(master, tenant, "user_companies", "company_id = $1", [companyId]);
     await copyRows(master, tenant, "settings", "company_id = $1", [companyId]);
 
@@ -230,10 +345,14 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
     return (result.rowCount ?? 0) > 0;
   });
 
-  if (!companyPresent && tenantTables + 5 < masterTables) {
+  // Company DBs must always get the full schema (not the lean master table set).
+  if (!companyPresent && (tenantTables < 20 || tenantTables + 5 < masterTables)) {
     await installSchema(tenantUrl, databaseUrl);
   }
   await copyCompany(databaseUrl, tenantUrl, companyId);
+  await withClient(tenantUrl, async (tenant) => {
+    await tenant.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`).catch(() => undefined);
+  });
 
   let pool = pools.get(databaseName);
   if (!pool) {
@@ -262,10 +381,170 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
       /* IF NOT EXISTS / already-aligned — ignore benign failures */
     }
   }
+  // Lean master skips startup FY migrations — every tenant DB must still have these tables.
   for (const stmt of [
+    `CREATE TABLE IF NOT EXISTS financial_years (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      label text NOT NULL,
+      start_date text NOT NULL,
+      end_date text NOT NULL,
+      status text NOT NULL DEFAULT 'inactive',
+      audit_status text NOT NULL DEFAULT 'pending',
+      closed_at timestamptz,
+      closed_by integer,
+      closed_by_username text,
+      activated_at timestamptz,
+      activated_by integer,
+      activated_by_username text,
+      reopened_at timestamptz,
+      reopened_by integer,
+      opening_balances_generated boolean NOT NULL DEFAULT false,
+      opening_journal_entry_id integer,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS financial_years_company_dates_uidx
+      ON financial_years (company_id, start_date, end_date)`,
+    `CREATE TABLE IF NOT EXISTS opening_balances (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      financial_year_id integer NOT NULL,
+      account_id integer,
+      account_code text NOT NULL,
+      account_name text NOT NULL,
+      account_type text,
+      debit numeric(15,2) NOT NULL DEFAULT 0,
+      credit numeric(15,2) NOT NULL DEFAULT 0,
+      notes text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS customer_opening_balances (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      financial_year_id integer NOT NULL,
+      customer_id integer,
+      customer_name text NOT NULL,
+      amount numeric(15,2) NOT NULL DEFAULT 0,
+      currency text NOT NULL DEFAULT 'SGD',
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS vendor_opening_balances (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      financial_year_id integer NOT NULL,
+      vendor_id integer,
+      vendor_name text NOT NULL,
+      amount numeric(15,2) NOT NULL DEFAULT 0,
+      currency text NOT NULL DEFAULT 'SGD',
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS inventory_opening_balances (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      financial_year_id integer NOT NULL,
+      stock_item_id integer,
+      item_code text,
+      item_name text NOT NULL,
+      warehouse_id integer,
+      warehouse_name text,
+      quantity numeric(15,4) NOT NULL DEFAULT 0,
+      value numeric(15,2) NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS fixed_asset_opening_balances (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      financial_year_id integer NOT NULL,
+      account_code text,
+      description text NOT NULL,
+      amount numeric(15,2) NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS bank_opening_balances (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      financial_year_id integer NOT NULL,
+      account_id integer,
+      account_code text NOT NULL,
+      account_name text NOT NULL,
+      amount numeric(15,2) NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    // settings columns that schema-postgres.sql may lack (drizzle inserts all of them)
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_id integer`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gst_rate numeric(5,2) NOT NULL DEFAULT 9`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_host text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_port text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_user text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_pass text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_from text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS po_prefix text DEFAULT 'PO'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS po_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS po_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_prefix text DEFAULT 'PQ'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS inv_prefix text DEFAULT 'INV'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS inv_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS inv_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS qt_prefix text DEFAULT 'QT'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS qt_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS qt_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS do_prefix text DEFAULT 'DO'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS do_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS do_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_prefix text DEFAULT 'SO'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS grn_prefix text DEFAULT 'GRN'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS grn_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS grn_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS cn_prefix text DEFAULT 'CN'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS cn_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS cn_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_prefix text DEFAULT 'DN'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pi_prefix text DEFAULT 'PI'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pi_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pi_suffix text DEFAULT ''`,
     `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_prefix text DEFAULT 'VPI'`,
     `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_counter integer NOT NULL DEFAULT 0`,
     `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_prefix text DEFAULT 'PV'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS si_prefix text DEFAULT 'STK'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS si_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS si_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS igr_prefix text DEFAULT 'IGR'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS igr_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS igr_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gin_prefix text DEFAULT 'GIN'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gin_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gin_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS st_prefix text DEFAULT 'ST'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS st_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS st_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS sa_prefix text DEFAULT 'SA'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS sa_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS sa_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_prefix text DEFAULT 'FA'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bc_prefix text DEFAULT 'BC'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bc_counter integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bc_suffix text DEFAULT ''`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS allow_negative_stock boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS auto_deduct_on_do boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS low_stock_warning numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_uom text DEFAULT 'pcs'`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bank_details text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS terms_and_conditions text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS quotation_terms text`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_verifier_id integer`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_approver_id integer`,
+    `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_paid_by_id integer`,
     `CREATE UNIQUE INDEX IF NOT EXISTS vendor_proforma_invoices_company_vpi_number_unique ON vendor_proforma_invoices (company_id, vpi_number)`,
   ]) {
     try {

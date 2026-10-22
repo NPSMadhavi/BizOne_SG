@@ -146,27 +146,42 @@ async function runCoordinatedStartupBootstrap(): Promise<void> {
       printMigrationFailure(err);
       throw err;
     }
-    await runBootstrapStep("seedCompanies", () => seedCompanies());
-    await runBootstrapStep("seedIfEmpty", () => seedIfEmpty());
-    await runBootstrapStep("seedInvoiceReportDefinition", () =>
-      seedInvoiceReportDefinition(),
-    );
+
+    const { isLeanMasterDirectory } = await import("./lib/master-schema.js");
+    const leanMaster = await isLeanMasterDirectory();
+
+    // Directory seed only — never create demo companies / settings on lean master.
+    if (!leanMaster) {
+      await runBootstrapStep("seedCompanies", () => seedCompanies());
+      await runBootstrapStep("seedIfEmpty", () => seedIfEmpty());
+      await runBootstrapStep("seedInvoiceReportDefinition", () =>
+        seedInvoiceReportDefinition(),
+      );
+    } else {
+      logger.info(
+        "[startup-bootstrap] lean master — skipping shared-DB seed/backfill (tenant DBs own business data)",
+      );
+    }
+
     await runBootstrapStep(
       "scrubAccidentalModuleDefaultsOnStartup",
       () => scrubAccidentalModuleDefaultsOnStartup(),
     );
-    await runBootstrapStep("backfillExpenseJEsOnStartup", () =>
-      backfillExpenseJEsOnStartup(),
-    );
-    await runBootstrapStep("backfillInvoiceJEsOnStartup", () =>
-      backfillInvoiceJEsOnStartup(),
-    );
-    await runBootstrapStep("backfillExchangeRatesOnStartup", () =>
-      backfillExchangeRatesOnStartup(),
-    );
-    await runBootstrapStep("reconcileStockQuantitiesOnStartup", () =>
-      reconcileStockQuantitiesOnStartup(),
-    );
+
+    if (!leanMaster) {
+      await runBootstrapStep("backfillExpenseJEsOnStartup", () =>
+        backfillExpenseJEsOnStartup(),
+      );
+      await runBootstrapStep("backfillInvoiceJEsOnStartup", () =>
+        backfillInvoiceJEsOnStartup(),
+      );
+      await runBootstrapStep("backfillExchangeRatesOnStartup", () =>
+        backfillExchangeRatesOnStartup(),
+      );
+      await runBootstrapStep("reconcileStockQuantitiesOnStartup", () =>
+        reconcileStockQuantitiesOnStartup(),
+      );
+    }
     logger.info("[startup-bootstrap] complete");
   });
 }

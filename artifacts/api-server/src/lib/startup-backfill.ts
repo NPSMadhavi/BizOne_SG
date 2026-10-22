@@ -110,20 +110,30 @@ export async function withStartupBootstrapLock<T>(
 
 /** Ensure any schema columns added after initial deploy exist on the live DB. */
 export async function runStartupMigrations(): Promise<void> {
-  try {
-    await migrateWmsTables();
-  } catch (err) {
-    logger.error({ err }, "WMS tables migration failed");
-    annotateMigrationError(err, "migrateWmsTables");
+  const { isLeanMasterDirectory } = await import("./master-schema.js");
+  const leanMaster = await isLeanMasterDirectory();
+  if (leanMaster) {
+    logger.info(
+      "[startup-migrations] lean master directory — skipping WMS/operations/business table creates on shared DB",
+    );
   }
 
-  // HR / payroll / assets / licenses (unprefixed company-scoped tables).
-  // Required on Plesk: without this, create/save fails when tables/columns are missing.
-  try {
-    await migrateOperationsTables();
-  } catch (err) {
-    logger.error({ err }, "Operations tables migration failed");
-    annotateMigrationError(err, "migrateOperationsTables");
+  if (!leanMaster) {
+    try {
+      await migrateWmsTables();
+    } catch (err) {
+      logger.error({ err }, "WMS tables migration failed");
+      annotateMigrationError(err, "migrateWmsTables");
+    }
+
+    // HR / payroll / assets / licenses (unprefixed company-scoped tables).
+    // Required on Plesk: without this, create/save fails when tables/columns are missing.
+    try {
+      await migrateOperationsTables();
+    } catch (err) {
+      logger.error({ err }, "Operations tables migration failed");
+      annotateMigrationError(err, "migrateOperationsTables");
+    }
   }
 
   try {
@@ -1128,7 +1138,11 @@ export async function runStartupMigrations(): Promise<void> {
     },
   ];
 
-  for (const step of steps) {
+  const stepsToRun = leanMaster
+    ? steps.filter((step) => step.name === "express-session table")
+    : steps;
+
+  for (const step of stepsToRun) {
     try {
       await db.execute(step.sql);
     } catch (err) {
@@ -1167,6 +1181,17 @@ export async function runStartupMigrations(): Promise<void> {
   } catch (err) {
     logger.error({ err }, "Drizzle column migration failed — refusing to start");
     annotateMigrationError(err, "migrateDrizzleColumns / critical column verification");
+  }
+
+  // Master directory: users.database_name, login_credentials, drop users.password_hash.
+  // Also prune business tables from master when every company has its own database.
+  try {
+    const { migrateMasterUserDirectory, pruneMasterBusinessTables } = await import("./master-schema.js");
+    await migrateMasterUserDirectory();
+    await pruneMasterBusinessTables();
+  } catch (err) {
+    logger.error({ err }, "[startup-migrations] master directory migration failed — refusing to start");
+    annotateMigrationError(err, "migrateMasterUserDirectory");
   }
 
   logger.info("[startup-migrations] schema up to date");

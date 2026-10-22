@@ -8,7 +8,8 @@ import { salesPersonsTable } from "./sales-persons";
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  /** Company PostgreSQL database (bizone_<slug>). Null = still on shared master DB. */
+  databaseName: text("database_name"),
   role: text("role").notNull().default("user"),
   email: text("email"),
   fullName: text("full_name"),

@@ -1,9 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db, companiesTable, userCompaniesTable, usersTable, settingsTable, financialYearsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
-import bcrypt from "bcryptjs";
-import pg from "pg";
 import { getUserCompanies } from "./auth";
+import { loginPasswordMatches } from "../lib/login-password.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -13,21 +12,6 @@ declare module "express-session" {
 }
 
 const router: IRouter = Router();
-
-async function loginPasswordMatches(userId: number, password: string): Promise<boolean> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) return false;
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const result = await client.query("SELECT password_hash FROM users WHERE id = $1", [userId]);
-    const hash = result.rows[0]?.password_hash as string | undefined;
-    if (!hash) return false;
-    return bcrypt.compare(password, hash);
-  } finally {
-    await client.end();
-  }
-}
 
 export const COMPANIES_SEED = [
   {
@@ -78,7 +62,7 @@ router.post("/companies", async (req, res): Promise<void> => {
   if (!country?.trim()) { res.status(400).json({ error: "Country is required" }); return; }
   if (!adminPassword) { res.status(400).json({ error: "Password confirmation is required" }); return; }
 
-  const passwordOk = await bcrypt.compare(adminPassword, user.passwordHash);
+  const passwordOk = await loginPasswordMatches(user.id, adminPassword);
   if (!passwordOk) { res.status(401).json({ error: "Incorrect password. Please try again." }); return; }
 
   try {

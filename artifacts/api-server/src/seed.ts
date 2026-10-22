@@ -129,13 +129,15 @@ export async function seedIfEmpty() {
     }
 
     const passwordHash = await bcrypt.hash("admin123", 10);
-    await db.insert(usersTable).values({
+    const [adminUser] = await db.insert(usersTable).values({
       username: "admin",
-      passwordHash,
+      databaseName: firstCompany.databaseName ?? null,
       role: "admin",
       companyId: firstCompany.id,
       roleId: adminRole.id,
-    });
+    }).returning();
+    const { setLoginPasswordHash } = await import("./lib/login-password.js");
+    await setLoginPasswordHash(adminUser.id, passwordHash);
     console.log("[seed] Admin user created under company " + firstCompany.name + " with Administrator role.");
   } else {
     console.log(`[seed] ${userCount} user(s) already exist — skipping user seed.`);

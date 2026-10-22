@@ -9,6 +9,7 @@ import { dropCompanyDatabase, normalizeCompanySlug, provisionCompanyDatabase } f
 import { getSalesPersonSummary, loadAssignedModules } from "../lib/assigned-modules.js";
 import { mergeAssignedPermissions } from "../lib/module-access.js";
 import { publishAllCompanyUsersToMaster } from "../lib/login-account.js";
+import { loginPasswordMatches, setLoginPasswordHash } from "../lib/login-password.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -238,8 +239,13 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
+    const fromYear = financialYearFrom.slice(0, 4);
+    const toYear = financialYearTo.slice(0, 4);
+    const fyLabel = fromYear === toYear ? `FY ${fromYear}` : `FY ${fromYear}-${toYear}`;
+
     let result;
     try {
+      // Lean master only stores directory rows. FY + settings go on the company DB below.
       result = await db.transaction(async (tx) => {
       const [company] = await tx
         .insert(companiesTable)
@@ -258,19 +264,6 @@ router.post("/auth/register", async (req, res): Promise<void> => {
         })
         .returning();
 
-      const fromYear = financialYearFrom.slice(0, 4);
-      const toYear = financialYearTo.slice(0, 4);
-      const fyLabel = fromYear === toYear ? `FY ${fromYear}` : `FY ${fromYear}-${toYear}`;
-      await tx.insert(financialYearsTable).values({
-        companyId: company.id,
-        label: fyLabel,
-        startDate: financialYearFrom,
-        endDate: financialYearTo,
-        status: "active",
-        auditStatus: "pending",
-        activatedAt: new Date(),
-      });
-
       await seedRolesForCompany(company.id, tx, signupModules);
 
       const [adminRole] = await tx
@@ -287,7 +280,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
         .insert(usersTable)
         .values({
           username,
-          passwordHash,
+          databaseName,
           role: "admin",
           email: normalizedEmail,
           fullName: fullName.trim(),
@@ -304,40 +297,66 @@ router.post("/auth/register", async (req, res): Promise<void> => {
         modules: [...signupModules],
       });
 
-      await tx.insert(settingsTable).values({
-        companyId: company.id,
-        gstRate: "9",
-        poPrefix: "PO",
-        poCounter: 0,
-        poSuffix: "",
-        invPrefix: "INV",
-        invCounter: 0,
-        invSuffix: "",
-        qtPrefix: "QT",
-        qtCounter: 0,
-        qtSuffix: "",
-        doPrefix: "DO",
-        doCounter: 0,
-        doSuffix: "",
-        grnPrefix: "GRN",
-        grnCounter: 0,
-        grnSuffix: "",
-      });
-
-      return { user, company, adminRole };
+      return { user, company, adminRole, passwordHash };
     });
     } catch (err) {
       await dropCompanyDatabase(databaseName);
       throw err;
     }
 
-    const { user, company, adminRole } = result;
+    const { user, company, adminRole, passwordHash: savedHash } = result;
+    await setLoginPasswordHash(user.id, savedHash);
 
     try {
-      await openCompanyPool(company.id);
+      const tenantPool = await openCompanyPool(company.id);
+      if (!tenantPool) {
+        throw new Error("Company database pool could not be opened");
+      }
+      await companyDbContext.run(tenantPool, async () => {
+        await db.insert(financialYearsTable).values({
+          companyId: company.id,
+          label: fyLabel,
+          startDate: financialYearFrom,
+          endDate: financialYearTo,
+          status: "active",
+          auditStatus: "pending",
+          activatedAt: new Date(),
+        });
+        await db.insert(settingsTable).values({
+          companyId: company.id,
+          gstRate: "9",
+          poPrefix: "PO",
+          poCounter: 0,
+          poSuffix: "",
+          invPrefix: "INV",
+          invCounter: 0,
+          invSuffix: "",
+          qtPrefix: "QT",
+          qtCounter: 0,
+          qtSuffix: "",
+          doPrefix: "DO",
+          doCounter: 0,
+          doSuffix: "",
+          grnPrefix: "GRN",
+          grnCounter: 0,
+          grnSuffix: "",
+        });
+      });
     } catch (err) {
+      const cause = err && typeof err === "object" && "cause" in err ? (err as { cause?: unknown }).cause : undefined;
       const message = err instanceof Error ? err.message : "Company database could not be prepared";
-      console.error("[signup] company database was created but its data was not copied:", message);
+      console.error("[signup] company database was created but tenant seed failed:", message, cause ?? "");
+      await dropCompanyDatabase(databaseName);
+      // Best-effort rollback of master directory rows created above.
+      try {
+        await db.delete(userCompaniesTable).where(eq(userCompaniesTable.companyId, company.id));
+        await db.delete(usersTable).where(eq(usersTable.id, user.id));
+        await db.delete(rolesTable).where(eq(rolesTable.companyId, company.id));
+        await db.delete(companiesTable).where(eq(companiesTable.id, company.id));
+      } catch (cleanupErr) {
+        console.error("[signup] master cleanup after tenant seed failure:", cleanupErr);
+      }
+      throw err;
     }
 
     req.session.userId = user.id;
@@ -356,13 +375,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Registration failed";
-    if (message.includes("column") || message.includes("Failed query")) {
+    console.error("[signup] registration failed:", message);
+    if (message.includes("column") || message.includes("Failed query") || message.includes("does not exist")) {
       res.status(500).json({
         error: "Database setup incomplete. Restart the backend (npm run dev) and try again.",
       });
       return;
     }
-    res.status(500).json({ error: "Registration failed. Please try again." });
+    res.status(500).json({ error: message || "Registration failed. Please try again." });
   }
 });
 
@@ -403,7 +423,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const validPassword = await bcrypt.compare(password, user.passwordHash);
+  const validPassword = await loginPasswordMatches(user.id, password);
   if (!validPassword) {
     res.status(401).json({ error: "Invalid email or password" });
     return;

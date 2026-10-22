@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { openCompanyPool } from "./company-database.js";
+import { getLoginPasswordHash, setLoginPasswordHash } from "./login-password.js";
 import { logger } from "./logger.js";
 
 type UserRow = typeof usersTable.$inferSelect;
@@ -31,13 +32,17 @@ async function bumpSerial(target: { query: (sql: string) => Promise<unknown> }, 
 /** Keep a company-only sales person id off the shared user row when that id belongs to someone else. */
 async function salesPersonIdForMaster(salesPersonId: number | null | undefined, companyId: number) {
   if (salesPersonId == null) return null;
-  const [row] = await masterDb
-    .select({ id: salesPersonsTable.id, companyId: salesPersonsTable.companyId })
-    .from(salesPersonsTable)
-    .where(eq(salesPersonsTable.id, salesPersonId))
-    .limit(1);
-  if (!row || row.companyId !== companyId) return null;
-  return row.id;
+  try {
+    const [row] = await masterDb
+      .select({ id: salesPersonsTable.id, companyId: salesPersonsTable.companyId })
+      .from(salesPersonsTable)
+      .where(eq(salesPersonsTable.id, salesPersonId))
+      .limit(1);
+    if (!row || row.companyId !== companyId) return null;
+    return row.id;
+  } catch {
+    return null;
+  }
 }
 
 async function ensureRoleOnMaster(roleId: number | null | undefined) {
@@ -59,6 +64,16 @@ async function ensureRoleOnMaster(roleId: number | null | undefined) {
     updatedAt: role.updatedAt,
   });
   await bumpSerial(masterPool, "roles");
+}
+
+async function databaseNameForCompany(companyId: number): Promise<string | null> {
+  const [company] = await masterDb
+    .select({ databaseName: companiesTable.databaseName })
+    .from(companiesTable)
+    .where(eq(companiesTable.id, companyId))
+    .limit(1);
+  const name = company?.databaseName?.trim();
+  return name || null;
 }
 
 export async function saveUserCompanyAccess(userId: number, companyId: number, modules: string[]) {
@@ -86,36 +101,109 @@ async function upsertAccess(
   await database.insert(userCompaniesTable).values({ userId, companyId, modules });
 }
 
-async function mirrorUserToCompany(user: UserRow, salesPersonId: number | null) {
+/** Company DBs may still have users.password_hash — keep it in sync via raw SQL. */
+async function mirrorUserToCompany(user: UserRow, salesPersonId: number | null, passwordHash?: string | null) {
   const tenant = companyDbContext.getStore();
   if (!tenant) return;
-  const values = {
-    username: user.username,
-    passwordHash: user.passwordHash,
-    role: user.role,
-    email: user.email,
-    fullName: user.fullName,
-    phoneNumber: user.phoneNumber,
-    isActive: user.isActive,
-    companyId: user.companyId,
-    roleId: user.roleId,
-    salesPersonId,
-    updatedAt: new Date(),
-  };
+  const hash = passwordHash ?? (await getLoginPasswordHash(user.id)) ?? "";
+  const hasPasswordCol = await tenant.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'password_hash'`,
+  );
+  const withPassword = (hasPasswordCol.rowCount ?? 0) > 0;
+
   const [existing] = await db
     .select({ id: usersTable.id })
     .from(usersTable)
     .where(eq(usersTable.id, user.id))
     .limit(1);
+
   if (existing) {
-    await db.update(usersTable).set(values).where(eq(usersTable.id, user.id));
+    await tenant.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`).catch(() => undefined);
+
+  if (withPassword) {
+      await tenant.query(
+        `UPDATE users SET
+           username = $2, password_hash = $3, role = $4, email = $5, full_name = $6,
+           phone_number = $7, is_active = $8, company_id = $9, role_id = $10,
+           sales_person_id = $11, database_name = $12, updated_at = now()
+         WHERE id = $1`,
+        [
+          user.id,
+          user.username,
+          hash,
+          user.role,
+          user.email,
+          user.fullName,
+          user.phoneNumber,
+          user.isActive,
+          user.companyId,
+          user.roleId,
+          salesPersonId,
+          user.databaseName,
+        ],
+      );
+    } else {
+      await db
+        .update(usersTable)
+        .set({
+          username: user.username,
+          role: user.role,
+          email: user.email,
+          fullName: user.fullName,
+          phoneNumber: user.phoneNumber,
+          isActive: user.isActive,
+          companyId: user.companyId,
+          roleId: user.roleId,
+          salesPersonId,
+          databaseName: user.databaseName,
+          updatedAt: new Date(),
+        })
+        .where(eq(usersTable.id, user.id));
+    }
     return;
   }
-  await db.insert(usersTable).values({
-    id: user.id,
-    ...values,
-    createdAt: user.createdAt,
-  });
+
+  await tenant.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`).catch(() => undefined);
+  if (withPassword) {
+    await tenant.query(
+      `INSERT INTO users (
+         id, username, password_hash, role, email, full_name, phone_number,
+         is_active, company_id, role_id, sales_person_id, database_name, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        user.id,
+        user.username,
+        hash,
+        user.role,
+        user.email,
+        user.fullName,
+        user.phoneNumber,
+        user.isActive,
+        user.companyId,
+        user.roleId,
+        salesPersonId,
+        user.databaseName,
+        user.createdAt,
+      ],
+    );
+  } else {
+    await db.insert(usersTable).values({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      email: user.email,
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      isActive: user.isActive,
+      companyId: user.companyId,
+      roleId: user.roleId,
+      salesPersonId,
+      databaseName: user.databaseName,
+      createdAt: user.createdAt,
+    });
+  }
   await bumpSerial(tenant, "users");
 }
 
@@ -129,11 +217,12 @@ export async function insertLoginUser(input: {
 }) {
   const username = input.username.trim().toLowerCase();
   await ensureRoleOnMaster(input.roleId);
+  const databaseName = await databaseNameForCompany(input.companyId);
   const [user] = await masterDb
     .insert(usersTable)
     .values({
       username,
-      passwordHash: input.passwordHash,
+      databaseName,
       role: input.role,
       email: loginEmail(username),
       companyId: input.companyId,
@@ -142,8 +231,9 @@ export async function insertLoginUser(input: {
       isActive: true,
     })
     .returning();
+  await setLoginPasswordHash(user.id, input.passwordHash);
   await bumpSerial(masterPool, "users");
-  await mirrorUserToCompany(user, input.salesPersonId);
+  await mirrorUserToCompany(user, input.salesPersonId, input.passwordHash);
   return user;
 }
 
@@ -152,17 +242,33 @@ export async function updateLoginUser(
   companyId: number,
   updates: Record<string, unknown>,
 ) {
-  const masterUpdates: Record<string, unknown> = { ...updates, updatedAt: new Date() };
-  if ("salesPersonId" in updates) {
+  const passwordHash =
+    typeof updates.passwordHash === "string" ? (updates.passwordHash as string) : undefined;
+  const { passwordHash: _drop, ...rest } = updates;
+  const masterUpdates: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+  if ("salesPersonId" in rest) {
     masterUpdates.salesPersonId = await salesPersonIdForMaster(
-      updates.salesPersonId as number | null,
+      rest.salesPersonId as number | null,
       companyId,
     );
   }
-  if (typeof updates.roleId === "number") await ensureRoleOnMaster(updates.roleId);
+  if (typeof rest.roleId === "number") await ensureRoleOnMaster(rest.roleId);
+  if (!("databaseName" in masterUpdates)) {
+    const databaseName = await databaseNameForCompany(companyId);
+    if (databaseName) masterUpdates.databaseName = databaseName;
+  }
   await masterDb.update(usersTable).set(masterUpdates).where(eq(usersTable.id, userId));
+  if (passwordHash) await setLoginPasswordHash(userId, passwordHash);
+
   if (companyDbContext.getStore()) {
-    await db.update(usersTable).set({ ...updates, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+    const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (user) {
+      await mirrorUserToCompany(
+        user,
+        (masterUpdates.salesPersonId as number | null | undefined) ?? user.salesPersonId,
+        passwordHash,
+      );
+    }
   }
 }
 
@@ -191,10 +297,23 @@ export async function loginNameTaken(username: string) {
   return Boolean(here);
 }
 
+async function tenantPasswordHash(userId: number, username: string): Promise<string | null> {
+  const tenant = companyDbContext.getStore();
+  if (!tenant) return null;
+  const result = await tenant.query(
+    `SELECT password_hash FROM users
+     WHERE id = $1 OR lower(username) = $2
+     LIMIT 1`,
+    [userId, username.trim().toLowerCase()],
+  ).catch(() => ({ rows: [] as Array<{ password_hash?: string }> }));
+  return (result.rows[0]?.password_hash as string | undefined) ?? null;
+}
+
 /** Copy company-database users that login cannot see into the shared database. */
 export async function publishCompanyUsersToMaster(companyId: number) {
   if (!companyDbContext.getStore()) return;
   const tenantUsers = await db.select().from(usersTable).where(eq(usersTable.companyId, companyId));
+  const databaseName = await databaseNameForCompany(companyId);
   for (const user of tenantUsers) {
     const loginName = user.username.trim().toLowerCase();
     const [existing] = await masterDb
@@ -218,7 +337,7 @@ export async function publishCompanyUsersToMaster(companyId: number) {
     await masterDb.insert(usersTable).values({
       id: user.id,
       username: loginName,
-      passwordHash: user.passwordHash,
+      databaseName,
       role: user.role,
       email: loginEmail(loginName, user.email),
       fullName: user.fullName,
@@ -230,6 +349,8 @@ export async function publishCompanyUsersToMaster(companyId: number) {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     });
+    const hash = await tenantPasswordHash(user.id, loginName);
+    if (hash) await setLoginPasswordHash(user.id, hash);
     await bumpSerial(masterPool, "users");
 
     const links = await db

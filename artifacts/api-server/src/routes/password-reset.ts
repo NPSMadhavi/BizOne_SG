@@ -2,7 +2,7 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
 import { companyDbContext, db, masterDb, usersTable } from "@workspace/db";
-import { eq, or, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { openCompanyPool } from "../lib/company-database.js";
 import { publishAllCompanyUsersToMaster } from "../lib/login-account.js";
 import { logger } from "../lib/logger.js";
@@ -134,10 +134,12 @@ async function sendOtpEmail(to: string, otp: string) {
 }
 
 async function savePassword(userId: number, username: string, companyId: number | null, passwordHash: string) {
+  const { setLoginPasswordHash } = await import("../lib/login-password.js");
   const loginName = username.trim().toLowerCase();
+  await setLoginPasswordHash(userId, passwordHash);
   await masterDb
     .update(usersTable)
-    .set({ passwordHash, updatedAt: new Date() })
+    .set({ updatedAt: new Date() })
     .where(eq(usersTable.id, userId));
 
   if (!companyId) return;
@@ -145,10 +147,11 @@ async function savePassword(userId: number, username: string, companyId: number 
     const tenantPool = await openCompanyPool(companyId);
     if (!tenantPool) return;
     await companyDbContext.run(tenantPool, async () => {
-      await db
-        .update(usersTable)
-        .set({ passwordHash, updatedAt: new Date() })
-        .where(or(eq(usersTable.id, userId), sql`lower(${usersTable.username}) = ${loginName}`));
+      await tenantPool.query(
+        `UPDATE users SET password_hash = $1, updated_at = now()
+         WHERE id = $2 OR lower(username) = $3`,
+        [passwordHash, userId, loginName],
+      ).catch(() => undefined);
     });
   } catch (err) {
     logger.warn(

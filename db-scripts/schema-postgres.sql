@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS companies (
 CREATE TABLE IF NOT EXISTS users (
   id             SERIAL       PRIMARY KEY,
   username       TEXT         NOT NULL UNIQUE,
-  password_hash  TEXT         NOT NULL,              -- bcrypt hash
+  password_hash  TEXT         NOT NULL DEFAULT '',   -- bcrypt hash (company DBs; master uses login_credentials)
+  database_name  TEXT,                               -- bizone_<slug> when company has its own DB
   role           TEXT         NOT NULL DEFAULT 'user',
   created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
