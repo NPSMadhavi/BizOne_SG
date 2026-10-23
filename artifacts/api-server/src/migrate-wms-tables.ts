@@ -217,8 +217,23 @@ const WMS_MIGRATIONS = [
 ];
 
 export async function migrateWmsTables(): Promise<void> {
-  for (const sql of WMS_MIGRATIONS) {
-    await pool.query(sql);
-  }
+  await migrateWmsOnPool(pool);
   logger.info("WMS tables migration complete");
+}
+
+/** Apply WMS DDL on a specific company (tenant) pool — used when lean master skips shared-DB WMS migrate. */
+export async function migrateWmsOnPool(
+  target: { query: (sql: string) => Promise<unknown> },
+): Promise<void> {
+  for (const sql of WMS_MIGRATIONS) {
+    try {
+      await target.query(sql);
+    } catch (err) {
+      // CREATE with REFERENCES may fail on lean/partial tenants; column adds should still apply.
+      const message = err instanceof Error ? err.message : String(err);
+      if (/already exists|duplicate/i.test(message)) continue;
+      // Keep going — later statements (ADD COLUMN) are the critical heal for older warehouses tables.
+      console.warn("[migrate-wms] statement skipped:", message.slice(0, 180));
+    }
+  }
 }

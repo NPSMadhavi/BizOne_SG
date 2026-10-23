@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import {
   db,
+  pool,
   warehousesTable,
   openingStockTable,
   goodsReceiptsTable,
@@ -57,19 +58,41 @@ router.get("/warehouses", async (req, res) => {
     } catch (err) {
       console.error("[warehouses] ensureDefaultWarehouse failed:", err instanceof Error ? err.message : err);
     }
-    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
-    let rows = await db.select().from(warehousesTable)
-      .where(eq(warehousesTable.companyId, ctx.companyId))
-      .orderBy(warehousesTable.code);
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter(r =>
-        r.code.toLowerCase().includes(q) ||
-        r.name.toLowerCase().includes(q) ||
-        (r.city || "").toLowerCase().includes(q)
-      );
+
+    const loadRows = async () => {
+      const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+      let rows = await db.select().from(warehousesTable)
+        .where(eq(warehousesTable.companyId, ctx.companyId))
+        .orderBy(warehousesTable.code);
+      if (search) {
+        const q = search.toLowerCase();
+        rows = rows.filter(r =>
+          r.code.toLowerCase().includes(q) ||
+          r.name.toLowerCase().includes(q) ||
+          (r.city || "").toLowerCase().includes(q)
+        );
+      }
+      return rows;
+    };
+
+    try {
+      res.json(await loadRows());
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Older tenants may lack pin_code/state/remarks — heal columns and retry once.
+      if (/pin_code|does not exist|42703|warehouses/i.test(message)) {
+        try {
+          await pool.query(`ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS state text`);
+          await pool.query(`ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS pin_code text`);
+          await pool.query(`ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS remarks text`);
+          res.json(await loadRows());
+          return;
+        } catch (retryErr) {
+          console.error("[warehouses] list retry failed:", retryErr instanceof Error ? retryErr.message : retryErr);
+        }
+      }
+      throw err;
     }
-    res.json(rows);
   } catch (err) {
     console.error("[warehouses] list failed:", err instanceof Error ? err.message : err);
     res.status(500).json({ error: warehouseErrorMessage(err, "Failed to fetch warehouses") });

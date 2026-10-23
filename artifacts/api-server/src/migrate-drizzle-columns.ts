@@ -418,6 +418,8 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_no text`,
   `ALTER TABLE customers ADD COLUMN IF NOT EXISTS postal_code text`,
   `ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency text DEFAULT 'SGD'`,
+  `ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit_enabled boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit numeric(15,2)`,
 
   // ── companies ─────────────────────────────────────────────────────────────
   `ALTER TABLE companies ADD COLUMN IF NOT EXISTS gst_reg_no text`,

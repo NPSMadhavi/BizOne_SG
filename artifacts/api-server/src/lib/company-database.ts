@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { applySalesPosSchema, DRIZZLE_TABLE_CREATES } from "../migrate-drizzle-columns.js";
 import { migrateOperationsOnPool } from "../migrate-operations-tables.js";
+import { migrateWmsOnPool } from "../migrate-wms-tables.js";
 
 const prepared = new Map<string, Promise<pg.Pool | null>>();
 const pools = new Map<string, pg.Pool>();
@@ -16,6 +17,8 @@ const schemaHealed = new Set<string>();
 const companyFksDropped = new Set<string>();
 /** `${databaseName}:${companyId}` → company stub row confirmed */
 const companyRowEnsured = new Set<string>();
+/** database_name → WMS + customers column heal already applied this process */
+const inventorySchemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw new Error("Invalid database identifier");
@@ -356,6 +359,8 @@ async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boole
          to_regclass('public.employees') IS NOT NULL
          AND to_regclass('public.financial_years') IS NOT NULL
          AND to_regclass('public.settings') IS NOT NULL
+         AND to_regclass('public.warehouses') IS NOT NULL
+         AND to_regclass('public.customers') IS NOT NULL
          AND EXISTS (SELECT 1 FROM companies WHERE id = $1)
        ) AS ok`,
       [companyId],
@@ -364,6 +369,35 @@ async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boole
   } catch {
     return false;
   }
+}
+
+/** Cheap IF NOT EXISTS heals for inventory/customers — must run even on schemaHealed fast path. */
+async function healTenantInventorySchema(pool: pg.Pool, databaseName: string): Promise<void> {
+  if (inventorySchemaHealed.has(databaseName)) return;
+  try {
+    await migrateWmsOnPool(pool);
+  } catch (err) {
+    console.error(
+      "[company-database] WMS schema heal failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+  for (const stmt of [
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS ship_to_address text`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_registered boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_no text`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS postal_code text`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency text DEFAULT 'SGD'`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit_enabled boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit numeric(15,2)`,
+    `ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS state text`,
+    `ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS pin_code text`,
+    `ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS remarks text`,
+  ]) {
+    await pool.query(stmt).catch(() => undefined);
+  }
+  inventorySchemaHealed.add(databaseName);
 }
 
 /**
@@ -458,6 +492,9 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
   // Always keep company stub + drop legacy FKs (cheap); then maybe skip heavy heal.
   await dropTenantCompanyForeignKeys(pool, databaseName);
   await ensureTenantCompanyRow(pool, databaseUrl, databaseName, companyId);
+  // Warehouses/customers columns are often missing on older tenants — heal even on fast path.
+  await healTenantInventorySchema(pool, databaseName);
+  await dropTenantCompanyForeignKeys(pool, databaseName, true);
 
   // Fast path: tenant already has company row + core tables — skip copy/DDL heal.
   if (schemaHealed.has(databaseName) || (await tenantLooksReady(pool, companyId))) {
