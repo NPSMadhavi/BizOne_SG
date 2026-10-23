@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   db,
+  pool,
   purchaseQuotationsTable,
   purchaseOrdersTable,
   vendorInvoicesTable,
@@ -11,8 +12,25 @@ import { and, desc, eq, ilike, inArray } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { postVendorInvoiceJE } from "../lib/vendor-invoice-auto-post.js";
+import { ensureCompanyDocumentTables } from "../lib/company-database.js";
 
 const router: IRouter = Router();
+
+function isMissingRelationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string })?.code;
+  return code === "42P01" || /does not exist|Failed query/i.test(msg);
+}
+
+async function withDocumentSchemaRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isMissingRelationError(err)) throw err;
+    await ensureCompanyDocumentTables(pool);
+    return await fn();
+  }
+}
 
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) {
@@ -98,35 +116,47 @@ function calculate(body: any) {
 router.get("/purchase-quotations/stats", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
-  const all = companyId
-    ? await db.select().from(purchaseQuotationsTable).where(eq(purchaseQuotationsTable.companyId, companyId))
-    : await db.select().from(purchaseQuotationsTable);
-  const visible = all.filter((doc) =>
-    canSee(doc, req.session.userId!, req.session.isAdmin ?? false, req.session.userRole === "external"),
-  );
-  res.json({
-    total: visible.length,
-    confirmed: visible.filter((doc) => doc.status === "confirmed").length,
-    draft: visible.filter((doc) => doc.status === "draft").length,
-    cancelled: visible.filter((doc) => doc.status === "cancelled").length,
-    totalValue: visible.reduce((sum, doc) => sum + Number(doc.totalAmount || 0), 0),
-  });
+  try {
+    const all = await withDocumentSchemaRetry(() =>
+      companyId
+        ? db.select().from(purchaseQuotationsTable).where(eq(purchaseQuotationsTable.companyId, companyId))
+        : db.select().from(purchaseQuotationsTable),
+    );
+    const visible = all.filter((doc) =>
+      canSee(doc, req.session.userId!, req.session.isAdmin ?? false, req.session.userRole === "external"),
+    );
+    res.json({
+      total: visible.length,
+      confirmed: visible.filter((doc) => doc.status === "confirmed").length,
+      draft: visible.filter((doc) => doc.status === "draft").length,
+      cancelled: visible.filter((doc) => doc.status === "cancelled").length,
+      totalValue: visible.reduce((sum, doc) => sum + Number(doc.totalAmount || 0), 0),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to load purchase quotation stats" });
+  }
 });
 
 router.get("/purchase-quotations", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const companyId = req.session.companyId;
-  const docs = companyId
-    ? await db
-        .select()
-        .from(purchaseQuotationsTable)
-        .where(eq(purchaseQuotationsTable.companyId, companyId))
-        .orderBy(desc(purchaseQuotationsTable.createdAt))
-    : await db.select().from(purchaseQuotationsTable).orderBy(desc(purchaseQuotationsTable.createdAt));
-  const visible = docs
-    .filter((doc) => canSee(doc, req.session.userId!, req.session.isAdmin ?? false, req.session.userRole === "external"))
-    .map(parseDoc);
-  res.json(await withUsernames(visible));
+  try {
+    const docs = await withDocumentSchemaRetry(() =>
+      companyId
+        ? db
+            .select()
+            .from(purchaseQuotationsTable)
+            .where(eq(purchaseQuotationsTable.companyId, companyId))
+            .orderBy(desc(purchaseQuotationsTable.createdAt))
+        : db.select().from(purchaseQuotationsTable).orderBy(desc(purchaseQuotationsTable.createdAt)),
+    );
+    const visible = docs
+      .filter((doc) => canSee(doc, req.session.userId!, req.session.isAdmin ?? false, req.session.userRole === "external"))
+      .map(parseDoc);
+    res.json(await withUsernames(visible));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to load purchase quotations" });
+  }
 });
 
 router.post("/purchase-quotations", async (req, res): Promise<void> => {
@@ -137,33 +167,41 @@ router.post("/purchase-quotations", async (req, res): Promise<void> => {
     res.status(400).json({ error: "vendorName and items are required" });
     return;
   }
-  const totals = calculate(req.body);
-  const pqNumber = await nextDocNumber("pq", req.session.companyId!);
-  const [doc] = await db.insert(purchaseQuotationsTable).values({
-    pqNumber,
-    companyId: req.session.companyId!,
-    vendorName,
-    vendorAddress,
-    vendorContact,
-    vendorContactEmail,
-    deliveryAddress,
-    issueDate: issueDate || new Date().toISOString().slice(0, 10),
-    deliveryDate,
-    paymentTerms,
-    notes,
-    items,
-    currency: currency || "SGD",
-    isPrivate: isPrivate === true,
-    subtotal: totals.subtotal.toFixed(2),
-    discountAmount: totals.discountAmount.toFixed(2),
-    tax: totals.tax.toFixed(2),
-    totalAmount: totals.totalAmount.toFixed(2),
-    status: status || "draft",
-    createdBy: req.session.userId!,
-  }).returning();
-  await upsertVendor(req.session.companyId!, vendorName, vendorAddress, vendorContact, vendorContactEmail);
-  logAudit({ req, action: "create", entityType: "purchase_quotation", entityId: doc.id, entityLabel: doc.pqNumber });
-  res.status(201).json(parseDoc(doc));
+  try {
+    // Ensure PQ (+ other document) tables exist before insert — older tenants omit them.
+    await ensureCompanyDocumentTables(pool);
+    const totals = calculate(req.body);
+    const pqNumber = await nextDocNumber("pq", req.session.companyId!);
+    const [doc] = await withDocumentSchemaRetry(() =>
+      db.insert(purchaseQuotationsTable).values({
+        pqNumber,
+        companyId: req.session.companyId!,
+        vendorName,
+        vendorAddress,
+        vendorContact,
+        vendorContactEmail,
+        deliveryAddress,
+        issueDate: issueDate || new Date().toISOString().slice(0, 10),
+        deliveryDate,
+        paymentTerms,
+        notes,
+        items,
+        currency: currency || "SGD",
+        isPrivate: isPrivate === true,
+        subtotal: totals.subtotal.toFixed(2),
+        discountAmount: totals.discountAmount.toFixed(2),
+        tax: totals.tax.toFixed(2),
+        totalAmount: totals.totalAmount.toFixed(2),
+        status: status || "draft",
+        createdBy: req.session.userId!,
+      }).returning(),
+    );
+    await upsertVendor(req.session.companyId!, vendorName, vendorAddress, vendorContact, vendorContactEmail).catch(() => undefined);
+    logAudit({ req, action: "create", entityType: "purchase_quotation", entityId: doc.id, entityLabel: doc.pqNumber });
+    res.status(201).json(parseDoc(doc));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to create purchase quotation" });
+  }
 });
 
 router.get("/purchase-quotations/:id", async (req, res): Promise<void> => {

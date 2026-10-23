@@ -3,7 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { applySalesPosSchema, DRIZZLE_TABLE_CREATES } from "../migrate-drizzle-columns.js";
+import {
+  applyDocumentTablesOnPool,
+  applySalesPosSchema,
+  DRIZZLE_TABLE_CREATES,
+} from "../migrate-drizzle-columns.js";
 import { migrateOperationsOnPool } from "../migrate-operations-tables.js";
 import { migrateWmsOnPool } from "../migrate-wms-tables.js";
 
@@ -23,6 +27,11 @@ const companyRowEnsured = new Set<string>();
  */
 const INVENTORY_HEAL_VERSION = 2;
 const inventorySchemaHealed = new Set<string>();
+/**
+ * Bump when adding document tables (PQ/SO/VI/GRN/…) so fast-path tenants re-create missing relations.
+ */
+const DOCUMENT_HEAL_VERSION = 1;
+const documentSchemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw new Error("Invalid database identifier");
@@ -469,6 +478,26 @@ async function healTenantInventorySchema(pool: pg.Pool, databaseName: string): P
   inventorySchemaHealed.add(healKey);
 }
 
+/** Ensure purchase/sales document tables exist even when tenantLooksReady short-circuits. */
+async function healTenantDocumentSchema(pool: pg.Pool, databaseName: string): Promise<void> {
+  const healKey = `${databaseName}:docs:v${DOCUMENT_HEAL_VERSION}`;
+  if (documentSchemaHealed.has(healKey)) return;
+  try {
+    await applyDocumentTablesOnPool((statement) => pool.query(statement));
+  } catch (err) {
+    console.error(
+      "[company-database] document schema heal failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+  documentSchemaHealed.add(healKey);
+}
+
+/** Force document-table heal (used by routes when Postgres reports missing relation). */
+export async function ensureCompanyDocumentTables(pool: pg.Pool): Promise<void> {
+  await applyDocumentTablesOnPool((statement) => pool.query(statement));
+}
+
 /**
  * Tenant DBs keep a stub companies row for legacy FKs, but the source of truth is master.
  * Missing rows (or stale schemaHealed) cause inserts like customers to fail with 23503.
@@ -563,6 +592,9 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
   await ensureTenantCompanyRow(pool, databaseUrl, databaseName, companyId);
   // Warehouses/customers columns are often missing on older tenants — heal even on fast path.
   await healTenantInventorySchema(pool, databaseName);
+  // Document tables (PQ/PO/SO/invoices/…) — must run even when tenantLooksReady is true,
+  // otherwise Westcon-style partial tenants 500 with "relation does not exist".
+  await healTenantDocumentSchema(pool, databaseName);
   await dropTenantCompanyForeignKeys(pool, databaseName, true);
 
   // Fast path: tenant already has company row + core tables — skip copy/DDL heal.

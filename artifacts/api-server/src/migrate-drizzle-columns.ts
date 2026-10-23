@@ -227,6 +227,176 @@ export const DRIZZLE_TABLE_CREATES: string[] = [
     created_by integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
+  // Older Westcon/tenant DBs often lacked these — must exist on every company DB.
+  `CREATE TABLE IF NOT EXISTS purchase_quotations (
+    id serial PRIMARY KEY,
+    pq_number text NOT NULL UNIQUE,
+    company_id integer NOT NULL DEFAULT 1,
+    vendor_name text NOT NULL,
+    vendor_address text,
+    vendor_contact text,
+    vendor_contact_email text,
+    delivery_address text,
+    issue_date text,
+    delivery_date text,
+    payment_terms text,
+    notes text,
+    is_private boolean NOT NULL DEFAULT false,
+    items jsonb NOT NULL DEFAULT '[]',
+    subtotal numeric(15,2) NOT NULL DEFAULT 0,
+    discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+    tax numeric(15,2) NOT NULL DEFAULT 0,
+    total_amount numeric(15,2) NOT NULL DEFAULT 0,
+    currency text NOT NULL DEFAULT 'SGD',
+    status text NOT NULL DEFAULT 'draft',
+    email_sent_to text,
+    converted_po_id integer,
+    converted_po_number text,
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS sales_orders (
+    id serial PRIMARY KEY,
+    so_number text NOT NULL UNIQUE,
+    company_id integer NOT NULL DEFAULT 1,
+    qt_id integer,
+    qt_number text,
+    inv_id integer,
+    inv_number text,
+    do_id integer,
+    do_number text,
+    customer_name text NOT NULL,
+    customer_address text,
+    customer_contact text,
+    customer_contact_email text,
+    delivery_address text,
+    issue_date text,
+    delivery_date text,
+    payment_terms text,
+    notes text,
+    is_private boolean NOT NULL DEFAULT false,
+    items jsonb NOT NULL DEFAULT '[]',
+    subtotal numeric(15,2) NOT NULL DEFAULT 0,
+    discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+    tax numeric(15,2) NOT NULL DEFAULT 0,
+    total_amount numeric(15,2) NOT NULL DEFAULT 0,
+    currency text NOT NULL DEFAULT 'SGD',
+    status text NOT NULL DEFAULT 'draft',
+    email_sent_to text,
+    terms_and_conditions text,
+    delivery_instructions text,
+    customer_note text,
+    authorised_signature text,
+    created_by integer NOT NULL,
+    attachment_path text,
+    attachment_name text,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS vendor_invoices (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    pi_number text NOT NULL,
+    pi_date text,
+    payment_terms text NOT NULL DEFAULT '30 Days Net',
+    due_date text,
+    planned_payment_date text,
+    reminders_enabled boolean NOT NULL DEFAULT false,
+    reminder_start_after_day integer,
+    reminder_emails jsonb NOT NULL DEFAULT '[]',
+    vendor_name text NOT NULL,
+    po_ids jsonb NOT NULL DEFAULT '[]',
+    po_numbers text,
+    currency text NOT NULL DEFAULT 'SGD',
+    total_amount numeric(15,2) NOT NULL DEFAULT 0,
+    paid_amount numeric(15,2) NOT NULL DEFAULT 0,
+    status text NOT NULL DEFAULT 'pending',
+    notes text,
+    customer_note text,
+    delivery_instructions text,
+    terms_and_conditions text,
+    authorised_signature text,
+    discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+    expense_account_id integer,
+    sales_person text,
+    items jsonb NOT NULL DEFAULT '[]',
+    subtotal numeric(15,2) NOT NULL DEFAULT 0,
+    tax numeric(15,2) NOT NULL DEFAULT 0,
+    gst_treatment text NOT NULL DEFAULT 'standard_rated',
+    gst_rate numeric(5,2) NOT NULL DEFAULT 9,
+    gst_amount numeric(15,2) NOT NULL DEFAULT 0,
+    gst_inclusive boolean NOT NULL DEFAULT false,
+    exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000,
+    created_by integer NOT NULL,
+    attachment_path text,
+    attachment_name text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS grn (
+    id serial PRIMARY KEY,
+    grn_number text NOT NULL UNIQUE,
+    po_id integer,
+    po_number text NOT NULL DEFAULT '',
+    vendor_name text NOT NULL,
+    company_id integer NOT NULL DEFAULT 1,
+    status text NOT NULL DEFAULT 'draft',
+    items jsonb NOT NULL DEFAULT '[]',
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS debit_notes (
+    id serial PRIMARY KEY,
+    dn_number text NOT NULL,
+    company_id integer NOT NULL DEFAULT 1,
+    customer_name text NOT NULL,
+    customer_address text,
+    contact_person text,
+    contact_email text,
+    ref_inv_number text,
+    so_id integer,
+    so_number text,
+    reason text,
+    issue_date text,
+    currency text NOT NULL DEFAULT 'SGD',
+    payment_terms text,
+    notes text,
+    is_private boolean NOT NULL DEFAULT false,
+    items jsonb NOT NULL DEFAULT '[]',
+    subtotal numeric(15,2) NOT NULL DEFAULT 0,
+    discount_amount numeric(15,2) NOT NULL DEFAULT 0,
+    tax_rate numeric(5,2) NOT NULL DEFAULT 9,
+    tax numeric(15,2) NOT NULL DEFAULT 0,
+    total_amount numeric(15,2) NOT NULL DEFAULT 0,
+    status text NOT NULL DEFAULT 'draft',
+    void_reason text,
+    email_sent_to text,
+    terms_and_conditions text,
+    delivery_instructions text,
+    customer_note text,
+    authorised_signature text,
+    created_by integer NOT NULL,
+    attachment_path text,
+    attachment_name text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT debit_notes_company_dn_number_unique UNIQUE (company_id, dn_number)
+  )`,
+  `CREATE TABLE IF NOT EXISTS vendors (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    name text NOT NULL,
+    address text,
+    postal_code text,
+    country text,
+    contact_person text,
+    contact_email text,
+    phone text,
+    currency text,
+    gst_registered boolean NOT NULL DEFAULT false,
+    gst_no text,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
   `CREATE TABLE IF NOT EXISTS maintenance (
     id serial PRIMARY KEY,
     is_enabled boolean NOT NULL DEFAULT false,
@@ -577,6 +747,40 @@ export async function applySalesPosSchema(
       throw err;
     }
   }
+}
+
+/**
+ * Idempotent document/core table create + column alignment for a company tenant pool.
+ * Safe to call on every openCompanyPool — IF NOT EXISTS / ADD IF NOT EXISTS only.
+ */
+export async function applyDocumentTablesOnPool(
+  query: (statement: string) => Promise<unknown>,
+): Promise<void> {
+  for (const statement of DRIZZLE_TABLE_CREATES) {
+    try {
+      await query(statement);
+    } catch (err) {
+      if (isBenignSchemaError(err)) continue;
+      logger.warn(
+        { err, statement: statement.slice(0, 120) },
+        "[schema-migrate] tenant document table create failed",
+      );
+    }
+  }
+  for (const statement of DRIZZLE_COLUMN_MIGRATIONS) {
+    try {
+      await query(statement);
+    } catch (err) {
+      if (isBenignSchemaError(err)) continue;
+      logger.warn(
+        { err, statement: statement.slice(0, 120) },
+        "[schema-migrate] tenant document column heal failed",
+      );
+    }
+  }
+  await applySalesPosSchema(query).catch((err) => {
+    logger.warn({ err }, "[schema-migrate] tenant sales/POS heal failed");
+  });
 }
 
 async function masterIsLeanDirectory(): Promise<boolean> {
