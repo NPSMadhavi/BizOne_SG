@@ -9,10 +9,14 @@ function sgPhoneDigits(value: string): string {
 export const RegisterBody = zod.object({
   fullName: zod.string().min(2, "Full name is required"),
   email: zod.string().email("Valid email is required"),
-  password: zod.string().regex(
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8}$/,
-    "Password must be 8 characters with a capital letter, a small letter, a number, and a special character",
-  ),
+  // Any length — no fixed character count. Composition rules only.
+  password: zod
+    .string()
+    .min(1, "Password is required")
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/,
+      "Password must include a capital letter, a small letter, a number, and a special character",
+    ),
   phoneNumber: zod
     .string()
     .min(1, "Phone number is required")
