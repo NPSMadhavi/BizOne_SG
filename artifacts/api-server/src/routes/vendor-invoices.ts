@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, vendorInvoicesTable, vendorPaymentsTable, usersTable } from "@workspace/db";
+import { db, pool, vendorInvoicesTable, vendorPaymentsTable, usersTable } from "@workspace/db";
 import { logAudit } from "../lib/audit.js";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import {
@@ -16,6 +16,8 @@ import {
 } from "../lib/vendor-invoice-stock.js";
 import { syncVendorInvoicePurchasePrices, recomputePriceLotsAfterVendorInvoiceRemoved } from "../lib/stock-purchase-price.js";
 import { applyVoucherAttachment, sendVoucherFile, VOUCHER_UPLOAD_FOLDERS } from "../lib/operations-upload.js";
+import { ensureCompanyDocumentTables } from "../lib/company-database.js";
+import { ensureAccountsSeeded } from "../lib/accounts-seed.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -152,6 +154,10 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
   const normalizedItems = normalizeViItems(items);
 
   try {
+    // Older Westcon/tenant DBs often lack vendor_invoices / accounts / journals.
+    await ensureCompanyDocumentTables(pool);
+    await ensureAccountsSeeded(companyId);
+
     const attachment = await applyVoucherAttachment(req.body, VOUCHER_UPLOAD_FOLDERS.vendorInvoice);
     const [doc] = await db.insert(vendorInvoicesTable).values({
       companyId,
@@ -396,9 +402,16 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   const userId = req.session.userId!;
 
+  try {
+    await ensureCompanyDocumentTables(pool);
+  } catch {
+    /* best-effort — delete should still proceed */
+  }
+
   const [toDelete] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
   if (!toDelete) { res.status(404).json({ error: "Not found" }); return; }
 
+  // JE reverse is non-fatal (missing journals/accounts on incomplete tenants).
   await reverseVendorInvoiceJE(id, toDelete.companyId, toDelete.piNumber, toDelete.vendorName, userId, req.log);
 
   try {
@@ -409,10 +422,12 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
       userId,
     });
   } catch (stockErr: any) {
-    req.log?.warn?.({ err: stockErr }, "Vendor invoice stock reverse failed on delete");
-    res.status(400).json({ error: stockErr?.message || "Failed to reverse stock for vendor invoice" });
-    return;
+    // Incomplete WMS schema must not block deleting the invoice document.
+    req.log?.warn?.({ err: stockErr }, "Vendor invoice stock reverse failed on delete (continuing)");
   }
+
+  // Drop payments first so FK does not block delete on older tenants.
+  await db.delete(vendorPaymentsTable).where(eq(vendorPaymentsTable.vendorInvoiceId, id)).catch(() => undefined);
 
   const affectedStockIds = [
     ...new Set(
@@ -422,7 +437,13 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
     ),
   ];
 
-  const [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
+  let deleted;
+  try {
+    [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
+  } catch (err: any) {
+    res.status(500).json({ error: err?.cause?.message || err?.message || "Failed to delete vendor invoice" });
+    return;
+  }
 
   try {
     await recomputePriceLotsAfterVendorInvoiceRemoved({

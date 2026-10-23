@@ -187,7 +187,10 @@ export default function VendorInvoiceView() {
   const handleDeletePI = async () => {
     try {
       const res = await fetch(`/api/vendor-invoices/${id}`, { method: "DELETE", credentials: "include" });
-      if (!res.ok) throw new Error("Failed to delete");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete");
+      }
       toast({ title: "Vendor PI Deleted" });
       queryClient.invalidateQueries({ queryKey: ["vendor-invoices"] });
       await invalidateInventoryQueries(queryClient);

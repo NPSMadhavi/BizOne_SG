@@ -159,28 +159,31 @@ export async function reverseVendorInvoiceJE(
   userId: number,
   log?: any,
 ): Promise<void> {
-  const [original] = await db.select()
-    .from(journalEntriesTable)
-    .where(and(
-      eq(journalEntriesTable.companyId, companyId),
-      eq(journalEntriesTable.refType, "vendor_invoice"),
-      eq(journalEntriesTable.refId, piId),
-    ))
-    .limit(1);
-
-  if (!original || original.status === "reversed") return;
-
-  const [existingReversal] = await db.select({ id: journalEntriesTable.id })
-    .from(journalEntriesTable)
-    .where(eq(journalEntriesTable.reversalOfId, original.id))
-    .limit(1);
-  if (existingReversal) return;
-
-  const originalLines = await db.select()
-    .from(journalLinesTable)
-    .where(eq(journalLinesTable.journalEntryId, original.id));
-
   try {
+    // Ensure COA/journals exist on older tenants before touching them.
+    await ensureAccountsSeeded(companyId);
+
+    const [original] = await db.select()
+      .from(journalEntriesTable)
+      .where(and(
+        eq(journalEntriesTable.companyId, companyId),
+        eq(journalEntriesTable.refType, "vendor_invoice"),
+        eq(journalEntriesTable.refId, piId),
+      ))
+      .limit(1);
+
+    if (!original || original.status === "reversed") return;
+
+    const [existingReversal] = await db.select({ id: journalEntriesTable.id })
+      .from(journalEntriesTable)
+      .where(eq(journalEntriesTable.reversalOfId, original.id))
+      .limit(1);
+    if (existingReversal) return;
+
+    const originalLines = await db.select()
+      .from(journalLinesTable)
+      .where(eq(journalLinesTable.journalEntryId, original.id));
+
     const [reversal] = await db.insert(journalEntriesTable).values({
       companyId,
       entryDate:   new Date().toISOString().split("T")[0],
@@ -193,21 +196,24 @@ export async function reverseVendorInvoiceJE(
       createdBy:   userId,
     }).returning();
 
-    await db.insert(journalLinesTable).values(
-      originalLines.map(l => ({
-        journalEntryId: reversal.id,
-        accountId:      l.accountId,
-        description:    `REVERSAL: ${l.description ?? ""}`,
-        debit:          l.credit,
-        credit:         l.debit,
-      }))
-    );
+    if (originalLines.length > 0) {
+      await db.insert(journalLinesTable).values(
+        originalLines.map(l => ({
+          journalEntryId: reversal.id,
+          accountId:      l.accountId,
+          description:    `REVERSAL: ${l.description ?? ""}`,
+          debit:          l.credit,
+          credit:         l.debit,
+        })),
+      );
+    }
 
     await db.update(journalEntriesTable)
       .set({ status: "reversed" })
       .where(eq(journalEntriesTable.id, original.id));
   } catch (err) {
-    if (log) log.error({ err, piNumber }, "vendor-invoice-auto-post: reversal failed (non-fatal)");
+    // Missing journals / accounts on incomplete tenants must not block delete.
+    if (log) log.warn({ err, piNumber }, "vendor-invoice-auto-post: reversal skipped (non-fatal)");
   }
 }
 

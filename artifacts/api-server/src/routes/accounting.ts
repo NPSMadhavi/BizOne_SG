@@ -40,14 +40,20 @@ router.get("/accounts", async (req, res): Promise<void> => {
   if (!(await requireSingapore(req, res))) return;
 
   const companyId = req.session.companyId!;
-  await ensureAccountsSeeded(companyId);
+  try {
+    await ensureAccountsSeeded(companyId);
 
-  const accounts = await db.select()
-    .from(accountsTable)
-    .where(eq(accountsTable.companyId, companyId))
-    .orderBy(asc(accountsTable.code));
+    const accounts = await db.select()
+      .from(accountsTable)
+      .where(eq(accountsTable.companyId, companyId))
+      .orderBy(asc(accountsTable.code));
 
-  res.json(accounts);
+    res.json(accounts);
+  } catch (err: any) {
+    res.status(500).json({
+      error: err?.cause?.message || err?.message || "Failed to load accounts",
+    });
+  }
 });
 
 router.post("/accounts", async (req, res): Promise<void> => {

@@ -30,7 +30,7 @@ const inventorySchemaHealed = new Set<string>();
 /**
  * Bump when adding document tables (PQ/SO/VI/GRN/…) so fast-path tenants re-create missing relations.
  */
-const DOCUMENT_HEAL_VERSION = 1;
+const DOCUMENT_HEAL_VERSION = 2; // +accounts / journals / vendor_payments
 const documentSchemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {

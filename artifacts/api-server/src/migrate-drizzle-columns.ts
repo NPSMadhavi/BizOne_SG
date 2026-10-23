@@ -397,6 +397,66 @@ export const DRIZZLE_TABLE_CREATES: string[] = [
     is_active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
+  // Chart of accounts + journals — required by Vendor Invoice / Tax Invoice auto-post
+  `CREATE TABLE IF NOT EXISTS accounts (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    code text NOT NULL,
+    name text NOT NULL,
+    type text NOT NULL,
+    sub_type text NOT NULL,
+    description text,
+    is_active boolean NOT NULL DEFAULT true,
+    is_system boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT accounts_company_code_unique UNIQUE (company_id, code)
+  )`,
+  `CREATE TABLE IF NOT EXISTS journal_entries (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    entry_date text NOT NULL,
+    description text NOT NULL,
+    ref_type text,
+    ref_id integer,
+    ref_number text,
+    status text NOT NULL DEFAULT 'posted',
+    reversal_of_id integer,
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS journal_lines (
+    id serial PRIMARY KEY,
+    journal_entry_id integer NOT NULL,
+    account_id integer NOT NULL,
+    description text,
+    debit numeric(15,2) NOT NULL DEFAULT 0,
+    credit numeric(15,2) NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS vendor_payments (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    vendor_invoice_id integer NOT NULL,
+    payment_date text NOT NULL,
+    amount numeric(15,2) NOT NULL,
+    reference text,
+    payment_method text DEFAULT 'bank_transfer',
+    notes text,
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS invoice_payments (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    invoice_id integer NOT NULL,
+    payment_date text NOT NULL,
+    amount numeric(15,2) NOT NULL,
+    reference text,
+    payment_method text DEFAULT 'bank_transfer',
+    notes text,
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
   `CREATE TABLE IF NOT EXISTS maintenance (
     id serial PRIMARY KEY,
     is_enabled boolean NOT NULL DEFAULT false,

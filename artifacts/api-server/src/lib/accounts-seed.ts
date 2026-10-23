@@ -1,5 +1,50 @@
-import { db, accountsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, pool, accountsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+
+/** Ensure chart-of-accounts table exists on the current company tenant DB. */
+async function ensureAccountsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      code text NOT NULL,
+      name text NOT NULL,
+      type text NOT NULL,
+      sub_type text NOT NULL,
+      description text,
+      is_active boolean NOT NULL DEFAULT true,
+      is_system boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT accounts_company_code_unique UNIQUE (company_id, code)
+    )
+  `).catch(() => undefined);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS journal_entries (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      entry_date text NOT NULL,
+      description text NOT NULL,
+      ref_type text,
+      ref_id integer,
+      ref_number text,
+      status text NOT NULL DEFAULT 'posted',
+      reversal_of_id integer,
+      created_by integer NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `).catch(() => undefined);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS journal_lines (
+      id serial PRIMARY KEY,
+      journal_entry_id integer NOT NULL,
+      account_id integer NOT NULL,
+      description text,
+      debit numeric(15,2) NOT NULL DEFAULT 0,
+      credit numeric(15,2) NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `).catch(() => undefined);
+}
 
 export const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash & Cash Equivalents",                    type: "asset",     subType: "current_asset",       isSystem: true  },
@@ -61,10 +106,26 @@ export const DEFAULT_ACCOUNTS = [
 ];
 
 export async function ensureAccountsSeeded(companyId: number): Promise<void> {
-  const existing = await db.select({ id: accountsTable.id })
-    .from(accountsTable)
-    .where(eq(accountsTable.companyId, companyId))
-    .limit(1);
+  await ensureAccountsTable();
+
+  let existing: { id: number }[] = [];
+  try {
+    existing = await db.select({ id: accountsTable.id })
+      .from(accountsTable)
+      .where(eq(accountsTable.companyId, companyId))
+      .limit(1);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/accounts|does not exist|42P01/i.test(msg)) {
+      await ensureAccountsTable();
+      existing = await db.select({ id: accountsTable.id })
+        .from(accountsTable)
+        .where(eq(accountsTable.companyId, companyId))
+        .limit(1);
+    } else {
+      throw err;
+    }
+  }
   if (existing.length > 0) return;
 
   await db.insert(accountsTable).values(
