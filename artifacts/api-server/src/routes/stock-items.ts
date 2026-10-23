@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, stockItemsTable, warehouseStockTable, vendorInvoicesTable } from "@workspace/db";
+import { db, pool, stockItemsTable, warehouseStockTable, vendorInvoicesTable } from "@workspace/db";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { adjustItemStockInWarehouse, deleteStockItem, resolveWarehouseId } from "../lib/inventory-service.js";
 import { nextDocNumber } from "../lib/running-numbers.js";
@@ -12,6 +12,64 @@ import {
 } from "../lib/stock-purchase-price.js";
 
 const router: IRouter = Router();
+
+/** Older Westcon/tenant DBs often lack Item Master columns — heal before create/list. */
+async function healStockItemsColumns(): Promise<void> {
+  for (const stmt of [
+    `CREATE TABLE IF NOT EXISTS stock_items (
+      id SERIAL PRIMARY KEY,
+      company_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      uom TEXT NOT NULL DEFAULT 'Pcs',
+      type TEXT NOT NULL DEFAULT 'stock_item',
+      unit_price NUMERIC(15,2) DEFAULT 0,
+      stock_qty NUMERIC(15,3) DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS barcode text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS category text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS stock_group text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sales_person text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS item_image text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS purchase_price numeric(15,2) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS mrp_price numeric(15,2) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS min_stock_level numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS reorder_level numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS max_stock_level numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batch_no text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS expiry_date text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS manufacturing_date text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batches_json text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_uom text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_qty numeric(15,4) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS main_qty numeric(15,4) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS track_inventory boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS show_in_pos boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS is_weight_based boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS pricing_method text DEFAULT 'fixed'`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS created_by integer`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS updated_by integer`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT NOW()`,
+  ]) {
+    await pool.query(stmt).catch((err) => {
+      console.warn("[stock-items] heal failed:", err instanceof Error ? err.message : err);
+    });
+  }
+  // Hard guarantee: barcode must exist for Item Master create uniqueness check.
+  const hasBarcode = await pool.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'stock_items' AND column_name = 'barcode'
+     LIMIT 1`,
+  ).catch(() => ({ rowCount: 0 }));
+  if (!hasBarcode.rowCount) {
+    await pool.query(`ALTER TABLE stock_items ADD COLUMN barcode text`);
+  }
+}
 
 type ItemBatch = {
   batchNo: string;
@@ -126,6 +184,7 @@ router.get("/stock-items", async (req, res): Promise<void> => {
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
   try {
+  await healStockItemsColumns();
   const search = typeof req.query.search === "string" ? req.query.search : "";
   const typeFilter = typeof req.query.type === "string" ? req.query.type : "";
 
@@ -270,6 +329,9 @@ router.post("/stock-items", async (req, res): Promise<void> => {
   let item: typeof stockItemsTable.$inferSelect | undefined;
 
   try {
+    // Ensure stock_items (+ barcode and other Item Master columns) exist on this tenant.
+    await healStockItemsColumns();
+
     // Always allocate from Settings → Running Numbers (Stock Item Code)
     try {
       resolvedCode = await nextDocNumber("si", companyId);
@@ -301,13 +363,28 @@ router.post("/stock-items", async (req, res): Promise<void> => {
     }
 
     if (resolvedBarcode) {
-      const [dup] = await db.select({ id: stockItemsTable.id })
-        .from(stockItemsTable)
-        .where(and(
-          eq(stockItemsTable.companyId, companyId),
-          eq(stockItemsTable.barcode, resolvedBarcode),
-        ))
-        .limit(1);
+      const findDup = async () => {
+        const [dup] = await db.select({ id: stockItemsTable.id })
+          .from(stockItemsTable)
+          .where(and(
+            eq(stockItemsTable.companyId, companyId),
+            eq(stockItemsTable.barcode, resolvedBarcode!),
+          ))
+          .limit(1);
+        return dup;
+      };
+      let dup;
+      try {
+        dup = await findDup();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/barcode|does not exist|42703|stock_items/i.test(msg)) {
+          await healStockItemsColumns();
+          dup = await findDup();
+        } else {
+          throw err;
+        }
+      }
       if (dup) {
         res.status(409).json({ error: `Barcode "${resolvedBarcode}" is already used by another item.` });
         return;
@@ -318,65 +395,78 @@ router.post("/stock-items", async (req, res): Promise<void> => {
     const openingQty = !isService ? Math.max(0, Number(stockQty) || 0) : 0;
     const alt = normalizeAlternateFields({ alternateUom, alternateQty, mainQty });
 
+    const insertValues = {
+      companyId,
+      code: resolvedCode,
+      name,
+      description: description || null,
+      uom: uom || "Pcs",
+      type: typeof type === "string" && type.trim()
+        ? (type === "product" ? "stock_item" : type === "service" ? "service_item" : type.trim())
+        : "stock_item",
+      category: typeof category === "string" && category.trim() ? category.trim() : null,
+      brand: typeof brand === "string" && brand.trim() ? brand.trim() : null,
+      stockGroup: typeof stockGroup === "string" && stockGroup.trim() ? stockGroup.trim() : null,
+      barcode: resolvedBarcode,
+      salesPerson: typeof salesPerson === "string" && salesPerson.trim() ? salesPerson.trim() : null,
+      itemImage: typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null,
+      purchasePrice: purchasePrice != null ? String(purchasePrice) : "0",
+      unitPrice: unitPrice != null ? String(unitPrice) : "0",
+      mrpPrice: mrpPrice != null ? String(mrpPrice) : "0",
+      stockQty: "0",
+      minStockLevel: minStockLevel != null ? String(minStockLevel) : "0",
+      reorderLevel: reorderLevel != null ? String(reorderLevel) : "0",
+      maxStockLevel: maxStockLevel != null ? String(maxStockLevel) : "0",
+      batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
+      expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
+      manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
+      batchesJson: (() => {
+        const normalized = normalizeBatchesPayload(batches);
+        if (normalized) return JSON.stringify(normalized);
+        const primary = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : "";
+        if (!primary) return null;
+        return JSON.stringify([{
+          batchNo: primary,
+          expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
+          manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
+          createdAt: new Date().toISOString(),
+        }]);
+      })(),
+      alternateUom: alt.alternateUom,
+      alternateQty: alt.alternateQty,
+      mainQty: alt.mainQty,
+      trackInventory: trackInventory === undefined ? true : Boolean(trackInventory),
+      showInPos: showInPos === undefined ? true : Boolean(showInPos),
+      isWeightBased: Boolean(isWeightBased),
+      pricingMethod: typeof pricingMethod === "string" ? pricingMethod : "fixed",
+      isActive: isActive === undefined ? true : Boolean(isActive),
+    };
+
     try {
-      [item] = await db.insert(stockItemsTable).values({
-        companyId,
-        code: resolvedCode,
-        name,
-        description: description || null,
-        uom: uom || "Pcs",
-        type: typeof type === "string" && type.trim()
-          ? (type === "product" ? "stock_item" : type === "service" ? "service_item" : type.trim())
-          : "stock_item",
-        category: typeof category === "string" && category.trim() ? category.trim() : null,
-        brand: typeof brand === "string" && brand.trim() ? brand.trim() : null,
-        stockGroup: typeof stockGroup === "string" && stockGroup.trim() ? stockGroup.trim() : null,
-        barcode: resolvedBarcode,
-        salesPerson: typeof salesPerson === "string" && salesPerson.trim() ? salesPerson.trim() : null,
-        itemImage: typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null,
-        purchasePrice: purchasePrice != null ? String(purchasePrice) : "0",
-        unitPrice: unitPrice != null ? String(unitPrice) : "0",
-        mrpPrice: mrpPrice != null ? String(mrpPrice) : "0",
-        stockQty: "0",
-        minStockLevel: minStockLevel != null ? String(minStockLevel) : "0",
-        reorderLevel: reorderLevel != null ? String(reorderLevel) : "0",
-        maxStockLevel: maxStockLevel != null ? String(maxStockLevel) : "0",
-        batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
-        expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
-        manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
-        batchesJson: (() => {
-          const normalized = normalizeBatchesPayload(batches);
-          if (normalized) return JSON.stringify(normalized);
-          const primary = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : "";
-          if (!primary) return null;
-          return JSON.stringify([{
-            batchNo: primary,
-            expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
-            manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
-            createdAt: new Date().toISOString(),
-          }]);
-        })(),
-        alternateUom: alt.alternateUom,
-        alternateQty: alt.alternateQty,
-        mainQty: alt.mainQty,
-        trackInventory: trackInventory === undefined ? true : Boolean(trackInventory),
-        showInPos: showInPos === undefined ? true : Boolean(showInPos),
-        isWeightBased: Boolean(isWeightBased),
-        pricingMethod: typeof pricingMethod === "string" ? pricingMethod : "fixed",
-        isActive: isActive === undefined ? true : Boolean(isActive),
-      }).returning();
+      [item] = await db.insert(stockItemsTable).values(insertValues).returning();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create stock item";
-      const isDup = /unique|duplicate/i.test(message);
-      const isFk = /foreign key|violates foreign key/i.test(message);
-      res.status(isDup ? 409 : 500).json({
-        error: isDup
-          ? `Item code "${resolvedCode}" already exists. Use a different code.`
-          : isFk
-            ? "Company database is out of sync. Log out, sign in again, then retry creating the item."
-            : message,
-      });
-      return;
+      if (/does not exist|42703/i.test(message)) {
+        await healStockItemsColumns();
+        try {
+          [item] = await db.insert(stockItemsTable).values(insertValues).returning();
+        } catch (retryErr) {
+          const retryMsg = retryErr instanceof Error ? retryErr.message : "Failed to create stock item";
+          res.status(500).json({ error: retryMsg });
+          return;
+        }
+      } else {
+        const isDup = /unique|duplicate/i.test(message);
+        const isFk = /foreign key|violates foreign key/i.test(message);
+        res.status(isDup ? 409 : 500).json({
+          error: isDup
+            ? `Item code "${resolvedCode}" already exists. Use a different code.`
+            : isFk
+              ? "Company database is out of sync. Log out, sign in again, then retry creating the item."
+              : message,
+        });
+        return;
+      }
     }
 
     if (!item) {

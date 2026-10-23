@@ -17,7 +17,11 @@ const schemaHealed = new Set<string>();
 const companyFksDropped = new Set<string>();
 /** `${databaseName}:${companyId}` → company stub row confirmed */
 const companyRowEnsured = new Set<string>();
-/** database_name → WMS + customers column heal already applied this process */
+/**
+ * database_name → inventory/customers/stock_items heal applied this process.
+ * Bump INVENTORY_HEAL_VERSION when adding new columns so older process caches re-run.
+ */
+const INVENTORY_HEAL_VERSION = 2;
 const inventorySchemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {
@@ -361,6 +365,7 @@ async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boole
          AND to_regclass('public.settings') IS NOT NULL
          AND to_regclass('public.warehouses') IS NOT NULL
          AND to_regclass('public.customers') IS NOT NULL
+         AND to_regclass('public.stock_items') IS NOT NULL
          AND EXISTS (SELECT 1 FROM companies WHERE id = $1)
        ) AS ok`,
       [companyId],
@@ -373,7 +378,8 @@ async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boole
 
 /** Cheap IF NOT EXISTS heals for inventory/customers — must run even on schemaHealed fast path. */
 async function healTenantInventorySchema(pool: pg.Pool, databaseName: string): Promise<void> {
-  if (inventorySchemaHealed.has(databaseName)) return;
+  const healKey = `${databaseName}:v${INVENTORY_HEAL_VERSION}`;
+  if (inventorySchemaHealed.has(healKey)) return;
   try {
     await migrateWmsOnPool(pool);
   } catch (err) {
@@ -383,6 +389,7 @@ async function healTenantInventorySchema(pool: pg.Pool, databaseName: string): P
     );
   }
   for (const stmt of [
+    // customers
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS quotation_terms text`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS ship_to_address text`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS gst_registered boolean NOT NULL DEFAULT false`,
@@ -391,13 +398,75 @@ async function healTenantInventorySchema(pool: pg.Pool, databaseName: string): P
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency text DEFAULT 'SGD'`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit_enabled boolean NOT NULL DEFAULT false`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit numeric(15,2)`,
+    // warehouses
     `ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS state text`,
     `ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS pin_code text`,
     `ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS remarks text`,
+    // stock_items — create base table if tenant was provisioned before Item Master
+    `CREATE TABLE IF NOT EXISTS stock_items (
+      id SERIAL PRIMARY KEY,
+      company_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      uom TEXT NOT NULL DEFAULT 'Pcs',
+      type TEXT NOT NULL DEFAULT 'stock_item',
+      unit_price NUMERIC(15,2) DEFAULT 0,
+      stock_qty NUMERIC(15,3) DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS category text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sub_category text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS stock_group text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS barcode text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS sales_person text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS item_image text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS purchase_price numeric(15,2) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS mrp_price numeric(15,2) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS min_stock_level numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS reorder_level numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS max_stock_level numeric(15,3) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batch_no text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS expiry_date text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS manufacturing_date text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batches_json text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_uom text`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_qty numeric(15,4) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS main_qty numeric(15,4) DEFAULT 0`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS track_inventory boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS show_in_pos boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS is_weight_based boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS pricing_method text DEFAULT 'fixed'`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS tax_percent numeric(5,2) DEFAULT 9`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS created_by integer`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS updated_by integer`,
+    `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT NOW()`,
+    `CREATE TABLE IF NOT EXISTS stock_item_purchase_prices (
+      id serial PRIMARY KEY,
+      company_id integer NOT NULL,
+      stock_item_id integer NOT NULL,
+      purchase_price numeric(15,2) NOT NULL DEFAULT 0,
+      quantity numeric(15,3) NOT NULL DEFAULT 0,
+      effective_date text NOT NULL,
+      source_type text NOT NULL DEFAULT 'item_master',
+      source_id integer,
+      source_ref text,
+      notes text,
+      created_by integer,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
   ]) {
-    await pool.query(stmt).catch(() => undefined);
+    await pool.query(stmt).catch((err) => {
+      console.warn(
+        "[company-database] inventory heal stmt failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
   }
-  inventorySchemaHealed.add(databaseName);
+  inventorySchemaHealed.add(healKey);
 }
 
 /**
