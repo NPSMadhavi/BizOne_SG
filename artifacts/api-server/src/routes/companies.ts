@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db, companiesTable, userCompaniesTable, usersTable, settingsTable, financialYearsTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { db, masterDb, companyDbContext, companiesTable, userCompaniesTable, usersTable, financialYearsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { getUserCompanies } from "./auth";
 import { loginPasswordMatches } from "../lib/login-password.js";
+import { openCompanyPool } from "../lib/company-database.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -54,7 +55,7 @@ export async function seedCompanies() {
 
 router.post("/companies", async (req, res): Promise<void> => {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
 
   const { name, country, address, phone, email, registrationNo, adminPassword } = req.body;
@@ -66,7 +67,8 @@ router.post("/companies", async (req, res): Promise<void> => {
   if (!passwordOk) { res.status(401).json({ error: "Incorrect password. Please try again." }); return; }
 
   try {
-    const [created] = await db.insert(companiesTable).values({
+    // Company directory lives on lean master. New companies should use signup (tenant DB).
+    const [created] = await masterDb.insert(companiesTable).values({
       name: name.trim(),
       country: country.trim(),
       address: address?.trim() || null,
@@ -75,20 +77,7 @@ router.post("/companies", async (req, res): Promise<void> => {
       registrationNo: registrationNo?.trim() || null,
     }).returning();
 
-    // Auto-assign the creating user to the new company
-    await db.insert(userCompaniesTable).values({ userId: user.id, companyId: created.id }).onConflictDoNothing();
-
-    // Initialise default settings for the new company
-    const defaultGst = country.trim() === "IN" ? "18" : "9";
-    await db.insert(settingsTable).values({
-      companyId: created.id,
-      gstRate: defaultGst,
-      poPrefix: "PO", poCounter: 1, poSuffix: "",
-      invPrefix: "INV", invCounter: 1, invSuffix: "",
-      qtPrefix: "QT", qtCounter: 1, qtSuffix: "",
-      doPrefix: "DO", doCounter: 1, doSuffix: "",
-      grnPrefix: "GRN", grnCounter: 1, grnSuffix: "",
-    });
+    await masterDb.insert(userCompaniesTable).values({ userId: user.id, companyId: created.id }).onConflictDoNothing();
 
     res.status(201).json(created);
   } catch (err: any) {
@@ -99,7 +88,7 @@ router.post("/companies", async (req, res): Promise<void> => {
 
 router.delete("/companies/:id", async (req, res): Promise<void> => {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
 
   const id = parseInt(req.params.id);
@@ -110,7 +99,7 @@ router.delete("/companies/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [existing] = await db.select().from(companiesTable).where(eq(companiesTable.id, id)).limit(1);
+  const [existing] = await masterDb.select().from(companiesTable).where(eq(companiesTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Company not found" }); return; }
 
   const password = typeof req.body?.password === "string" ? req.body.password : "";
@@ -118,11 +107,8 @@ router.delete("/companies/:id", async (req, res): Promise<void> => {
   const passwordOk = await loginPasswordMatches(req.session.userId, password);
   if (!passwordOk) { res.status(401).json({ error: "Incorrect password" }); return; }
 
-  // Clean related rows that may not cascade (settings has no FK)
-  await db.delete(settingsTable).where(eq(settingsTable.companyId, id));
-  await db.delete(userCompaniesTable).where(eq(userCompaniesTable.companyId, id));
-
-  const [deleted] = await db.delete(companiesTable).where(eq(companiesTable.id, id)).returning();
+  await masterDb.delete(userCompaniesTable).where(eq(userCompaniesTable.companyId, id));
+  const [deleted] = await masterDb.delete(companiesTable).where(eq(companiesTable.id, id)).returning();
   if (!deleted) { res.status(404).json({ error: "Company not found" }); return; }
 
   if (req.session.companyId === id) {
@@ -134,7 +120,7 @@ router.delete("/companies/:id", async (req, res): Promise<void> => {
 
 router.put("/companies/:id", async (req, res): Promise<void> => {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return; }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user || user.role !== "admin") { res.status(403).json({ error: "Admin only" }); return; }
 
   const id = parseInt(req.params.id);
@@ -155,8 +141,21 @@ router.put("/companies/:id", async (req, res): Promise<void> => {
   if (gstRegNo !== undefined) updateData.gstRegNo = gstRegNo || null;
   if (logoUrl !== undefined) updateData.logoUrl = logoUrl || null;
 
-  const [updated] = await db.update(companiesTable).set(updateData).where(eq(companiesTable.id, id)).returning();
+  const [updated] = await masterDb.update(companiesTable).set(updateData).where(eq(companiesTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Company not found" }); return; }
+
+  // Best-effort mirror onto tenant DB so business docs see the same company profile.
+  try {
+    const tenantPool = await openCompanyPool(id);
+    if (tenantPool) {
+      await companyDbContext.run(tenantPool, async () => {
+        await db.update(companiesTable).set(updateData).where(eq(companiesTable.id, id));
+      });
+    }
+  } catch {
+    /* tenant may be offline — master is source of truth for directory */
+  }
+
   res.json(updated);
 });
 
@@ -166,14 +165,22 @@ router.get("/companies", async (req, res): Promise<void> => {
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user) { res.status(401).json({ error: "User not found" }); return; }
 
   const companies = await getUserCompanies(req.session.userId);
-  const ids = companies.map((company) => company.id);
-  const years = ids.length
-    ? await db.select().from(financialYearsTable).where(inArray(financialYearsTable.companyId, ids))
-    : [];
+  const sessionCompanyId = req.session.companyId;
+  let years: Array<typeof financialYearsTable.$inferSelect> = [];
+  if (sessionCompanyId) {
+    try {
+      years = await db
+        .select()
+        .from(financialYearsTable)
+        .where(eq(financialYearsTable.companyId, sessionCompanyId));
+    } catch {
+      years = [];
+    }
+  }
   res.json(companies.map(({ modules: _modules, ...company }) => {
     const companyYears = years.filter((year) => year.companyId === company.id);
     const active = companyYears.find((year) => year.status === "active")

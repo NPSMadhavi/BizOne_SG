@@ -221,7 +221,8 @@ app.use(async (req, res, next) => {
     !companyId ||
     !req.path.startsWith("/api") ||
     req.path.startsWith("/api/auth") ||
-    req.path.startsWith("/api/health")
+    req.path.startsWith("/api/health") ||
+    req.path.startsWith("/api/maintenance")
   ) {
     next();
     return;
@@ -230,12 +231,29 @@ app.use(async (req, res, next) => {
   try {
     const tenantPool = await openCompanyPool(companyId);
     if (!tenantPool) {
+      // Lean master has no business tables (e.g. employees). Never fall back to it.
+      const { isLeanMasterDirectory } = await import("./lib/master-schema.js");
+      if (await isLeanMasterDirectory()) {
+        res.status(503).json({
+          error:
+            "Company database is not available. Log out and sign in again (or create the company again).",
+        });
+        return;
+      }
       next();
       return;
     }
     companyDbContext.run(tenantPool, () => next());
   } catch (err) {
     const message = err instanceof Error ? err.message : "failed";
+    req.log.error({ companyId, message }, "company database unavailable");
+    const { isLeanMasterDirectory } = await import("./lib/master-schema.js");
+    if (await isLeanMasterDirectory()) {
+      res.status(503).json({
+        error: "Company database is not available. Log out and sign in again.",
+      });
+      return;
+    }
     req.log.error({ companyId, message }, "company database unavailable, using shared database");
     next();
   }

@@ -4,9 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { applySalesPosSchema, DRIZZLE_TABLE_CREATES } from "../migrate-drizzle-columns.js";
+import { migrateOperationsOnPool } from "../migrate-operations-tables.js";
 
 const prepared = new Map<string, Promise<pg.Pool | null>>();
 const pools = new Map<string, pg.Pool>();
+/** companyId → database_name (avoid master lookup on every API request) */
+const companyDbNameCache = new Map<number, string>();
+/** database_name → already ran heavy schema heal this process */
+const schemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw new Error("Invalid database identifier");
@@ -315,10 +320,16 @@ export async function openCompanyPool(companyId: number): Promise<pg.Pool | null
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) return null;
 
-  const meta = await withClient(databaseUrl, async (client) => {
-    const result = await client.query("SELECT database_name FROM companies WHERE id = $1", [companyId]);
-    return (result.rows[0]?.database_name as string | undefined) ?? "";
-  });
+  let meta = companyDbNameCache.get(companyId) ?? "";
+  if (!meta) {
+    meta = await withClient(databaseUrl, async (client) => {
+      const result = await client.query("SELECT database_name FROM companies WHERE id = $1", [companyId]);
+      return (result.rows[0]?.database_name as string | undefined) ?? "";
+    });
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(meta)) {
+      companyDbNameCache.set(companyId, meta);
+    }
+  }
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(meta)) return null;
 
   const existing = prepared.get(meta);
@@ -334,8 +345,42 @@ export async function openCompanyPool(companyId: number): Promise<pg.Pool | null
   }
 }
 
+async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boolean> {
+  try {
+    const result = await pool.query<{ ok: boolean }>(
+      `SELECT (
+         to_regclass('public.employees') IS NOT NULL
+         AND to_regclass('public.financial_years') IS NOT NULL
+         AND to_regclass('public.settings') IS NOT NULL
+         AND EXISTS (SELECT 1 FROM companies WHERE id = $1)
+       ) AS ok`,
+      [companyId],
+    );
+    return Boolean(result.rows[0]?.ok);
+  } catch {
+    return false;
+  }
+}
+
 async function prepareCompanyPool(databaseUrl: string, databaseName: string, companyId: number): Promise<pg.Pool> {
   const tenantUrl = databaseUrlFor(databaseUrl, databaseName);
+
+  let pool = pools.get(databaseName);
+  if (!pool) {
+    pool = new pg.Pool({
+      connectionString: tenantUrl,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+    });
+    pools.set(databaseName, pool);
+  }
+
+  // Fast path: tenant already has company row + core tables — skip copy/DDL heal.
+  if (schemaHealed.has(databaseName) || (await tenantLooksReady(pool, companyId))) {
+    schemaHealed.add(databaseName);
+    return pool;
+  }
+
   const [masterTables, tenantTables] = await Promise.all([
     tableCount(databaseUrl),
     tableCount(tenantUrl).catch(() => 0),
@@ -349,16 +394,14 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
   if (!companyPresent && (tenantTables < 20 || tenantTables + 5 < masterTables)) {
     await installSchema(tenantUrl, databaseUrl);
   }
-  await copyCompany(databaseUrl, tenantUrl, companyId);
+  // Only copy directory rows when the company row is missing (avoid re-copy every boot).
+  if (!companyPresent) {
+    await copyCompany(databaseUrl, tenantUrl, companyId);
+  }
   await withClient(tenantUrl, async (tenant) => {
     await tenant.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS database_name text`).catch(() => undefined);
   });
 
-  let pool = pools.get(databaseName);
-  if (!pool) {
-    pool = new pg.Pool({ connectionString: tenantUrl });
-    pools.set(databaseName, pool);
-  }
   await pool.query(`CREATE TABLE IF NOT EXISTS ir8a_employers (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL,
@@ -380,6 +423,15 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
     } catch {
       /* IF NOT EXISTS / already-aligned — ignore benign failures */
     }
+  }
+  // Lean master skips operations migrations — HR tables (employees, etc.) must exist on each tenant.
+  try {
+    await migrateOperationsOnPool(pool);
+  } catch (err) {
+    console.error(
+      "[company-database] operations schema heal failed:",
+      err instanceof Error ? err.message : err,
+    );
   }
   // Lean master skips startup FY migrations — every tenant DB must still have these tables.
   for (const stmt of [
@@ -553,5 +605,6 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
       /* ignore */
     }
   }
+  schemaHealed.add(databaseName);
   return pool;
 }

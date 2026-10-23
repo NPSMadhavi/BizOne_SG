@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { companyDbContext, db, usersTable, companiesTable, userCompaniesTable, settingsTable, financialYearsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable, modulesForBusinessType } from "@workspace/db";
+import { companyDbContext, db, masterDb, usersTable, companiesTable, userCompaniesTable, settingsTable, financialYearsTable, APP_ALL_MODULES, rolesTable, permissionsTable, rolePermissionsTable, modulesForBusinessType } from "@workspace/db";
 import { eq, or, sql } from "drizzle-orm";
 import { LoginBody, RegisterBody, SelectCompanyBody } from "@workspace/api-zod";
 import { seedRolesForCompany } from "../seed";
@@ -24,7 +24,8 @@ declare module "express-session" {
 }
 
 async function getUserPermissions(roleId: number): Promise<string[]> {
-  const rows = await db
+  // Roles/permissions live on lean master — never follow companyDbContext here.
+  const rows = await masterDb
     .select({
       module: permissionsTable.module,
       action: permissionsTable.action,
@@ -70,10 +71,10 @@ async function permissionsFor(
 const ALL_MODULES = [...APP_ALL_MODULES];
 
 async function assignDefaultCompanyAccess(userId: number): Promise<number | null> {
-  const [company] = await db.select().from(companiesTable).orderBy(companiesTable.id).limit(1);
+  const [company] = await masterDb.select().from(companiesTable).orderBy(companiesTable.id).limit(1);
   if (!company) return null;
 
-  await db
+  await masterDb
     .insert(userCompaniesTable)
     .values({
       userId,
@@ -98,10 +99,11 @@ async function ensureUserCompanyAccess(userId: number, role: string): Promise<nu
 }
 
 export async function getUserCompanies(userId: number) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  // Directory tables are on lean master; session user ids are master ids.
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, userId));
   if (!user) return [];
 
-  const rows = await db
+  const rows = await masterDb
     .select({ company: companiesTable, uc: userCompaniesTable })
     .from(userCompaniesTable)
     .innerJoin(companiesTable, eq(userCompaniesTable.companyId, companiesTable.id))
@@ -114,7 +116,7 @@ export async function getUserCompanies(userId: number) {
   }));
 
   if (user.companyId && !companies.some((company) => company.id === user.companyId)) {
-    const [own] = await db.select().from(companiesTable).where(eq(companiesTable.id, user.companyId)).limit(1);
+    const [own] = await masterDb.select().from(companiesTable).where(eq(companiesTable.id, user.companyId)).limit(1);
     if (own) {
       companies.unshift({
         ...own,
@@ -473,7 +475,7 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (!user) {
     res.status(401).json({ error: "User not found" });
     return;
@@ -521,7 +523,7 @@ router.post("/auth/select-company", async (req, res): Promise<void> => {
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  const [user] = await masterDb.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
   if (user) {
     req.session.companyId = companyId;
     req.session.roleId = user.roleId ?? undefined;

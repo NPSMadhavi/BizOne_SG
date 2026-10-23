@@ -1,13 +1,52 @@
 import { Router, type IRouter } from "express";
-import { db, maintenanceTable } from "@workspace/db";
+import { masterDb, masterPool, maintenanceTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
+const DISABLED = {
+  isEnabled: false,
+  scheduledStart: null as string | null,
+  scheduledEnd: null as string | null,
+  message: null as string | null,
+  contactEmail: null as string | null,
+  updatedAt: null as Date | null,
+  updatedByUser: null as number | null,
+};
+
+let maintenanceTableReady: Promise<boolean> | null = null;
+
+async function ensureMaintenanceTable(): Promise<boolean> {
+  if (!maintenanceTableReady) {
+    maintenanceTableReady = (async () => {
+      try {
+        await masterPool.query(`
+          CREATE TABLE IF NOT EXISTS maintenance (
+            id serial PRIMARY KEY,
+            is_enabled boolean NOT NULL DEFAULT false,
+            scheduled_start timestamptz,
+            scheduled_end timestamptz,
+            message text,
+            contact_email text,
+            updated_at timestamptz DEFAULT now(),
+            updated_by_user integer
+          )
+        `);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return maintenanceTableReady;
+}
+
 async function getOrCreateMaintenance() {
-  const rows = await db.select().from(maintenanceTable).limit(1);
+  const ok = await ensureMaintenanceTable();
+  if (!ok) return null;
+  const rows = await masterDb.select().from(maintenanceTable).limit(1);
   if (rows.length > 0) return rows[0];
-  const [created] = await db.insert(maintenanceTable).values({
+  const [created] = await masterDb.insert(maintenanceTable).values({
     isEnabled: false,
     scheduledStart: null,
     scheduledEnd: null,
@@ -17,9 +56,13 @@ async function getOrCreateMaintenance() {
   return created;
 }
 
-router.get("/maintenance", async (req, res): Promise<void> => {
+router.get("/maintenance", async (_req, res): Promise<void> => {
   try {
     const row = await getOrCreateMaintenance();
+    if (!row) {
+      res.json(DISABLED);
+      return;
+    }
     res.json({
       isEnabled: row.isEnabled,
       scheduledStart: row.scheduledStart,
@@ -30,7 +73,8 @@ router.get("/maintenance", async (req, res): Promise<void> => {
       updatedByUser: row.updatedByUser,
     });
   } catch {
-    res.status(500).json({ error: "Failed to fetch maintenance status" });
+    // Never block the app on maintenance status — return disabled.
+    res.json(DISABLED);
   }
 });
 
@@ -42,7 +86,11 @@ router.put("/maintenance", async (req, res): Promise<void> => {
 
   try {
     const existing = await getOrCreateMaintenance();
-    const [updated] = await db.update(maintenanceTable)
+    if (!existing) {
+      res.status(500).json({ error: "Failed to update maintenance" });
+      return;
+    }
+    const [updated] = await masterDb.update(maintenanceTable)
       .set({
         isEnabled: Boolean(isEnabled),
         scheduledStart: scheduledStart || null,

@@ -519,13 +519,6 @@ export default function Dashboard() {
   const showEmptyPeriodBanner =
     metrics.hasSourceActivity && !metrics.hasPeriodActivity;
 
-  /** Requests settled with empty KPI lists — not an empty date period. */
-  const showEmptyCompanyDataBanner =
-    !!selectedCompany &&
-    kpiSourceEnabled &&
-    kpiSourcesSettled &&
-    !metrics.hasSourceActivity;
-
   const summaryCards = [
     {
       title: "Total Income",
@@ -651,15 +644,6 @@ export default function Dashboard() {
         openRequest={fyRolloverRequest}
         onOpenRequestHandled={() => setFyRolloverRequest(null)}
       />
-
-      {showEmptyCompanyDataBanner && selectedCompany && (
-        <div className="rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-4 py-3 text-sm text-[#334155]">
-          <p className="text-[13px] leading-relaxed">
-            No documents found for {selectedCompany.name} (Company ID {selectedCompany.id}). Check
-            the company&apos;s data setup.
-          </p>
-        </div>
-      )}
 
       {showEmptyPeriodBanner && (
         <div className="rounded-xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">

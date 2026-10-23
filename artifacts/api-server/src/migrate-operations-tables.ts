@@ -6,7 +6,7 @@ import { pool } from "@workspace/db";
 import { logger } from "./lib/logger";
 
 /** Fresh installs — CREATE TABLE IF NOT EXISTS with full current columns. */
-const OPERATIONS_TABLE_MIGRATIONS = [
+export const OPERATIONS_TABLE_MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS assets (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL,
@@ -220,7 +220,7 @@ const OPERATIONS_TABLE_MIGRATIONS = [
  * Existing DBs — ADD COLUMN IF NOT EXISTS so older Plesk databases pick up
  * new fields without destructive recreate.
  */
-const OPERATIONS_COLUMN_MIGRATIONS = [
+export const OPERATIONS_COLUMN_MIGRATIONS = [
   // employees
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS annual_salary TEXT`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS pr_status TEXT`,
@@ -300,7 +300,7 @@ const OPERATIONS_COLUMN_MIGRATIONS = [
   `ALTER TABLE service_reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
 ];
 
-const OPERATIONS_INDEX_MIGRATIONS = [
+export const OPERATIONS_INDEX_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS employees_company_id_idx ON employees (company_id)`,
   `CREATE INDEX IF NOT EXISTS employee_payroll_company_id_idx ON employee_payroll (company_id)`,
   `CREATE INDEX IF NOT EXISTS employee_payroll_employee_id_idx ON employee_payroll (employee_id)`,
@@ -313,15 +313,22 @@ const OPERATIONS_INDEX_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS employee_documents_company_id_idx ON employee_documents (company_id)`,
 ];
 
-export async function migrateOperationsTables(): Promise<void> {
+/** Apply HR/operations schema on any pool (shared or per-company tenant). */
+export async function migrateOperationsOnPool(
+  queryable: { query: (sql: string) => Promise<unknown> },
+): Promise<void> {
   for (const statement of OPERATIONS_TABLE_MIGRATIONS) {
-    await pool.query(statement);
+    await queryable.query(statement);
   }
   for (const statement of OPERATIONS_COLUMN_MIGRATIONS) {
-    await pool.query(statement);
+    await queryable.query(statement);
   }
   for (const statement of OPERATIONS_INDEX_MIGRATIONS) {
-    await pool.query(statement);
+    await queryable.query(statement);
   }
+}
+
+export async function migrateOperationsTables(): Promise<void> {
+  await migrateOperationsOnPool(pool);
   logger.info("Operations tables migration complete");
 }

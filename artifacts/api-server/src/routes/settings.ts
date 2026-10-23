@@ -1,24 +1,94 @@
 import { Router } from "express";
-import { db, pool, settingsTable, companiesTable } from "@workspace/db";
+import { db, masterDb, pool, settingsTable, companiesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { isSmtpConfigured } from "../lib/smtp.js";
 import { loginPasswordMatches } from "../lib/login-password.js";
 
 const router = Router();
 
-/** One-shot schema heal — prevents /api/settings 500 when vpi_* cols were never migrated. */
+/** One-shot schema heal — prevents /api/settings 500 when drizzle columns are missing on tenant DBs. */
 let settingsSchemaReady: Promise<void> | null = null;
 
 async function ensureSettingsSchema(): Promise<void> {
   if (!settingsSchemaReady) {
     settingsSchemaReady = (async () => {
       const stmts = [
+        `CREATE TABLE IF NOT EXISTS settings (
+          id serial PRIMARY KEY,
+          company_id integer,
+          gst_rate numeric(5,2) NOT NULL DEFAULT 9
+        )`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_id integer`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gst_rate numeric(5,2) NOT NULL DEFAULT 9`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_host text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_port text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_user text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_pass text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS smtp_from text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS po_prefix text DEFAULT 'PO'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS po_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS po_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_prefix text DEFAULT 'PQ'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pq_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS inv_prefix text DEFAULT 'INV'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS inv_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS inv_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS qt_prefix text DEFAULT 'QT'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS qt_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS qt_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS do_prefix text DEFAULT 'DO'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS do_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS do_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_prefix text DEFAULT 'SO'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS so_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS grn_prefix text DEFAULT 'GRN'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS grn_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS grn_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS cn_prefix text DEFAULT 'CN'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS cn_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS cn_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_prefix text DEFAULT 'DN'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS dn_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pi_prefix text DEFAULT 'PI'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pi_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pi_suffix text DEFAULT ''`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_prefix text DEFAULT 'VPI'`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_counter integer NOT NULL DEFAULT 0`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS vpi_suffix text DEFAULT ''`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_prefix text DEFAULT 'PV'`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_counter integer NOT NULL DEFAULT 0`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS pv_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS si_prefix text DEFAULT 'STK'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS si_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS si_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS igr_prefix text DEFAULT 'IGR'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS igr_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS igr_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gin_prefix text DEFAULT 'GIN'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gin_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS gin_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS st_prefix text DEFAULT 'ST'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS st_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS st_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS sa_prefix text DEFAULT 'SA'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS sa_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS sa_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_prefix text DEFAULT 'FA'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS fa_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bc_prefix text DEFAULT 'BC'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bc_counter integer NOT NULL DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bc_suffix text DEFAULT ''`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS allow_negative_stock boolean NOT NULL DEFAULT false`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS auto_deduct_on_do boolean NOT NULL DEFAULT false`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS low_stock_warning numeric(15,3) DEFAULT 0`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_uom text DEFAULT 'pcs'`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS bank_details text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS terms_and_conditions text`,
+        `ALTER TABLE settings ADD COLUMN IF NOT EXISTS quotation_terms text`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_verifier_id integer`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_approver_id integer`,
         `ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_paid_by_id integer`,
@@ -54,33 +124,43 @@ async function ensureSettings(companyId: number) {
   const existing = await db.select().from(settingsTable).where(eq(settingsTable.companyId, cid)).limit(1);
   if (existing.length > 0) return existing[0];
 
-  const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, cid)).limit(1);
+  const [company] = await masterDb.select().from(companiesTable).where(eq(companiesTable.id, cid)).limit(1);
   const defaultGst = defaultGstForCountry(company?.country);
 
-  const [created] = await db.insert(settingsTable).values({
-    companyId: cid,
-    gstRate: defaultGst,
-    poPrefix: "PO",  poCounter: 0,  poSuffix: "",
-    pqPrefix: "PQ",  pqCounter: 0,  pqSuffix: "",
-    invPrefix: "INV", invCounter: 0, invSuffix: "",
-    qtPrefix: "QT",  qtCounter: 0,  qtSuffix: "",
-    soPrefix: "SO",  soCounter: 0,  soSuffix: "",
-    doPrefix: "DO",  doCounter: 0,  doSuffix: "",
-    grnPrefix: "GRN", grnCounter: 0, grnSuffix: "",
-    cnPrefix: "CN",  cnCounter: 0,  cnSuffix: "",
-    dnPrefix: "DN",  dnCounter: 0,  dnSuffix: "",
-    piPrefix: "PI",  piCounter: 0,  piSuffix: "",
-    vpiPrefix: "VPI", vpiCounter: 0, vpiSuffix: "",
-    pvPrefix: "PV",  pvCounter: 0,  pvSuffix: "",
-    siPrefix: "STK", siCounter: 0,  siSuffix: "",
-    igrPrefix: "IGR", igrCounter: 0, igrSuffix: "",
-    ginPrefix: "GIN", ginCounter: 0, ginSuffix: "",
-    stPrefix: "ST",  stCounter: 0,  stSuffix: "",
-    saPrefix: "SA",  saCounter: 0,  saSuffix: "",
-    faPrefix: "FA",  faCounter: 0,  faSuffix: "",
-    bcPrefix: "BC",  bcCounter: 0,  bcSuffix: "",
-  }).returning();
-  return created;
+  try {
+    const [created] = await db.insert(settingsTable).values({
+      companyId: cid,
+      gstRate: defaultGst,
+      poPrefix: "PO",  poCounter: 0,  poSuffix: "",
+      pqPrefix: "PQ",  pqCounter: 0,  pqSuffix: "",
+      invPrefix: "INV", invCounter: 0, invSuffix: "",
+      qtPrefix: "QT",  qtCounter: 0,  qtSuffix: "",
+      soPrefix: "SO",  soCounter: 0,  soSuffix: "",
+      doPrefix: "DO",  doCounter: 0,  doSuffix: "",
+      grnPrefix: "GRN", grnCounter: 0, grnSuffix: "",
+      cnPrefix: "CN",  cnCounter: 0,  cnSuffix: "",
+      dnPrefix: "DN",  dnCounter: 0,  dnSuffix: "",
+      piPrefix: "PI",  piCounter: 0,  piSuffix: "",
+      vpiPrefix: "VPI", vpiCounter: 0, vpiSuffix: "",
+      pvPrefix: "PV",  pvCounter: 0,  pvSuffix: "",
+      siPrefix: "STK", siCounter: 0,  siSuffix: "",
+      igrPrefix: "IGR", igrCounter: 0, igrSuffix: "",
+      ginPrefix: "GIN", ginCounter: 0, ginSuffix: "",
+      stPrefix: "ST",  stCounter: 0,  stSuffix: "",
+      saPrefix: "SA",  saCounter: 0,  saSuffix: "",
+      faPrefix: "FA",  faCounter: 0,  faSuffix: "",
+      bcPrefix: "BC",  bcCounter: 0,  bcSuffix: "",
+    }).returning();
+    return created;
+  } catch (err) {
+    // Minimal insert if some optional columns are still missing on older tenant schemas.
+    console.error("[settings] full insert failed, retrying minimal:", err instanceof Error ? err.message : err);
+    const [created] = await db.insert(settingsTable).values({
+      companyId: cid,
+      gstRate: defaultGst,
+    }).returning();
+    return created;
+  }
 }
 
 function num(value: unknown, fallback = 0): number {
@@ -186,7 +266,7 @@ router.get("/", async (req, res) => {
     if (!settings) {
       return res.status(500).json({ error: "Failed to create settings for company" });
     }
-    const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+    const [company] = await masterDb.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
     return res.json(formatSettings(settings, company?.country));
   } catch (err) {
     req.log?.error?.({ err }, "GET /api/settings failed");
@@ -313,11 +393,13 @@ router.put("/", async (req, res) => {
 
   try {
     const settings = await ensureSettings(companyId);
-    const [company] = await db.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
+    const [company] = await masterDb.select().from(companiesTable).where(eq(companiesTable.id, companyId)).limit(1);
     const [updated] = await db.update(settingsTable).set(updateData).where(eq(settingsTable.id, settings.id)).returning();
     return res.json(formatSettings(updated, company?.country));
   } catch (err) {
-    return res.status(500).json({ error: "Failed to update settings" });
+    console.error("[settings] PUT failed:", err);
+    const message = err instanceof Error ? err.message : "Failed to update settings";
+    return res.status(500).json({ error: "Failed to update settings", detail: message });
   }
 });
 

@@ -102,6 +102,11 @@ export async function provisionCompanyDatabase(slug: string): Promise<string> {
     ]) {
       await tenant.query(stmt).catch(() => undefined);
     }
+    // schema-postgres.sql may omit HR tables — install them on every new company DB.
+    const { migrateOperationsOnPool } = await import("./migrate-operations-tables.js");
+    await migrateOperationsOnPool(tenant).catch((err) => {
+      console.error("[signup] operations schema install failed:", safePgMessage(err));
+    });
   } catch (err) {
     // The database itself already exists. Schema copy must not remove it.
     console.error("[signup] company database created but schema copy failed:", safePgMessage(err));

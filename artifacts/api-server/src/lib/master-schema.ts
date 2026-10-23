@@ -15,6 +15,7 @@ export const MASTER_TABLES = new Set([
   "permissions",
   "role_permissions",
   "session",
+  "maintenance",
 ]);
 
 export function isMasterTable(name: string): boolean {
@@ -26,12 +27,23 @@ export function isMasterTable(name: string): boolean {
  * business tables (e.g. invoices / stock_items). Startup must skip WMS/ops
  * migrations against master in this mode.
  */
+let leanMasterCache: { value: boolean; checkedAt: number } | null = null;
+const LEAN_MASTER_CACHE_MS = 60_000;
+
 export async function isLeanMasterDirectory(): Promise<boolean> {
+  const now = Date.now();
+  if (leanMasterCache && now - leanMasterCache.checkedAt < LEAN_MASTER_CACHE_MS) {
+    return leanMasterCache.value;
+  }
+
   const shared = await masterPool.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM companies
      WHERE database_name IS NULL OR btrim(database_name) = ''`,
   ).catch(() => ({ rows: [{ n: 1 }] }));
-  if ((shared.rows[0]?.n ?? 1) > 0) return false;
+  if ((shared.rows[0]?.n ?? 1) > 0) {
+    leanMasterCache = { value: false, checkedAt: now };
+    return false;
+  }
 
   const invoices = await masterPool.query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -45,7 +57,9 @@ export async function isLeanMasterDirectory(): Promise<boolean> {
        WHERE table_schema = 'public' AND table_name = 'stock_items'
      ) AS exists`,
   );
-  return !invoices.rows[0]?.exists && !stock.rows[0]?.exists;
+  const value = !invoices.rows[0]?.exists && !stock.rows[0]?.exists;
+  leanMasterCache = { value, checkedAt: now };
+  return value;
 }
 
 async function columnExists(table: string, column: string): Promise<boolean> {
