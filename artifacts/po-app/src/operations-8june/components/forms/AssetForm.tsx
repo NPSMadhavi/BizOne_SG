@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGetSettings, getGetSettingsQueryKey } from "@workspace/api-client-react";
 import { previewRunningNumber } from "@/lib/running-number";
-import { apiRequest } from "@/operations-8june/lib/queryClient";
+import { apiRequest, parseApiResponse } from "@/operations-8june/lib/queryClient";
 import { useVedaFormFill } from "@/hooks/useVedaFormFill";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,30 +198,59 @@ function pickField(data: AssetRecord, camel: string, snake: string): unknown {
 }
 
 function normalizeAssetRecord(data: AssetRecord): AssetRecord {
+  const type =
+    pickField(data, "type", "asset_type") ??
+    pickField(data, "assetType", "asset_type") ??
+    pickField(data, "assetName", "asset_name") ??
+    pickField(data, "name", "name");
   return {
     ...data,
-    type: pickField(data, "type", "asset_type") ?? pickField(data, "assetType", "asset_type"),
+    tag: pickField(data, "tag", "tag"),
+    type,
     category: pickField(data, "category", "category"),
+    serial: pickField(data, "serial", "serial"),
+    model: pickField(data, "model", "model"),
+    manufacturer: pickField(data, "manufacturer", "manufacturer"),
+    status: pickField(data, "status", "status"),
+    condition: pickField(data, "condition", "condition"),
     assignedTo: pickField(data, "assignedTo", "assigned_to"),
     location: pickField(data, "location", "location"),
-    manufacturer: pickField(data, "manufacturer", "manufacturer"),
-    model: pickField(data, "model", "model"),
+    vendor: pickField(data, "vendor", "vendor"),
     invoiceNumber: pickField(data, "invoiceNumber", "invoice_number"),
     purchaseDate: pickField(data, "purchaseDate", "purchase_date"),
     warrantyExpiry: pickField(data, "warrantyExpiry", "warranty_expiry"),
     depreciationStartDate: pickField(data, "depreciationStartDate", "depreciation_start_date"),
     usefulLifeYears: pickField(data, "usefulLifeYears", "useful_life_years"),
     depreciationMethod: pickField(data, "depreciationMethod", "depreciation_method"),
+    description: pickField(data, "description", "description"),
     vendorId: pickField(data, "vendorId", "vendor_id"),
+    cost: pickField(data, "cost", "cost"),
   };
 }
 
-function matchSelectValue(stored: unknown, options: readonly string[]): string {
+function matchSelectValue(
+  stored: unknown,
+  options: readonly string[],
+  renames: Record<string, string> = {},
+): string {
   if (stored == null || stored === "") return "";
   const normalized = String(stored).trim().toLowerCase();
   if (normalized === "other") return "";
+
+  // Prefer renamed label so SelectItem value (option.toLowerCase()) matches.
+  const renamedTo = renames[normalized];
+  if (renamedTo && renamedTo.trim()) {
+    return renamedTo.trim().toLowerCase();
+  }
+
   const match = options.find((option) => option.toLowerCase() === normalized);
-  return match ? match.toLowerCase() : normalized;
+  if (match) return match.toLowerCase();
+
+  for (const to of Object.values(renames)) {
+    if (to.trim().toLowerCase() === normalized) return to.trim().toLowerCase();
+  }
+
+  return normalized;
 }
 
 function withStoredOption(options: readonly string[], stored: unknown): string[] {
@@ -459,17 +488,18 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     queryKey: ["/api/assets", assetId],
     enabled: !!assetId,
     staleTime: 0,
+    placeholderData: initialAsset ?? undefined,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/assets/${assetId}`);
+      const json = await res.json();
+      return parseApiResponse(json) as AssetRecord;
+    },
   });
 
   const resolvedAsset = useMemo(() => {
     const source = (assetData ?? initialAsset) as AssetRecord | null | undefined;
     return source ? normalizeAssetRecord(source) : undefined;
   }, [assetData, initialAsset]);
-
-  const editFormValues = useMemo(() => {
-    if (!assetId || !resolvedAsset) return undefined;
-    return mapAssetToFormValues(resolvedAsset);
-  }, [assetId, resolvedAsset]);
 
   const typeOptions = useMemo(
     () => applyOptionRenames(
@@ -532,6 +562,37 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     [resolvedAsset?.depreciationMethod],
   );
 
+  const editFormValues = useMemo(() => {
+    if (!assetId || !resolvedAsset) return undefined;
+    const base = mapAssetToFormValues(resolvedAsset);
+    return {
+      ...base,
+      type: matchSelectValue(resolvedAsset.type, typeOptions, optionRenames.type),
+      category: matchSelectValue(resolvedAsset.category, categoryOptions, optionRenames.category),
+      manufacturer: matchSelectValue(
+        resolvedAsset.manufacturer,
+        manufacturerOptions,
+        optionRenames.manufacturer,
+      ),
+      location: matchSelectValue(resolvedAsset.location, locationOptions, optionRenames.location),
+      depreciationMethod:
+        matchSelectValue(resolvedAsset.depreciationMethod, depreciationMethodOptions) ||
+        "straight line",
+    };
+  }, [
+    assetId,
+    resolvedAsset,
+    typeOptions,
+    categoryOptions,
+    manufacturerOptions,
+    locationOptions,
+    depreciationMethodOptions,
+    optionRenames.type,
+    optionRenames.category,
+    optionRenames.manufacturer,
+    optionRenames.location,
+  ]);
+
   const employeeSelectOptions = useMemo(() => {
     const seen = new Set<string>();
     return employees.filter((employee) => {
@@ -560,28 +621,40 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
 
   useEffect(() => {
     if (draftRestoredRef.current) return;
+    // Edit mode: wait until asset values are ready before restoring draft / reset.
     if (assetId && !editFormValues) return;
 
     const draft = loadAssetFormDraft();
-    if (draft) {
-      if (!assetId) {
-        form.reset({
-          ...emptyFormValues,
-          ...deserializeAssetFormValues(draft.values),
-        } as AssetFormData);
+    if (assetId && editFormValues) {
+      if (draft && draft.assetId === assetId) {
+        const draftValues = deserializeAssetFormValues(draft.values);
+        // Draft is only for returning from "create employee" — keep loaded asset
+        // fields and only overlay non-empty draft values (esp. assignedTo).
+        const merged: AssetFormData = { ...editFormValues };
+        for (const [key, value] of Object.entries(draftValues) as [keyof AssetFormData, unknown][]) {
+          if (value === "" || value == null) continue;
+          (merged as Record<string, unknown>)[key as string] = value;
+        }
+        form.reset(merged);
         if (draft.attachments?.length) setAttachments(draft.attachments);
-        draftRestoredRef.current = true;
-      } else if (draft.assetId === assetId) {
-        form.reset({
-          ...form.getValues(),
-          ...deserializeAssetFormValues(draft.values),
-        } as AssetFormData);
-        if (draft.attachments?.length) setAttachments(draft.attachments);
-        draftRestoredRef.current = true;
+      } else {
+        form.reset(editFormValues);
       }
-    } else if (!assetId) {
       draftRestoredRef.current = true;
-    } else if (editFormValues) {
+      return;
+    }
+
+    if (!assetId && draft && draft.assetId == null) {
+      form.reset({
+        ...emptyFormValues,
+        ...deserializeAssetFormValues(draft.values),
+      } as AssetFormData);
+      if (draft.attachments?.length) setAttachments(draft.attachments);
+      draftRestoredRef.current = true;
+      return;
+    }
+
+    if (!assetId) {
       draftRestoredRef.current = true;
     }
   }, [assetId, editFormValues, form]);
@@ -968,7 +1041,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             >
                               <FormControl>
                                 <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select asset name" />
+                                  <SelectValue placeholder="Select asset name">
+                                    {field.value ? capitalizeStart(field.value) : undefined}
+                                  </SelectValue>
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="max-h-[14rem]">
@@ -1014,7 +1089,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             >
                               <FormControl>
                                 <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select asset category" />
+                                  <SelectValue placeholder="Select asset category">
+                                    {field.value ? capitalizeStart(field.value) : undefined}
+                                  </SelectValue>
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="max-h-[14rem]">
@@ -1086,7 +1163,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                             >
                               <FormControl>
                                 <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select manufacturer" />
+                                  <SelectValue placeholder="Select manufacturer">
+                                    {field.value ? capitalizeStart(field.value) : undefined}
+                                  </SelectValue>
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent className="max-h-[14rem]">
@@ -1247,7 +1326,9 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                           >
                             <FormControl>
                               <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select location" />
+                                <SelectValue placeholder="Select location">
+                                  {field.value ? capitalizeStart(field.value) : undefined}
+                                </SelectValue>
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="max-h-[14rem]">

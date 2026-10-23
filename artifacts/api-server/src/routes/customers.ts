@@ -55,8 +55,15 @@ router.post("/customers", async (req, res) => {
     }).returning();
     return res.status(201).json(customer);
   } catch (e: any) {
-    console.error("[customers] create failed:", e?.message || e);
-    return res.status(500).json({ error: e?.message || "Failed to create customer" });
+    console.error("[customers] create failed:", e?.message || e, e?.cause || e?.detail || "");
+    const detail = e?.cause?.detail || e?.detail || e?.cause?.message || "";
+    const msg = String(e?.message || "Failed to create customer");
+    if (msg.includes("customers_company_id_fkey") || detail.includes("company_id")) {
+      return res.status(500).json({
+        error: "Company database is out of sync. Log out, sign in again, then retry creating the customer.",
+      });
+    }
+    return res.status(500).json({ error: msg });
   }
 });
 

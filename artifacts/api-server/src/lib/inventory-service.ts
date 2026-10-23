@@ -11,7 +11,7 @@ import {
   stockAdjustmentsTable,
   stockSerialsTable,
 } from "@workspace/db";
-import { and, eq, ilike, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -248,12 +248,16 @@ export async function getDefaultWarehouseId(companyId: number): Promise<number |
  */
 export async function ensureDefaultWarehouse(companyId: number): Promise<number> {
   const clearOtherDefaults = async (keepId: number) => {
-    await db.update(warehousesTable)
-      .set({ isDefault: false })
-      .where(and(
-        eq(warehousesTable.companyId, companyId),
-        ne(warehousesTable.id, keepId),
-      ));
+    try {
+      await db.update(warehousesTable)
+        .set({ isDefault: false })
+        .where(and(
+          eq(warehousesTable.companyId, companyId),
+          ne(warehousesTable.id, keepId),
+        ));
+    } catch {
+      // Non-fatal — default flag cleanup should not block warehouse use.
+    }
   };
 
   // 1) Already have a default warehouse — preserve all user fields (including code).
@@ -304,7 +308,22 @@ export async function ensureDefaultWarehouse(companyId: number): Promise<number>
     return byName.id;
   }
 
-  // 4) Brand-new company: create default MAIN.
+  // 4) Any existing warehouse — promote the first one as default.
+  const [anyWh] = await db
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(eq(warehousesTable.companyId, companyId))
+    .orderBy(asc(warehousesTable.id))
+    .limit(1);
+  if (anyWh) {
+    await db.update(warehousesTable)
+      .set({ isDefault: true })
+      .where(eq(warehousesTable.id, anyWh.id));
+    await clearOtherDefaults(anyWh.id);
+    return anyWh.id;
+  }
+
+  // 5) Brand-new company: create default MAIN.
   const [wh] = await db
     .insert(warehousesTable)
     .values({
@@ -316,6 +335,9 @@ export async function ensureDefaultWarehouse(companyId: number): Promise<number>
     })
     .returning({ id: warehousesTable.id });
 
+  if (!wh?.id) {
+    throw new Error("Failed to create default warehouse");
+  }
   await clearOtherDefaults(wh.id);
   return wh.id;
 }

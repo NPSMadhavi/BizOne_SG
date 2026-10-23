@@ -5,6 +5,7 @@ import { CreditCard, Trash2 } from "lucide-react";
 import { FormPageShell } from "@/operations-8june/components/layout/FormPageShell";
 import { ModalCancelButton, ModalSaveButton } from "@/operations-8june/components/forms/FormModalShell";
 import AssetForm from "@/operations-8june/components/forms/AssetForm";
+import type { Asset } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -126,6 +127,7 @@ export default function AssetEditPage() {
         <AssetForm
           key={assetId}
           assetId={assetId}
+          initialAsset={(asset as Asset | undefined) ?? null}
           formId="asset-form"
           hideFooter
           onPendingChange={setPending}

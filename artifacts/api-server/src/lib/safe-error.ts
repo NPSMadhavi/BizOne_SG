@@ -5,17 +5,27 @@ const SENSITIVE =
   /password|secret|token|authorization|api[_-]?key|database_url|smtp_pass|connectionstring|bearer/i;
 
 export function sanitizeErrorMessage(err: unknown, fallback = "An unexpected error occurred"): string {
-  if (process.env.NODE_ENV !== "production") {
-    if (err instanceof Error && err.message && !SENSITIVE.test(err.message)) {
-      return err.message;
+  if (!(err instanceof Error) || !err.message) return fallback;
+  if (SENSITIVE.test(err.message)) return fallback;
+  // Hide raw SQL / connection strings
+  if (/password=|postgresql:\/\//i.test(err.message)) return fallback;
+  // Prefer a short, useful message over a generic 500 for constraint / validation failures
+  const msg = err.message.trim();
+  if (!msg) return fallback;
+  if (process.env.NODE_ENV !== "production") return msg;
+  // Production: still return non-sensitive app messages (not full query dumps)
+  if (/^Failed query:/i.test(msg)) {
+    const cause = (err as Error & { cause?: { message?: string; detail?: string; code?: string } }).cause;
+    if (cause?.detail) return cause.detail;
+    if (cause?.message) return cause.message;
+    if (/unique|duplicate/i.test(msg)) return "A record with this value already exists.";
+    if (/foreign key|violates foreign key/i.test(msg)) {
+      return "Related company or master data is missing. Log out, sign in again, then retry.";
     }
+    if (/null value|not-null|not null/i.test(msg)) return "A required field is missing.";
+    return fallback;
   }
-  if (err instanceof Error && err.message) {
-    if (SENSITIVE.test(err.message)) return fallback;
-    // Hide raw SQL / connection strings in production
-    if (/password=|postgresql:\/\//i.test(err.message)) return fallback;
-  }
-  return fallback;
+  return msg.length > 300 ? `${msg.slice(0, 297)}…` : msg;
 }
 
 export function extractPostgresError(err: unknown): { pgCode?: string; constraint?: string } {

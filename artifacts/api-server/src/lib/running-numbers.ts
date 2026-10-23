@@ -110,11 +110,33 @@ async function numberExists(type: DocType, number: string, companyId?: number): 
   return false;
 }
 
+async function ensureSettingsRow(companyId: number): Promise<void> {
+  const existing = await db.execute(
+    sql`SELECT id FROM settings WHERE company_id = ${companyId} LIMIT 1`,
+  );
+  if (executeRows(existing).length > 0) return;
+  await db.execute(
+    sql`INSERT INTO settings (company_id) VALUES (${companyId}) ON CONFLICT DO NOTHING`,
+  ).catch(async () => {
+    // Older schemas may lack a unique on company_id — insert only when empty.
+    const again = await db.execute(
+      sql`SELECT id FROM settings WHERE company_id = ${companyId} LIMIT 1`,
+    );
+    if (executeRows(again).length === 0) {
+      await db.execute(sql`INSERT INTO settings (company_id) VALUES (${companyId})`);
+    }
+  });
+}
+
 export async function nextDocNumber(type: DocType, companyId?: number): Promise<string> {
   const cols = COL_MAP[type];
   const counterCol = cols.counter;
   const prefixCol = cols.prefix;
   const suffixCol = cols.suffix;
+
+  if (companyId) {
+    await ensureSettingsRow(companyId);
+  }
 
   const result = companyId
     ? await db.execute(

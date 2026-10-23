@@ -34,64 +34,115 @@ function requireSession(req: Request, res: Response): { companyId: number; userI
 
 // ─── Warehouses ───────────────────────────────────────────────────────────────
 
+function warehouseErrorMessage(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message : String(err || fallback);
+  if (/unique|duplicate|warehouses_company_code/i.test(message)) {
+    return "Warehouse code already exists";
+  }
+  if (/foreign key|violates foreign key/i.test(message)) {
+    return "Company database is out of sync. Log out, sign in again, then retry.";
+  }
+  if (/relation .*warehouses.* does not exist/i.test(message)) {
+    return "Warehouses table is missing in this company database. Contact support or re-open the company.";
+  }
+  return message || fallback;
+}
+
 router.get("/warehouses", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
-  // Always ensure Main Warehouse exists so pickers can show it
-  await ensureDefaultWarehouse(ctx.companyId);
-  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
-  let rows = await db.select().from(warehousesTable)
-    .where(eq(warehousesTable.companyId, ctx.companyId))
-    .orderBy(warehousesTable.code);
-  if (search) {
-    const q = search.toLowerCase();
-    rows = rows.filter(r =>
-      r.code.toLowerCase().includes(q) ||
-      r.name.toLowerCase().includes(q) ||
-      (r.city || "").toLowerCase().includes(q)
-    );
+  try {
+    // Best-effort: never fail the list if default-warehouse seed has issues.
+    try {
+      await ensureDefaultWarehouse(ctx.companyId);
+    } catch (err) {
+      console.error("[warehouses] ensureDefaultWarehouse failed:", err instanceof Error ? err.message : err);
+    }
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    let rows = await db.select().from(warehousesTable)
+      .where(eq(warehousesTable.companyId, ctx.companyId))
+      .orderBy(warehousesTable.code);
+    if (search) {
+      const q = search.toLowerCase();
+      rows = rows.filter(r =>
+        r.code.toLowerCase().includes(q) ||
+        r.name.toLowerCase().includes(q) ||
+        (r.city || "").toLowerCase().includes(q)
+      );
+    }
+    res.json(rows);
+  } catch (err) {
+    console.error("[warehouses] list failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ error: warehouseErrorMessage(err, "Failed to fetch warehouses") });
   }
-  res.json(rows);
 });
 
 router.post("/warehouses", async (req, res) => {
   const ctx = requireSession(req, res); if (!ctx) return;
-  const { code, name, description, address, city, state, pinCode, country, contactPerson, contactNumber, email, remarks, isDefault, isActive } = req.body;
+  const {
+    code, name, description, address, city, state, pinCode, postalCode, country,
+    contactPerson, contactNumber, email, remarks, isDefault, isActive,
+  } = req.body;
   if (!code?.trim() || !name?.trim()) { res.status(400).json({ error: "Code and name are required" }); return; }
 
-  const existing = await db.select({ id: warehousesTable.id }).from(warehousesTable)
-    .where(and(eq(warehousesTable.companyId, ctx.companyId), eq(warehousesTable.code, code.trim())));
-  if (existing.length) { res.status(409).json({ error: "Warehouse code already exists" }); return; }
+  const resolvedPin =
+    (typeof pinCode === "string" && pinCode.trim()) ||
+    (typeof postalCode === "string" && postalCode.trim()) ||
+    null;
 
   try {
-    const [wh] = await db.transaction(async (tx) => {
-      if (isDefault) {
-        await tx.update(warehousesTable).set({ isDefault: false })
-          .where(eq(warehousesTable.companyId, ctx.companyId));
+    const existing = await db.select({ id: warehousesTable.id }).from(warehousesTable)
+      .where(and(eq(warehousesTable.companyId, ctx.companyId), eq(warehousesTable.code, code.trim())));
+    if (existing.length) { res.status(409).json({ error: "Warehouse code already exists" }); return; }
+
+    const baseValues = {
+      companyId: ctx.companyId,
+      code: code.trim(),
+      name: name.trim(),
+      description: description || null,
+      address: address || null,
+      city: city || null,
+      state: state || null,
+      pinCode: resolvedPin,
+      country: country || null,
+      contactPerson: contactPerson || null,
+      contactNumber: contactNumber || null,
+      email: email || null,
+      remarks: remarks || null,
+      isDefault: Boolean(isDefault),
+      isActive: isActive !== false,
+    };
+
+    const insertWarehouse = async (withUserIds: boolean) =>
+      db.transaction(async (tx) => {
+        if (isDefault) {
+          await tx.update(warehousesTable).set({ isDefault: false })
+            .where(eq(warehousesTable.companyId, ctx.companyId));
+        }
+        return tx.insert(warehousesTable).values({
+          ...baseValues,
+          // Master login user ids often do not exist in the tenant users table.
+          // Prefer null over failing the create on created_by / updated_by FKs.
+          ...(withUserIds ? { createdBy: ctx.userId, updatedBy: ctx.userId } : {}),
+        }).returning();
+      });
+
+    let wh;
+    try {
+      [wh] = await insertWarehouse(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (/foreign key|violates foreign key|created_by|updated_by/i.test(msg)) {
+        [wh] = await insertWarehouse(false);
+      } else {
+        throw err;
       }
-      return tx.insert(warehousesTable).values({
-        companyId: ctx.companyId,
-        code: code.trim(),
-        name: name.trim(),
-        description: description || null,
-        address: address || null,
-        city: city || null,
-        state: state || null,
-        pinCode: pinCode || null,
-        country: country || null,
-        contactPerson: contactPerson || null,
-        contactNumber: contactNumber || null,
-        email: email || null,
-        remarks: remarks || null,
-        isDefault: Boolean(isDefault),
-        isActive: isActive !== false,
-        createdBy: ctx.userId,
-        updatedBy: ctx.userId,
-      }).returning();
-    });
+    }
+
     logAudit({ req, action: "create", entityType: "warehouse", entityId: wh.id, entityLabel: wh.name });
     res.status(201).json(wh);
-  } catch {
-    res.status(500).json({ error: "Failed to create warehouse" });
+  } catch (err) {
+    console.error("[warehouses] create failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ error: warehouseErrorMessage(err, "Failed to create warehouse") });
   }
 });
 
@@ -100,7 +151,14 @@ router.put("/warehouses/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const { code, name, description, address, city, state, pinCode, country, contactPerson, contactNumber, email, remarks, isDefault, isActive } = req.body;
+  const {
+    code, name, description, address, city, state, pinCode, postalCode, country,
+    contactPerson, contactNumber, email, remarks, isDefault, isActive,
+  } = req.body;
+  const resolvedPin =
+    pinCode !== undefined ? pinCode
+      : postalCode !== undefined ? postalCode
+        : undefined;
   try {
     const [updated] = await db.transaction(async (tx) => {
       if (isDefault) {
@@ -114,7 +172,7 @@ router.put("/warehouses/:id", async (req, res) => {
         address: address ?? undefined,
         city: city ?? undefined,
         state: state ?? undefined,
-        pinCode: pinCode ?? undefined,
+        pinCode: resolvedPin !== undefined ? (resolvedPin || null) : undefined,
         country: country ?? undefined,
         contactPerson: contactPerson ?? undefined,
         contactNumber: contactNumber ?? undefined,
@@ -122,15 +180,15 @@ router.put("/warehouses/:id", async (req, res) => {
         remarks: remarks ?? undefined,
         isDefault: isDefault !== undefined ? Boolean(isDefault) : undefined,
         isActive: isActive !== undefined ? Boolean(isActive) : undefined,
-        updatedBy: ctx.userId,
         updatedAt: new Date(),
       }).where(and(eq(warehousesTable.id, id), eq(warehousesTable.companyId, ctx.companyId))).returning();
     });
     if (!updated) { res.status(404).json({ error: "Warehouse not found" }); return; }
     logAudit({ req, action: "update", entityType: "warehouse", entityId: id, entityLabel: updated.name });
     res.json(updated);
-  } catch {
-    res.status(500).json({ error: "Failed to update warehouse" });
+  } catch (err) {
+    console.error("[warehouses] update failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ error: warehouseErrorMessage(err, "Failed to update warehouse") });
   }
 });
 

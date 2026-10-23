@@ -14,6 +14,7 @@ import { logger } from "./lib/logger";
 import { sanitizeErrorMessage, logServerError } from "./lib/safe-error.js";
 import { companyDbContext } from "@workspace/db";
 import { openCompanyPool } from "./lib/company-database";
+import { getUploadsRoot } from "./lib/ensure-uploads.js";
 
 // cookie-signature may be CJS; ensure .sign exists
 const signCookie = (sid: string, secret: string) =>
@@ -266,6 +267,13 @@ app.use(async (req, res, next) => {
  */
 
 app.use("/api", router);
+
+/** Serve uploaded employee/voucher files (disk paths stored as uploads/...). */
+try {
+  app.use("/uploads", express.static(getUploadsRoot(), { fallthrough: true, redirect: false }));
+} catch {
+  /* uploads root may be unavailable on some hosts */
+}
 
 /**
  * ---------------------------------------------------------

@@ -95,8 +95,24 @@ export function FilePreviewDialog({
           return;
         }
         const response = await fetch(source, { credentials: "include" });
-        if (!response.ok) throw new Error("Could not open file");
+        if (!response.ok) {
+          let message = "Could not open file";
+          try {
+            const body = (await response.json()) as { error?: string; code?: string };
+            if (body?.error) message = body.error;
+          } catch {
+            if (response.status === 401) message = "Session expired. Please sign in again.";
+            else if (response.status === 404) {
+              message = "File missing on server. Please upload the document again.";
+            }
+          }
+          throw new Error(message);
+        }
         const blob = await response.blob();
+        // API may return JSON error with a 200 in some proxies — guard content-type
+        if ((blob.type || "").includes("json")) {
+          throw new Error("File missing on server. Please upload the document again.");
+        }
         objectUrl = URL.createObjectURL(blob);
         if (cancelled) {
           URL.revokeObjectURL(objectUrl);
@@ -110,9 +126,13 @@ export function FilePreviewDialog({
               ? "pdf"
               : "other",
         );
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          toast({ title: "Could not open file", variant: "destructive" });
+          toast({
+            title: err instanceof Error ? err.message : "Could not open file",
+            description: "Remove the old file and upload it again, then Save.",
+            variant: "destructive",
+          });
           onCloseRef.current();
         }
       }
@@ -197,15 +217,43 @@ export function EmployeeScanFile({
   onRemove?: () => void;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [missingOnServer, setMissingOnServer] = useState(false);
   if (!value) return null;
   const source = fileSource(value, href);
+
+  // Probe server-backed scans once so the green "uploaded" label is not a lie after DB restore.
+  useEffect(() => {
+    if (!href || value.startsWith("data:")) {
+      setMissingOnServer(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(href, { method: "GET", credentials: "include" });
+        if (!cancelled) setMissingOnServer(!response.ok);
+      } catch {
+        if (!cancelled) setMissingOnServer(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [href, value]);
+
   return (
     <div>
       <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 truncate text-xs text-green-600">
-          {fileCaption(value, pickedName)}
+        <p
+          className={`min-w-0 flex-1 truncate text-xs ${
+            missingOnServer ? "text-amber-700" : "text-green-600"
+          }`}
+        >
+          {missingOnServer
+            ? `${fileCaption(value, pickedName)} (missing — re-upload)`
+            : fileCaption(value, pickedName)}
         </p>
-        {source ? (
+        {source && !missingOnServer ? (
           <button
             type="button"
             title="View"
@@ -228,8 +276,13 @@ export function EmployeeScanFile({
           </button>
         ) : null}
       </div>
-      {source ? <StoredImage source={source} /> : null}
-      {source ? (
+      {source && !missingOnServer ? <StoredImage source={source} /> : null}
+      {missingOnServer ? (
+        <p className="mt-1 text-[11px] text-amber-700">
+          This file was not found on the server (often after a database restore). Delete it and upload again, then Save.
+        </p>
+      ) : null}
+      {source && !missingOnServer ? (
         <FilePreviewDialog
           source={previewOpen ? source : null}
           title={fileCaption(value, pickedName)}

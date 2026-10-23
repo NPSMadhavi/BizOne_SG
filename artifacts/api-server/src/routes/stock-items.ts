@@ -125,6 +125,7 @@ router.get("/stock-items", async (req, res): Promise<void> => {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return; }
 
+  try {
   const search = typeof req.query.search === "string" ? req.query.search : "";
   const typeFilter = typeof req.query.type === "string" ? req.query.type : "";
 
@@ -175,38 +176,53 @@ router.get("/stock-items", async (req, res): Promise<void> => {
   }
 
   // Avail. Qty must mirror warehouse on-hand (never a stale stock_items.stock_qty).
-  const totals = await db
-    .select({
-      stockItemId: warehouseStockTable.stockItemId,
-      total: sql<string>`coalesce(sum(${warehouseStockTable.quantity}::numeric), 0)`,
-    })
-    .from(warehouseStockTable)
-    .where(eq(warehouseStockTable.companyId, companyId))
-    .groupBy(warehouseStockTable.stockItemId);
-  const totalByItem = new Map(totals.map((row) => [row.stockItemId, String(row.total)]));
+  let totalByItem = new Map<number, string>();
+  try {
+    const totals = await db
+      .select({
+        stockItemId: warehouseStockTable.stockItemId,
+        total: sql<string>`coalesce(sum(${warehouseStockTable.quantity}::numeric), 0)`,
+      })
+      .from(warehouseStockTable)
+      .where(eq(warehouseStockTable.companyId, companyId))
+      .groupBy(warehouseStockTable.stockItemId);
+    totalByItem = new Map(totals.map((row) => [row.stockItemId, String(row.total)]));
+  } catch (err) {
+    console.error("[stock-items] warehouse totals failed:", err instanceof Error ? err.message : err);
+  }
 
   // Rebuild VI price lots (different unit price → Item Master row with qty)
-  const vis = await db
-    .select({ items: vendorInvoicesTable.items })
-    .from(vendorInvoicesTable)
-    .where(eq(vendorInvoicesTable.companyId, companyId));
   const viItemIds = new Set<number>();
-  for (const vi of vis) {
-    for (const line of (vi.items as any[]) || []) {
-      if (line?.type === "section") continue;
-      const sid = Number(line.stockItemId);
-      if (Number.isFinite(sid) && sid > 0) viItemIds.add(sid);
+  try {
+    const vis = await db
+      .select({ items: vendorInvoicesTable.items })
+      .from(vendorInvoicesTable)
+      .where(eq(vendorInvoicesTable.companyId, companyId));
+    for (const vi of vis) {
+      for (const line of (vi.items as any[]) || []) {
+        if (line?.type === "section") continue;
+        const sid = Number(line.stockItemId);
+        if (Number.isFinite(sid) && sid > 0) viItemIds.add(sid);
+      }
     }
+  } catch {
+    // vendor invoices optional for item list
   }
-  let priceHistory = await listCompanyPurchasePrices(companyId);
-  for (const h of priceHistory) {
-    if (h.sourceType === "vendor_invoice") viItemIds.add(h.stockItemId);
-  }
-  if (viItemIds.size > 0) {
-    for (const stockItemId of viItemIds) {
-      await recomputeVendorInvoicePriceLots({ companyId, stockItemId });
-    }
+
+  let priceHistory: Awaited<ReturnType<typeof listCompanyPurchasePrices>> = [];
+  try {
     priceHistory = await listCompanyPurchasePrices(companyId);
+    for (const h of priceHistory) {
+      if (h.sourceType === "vendor_invoice") viItemIds.add(h.stockItemId);
+    }
+    if (viItemIds.size > 0) {
+      for (const stockItemId of viItemIds) {
+        await recomputeVendorInvoicePriceLots({ companyId, stockItemId }).catch(() => undefined);
+      }
+      priceHistory = await listCompanyPurchasePrices(companyId);
+    }
+  } catch (err) {
+    console.error("[stock-items] purchase prices failed:", err instanceof Error ? err.message : err);
   }
 
   const historyByItem = new Map<number, typeof priceHistory>();
@@ -227,6 +243,12 @@ router.get("/stock-items", async (req, res): Promise<void> => {
     const legacy = item.stockQty != null && item.stockQty !== "" ? String(item.stockQty) : "0";
     return withBatches({ ...item, stockQty: legacy, purchasePriceHistory: history });
   }));
+  } catch (err) {
+    console.error("[stock-items] list failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Failed to fetch stock items",
+    });
+  }
 });
 
 router.post("/stock-items", async (req, res): Promise<void> => {
@@ -244,160 +266,196 @@ router.post("/stock-items", async (req, res): Promise<void> => {
   } = req.body;
   if (!name) { res.status(400).json({ error: "name is required" }); return; }
 
-  // Always allocate from Settings → Running Numbers (Stock Item Code)
-  let resolvedCode: string;
+  let resolvedCode = "";
+  let item: typeof stockItemsTable.$inferSelect | undefined;
+
   try {
-    resolvedCode = await nextDocNumber("si", companyId);
-  } catch (err) {
-    const fallback = typeof code === "string" ? code.trim() : "";
-    if (!fallback) {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : "Failed to generate item code",
-      });
-      return;
-    }
-    resolvedCode = fallback;
-  }
-
-  // Always allocate from Settings → Barcode Number
-  let resolvedBarcode: string | null = null;
-  try {
-    resolvedBarcode = await nextDocNumber("bc", companyId);
-  } catch (err) {
-    const fallback = typeof barcode === "string" ? barcode.trim() : "";
-    if (fallback) {
-      resolvedBarcode = fallback;
-    } else {
-      res.status(500).json({
-        error: err instanceof Error ? err.message : "Failed to generate barcode",
-      });
-      return;
-    }
-  }
-
-  if (resolvedBarcode) {
-    const [dup] = await db.select({ id: stockItemsTable.id })
-      .from(stockItemsTable)
-      .where(and(
-        eq(stockItemsTable.companyId, companyId),
-        eq(stockItemsTable.barcode, resolvedBarcode),
-      ))
-      .limit(1);
-    if (dup) {
-      res.status(409).json({ error: `Barcode "${resolvedBarcode}" is already used by another item.` });
-      return;
-    }
-  }
-
-  const isService = type === "service" || type === "service_item";
-  const openingQty = !isService ? Math.max(0, Number(stockQty) || 0) : 0;
-  const alt = normalizeAlternateFields({ alternateUom, alternateQty, mainQty });
-
-  let item;
-  try {
-    [item] = await db.insert(stockItemsTable).values({
-      companyId,
-      code: resolvedCode,
-      name,
-      description: description || null,
-      uom: uom || "Pcs",
-      type: typeof type === "string" && type.trim()
-        ? (type === "product" ? "stock_item" : type === "service" ? "service_item" : type.trim())
-        : "stock_item",
-      category: typeof category === "string" && category.trim() ? category.trim() : null,
-      brand: typeof brand === "string" && brand.trim() ? brand.trim() : null,
-      stockGroup: typeof stockGroup === "string" && stockGroup.trim() ? stockGroup.trim() : null,
-      barcode: resolvedBarcode,
-      salesPerson: typeof salesPerson === "string" && salesPerson.trim() ? salesPerson.trim() : null,
-      itemImage: typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null,
-      purchasePrice: purchasePrice != null ? String(purchasePrice) : "0",
-      unitPrice: unitPrice != null ? String(unitPrice) : "0",
-      mrpPrice: mrpPrice != null ? String(mrpPrice) : "0",
-      stockQty: "0",
-      minStockLevel: minStockLevel != null ? String(minStockLevel) : "0",
-      reorderLevel: reorderLevel != null ? String(reorderLevel) : "0",
-      maxStockLevel: maxStockLevel != null ? String(maxStockLevel) : "0",
-      batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
-      expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
-      manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
-      batchesJson: (() => {
-        const normalized = normalizeBatchesPayload(batches);
-        if (normalized) return JSON.stringify(normalized);
-        const primary = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : "";
-        if (!primary) return null;
-        return JSON.stringify([{
-          batchNo: primary,
-          expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
-          manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
-          createdAt: new Date().toISOString(),
-        }]);
-      })(),
-      alternateUom: alt.alternateUom,
-      alternateQty: alt.alternateQty,
-      mainQty: alt.mainQty,
-      trackInventory: trackInventory === undefined ? true : Boolean(trackInventory),
-      showInPos: showInPos === undefined ? true : Boolean(showInPos),
-      isWeightBased: Boolean(isWeightBased),
-      pricingMethod: typeof pricingMethod === "string" ? pricingMethod : "fixed",
-      isActive: isActive === undefined ? true : Boolean(isActive),
-    }).returning();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create stock item";
-    const isDup = /unique|duplicate/i.test(message);
-    res.status(isDup ? 409 : 500).json({
-      error: isDup
-        ? `Item code "${resolvedCode}" already exists. Use a different code.`
-        : message,
-    });
-    return;
-  }
-
-  // Opening stock is booked as a warehouse movement so warehouse_stock, the item
-  // total and the stock reports all start out in agreement.
-  if (openingQty > 0) {
-    const targetWarehouseId = Number(warehouseId) || await resolveWarehouseId(companyId);
-    if (targetWarehouseId) {
-      try {
-        await adjustItemStockInWarehouse({
-          companyId,
-          stockItemId: item.id,
-          warehouseId: targetWarehouseId,
-          newTotalQty: openingQty,
-          userId: req.session.userId,
-          reference: "Opening stock",
+    // Always allocate from Settings → Running Numbers (Stock Item Code)
+    try {
+      resolvedCode = await nextDocNumber("si", companyId);
+    } catch (err) {
+      const fallback = typeof code === "string" ? code.trim() : "";
+      if (!fallback) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : "Failed to generate item code",
         });
-      } catch (err) {
-        await db.delete(stockItemsTable).where(eq(stockItemsTable.id, item.id));
-        res.status(400).json({ error: err instanceof Error ? err.message : "Failed to set opening stock" });
+        return;
+      }
+      resolvedCode = fallback;
+    }
+
+    // Always allocate from Settings → Barcode Number
+    let resolvedBarcode: string | null = null;
+    try {
+      resolvedBarcode = await nextDocNumber("bc", companyId);
+    } catch (err) {
+      const fallback = typeof barcode === "string" ? barcode.trim() : "";
+      if (fallback) {
+        resolvedBarcode = fallback;
+      } else {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : "Failed to generate barcode",
+        });
         return;
       }
     }
-  }
 
-  const openingPurchase = Number(purchasePrice);
-  if (Number.isFinite(openingPurchase) && openingPurchase > 0) {
-    const today = new Date();
-    const ymd = typeof purchasePriceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(purchasePriceDate.trim())
-      ? purchasePriceDate.trim()
-      : `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    try {
-      await recordStockPurchasePrice({
-        companyId,
-        stockItemId: item.id,
-        purchasePrice: openingPurchase,
-        effectiveDate: ymd,
-        sourceType: "item_master",
-        notes: "Opening purchase cost",
-        userId: req.session.userId,
-        updateMasterPrice: false,
-      });
-    } catch {
-      // non-fatal — item already created
+    if (resolvedBarcode) {
+      const [dup] = await db.select({ id: stockItemsTable.id })
+        .from(stockItemsTable)
+        .where(and(
+          eq(stockItemsTable.companyId, companyId),
+          eq(stockItemsTable.barcode, resolvedBarcode),
+        ))
+        .limit(1);
+      if (dup) {
+        res.status(409).json({ error: `Barcode "${resolvedBarcode}" is already used by another item.` });
+        return;
+      }
     }
-  }
 
-  const [created] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, item.id));
-  res.status(201).json(withBatches(created ?? item));
+    const isService = type === "service" || type === "service_item";
+    const openingQty = !isService ? Math.max(0, Number(stockQty) || 0) : 0;
+    const alt = normalizeAlternateFields({ alternateUom, alternateQty, mainQty });
+
+    try {
+      [item] = await db.insert(stockItemsTable).values({
+        companyId,
+        code: resolvedCode,
+        name,
+        description: description || null,
+        uom: uom || "Pcs",
+        type: typeof type === "string" && type.trim()
+          ? (type === "product" ? "stock_item" : type === "service" ? "service_item" : type.trim())
+          : "stock_item",
+        category: typeof category === "string" && category.trim() ? category.trim() : null,
+        brand: typeof brand === "string" && brand.trim() ? brand.trim() : null,
+        stockGroup: typeof stockGroup === "string" && stockGroup.trim() ? stockGroup.trim() : null,
+        barcode: resolvedBarcode,
+        salesPerson: typeof salesPerson === "string" && salesPerson.trim() ? salesPerson.trim() : null,
+        itemImage: typeof itemImage === "string" && itemImage.trim() ? itemImage.trim() : null,
+        purchasePrice: purchasePrice != null ? String(purchasePrice) : "0",
+        unitPrice: unitPrice != null ? String(unitPrice) : "0",
+        mrpPrice: mrpPrice != null ? String(mrpPrice) : "0",
+        stockQty: "0",
+        minStockLevel: minStockLevel != null ? String(minStockLevel) : "0",
+        reorderLevel: reorderLevel != null ? String(reorderLevel) : "0",
+        maxStockLevel: maxStockLevel != null ? String(maxStockLevel) : "0",
+        batchNo: typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : null,
+        expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
+        manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
+        batchesJson: (() => {
+          const normalized = normalizeBatchesPayload(batches);
+          if (normalized) return JSON.stringify(normalized);
+          const primary = typeof batchNo === "string" && batchNo.trim() ? batchNo.trim() : "";
+          if (!primary) return null;
+          return JSON.stringify([{
+            batchNo: primary,
+            expiryDate: typeof expiryDate === "string" && expiryDate.trim() ? expiryDate.trim() : null,
+            manufacturingDate: typeof manufacturingDate === "string" && manufacturingDate.trim() ? manufacturingDate.trim() : null,
+            createdAt: new Date().toISOString(),
+          }]);
+        })(),
+        alternateUom: alt.alternateUom,
+        alternateQty: alt.alternateQty,
+        mainQty: alt.mainQty,
+        trackInventory: trackInventory === undefined ? true : Boolean(trackInventory),
+        showInPos: showInPos === undefined ? true : Boolean(showInPos),
+        isWeightBased: Boolean(isWeightBased),
+        pricingMethod: typeof pricingMethod === "string" ? pricingMethod : "fixed",
+        isActive: isActive === undefined ? true : Boolean(isActive),
+      }).returning();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create stock item";
+      const isDup = /unique|duplicate/i.test(message);
+      const isFk = /foreign key|violates foreign key/i.test(message);
+      res.status(isDup ? 409 : 500).json({
+        error: isDup
+          ? `Item code "${resolvedCode}" already exists. Use a different code.`
+          : isFk
+            ? "Company database is out of sync. Log out, sign in again, then retry creating the item."
+            : message,
+      });
+      return;
+    }
+
+    if (!item) {
+      res.status(500).json({ error: "Failed to create stock item" });
+      return;
+    }
+
+    // Opening stock is booked as a warehouse movement so warehouse_stock, the item
+    // total and the stock reports all start out in agreement.
+    if (openingQty > 0) {
+      let targetWarehouseId = Number(warehouseId) || 0;
+      if (!targetWarehouseId) {
+        try {
+          targetWarehouseId = (await resolveWarehouseId(companyId)) || 0;
+        } catch (err) {
+          await db.delete(stockItemsTable).where(eq(stockItemsTable.id, item.id));
+          res.status(400).json({
+            error: err instanceof Error
+              ? `Failed to resolve warehouse: ${err.message}`
+              : "Failed to resolve warehouse for opening stock",
+          });
+          return;
+        }
+      }
+      if (targetWarehouseId) {
+        try {
+          await adjustItemStockInWarehouse({
+            companyId,
+            stockItemId: item.id,
+            warehouseId: targetWarehouseId,
+            newTotalQty: openingQty,
+            userId: req.session.userId,
+            reference: "Opening stock",
+          });
+        } catch (err) {
+          await db.delete(stockItemsTable).where(eq(stockItemsTable.id, item.id));
+          res.status(400).json({ error: err instanceof Error ? err.message : "Failed to set opening stock" });
+          return;
+        }
+      } else {
+        // No warehouse yet — keep opening qty on the item row so create still succeeds.
+        await db.update(stockItemsTable)
+          .set({ stockQty: String(openingQty), updatedAt: new Date() })
+          .where(eq(stockItemsTable.id, item.id));
+      }
+    }
+
+    const openingPurchase = Number(purchasePrice);
+    if (Number.isFinite(openingPurchase) && openingPurchase > 0) {
+      const today = new Date();
+      const ymd = typeof purchasePriceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(purchasePriceDate.trim())
+        ? purchasePriceDate.trim()
+        : `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      try {
+        await recordStockPurchasePrice({
+          companyId,
+          stockItemId: item.id,
+          purchasePrice: openingPurchase,
+          effectiveDate: ymd,
+          sourceType: "item_master",
+          notes: "Opening purchase cost",
+          userId: req.session.userId,
+          updateMasterPrice: false,
+        });
+      } catch {
+        // non-fatal — item already created
+      }
+    }
+
+    const [created] = await db.select().from(stockItemsTable).where(eq(stockItemsTable.id, item.id));
+    res.status(201).json(withBatches(created ?? item));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create stock item";
+    console.error("[stock-items] create failed:", message, err);
+    if (item?.id) {
+      await db.delete(stockItemsTable).where(eq(stockItemsTable.id, item.id)).catch(() => undefined);
+    }
+    res.status(500).json({ error: message });
+  }
 });
 
 router.get("/stock-items/:id/purchase-prices", async (req, res): Promise<void> => {

@@ -16,7 +16,6 @@ import {
   previewPayslipCompany,
   processIndividualPayrollCompany,
   repairPayrollMonthSnapshots,
-  savePayrollMonthSnapshot,
   syncEmployeeSalaryFromPayrollConfig,
   syncPayrollConfigFromEmployee,
   viewPayslipCompany,
@@ -168,6 +167,13 @@ async function persistEmployeeScanUploads(
       continue;
     }
     if (value.startsWith("data:")) {
+      // Keep small scans inline in the DB so company DB backups still open after restore.
+      // Larger files still go to disk under uploads/employee-documents.
+      const approxBytes = Math.floor(((value.split(",")[1] || value).length * 3) / 4);
+      if (approxBytes > 0 && approxBytes <= 1_500_000) {
+        body[key] = value;
+        continue;
+      }
       const prefix = key === "passportScan" ? "passport" : key === "visaScan" ? "visa" : "nric";
       body[key] = await saveEmployeeDocumentUpload(value, prefix);
     }
@@ -177,13 +183,19 @@ async function persistEmployeeScanUploads(
 function sendStoredEmployeeFile(res: Response, stored: unknown): void {
   const value = typeof stored === "string" ? stored : "";
   if (!value) {
-    res.status(404).json({ error: "File not found" });
+    res.status(404).json({
+      error: "File missing on server. Please upload the document again.",
+      code: "FILE_MISSING",
+    });
     return;
   }
   if (value.startsWith("data:")) {
     const match = value.match(/^data:([^;,]+)(;base64)?,([\s\S]*)$/);
     if (!match) {
-      res.status(404).json({ error: "File not found" });
+      res.status(404).json({
+        error: "File missing on server. Please upload the document again.",
+        code: "FILE_MISSING",
+      });
       return;
     }
     const mime = match[1] || "application/octet-stream";
@@ -195,7 +207,11 @@ function sendStoredEmployeeFile(res: Response, stored: unknown): void {
   }
   const absolute = resolveStoredEmployeeDocument(value);
   if (!absolute) {
-    res.status(404).json({ error: "File not found" });
+    console.warn("[operations] employee file not on disk:", value);
+    res.status(404).json({
+      error: "File missing on server. Please upload the document again.",
+      code: "FILE_MISSING",
+    });
     return;
   }
   const filename = path.basename(absolute).replace(/"/g, "");
@@ -1268,34 +1284,9 @@ async function savePayrollConfig(companyId: number, body: Record<string, unknown
       console.error("Failed to sync employee salary from payroll config:", syncErr);
     }
   }
-  await rememberPayrollMonth(companyId, row, body);
+  // Do NOT create/process payroll_records here — that happens only via Process Payroll.
   const empMap = await fetchEmployeeMap(companyId);
   return mapPayrollConfigRow(row, empMap.get(row.employee_id as number));
-}
-
-async function rememberPayrollMonth(
-  companyId: number,
-  row: Record<string, unknown>,
-  body: Record<string, unknown>,
-) {
-  const month = Number(body.payrollMonth);
-  const year = Number(body.payrollYear) || new Date().getFullYear();
-  if (!Number.isInteger(month) || month < 1 || month > 12) return;
-  try {
-    await savePayrollMonthSnapshot(
-      pool,
-      companyId,
-      Number(row.id),
-      Number(row.employee_id),
-      month,
-      year,
-      Number(row.base_salary) || Number(body.baseSalary) || 0,
-      row.allowances ?? body.allowances,
-      row.deductions ?? body.deductions,
-    );
-  } catch (err) {
-    console.error("Failed to save payroll month snapshot:", err);
-  }
 }
 
 router.post("/employee-payroll", async (req, res): Promise<void> => {
@@ -1339,7 +1330,6 @@ router.put("/employee-payroll/:id", async (req, res): Promise<void> => {
         console.error("Failed to sync employee salary from payroll config:", syncErr);
       }
     }
-    await rememberPayrollMonth(companyId, result.rows[0], body);
     const empMap = await fetchEmployeeMap(companyId);
     res.json(mapPayrollConfigRow(result.rows[0], empMap.get(result.rows[0].employee_id)));
   } catch (err: any) {
@@ -1366,7 +1356,6 @@ router.put("/payroll/configs/:id", async (req, res): Promise<void> => {
         console.error("Failed to sync employee salary from payroll config:", syncErr);
       }
     }
-    await rememberPayrollMonth(companyId, result.rows[0], body);
     const empMap = await fetchEmployeeMap(companyId);
     res.json(mapPayrollConfigRow(result.rows[0], empMap.get(result.rows[0].employee_id)));
   } catch (err: any) {

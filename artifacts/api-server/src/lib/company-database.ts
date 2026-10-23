@@ -12,6 +12,10 @@ const pools = new Map<string, pg.Pool>();
 const companyDbNameCache = new Map<number, string>();
 /** database_name → already ran heavy schema heal this process */
 const schemaHealed = new Set<string>();
+/** database_name → dropped FKs that reference companies(id) (tenant DBs only) */
+const companyFksDropped = new Set<string>();
+/** `${databaseName}:${companyId}` → company stub row confirmed */
+const companyRowEnsured = new Set<string>();
 
 function quoteIdent(name: string): string {
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw new Error("Invalid database identifier");
@@ -362,6 +366,82 @@ async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boole
   }
 }
 
+/**
+ * Tenant DBs keep a stub companies row for legacy FKs, but the source of truth is master.
+ * Missing rows (or stale schemaHealed) cause inserts like customers to fail with 23503.
+ */
+async function ensureTenantCompanyRow(
+  pool: pg.Pool,
+  masterUrl: string,
+  databaseName: string,
+  companyId: number,
+): Promise<void> {
+  const ensuredKey = `${databaseName}:${companyId}`;
+  if (companyRowEnsured.has(ensuredKey)) return;
+
+  const present = await pool.query("SELECT 1 FROM companies WHERE id = $1", [companyId]).catch(() => ({ rowCount: 0 }));
+  if ((present.rowCount ?? 0) > 0) {
+    companyRowEnsured.add(ensuredKey);
+    return;
+  }
+
+  const master = new pg.Client({ connectionString: masterUrl });
+  await master.connect();
+  const tenant = await pool.connect();
+  try {
+    await tenant.query("SET session_replication_role = replica").catch(() => undefined);
+    await copyRows(master, tenant, "companies", "id = $1", [companyId]);
+    const again = await tenant.query("SELECT 1 FROM companies WHERE id = $1", [companyId]);
+    if ((again.rowCount ?? 0) === 0) {
+      // Master missing this company (stale session) — insert a minimal stub so FK inserts work.
+      await tenant.query(
+        `INSERT INTO companies (id, name, country, slug, database_name)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO NOTHING`,
+        [companyId, `Company ${companyId}`, "Singapore", `company-${companyId}`, databaseName],
+      );
+    }
+    companyRowEnsured.add(ensuredKey);
+  } finally {
+    await tenant.query("SET session_replication_role = origin").catch(() => undefined);
+    tenant.release();
+    await master.end();
+  }
+}
+
+/**
+ * Per-company databases should not enforce FKs to companies(id) / users(id) from master.
+ * Companies + login users live on master; tenant user ids often differ after restore/copy,
+ * which breaks inserts (warehouses.created_by, stock items, etc.).
+ */
+async function dropTenantCompanyForeignKeys(
+  pool: pg.Pool,
+  databaseName: string,
+  force = false,
+): Promise<void> {
+  if (!force && companyFksDropped.has(databaseName)) return;
+  try {
+    const { rows } = await pool.query<{ conname: string; table_name: string }>(
+      `SELECT c.conname, c.conrelid::regclass::text AS table_name
+       FROM pg_constraint c
+       JOIN pg_class rel ON rel.oid = c.confrelid
+       JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+       WHERE c.contype = 'f'
+         AND nsp.nspname = 'public'
+         AND rel.relname IN ('companies', 'users')`,
+    );
+    for (const row of rows) {
+      if (!/^[a-z0-9_."]+$/i.test(row.table_name) || !/^[a-z_][a-z0-9_]*$/i.test(row.conname)) continue;
+      await pool
+        .query(`ALTER TABLE ${row.table_name} DROP CONSTRAINT IF EXISTS ${quoteIdent(row.conname)}`)
+        .catch(() => undefined);
+    }
+  } catch {
+    /* ignore — older tenants may lack catalog access */
+  }
+  companyFksDropped.add(databaseName);
+}
+
 async function prepareCompanyPool(databaseUrl: string, databaseName: string, companyId: number): Promise<pg.Pool> {
   const tenantUrl = databaseUrlFor(databaseUrl, databaseName);
 
@@ -374,6 +454,10 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
     });
     pools.set(databaseName, pool);
   }
+
+  // Always keep company stub + drop legacy FKs (cheap); then maybe skip heavy heal.
+  await dropTenantCompanyForeignKeys(pool, databaseName);
+  await ensureTenantCompanyRow(pool, databaseUrl, databaseName, companyId);
 
   // Fast path: tenant already has company row + core tables — skip copy/DDL heal.
   if (schemaHealed.has(databaseName) || (await tenantLooksReady(pool, companyId))) {
@@ -605,6 +689,9 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
       /* ignore */
     }
   }
+  // Migrations / CREATE TABLE may re-add companies(id) FKs — drop again after heal.
+  await dropTenantCompanyForeignKeys(pool, databaseName, true);
+  await ensureTenantCompanyRow(pool, databaseUrl, databaseName, companyId);
   schemaHealed.add(databaseName);
   return pool;
 }
