@@ -10,6 +10,7 @@ import {
 } from "../migrate-drizzle-columns.js";
 import { migrateOperationsOnPool } from "../migrate-operations-tables.js";
 import { migrateWmsOnPool } from "../migrate-wms-tables.js";
+import { ensureFullTenantSchema } from "./apply-full-tenant-schema.js";
 
 const prepared = new Map<string, Promise<pg.Pool | null>>();
 const pools = new Map<string, pg.Pool>();
@@ -25,12 +26,12 @@ const companyRowEnsured = new Set<string>();
  * database_name → inventory/customers/stock_items heal applied this process.
  * Bump INVENTORY_HEAL_VERSION when adding new columns so older process caches re-run.
  */
-const INVENTORY_HEAL_VERSION = 2;
+const INVENTORY_HEAL_VERSION = 3;
 const inventorySchemaHealed = new Set<string>();
 /**
  * Bump when adding document tables (PQ/SO/VI/GRN/…) so fast-path tenants re-create missing relations.
  */
-const DOCUMENT_HEAL_VERSION = 2; // +accounts / journals / vendor_payments
+const DOCUMENT_HEAL_VERSION = 3; // +full 91-table schema-postgres.sql heal for Plesk
 const documentSchemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {
@@ -231,10 +232,12 @@ async function copyRows(
 function schemaSqlPath(): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
+    path.resolve(here, "../../db-scripts/schema-postgres.sql"),
+    path.resolve(here, "../db-scripts/schema-postgres.sql"),
+    path.resolve(process.cwd(), "db-scripts/schema-postgres.sql"),
     path.resolve(here, "../../../../db-scripts/schema-postgres.sql"),
     path.resolve(here, "../../../db-scripts/schema-postgres.sql"),
     path.resolve(process.cwd(), "../../db-scripts/schema-postgres.sql"),
-    path.resolve(process.cwd(), "db-scripts/schema-postgres.sql"),
   ];
   return candidates.find((file) => fs.existsSync(file)) ?? null;
 }
@@ -442,6 +445,33 @@ async function healTenantInventorySchema(pool: pg.Pool, databaseName: string): P
     `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS expiry_date text`,
     `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS manufacturing_date text`,
     `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS batches_json text`,
+    // stock_serials — required for GRN receive with serial numbers
+    `CREATE TABLE IF NOT EXISTS stock_serials (
+      id SERIAL PRIMARY KEY,
+      company_id INTEGER NOT NULL,
+      stock_item_id INTEGER NOT NULL,
+      serial_number TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'available',
+      grn_id INTEGER,
+      grn_number TEXT,
+      batch_no TEXT,
+      expiry_date TEXT,
+      manufacturing_date TEXT,
+      invoice_id INTEGER,
+      invoice_number TEXT,
+      reserved_by_user TEXT,
+      do_id INTEGER,
+      do_number TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS batch_no text`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS expiry_date text`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS manufacturing_date text`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS invoice_id integer`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS invoice_number text`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS reserved_by_user text`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS do_id integer`,
+    `ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS do_number text`,
     `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_uom text`,
     `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS alternate_qty numeric(15,4) DEFAULT 0`,
     `ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS main_qty numeric(15,4) DEFAULT 0`,
@@ -483,7 +513,11 @@ async function healTenantDocumentSchema(pool: pg.Pool, databaseName: string): Pr
   const healKey = `${databaseName}:docs:v${DOCUMENT_HEAL_VERSION}`;
   if (documentSchemaHealed.has(healKey)) return;
   try {
+    // Full 91-table DDL first (Plesk tenants often stuck at ~61 from old schema dump).
+    await ensureFullTenantSchema(pool, { label: databaseName });
     await applyDocumentTablesOnPool((statement) => pool.query(statement));
+    await migrateOperationsOnPool(pool);
+    await migrateWmsOnPool(pool);
   } catch (err) {
     console.error(
       "[company-database] document schema heal failed:",
@@ -495,6 +529,7 @@ async function healTenantDocumentSchema(pool: pg.Pool, databaseName: string): Pr
 
 /** Force document-table heal (used by routes when Postgres reports missing relation). */
 export async function ensureCompanyDocumentTables(pool: pg.Pool): Promise<void> {
+  await ensureFullTenantSchema(pool, { label: "ensureCompanyDocumentTables" });
   await applyDocumentTablesOnPool((statement) => pool.query(statement));
 }
 

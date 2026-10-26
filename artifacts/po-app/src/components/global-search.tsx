@@ -48,6 +48,7 @@ const PAGES: PageEntry[] = [
   { label: "Employees", href: "/employees", keywords: ["staff", "hr"], category: "Payroll", path: ["Employees"], module: "employees" },
   { label: "Payroll", href: "/payroll", keywords: ["salary"], category: "Payroll", path: ["Payroll"], module: "payroll" },
   { label: "IR8A / AIS", href: "/payroll/ir8a", keywords: ["ir8a", "ais", "tax", "cpf"], category: "Payroll", path: ["IR8A / AIS"], module: "payroll" },
+  { label: "AIS Submission", href: "/payroll/ir8a/ais", keywords: ["ais", "iras", "auto inclusion", "submission"], category: "Payroll", path: ["IR8A / AIS", "AIS Submission"], module: "payroll" },
   { label: "Employer's (IR8A)", href: "/payroll/ir8a/employers", keywords: ["ir8a", "employer", "uen", "declaration"], category: "Payroll", path: ["Employer's (IR8A)"], module: "payroll" },
   { label: "Fixed Assets", href: "/assets", keywords: ["assets", "fixed asset"], category: "Fixed Assets", path: ["Fixed Assets"], module: "assets" },
   { label: "Licenses", href: "/licenses", keywords: ["licence"], category: "Licenses", path: ["Licenses"], module: "licenses" },

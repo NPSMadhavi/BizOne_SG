@@ -16,9 +16,18 @@ type InputProps = React.ComponentProps<"input"> & {
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, autoComplete, name, id, readOnly, onFocus, onMouseDown, ...props }, ref) => {
+  ({ className, type, autoComplete, name, id, readOnly, onFocus, onMouseDown, onWheel, ...props }, ref) => {
     const innerRef = React.useRef<HTMLInputElement>(null)
     React.useImperativeHandle(ref, () => innerRef.current as HTMLInputElement)
+
+    // Number inputs change value on mouse-wheel by default (e.g. 2344 → 2344.01).
+    // Blur on wheel so page scroll works without mutating the amount.
+    const handleWheel = (event: React.WheelEvent<HTMLInputElement>) => {
+      if (type === "number") {
+        event.currentTarget.blur()
+      }
+      onWheel?.(event)
+    }
 
     const allowAutofill =
       props["data-allow-autofill"] === true || props["data-allow-autofill"] === "true"
@@ -116,6 +125,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           unlock()
           onMouseDown?.(event)
         }}
+        onWheel={handleWheel}
         onFocus={(event) => {
           unlock()
           if (!allowAutofill) {

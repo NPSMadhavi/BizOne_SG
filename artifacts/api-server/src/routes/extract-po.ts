@@ -2,6 +2,7 @@ import { Router } from "express";
 import { createRequire } from "node:module";
 import multer from "multer";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { isVedaGatewayConfigured, vedaChat } from "../lib/veda-gateway.js";
 
 const require = createRequire(import.meta.url);
 const { PDFParse } = require("pdf-parse") as {
@@ -56,7 +57,8 @@ Rules:
 - qty must be a positive number (default 1 if unclear)
 - unitPrice is a number, 0 if not shown
 - Do not include shipping/freight as a line item unless explicitly priced
-- Never return the image or file itself — only structured field data`;
+- Never return the image or file itself — only structured field data
+- Return ONLY valid JSON (no markdown fences, no explanation)`;
 
 const IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -86,6 +88,119 @@ function resolveApiKey() {
   );
 }
 
+function parseJsonLoose(raw: string): any {
+  const cleaned = String(raw || "")
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("AI returned malformed JSON");
+  }
+}
+
+function mapExtracted(extracted: any) {
+  if (!Array.isArray(extracted?.items)) {
+    extracted = { ...extracted, items: [] };
+  }
+  return {
+    customerName: String(extracted.customerName || ""),
+    customerAddress: String(extracted.customerAddress || ""),
+    customerContact: String(extracted.customerContact || ""),
+    customerContactEmail: String(extracted.customerContactEmail || ""),
+    currency: String(extracted.currency || ""),
+    paymentTerms: String(extracted.paymentTerms || ""),
+    poRefNo: String(extracted.poRefNo || ""),
+    notes: String(extracted.notes || ""),
+    items: extracted.items.map((it: any) => ({
+      partNumber: String(it?.partNumber || ""),
+      description: String(it?.description || ""),
+      qty: Number(it?.qty) || 1,
+      uom: String(it?.uom || ""),
+      unitPrice: Number(it?.unitPrice) || 0,
+    })),
+  };
+}
+
+function friendlyAiError(err: any): { status: number; error: string } | null {
+  const msg = String(err?.message || err || "");
+  const status = Number(err?.status || err?.statusCode || 0);
+  if (
+    status === 429 ||
+    /429|no credits remaining|insufficient_quota|quota|rate limit/i.test(msg)
+  ) {
+    return {
+      status: 503,
+      error: isVedaGatewayConfigured()
+        ? "OpenAI credits are exhausted. PDF text extraction will use the Veda gateway — upload a text PDF, or use Excel (.xlsx). For scanned image/JPG imports, add OpenAI credits or convert the scan to a text PDF."
+        : "AI credits are exhausted. Add credits at https://platform.openai.com/settings/organization/billing, or import line items from Excel (.xlsx) instead.",
+    };
+  }
+  if (/incorrect api key|invalid api key|401|unauthorized/i.test(msg)) {
+    return {
+      status: 503,
+      error:
+        "OpenAI rejected the API key. Update AI_INTEGRATIONS_OPENAI_API_KEY in the API server .env with a valid key, then restart the API server. Or use Excel (.xlsx) import.",
+    };
+  }
+  return null;
+}
+
+async function extractWithVeda(documentText: string): Promise<any> {
+  const content = await vedaChat(
+    `${EXTRACT_SYSTEM}\n\n---\n\nExtract data from this document:\n\n${documentText.slice(0, 28000)}`,
+    { timeoutMs: 120_000 },
+  );
+  return parseJsonLoose(content);
+}
+
+async function extractPdfWithOpenAi(documentText: string) {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_completion_tokens: 8192,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: EXTRACT_SYSTEM },
+      {
+        role: "user",
+        content: `Extract data from this document:\n\n${documentText.slice(0, 28000)}`,
+      },
+    ],
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("AI extraction returned no response");
+  return parseJsonLoose(content);
+}
+
+async function extractImageWithOpenAi(mime: string, buffer: Buffer) {
+  const b64 = buffer.toString("base64");
+  const dataUrl = `data:${mime.startsWith("image/") ? mime : "image/jpeg"};base64,${b64}`;
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_completion_tokens: 8192,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: EXTRACT_SYSTEM },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Extract purchase order / invoice data from this image. Return JSON fields only — do not describe or return the image.",
+          },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("AI extraction returned no response");
+  return parseJsonLoose(content);
+}
+
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -107,10 +222,13 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
   const apiKey = resolveApiKey();
-  if (isPlaceholderKey(apiKey)) {
+  const vedaReady = isVedaGatewayConfigured();
+  const openaiReady = !isPlaceholderKey(apiKey);
+
+  if (!vedaReady && !openaiReady) {
     return res.status(503).json({
       error:
-        "OpenAI API key is not configured. Set AI_INTEGRATIONS_OPENAI_API_KEY in artifacts/api-server/src/.env to a valid key from https://platform.openai.com/account/api-keys, then restart the API server.",
+        "AI is not configured. Set VEDA_GATEWAY_URL (preferred) or AI_INTEGRATIONS_OPENAI_API_KEY in the API server .env, then restart. Excel (.xlsx) import works without AI.",
     });
   }
 
@@ -121,29 +239,25 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
       IMAGE_TYPES.has(mime) || /\.(jpe?g|png|webp|gif)$/i.test(name);
     const isPdf = mime === "application/pdf" || name.endsWith(".pdf");
 
-    let response;
+    let extracted: any;
 
     if (isImage) {
-      const b64 = req.file.buffer.toString("base64");
-      const dataUrl = `data:${mime.startsWith("image/") ? mime : "image/jpeg"};base64,${b64}`;
-      response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        max_completion_tokens: 8192,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: EXTRACT_SYSTEM },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract purchase order / invoice data from this image. Return JSON fields only — do not describe or return the image.",
-              },
-              { type: "image_url", image_url: { url: dataUrl } },
-            ],
-          },
-        ],
-      });
+      if (!openaiReady) {
+        return res.status(503).json({
+          error:
+            "Image import needs OpenAI vision. Configure AI_INTEGRATIONS_OPENAI_API_KEY, or upload a text PDF / Excel (.xlsx) instead.",
+        });
+      }
+      try {
+        extracted = await extractImageWithOpenAi(
+          mime.startsWith("image/") ? mime : "image/jpeg",
+          req.file.buffer,
+        );
+      } catch (imgErr: any) {
+        const friendly = friendlyAiError(imgErr);
+        if (friendly) return res.status(friendly.status).json({ error: friendly.error });
+        throw imgErr;
+      }
     } else if (isPdf) {
       let text = "";
       try {
@@ -165,63 +279,44 @@ router.post("/invoices/extract-po", upload.single("file"), async (req, res) => {
         });
       }
 
-      response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        max_completion_tokens: 8192,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: EXTRACT_SYSTEM },
-          {
-            role: "user",
-            content: `Extract data from this document:\n\n${text.slice(0, 28000)}`,
-          },
-        ],
-      });
+      // Prefer local Veda gateway so deploy does not depend on OpenAI billing.
+      if (vedaReady) {
+        try {
+          extracted = await extractWithVeda(text);
+        } catch (vedaErr: any) {
+          req.log?.warn({ err: vedaErr }, "Veda extract-po failed; trying OpenAI fallback");
+          if (!openaiReady) {
+            return res.status(503).json({
+              error: vedaErr?.message || "Veda gateway extraction failed. Try Excel (.xlsx) import.",
+            });
+          }
+          try {
+            extracted = await extractPdfWithOpenAi(text);
+          } catch (oaErr: any) {
+            const friendly = friendlyAiError(oaErr);
+            if (friendly) return res.status(friendly.status).json({ error: friendly.error });
+            throw oaErr;
+          }
+        }
+      } else {
+        try {
+          extracted = await extractPdfWithOpenAi(text);
+        } catch (oaErr: any) {
+          const friendly = friendlyAiError(oaErr);
+          if (friendly) return res.status(friendly.status).json({ error: friendly.error });
+          throw oaErr;
+        }
+      }
     } else {
       return res.status(400).json({ error: "Unsupported file type. Upload a PDF or image (JPG, PNG, WEBP)." });
     }
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) return res.status(500).json({ error: "AI extraction returned no response" });
-
-    let extracted: any;
-    try {
-      extracted = JSON.parse(content);
-    } catch {
-      return res.status(500).json({ error: "AI returned malformed JSON" });
-    }
-
-    if (!Array.isArray(extracted?.items)) {
-      extracted = { ...extracted, items: [] };
-    }
-
-    return res.json({
-      customerName: String(extracted.customerName || ""),
-      customerAddress: String(extracted.customerAddress || ""),
-      customerContact: String(extracted.customerContact || ""),
-      customerContactEmail: String(extracted.customerContactEmail || ""),
-      currency: String(extracted.currency || ""),
-      paymentTerms: String(extracted.paymentTerms || ""),
-      poRefNo: String(extracted.poRefNo || ""),
-      notes: String(extracted.notes || ""),
-      items: extracted.items.map((it: any) => ({
-        partNumber: String(it?.partNumber || ""),
-        description: String(it?.description || ""),
-        qty: Number(it?.qty) || 1,
-        uom: String(it?.uom || ""),
-        unitPrice: Number(it?.unitPrice) || 0,
-      })),
-    });
+    return res.json(mapExtracted(extracted));
   } catch (err: any) {
     req.log?.error({ err }, "extract-po failed");
-    const msg = String(err?.message || "Extraction failed");
-    if (/incorrect api key|invalid api key|401/i.test(msg)) {
-      return res.status(503).json({
-        error:
-          "OpenAI rejected the API key. Update AI_INTEGRATIONS_OPENAI_API_KEY in artifacts/api-server/src/.env with a valid key, then restart the API server.",
-      });
-    }
-    return res.status(500).json({ error: msg });
+    const friendly = friendlyAiError(err);
+    if (friendly) return res.status(friendly.status).json({ error: friendly.error });
+    return res.status(500).json({ error: String(err?.message || "Extraction failed") });
   }
 });
 

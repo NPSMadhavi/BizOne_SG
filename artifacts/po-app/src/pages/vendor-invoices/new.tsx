@@ -329,11 +329,14 @@ export default function VendorInvoiceNew() {
       }
       const created = await res.json();
       const hasJE = !!expenseAccountId && expenseAccountId !== "none";
+      const warnings = Array.isArray(created.warnings) ? created.warnings.filter(Boolean) : [];
       toast({
         title: "Vendor PI Recorded",
-        description: hasJE
-          ? `${created.piNumber} saved — journal entry posted automatically.`
-          : `${created.piNumber} has been saved.`,
+        description: warnings.length
+          ? `${created.piNumber} saved. Note: ${warnings[0]}`
+          : hasJE
+            ? `${created.piNumber} saved — journal entry posted automatically.`
+            : `${created.piNumber} has been saved.`,
       });
       qc.setQueryData(["vendor-invoices"], (old: any) =>
         Array.isArray(old) ? [created, ...old.filter((d: any) => d.id !== created.id)] : [created],

@@ -433,7 +433,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   req.session.userId = user.id;
   req.session.username = user.username;
-  req.session.isAdmin = user.role === "admin";
+  req.session.isAdmin = user.role === "admin" || user.role === "administrator";
   req.session.userRole = user.role;
   req.session.companyId = user.companyId || undefined;
   req.session.roleId = user.roleId || undefined;

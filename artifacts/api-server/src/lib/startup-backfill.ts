@@ -12,6 +12,7 @@ import { migrateWmsTables } from "../migrate-wms-tables.js";
 import { migrateOperationsTables } from "../migrate-operations-tables.js";
 import { migrateAuthFields } from "../migrate-auth-fields.js";
 import { migrateDrizzleColumns } from "../migrate-drizzle-columns.js";
+import { ensureFullTenantSchema } from "./apply-full-tenant-schema.js";
 
 function isSoftMigrationStep(name: string): boolean {
   const n = name.toLowerCase();
@@ -119,6 +120,14 @@ export async function runStartupMigrations(): Promise<void> {
   }
 
   if (!leanMaster) {
+    // Bring shared/Plesk DB from incomplete dumps (~61 tables) up to full app schema (~91).
+    try {
+      await ensureFullTenantSchema(pool, { label: "shared-startup" });
+    } catch (err) {
+      logger.error({ err }, "Full tenant schema heal failed");
+      annotateMigrationError(err, "ensureFullTenantSchema");
+    }
+
     try {
       await migrateWmsTables();
     } catch (err) {
@@ -133,6 +142,32 @@ export async function runStartupMigrations(): Promise<void> {
     } catch (err) {
       logger.error({ err }, "Operations tables migration failed");
       annotateMigrationError(err, "migrateOperationsTables");
+    }
+  } else {
+    // Lean master: heal every company DB that has database_name set.
+    try {
+      const { rows } = await pool.query<{ id: number; database_name: string }>(
+        `SELECT id, database_name FROM companies
+         WHERE database_name IS NOT NULL AND btrim(database_name) <> ''
+         ORDER BY id`,
+      );
+      const { openCompanyPool } = await import("./company-database.js");
+      for (const row of rows) {
+        try {
+          await openCompanyPool(row.id);
+          logger.info(
+            { companyId: row.id, database: row.database_name },
+            "[startup-migrations] company tenant schema heal opened",
+          );
+        } catch (err) {
+          logger.warn(
+            { err, companyId: row.id, database: row.database_name },
+            "[startup-migrations] company tenant schema heal failed (non-fatal)",
+          );
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "[startup-migrations] lean-master tenant heal scan failed (non-fatal)");
     }
   }
 

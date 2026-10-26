@@ -218,12 +218,12 @@ export function EmployeeScanFile({
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [missingOnServer, setMissingOnServer] = useState(false);
-  if (!value) return null;
-  const source = fileSource(value, href);
+  const source = value ? fileSource(value, href) : null;
 
   // Probe server-backed scans once so the green "uploaded" label is not a lie after DB restore.
+  // Hooks must run unconditionally (before any early return).
   useEffect(() => {
-    if (!href || value.startsWith("data:")) {
+    if (!value || !href || value.startsWith("data:")) {
       setMissingOnServer(false);
       return;
     }
@@ -240,6 +240,8 @@ export function EmployeeScanFile({
       cancelled = true;
     };
   }, [href, value]);
+
+  if (!value) return null;
 
   return (
     <div>

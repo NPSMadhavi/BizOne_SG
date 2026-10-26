@@ -1105,7 +1105,7 @@ export default function PayrollConfigForm({ onSuccess, onCancel, editData }: Pay
                     <PopoverTrigger asChild>
                       <button
                         type="button"
-                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:border-[#2563EB] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB] focus-visible:ring-offset-0 data-[state=open]:border-[#2563EB] data-[state=open]:ring-1 data-[state=open]:ring-[#2563EB]"
                       >
                         <span className={selectedPayrollMonth == null ? "text-muted-foreground" : "text-[#111827]"}>
                           {PAYROLL_MONTH_OPTIONS.find((month) => month.value === selectedPayrollMonth)?.label ?? "Select month"}

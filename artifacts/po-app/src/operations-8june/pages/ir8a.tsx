@@ -19,10 +19,16 @@ import {
 } from "@/components/ui/select";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
-import { useToast } from "@/hooks/use-toast";
-import { emptyEarningsSplit, splitEarnings, type EarningsSplit } from "@/operations-8june/lib/payroll-earnings";
-import { recordPayrollMonthYear } from "@/operations-8june/lib/payroll-batch-utils";
 import { mapEmployeeResidency } from "@/operations-8june/types/singapore-payroll";
+import {
+  buildIr8aLine,
+  ir8aStatusClass,
+  money,
+  type Ir8aEmployeeRow,
+  type Ir8aLine,
+  type Ir8aPayrollConfigRow,
+  type Ir8aPayrollRecord,
+} from "@/operations-8june/lib/ir8a-data";
 import {
   Users,
   DollarSign,
@@ -38,187 +44,6 @@ import { useAuth } from "@/contexts/auth-context";
 import { downloadIr8aForm, Ir8aFormView, type Ir8aOfficialFormData } from "@/operations-8june/pages/ir8a-form-view";
 import { Ir8aGenerateDialog } from "@/operations-8june/pages/ir8a-generate-dialog";
 
-type Ir8aStatus = "Ready" | "Check" | "Pending" | "Submitted";
-
-type EmployeeRow = {
-  id: number;
-  employeeId?: string | null;
-  name?: string | null;
-  designation?: string | null;
-  nricNumber?: string | null;
-  salary?: string | number | null;
-  annualSalary?: string | number | null;
-  nationality?: string | null;
-  prStatus?: string | null;
-  dateOfBirth?: string | null;
-  joinDate?: string | null;
-  status?: string | null;
-};
-
-type PayrollRecord = {
-  id: number;
-  employeeId: number;
-  payrollYear?: number | string | null;
-  payPeriodStart?: string | null;
-  baseSalary?: string | number | null;
-  allowances?: unknown;
-  overtimePay?: string | number | null;
-  grossPay?: string | number | null;
-  cpfDeduction?: string | number | null;
-  cpfEmployer?: string | number | null;
-  netPay?: string | number | null;
-  payrollMonth?: string | number | null;
-};
-
-type PayrollConfigRow = {
-  employeeId: number;
-  isActive?: boolean | null;
-  allowances?: unknown;
-  baseSalary?: string | number | null;
-};
-
-type Ir8aLine = {
-  employee: EmployeeRow;
-  monthlySalary: number;
-  grossSalary: number;
-  bonus: number;
-  allowances: number;
-  directorsFees: number;
-  fees: number;
-  otherPayments: number;
-  gross: number;
-  benefitsInKind: number;
-  shareOption: number;
-  retirementBenefits: number;
-  incomeTaxBorneByEmployee: number;
-  employeeCpf: number;
-  employerCpf: number;
-  status: Ir8aStatus;
-  checks: { label: string; ok: boolean }[];
-};
-
-function num(value: unknown) {
-  const n = parseFloat(String(value ?? 0));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function money(value: number) {
-  return value.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function addSplit(left: EarningsSplit, right: EarningsSplit): EarningsSplit {
-  const next = emptyEarningsSplit();
-  for (const key of Object.keys(next) as (keyof EarningsSplit)[]) {
-    next[key] = left[key] + right[key];
-  }
-  return next;
-}
-
-function monthPayrollAmount(record: PayrollRecord) {
-  const earnings = splitEarnings(record.allowances);
-  const overtime = num(record.overtimePay) > 0 ? num(record.overtimePay) : earnings.overtime;
-  const classified =
-    earnings.allowances +
-    earnings.bonus +
-    earnings.directorsFees +
-    earnings.fees +
-    earnings.otherPayments +
-    earnings.benefitsInKind +
-    earnings.shareOption +
-    earnings.retirementBenefits +
-    earnings.incomeTaxBorneByEmployee +
-    earnings.genericOtherIncome +
-    overtime;
-  const basic = num(record.baseSalary);
-  const grossPay = num(record.grossPay);
-  if (basic > 0) return { basic, overtime, earnings };
-  if (grossPay > 0 && classified > 0 && grossPay + 0.009 >= classified) {
-    return { basic: Math.max(0, grossPay - classified), overtime, earnings };
-  }
-  return { basic: grossPay, overtime: 0, earnings: emptyEarningsSplit() };
-}
-
-function buildLine(
-  employee: EmployeeRow,
-  records: PayrollRecord[],
-  _config: PayrollConfigRow | undefined,
-  year: number,
-  submitted: boolean,
-): Ir8aLine {
-  const byMonth = new Map<string, PayrollRecord>();
-  for (const record of records) {
-    if (Number(record.employeeId) !== Number(employee.id)) continue;
-    const period = recordPayrollMonthYear(record);
-    if (period.year !== year || period.month < 1 || period.month > 12) continue;
-    const key = `${period.year}-${period.month}`;
-    const current = byMonth.get(key);
-    if (!current || Number(record.id) >= Number(current.id)) byMonth.set(key, record);
-  }
-  const months = [...byMonth.values()];
-  const { residencyType } = mapEmployeeResidency({
-    nationality: employee.nationality,
-    prStatus: employee.prStatus,
-  });
-
-  let grossSalary = 0;
-  let components = emptyEarningsSplit();
-  let employeeCpf = 0;
-  let employerCpf = 0;
-  for (const record of months) {
-    const month = monthPayrollAmount(record);
-    grossSalary += month.basic + month.overtime;
-    components = addSplit(components, month.earnings);
-    employeeCpf += num(record.cpfDeduction);
-    employerCpf += num(record.cpfEmployer);
-  }
-  const monthlySalary = months.length > 0 ? grossSalary / months.length : num(employee.salary);
-  const allowances = components.allowances;
-  const bonus = components.bonus;
-  const directorsFees = components.directorsFees;
-  const fees = components.fees;
-  const otherPayments = components.otherPayments;
-  const gross = grossSalary + bonus + directorsFees + fees + allowances + otherPayments;
-  const nric = String(employee.nricNumber || "").trim();
-  const checks = [
-    { label: "Payroll records matched", ok: months.length > 0 },
-    { label: "CPF calculations completed", ok: employeeCpf > 0 || residencyType === "foreigner" || monthlySalary > 0 },
-    { label: "Employee particulars available", ok: Boolean(employee.name && employee.employeeId && nric) },
-    { label: "IR8A data ready", ok: Boolean(nric) && gross > 0 },
-  ];
-
-  let status: Ir8aStatus = "Ready";
-  if (submitted) status = "Submitted";
-  else if (!nric) status = "Check";
-  else if (gross <= 0) status = "Pending";
-
-  return {
-    employee,
-    monthlySalary,
-    grossSalary,
-    bonus,
-    allowances,
-    directorsFees,
-    fees,
-    otherPayments,
-    gross,
-    benefitsInKind: components.benefitsInKind,
-    shareOption: components.shareOption + components.genericOtherIncome,
-    retirementBenefits: components.retirementBenefits,
-    incomeTaxBorneByEmployee: components.incomeTaxBorneByEmployee,
-    employeeCpf,
-    employerCpf,
-    status,
-    checks,
-  };
-}
-
-function statusClass(status: Ir8aStatus) {
-  if (status === "Ready") return "bg-emerald-50 text-emerald-700";
-  if (status === "Check") return "bg-amber-50 text-amber-700";
-  if (status === "Submitted") return "bg-blue-50 text-blue-700";
-  return "bg-orange-50 text-orange-700";
-}
-
 function attentionIssue(line: Ir8aLine) {
   const employee = line.employee;
   if (!String(employee.nricNumber || "").trim()) return "Missing NRIC / FIN";
@@ -231,6 +56,10 @@ function attentionIssue(line: Ir8aLine) {
   if (line.employeeCpf <= 0 && line.employerCpf <= 0 && residencyType !== "foreigner") return "Missing CPF Data";
   return null;
 }
+
+type EmployeeRow = Ir8aEmployeeRow;
+type PayrollRecord = Ir8aPayrollRecord;
+type PayrollConfigRow = Ir8aPayrollConfigRow;
 
 function formDataFor(
   line: Ir8aLine,
@@ -270,7 +99,6 @@ function formDataFor(
 }
 
 export default function Ir8aPage() {
-  const { toast } = useToast();
   const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -313,7 +141,7 @@ export default function Ir8aPage() {
       const config = payrollConfigs.find(
         (item) => Number(item.employeeId) === Number(employee.id) && item.isActive !== false,
       ) || payrollConfigs.find((item) => Number(item.employeeId) === Number(employee.id));
-      return buildLine(employee, payrollRecords, config, assessmentYear, submittedIds.includes(employee.id));
+      return buildIr8aLine(employee, payrollRecords, config, assessmentYear, submittedIds.includes(employee.id));
     }),
     [employees, payrollRecords, payrollConfigs, assessmentYear, submittedIds],
   );
@@ -397,8 +225,7 @@ export default function Ir8aPage() {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#111827]">IR8A – Employment Income Declaration</h1>
-          <p className="mt-1 text-sm text-[#6B7280]">Auto-filled from Payroll and CPF calculations</p>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">IR8A – Employment Income Declaration</h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-sm text-[#6B7280]">Year of Assessment</span>
@@ -493,7 +320,7 @@ export default function Ir8aPage() {
                       <td className="px-3 py-3 text-right">{money(line.gross)}</td>
                       <td className="px-3 py-3 text-right">{money(line.employeeCpf + line.employerCpf)}</td>
                       <td className="px-4 py-3 text-right">
-                        <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium", statusClass(line.status))}>
+                        <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium", ir8aStatusClass(line.status))}>
                           {line.status}
                         </span>
                       </td>
@@ -605,8 +432,8 @@ export default function Ir8aPage() {
                         type="button"
                         className="w-full justify-center gap-2 bg-emerald-600 hover:bg-emerald-700"
                         onClick={() => {
-                          setSubmittedIds((current) => current.includes(selected.employee.id) ? current : [...current, selected.employee.id]);
-                          toast({ title: "Submitted to AIS" });
+                          setSelectedId(null);
+                          setLocation(`/payroll/ir8a/ais?year=${encodeURIComponent(year)}`);
                         }}
                       >
                         <Send className="h-4 w-4" /> Submit AIS

@@ -27,7 +27,7 @@ const TEAL = "hsl(180 45% 22%)";
 const TEAL_MUTED = "hsl(180 20% 55%)";
 const PILL_BG = "hsl(0 0% 96%)";
 
-export type DatePickerMode = "date" | "month";
+export type DatePickerMode = "date" | "month" | "year";
 
 export interface SyncBridgeDatePickerProps {
   value?: string | null;
@@ -43,7 +43,9 @@ export interface SyncBridgeDatePickerProps {
 
 function parseYmd(v?: string | null): Date | null {
   if (!v) return null;
-  const raw = v.includes("T") ? v.split("T")[0] : v;
+  const raw = v.includes("T") ? v.split("T")[0] : v.trim();
+  // Bare "YYYY" is ambiguous across timezones — reject and let year mode handle it.
+  if (/^\d{4}$/.test(raw)) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
@@ -71,6 +73,14 @@ function toYmd(d: Date | string | number | null | undefined): string {
 }
 
 function formatDisplay(value: string | null | undefined, mode: DatePickerMode): string {
+  if (!value) return "";
+  // Year-only values must not go through Date("YYYY") — UTC parsing can show the previous year.
+  if (mode === "year") {
+    const yearOnly = value.trim();
+    if (/^\d{4}$/.test(yearOnly)) return yearOnly;
+    const d = parseYearValue(value);
+    return d ? String(d.getFullYear()) : "";
+  }
   const d = parseYmd(value);
   if (!d) return "";
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -78,6 +88,17 @@ function formatDisplay(value: string | null | undefined, mode: DatePickerMode): 
   if (mode === "month") return `${mm}/${yyyy}`;
   const dd = String(d.getDate()).padStart(2, "0");
   return `${dd}/${mm}/${yyyy}`;
+}
+
+function parseYearValue(v?: string | null): Date | null {
+  if (!v) return null;
+  const trimmed = v.trim();
+  if (/^\d{4}$/.test(trimmed)) return new Date(Number(trimmed), 0, 1);
+  const ymd = parseYmd(trimmed);
+  if (ymd) return new Date(ymd.getFullYear(), 0, 1);
+  const match = trimmed.match(/^(\d{4})/);
+  if (match) return new Date(Number(match[1]), 0, 1);
+  return null;
 }
 
 function isDisabled(
@@ -196,13 +217,13 @@ export function DatePickerPanel({
     return (
       <div className="w-[280px] select-none p-4">
         <div className="mb-5 flex items-center justify-between">
-          <NavButton onClick={() => onViewYearChange(viewYear - 10)}>
+          <NavButton onClick={() => onViewYearChange(decadeStart - 10)}>
             <ChevronLeft className="h-4 w-4" />
           </NavButton>
           <YearPill>
             {decadeStart}–{decadeStart + 9}
           </YearPill>
-          <NavButton onClick={() => onViewYearChange(viewYear + 10)}>
+          <NavButton onClick={() => onViewYearChange(decadeStart + 10)}>
             <ChevronRight className="h-4 w-4" />
           </NavButton>
         </div>
@@ -215,16 +236,21 @@ export function DatePickerPanel({
                 key={y}
                 type="button"
                 onClick={() => {
+                  if (mode === "year") {
+                    // Use local noon to avoid any UTC day-boundary edge cases.
+                    onSelect(new Date(y, 0, 15));
+                    return;
+                  }
                   onViewYearChange(y);
                   onPanelViewChange("month");
                 }}
                 className={cn(
-                  "rounded-full py-2 text-sm font-medium transition-colors",
-                  isSelected && inDecade && "border bg-white"
+                  "rounded-md py-2 text-sm font-medium transition-colors",
+                  isSelected && "border bg-white",
                 )}
                 style={{
                   color: inDecade ? TEAL : TEAL_MUTED,
-                  borderColor: isSelected && inDecade ? "hsl(0 0% 82%)" : "transparent",
+                  borderColor: isSelected ? "hsl(0 0% 82%)" : "transparent",
                 }}
               >
                 {y}
@@ -397,8 +423,9 @@ export function SyncBridgeDatePicker({
   disabledDate,
 }: SyncBridgeDatePickerProps) {
   const [open, setOpen] = React.useState(false);
-  const selected = parseYmd(value);
+  const selected = mode === "year" ? parseYearValue(value) : parseYmd(value);
   const today = new Date();
+  const initialPanelView: PanelView = mode === "year" ? "year" : "month";
 
   const [viewYear, setViewYear] = React.useState(
     selected?.getFullYear() ?? today.getFullYear()
@@ -406,21 +433,26 @@ export function SyncBridgeDatePicker({
   const [viewMonth, setViewMonth] = React.useState(
     selected?.getMonth() ?? today.getMonth()
   );
-  const [panelView, setPanelView] = React.useState<PanelView>("month");
+  const [panelView, setPanelView] = React.useState<PanelView>(initialPanelView);
 
   React.useEffect(() => {
-    if (open) {
-      setViewYear(selected?.getFullYear() ?? today.getFullYear());
-      setViewMonth(selected?.getMonth() ?? today.getMonth());
-      setPanelView("month");
-    }
-  }, [open]);
+    if (!open) return;
+    const year = selected?.getFullYear() ?? today.getFullYear();
+    setViewYear(year);
+    setViewMonth(selected?.getMonth() ?? today.getMonth());
+    setPanelView(mode === "year" ? "year" : "month");
+  }, [open, mode, value]);
 
   const displayPlaceholder =
-    placeholder ?? (mode === "month" ? "MM/YYYY" : "DD/MM/YYYY");
+    placeholder ?? (mode === "year" ? "YYYY" : mode === "month" ? "MM/YYYY" : "DD/MM/YYYY");
+  const displayValue = value ? formatDisplay(value, mode) : "";
 
   const handleSelect = (d: Date) => {
-    onChange(toYmd(d));
+    if (mode === "year") {
+      onChange(String(d.getFullYear()));
+    } else {
+      onChange(toYmd(d));
+    }
     setOpen(false);
   };
 
@@ -447,18 +479,20 @@ export function SyncBridgeDatePicker({
             <span
               className={cn(
                 "min-w-0 flex-1 truncate",
-                !value && "text-muted-foreground font-normal"
+                !displayValue && "text-muted-foreground font-normal"
               )}
             >
-              {value ? formatDisplay(value, mode) : displayPlaceholder}
+              {displayValue || displayPlaceholder}
             </span>
             <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           </button>
         </PopoverTrigger>
         <PopoverContent
-          className="z-[80] w-auto border bg-white p-0 shadow-lg"
+          className="z-[80] w-[280px] overflow-visible border bg-white p-0 shadow-lg"
           align="start"
+          side="bottom"
           sideOffset={6}
+          collisionPadding={16}
           style={{ borderColor: "hsl(0 0% 85%)" }}
           onOpenAutoFocus={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
@@ -468,7 +502,7 @@ export function SyncBridgeDatePicker({
             viewMonth={viewMonth}
             selected={selected}
             mode={mode}
-            panelView={panelView}
+            panelView={mode === "year" ? "year" : panelView}
             onPanelViewChange={setPanelView}
             onViewYearChange={setViewYear}
             onViewMonthChange={setViewMonth}

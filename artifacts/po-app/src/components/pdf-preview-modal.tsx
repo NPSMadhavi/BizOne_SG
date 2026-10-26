@@ -90,6 +90,7 @@ function printingCaption(title: string) {
     .replace(/\s+preview$/i, "")
     .trim();
   if (/^(sales\s+)?invoice$/i.test(base)) return "Tax Invoice Printing";
+  if (/payslip/i.test(base)) return "Payslip Printing";
   if (!base) return "Printing";
   return `${base} Printing`;
 }

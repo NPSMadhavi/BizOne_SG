@@ -716,6 +716,19 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
   const prevItems = (existing.items as any[]) || [];
   const newStatus = computeGrnStatus(items);
 
+  // Heal stock_serials columns before the receive transaction (ALTER cannot run mid-txn safely).
+  for (const stmt of [
+    sql`ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS batch_no text`,
+    sql`ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS expiry_date text`,
+    sql`ALTER TABLE stock_serials ADD COLUMN IF NOT EXISTS manufacturing_date text`,
+  ]) {
+    try {
+      await db.execute(stmt);
+    } catch {
+      // Table may be missing on a brand-new tenant; company heal / create path covers that.
+    }
+  }
+
   try {
     const updated = await db.transaction(async (tx) => {
       let poItems: any[] = [];
@@ -835,16 +848,48 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
               ))
               .limit(1);
             if (exists.length === 0) {
-              await tx.insert(stockSerialsTable).values({
-                companyId, stockItemId, serialNumber: sn,
-                status: "available", grnId: id, grnNumber: existing.grnNumber,
-                batchNo: batchNo || null,
-                expiryDate,
-                manufacturingDate,
-              });
-            } else if (batchNo || expiryDate || manufacturingDate) {
-              // Keep batch details on re-receive / later edit of the same serial.
+              try {
+                await tx.insert(stockSerialsTable).values({
+                  companyId, stockItemId, serialNumber: sn,
+                  status: "available", grnId: id, grnNumber: existing.grnNumber,
+                  batchNo: batchNo || null,
+                  expiryDate,
+                  manufacturingDate,
+                });
+              } catch (insertErr: any) {
+                const msg = String(insertErr?.message || insertErr || "");
+                // Serial already present (race / unique index) — attach to this GRN.
+                if (/unique|duplicate/i.test(msg)) {
+                  await tx.update(stockSerialsTable).set({
+                    status: "available",
+                    grnId: id,
+                    grnNumber: existing.grnNumber,
+                    batchNo: batchNo || null,
+                    expiryDate,
+                    manufacturingDate,
+                  }).where(and(
+                    eq(stockSerialsTable.companyId, companyId),
+                    eq(stockSerialsTable.stockItemId, stockItemId),
+                    eq(stockSerialsTable.serialNumber, sn),
+                  ));
+                  continue;
+                }
+                // Columns missing despite heal — insert core fields only.
+                if (/column .* does not exist|batch_no|expiry_date|manufacturing_date/i.test(msg)) {
+                  await tx.execute(sql`
+                    INSERT INTO stock_serials
+                      (company_id, stock_item_id, serial_number, status, grn_id, grn_number)
+                    VALUES
+                      (${companyId}, ${stockItemId}, ${sn}, 'available', ${id}, ${existing.grnNumber})
+                  `);
+                  continue;
+                }
+                throw insertErr;
+              }
+            } else {
+              // Keep / refresh GRN link and batch details on re-receive.
               await tx.update(stockSerialsTable).set({
+                status: "available",
                 batchNo: batchNo || null,
                 expiryDate,
                 manufacturingDate,

@@ -62,7 +62,11 @@ export function requirePermission(permission: string) {
 
     const userPermissions = req.session.permissions || [];
     const [moduleName, action] = permission.split(":");
-    const isAdmin = Boolean(req.session.isAdmin || req.session.userRole === "admin");
+    const isAdmin = Boolean(
+      req.session.isAdmin ||
+      req.session.userRole === "admin" ||
+      req.session.userRole === "administrator",
+    );
     if (!isAdmin && moduleName) {
       const assigned = await loadAssignedModules(req.session.userId, companyId);
       if (!assigned.includes(moduleName)) {

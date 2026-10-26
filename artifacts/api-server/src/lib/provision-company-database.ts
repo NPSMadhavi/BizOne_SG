@@ -28,10 +28,12 @@ function databaseUrlFor(databaseUrl: string, dbName: string): string {
 function schemaSqlPath(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
+    path.resolve(here, "../../db-scripts/schema-postgres.sql"),
+    path.resolve(here, "../db-scripts/schema-postgres.sql"),
+    path.resolve(process.cwd(), "db-scripts/schema-postgres.sql"),
     path.resolve(here, "../../../../db-scripts/schema-postgres.sql"),
     path.resolve(here, "../../../db-scripts/schema-postgres.sql"),
     path.resolve(process.cwd(), "../../db-scripts/schema-postgres.sql"),
-    path.resolve(process.cwd(), "db-scripts/schema-postgres.sql"),
   ];
   const found = candidates.find((file) => fs.existsSync(file));
   if (!found) throw new Error("Company database schema file was not found");

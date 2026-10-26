@@ -159,6 +159,7 @@ const EmployeeEditPage   = lazy(() => import("@/operations-8june/pages/employee-
 const PayrollPage        = lazy(() => import("@/operations-8june/pages/payroll"));
 const Ir8aPage           = lazy(() => import("@/operations-8june/pages/ir8a"));
 const Ir8aEmployersPage  = lazy(() => import("@/operations-8june/pages/ir8a-employers"));
+const AisSubmissionPage  = lazy(() => import("@/operations-8june/pages/ais-submission"));
 const PayrollConfigNewPage = lazy(() => import("@/operations-8june/pages/payroll-config-new"));
 const PayrollConfigEditPage = lazy(() => import("@/operations-8june/pages/payroll-config-edit"));
 const PayrollProcessPage = lazy(() => import("@/operations-8june/pages/payroll-process"));
@@ -212,6 +213,7 @@ const ROUTE_TITLES: Record<string, string> = {
   "/employees/new": "Create Employee",
   "/payroll": "Payroll",
   "/payroll/ir8a": "IR8A / AIS",
+  "/payroll/ir8a/ais": "AIS Submission",
   "/payroll/ir8a/employers": "Employer's (IR8A)",
   "/payroll/config/new": "Add Payroll Configuration",
   "/payroll/process": "Process Payroll",
@@ -406,6 +408,7 @@ function Router() {
           <Route path="/payroll/config/:id/edit">{() => <ProtectedRoute component={PayrollConfigEditPage} module="payroll" />}</Route>
           <Route path="/payroll/process">{() => <ProtectedRoute component={PayrollProcessPage} module="payroll" />}</Route>
           <Route path="/payroll/ir8a/employers">{() => <ProtectedRoute component={Ir8aEmployersPage} module="payroll" />}</Route>
+          <Route path="/payroll/ir8a/ais">{() => <ProtectedRoute component={AisSubmissionPage} module="payroll" />}</Route>
           <Route path="/payroll/ir8a">{() => <ProtectedRoute component={Ir8aPage} module="payroll" />}</Route>
           <Route path="/payroll">{() => <ProtectedRoute component={PayrollPage} module="payroll" />}</Route>
 

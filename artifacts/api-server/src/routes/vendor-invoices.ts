@@ -198,17 +198,27 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
 
     logAudit({ req, action: "create", entityType: "vendor_invoice", entityId: doc.id, entityLabel: doc.piNumber });
 
-    await postVendorInvoiceJE(
-      {
-        id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName,
-        piDate: doc.piDate, totalAmount: parseFloat(totalAmount),
-        gstAmount: parseFloat(String(gstAmount ?? "0")),
-        gstTreatment: gstTreatment || "standard_rated",
-        expenseAccountId: doc.expenseAccountId,
-      },
-      userId,
-      req.log,
-    );
+    // Side-effects must not turn a successful insert into a failed create response
+    // (deploy tenants often hit incomplete JE/WMS schema — invoice already exists).
+    const warnings: string[] = [];
+    try {
+      await postVendorInvoiceJE(
+        {
+          id: doc.id, companyId, piNumber: doc.piNumber, vendorName: doc.vendorName,
+          piDate: doc.piDate, totalAmount: parseFloat(totalAmount),
+          gstAmount: parseFloat(String(gstAmount ?? "0")),
+          gstTreatment: gstTreatment || "standard_rated",
+          expenseAccountId: doc.expenseAccountId,
+          items: normalizedItems,
+        },
+        userId,
+        req.log,
+      );
+    } catch (jeErr: any) {
+      const msg = jeErr?.message || "Journal entry failed";
+      warnings.push(msg);
+      req.log?.warn?.({ err: jeErr }, "Vendor invoice journal post failed on create");
+    }
 
     try {
       await syncVendorInvoiceStock({
@@ -221,13 +231,9 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
         userId,
       });
     } catch (stockErr: any) {
+      const msg = stockErr?.message || "Stock update failed";
+      warnings.push(msg);
       req.log?.warn?.({ err: stockErr }, "Vendor invoice stock sync failed on create");
-      res.status(400).json({
-        error: stockErr?.message || "Failed to update stock for vendor invoice",
-        id: doc.id,
-        number: doc.piNumber,
-      });
-      return;
     }
 
     try {
@@ -244,7 +250,10 @@ router.post("/vendor-invoices", async (req, res): Promise<void> => {
     }
 
     const [withStock] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, doc.id));
-    res.status(201).json(parsePI(withStock ?? doc));
+    res.status(201).json({
+      ...parsePI(withStock ?? doc),
+      ...(warnings.length ? { warnings } : {}),
+    });
   } catch (err: any) {
     const message = err?.cause?.message || err?.message || "Failed to create vendor invoice";
     res.status(500).json({ error: message });
@@ -397,10 +406,20 @@ router.put("/vendor-invoices/:id", async (req, res): Promise<void> => {
 
 router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const isAdmin = req.session.isAdmin ?? false;
-  if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  const role = String(req.session.userRole || "").toLowerCase();
+  const canDelete =
+    (req.session.isAdmin ?? false) ||
+    role === "admin" ||
+    role === "administrator" ||
+    role === "accountant";
+  if (!canDelete) {
+    res.status(403).json({ error: "Only administrators or accountants can delete vendor invoices." });
+    return;
+  }
   const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
   const userId = req.session.userId!;
+  const companyId = req.session.companyId;
 
   try {
     await ensureCompanyDocumentTables(pool);
@@ -408,11 +427,19 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
     /* best-effort — delete should still proceed */
   }
 
-  const [toDelete] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id));
+  const [toDelete] = await db.select().from(vendorInvoicesTable).where(
+    companyId
+      ? and(eq(vendorInvoicesTable.id, id), eq(vendorInvoicesTable.companyId, companyId))
+      : eq(vendorInvoicesTable.id, id),
+  );
   if (!toDelete) { res.status(404).json({ error: "Not found" }); return; }
 
   // JE reverse is non-fatal (missing journals/accounts on incomplete tenants).
-  await reverseVendorInvoiceJE(id, toDelete.companyId, toDelete.piNumber, toDelete.vendorName, userId, req.log);
+  try {
+    await reverseVendorInvoiceJE(id, toDelete.companyId, toDelete.piNumber, toDelete.vendorName, userId, req.log);
+  } catch (jeErr: any) {
+    req.log?.warn?.({ err: jeErr }, "Vendor invoice JE reverse failed on delete (continuing)");
+  }
 
   try {
     await reverseVendorInvoiceStock({
@@ -441,7 +468,41 @@ router.delete("/vendor-invoices/:id", async (req, res): Promise<void> => {
   try {
     [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
   } catch (err: any) {
-    res.status(500).json({ error: err?.cause?.message || err?.message || "Failed to delete vendor invoice" });
+    const msg = err?.cause?.message || err?.message || "Failed to delete vendor invoice";
+    // Last resort: clear common FK blockers then retry once.
+    if (/foreign key|violates|constraint/i.test(msg)) {
+      try {
+        await db.execute(sql`DELETE FROM vendor_payments WHERE vendor_invoice_id = ${id}`);
+        await db.execute(sql`
+          DELETE FROM journal_lines
+          WHERE journal_entry_id IN (
+            SELECT id FROM journal_entries
+            WHERE company_id = ${toDelete.companyId}
+              AND ref_type = 'vendor_invoice'
+              AND ref_id = ${id}
+          )
+        `).catch(() => undefined);
+        await db.execute(sql`
+          DELETE FROM journal_entries
+          WHERE company_id = ${toDelete.companyId}
+            AND ref_type = 'vendor_invoice'
+            AND ref_id = ${id}
+        `).catch(() => undefined);
+        [deleted] = await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, id)).returning();
+      } catch (retryErr: any) {
+        res.status(500).json({
+          error: retryErr?.cause?.message || retryErr?.message || msg,
+        });
+        return;
+      }
+    } else {
+      res.status(500).json({ error: msg });
+      return;
+    }
+  }
+
+  if (!deleted) {
+    res.status(404).json({ error: "Not found" });
     return;
   }
 
@@ -548,8 +609,16 @@ router.put("/vendor-invoices/:id/payments/:paymentId", async (req, res): Promise
 
 router.delete("/vendor-invoices/:id/payments/:paymentId", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
-  const isAdmin = req.session.isAdmin ?? false;
-  if (!isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  const role = String(req.session.userRole || "").toLowerCase();
+  const canDelete =
+    (req.session.isAdmin ?? false) ||
+    role === "admin" ||
+    role === "administrator" ||
+    role === "accountant";
+  if (!canDelete) {
+    res.status(403).json({ error: "Only administrators or accountants can delete payments." });
+    return;
+  }
   const id = parseInt(req.params.id);
   const paymentId = parseInt(req.params.paymentId);
   const userId = req.session.userId!;

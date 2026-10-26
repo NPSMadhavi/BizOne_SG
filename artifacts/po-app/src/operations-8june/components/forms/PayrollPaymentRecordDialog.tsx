@@ -424,7 +424,7 @@ export function PayrollPaymentRecordDialog({
                   setAmountEdited(false);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] focus:ring-offset-0 data-[state=open]:border-[#2563EB] data-[state=open]:ring-1 data-[state=open]:ring-[#2563EB]">
                   <SelectValue placeholder="Select month" />
                 </SelectTrigger>
                 <SelectContent>

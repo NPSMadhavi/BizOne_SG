@@ -457,6 +457,8 @@ export default function StockItemFormPage() {
   const [itemBatches, setItemBatches] = useState<ItemBatch[]>([]);
   const [batchSelectValue, setBatchSelectValue] = useState("");
   const [creatingBatch, setCreatingBatch] = useState(false);
+  /** Opening Qty as loaded — omit stockQty on save unless the user changes it (avoids wiping warehouse stock). */
+  const [initialOpeningQty, setInitialOpeningQty] = useState("");
   const newBatchInputRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useCreateStockItem();
@@ -581,6 +583,9 @@ export default function StockItemFormPage() {
       openingQty: item.stockQty != null && Number(item.stockQty) !== 0 ? String(item.stockQty) : "",
       openingUnitPrice: cost > 0 ? String(item.purchasePrice) : "",
     });
+    setInitialOpeningQty(
+      item.stockQty != null && Number(item.stockQty) !== 0 ? String(item.stockQty) : "",
+    );
     setLoaded(true);
   }, [isEdit, editId, items, editItemDetail]);
 
@@ -1042,7 +1047,7 @@ export default function StockItemFormPage() {
         : [],
     );
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       code: form.code.trim(),
       name: form.name.trim(),
       uom: form.uom.trim() || "Pcs",
@@ -1055,7 +1060,6 @@ export default function StockItemFormPage() {
       expiryDate: form.expiryDate.trim() || null,
       manufacturingDate: form.manufacturingDate.trim() || null,
       batches: nextBatches,
-      stockQty: Number(form.openingQty) || 0,
       itemImage: form.itemImage || null,
       purchasePrice: Number(form.openingUnitPrice !== "" ? form.openingUnitPrice : form.purchasePrice) || 0,
       purchasePriceDate: form.purchasePriceDate || todayYmd(),
@@ -1069,6 +1073,13 @@ export default function StockItemFormPage() {
       alternateQty: form.alternateUom.trim() ? Number(form.alternateQty) || 0 : 0,
       mainQty: form.alternateUom.trim() ? Number(form.mainQty) || 0 : 0,
     };
+    // Create: always send opening qty. Edit: only when Opening Qty actually changed —
+    // empty/unchanged must not send stockQty:0 (that tried to clear warehouse stock).
+    if (!isEdit) {
+      payload.stockQty = Number(form.openingQty) || 0;
+    } else if (String(form.openingQty ?? "") !== String(initialOpeningQty ?? "")) {
+      payload.stockQty = Number(form.openingQty) || 0;
+    }
 
     const opts = {
       onSuccess: (created?: any) => {

@@ -83,13 +83,17 @@ export default function PurchaseQuotationList() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const pqDate = (d: { issueDate?: string | null; createdAt?: string | null }) =>
+    (d.issueDate || d.createdAt || "").slice(0, 10);
+
   const filteredByDate = useMemo(() => {
     const all = docs ?? [];
     if (filterMode === "all") return all;
     if (filterMode === "custom") {
       if (!customFrom && !customTo) return all;
       return all.filter(d => {
-        const s = (d.createdAt || "").slice(0, 10);
+        const s = pqDate(d);
+        if (!s) return false;
         if (customFrom && s < customFrom) return false;
         if (customTo && s > customTo) return false;
         return true;
@@ -98,9 +102,10 @@ export default function PurchaseQuotationList() {
     const qIdx = ["q1","q2","q3","q4"].indexOf(filterMode);
     const months = QUARTERS[qIdx].months;
     return all.filter(d => {
-      if (!d.createdAt) return false;
-      const dt = new Date(d.createdAt);
-      return dt.getFullYear() === filterYear && months.includes(dt.getMonth());
+      const s = pqDate(d);
+      if (!s) return false;
+      const [y, m] = s.split("-").map(Number);
+      return y === filterYear && months.includes((m || 1) - 1);
     });
   }, [docs, filterMode, filterYear, customFrom, customTo]);
 
@@ -235,7 +240,7 @@ export default function PurchaseQuotationList() {
                       label={`Select ${doc.pqNumber}`}
                     />
                     <td className="px-6 py-4 font-medium">{doc.pqNumber}</td>
-                    <td className="px-6 py-4 font-medium">{fmtDate(doc.createdAt)}</td>
+                    <td className="px-6 py-4 font-medium">{fmtDate(doc.issueDate || doc.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">{doc.vendorName}</td>
                     <td className="px-6 py-4 font-medium">{new Intl.NumberFormat("en-SG",{style:"currency",currency:"SGD"}).format(Number(doc.totalAmount))}</td>
                     <td className="px-6 py-4">{getStatusBadge(doc.status)}</td>

@@ -565,7 +565,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <NavItem
             href="/payroll/ir8a"
             icon={FileText}
-            active={location === "/payroll/ir8a"}
+            active={location === "/payroll/ir8a" || location.startsWith("/payroll/ir8a/ais")}
             inGroup
           >
             IR8A / AIS

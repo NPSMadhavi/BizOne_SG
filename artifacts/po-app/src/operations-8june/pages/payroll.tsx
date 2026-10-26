@@ -209,6 +209,29 @@ function PayrollMonthTable({
       </p>
     );
   }
+  const totals = rows.reduce(
+    (acc, row) => ({
+      basic: acc.basic + (Number(row.basic) || 0),
+      transport: acc.transport + (Number(row.transport) || 0),
+      meal: acc.meal + (Number(row.meal) || 0),
+      bonus: acc.bonus + (Number(row.bonus) || 0),
+      other: acc.other + (Number(row.other) || 0),
+      gross: acc.gross + (Number(row.gross) || 0),
+      employeeCpf: acc.employeeCpf + (Number(row.employeeCpf) || 0),
+      employerCpf: acc.employerCpf + (Number(row.employerCpf) || 0),
+    }),
+    {
+      basic: 0,
+      transport: 0,
+      meal: 0,
+      bonus: 0,
+      other: 0,
+      gross: 0,
+      employeeCpf: 0,
+      employerCpf: 0,
+    },
+  );
+
   return (
     <div className="overflow-x-auto rounded-md border border-[#E5E7EB]">
       <table className="min-w-full text-sm">
@@ -241,6 +264,19 @@ function PayrollMonthTable({
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-[#CBD5E1] bg-[#F8FAFC] font-semibold text-[#111827]">
+            <td className="whitespace-nowrap px-3 py-2">Total</td>
+            <td className="px-3 py-2">{formatCurrency(totals.basic)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.transport)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.meal)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.bonus)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.other)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.gross)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.employeeCpf)}</td>
+            <td className="px-3 py-2">{formatCurrency(totals.employerCpf)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -322,7 +358,6 @@ function buildPayslipFromSetSalary(args: {
     deductions,
   });
   const earnings = splitEarnings(allowances);
-  const monthLabel = formatPayrollMonthLabel(year, month);
   return {
     data: {
       companyName: company?.name || "",
@@ -350,7 +385,7 @@ function buildPayslipFromSetSalary(args: {
       employerCpf: preview.employerCpf,
       otherDeductions: preview.deductionsTotal,
     },
-    title: `${employee?.name || config.employeeName} - ${monthLabel}`,
+    title: "Payslip",
     filename: payslipPdfFilename(employee?.name || config.employeeName, month, year),
   };
 }

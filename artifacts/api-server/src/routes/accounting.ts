@@ -21,6 +21,15 @@ function requireCompany(req: any, res: any): boolean {
   return true;
 }
 
+/** Match UI `canManage` (admin or accountant) — deploy sessions often use accountant role. */
+function canManageAccounts(req: any): boolean {
+  const role = String(req.session?.userRole || "").toLowerCase();
+  return Boolean(req.session?.isAdmin)
+    || role === "admin"
+    || role === "administrator"
+    || role === "accountant";
+}
+
 async function requireSingapore(req: any, res: any): Promise<boolean> {
   const companyId = req.session.companyId;
   if (!companyId) { res.status(400).json({ error: "No company selected" }); return false; }
@@ -60,7 +69,7 @@ router.post("/accounts", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
-  if (!req.session.isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  if (!canManageAccounts(req)) { res.status(403).json({ error: "Admin or accountant only" }); return; }
 
   const companyId = req.session.companyId!;
   const { code, name, type, subType, description } = req.body;
@@ -72,6 +81,7 @@ router.post("/accounts", async (req, res): Promise<void> => {
   if (!VALID_TYPES.includes(type)) { res.status(400).json({ error: "Invalid account type" }); return; }
 
   try {
+    await ensureAccountsSeeded(companyId);
     const [account] = await db.insert(accountsTable).values({
       companyId, code: code.trim(), name: name.trim(),
       type, subType: subType || type, description: description || null,
@@ -82,7 +92,9 @@ router.post("/accounts", async (req, res): Promise<void> => {
     if (err.code === "23505") {
       res.status(400).json({ error: `Account code "${code}" already exists for this company` });
     } else {
-      res.status(500).json({ error: "Failed to create account" });
+      res.status(500).json({
+        error: err?.cause?.message || err?.message || "Failed to create account",
+      });
     }
   }
 });
@@ -91,7 +103,7 @@ router.put("/accounts/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
-  if (!req.session.isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  if (!canManageAccounts(req)) { res.status(403).json({ error: "Admin or accountant only" }); return; }
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid account ID" }); return; }
@@ -119,7 +131,7 @@ router.delete("/accounts/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
-  if (!req.session.isAdmin) { res.status(403).json({ error: "Admin only" }); return; }
+  if (!canManageAccounts(req)) { res.status(403).json({ error: "Admin or accountant only" }); return; }
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid account ID" }); return; }

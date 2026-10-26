@@ -1,7 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db, pool, stockItemsTable, warehouseStockTable, vendorInvoicesTable } from "@workspace/db";
 import { and, eq, ne, sql } from "drizzle-orm";
-import { adjustItemStockInWarehouse, deleteStockItem, resolveWarehouseId } from "../lib/inventory-service.js";
+import {
+  adjustItemStockInWarehouse,
+  deleteStockItem,
+  getItemTotalStock,
+  resolveWarehouseId,
+} from "../lib/inventory-service.js";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import {
   listCompanyPurchasePrices,
@@ -716,26 +721,31 @@ router.put("/stock-items/:id", async (req, res): Promise<void> => {
 
   // A quantity edit is a stock adjustment: book the difference in a warehouse instead of
   // overwriting stock_qty, which would drift away from warehouse_stock.
+  // Skip when target equals current total (price-only saves must not touch stock).
   if (stockQty !== undefined && updated.type !== "service") {
-    const targetWarehouseId = Number(warehouseId) || await resolveWarehouseId(updated.companyId);
-    if (targetWarehouseId) {
-      try {
-        await adjustItemStockInWarehouse({
-          companyId: updated.companyId,
-          stockItemId: updated.id,
-          warehouseId: targetWarehouseId,
-          newTotalQty: Number(stockQty) || 0,
-          userId: req.session.userId,
-          reference: "Stock quantity updated",
-        });
-      } catch (err) {
-        res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update stock quantity" });
-        return;
+    const targetQty = Math.max(0, Number(stockQty) || 0);
+    const currentTotal = await getItemTotalStock(db, updated.companyId, updated.id);
+    if (Math.abs(targetQty - currentTotal) > 0.0005) {
+      const targetWarehouseId = Number(warehouseId) || await resolveWarehouseId(updated.companyId);
+      if (targetWarehouseId) {
+        try {
+          await adjustItemStockInWarehouse({
+            companyId: updated.companyId,
+            stockItemId: updated.id,
+            warehouseId: targetWarehouseId,
+            newTotalQty: targetQty,
+            userId: req.session.userId,
+            reference: "Stock quantity updated",
+          });
+        } catch (err) {
+          res.status(400).json({ error: err instanceof Error ? err.message : "Failed to update stock quantity" });
+          return;
+        }
+      } else {
+        await db.update(stockItemsTable)
+          .set({ stockQty: String(targetQty) })
+          .where(eq(stockItemsTable.id, id));
       }
-    } else {
-      await db.update(stockItemsTable)
-        .set({ stockQty: String(Number(stockQty) || 0) })
-        .where(eq(stockItemsTable.id, id));
     }
   }
 
