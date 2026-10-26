@@ -244,7 +244,12 @@ export const OPERATIONS_COLUMN_MIGRATIONS = [
   `ALTER TABLE assets ADD COLUMN IF NOT EXISTS invoice_number TEXT`,
   `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_start_date TIMESTAMPTZ`,
   `ALTER TABLE assets ADD COLUMN IF NOT EXISTS useful_life_years INTEGER`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS useful_life_unit TEXT`,
   `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_method TEXT`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS residual_value TEXT`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_frequency TEXT`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_book TEXT`,
+  `ALTER TABLE assets ADD COLUMN IF NOT EXISTS asset_image TEXT`,
   `ALTER TABLE assets ADD COLUMN IF NOT EXISTS has_license BOOLEAN DEFAULT FALSE`,
 
   // employee_payroll (working days, OT, CPF breakdown, effective dates)

@@ -31,7 +31,7 @@ const inventorySchemaHealed = new Set<string>();
 /**
  * Bump when adding document tables (PQ/SO/VI/GRN/…) so fast-path tenants re-create missing relations.
  */
-const DOCUMENT_HEAL_VERSION = 3; // +full 91-table schema-postgres.sql heal for Plesk
+const DOCUMENT_HEAL_VERSION = 4; // +expenses, income_records.exchange_rate, income_attachments
 const documentSchemaHealed = new Set<string>();
 
 function quoteIdent(name: string): string {
@@ -378,6 +378,8 @@ async function tenantLooksReady(pool: pg.Pool, companyId: number): Promise<boole
          AND to_regclass('public.warehouses') IS NOT NULL
          AND to_regclass('public.customers') IS NOT NULL
          AND to_regclass('public.stock_items') IS NOT NULL
+         AND to_regclass('public.expenses') IS NOT NULL
+         AND to_regclass('public.income_records') IS NOT NULL
          AND EXISTS (SELECT 1 FROM companies WHERE id = $1)
        ) AS ok`,
       [companyId],

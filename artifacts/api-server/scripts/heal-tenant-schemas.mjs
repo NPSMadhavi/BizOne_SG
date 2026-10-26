@@ -24,11 +24,13 @@ const migratePath = path.join(root, "src/migrate-drizzle-columns.ts");
 // Prefer running through built dist if present; else inline essential creates via pg from SQL file only + ALTER heals.
 // Use the JS that esbuild may not have — import from dist if available.
 let DRIZZLE_TABLE_CREATES = [];
+let DRIZZLE_COLUMN_MIGRATIONS = [];
 let applySalesPosSchema = async () => {};
 try {
   const mod = await import(pathToFileURL(path.join(root, "dist/migrate-drizzle-columns.js")).href).catch(() => null);
   if (mod?.DRIZZLE_TABLE_CREATES) {
     DRIZZLE_TABLE_CREATES = mod.DRIZZLE_TABLE_CREATES;
+    DRIZZLE_COLUMN_MIGRATIONS = mod.DRIZZLE_COLUMN_MIGRATIONS ?? [];
     applySalesPosSchema = mod.applySalesPosSchema;
   }
 } catch {
@@ -57,6 +59,9 @@ for (const co of cos.rows) {
     );
     if (DRIZZLE_TABLE_CREATES.length) {
       for (const stmt of DRIZZLE_TABLE_CREATES) {
+        await t.query(stmt).catch(() => undefined);
+      }
+      for (const stmt of DRIZZLE_COLUMN_MIGRATIONS) {
         await t.query(stmt).catch(() => undefined);
       }
       await applySalesPosSchema((s) => t.query(s));

@@ -1,12 +1,81 @@
 import { Router, type IRouter } from "express";
-import { db, incomeRecordsTable, incomeAttachmentsTable, companiesTable, accountsTable } from "@workspace/db";
+import { db, companyDbContext, pool, incomeRecordsTable, incomeAttachmentsTable, companiesTable, accountsTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { postIncomeJE, reverseIncomeJE } from "../lib/income-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
 import { assertPeriodWritable } from "../lib/financial-year.js";
+import { sanitizeErrorMessage, logServerError } from "../lib/safe-error.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
+
+const incomeSchemaHealed = new WeakSet<object>();
+
+/** Ensure income_records and income_attachments exist and have full column shape on current pool. */
+export async function ensureIncomeSchema(): Promise<void> {
+  const currentPool: any = companyDbContext.getStore() ?? pool;
+  if (currentPool && incomeSchemaHealed.has(currentPool)) return;
+
+  await currentPool.query(`
+    CREATE TABLE IF NOT EXISTS income_records (
+      id              serial PRIMARY KEY,
+      company_id      integer NOT NULL,
+      income_date     text NOT NULL,
+      payer_name      text NOT NULL,
+      description     text NOT NULL,
+      category        text NOT NULL,
+      amount          numeric(15,2) NOT NULL,
+      gst_amount      numeric(15,2) NOT NULL DEFAULT 0,
+      gst_treatment   text NOT NULL DEFAULT 'standard_rated',
+      gst_claimable   boolean NOT NULL DEFAULT false,
+      is_deductible   boolean NOT NULL DEFAULT true,
+      deductible_pct  integer NOT NULL DEFAULT 100,
+      currency        text NOT NULL DEFAULT 'SGD',
+      exchange_rate   numeric(10,6) NOT NULL DEFAULT 1.000000,
+      payment_method  text DEFAULT 'bank_transfer',
+      account_id      integer,
+      reference       text,
+      notes           text,
+      status          text NOT NULL DEFAULT 'draft',
+      journal_entry_id integer,
+      created_by      integer NOT NULL,
+      created_at      timestamptz NOT NULL DEFAULT now(),
+      updated_at      timestamptz NOT NULL DEFAULT now()
+    )
+  `).catch(() => undefined);
+
+  for (const stmt of [
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_amount numeric(15,2) NOT NULL DEFAULT 0`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_treatment text NOT NULL DEFAULT 'standard_rated'`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_claimable boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS is_deductible boolean NOT NULL DEFAULT true`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS deductible_pct integer NOT NULL DEFAULT 100`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'SGD'`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS payment_method text DEFAULT 'bank_transfer'`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS account_id integer`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS reference text`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS notes text`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft'`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS journal_entry_id integer`,
+    `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000`,
+    `ALTER TABLE vendor_invoices ADD COLUMN IF NOT EXISTS exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000`,
+    `CREATE TABLE IF NOT EXISTS income_attachments (
+      id          serial PRIMARY KEY,
+      income_id   integer NOT NULL,
+      file_name   text NOT NULL DEFAULT 'attachment',
+      mime_type   text NOT NULL DEFAULT 'application/octet-stream',
+      file_data   text NOT NULL,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    )`,
+  ]) {
+    await currentPool.query(stmt).catch(() => undefined);
+  }
+
+  if (currentPool) incomeSchemaHealed.add(currentPool);
+}
 
 function requireAuth(req: any, res: any): boolean {
   if (!req.session.userId) { res.status(401).json({ error: "Not authenticated" }); return false; }
@@ -33,13 +102,19 @@ router.get("/income", async (req, res): Promise<void> => {
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
 
-  const companyId = req.session.companyId!;
-  const records = await db.select()
-    .from(incomeRecordsTable)
-    .where(eq(incomeRecordsTable.companyId, companyId))
-    .orderBy(desc(incomeRecordsTable.incomeDate), desc(incomeRecordsTable.createdAt));
+  try {
+    await ensureIncomeSchema();
+    const companyId = req.session.companyId!;
+    const records = await db.select()
+      .from(incomeRecordsTable)
+      .where(eq(incomeRecordsTable.companyId, companyId))
+      .orderBy(desc(incomeRecordsTable.incomeDate), desc(incomeRecordsTable.createdAt));
 
-  res.json(records);
+    res.json(records);
+  } catch (err) {
+    logServerError(logger, err, { route: "GET /api/income", companyId: req.session.companyId });
+    res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to load income records") });
+  }
 });
 
 // ── Get one ───────────────────────────────────────────────────────────────────
@@ -48,33 +123,39 @@ router.get("/income/:id", async (req, res): Promise<void> => {
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
 
-  const id = parseInt(req.params.id);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  try {
+    await ensureIncomeSchema();
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const [record] = await db.select()
-    .from(incomeRecordsTable)
-    .where(and(eq(incomeRecordsTable.id, id), eq(incomeRecordsTable.companyId, req.session.companyId!)))
-    .limit(1);
-  if (!record) { res.status(404).json({ error: "Income record not found" }); return; }
+    const [record] = await db.select()
+      .from(incomeRecordsTable)
+      .where(and(eq(incomeRecordsTable.id, id), eq(incomeRecordsTable.companyId, req.session.companyId!)))
+      .limit(1);
+    if (!record) { res.status(404).json({ error: "Income record not found" }); return; }
 
-  // Fetch account name if linked
-  let accountName: string | null = null;
-  if (record.accountId) {
-    const [acct] = await db.select({ name: accountsTable.name, code: accountsTable.code })
-      .from(accountsTable).where(eq(accountsTable.id, record.accountId)).limit(1);
-    if (acct) accountName = `${acct.code} ${acct.name}`;
+    // Fetch account name if linked
+    let accountName: string | null = null;
+    if (record.accountId) {
+      const [acct] = await db.select({ name: accountsTable.name, code: accountsTable.code })
+        .from(accountsTable).where(eq(accountsTable.id, record.accountId)).limit(1);
+      if (acct) accountName = `${acct.code} ${acct.name}`;
+    }
+
+    // Attachment count
+    const attachments = await db.select({
+      id: incomeAttachmentsTable.id,
+      fileName: incomeAttachmentsTable.fileName,
+      mimeType: incomeAttachmentsTable.mimeType,
+      createdAt: incomeAttachmentsTable.createdAt,
+    }).from(incomeAttachmentsTable).where(eq(incomeAttachmentsTable.incomeId, id))
+      .orderBy(incomeAttachmentsTable.createdAt);
+
+    res.json({ ...record, accountName, attachmentCount: attachments.length });
+  } catch (err) {
+    logServerError(logger, err, { route: "GET /api/income/:id", companyId: req.session.companyId, id: req.params.id });
+    res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to fetch income record") });
   }
-
-  // Attachment count
-  const attachments = await db.select({
-    id: incomeAttachmentsTable.id,
-    fileName: incomeAttachmentsTable.fileName,
-    mimeType: incomeAttachmentsTable.mimeType,
-    createdAt: incomeAttachmentsTable.createdAt,
-  }).from(incomeAttachmentsTable).where(eq(incomeAttachmentsTable.incomeId, id))
-    .orderBy(incomeAttachmentsTable.createdAt);
-
-  res.json({ ...record, accountName, attachmentCount: attachments.length });
 });
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -83,44 +164,50 @@ router.post("/income", async (req, res): Promise<void> => {
   if (!requireCompany(req, res)) return;
   if (!(await requireSingapore(req, res))) return;
 
-  const companyId = req.session.companyId!;
-  const {
-    incomeDate, payerName, description, category,
-    amount, gstAmount, gstTreatment, gstClaimable, isDeductible, deductiblePct,
-    currency, exchangeRate,
-    paymentMethod, accountId, reference, notes, status,
-  } = req.body;
+  try {
+    await ensureIncomeSchema();
+    const companyId = req.session.companyId!;
+    const {
+      incomeDate, payerName, description, category,
+      amount, gstAmount, gstTreatment, gstClaimable, isDeductible, deductiblePct,
+      currency, exchangeRate,
+      paymentMethod, accountId, reference, notes, status,
+    } = req.body;
 
-  if (!incomeDate) { res.status(400).json({ error: "Income date is required" }); return; }
-  const periodCheck = await assertPeriodWritable(companyId, incomeDate);
-  if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
-  if (!category) { res.status(400).json({ error: "Category is required" }); return; }
-  if (!amount || isNaN(parseFloat(amount))) { res.status(400).json({ error: "Amount is required" }); return; }
+    if (!incomeDate) { res.status(400).json({ error: "Income date is required" }); return; }
+    const periodCheck = await assertPeriodWritable(companyId, incomeDate);
+    if (!periodCheck.ok) { res.status(periodCheck.status).json({ error: periodCheck.error }); return; }
+    if (!category) { res.status(400).json({ error: "Category is required" }); return; }
+    if (!amount || isNaN(parseFloat(amount))) { res.status(400).json({ error: "Amount is required" }); return; }
 
-  const [created] = await db.insert(incomeRecordsTable).values({
-    companyId,
-    incomeDate,
-    payerName:    String(payerName ?? "").trim(),
-    description:  String(description ?? "").trim(),
-    category,
-    amount:       parseFloat(amount).toFixed(2),
-    gstAmount:    (parseFloat(gstAmount) || 0).toFixed(2),
-    gstTreatment: gstTreatment || "standard_rated",
-    gstClaimable: !!gstClaimable,
-    isDeductible: isDeductible !== false,
-    deductiblePct: deductiblePct ?? 100,
-    currency:     currency || "SGD",
-    exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
-    paymentMethod: paymentMethod || "bank_transfer",
-    accountId:    accountId ? parseInt(accountId) : null,
-    reference:    reference?.trim() || null,
-    notes:        notes || null,
-    status:       status || "draft",
-    createdBy:    req.session.userId!,
-  }).returning();
+    const [created] = await db.insert(incomeRecordsTable).values({
+      companyId,
+      incomeDate,
+      payerName:    String(payerName ?? "").trim(),
+      description:  String(description ?? "").trim(),
+      category,
+      amount:       parseFloat(amount).toFixed(2),
+      gstAmount:    (parseFloat(gstAmount) || 0).toFixed(2),
+      gstTreatment: gstTreatment || "standard_rated",
+      gstClaimable: !!gstClaimable,
+      isDeductible: isDeductible !== false,
+      deductiblePct: deductiblePct ?? 100,
+      currency:     currency || "SGD",
+      exchangeRate: parseFloat(exchangeRate ?? "1").toFixed(6) as any,
+      paymentMethod: paymentMethod || "bank_transfer",
+      accountId:    accountId ? parseInt(accountId) : null,
+      reference:    reference?.trim() || null,
+      notes:        notes || null,
+      status:       status || "draft",
+      createdBy:    req.session.userId!,
+    }).returning();
 
-  logAudit({ req, action: "create", entityType: "income_record", entityId: created.id, entityLabel: `${created.category} — ${created.payerName}` });
-  res.status(201).json(created);
+    logAudit({ req, action: "create", entityType: "income_record", entityId: created.id, entityLabel: `${created.category} — ${created.payerName}` });
+    res.status(201).json(created);
+  } catch (err) {
+    logServerError(logger, err, { route: "POST /api/income", companyId: req.session.companyId });
+    res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to create income record") });
+  }
 });
 
 // ── Update ────────────────────────────────────────────────────────────────────

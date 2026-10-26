@@ -42,9 +42,11 @@ import {
   downloadAssetAttachment,
   formatFileSize,
   loadAssetAttachments,
+  loadAssetPrimaryImage,
   mimeFromFileName,
   readFileAsDataUrl,
   saveAssetAttachments,
+  saveAssetPrimaryImage,
   viewAssetAttachment,
   type AssetAttachment,
 } from "@/operations-8june/lib/asset-attachments";
@@ -56,7 +58,9 @@ import {
   Pencil,
   Upload,
   Download,
-  X
+  X,
+  Calculator,
+  Camera,
 } from "lucide-react";
 import {
   Tooltip,
@@ -153,6 +157,10 @@ const depreciationMethods = [
   "Straight Line", "Reducing Balance", "Sum of Years Digits"
 ];
 
+const depreciationFrequencies = ["Monthly", "Quarterly", "Yearly"];
+const depreciationBooks = ["Financial (SFRS(I))", "Tax", "Management"];
+const usefulLifeUnits = ["Years", "Months"];
+
 const optionalDate = z.union([z.date(), z.literal(""), z.null(), z.undefined()]).optional().transform((val) => {
   if (val == null || val === "") return undefined;
   return val instanceof Date && !Number.isNaN(val.getTime()) ? val : undefined;
@@ -175,8 +183,13 @@ const formSchema = insertAssetSchema.extend({
   purchaseDate: optionalDate,
   warrantyExpiry: optionalDate,
   depreciationStartDate: optionalDate,
-  usefulLifeYears: z.number().min(1).max(20).optional(),
+  usefulLifeYears: z.number().min(1).max(100).optional(),
+  usefulLifeUnit: z.string().optional(),
   depreciationMethod: z.string().optional(),
+  residualValue: z.string().optional(),
+  depreciationFrequency: z.string().optional(),
+  depreciationBook: z.string().optional(),
+  assetImage: z.string().optional().nullable(),
   description: z.string().optional(),
 });
 
@@ -221,7 +234,12 @@ function normalizeAssetRecord(data: AssetRecord): AssetRecord {
     warrantyExpiry: pickField(data, "warrantyExpiry", "warranty_expiry"),
     depreciationStartDate: pickField(data, "depreciationStartDate", "depreciation_start_date"),
     usefulLifeYears: pickField(data, "usefulLifeYears", "useful_life_years"),
+    usefulLifeUnit: pickField(data, "usefulLifeUnit", "useful_life_unit"),
     depreciationMethod: pickField(data, "depreciationMethod", "depreciation_method"),
+    residualValue: pickField(data, "residualValue", "residual_value"),
+    depreciationFrequency: pickField(data, "depreciationFrequency", "depreciation_frequency"),
+    depreciationBook: pickField(data, "depreciationBook", "depreciation_book"),
+    assetImage: pickField(data, "assetImage", "asset_image"),
     description: pickField(data, "description", "description"),
     vendorId: pickField(data, "vendorId", "vendor_id"),
     cost: pickField(data, "cost", "cost"),
@@ -320,8 +338,20 @@ function mapAssetToFormValues(data: AssetRecord): AssetFormData {
     usefulLifeYears: normalized.usefulLifeYears != null && normalized.usefulLifeYears !== ""
       ? Number(normalized.usefulLifeYears)
       : undefined,
+    usefulLifeUnit:
+      matchSelectValue(normalized.usefulLifeUnit || "Years", usefulLifeUnits) || "Years",
     depreciationMethod:
       matchSelectValue(normalized.depreciationMethod, depreciationMethods) || "straight line",
+    residualValue: String(normalized.residualValue ?? "0.00"),
+    depreciationFrequency:
+      matchSelectValue(normalized.depreciationFrequency || "Monthly", depreciationFrequencies) ||
+      "Monthly",
+    depreciationBook:
+      matchSelectValue(
+        normalized.depreciationBook || "Financial (SFRS(I))",
+        depreciationBooks,
+      ) || "Financial (SFRS(I))",
+    assetImage: String(normalized.assetImage ?? "") || "",
     description: String(normalized.description ?? ""),
     vendorId: normalized.vendorId as number | undefined,
     cost: normalized.cost as string | undefined,
@@ -345,7 +375,12 @@ const emptyFormValues: AssetFormData = {
   warrantyExpiry: undefined,
   depreciationStartDate: undefined,
   usefulLifeYears: undefined,
+  usefulLifeUnit: "Years",
   depreciationMethod: "straight line",
+  residualValue: "0.00",
+  depreciationFrequency: "Monthly",
+  depreciationBook: "Financial (SFRS(I))",
+  assetImage: "",
   description: "",
   vendorId: undefined,
   cost: undefined,
@@ -456,6 +491,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const [optionSaving, setOptionSaving] = useState(false);
   const [attachments, setAttachments] = useState<AssetAttachment[]>(() => loadAssetAttachments(assetId));
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const draftRestoredRef = useRef(false);
 
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
@@ -565,8 +601,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const editFormValues = useMemo(() => {
     if (!assetId || !resolvedAsset) return undefined;
     const base = mapAssetToFormValues(resolvedAsset);
+    const localImage = loadAssetPrimaryImage(assetId);
     return {
       ...base,
+      purchaseDate: base.purchaseDate || toDateValue(resolvedAsset.depreciationStartDate),
+      assetImage: base.assetImage || localImage || "",
       type: matchSelectValue(resolvedAsset.type, typeOptions, optionRenames.type),
       category: matchSelectValue(resolvedAsset.category, categoryOptions, optionRenames.category),
       manufacturer: matchSelectValue(
@@ -864,6 +903,53 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     setAttachments((current) => current.filter((attachment) => attachment.id !== id));
   };
 
+  const handleAssetImage = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file",
+        description: "Please choose a PNG or JPG image.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (file.size > 5_000_000) {
+      toast({
+        title: "Image too large",
+        description: "Keep image under 5 MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = String(reader.result || "");
+      if (!raw) return;
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 320;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          form.setValue("assetImage", raw, { shouldDirty: true });
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        form.setValue("assetImage", canvas.toDataURL("image/jpeg", 0.72) || raw, {
+          shouldDirty: true,
+        });
+      };
+      img.onerror = () => form.setValue("assetImage", raw, { shouldDirty: true });
+      img.src = raw;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const createAssetMutation = useMutation({
     mutationFn: async (data: AssetFormData) => {
       const res = await apiRequest("POST", "/api/assets", data);
@@ -874,12 +960,15 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       }
       return responseData;
     },
-    onSuccess: async (created: any) => {
+    onSuccess: async (created: any, variables) => {
       toast({
         title: "Asset created",
         description: "The asset has been created successfully.",
       });
-      if (created?.id != null) saveAssetAttachments(created.id, attachments);
+      if (created?.id != null) {
+        saveAssetAttachments(created.id, attachments);
+        saveAssetPrimaryImage(created.id, (variables as any)?.assetImage || created?.assetImage);
+      }
       await queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
       await queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
       await queryClient.refetchQueries({ queryKey: ["/api/assets"] });
@@ -908,12 +997,15 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       }
       return responseData;
     },
-    onSuccess: () => {
+    onSuccess: (_updated, variables) => {
       toast({
         title: "Asset updated",
         description: "The asset has been updated successfully.",
       });
-      if (assetId != null) saveAssetAttachments(assetId, attachments);
+      if (assetId != null) {
+        saveAssetAttachments(assetId, attachments);
+        saveAssetPrimaryImage(assetId, (variables as any)?.assetImage);
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/assets", assetId] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
@@ -945,9 +1037,22 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       assignedTo: data.assignedTo ? capitalizeStart(data.assignedTo) : data.assignedTo,
       vendor: data.vendor ? capitalizeStart(data.vendor) : data.vendor,
       serial: data.serial?.trim() || "",
-      purchaseDate: data.purchaseDate ? (data.purchaseDate instanceof Date ? data.purchaseDate.toISOString() : new Date(data.purchaseDate).toISOString()) : undefined,
+      purchaseDate: data.purchaseDate
+        ? (data.purchaseDate instanceof Date ? data.purchaseDate.toISOString() : new Date(data.purchaseDate).toISOString())
+        : (data.depreciationStartDate
+          ? (data.depreciationStartDate instanceof Date ? data.depreciationStartDate.toISOString() : new Date(data.depreciationStartDate).toISOString())
+          : undefined),
       warrantyExpiry: data.warrantyExpiry ? (data.warrantyExpiry instanceof Date ? data.warrantyExpiry.toISOString() : new Date(data.warrantyExpiry).toISOString()) : undefined,
       depreciationStartDate: data.depreciationStartDate ? (data.depreciationStartDate instanceof Date ? data.depreciationStartDate.toISOString() : new Date(data.depreciationStartDate).toISOString()) : undefined,
+      residualValue: data.residualValue != null && String(data.residualValue).trim() !== ""
+        ? String(Number(data.residualValue) || 0)
+        : "0",
+      depreciationFrequency: data.depreciationFrequency || "Monthly",
+      depreciationBook: data.depreciationBook || "Financial (SFRS(I))",
+      usefulLifeUnit: data.usefulLifeUnit || "Years",
+      // Keep the entered number; unit is stored separately for schedule math.
+      usefulLifeYears: data.usefulLifeYears == null ? undefined : Number(data.usefulLifeYears),
+      assetImage: data.assetImage?.trim() ? data.assetImage.trim() : undefined,
     };
     
     if (isEditMode) {
@@ -992,6 +1097,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
           {/* Basic Details */}
           <section className="space-y-4">
             <ModalSectionHeader icon={Package} title="Basic Details" />
+
             <div className={formFieldGridClass}>
                       <FormField
                         control={form.control}
@@ -1404,6 +1510,33 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
 
                     <FormField
                       control={form.control}
+                      name="cost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm font-medium text-[#111827]">
+                            Purchase Cost <span className="text-red-500">*</span>
+                          </FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#6B7280]">
+                                S$
+                              </span>
+                              <Input
+                                className="pl-9"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={field.value ?? ""}
+                                onChange={(e) => field.onChange(e.target.value)}
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
                       name="warrantyExpiry"
                       render={({ field }) => (
                         <FormItem>
@@ -1419,73 +1552,216 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                       )}
                     />
 
-                        <FormField
-                          control={form.control}
-                          name="depreciationStartDate"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-sm font-medium text-[#111827]">Depreciation Start Date</FormLabel>
-                              <FormControl>
-                                <DatePicker
-                                  date={field.value ? new Date(field.value) : undefined}
-                                  setDate={(date) => field.onChange(date)}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+            </div>
+          </section>
 
-                        <FormField
-                          control={form.control}
-                          name="usefulLifeYears"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-sm font-medium text-[#111827]">Useful Life (Years)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="text"
-                                  inputMode="numeric"
-                                  placeholder=""
-                                  value={field.value ?? ""}
-                                  onChange={(e) => {
-                                    const v = e.target.value.replace(/\D/g, "");
-                                    field.onChange(v === "" ? undefined : parseInt(v, 10));
-                                  }}
-                                  onBlur={field.onBlur}
-                                  name={field.name}
-                                  ref={field.ref}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+          <div className="w-[140px] space-y-1.5">
+            <label className="text-sm font-medium text-[#111827]">Asset Image</label>
+            <button
+              type="button"
+              className="flex h-[72px] w-full cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-2 hover:border-[#2563EB]/50"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              {form.watch("assetImage") ? (
+                <img
+                  src={form.watch("assetImage") || ""}
+                  alt=""
+                  className="h-12 w-12 rounded-md border object-cover"
+                />
+              ) : (
+                <>
+                  <Camera className="h-5 w-5 text-[#2563EB]" />
+                  <span className="text-xs font-semibold text-[#1E293B]">Add Image</span>
+                </>
+              )}
+            </button>
+            {form.watch("assetImage") ? (
+              <button
+                type="button"
+                className="text-xs font-medium text-red-600 hover:underline"
+                onClick={() => form.setValue("assetImage", "", { shouldDirty: true })}
+              >
+                Remove
+              </button>
+            ) : null}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                handleAssetImage(e.target.files?.[0] || null);
+                e.target.value = "";
+              }}
+            />
+          </div>
 
-                        <FormField
-                          control={form.control}
-                          name="depreciationMethod"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-sm font-medium text-[#111827]">Depreciation Method</FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value || undefined}>
-                                <FormControl>
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select method" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent className="max-h-[14rem]">
-                                  {depreciationMethodOptions.map((method) => (
-                                    <SelectItem key={method} value={method.toLowerCase()}>
-                                      {method}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
+          <section className="space-y-4">
+            <ModalSectionHeader icon={Calculator} title="Depreciation Settings" />
+            <div className={formFieldGridClass}>
+              <FormField
+                control={form.control}
+                name="depreciationMethod"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#1E3A8A]">
+                      Depreciation Method <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || undefined}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select method" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="max-h-[14rem]">
+                        {depreciationMethodOptions.map((method) => (
+                          <SelectItem key={method} value={method.toLowerCase()}>
+                            {method}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="usefulLifeYears"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#1E3A8A]">
+                      Useful Life <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          className="flex-1"
+                          placeholder=""
+                          value={field.value ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, "");
+                            field.onChange(v === "" ? undefined : parseInt(v, 10));
+                          }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
                         />
+                      </FormControl>
+                      <Select
+                        onValueChange={(v) => form.setValue("usefulLifeUnit", v)}
+                        value={form.watch("usefulLifeUnit") || "Years"}
+                      >
+                        <SelectTrigger className="w-[110px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {usefulLifeUnits.map((u) => (
+                            <SelectItem key={u} value={u}>{u}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="residualValue"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#1E3A8A]">Residual Value</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#6B7280]">
+                          S$
+                        </span>
+                        <Input
+                          className="pl-9"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="depreciationStartDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#1E3A8A]">
+                      Depreciation Start Date <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <DatePicker
+                        date={field.value ? new Date(field.value) : undefined}
+                        setDate={(date) => field.onChange(date)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="depreciationFrequency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#1E3A8A]">Depreciation Frequency</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || "Monthly"}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select frequency" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {depreciationFrequencies.map((f) => (
+                          <SelectItem key={f} value={f}>{f}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="depreciationBook"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-sm font-medium text-[#1E3A8A]">Depreciation Book</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || "Financial (SFRS(I))"}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select book" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {depreciationBooks.map((b) => (
+                          <SelectItem key={b} value={b}>{b}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
           </section>
 

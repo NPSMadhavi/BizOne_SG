@@ -7,9 +7,40 @@ export type AssetAttachment = {
 };
 
 const ATTACHMENT_STORAGE_PREFIX = "asset-attachments-";
+const IMAGE_STORAGE_PREFIX = "asset-primary-image-";
 
 function attachmentStorageKey(assetId: number | string): string {
   return `${ATTACHMENT_STORAGE_PREFIX}${assetId}`;
+}
+
+function imageStorageKey(assetId: number | string): string {
+  return `${IMAGE_STORAGE_PREFIX}${assetId}`;
+}
+
+/** Persist primary asset image locally as a fallback when DB column is missing. */
+export function saveAssetPrimaryImage(
+  assetId: number | string,
+  dataUrl: string | null | undefined,
+): void {
+  try {
+    const value = String(dataUrl || "").trim();
+    if (!value) {
+      localStorage.removeItem(imageStorageKey(assetId));
+      return;
+    }
+    localStorage.setItem(imageStorageKey(assetId), value);
+  } catch {
+    /* quota — ignore */
+  }
+}
+
+export function loadAssetPrimaryImage(assetId?: number | string | null): string {
+  if (assetId == null || assetId === "") return "";
+  try {
+    return String(localStorage.getItem(imageStorageKey(assetId)) || "");
+  } catch {
+    return "";
+  }
 }
 
 export function loadAssetAttachments(assetId?: number | string | null): AssetAttachment[] {

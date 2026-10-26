@@ -3,6 +3,7 @@ import { db, creditNotesTable, usersTable, customersTable, settingsTable } from 
 import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
+import { reverseCreditNoteStock, syncCreditNoteStock } from "../lib/credit-note-stock.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -226,6 +227,20 @@ router.post("/credit-notes/:id/confirm", async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Credit note not found" }); return; }
   if (existing.status !== "draft") { res.status(400).json({ error: "Only draft credit notes can be confirmed" }); return; }
 
+  try {
+    await syncCreditNoteStock({
+      companyId: existing.companyId,
+      creditNoteId: existing.id,
+      cnNumber: existing.cnNumber,
+      items: (existing.items as any[]) || [],
+      userId: req.session.userId,
+      username: (req.session as any).username,
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Failed to post credit note stock return" });
+    return;
+  }
+
   const [doc] = await db.update(creditNotesTable).set({ status: "confirmed" }).where(eq(creditNotesTable.id, id)).returning();
   logAudit({ req, action: "update", entityType: "credit_note", entityId: doc.id, entityLabel: `${doc.cnNumber} confirmed` });
   res.json(parseDoc(doc));
@@ -243,6 +258,21 @@ router.post("/credit-notes/:id/void", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(creditNotesTable).where(eq(creditNotesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Credit note not found" }); return; }
   if (existing.status === "void") { res.status(400).json({ error: "Already voided" }); return; }
+
+  try {
+    if (existing.status === "confirmed") {
+      await reverseCreditNoteStock({
+        companyId: existing.companyId,
+        creditNoteId: existing.id,
+        cnNumber: existing.cnNumber,
+        userId: req.session.userId,
+        username: (req.session as any).username,
+      });
+    }
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Failed to reverse credit note stock" });
+    return;
+  }
 
   const { reason } = req.body;
   const [doc] = await db.update(creditNotesTable).set({ status: "void", voidReason: reason || null }).where(eq(creditNotesTable.id, id)).returning();

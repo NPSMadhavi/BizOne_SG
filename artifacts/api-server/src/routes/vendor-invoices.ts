@@ -60,20 +60,23 @@ function normalizeViItems(items: any[]) {
   return (items || []).map((it) => {
     const stockItemId = Number(it.stockItemId);
     const warehouseId = Number(it.warehouseId);
-    const hasStock =
-      Number.isFinite(stockItemId) && stockItemId > 0
-      && (Number.isFinite(warehouseId) && warehouseId > 0 || !!String(it.partNumber || "").trim());
+    const partNumber = String(it.partNumber || "").replace(/<[^>]*>/g, "").trim();
+    // Part number alone is enough — stock sync resolves Item Master + default warehouse.
+    const hasStockLink =
+      (Number.isFinite(stockItemId) && stockItemId > 0)
+      || partNumber.length > 0
+      || it.isStockItem === true;
     return {
       type: it.type || "item",
       sectionLabel: it.sectionLabel || "",
-      partNumber: String(it.partNumber || "").trim(),
+      partNumber,
       description: String(it.description || "").trim(),
       qty: Number(it.qty) || 0,
       unitPrice: Number(it.unitPrice) || 0,
       discount: Number(it.discount) || 0,
       uom: it.uom || "",
       amount: it.type === "section" ? 0 : calcViLineAmount(Number(it.qty) || 0, Number(it.unitPrice) || 0, Number(it.discount) || 0),
-      isStockItem: hasStock || !!it.isStockItem,
+      isStockItem: hasStockLink,
       stockItemId: Number.isFinite(stockItemId) && stockItemId > 0 ? stockItemId : undefined,
       warehouseId: Number.isFinite(warehouseId) && warehouseId > 0 ? warehouseId : undefined,
       warehouseName: typeof it.warehouseName === "string" ? it.warehouseName : undefined,

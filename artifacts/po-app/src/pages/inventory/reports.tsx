@@ -1102,19 +1102,29 @@ async function buildReportData(
       if (!item && !st && !led) continue;
 
       const opening = Number(led?.opening) || 0;
+      // Purchase = purchases − purchase returns; Sales = sales + sales returns
       const purchase = Number(led?.received) || 0;
       const sales = Number(led?.issued) || 0;
-      // Adjust = stock adjustments (±) + warehouse transfers (±) + credit/debit note effects
-      // so visible columns always satisfy: Opening + Purchase − Sales + Adjust = Closing
       const adjust =
         (Number(led?.adjustedIn) || 0) -
         (Number(led?.adjustedOut) || 0) +
         (Number(led?.transferredIn) || 0) -
         (Number(led?.transferredOut) || 0);
-      const closing = Math.round((opening + purchase - sales + adjust) * 1000) / 1000;
+      // Prefer API closing (accounts for return direction); fall back to O+P−S+A
+      const closingRaw = led?.closing != null
+        ? Number(led.closing)
+        : opening + purchase - sales + adjust;
+      const closing = Math.round(closingRaw * 1000) / 1000;
       const unitCost = Number(st?.unitPrice ?? item?.unitPrice ?? 0) || 0;
 
-      if (!filters.includeZeroStock && closing === 0 && opening === 0 && purchase === 0 && sales === 0 && adjust === 0) continue;
+      if (
+        !filters.includeZeroStock
+        && closing === 0
+        && opening === 0
+        && purchase === 0
+        && sales === 0
+        && adjust === 0
+      ) continue;
 
       rows.push({
         id,

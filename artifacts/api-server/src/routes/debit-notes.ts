@@ -4,6 +4,7 @@ import { eq, desc, inArray, ilike, and } from "drizzle-orm";
 import { nextDocNumber } from "../lib/running-numbers.js";
 import { logAudit } from "../lib/audit.js";
 import { applyVoucherAttachment, sendVoucherFile, VOUCHER_UPLOAD_FOLDERS } from "../lib/operations-upload.js";
+import { reverseDebitNoteStock, syncDebitNoteStock } from "../lib/debit-note-stock.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -146,6 +147,24 @@ router.post("/debit-notes", async (req, res): Promise<void> => {
     ...attachment,
   }).returning();
 
+  if (doc.status === "confirmed") {
+    try {
+      await syncDebitNoteStock({
+        companyId,
+        debitNoteId: doc.id,
+        dnNumber: doc.dnNumber,
+        items: (doc.items as any[]) || [],
+        userId,
+        username: (req.session as any).username,
+        issueDate: doc.issueDate,
+      });
+    } catch (e: any) {
+      await db.delete(debitNotesTable).where(eq(debitNotesTable.id, doc.id));
+      res.status(400).json({ error: e.message || "Failed to post debit note stock return" });
+      return;
+    }
+  }
+
   await upsertVendor(companyId, customerName, customerAddress, contactPerson, contactEmail);
   logAudit({ req, action: "create", entityType: "debit_note", entityId: doc.id, entityLabel: doc.dnNumber });
   res.status(201).json(parseDoc(doc));
@@ -246,6 +265,21 @@ router.post("/debit-notes/:id/confirm", async (req, res): Promise<void> => {
   if (existing.status === "confirmed") { res.status(400).json({ error: "Already confirmed" }); return; }
   if (existing.status === "void") { res.status(400).json({ error: "Cannot confirm a voided debit note" }); return; }
 
+  try {
+    await syncDebitNoteStock({
+      companyId: existing.companyId,
+      debitNoteId: existing.id,
+      dnNumber: existing.dnNumber,
+      items: (existing.items as any[]) || [],
+      userId: req.session.userId,
+      username: (req.session as any).username,
+      issueDate: existing.issueDate,
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Failed to post debit note stock return" });
+    return;
+  }
+
   const [doc] = await db.update(debitNotesTable).set({ status: "confirmed" }).where(eq(debitNotesTable.id, id)).returning();
   logAudit({ req, action: "update", entityType: "debit_note", entityId: doc.id, entityLabel: `${doc.dnNumber} confirmed` });
   res.json(parseDoc(doc));
@@ -263,6 +297,21 @@ router.post("/debit-notes/:id/void", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(debitNotesTable).where(eq(debitNotesTable.id, id));
   if (!existing) { res.status(404).json({ error: "Debit note not found" }); return; }
   if (existing.status === "void") { res.status(400).json({ error: "Already voided" }); return; }
+
+  try {
+    if (existing.status === "confirmed") {
+      await reverseDebitNoteStock({
+        companyId: existing.companyId,
+        debitNoteId: existing.id,
+        dnNumber: existing.dnNumber,
+        userId: req.session.userId,
+        username: (req.session as any).username,
+      });
+    }
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || "Failed to reverse debit note stock" });
+    return;
+  }
 
   const { reason } = req.body;
   const [doc] = await db.update(debitNotesTable).set({ status: "void", voidReason: reason || null }).where(eq(debitNotesTable.id, id)).returning();

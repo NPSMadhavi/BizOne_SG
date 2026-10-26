@@ -59,6 +59,7 @@ import {
   Landmark,
   LayoutTemplate,
   Sparkles,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -579,13 +580,40 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </NavGroup>
 
       {hasModuleAccess("assets") && (
-        <NavItem
-          href="/assets"
+        <NavGroup
+          id="fixed_assets"
+          label="Fixed Assets"
           icon={Monitor}
-          active={location.startsWith("/assets")}
+          isOpen={openGroup === "fixed_assets"}
+          onToggle={toggleGroup}
+          visible
+          hasActive={location.startsWith("/assets")}
         >
-          Fixed Assets
-        </NavItem>
+          <NavItem
+            href="/assets"
+            icon={Plus}
+            active={location === "/assets" || location === "/assets/" || location.startsWith("/assets/new") || /\/assets\/\d+\/edit/.test(location)}
+            inGroup
+          >
+            Add Asset
+          </NavItem>
+          <NavItem
+            href="/assets/register"
+            icon={FileText}
+            active={location.startsWith("/assets/register")}
+            inGroup
+          >
+            Asset Register
+          </NavItem>
+          <NavItem
+            href="/assets/depreciation"
+            icon={Banknote}
+            active={location.startsWith("/assets/depreciation")}
+            inGroup
+          >
+            Depreciation Schedule
+          </NavItem>
+        </NavGroup>
       )}
 
       {hasModuleAccess("licenses") && (

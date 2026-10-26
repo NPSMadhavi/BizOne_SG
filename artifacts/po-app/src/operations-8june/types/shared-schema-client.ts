@@ -24,7 +24,12 @@ export type Asset = {
   cost?: string | null;
   depreciationStartDate?: string | Date | null;
   usefulLifeYears?: number | null;
+  usefulLifeUnit?: string | null;
   depreciationMethod?: string | null;
+  residualValue?: string | null;
+  depreciationFrequency?: string | null;
+  depreciationBook?: string | null;
+  assetImage?: string | null;
   description?: string | null;
   hasLicense?: boolean | null;
   createdAt?: string | Date | null;
@@ -169,7 +174,12 @@ export const insertAssetSchema = z.object({
   cost: z.string().optional().nullable(),
   depreciationStartDate: z.coerce.date().optional(),
   usefulLifeYears: z.coerce.number().optional().nullable(),
+  usefulLifeUnit: z.string().optional().nullable(),
   depreciationMethod: z.string().optional().nullable(),
+  residualValue: z.string().optional().nullable(),
+  depreciationFrequency: z.string().optional().nullable(),
+  depreciationBook: z.string().optional().nullable(),
+  assetImage: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   hasLicense: z.boolean().optional(),
 });

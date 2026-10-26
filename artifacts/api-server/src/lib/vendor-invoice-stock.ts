@@ -198,7 +198,8 @@ export async function syncVendorInvoiceStock(params: {
       applyReferenceType: "vendor_invoice",
       reverseReferenceType: "vendor_invoice_reversal",
       applyInTransactionType: "goods_receipt",
-      reverseOutTransactionType: "adjustment_out",
+      // Purchase return — must reduce Purchase Qty, never Adjust
+      reverseOutTransactionType: "purchase_return",
     });
   });
 }
@@ -233,7 +234,7 @@ export async function reverseVendorInvoiceStock(params: {
       applyReferenceType: "vendor_invoice",
       reverseReferenceType: "vendor_invoice_reversal",
       applyInTransactionType: "goods_receipt",
-      reverseOutTransactionType: "adjustment_out",
+      reverseOutTransactionType: "purchase_return",
     });
   });
 }

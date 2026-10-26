@@ -27,7 +27,14 @@ export type MovementType =
   | "adjustment_in"
   | "adjustment_out"
   | "tax_invoice"
-  | "purchase_order";
+  | "purchase_order"
+  | "credit_note"
+  | "debit_note"
+  | "sales_return"
+  | "purchase_return"
+  | "invoice_void"
+  | "invoice_reversal"
+  | "vendor_invoice_reversal";
 
 export interface ApplyMovementInput {
   companyId: number;
@@ -569,6 +576,7 @@ function classifyMovementQty(
   transactionType: string | null | undefined,
   qtyIn: number,
   qtyOut: number,
+  referenceType?: string | null,
 ): {
   opening: number;
   received: number;
@@ -577,9 +585,56 @@ function classifyMovementQty(
   transferredOut: number;
   adjustedIn: number;
   adjustedOut: number;
+  /** Customer returns (stock in) — shown in Return Qty; nets against Sales. */
+  salesReturn: number;
+  /** Vendor / purchase returns (stock out) — shown in Return Qty; nets against Purchase. */
+  purchaseReturn: number;
 } {
-  const z = { opening: 0, received: 0, issued: 0, transferredIn: 0, transferredOut: 0, adjustedIn: 0, adjustedOut: 0 };
+  const z = {
+    opening: 0,
+    received: 0,
+    issued: 0,
+    transferredIn: 0,
+    transferredOut: 0,
+    adjustedIn: 0,
+    adjustedOut: 0,
+    salesReturn: 0,
+    purchaseReturn: 0,
+  };
   const t = String(transactionType || "").toLowerCase();
+  const ref = String(referenceType || "").toLowerCase();
+
+  // Purchase / vendor returns FIRST — never land in Adjust
+  const isPurchaseReturn =
+    t === "purchase_return"
+    || t === "vendor_invoice_reversal"
+    || t === "debit_note"
+    || t === "dn"
+    || ref === "vendor_invoice_reversal"
+    || ref === "debit_note"
+    || ref === "purchase_return"
+    || (ref.includes("vendor_invoice") && ref.includes("reversal"))
+    || (t === "adjustment_out" && (ref.includes("vendor_invoice") || ref.includes("debit")));
+  if (isPurchaseReturn && (qtyOut > 0 || qtyIn > 0)) {
+    return { ...z, purchaseReturn: qtyOut > 0 ? qtyOut : qtyIn };
+  }
+
+  // Sales / customer returns
+  const isSalesReturn =
+    t === "sales_return"
+    || t === "credit_note"
+    || t === "cn"
+    || t === "invoice_void"
+    || t === "invoice_reversal"
+    || ref === "credit_note"
+    || ref === "sales_return"
+    || ref === "invoice_void"
+    || ref === "invoice_reversal"
+    || (t === "adjustment_in" && (ref.includes("invoice") || ref.includes("credit")));
+  if (isSalesReturn) {
+    if (qtyIn > 0) return { ...z, salesReturn: qtyIn };
+    if (qtyOut > 0) return { ...z, salesReturn: qtyOut };
+  }
 
   // Purchases / inbound receipts
   if (t === "goods_receipt" || t === "purchase_order" || t === "grn" || t === "vendor_invoice") {
@@ -588,16 +643,6 @@ function classifyMovementQty(
   // Sales / outbound issues
   if (t === "goods_issue" || t === "tax_invoice") {
     return { ...z, issued: qtyOut > 0 ? qtyOut : qtyIn };
-  }
-  // Invoice void / credit put-back → treat as negative sales (stock returns in)
-  if (t === "invoice_void" || t === "invoice_reversal" || t === "vendor_invoice_reversal") {
-    if (qtyIn > 0) return { ...z, issued: -qtyIn };
-    if (qtyOut > 0) return { ...z, issued: qtyOut };
-  }
-  // Credit / debit note stock effects → Adjust
-  if (t === "credit_note" || t === "debit_note" || t === "cn" || t === "dn") {
-    if (qtyIn > 0) return { ...z, adjustedIn: qtyIn };
-    if (qtyOut > 0) return { ...z, adjustedOut: qtyOut };
   }
   if (t === "transfer_in") return { ...z, transferredIn: qtyIn > 0 ? qtyIn : qtyOut };
   if (t === "transfer_out") return { ...z, transferredOut: qtyOut > 0 ? qtyOut : qtyIn };
@@ -643,6 +688,7 @@ export async function getLedgerSummary(
     .select({
       stockItemId: stockMovementsTable.stockItemId,
       transactionType: stockMovementsTable.transactionType,
+      referenceType: stockMovementsTable.referenceType,
       quantityIn: stockMovementsTable.quantityIn,
       quantityOut: stockMovementsTable.quantityOut,
       moveDay: sql<string>`to_char(${stockMovementsTable.movementDate}::date, 'YYYY-MM-DD')`,
@@ -656,8 +702,18 @@ export async function getLedgerSummary(
   const summary: Record<number, {
     stockItemId: number;
     opening: number;
+    /** Gross inbound purchases in period (before purchase returns). */
+    receivedGross: number;
+    /** Gross outbound sales in period (before sales returns). */
+    issuedGross: number;
+    /** Net purchase qty after purchase returns (report Purchase Qty). */
     received: number;
+    /** Net sales qty: gross sales + sales returns (report Sales Qty). */
     issued: number;
+    /** All returns in period (purchase + sales) for Return Qty column. */
+    returned: number;
+    purchaseReturn: number;
+    salesReturn: number;
     transferredIn: number;
     transferredOut: number;
     adjustedIn: number;
@@ -670,8 +726,13 @@ export async function getLedgerSummary(
       summary[itemId] = {
         stockItemId: itemId,
         opening: 0,
+        receivedGross: 0,
+        issuedGross: 0,
         received: 0,
         issued: 0,
+        returned: 0,
+        purchaseReturn: 0,
+        salesReturn: 0,
         transferredIn: 0,
         transferredOut: 0,
         adjustedIn: 0,
@@ -695,10 +756,12 @@ export async function getLedgerSummary(
       continue;
     }
 
-    const bucket = classifyMovementQty(m.transactionType, qtyIn, qtyOut);
+    const bucket = classifyMovementQty(m.transactionType, qtyIn, qtyOut, m.referenceType);
     s.opening += bucket.opening;
-    s.received += bucket.received;
-    s.issued += bucket.issued;
+    s.receivedGross += bucket.received;
+    s.issuedGross += bucket.issued;
+    s.purchaseReturn += bucket.purchaseReturn;
+    s.salesReturn += bucket.salesReturn;
     s.transferredIn += bucket.transferredIn;
     s.transferredOut += bucket.transferredOut;
     s.adjustedIn += bucket.adjustedIn;
@@ -706,14 +769,24 @@ export async function getLedgerSummary(
   }
 
   for (const s of Object.values(summary)) {
-    s.closing =
+    // Purchase Qty = purchases − purchase returns
+    s.received = Math.round((s.receivedGross - s.purchaseReturn) * 1000) / 1000;
+    // Sales Qty = sales + sales returns (returns add into Sales Qty as requested)
+    s.issued = Math.round((s.issuedGross + s.salesReturn) * 1000) / 1000;
+    // Return Qty = all returns (purchase + sales)
+    s.returned = Math.round((s.purchaseReturn + s.salesReturn) * 1000) / 1000;
+    // Physical closing: purchase returns out, sales returns in
+    s.closing = Math.round((
       s.opening +
-      s.received -
-      s.issued +
+      s.receivedGross -
+      s.issuedGross -
+      s.purchaseReturn +
+      s.salesReturn +
       s.transferredIn -
       s.transferredOut +
       s.adjustedIn -
-      s.adjustedOut;
+      s.adjustedOut
+    ) * 1000) / 1000;
   }
 
   return Object.values(summary);

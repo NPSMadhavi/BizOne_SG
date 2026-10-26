@@ -787,7 +787,10 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
 
         stockItemId = stockItem.id;
         const serialLines = (item.serialNumbers || "").split("\n").map((s: string) => s.trim()).filter(Boolean);
-        const addQty = serialLines.length > 0 ? serialLines.length : (Number(item.qty) || 0);
+        // Always prefer the GRN line qty. Serial numbers are tracking metadata —
+        // using serial count here previously posted +1 whenever one serial was entered.
+        const lineQty = Number(item.qty) || 0;
+        const addQty = lineQty > 0 ? lineQty : serialLines.length;
         if (addQty <= 0) continue;
 
         const warehouseId = await resolveGrnLineWarehouseId(
@@ -827,6 +830,26 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
         if (existingGrnMove) {
           items[idx] = { ...item, warehouseStockPosted: true, stockItemId, warehouseId };
           continue;
+        }
+
+        // VI already holds stock for this item and GRN is mainly for serials
+        // (fewer serials than line qty) → register serials only, do not double Purchase Qty.
+        let skipWarehouseIn = false;
+        if (serialLines.length > 0 && serialLines.length + 0.0005 < addQty) {
+          const [viPosted] = await tx
+            .select({
+              net: sql<string>`coalesce(sum(${stockMovementsTable.quantityIn}::numeric - ${stockMovementsTable.quantityOut}::numeric), 0)`,
+            })
+            .from(stockMovementsTable)
+            .where(and(
+              eq(stockMovementsTable.companyId, companyId),
+              eq(stockMovementsTable.stockItemId, stockItemId),
+              or(
+                eq(stockMovementsTable.referenceType, "vendor_invoice"),
+                eq(stockMovementsTable.referenceType, "vendor_invoice_reversal"),
+              ),
+            ));
+          if (toStockQty(viPosted?.net) > 0.0005) skipWarehouseIn = true;
         }
 
         const batchNo = typeof item.batchNo === "string" ? item.batchNo.trim() : "";
@@ -936,19 +959,21 @@ router.post("/grn/:id/receive", async (req, res): Promise<void> => {
         }
 
         // STOCK IN to selected warehouse only — never touches another warehouse.
-        await applyMovement(tx, {
-          companyId,
-          warehouseId,
-          stockItemId,
-          transactionType: "goods_receipt",
-          documentNumber: existing.grnNumber,
-          referenceType: "grn",
-          referenceId: id,
-          quantityIn: addQty,
-          reference: existing.vendorName || existing.poNumber,
-          userId: req.session.userId,
-          username: req.session.username,
-        });
+        if (!skipWarehouseIn) {
+          await applyMovement(tx, {
+            companyId,
+            warehouseId,
+            stockItemId,
+            transactionType: "goods_receipt",
+            documentNumber: existing.grnNumber,
+            referenceType: "grn",
+            referenceId: id,
+            quantityIn: addQty,
+            reference: existing.vendorName || existing.poNumber,
+            userId: req.session.userId,
+            username: req.session.username,
+          });
+        }
         items[idx] = { ...item, warehouseStockPosted: true, stockItemId, warehouseId };
       }
 
@@ -1002,7 +1027,8 @@ router.delete("/grn/:id", async (req, res): Promise<void> => {
           .split("\n")
           .map((s: string) => s.trim())
           .filter(Boolean);
-        const qty = serialLines.length > 0 ? serialLines.length : Number(item.qty) || 0;
+        const lineQty = Number(item.qty) || 0;
+        const qty = lineQty > 0 ? lineQty : serialLines.length;
         if (qty <= 0) continue;
 
         const warehouseId = Number(item.warehouseId);

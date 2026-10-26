@@ -516,7 +516,8 @@ const ASSET_COLUMNS = [
   "tag", "type", "category", "serial", "model", "manufacturer", "status", "condition",
   "assigned_to", "location", "vendor", "vendor_id", "invoice_number", "purchase_date",
   "warranty_expiry", "cost", "depreciation_start_date", "useful_life_years",
-  "depreciation_method", "description", "has_license",
+  "useful_life_unit", "depreciation_method", "residual_value", "depreciation_frequency",
+  "depreciation_book", "asset_image", "description", "has_license",
 ];
 
 const EMPLOYEE_COLUMNS = [
@@ -584,9 +585,23 @@ async function insertDependents(
 
 // ── ASSETS ────────────────────────────────────────────────────────────────────
 
+/** Heal newer Fixed Asset columns (image / depreciation settings) on tenant DBs. */
+async function ensureAssetsSchema(): Promise<void> {
+  for (const stmt of [
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS useful_life_unit TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS residual_value TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_frequency TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_book TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS asset_image TEXT`,
+  ]) {
+    await pool.query(stmt).catch(() => undefined);
+  }
+}
+
 router.get("/assets", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
+    await ensureAssetsSchema();
     const result = await pool.query(
       `SELECT * FROM assets WHERE company_id = $1 ORDER BY id DESC`,
       [req.session.companyId],
@@ -602,6 +617,7 @@ router.get("/assets/:id", async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
+    await ensureAssetsSchema();
     const result = await pool.query(
       `SELECT * FROM assets WHERE id = $1 AND company_id = $2`,
       [id, req.session.companyId],
@@ -616,6 +632,7 @@ router.get("/assets/:id", async (req, res): Promise<void> => {
 router.post("/assets", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
+    await ensureAssetsSchema();
     const tag = await nextDocNumber("fa", req.session.companyId!);
     const body = {
       status: "available",
@@ -628,6 +645,8 @@ router.post("/assets", async (req, res): Promise<void> => {
     if (!body.serial) body.serial = "";
     if (!body.type) body.type = "Asset";
     if (!body.category) body.category = "Hardware";
+    // Don't insert blank image as NULL column noise
+    if (body.assetImage == null || body.assetImage === "") delete body.assetImage;
     const { sql, values } = buildInsert("assets", req.session.companyId!, body, ASSET_COLUMNS);
     const result = await pool.query(sql, values);
     res.status(201).json(formatRow(result.rows[0]));
@@ -642,6 +661,7 @@ router.put("/assets/:id", async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
+    await ensureAssetsSchema();
     const updateBody = { ...req.body };
     if ("serial" in updateBody && (updateBody.serial === null || updateBody.serial === undefined)) {
       updateBody.serial = "";

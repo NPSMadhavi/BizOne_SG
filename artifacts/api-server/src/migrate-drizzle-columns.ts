@@ -467,6 +467,66 @@ export const DRIZZLE_TABLE_CREATES: string[] = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     updated_by_user text
   )`,
+  `CREATE TABLE IF NOT EXISTS income_records (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    income_date text NOT NULL,
+    payer_name text NOT NULL,
+    description text NOT NULL,
+    category text NOT NULL,
+    amount numeric(15,2) NOT NULL,
+    gst_amount numeric(15,2) NOT NULL DEFAULT 0,
+    gst_treatment text NOT NULL DEFAULT 'standard_rated',
+    gst_claimable boolean NOT NULL DEFAULT false,
+    is_deductible boolean NOT NULL DEFAULT true,
+    deductible_pct integer NOT NULL DEFAULT 100,
+    currency text NOT NULL DEFAULT 'SGD',
+    exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000,
+    payment_method text DEFAULT 'bank_transfer',
+    account_id integer,
+    reference text,
+    notes text,
+    status text NOT NULL DEFAULT 'draft',
+    journal_entry_id integer,
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS income_attachments (
+    id serial PRIMARY KEY,
+    income_id integer NOT NULL,
+    file_name text NOT NULL DEFAULT 'attachment',
+    mime_type text NOT NULL DEFAULT 'application/octet-stream',
+    file_data text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS expenses (
+    id serial PRIMARY KEY,
+    company_id integer NOT NULL,
+    expense_date text NOT NULL,
+    vendor_name text NOT NULL,
+    description text NOT NULL,
+    category text NOT NULL,
+    account_id integer,
+    amount numeric(15,2) NOT NULL,
+    gst_amount numeric(15,2) NOT NULL DEFAULT 0,
+    gst_claimable boolean NOT NULL DEFAULT false,
+    is_deductible boolean NOT NULL DEFAULT true,
+    deductible_pct integer NOT NULL DEFAULT 100,
+    currency text NOT NULL DEFAULT 'SGD',
+    payment_method text DEFAULT 'bank_transfer',
+    receipt_data text,
+    receipt_mime_type text,
+    vendor_id integer,
+    project_id integer,
+    voucher_id integer,
+    journal_entry_id integer,
+    status text NOT NULL DEFAULT 'draft',
+    notes text,
+    created_by integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
 ];
 
 /**
@@ -699,10 +759,44 @@ export const DRIZZLE_COLUMN_MIGRATIONS: string[] = [
   `ALTER TABLE stock_item_purchase_prices ADD COLUMN IF NOT EXISTS quantity numeric(15,3) NOT NULL DEFAULT 0`,
   `CREATE INDEX IF NOT EXISTS stock_item_purchase_prices_item_idx
     ON stock_item_purchase_prices (stock_item_id, effective_date DESC, id DESC)`,
+
+  // ── income_records ────────────────────────────────────────────────────────
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS exchange_rate numeric(10,6) NOT NULL DEFAULT 1.000000`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_amount numeric(15,2) NOT NULL DEFAULT 0`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_treatment text NOT NULL DEFAULT 'standard_rated'`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS gst_claimable boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS is_deductible boolean NOT NULL DEFAULT true`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS deductible_pct integer NOT NULL DEFAULT 100`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'SGD'`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS payment_method text DEFAULT 'bank_transfer'`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS account_id integer`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS reference text`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS notes text`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft'`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS journal_entry_id integer`,
+  `ALTER TABLE income_records ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
+
+  // ── expenses ──────────────────────────────────────────────────────────────
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS account_id integer`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS gst_amount numeric(15,2) NOT NULL DEFAULT 0`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS gst_claimable boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_deductible boolean NOT NULL DEFAULT true`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS deductible_pct integer NOT NULL DEFAULT 100`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'SGD'`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method text DEFAULT 'bank_transfer'`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_data text`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_mime_type text`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS vendor_id integer`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id integer`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS voucher_id integer`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS journal_entry_id integer`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft'`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes text`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`,
 ];
 
 /** Columns that MUST exist after migration or startup must fail. */
-const CRITICAL_COLUMNS: Array<{ table: string; column: string }> = [
+export const CRITICAL_COLUMNS: Array<{ table: string; column: string }> = [
   { table: "sales_orders", column: "terms_and_conditions" },
   { table: "sales_orders", column: "delivery_instructions" },
   { table: "sales_orders", column: "customer_note" },
@@ -739,6 +833,8 @@ const CRITICAL_COLUMNS: Array<{ table: string; column: string }> = [
   { table: "settings", column: "vpi_counter" },
   { table: "settings", column: "vpi_suffix" },
   { table: "vendor_proforma_invoices", column: "vpi_number" },
+  { table: "income_records", column: "exchange_rate" },
+  { table: "expenses", column: "amount" },
 ];
 
 /** Postgres codes that are safe to ignore (idempotent / race / table not yet created). */

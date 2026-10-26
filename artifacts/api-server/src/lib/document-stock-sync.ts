@@ -1,5 +1,5 @@
 /**
- * SHARED DOCUMENT → WAREHOUSE STOCK SYNC
+ * SHARED DOCUMENT â†’ WAREHOUSE STOCK SYNC
  * --------------------------------------
  * Root-cause fix for the "Tax Invoice / Purchase Order looks like Stock Transfer" bug.
  *
@@ -9,7 +9,7 @@
  *   ONE warehouse, STOCK IN (+qty). Never reduces another warehouse.
  *
  * TAX INVOICE (direction: "out"):
- *   ONE warehouse, STOCK OUT (−qty). Never increases another warehouse
+ *   ONE warehouse, STOCK OUT (âˆ’qty). Never increases another warehouse
  *   except:
  *     - same-warehouse qty reduction put-back
  *     - explicit warehouse remap on the document line (TEST 7)
@@ -17,7 +17,7 @@
  * STOCK TRANSFER is a separate API and must NOT be used here.
  *
  * The previous bug used keyed delta sync over union(oldKeys, newKeys):
- *   when warehouse A → B, it reversed A and posted B in one save
+ *   when warehouse A â†’ B, it reversed A and posted B in one save
  *   (= transfer lookalike). That pattern is gone.
  */
 
@@ -89,6 +89,7 @@ async function applyIn(
     userId?: number;
     username?: string;
     transactionType?: MovementType;
+    movementDate?: Date;
   },
 ): Promise<void> {
   if (params.qty <= 0) return;
@@ -112,6 +113,7 @@ async function applyIn(
     reference: params.reference,
     userId: params.userId,
     username: params.username,
+    movementDate: params.movementDate,
   });
 }
 
@@ -130,6 +132,7 @@ async function applyOut(
     username?: string;
     transactionType?: MovementType;
     allowNegative?: boolean;
+    movementDate?: Date;
   },
 ): Promise<void> {
   if (params.qty <= 0) return;
@@ -162,6 +165,7 @@ async function applyOut(
     quantityOut: params.qty,
     reference: params.reference,
     userId: params.userId,
+    movementDate: params.movementDate,
     username: params.username,
   });
 }
@@ -180,7 +184,7 @@ export type SyncDocumentStockParams = {
   /**
    * When true (Tax Invoice): if the line warehouse changes, reverse the old
    * warehouse fully and apply on the new warehouse (TEST 7).
-   * When false (Purchase Order): warehouse change after posting is rejected —
+   * When false (Purchase Order): warehouse change after posting is rejected â€”
    * never auto-transfer between warehouses.
    */
   allowWarehouseRemap: boolean;
@@ -195,6 +199,8 @@ export type SyncDocumentStockParams = {
   applyOutTransactionType?: MovementType;
   reverseInTransactionType?: MovementType;
   reverseOutTransactionType?: MovementType;
+  /** When set, all movements written by this sync use this calendar date. */
+  movementDate?: Date;
 };
 
 /**
@@ -237,7 +243,7 @@ export async function syncDocumentWarehouseStock(
     const onlyPrevious = [...previousWhIds].filter((id) => !desiredWhIds.has(id));
     const onlyDesired = [...desiredWhIds].filter((id) => !previousWhIds.has(id));
 
-    // Explicit warehouse change on the document (e.g. invoice WH1 → WH2):
+    // Explicit warehouse change on the document (e.g. invoice WH1 â†’ WH2):
     // reverse every previous warehouse for this item, then apply desired warehouse(s).
     const isWarehouseChange =
       previousList.length > 0
@@ -287,6 +293,7 @@ export async function syncDocumentWarehouseStock(
             reference: params.reference ?? `${params.documentNumber} warehouse change`,
             userId: params.userId,
             username: params.username,
+            movementDate: params.movementDate,
             transactionType: params.reverseOutTransactionType ?? "adjustment_out",
           });
         } else {
@@ -302,6 +309,7 @@ export async function syncDocumentWarehouseStock(
             reference: params.reference ?? `${params.documentNumber} warehouse change`,
             userId: params.userId,
             username: params.username,
+            movementDate: params.movementDate,
             transactionType: params.reverseInTransactionType ?? "adjustment_in",
           });
         }
@@ -320,6 +328,7 @@ export async function syncDocumentWarehouseStock(
           reference: params.reference,
           userId: params.userId,
           username: params.username,
+          movementDate: params.movementDate,
           transactionType: params.applyInTransactionType ?? "goods_receipt",
         });
       } else {
@@ -334,6 +343,7 @@ export async function syncDocumentWarehouseStock(
           reference: params.reference,
           userId: params.userId,
           username: params.username,
+          movementDate: params.movementDate,
           transactionType: params.applyOutTransactionType ?? "goods_issue",
         });
       }
@@ -357,7 +367,7 @@ export async function syncDocumentWarehouseStock(
       if (Math.abs(delta) < 0.0005) continue;
 
       // Leftover net on a non-desired warehouse while item remains elsewhere:
-      // only possible with corrupt multi-WH history — never silent put-back.
+      // only possible with corrupt multi-WH history â€” never silent put-back.
       if (desiredQty <= 0 && currentQty > 0 && itemStillDesired && !desiredWhIds.has(warehouseId)) {
         inventoryLog({
           event: "orphan_net_skipped",
@@ -399,6 +409,7 @@ export async function syncDocumentWarehouseStock(
             reference: params.reference,
             userId: params.userId,
             username: params.username,
+            movementDate: params.movementDate,
             transactionType: params.applyInTransactionType ?? "goods_receipt",
           });
         } else {
@@ -413,6 +424,7 @@ export async function syncDocumentWarehouseStock(
             reference: params.reference ?? `${params.documentNumber} qty set to ${desiredQty}`,
             userId: params.userId,
             username: params.username,
+            movementDate: params.movementDate,
             transactionType: params.reverseOutTransactionType ?? "adjustment_out",
           });
         }
@@ -429,6 +441,7 @@ export async function syncDocumentWarehouseStock(
             reference: params.reference,
             userId: params.userId,
             username: params.username,
+            movementDate: params.movementDate,
             transactionType: params.applyOutTransactionType ?? "goods_issue",
           });
         } else {
@@ -444,6 +457,7 @@ export async function syncDocumentWarehouseStock(
             reference: params.reference ?? `${params.documentNumber} qty reduced (same warehouse)`,
             userId: params.userId,
             username: params.username,
+            movementDate: params.movementDate,
             transactionType: params.reverseInTransactionType ?? "adjustment_in",
           });
         }
@@ -456,7 +470,7 @@ export async function syncDocumentWarehouseStock(
         if (afterBal > previousBal + 0.0005) {
           throw new Error(
             `Tax Invoice must reduce stock, not increase it `
-            + `(warehouse #${warehouseId}, item #${stockItemId}: ${previousBal} → ${afterBal}).`,
+            + `(warehouse #${warehouseId}, item #${stockItemId}: ${previousBal} â†’ ${afterBal}).`,
           );
         }
       }

@@ -1,0 +1,10 @@
+const fs = require("fs");
+const p = require("path").join(__dirname, "src/lib/document-stock-sync.ts");
+let c = fs.readFileSync(p, "utf8");
+c = c.split("`n").join("\n");
+c = c.replace(/Invoice OUT â†’ put/g, "Invoice OUT → put");
+c = c.replace(/Invoice OUT .+ put stock back/g, "Invoice OUT → put stock back");
+fs.writeFileSync(p, c);
+console.log("fixed, sample lines:");
+const lines = c.split("\n");
+for (let i = 292; i < 312; i++) console.log(String(i + 1) + ":" + lines[i]);
