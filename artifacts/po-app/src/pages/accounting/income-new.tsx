@@ -16,6 +16,7 @@ import { ArrowLeft, Info, RefreshCw, Paperclip, X, FileText, FileImage, Upload }
 import { cn } from "@/lib/utils";
 import { BankAccountField } from "@/components/bank-account-field";
 import { LedgerCombobox, type LedgerAccount } from "@/components/ledger-combobox";
+import { formatExchangeRate } from "@/lib/currencies";
 
 interface IncomeForm {
   incomeDate: string;
@@ -83,7 +84,7 @@ export default function IncomeNew() {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [selectedBank, setSelectedBank] = useState("");
-  const [exchangeRate, setExchangeRate] = useState("1.000000");
+  const [exchangeRate, setExchangeRate] = useState("1.00");
   const [fetchingRate, setFetchingRate] = useState(false);
   const [attachments, setAttachments] = useState<AttachFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,18 +135,31 @@ export default function IncomeNew() {
   const payerName          = watch("payerName");
   const description        = watch("description");
 
-  const fetchExchangeRateIncome = async (curr: string, date: string) => {
-    if (curr === "SGD") { setExchangeRate("1.000000"); return; }
+  const fetchExchangeRateIncome = async (curr: string, date: string, isManual = false) => {
+    if (curr === "SGD") {
+      setExchangeRate("1.00");
+      if (isManual) toast({ title: "SGD Currency", description: "SGD is the base currency (rate: 1.00)." });
+      return;
+    }
     setFetchingRate(true);
     try {
       const res = await fetch(`/api/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
-      if (res.ok) { const d = await res.json(); setExchangeRate(d.rateSGD.toFixed(6)); }
-    } catch { /* silently ignore */ } finally { setFetchingRate(false); }
+      if (res.ok) {
+        const d = await res.json();
+        const formatted = formatExchangeRate(d.rateSGD);
+        setExchangeRate(formatted);
+        if (isManual) toast({ title: "Exchange Rate Updated", description: `1 ${curr} = ${formatted} SGD` });
+      } else if (isManual) {
+        toast({ variant: "destructive", title: "Rate fetch failed", description: "Could not retrieve exchange rate." });
+      }
+    } catch {
+      if (isManual) toast({ variant: "destructive", title: "Network error", description: "Could not reach exchange rate service." });
+    } finally { setFetchingRate(false); }
   };
 
   useEffect(() => {
     if (watchedCurrency !== "SGD") fetchExchangeRateIncome(watchedCurrency, watchedDate);
-    else setExchangeRate("1.000000");
+    else setExchangeRate("1.00");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedCurrency, watchedDate]);
 
@@ -328,10 +342,10 @@ export default function IncomeNew() {
                           className="h-7 font-mono text-xs w-32 bg-white" />
                         <span className="font-mono">SGD</span>
                       </div>
-                      <button type="button" onClick={() => fetchExchangeRateIncome(watchedCurrency, watchedDate)}
+                      <button type="button" onClick={() => fetchExchangeRateIncome(watchedCurrency, watchedDate, true)}
                         disabled={fetchingRate}
-                        className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50">
-                        <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} /> Fetch Rate
+                        className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50 transition-colors">
+                        <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} /> {fetchingRate ? "Fetching…" : "Fetch Rate"}
                       </button>
                     </div>
                     <p className="text-[10px] text-amber-600">Auto-fetched from public exchange rates for {watchedDate}. Verify with MAS for IRAS compliance.</p>

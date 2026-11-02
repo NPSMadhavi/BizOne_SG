@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
+import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -9,6 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -30,9 +40,14 @@ import {
   type Ir8aPayrollRecord,
 } from "@/operations-8june/lib/ir8a-data";
 import {
+  ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  Download,
   ExternalLink,
   Eye,
+  FileSpreadsheet,
+  FileText,
   Send,
 } from "lucide-react";
 
@@ -54,6 +69,7 @@ function parseYearFromSearch(search: string): string {
 }
 
 export default function AisSubmissionPage() {
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const search = useSearch();
   const [year, setYear] = useState(parseYearFromSearch(search));
@@ -202,19 +218,177 @@ export default function AisSubmissionPage() {
     });
   }
 
+  const handleExport = (formatType: "excel" | "pdf") => {
+    if (filtered.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no employees for the selected year to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      if (formatType === "excel") {
+        const data = filtered.map((line) => ({
+          "Employee ID": line.employee.employeeId || "—",
+          "Employee Name": line.employee.name || "—",
+          "NRIC / FIN": line.employee.nricNumber || "—",
+          Department: line.employee.department || "—",
+          Designation: line.employee.designation || "—",
+          "Employment Income (SGD)": Number(line.gross || 0),
+          "CPF (SGD)": Number((line.employeeCpf || 0) + (line.employerCpf || 0)),
+          Status: line.status,
+          "Assessment Year": assessmentYear || "—",
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        worksheet["!cols"] = [
+          { wch: 15 },
+          { wch: 25 },
+          { wch: 16 },
+          { wch: 18 },
+          { wch: 18 },
+          { wch: 24 },
+          { wch: 16 },
+          { wch: 14 },
+          { wch: 16 },
+        ];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, `AIS YA${assessmentYear || ""}`);
+        XLSX.writeFile(
+          workbook,
+          `ais-submission-YA${assessmentYear || "all"}-${format(new Date(), "yyyy-MM-dd")}.xlsx`,
+        );
+        toast({
+          title: "Export successful",
+          description: "AIS submission data has been downloaded as an Excel file.",
+        });
+      } else {
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+        const dateLabel = format(new Date(), "dd MMM yyyy");
+
+        doc.setFontSize(16);
+        doc.setTextColor(37, 99, 235);
+        doc.text(
+          `Auto-Inclusion Scheme (AIS) Submission - YA ${assessmentYear || "—"}`,
+          14,
+          15,
+        );
+        doc.setFontSize(9);
+        doc.setTextColor(107, 114, 128);
+        doc.text(
+          `Generated: ${dateLabel}  |  Total Employees: ${filtered.length}  |  Total Income: SGD ${money(
+            filtered.reduce((s, l) => s + l.gross, 0),
+          )}`,
+          14,
+          21,
+        );
+
+        (doc as any).autoTable({
+          startY: 25,
+          head: [[
+            "Employee ID",
+            "Employee Name",
+            "NRIC / FIN",
+            "Department",
+            "Gross Income (S$)",
+            "Total CPF (S$)",
+            "Status",
+          ]],
+          body: filtered.map((line) => [
+            line.employee.employeeId || "—",
+            line.employee.name || "—",
+            line.employee.nricNumber || "—",
+            line.employee.department || "—",
+            money(line.gross),
+            money(line.employeeCpf + line.employerCpf),
+            line.status,
+          ]),
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: 255,
+            fontStyle: "bold",
+          },
+          styles: { fontSize: 8, cellPadding: 2 },
+          columnStyles: {
+            4: { halign: "right" },
+            5: { halign: "right" },
+          },
+        });
+
+        doc.save(
+          `ais-submission-YA${assessmentYear || "all"}-${format(new Date(), "yyyy-MM-dd")}.pdf`,
+        );
+        toast({
+          title: "Export successful",
+          description: "AIS submission report has been downloaded as a PDF file.",
+        });
+      }
+    } catch {
+      toast({
+        title: "Export failed",
+        description: "Unable to export AIS submission. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">AIS Submission</h1>
-        <a
-          href={IRAS_AIS_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2563EB] hover:underline"
-        >
-          Learn more about AIS (IRAS)
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                setLocation("/payroll/ir8a");
+              }
+            }}
+            aria-label="Back to IR8A"
+            className="h-9 w-9 text-[#2563EB] hover:bg-[#EFF6FF] border border-[#E5E7EB] rounded-lg shadow-sm"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">AIS Submission</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="gap-2 border-[#E5E7EB] bg-white text-[#374151] hover:bg-[#F9FAFB] shadow-sm"
+                disabled={filtered.length === 0}
+              >
+                <Download className="h-4 w-4" />
+                Export
+                <ChevronDown className="h-4 w-4 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("excel")} className="gap-2 cursor-pointer">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("pdf")} className="gap-2 cursor-pointer">
+                <FileText className="h-4 w-4 text-red-600" />
+                PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <a
+            href={IRAS_AIS_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2563EB] hover:underline"
+          >
+            Learn more about AIS (IRAS)
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
       </div>
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white px-4 py-4 shadow-sm sm:px-6">

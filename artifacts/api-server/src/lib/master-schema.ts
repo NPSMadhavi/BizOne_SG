@@ -16,6 +16,11 @@ export const MASTER_TABLES = new Set([
   "role_permissions",
   "session",
   "maintenance",
+  "accounting_backups",
+  "accounting_restore_operations",
+  "backup_retention_settings",
+  "backup_schedules",
+  "local_backup_download_history",
 ]);
 
 export function isMasterTable(name: string): boolean {

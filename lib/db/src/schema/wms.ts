@@ -111,6 +111,7 @@ export const stockTransfersTable = pgTable("stock_transfers", {
   transferDate: date("transfer_date").notNull(),
   remarks: text("remarks"),
   status: text("status").notNull().default("posted"),
+  salesPerson: text("sales_person"),
   createdBy: integer("created_by").references(() => usersTable.id),
   updatedBy: integer("updated_by").references(() => usersTable.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

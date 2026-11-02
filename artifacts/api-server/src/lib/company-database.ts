@@ -579,6 +579,60 @@ async function ensureTenantCompanyRow(
 }
 
 /**
+ * Ensure users, roles, role_permissions, and user_companies are synced from master to tenant.
+ */
+async function ensureTenantUsersAndRoles(
+  pool: pg.Pool,
+  masterUrl: string,
+  companyId: number,
+): Promise<void> {
+  try {
+    const userCheck = await pool.query<{ count: string }>(
+      "SELECT count(*)::int AS count FROM users WHERE company_id = $1",
+      [companyId],
+    );
+    if (Number(userCheck.rows[0]?.count || 0) > 0) {
+      return;
+    }
+    const master = new pg.Client({ connectionString: masterUrl });
+    const tenant = await pool.connect();
+    await master.connect();
+    try {
+      await tenant.query("SET session_replication_role = replica").catch(() => undefined);
+      const catalog = await tenant.query("SELECT 1 FROM permissions LIMIT 1").then(() => true).catch(() => false);
+      if (catalog) {
+        const empty = await tenant.query("SELECT 1 FROM permissions LIMIT 1");
+        if ((empty.rowCount ?? 0) === 0) {
+          await copyRows(master, tenant, "permissions", "true", []);
+        }
+      }
+      await copyRows(master, tenant, "roles", "company_id = $1", [companyId]);
+      await copyRows(
+        master,
+        tenant,
+        "role_permissions",
+        "role_id IN (SELECT id FROM roles WHERE company_id = $1)",
+        [companyId],
+      );
+      await tenant
+        .query(`ALTER TABLE users ALTER COLUMN password_hash SET DEFAULT ''`)
+        .catch(() => undefined);
+      await tenant
+        .query(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`)
+        .catch(() => undefined);
+      await copyUsersWithPasswords(master, tenant, companyId);
+      await copyRows(master, tenant, "user_companies", "company_id = $1", [companyId]);
+    } finally {
+      await tenant.query("SET session_replication_role = origin").catch(() => undefined);
+      tenant.release();
+      await master.end();
+    }
+  } catch (err) {
+    console.error("[company-database] ensureTenantUsersAndRoles error:", err);
+  }
+}
+
+/**
  * Per-company databases should not enforce FKs to companies(id) / users(id) from master.
  * Companies + login users live on master; tenant user ids often differ after restore/copy,
  * which breaks inserts (warehouses.created_by, stock items, etc.).
@@ -627,6 +681,7 @@ async function prepareCompanyPool(databaseUrl: string, databaseName: string, com
   // Always keep company stub + drop legacy FKs (cheap); then maybe skip heavy heal.
   await dropTenantCompanyForeignKeys(pool, databaseName);
   await ensureTenantCompanyRow(pool, databaseUrl, databaseName, companyId);
+  await ensureTenantUsersAndRoles(pool, databaseUrl, companyId);
   // Warehouses/customers columns are often missing on older tenants — heal even on fast path.
   await healTenantInventorySchema(pool, databaseName);
   // Document tables (PQ/PO/SO/invoices/…) — must run even when tenantLooksReady is true,

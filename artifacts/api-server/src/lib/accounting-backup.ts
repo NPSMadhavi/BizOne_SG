@@ -25,6 +25,7 @@ import {
   incomeRecordsTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, gte, lte, inArray } from "drizzle-orm";
+import { createCompanyBackup } from "./system-backup-engine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const backupsDir = path.join(__dirname, "..", "uploads", "accounting-backups");
@@ -380,12 +381,10 @@ export async function runDueSchedules(): Promise<number> {
   const now = new Date();
   for (const s of schedules) {
     if (!s.nextRunAt || s.nextRunAt > now) continue;
-    const result = await createAccountingBackup({
+    const result = await createCompanyBackup({
       companyId: s.companyId,
-      backupType: (s.backupType as BackupType) || "accounting",
       source: "scheduled",
-      scheduleId: s.id,
-      username: "system-scheduler",
+      username: "System Scheduler",
     });
     const next = computeNextRunAt(s.frequency, s.timeOfDay, s.dayOfWeek);
     await db

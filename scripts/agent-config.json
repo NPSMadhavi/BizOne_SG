@@ -1,0 +1,10 @@
+{
+    "CompanyId":  23,
+    "Frequency":  "Daily",
+    "DestinationDir":  "C:\\BizOneBackups",
+    "CompanySlug":  "",
+    "LastConfiguredAt":  "2026-10-30T15:16:11.1031790+05:30",
+    "Time":  "16:42",
+    "AgentKey":  "bizone-backup-sync-key",
+    "ServerUrl":  "http://localhost:8080"
+}

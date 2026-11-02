@@ -20,7 +20,8 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { CURRENCIES } from "@/lib/currencies";
+import { CURRENCIES, formatExchangeRate } from "@/lib/currencies";
+import { CurrencySelect } from "@/components/currency-select";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
 import { VendorInvoiceLineItems } from "@/components/vendor-invoice-line-items";
 import { VendorInvoiceAdditionalInfo } from "@/components/vendor-invoice-additional-info";
@@ -92,7 +93,7 @@ export default function VendorInvoiceEdit() {
   const [gstInclusive, setGstInclusive] = useState(false);
   const [expenseAccountId, setExpenseAccountId] = useState<string>("none");
   const [expenseAccountPickerOpen, setExpenseAccountPickerOpen] = useState(false);
-  const [exchangeRate, setExchangeRate] = useState("1.000000");
+  const [exchangeRate, setExchangeRate] = useState("1.00");
   const [fetchingRate, setFetchingRate] = useState(false);
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -190,8 +191,8 @@ export default function VendorInvoiceEdit() {
     setExpenseAccountId(pi.expenseAccountId ? String(pi.expenseAccountId) : "none");
     setExchangeRate(
       pi.exchangeRate != null && pi.exchangeRate !== ""
-        ? Number(pi.exchangeRate).toFixed(6)
-        : "1.000000"
+        ? formatExchangeRate(pi.exchangeRate)
+        : "1.00"
     );
     skipNextRateFetch.current = true;
     initialized.current = true;
@@ -211,17 +212,48 @@ export default function VendorInvoiceEdit() {
 
   const vendorName = selectedVendor ? selectedVendor.name : vendorSearch.trim();
 
-  const fetchExchangeRate = async (curr: string, date: string) => {
-    if (curr === "SGD") { setExchangeRate("1.000000"); return; }
+  const fetchExchangeRate = async (curr: string, date: string, isManual = false) => {
+    if (curr === "SGD") {
+      setExchangeRate("1.00");
+      if (isManual) {
+        toast({ title: "SGD Currency", description: "SGD is the base currency (rate: 1.00)." });
+      }
+      return;
+    }
     setFetchingRate(true);
     try {
       const res = await fetch(`/api/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setExchangeRate(data.rateSGD.toFixed(6));
+        const formatted = formatExchangeRate(data.rateSGD);
+        setExchangeRate(formatted);
+        if (isManual) {
+          toast({
+            title: "Exchange Rate Updated",
+            description: `1 ${curr} = ${formatted} SGD`,
+          });
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (isManual) {
+          toast({
+            variant: "destructive",
+            title: "Rate fetch failed",
+            description: err.error || "Could not retrieve exchange rate. Please enter manually.",
+          });
+        }
       }
-    } catch { /* silently ignore; user can enter manually */ }
-    finally { setFetchingRate(false); }
+    } catch {
+      if (isManual) {
+        toast({
+          variant: "destructive",
+          title: "Network error",
+          description: "Could not reach exchange rate service. Please enter rate manually.",
+        });
+      }
+    } finally {
+      setFetchingRate(false);
+    }
   };
 
   useEffect(() => {
@@ -231,7 +263,7 @@ export default function VendorInvoiceEdit() {
       return;
     }
     if (currency !== "SGD") fetchExchangeRate(currency, piDate);
-    if (currency === "SGD") setExchangeRate("1.000000");
+    if (currency === "SGD") setExchangeRate("1.00");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency, piDate]);
 
@@ -712,14 +744,7 @@ export default function VendorInvoiceEdit() {
             </div>
             <div className="space-y-1.5">
               <Label>Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map(c => (
-                    <SelectItem key={c.code} value={c.code}>{c.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CurrencySelect value={currency} onValueChange={setCurrency} />
             </div>
           </div>
 
@@ -803,7 +828,7 @@ export default function VendorInvoiceEdit() {
             <div className="flex items-center gap-1.5 flex-1 text-xs text-amber-700">
               <span className="font-mono">1 {currency} =</span>
               <Input
-                type="text" inputMode="decimal" step="0.000001" min="0.000001" placeholder="Internal notes..."
+                type="text" inputMode="decimal" step="0.000001" min="0.000001" placeholder="1.00"
                 value={exchangeRate}
                 onChange={e => setExchangeRate(e.target.value)}
                 className="h-7 font-mono text-xs w-32 bg-white"
@@ -812,12 +837,12 @@ export default function VendorInvoiceEdit() {
             </div>
             <button
               type="button"
-              onClick={() => fetchExchangeRate(currency, piDate)}
+              onClick={() => fetchExchangeRate(currency, piDate, true)}
               disabled={fetchingRate}
-              className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50"
+              className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50 transition-colors"
             >
               <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} />
-              Fetch Rate
+              {fetchingRate ? "Fetching…" : "Fetch Rate"}
             </button>
           </div>
           <p className="text-[10px] text-amber-600">Rate auto-fetched from public exchange rates for {piDate}. Verify with MAS (mas.gov.sg) for IRAS compliance.</p>

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Info, Plus, Trash2 } from "lucide-react";
+import { Info, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -119,6 +119,7 @@ export default function Ir8aEmployersPage() {
   const queryClient = useQueryClient();
   const { selectedCompany } = useAuth();
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<EmployerForm>(() => emptyForm(null));
 
   const { data: employers = [], isLoading } = useQuery<Ir8aEmployer[]>({
@@ -133,10 +134,25 @@ export default function Ir8aEmployersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ir8a/employers"] });
       toast({ title: "Employer added" });
-      setShowForm(false);
+      closeForm();
     },
     onError: (error: Error) => {
       toast({ title: "Could not save employer", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: number; payload: EmployerForm }) => {
+      const response = await apiRequest("PUT", `/api/ir8a/employers/${id}`, payload);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ir8a/employers"] });
+      toast({ title: "Employer updated" });
+      closeForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not update employer", description: error.message, variant: "destructive" });
     },
   });
 
@@ -154,8 +170,30 @@ export default function Ir8aEmployersPage() {
   });
 
   function openForm() {
+    setEditingId(null);
     setForm(emptyForm(selectedCompany));
     setShowForm(true);
+  }
+
+  function openEdit(employer: Ir8aEmployer) {
+    setEditingId(employer.id);
+    setForm({
+      employerName: employer.employerName || "",
+      uen: employer.uen || "",
+      address: employer.address || "",
+      signatoryName: employer.signatoryName || "",
+      designation: employer.designation || "",
+      declarationDate: employer.declarationDate
+        ? employer.declarationDate.slice(0, 10)
+        : todayInput(),
+      signature: employer.signature || "",
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setEditingId(null);
+    setShowForm(false);
   }
 
   function update(field: keyof EmployerForm, value: string) {
@@ -176,14 +214,19 @@ export default function Ir8aEmployersPage() {
       toast({ title: "Fill the required fields", description: missing.join(", "), variant: "destructive" });
       return;
     }
-    createMutation.mutate({
+    const payload = {
       ...form,
       employerName: form.employerName.trim(),
       uen: form.uen.trim(),
       address: form.address.trim(),
       signatoryName: form.signatoryName.trim(),
       designation: form.designation.trim(),
-    });
+    };
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, payload });
+    } else {
+      createMutation.mutate(payload);
+    }
   }
 
   const inputClass = "w-full rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2.5 text-sm text-[#111827] outline-none focus:border-[#2563EB]";
@@ -207,7 +250,9 @@ export default function Ir8aEmployersPage() {
           <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_300px]">
             <div className="rounded-2xl border border-[#E8EEF8] bg-white p-6">
               <div className="mb-5">
-                <h2 className="text-xl font-bold text-[#1E3A5F]">Employer Details</h2>
+                <h2 className="text-xl font-bold text-[#1E3A5F]">
+                  {editingId ? "Edit Employer Details" : "Employer Details"}
+                </h2>
                 <p className="text-sm text-[#64748B]">Provide your company details as registered with IRAS.</p>
               </div>
               <div className="space-y-4">
@@ -284,9 +329,20 @@ export default function Ir8aEmployersPage() {
           </section>
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button type="button" className="bg-[#2563EB] hover:bg-[#1D4ED8]" disabled={createMutation.isPending} onClick={save}>
-              Save
+            <Button type="button" variant="outline" onClick={closeForm}>Cancel</Button>
+            <Button
+              type="button"
+              className="bg-[#2563EB] hover:bg-[#1D4ED8]"
+              disabled={createMutation.isPending || updateMutation.isPending}
+              onClick={save}
+            >
+              {editingId
+                ? updateMutation.isPending
+                  ? "Updating..."
+                  : "Update Employer"
+                : createMutation.isPending
+                  ? "Saving..."
+                  : "Save"}
             </Button>
           </div>
         </div>
@@ -324,16 +380,28 @@ export default function Ir8aEmployersPage() {
                       <td className="px-3 py-3 text-[#374151]">{employer.designation}</td>
                       <td className="px-3 py-3 text-[#374151]">{formatDisplayDate(employer.declarationDate)}</td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-[#DC2626]"
-                          aria-label={`Remove ${employer.employerName}`}
-                          onClick={() => deleteMutation.mutate(employer.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-[#2563EB] hover:bg-blue-50"
+                            aria-label={`Edit ${employer.employerName}`}
+                            onClick={() => openEdit(employer)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-[#DC2626] hover:bg-red-50"
+                            aria-label={`Remove ${employer.employerName}`}
+                            onClick={() => deleteMutation.mutate(employer.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))

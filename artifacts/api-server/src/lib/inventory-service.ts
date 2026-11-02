@@ -550,6 +550,7 @@ export async function getWarehouseStockSummary(companyId: number, warehouseId?: 
       itemName: stockItemsTable.name,
       uom: stockItemsTable.uom,
       unitPrice: stockItemsTable.unitPrice,
+      salesPerson: stockItemsTable.salesPerson,
       minStockLevel: stockItemsTable.minStockLevel,
       reorderLevel: stockItemsTable.reorderLevel,
       maxStockLevel: stockItemsTable.maxStockLevel,
@@ -567,6 +568,7 @@ export async function getWarehouseStockSummary(companyId: number, warehouseId?: 
     stockItemId: Number(r.stockItemId),
     quantity: toQty(r.quantity),
     unitPrice: toQty(r.unitPrice),
+    salesPerson: r.salesPerson || null,
     warehouseName: r.warehouseName,
   }));
 }

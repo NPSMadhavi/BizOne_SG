@@ -543,6 +543,10 @@ export default function ReportsPage() {
     setFilters((f) => ({ ...f, warehouseId }));
   }
 
+  function onPreviewCategoryChange(category: string) {
+    setFilters((f) => ({ ...f, category }));
+  }
+
   const displayedBatchWise = useMemo(() => {
     if (reportProductFilter === "all") return batchWiseRows;
     return batchWiseRows.filter((r) => r.itemCode === reportProductFilter);
@@ -910,6 +914,22 @@ ${styles}
                       <SelectItem value="all">All Warehouses</SelectItem>
                       {warehouses.map((w) => (
                         <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {activeReport === "categorised_report" && (
+                <div className="flex items-center gap-1.5 mr-2">
+                  <span className="text-xs font-medium text-[#6B7280] whitespace-nowrap">Category:</span>
+                  <Select value={filters.category} onValueChange={onPreviewCategoryChange}>
+                    <SelectTrigger className="h-9 w-48 bg-white text-xs">
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categories.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

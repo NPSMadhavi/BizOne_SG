@@ -758,7 +758,6 @@ ${styles}
     <div className="min-h-full space-y-5 bg-[#F6F8FC] p-1">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-[#132D52]">Sales Person Wise Stock Report</h1>
-        <p className="mt-1 text-sm text-[#6B7280]">View sales and stock movement details based on Sales Person.</p>
       </div>
 
       {/* Filters */}

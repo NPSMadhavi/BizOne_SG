@@ -3,7 +3,7 @@ import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTab
 import { eq, and, desc, sql, asc } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
-import { getExchangeRateToSGD } from "../lib/exchange-rate.js";
+import { getExchangeRateToSGD, getExchangeRateInfo } from "../lib/exchange-rate.js";
 import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
 import { backfillVendorInvoiceJEs } from "../lib/vendor-invoice-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
@@ -506,11 +506,11 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     ));
 
     const invBox1 = invRows.reduce((s, r) => {
-      const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+      const fx = parseFloat(String(r.exchangeRate ?? "1")) || 1;
       return s + (parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")) * fx;
     }, 0);
     const invBox6 = invRows.reduce((s, r) => {
-      const fx = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+      const fx = parseFloat(String(r.exchangeRate ?? "1")) || 1;
       return s + parseFloat(r.tax ?? "0") * fx;
     }, 0);
 
@@ -591,16 +591,14 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
     const viSR = viRows.filter(r => !r.gstTreatment || r.gstTreatment === "standard_rated");
 
     // Box 4: net amount (excl. GST) of SR purchases — converted to SGD via exchange rate
-    // FX rate is rounded to 4dp to match what's displayed in the FX Rate column,
-    // so every SGD value is exactly verifiable: Net(Box4) × displayed_rate = Net SGD.
     const viBox4 = viSR.reduce((s, r) => {
-      const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+      const fx  = parseFloat(String(r.exchangeRate ?? "1")) || 1;
       const net = parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2));
       return s + net * fx;
     }, 0);
     // Box 7 contribution from vendor invoices: GST amount on SR purchases — converted to SGD
     const viBox7 = viSR.reduce((s, r) => {
-      const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
+      const fx  = parseFloat(String(r.exchangeRate ?? "1")) || 1;
       const gst = parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2));
       return s + gst * fx;
     }, 0);
@@ -649,43 +647,45 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
       box7: parseFloat(totalBox7.toFixed(2)),
       box8: parseFloat(box8.toFixed(2)),
       invoices: invRows.map(r => {
-        const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
-        // Round net/gst to 2dp and fx to 4dp before multiply — result matches displayed_net × displayed_rate
+        const fx  = parseFloat(String(r.exchangeRate ?? "1")) || 1;
         const net = parseFloat((parseFloat(r.subtotal ?? "0") - parseFloat(r.discountAmount ?? "0")).toFixed(2));
         const gst = parseFloat(parseFloat(r.tax ?? "0").toFixed(2));
+        const tot = parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2));
         return {
           id:           r.id,
           invNumber:    r.invNumber,
           customerName: r.customerName,
           issueDate:    r.issueDate,
-          netAmount:    net,
-          gstAmount:    gst,
-          totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
-          netAmountSGD: parseFloat((net * fx).toFixed(2)),
-          gstAmountSGD: parseFloat((gst * fx).toFixed(2)),
           currency:     r.currency ?? "SGD",
           exchangeRate: fx,
           status:       r.status,
+          netAmount:    net,
+          gstAmount:    gst,
+          totalAmount:  tot,
+          netAmountSGD: parseFloat((net * fx).toFixed(2)),
+          gstAmountSGD: parseFloat((gst * fx).toFixed(2)),
+          totalAmountSGD: parseFloat((tot * fx).toFixed(2)),
         };
       }),
       vendorInvoices: viRows.map(r => {
-        const fx  = parseFloat(parseFloat(r.exchangeRate ?? "1").toFixed(4)) || 1;
-        // Round net/gst to 2dp and fx to 4dp — result = displayed_net × displayed_rate exactly.
+        const fx  = parseFloat(String(r.exchangeRate ?? "1")) || 1;
         const net = parseFloat((parseFloat(r.totalAmount ?? "0") - parseFloat(r.gstAmount ?? "0")).toFixed(2));
         const gst = parseFloat(parseFloat(r.gstAmount ?? "0").toFixed(2));
+        const tot = parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2));
         return {
           id:           r.id,
           piNumber:     r.piNumber,
           vendorName:   r.vendorName,
           piDate:       r.piDate,
+          currency:     r.currency ?? "SGD",
+          exchangeRate: fx,
+          gstTreatment: r.gstTreatment ?? "standard_rated",
           netAmount:    net,
           gstAmount:    gst,
-          totalAmount:  parseFloat(parseFloat(r.totalAmount ?? "0").toFixed(2)),
+          totalAmount:  tot,
           netAmountSGD: parseFloat((net * fx).toFixed(2)),
           gstAmountSGD: parseFloat((gst * fx).toFixed(2)),
-          gstTreatment: r.gstTreatment ?? "standard_rated",
-          currency:     r.currency,
-          exchangeRate: fx,
+          totalAmountSGD: parseFloat((tot * fx).toFixed(2)),
         };
       }),
       expenses: expenseRows.map(r => ({
@@ -716,7 +716,7 @@ router.get("/gst-f5", async (req, res): Promise<void> => {
         };
       }),
     });
-  } catch (err) {
+  } catch (err: any) {
     logServerError(logger, "Failed to load GST F5 data", err);
     res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to load GST F5 data") });
   }
@@ -2219,10 +2219,17 @@ router.get("/exchange-rate", async (req, res): Promise<void> => {
   if (!requireAuth(req, res)) return;
   const currency = ((req.query.currency as string) || "SGD").toUpperCase();
   const date = (req.query.date as string) || undefined;
-  if (currency === "SGD") { res.json({ currency: "SGD", date: date || "latest", rateSGD: 1 }); return; }
+  if (currency === "SGD") { res.json({ currency: "SGD", date: date || "latest", rateSGD: 1, roundedRateSGD: 1 }); return; }
   try {
-    const rate = await getExchangeRateToSGD(currency, date);
-    res.json({ currency, date: date || "latest", rateSGD: parseFloat(rate.toFixed(6)) });
+    const { rate, resolvedDate } = await getExchangeRateInfo(currency, date);
+    const rounded = Math.round(rate * 100) / 100;
+    const roundedRateSGD = rounded >= 0.01 ? parseFloat(rounded.toFixed(2)) : parseFloat(rate.toFixed(6));
+    res.json({
+      currency,
+      date: resolvedDate || date || "latest",
+      rateSGD: parseFloat(rate.toFixed(6)),
+      roundedRateSGD,
+    });
   } catch (e: any) {
     res.status(502).json({ error: `Could not fetch exchange rate: ${e.message}` });
   }
@@ -2252,7 +2259,9 @@ router.post("/exchange-rate/backfill", async (req, res): Promise<void> => {
       if (parseFloat(vi.exchangeRate ?? "1") !== 1.0) continue; // already set
       try {
         const rate = await getExchangeRateToSGD(vi.currency!, vi.piDate || undefined);
-        await db.update(vendorInvoicesTable).set({ exchangeRate: rate.toFixed(6) } as any).where(eq(vendorInvoicesTable.id, vi.id));
+        const rounded = Math.round(rate * 100) / 100;
+        const finalRate = rounded >= 0.01 ? rounded : rate;
+        await db.update(vendorInvoicesTable).set({ exchangeRate: finalRate.toFixed(finalRate >= 0.01 ? 2 : 6) } as any).where(eq(vendorInvoicesTable.id, vi.id));
         updated++;
       } catch (e: any) { failed++; errors.push(`VI #${vi.id}: ${e.message}`); }
     }
@@ -2268,7 +2277,9 @@ router.post("/exchange-rate/backfill", async (req, res): Promise<void> => {
       if (parseFloat(inv.exchangeRate ?? "1") !== 1.0) continue;
       try {
         const rate = await getExchangeRateToSGD(inv.currency!, inv.issueDate || undefined);
-        await db.update(invoicesTable).set({ exchangeRate: rate.toFixed(6) } as any).where(eq(invoicesTable.id, inv.id));
+        const rounded = Math.round(rate * 100) / 100;
+        const finalRate = rounded >= 0.01 ? rounded : rate;
+        await db.update(invoicesTable).set({ exchangeRate: finalRate.toFixed(finalRate >= 0.01 ? 2 : 6) } as any).where(eq(invoicesTable.id, inv.id));
         updated++;
       } catch (e: any) { failed++; errors.push(`INV #${inv.id}: ${e.message}`); }
     }
@@ -2284,13 +2295,15 @@ router.post("/exchange-rate/backfill", async (req, res): Promise<void> => {
       if (parseFloat(inc.exchangeRate ?? "1") !== 1.0) continue;
       try {
         const rate = await getExchangeRateToSGD(inc.currency!, inc.incomeDate || undefined);
-        await db.update(incomeRecordsTable).set({ exchangeRate: rate.toFixed(6) } as any).where(eq(incomeRecordsTable.id, inc.id));
+        const rounded = Math.round(rate * 100) / 100;
+        const finalRate = rounded >= 0.01 ? rounded : rate;
+        await db.update(incomeRecordsTable).set({ exchangeRate: finalRate.toFixed(finalRate >= 0.01 ? 2 : 6) } as any).where(eq(incomeRecordsTable.id, inc.id));
         updated++;
       } catch (e: any) { failed++; errors.push(`INC #${inc.id}: ${e.message}`); }
     }
 
     res.json({ updated, failed, errors: errors.slice(0, 20) });
-  } catch (err) {
+  } catch (err: any) {
     logServerError(logger, "Failed to backfill exchange rates", err);
     res.status(500).json({ error: sanitizeErrorMessage(err, "Failed to backfill exchange rates") });
   }

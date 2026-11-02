@@ -68,7 +68,7 @@ const itemSchema = z.object({
   itemImage: z.string().default(""),
 });
 
-import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+import { CURRENCIES, normalizeCurrency, formatCurrency as formatCurrencySafe, formatExchangeRate } from "@/lib/currencies";
 
 const schema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
@@ -120,7 +120,7 @@ export default function InvoiceNew() {
   const [aiOpen, setAiOpen] = useState(false);
   const [createDeliveryOrder, setCreateDeliveryOrder] = useState(false);
   const [discountPct, setDiscountPct] = useState(0);
-  const [exchangeRate, setExchangeRate] = useState("1.000000");
+  const [exchangeRate, setExchangeRate] = useState("1.00");
   const [fetchingRate, setFetchingRate] = useState(false);
   const [copiedFromInvoice, setCopiedFromInvoice] = useState(
     () => Boolean((window as any).__ariaPrefill?.sourceInvNumber),
@@ -440,22 +440,53 @@ export default function InvoiceNew() {
   const currency = normalizeCurrency(rawCurrency);
   const issueDate = form.watch("issueDate") || getToday();
 
-  const fetchExchangeRate = async (curr: string, date: string) => {
-    if (curr === "SGD") { setExchangeRate("1.000000"); return; }
+  const fetchExchangeRate = async (curr: string, date: string, isManual = false) => {
+    if (curr === "SGD") {
+      setExchangeRate("1.00");
+      if (isManual) {
+        toast({ title: "SGD Currency", description: "SGD is the base currency (rate: 1.00)." });
+      }
+      return;
+    }
     setFetchingRate(true);
     try {
       const res = await fetch(`/api/exchange-rate?currency=${curr}&date=${date}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setExchangeRate(data.rateSGD.toFixed(6));
+        const formatted = formatExchangeRate(data.rateSGD);
+        setExchangeRate(formatted);
+        if (isManual) {
+          toast({
+            title: "Exchange Rate Updated",
+            description: `1 ${curr} = ${formatted} SGD`,
+          });
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (isManual) {
+          toast({
+            variant: "destructive",
+            title: "Rate fetch failed",
+            description: err.error || "Could not retrieve exchange rate. Please enter manually.",
+          });
+        }
       }
-    } catch { /* user can enter manually */ }
-    finally { setFetchingRate(false); }
+    } catch {
+      if (isManual) {
+        toast({
+          variant: "destructive",
+          title: "Network error",
+          description: "Could not reach exchange rate service. Please enter rate manually.",
+        });
+      }
+    } finally {
+      setFetchingRate(false);
+    }
   };
 
   useEffect(() => {
     if (currency !== "SGD") fetchExchangeRate(currency, issueDate);
-    if (currency === "SGD") setExchangeRate("1.000000");
+    if (currency === "SGD") setExchangeRate("1.00");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency, issueDate]);
 
@@ -935,12 +966,12 @@ export default function InvoiceNew() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => fetchExchangeRate(currency, issueDate)}
+                  onClick={() => fetchExchangeRate(currency, issueDate, true)}
                   disabled={fetchingRate}
-                  className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50"
+                  className="flex items-center gap-1 text-xs text-amber-800 border border-amber-300 rounded px-2 h-7 bg-white hover:bg-amber-50 disabled:opacity-50 transition-colors"
                 >
                   <RefreshCw className={`h-3 w-3 ${fetchingRate ? "animate-spin" : ""}`} />
-                  Fetch Rate
+                  {fetchingRate ? "Fetching…" : "Fetch Rate"}
                 </button>
               </div>
               <p className="text-[10px] text-amber-600">Rate auto-fetched from public exchange rates for {issueDate}. Verify with MAS (mas.gov.sg) for IRAS compliance.</p>

@@ -111,6 +111,8 @@ router.get("/report-templates", requireReportPerm("report_templates:view"), asyn
   const companyId = companyIdFrom(req);
   if (!companyId) { res.status(403).json({ error: "Active company context required" }); return; }
 
+  await seedReportDefinitions();
+
   const reportType = typeof req.query.reportType === "string" ? req.query.reportType : null;
   let definitionId: number | null = null;
   if (reportType) {

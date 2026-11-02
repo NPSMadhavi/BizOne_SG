@@ -9,7 +9,7 @@ import {
   salesPersonsTable,
   APP_ALL_MODULES,
 } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { UpdateUserParams, DeleteUserParams } from "@workspace/api-zod";
 import { logAudit } from "../lib/audit.js";
@@ -21,6 +21,7 @@ import {
   loginNameTaken,
   publishCompanyUsersToMaster,
   saveUserCompanyAccess,
+  syncMasterUsersToTenant,
   updateLoginUser,
 } from "../lib/login-account.js";
 
@@ -172,12 +173,26 @@ router.get("/users", requirePermission("user_management:view"), async (req, res)
     return;
   }
 
+  await syncMasterUsersToTenant(companyId);
   await publishCompanyUsersToMaster(companyId);
+
+  const ucRows = await db
+    .select({ userId: userCompaniesTable.userId })
+    .from(userCompaniesTable)
+    .where(eq(userCompaniesTable.companyId, companyId));
+  const userIdsWithAccess = ucRows.map((r) => r.userId);
 
   const users = await db
     .select()
     .from(usersTable)
-    .where(eq(usersTable.companyId, companyId))
+    .where(
+      userIdsWithAccess.length > 0
+        ? or(
+            eq(usersTable.companyId, companyId),
+            sql`${usersTable.id} IN (${sql.join(userIdsWithAccess.map((id) => sql`${id}`), sql`, `)})`,
+          )
+        : eq(usersTable.companyId, companyId),
+    )
     .orderBy(usersTable.createdAt);
 
   const result = await Promise.all(users.map((u) => getUserWithCompaniesAndRole(u.id, companyId)));

@@ -343,6 +343,10 @@ router.post("/auth/register", async (req, res): Promise<void> => {
           grnCounter: 0,
           grnSuffix: "",
         });
+        const { syncMasterUsersToTenant } = await import("../lib/login-account.js");
+        await syncMasterUsersToTenant(company.id);
+        const { seedReportDefinitions } = await import("../lib/reports/seed.js");
+        await seedReportDefinitions();
       });
     } catch (err) {
       const cause = err && typeof err === "object" && "cause" in err ? (err as { cause?: unknown }).cause : undefined;

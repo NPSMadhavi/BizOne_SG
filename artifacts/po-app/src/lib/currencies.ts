@@ -146,3 +146,24 @@ export function formatCurrency(value: number, currencyInput?: string): string {
     return `${code} ${formatted}`;
   }
 }
+
+/**
+ * Formats an exchange rate to a rounded figure suitable for display and calculations.
+ * For standard rates (>= 0.01), rounds to 2 decimal places (e.g., 1.280543 -> "1.28", 1.286543 -> "1.29").
+ * For micro-rates (< 0.01, such as IDR, VND, KRW), preserves up to 6 decimal places to prevent 0.00.
+ */
+export function formatExchangeRate(rate: number | string | null | undefined): string {
+  if (rate == null || rate === "") return "1.00";
+  const num = typeof rate === "number" ? rate : parseFloat(String(rate));
+  if (isNaN(num) || num <= 0) return "1.00";
+
+  // Standard 2-decimal rounding:
+  // Math.round(num * 100) / 100 ensures 1.280543 -> 1.28, 1.286543 -> 1.29
+  const rounded2 = Math.round(num * 100) / 100;
+  if (rounded2 >= 0.01) {
+    return rounded2.toFixed(2);
+  }
+
+  // Micro-currencies (e.g. IDR, VND, KRW) where 2 decimals would produce 0.00:
+  return num.toFixed(6).replace(/\.?0+$/, "");
+}

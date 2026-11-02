@@ -36,6 +36,7 @@ export const UPLOAD_SUBDIRS = [
   "payslips",
   "payslip-zips",
   "accounting-backups",
+  "system-backups",
   "purchase orders",
   "vendor invoice",
   "debit note",

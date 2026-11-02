@@ -13,11 +13,21 @@ router.get("/roles", requirePermission("user_management:view"), async (req, res)
     return;
   }
 
-  const rows = await db
+  let rows = await db
     .select({ id: rolesTable.id, name: rolesTable.name })
     .from(rolesTable)
     .where(eq(rolesTable.companyId, companyId))
     .orderBy(rolesTable.name);
+
+  if (rows.length === 0) {
+    const { syncMasterRolesToCompany } = await import("../lib/login-account.js");
+    await syncMasterRolesToCompany(companyId);
+    rows = await db
+      .select({ id: rolesTable.id, name: rolesTable.name })
+      .from(rolesTable)
+      .where(eq(rolesTable.companyId, companyId))
+      .orderBy(rolesTable.name);
+  }
 
   res.json(rows);
 });

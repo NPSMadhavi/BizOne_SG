@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Download, Loader2, Info, ChevronDown, ChevronRight, RefreshCw, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateGstF5_PDF } from "@/lib/pdf";
+import { formatExchangeRate } from "@/lib/currencies";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -22,12 +23,18 @@ interface F5Data {
     id: number; invNumber: string; customerName: string;
     issueDate: string | null; netAmount: number; gstAmount: number;
     totalAmount: number; status: string;
+    currency?: string;
+    exchangeRate?: number;
+    netAmountSGD?: number;
+    gstAmountSGD?: number;
+    totalAmountSGD?: number;
   }>;
   vendorInvoices: Array<{
     id: number; piNumber: string; vendorName: string;
     piDate: string | null; netAmount: number; gstAmount: number;
     netAmountSGD?: number; gstAmountSGD?: number;
-    totalAmount: number; gstTreatment: string; currency: string;
+    totalAmount: number; totalAmountSGD?: number;
+    gstTreatment: string; currency: string;
     exchangeRate?: number;
   }>;
   expenses: Array<{
@@ -81,18 +88,45 @@ function fmtDateLong(d: string | null) {
 
 // ─── SortTh — standalone so it doesn't remount on every parent re-render ─────
 
-type VISortKey = "piNumber" | "vendorName" | "piDate" | "currency" | "netAmount" | "gstAmount" | "totalAmount";
+type VISortKey =
+  | "piNumber"
+  | "vendorName"
+  | "piDate"
+  | "currency"
+  | "exchangeRate"
+  | "gstTreatment"
+  | "netAmount"
+  | "netAmountSGD"
+  | "gstAmount"
+  | "gstAmountSGD"
+  | "totalAmount"
+  | "totalAmountSGD";
 
-interface SortThProps {
-  col: VISortKey;
-  sortKey: VISortKey;
+type InvSortKey =
+  | "invNumber"
+  | "customerName"
+  | "issueDate"
+  | "status"
+  | "currency"
+  | "exchangeRate"
+  | "netAmount"
+  | "netAmountSGD"
+  | "gstAmount"
+  | "gstAmountSGD"
+  | "totalAmount"
+  | "totalAmountSGD";
+
+interface SortThProps<T extends string = string> {
+  col: T;
+  sortKey: T;
   sortDir: "asc" | "desc";
-  onSort: (col: VISortKey) => void;
+  onSort: (col: T) => void;
   right?: boolean;
+  className?: string;
   children: React.ReactNode;
 }
 
-function SortTh({ col, sortKey, sortDir, onSort, right, children }: SortThProps) {
+function SortTh<T extends string = string>({ col, sortKey, sortDir, onSort, right, className, children }: SortThProps<T>) {
   const active = sortKey === col;
   return (
     <th
@@ -100,6 +134,7 @@ function SortTh({ col, sortKey, sortDir, onSort, right, children }: SortThProps)
         "px-4 py-2 text-xs font-semibold cursor-pointer select-none hover:text-foreground group",
         active ? "text-foreground" : "text-muted-foreground",
         right ? "text-right" : "text-left",
+        className,
       )}
       onClick={() => onSort(col)}
     >
@@ -131,6 +166,10 @@ export default function GstF5Page() {
   const [backfilling,        setBackfilling]        = useState(false);
   const [backfillResult,     setBackfillResult]     = useState<{ updated: number; failed: number } | null>(null);
 
+  // Sales invoices sort state
+  const [invSortKey, setInvSortKey] = useState<InvSortKey>("issueDate");
+  const [invSortDir, setInvSortDir] = useState<"asc" | "desc">("desc");
+
   // Vendor invoices sort state
   const [viSortKey, setViSortKey] = useState<VISortKey>("piDate");
   const [viSortDir, setViSortDir] = useState<"asc" | "desc">("desc");
@@ -153,6 +192,14 @@ export default function GstF5Page() {
     // prevent text selection on multi-click
     if (e.detail > 1) e.preventDefault();
   }
+
+  const handleInvSort = useCallback((col: InvSortKey) => {
+    setInvSortKey(prev => {
+      if (prev === col) { setInvSortDir(d => d === "asc" ? "desc" : "asc"); return col; }
+      setInvSortDir("asc");
+      return col;
+    });
+  }, []);
 
   const handleViSort = useCallback((col: VISortKey) => {
     setViSortKey(prev => {
@@ -208,6 +255,8 @@ export default function GstF5Page() {
     if (autoBackfillDone.current === periodKey) return;
     const needsFix = data.vendorInvoices.some(
       v => (v.currency ?? "SGD") !== "SGD" && ((v as any).exchangeRate ?? 1) === 1
+    ) || data.invoices.some(
+      i => (i.currency ?? "SGD") !== "SGD" && ((i as any).exchangeRate ?? 1) === 1
     );
     if (needsFix) {
       autoBackfillDone.current = periodKey;
@@ -456,60 +505,132 @@ export default function GstF5Page() {
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Supporting Details</h3>
 
               {/* Sales invoices */}
-              <div className="border rounded-lg overflow-hidden">
-                <button
-                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 text-sm font-medium transition-colors"
-                  onClick={() => setShowInvoices(v => !v)}
-                >
-                  <span>Sales Invoices contributing to Box 1 + Box 6 — {data.invoices.length} invoice{data.invoices.length !== 1 ? "s" : ""}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-muted-foreground">Output GST S$ {fmtAmt(data.box6)}</span>
-                    {showInvoices ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </div>
-                </button>
-                {showInvoices && (
-                  <div className="overflow-x-auto">
-                    {data.invoices.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-6">No taxable invoices in this period.</p>
-                    ) : (
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/20 border-b">
-                          <tr>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Invoice No.</th>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Customer</th>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Date</th>
-                            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">Status</th>
-                            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Net (Box 1)</th>
-                            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">GST (Box 6)</th>
-                            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {data.invoices.map((inv, i) => (
-                            <tr key={inv.id} onClick={e => toggleRow(e, inv.id, selInv, setSelInv)} className={cn("border-b last:border-b-0 cursor-pointer select-none transition-colors", selInv.has(inv.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30")}>
-                              <td className="px-4 py-2 font-mono text-xs font-medium">{inv.invNumber}</td>
-                              <td className="px-4 py-2 text-xs">{inv.customerName}</td>
-                              <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(inv.issueDate)}</td>
-                              <td className="px-4 py-2">
-                                <Badge variant={inv.status === "paid" ? "default" : "outline"} className="text-[10px]">{inv.status}</Badge>
-                              </td>
-                              <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(inv.netAmount)}</td>
-                              <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(inv.gstAmount)}</td>
-                              <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{fmtAmt(inv.totalAmount)}</td>
-                            </tr>
-                          ))}
-                          <tr className="bg-muted/30 font-semibold border-t-2">
-                            <td colSpan={4} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals</td>
-                            <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(data.box1)}</td>
-                            <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(data.box6)}</td>
-                            <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(data.invoices.reduce((s, i) => s + i.totalAmount, 0))}</td>
-                          </tr>
-                        </tbody>
-                      </table>
+              {(() => {
+                const sortedInvoices = [...data.invoices].sort((a, b) => {
+                  let av: any, bv: any;
+                  switch (invSortKey) {
+                    case "invNumber":      av = a.invNumber;                 bv = b.invNumber;                 break;
+                    case "customerName":   av = a.customerName;              bv = b.customerName;              break;
+                    case "issueDate":      av = a.issueDate ?? "";           bv = b.issueDate ?? "";           break;
+                    case "status":         av = a.status;                    bv = b.status;                    break;
+                    case "currency":       av = a.currency ?? "SGD";         bv = b.currency ?? "SGD";         break;
+                    case "exchangeRate":   av = a.exchangeRate ?? 1;         bv = b.exchangeRate ?? 1;         break;
+                    case "netAmount":      av = a.netAmount;                 bv = b.netAmount;                 break;
+                    case "netAmountSGD":   av = a.netAmountSGD ?? a.netAmount; bv = b.netAmountSGD ?? b.netAmount; break;
+                    case "gstAmount":      av = a.gstAmount;                 bv = b.gstAmount;                 break;
+                    case "gstAmountSGD":   av = a.gstAmountSGD ?? a.gstAmount; bv = b.gstAmountSGD ?? b.gstAmount; break;
+                    case "totalAmount":    av = a.totalAmount;               bv = b.totalAmount;               break;
+                    case "totalAmountSGD": av = a.totalAmountSGD ?? a.totalAmount; bv = b.totalAmountSGD ?? b.totalAmount; break;
+                    default:               av = a.issueDate ?? "";           bv = b.issueDate ?? "";
+                  }
+                  if (typeof av === "string") return invSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+                  return invSortDir === "asc" ? av - bv : bv - av;
+                });
+
+                const totalInvNetOrig = sortedInvoices.reduce((s, i) => s + (i.netAmount || 0), 0);
+                const totalInvNetSGD  = sortedInvoices.reduce((s, i) => s + (i.netAmountSGD ?? (i.netAmount * (i.exchangeRate ?? 1))), 0);
+                const totalInvGstOrig = sortedInvoices.reduce((s, i) => s + (i.gstAmount || 0), 0);
+                const totalInvGstSGD  = sortedInvoices.reduce((s, i) => s + (i.gstAmountSGD ?? (i.gstAmount * (i.exchangeRate ?? 1))), 0);
+                const totalInvTotOrig = sortedInvoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
+                const totalInvTotSGD  = sortedInvoices.reduce((s, i) => s + (i.totalAmountSGD ?? (i.netAmountSGD ?? i.netAmount) + (i.gstAmountSGD ?? i.gstAmount)), 0);
+
+                return (
+                  <div className="border rounded-lg overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 text-sm font-medium transition-colors"
+                      onClick={() => setShowInvoices(v => !v)}
+                    >
+                      <span>Sales Invoices contributing to Box 1 + Box 6 — {data.invoices.length} invoice{data.invoices.length !== 1 ? "s" : ""}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-xs text-muted-foreground">Output GST S$ {fmtAmt(data.box6)}</span>
+                        {showInvoices ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </div>
+                    </button>
+                    {showInvoices && (
+                      <div className="overflow-x-auto">
+                        {data.invoices.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-6">No taxable invoices in this period.</p>
+                        ) : (
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/20 border-b">
+                              <tr>
+                                <SortTh col="invNumber"      sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort}>Invoice No.</SortTh>
+                                <SortTh col="customerName"   sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort}>Customer</SortTh>
+                                <SortTh col="issueDate"      sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort}>Date</SortTh>
+                                <SortTh col="status"         sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort}>Status</SortTh>
+                                <SortTh col="currency"       sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort}>Currency</SortTh>
+                                <SortTh col="exchangeRate"   sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right className="text-amber-700">FX Rate</SortTh>
+                                <SortTh col="netAmount"      sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right>Net</SortTh>
+                                <SortTh col="netAmountSGD"   sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right className="text-emerald-700">Net SGD (Box 1)</SortTh>
+                                <SortTh col="gstAmount"      sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right>GST</SortTh>
+                                <SortTh col="gstAmountSGD"   sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right className="text-blue-700">GST SGD (Box 6)</SortTh>
+                                <SortTh col="totalAmount"    sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right>Total</SortTh>
+                                <SortTh col="totalAmountSGD" sortKey={invSortKey} sortDir={invSortDir} onSort={handleInvSort} right className="text-foreground">Total SGD</SortTh>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sortedInvoices.map((inv, i) => {
+                                const isFX = (inv.currency ?? "SGD") !== "SGD";
+                                const netSGD = inv.netAmountSGD ?? (inv.netAmount * (inv.exchangeRate ?? 1));
+                                const gstSGD = inv.gstAmountSGD ?? (inv.gstAmount * (inv.exchangeRate ?? 1));
+                                const totSGD = inv.totalAmountSGD ?? (netSGD + gstSGD);
+                                return (
+                                  <tr
+                                    key={inv.id}
+                                    onClick={e => toggleRow(e, inv.id, selInv, setSelInv)}
+                                    className={cn(
+                                      "border-b last:border-b-0 cursor-pointer select-none transition-colors",
+                                      selInv.has(inv.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30"
+                                    )}
+                                  >
+                                    <td className="px-4 py-2 font-mono text-xs font-medium">{inv.invNumber}</td>
+                                    <td className="px-4 py-2 text-xs">{inv.customerName}</td>
+                                    <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(inv.issueDate)}</td>
+                                    <td className="px-4 py-2">
+                                      <Badge variant={inv.status === "paid" ? "default" : "outline"} className="text-[10px]">{inv.status}</Badge>
+                                    </td>
+                                    <td className="px-4 py-2 text-xs">
+                                      {isFX ? (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold bg-amber-50 text-amber-800 border-amber-300">
+                                          {inv.currency}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">SGD</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">
+                                      {isFX ? (
+                                        <span className="text-amber-700 font-semibold">{formatExchangeRate(inv.exchangeRate)}</span>
+                                      ) : (
+                                        <span className="text-muted-foreground/30">1.00</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(inv.netAmount)}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-emerald-700 font-semibold">{fmtAmt(netSGD)}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">{fmtAmt(inv.gstAmount)}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-blue-700 font-semibold">{fmtAmt(gstSGD)}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(inv.totalAmount)}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{fmtAmt(totSGD)}</td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="bg-muted/30 font-semibold border-t-2">
+                                <td colSpan={6} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalInvNetOrig)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-emerald-700 font-bold">{fmtAmt(totalInvNetSGD)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">{fmtAmt(totalInvGstOrig)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-blue-700 font-bold">{fmtAmt(totalInvGstSGD)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalInvTotOrig)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs font-bold">{fmtAmt(totalInvTotSGD)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Vendor invoices */}
               {(() => {
@@ -517,14 +638,19 @@ export default function GstF5Page() {
                 const sortedVI = [...data.vendorInvoices].sort((a, b) => {
                   let av: any, bv: any;
                   switch (viSortKey) {
-                    case "piNumber":   av = a.piNumber;   bv = b.piNumber;   break;
-                    case "vendorName": av = a.vendorName; bv = b.vendorName; break;
-                    case "piDate":     av = a.piDate ?? ""; bv = b.piDate ?? ""; break;
-                    case "currency":   av = a.currency ?? "SGD"; bv = b.currency ?? "SGD"; break;
-                    case "netAmount":  av = a.netAmount;  bv = b.netAmount;  break;
-                    case "gstAmount":  av = a.gstAmount;  bv = b.gstAmount;  break;
-                    case "totalAmount":av = a.totalAmount;bv = b.totalAmount;break;
-                    default:           av = a.piDate ?? ""; bv = b.piDate ?? "";
+                    case "piNumber":      av = a.piNumber;                 bv = b.piNumber;                 break;
+                    case "vendorName":    av = a.vendorName;               bv = b.vendorName;               break;
+                    case "piDate":        av = a.piDate ?? "";             bv = b.piDate ?? "";             break;
+                    case "currency":      av = a.currency ?? "SGD";        bv = b.currency ?? "SGD";        break;
+                    case "exchangeRate":  av = a.exchangeRate ?? 1;        bv = b.exchangeRate ?? 1;        break;
+                    case "gstTreatment":  av = a.gstTreatment ?? "";       bv = b.gstTreatment ?? "";       break;
+                    case "netAmount":     av = a.netAmount;                bv = b.netAmount;                break;
+                    case "netAmountSGD":  av = a.netAmountSGD ?? a.netAmount; bv = b.netAmountSGD ?? b.netAmount; break;
+                    case "gstAmount":     av = a.gstAmount;                bv = b.gstAmount;                break;
+                    case "gstAmountSGD":  av = a.gstAmountSGD ?? a.gstAmount; bv = b.gstAmountSGD ?? b.gstAmount; break;
+                    case "totalAmount":   av = a.totalAmount;              bv = b.totalAmount;              break;
+                    case "totalAmountSGD":av = a.totalAmountSGD ?? a.totalAmount; bv = b.totalAmountSGD ?? b.totalAmount; break;
+                    default:              av = a.piDate ?? "";             bv = b.piDate ?? "";
                   }
                   if (typeof av === "string") return viSortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
                   return viSortDir === "asc" ? av - bv : bv - av;
@@ -532,15 +658,12 @@ export default function GstF5Page() {
 
                 const viSR    = sortedVI.filter(v => !v.gstTreatment || v.gstTreatment === "standard_rated");
                 const viOther = sortedVI.filter(v => v.gstTreatment && v.gstTreatment !== "standard_rated");
-                const hasFX   = sortedVI.some(v => (v.currency ?? "SGD") !== "SGD");
-                const totalInputGst = viSR.reduce((s, v) => s + (hasFX ? (v.gstAmountSGD ?? v.gstAmount) : v.gstAmount), 0);
-                const totalNet      = viSR.reduce((s, v) => s + (hasFX ? (v.netAmountSGD ?? v.netAmount) : v.netAmount), 0);
-                const totalAll      = sortedVI.reduce((s, v) => {
-                  const isFX = (v.currency ?? "SGD") !== "SGD";
-                  const net  = isFX ? ((v as any).netAmountSGD ?? v.netAmount) : v.netAmount;
-                  const gst  = isFX ? ((v as any).gstAmountSGD ?? v.gstAmount) : v.gstAmount;
-                  return s + net + gst;
-                }, 0);
+                const totalSRNetOrig = viSR.reduce((s, v) => s + v.netAmount, 0);
+                const totalSRNetSGD  = viSR.reduce((s, v) => s + (v.netAmountSGD ?? (v.netAmount * (v.exchangeRate ?? 1))), 0);
+                const totalSRGstOrig = viSR.reduce((s, v) => s + v.gstAmount, 0);
+                const totalSRGstSGD  = viSR.reduce((s, v) => s + (v.gstAmountSGD ?? (v.gstAmount * (v.exchangeRate ?? 1))), 0);
+                const totalAllOrig   = sortedVI.reduce((s, v) => s + v.totalAmount, 0);
+                const totalAllSGD    = sortedVI.reduce((s, v) => s + (v.totalAmountSGD ?? ((v.netAmountSGD ?? (v.netAmount * (v.exchangeRate ?? 1))) + (v.gstAmountSGD ?? (v.gstAmount * (v.exchangeRate ?? 1))))), 0);
 
                 const GST_TREATMENT_BADGE: Record<string, { label: string; cls: string }> = {
                   standard_rated: { label: "SR 9%",       cls: "bg-green-100 text-green-800 border-green-300" },
@@ -564,7 +687,7 @@ export default function GstF5Page() {
                         )}
                       </span>
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-xs text-muted-foreground">Input GST S$ {fmtAmt(totalInputGst)}</span>
+                        <span className="font-mono text-xs text-muted-foreground">Input GST S$ {fmtAmt(totalSRGstSGD)}</span>
                         {showVendorInvoices ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </div>
                     </button>
@@ -576,34 +699,58 @@ export default function GstF5Page() {
                           <table className="w-full text-sm">
                             <thead className="bg-muted/20 border-b">
                               <tr>
-                                <SortTh col="piNumber"    sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>PI Number</SortTh>
-                                <SortTh col="vendorName"  sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Vendor</SortTh>
-                                <SortTh col="piDate"      sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Date</SortTh>
-                                <SortTh col="currency"    sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Currency</SortTh>
-                                {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">FX Rate</th>}
-                                <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground">GST Treatment</th>
-                                <SortTh col="netAmount"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>Net (Box 4)</SortTh>
-                                {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">Net SGD</th>}
-                                <SortTh col="gstAmount"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>GST (Box 7)</SortTh>
-                                {hasFX && <th className="text-right px-4 py-2 text-xs font-semibold text-amber-700">GST SGD</th>}
-                                <SortTh col="totalAmount" sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>Total</SortTh>
+                                <SortTh col="piNumber"       sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>PI Number</SortTh>
+                                <SortTh col="vendorName"     sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Vendor</SortTh>
+                                <SortTh col="piDate"         sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Date</SortTh>
+                                <SortTh col="currency"       sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>Currency</SortTh>
+                                <SortTh col="exchangeRate"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right className="text-amber-700">FX Rate</SortTh>
+                                <SortTh col="gstTreatment"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort}>GST Treatment</SortTh>
+                                <SortTh col="netAmount"      sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>Net</SortTh>
+                                <SortTh col="netAmountSGD"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right className="text-emerald-700">Net SGD (Box 4)</SortTh>
+                                <SortTh col="gstAmount"      sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>GST</SortTh>
+                                <SortTh col="gstAmountSGD"   sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right className="text-blue-700">GST SGD (Box 7)</SortTh>
+                                <SortTh col="totalAmount"    sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right>Total</SortTh>
+                                <SortTh col="totalAmountSGD" sortKey={viSortKey} sortDir={viSortDir} onSort={handleViSort} right className="text-foreground">Total SGD</SortTh>
                               </tr>
                             </thead>
                             <tbody>
                               {sortedVI.map((vi, i) => {
                                 const isSR = !vi.gstTreatment || vi.gstTreatment === "standard_rated";
                                 const badge = GST_TREATMENT_BADGE[vi.gstTreatment] ?? GST_TREATMENT_BADGE.standard_rated;
+                                const isFX = (vi.currency ?? "SGD") !== "SGD";
+                                const netSGD = isSR ? (vi.netAmountSGD ?? (vi.netAmount * (vi.exchangeRate ?? 1))) : 0;
+                                const gstSGD = isSR ? (vi.gstAmountSGD ?? (vi.gstAmount * (vi.exchangeRate ?? 1))) : 0;
+                                const totSGD = vi.totalAmountSGD ?? ((vi.netAmountSGD ?? (vi.netAmount * (vi.exchangeRate ?? 1))) + (vi.gstAmountSGD ?? (vi.gstAmount * (vi.exchangeRate ?? 1))));
+
                                 return (
-                                  <tr key={vi.id} onClick={e => toggleRow(e, vi.id, selVI, setSelVI)} className={cn("border-b last:border-b-0 cursor-pointer select-none transition-colors", selVI.has(vi.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30", !isSR ? "opacity-70" : "")}>
+                                  <tr
+                                    key={vi.id}
+                                    onClick={e => toggleRow(e, vi.id, selVI, setSelVI)}
+                                    className={cn(
+                                      "border-b last:border-b-0 cursor-pointer select-none transition-colors",
+                                      selVI.has(vi.id) ? "bg-blue-100 hover:bg-blue-150" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/10 hover:bg-muted/30",
+                                      !isSR ? "opacity-70" : ""
+                                    )}
+                                  >
                                     <td className="px-4 py-2 font-mono text-xs font-medium">{vi.piNumber}</td>
                                     <td className="px-4 py-2 text-xs">{vi.vendorName}</td>
                                     <td className="px-4 py-2 text-xs text-muted-foreground">{fmtDate(vi.piDate)}</td>
-                                    <td className="px-4 py-2 text-xs text-muted-foreground">{vi.currency ?? "SGD"}</td>
-                                    {hasFX && (
-                                      <td className="px-4 py-2 text-right font-mono text-xs text-amber-700">
-                                        {(vi.currency ?? "SGD") !== "SGD" ? ((vi as any).exchangeRate ?? 1).toFixed(4) : <span className="text-muted-foreground/30">—</span>}
-                                      </td>
-                                    )}
+                                    <td className="px-4 py-2 text-xs">
+                                      {isFX ? (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold bg-amber-50 text-amber-800 border-amber-300">
+                                          {vi.currency}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">SGD</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">
+                                      {isFX ? (
+                                        <span className="text-amber-700 font-semibold">{formatExchangeRate(vi.exchangeRate)}</span>
+                                      ) : (
+                                        <span className="text-muted-foreground/30">1.00</span>
+                                      )}
+                                    </td>
                                     <td className="px-4 py-2">
                                       <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold", badge.cls)}>
                                         {badge.label}
@@ -612,38 +759,36 @@ export default function GstF5Page() {
                                     <td className="px-4 py-2 text-right font-mono text-xs">
                                       {isSR ? fmtAmt(vi.netAmount) : <span className="text-muted-foreground/40">—</span>}
                                     </td>
-                                    {hasFX && (
-                                      <td className="px-4 py-2 text-right font-mono text-xs text-amber-700 font-semibold">
-                                        {isSR && (vi.currency ?? "SGD") !== "SGD" ? fmtAmt((vi as any).netAmountSGD ?? vi.netAmount) : <span className="text-muted-foreground/30">—</span>}
-                                      </td>
-                                    )}
-                                    <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-emerald-700 font-semibold">
+                                      {isSR ? fmtAmt(netSGD) : <span className="text-muted-foreground/40">—</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">
                                       {isSR ? fmtAmt(vi.gstAmount) : <span className="text-muted-foreground/40">—</span>}
                                     </td>
-                                    {hasFX && (
-                                      <td className="px-4 py-2 text-right font-mono text-xs text-amber-700 font-semibold">
-                                        {isSR && (vi.currency ?? "SGD") !== "SGD" ? fmtAmt((vi as any).gstAmountSGD ?? vi.gstAmount) : <span className="text-muted-foreground/30">—</span>}
-                                      </td>
-                                    )}
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-blue-700 font-semibold">
+                                      {isSR ? fmtAmt(gstSGD) : <span className="text-muted-foreground/40">—</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">
+                                      {fmtAmt(vi.totalAmount)}
+                                    </td>
                                     <td className="px-4 py-2 text-right font-mono text-xs font-semibold">
-                                      {(vi.currency ?? "SGD") !== "SGD"
-                                        ? fmtAmt(((vi as any).netAmountSGD ?? vi.netAmount) + ((vi as any).gstAmountSGD ?? vi.gstAmount))
-                                        : fmtAmt(vi.totalAmount)}
+                                      {fmtAmt(totSGD)}
                                     </td>
                                   </tr>
                                 );
                               })}
                               <tr className="bg-muted/30 font-semibold border-t-2">
-                                <td colSpan={hasFX ? 6 : 5} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals (SGD)</td>
-                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalNet)}</td>
-                                {hasFX && <td />}
-                                <td className="px-4 py-2 text-right font-mono text-xs text-blue-700">{fmtAmt(totalInputGst)}</td>
-                                {hasFX && <td />}
-                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalAll)}</td>
+                                <td colSpan={6} className="px-4 py-2 text-xs text-right text-muted-foreground">Totals</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalSRNetOrig)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-emerald-700 font-bold">{fmtAmt(totalSRNetSGD)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-muted-foreground">{fmtAmt(totalSRGstOrig)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs text-blue-700 font-bold">{fmtAmt(totalSRGstSGD)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs">{fmtAmt(totalAllOrig)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-xs font-bold">{fmtAmt(totalAllSGD)}</td>
                               </tr>
                               {viOther.length > 0 && (
                                 <tr className="bg-amber-50 border-t">
-                                  <td colSpan={8} className="px-4 py-2 text-[10px] text-amber-700 flex items-center gap-1">
+                                  <td colSpan={12} className="px-4 py-2 text-[10px] text-amber-700 flex items-center gap-1">
                                     <Info className="h-3 w-3 shrink-0" />
                                     {viOther.length} non-GST record{viOther.length !== 1 ? "s" : ""} (ZR / Exempt / Out-of-scope) — excluded from Box 4 &amp; Box 7 as no input tax is claimable.
                                   </td>

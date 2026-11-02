@@ -391,3 +391,91 @@ export function publishAllCompanyUsersToMaster() {
   }
   return publishAll;
 }
+
+export async function syncMasterRolesToCompany(companyId: number) {
+  const tenant = companyDbContext.getStore();
+  if (!tenant) return;
+  const masterRoles = await masterDb
+    .select()
+    .from(rolesTable)
+    .where(eq(rolesTable.companyId, companyId));
+
+  for (const role of masterRoles) {
+    const [existing] = await db
+      .select({ id: rolesTable.id })
+      .from(rolesTable)
+      .where(eq(rolesTable.id, role.id))
+      .limit(1);
+    if (!existing) {
+      await db.insert(rolesTable).values({
+        id: role.id,
+        name: role.name,
+        companyId: role.companyId,
+        createdAt: role.createdAt,
+        updatedAt: role.updatedAt,
+      });
+    }
+  }
+  await bumpSerial(tenant, "roles");
+}
+
+export async function syncMasterUsersToTenant(companyId: number) {
+  const tenant = companyDbContext.getStore();
+  if (!tenant) return;
+
+  await syncMasterRolesToCompany(companyId);
+
+  const [masterCompany] = await masterDb
+    .select()
+    .from(companiesTable)
+    .where(eq(companiesTable.id, companyId))
+    .limit(1);
+  if (masterCompany) {
+    const [tenantCompany] = await db
+      .select({ id: companiesTable.id })
+      .from(companiesTable)
+      .where(eq(companiesTable.id, companyId))
+      .limit(1);
+    if (!tenantCompany) {
+      await db.insert(companiesTable).values({ ...masterCompany });
+    }
+  }
+
+  const masterUsers = await masterDb
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.companyId, companyId));
+
+  const ucs = await masterDb
+    .select()
+    .from(userCompaniesTable)
+    .where(eq(userCompaniesTable.companyId, companyId));
+
+  const extraUserIds = ucs
+    .map((u) => u.userId)
+    .filter((id) => !masterUsers.some((mu) => mu.id === id));
+
+  let allMasterUsers = [...masterUsers];
+  if (extraUserIds.length > 0) {
+    const extras = await masterDb
+      .select()
+      .from(usersTable)
+      .where(sql`${usersTable.id} IN (${sql.join(extraUserIds.map((id) => sql`${id}`), sql`, `)})`);
+    allMasterUsers = [...allMasterUsers, ...extras];
+  }
+
+  for (const user of allMasterUsers) {
+    const [existing] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id))
+      .limit(1);
+    if (!existing) {
+      await mirrorUserToCompany(user, user.salesPersonId);
+    }
+  }
+
+  for (const uc of ucs) {
+    await upsertAccess(db, uc.userId, uc.companyId, Array.isArray(uc.modules) ? uc.modules : []);
+  }
+}

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Loader2, Search, ChevronLeft } from "lucide-react";
+import { Loader2, Search, ChevronLeft, ArrowLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -9,16 +9,30 @@ export function ManagementPageHeader({
   title,
   description,
   action,
+  onBack,
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  onBack?: () => void;
 }) {
   return (
     <div className="mb-5 flex flex-col gap-4 py-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <h2 className="text-[36px] font-bold leading-tight text-[#2563EB]">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-[#6B7280]">{description}</p> : null}
+      <div className="flex items-center gap-3 min-w-0">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={`Back from ${title}`}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#2563EB] shadow-sm transition-colors hover:bg-[#EFF6FF] hover:border-[#BFDBFE]"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        ) : null}
+        <div className="min-w-0">
+          <h2 className="text-[36px] font-bold leading-tight text-[#2563EB]">{title}</h2>
+          {description ? <p className="mt-1 text-sm text-[#6B7280]">{description}</p> : null}
+        </div>
       </div>
       {action ? <div className="flex shrink-0 flex-nowrap items-center sm:justify-end">{action}</div> : null}
     </div>

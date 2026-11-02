@@ -12,6 +12,7 @@ import bizoneLogo from "@assets/bizone_logo_optimized.webp";
 import bizoneSgLogo from "@assets/bizone_sg_optimized.webp";
 import bizoneIndiaLogo from "@assets/bizone_india_optimized.webp";
 import * as pdfjsLib from "pdfjs-dist";
+import { useToast } from "@/hooks/use-toast";
 
 export const SENT_TO_EXTERNAL = "Sent to External";
 
@@ -280,58 +281,57 @@ export function PdfPreviewModal({
   docInfo,
   showEmail = true,
 }: PdfPreviewModalProps) {
+  const { toast } = useToast();
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [markSentConfirmOpen, setMarkSentConfirmOpen] = useState(false);
   const [markingSent, setMarkingSent] = useState(false);
-  const closingConfirmRef = useRef(false);
+  const [hasMarkedSent, setHasMarkedSent] = useState(false);
 
   const handleOpenChange = (next: boolean) => {
     if (next) {
       onOpenChange(true);
       return;
     }
-    if (askMarkSentOnClose) {
-      setMarkSentConfirmOpen(true);
-      return;
-    }
+    // When clicking cross mark X (or pressing Escape), directly close the modal without asking "Mark as sent?"
     onOpenChange(false);
   };
 
-  const finishClose = async (markExternal: boolean) => {
-    if (closingConfirmRef.current) return;
-    closingConfirmRef.current = true;
+  const handleMarkSent = async (markExternal: boolean) => {
     setMarkSentConfirmOpen(false);
-    try {
-      if (markExternal && (markSentUrl || onMarkAsSentExternal)) {
-        setMarkingSent(true);
-        try {
-          if (markSentUrl) {
-            const res = await fetch(markSentUrl, {
-              method: "POST",
-              credentials: "include",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
-            });
-            if (!res.ok) {
-              const err = await res.json().catch(() => ({} as { error?: string }));
-              throw new Error(err.error || `Failed to mark as sent (${res.status})`);
-            }
+    if (!markExternal) return;
+    if (markSentUrl || onMarkAsSentExternal) {
+      setMarkingSent(true);
+      try {
+        if (markSentUrl) {
+          const res = await fetch(markSentUrl, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sentTo: [SENT_TO_EXTERNAL] }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({} as { error?: string }));
+            throw new Error(err.error || `Failed to mark as sent (${res.status})`);
           }
-          await onMarkAsSentExternal?.();
-        } finally {
-          setMarkingSent(false);
         }
+        await onMarkAsSentExternal?.();
+        setHasMarkedSent(true);
+        toast({ title: "Marked as sent", description: SENT_TO_EXTERNAL });
+      } catch (err: any) {
+        console.error("Failed to mark as sent", err);
+        toast({ title: "Error", description: err.message || "Failed to mark as sent", variant: "destructive" });
+      } finally {
+        setMarkingSent(false);
       }
-      onOpenChange(false);
-    } finally {
-      closingConfirmRef.current = false;
     }
   };
 
   useEffect(() => {
     if (!open) {
       setPdfBase64(null);
+      setHasMarkedSent(false);
+      setMarkSentConfirmOpen(false);
       return;
     }
 
@@ -358,6 +358,9 @@ export function PdfPreviewModal({
   const handleDownload = async () => {
     try {
       await generatePdf();
+      if ((askMarkSentOnClose || markSentUrl || onMarkAsSentExternal) && !hasMarkedSent) {
+        setMarkSentConfirmOpen(true);
+      }
     } catch (e) {
       console.error("Download failed", e);
     }
@@ -375,11 +378,42 @@ export function PdfPreviewModal({
     document.body.appendChild(iframe);
     iframe.src = url;
     iframe.onload = () => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
+      const contentWin = iframe.contentWindow;
+      if (!contentWin) return;
+
+      let popupTriggered = false;
+      const onPrintDialogClosed = () => {
+        if (popupTriggered) return;
+        popupTriggered = true;
+
+        try {
+          contentWin.removeEventListener("afterprint", onPrintDialogClosed);
+        } catch {}
+        try {
+          window.removeEventListener("afterprint", onPrintDialogClosed);
+        } catch {}
+
+        if ((askMarkSentOnClose || markSentUrl || onMarkAsSentExternal) && !hasMarkedSent) {
+          setMarkSentConfirmOpen(true);
+        }
+      };
+
+      // Listen for when user finishes or closes the print/save dialog
+      try {
+        contentWin.addEventListener("afterprint", onPrintDialogClosed, { once: true });
+      } catch {}
+      try {
+        window.addEventListener("afterprint", onPrintDialogClosed, { once: true });
+      } catch {}
+
+      contentWin.focus();
+      contentWin.print();
+
       setTimeout(() => {
-        document.body.removeChild(iframe);
-        URL.revokeObjectURL(url);
+        try {
+          document.body.removeChild(iframe);
+          URL.revokeObjectURL(url);
+        } catch {}
       }, 60000);
     };
   };
@@ -438,7 +472,7 @@ export function PdfPreviewModal({
       <AlertDialog
         open={markSentConfirmOpen}
         onOpenChange={(v) => {
-          if (!v && !markingSent) void finishClose(false);
+          if (!v && !markingSent) void handleMarkSent(false);
         }}
       >
         <AlertDialogContent>
@@ -453,7 +487,7 @@ export function PdfPreviewModal({
               disabled={markingSent}
               onClick={(e) => {
                 e.preventDefault();
-                void finishClose(false);
+                void handleMarkSent(false);
               }}
             >
               No
@@ -462,7 +496,7 @@ export function PdfPreviewModal({
               disabled={markingSent}
               onClick={(e) => {
                 e.preventDefault();
-                void finishClose(true);
+                void handleMarkSent(true);
               }}
             >
               {markingSent ? "Saving..." : "Yes"}

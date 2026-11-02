@@ -250,18 +250,28 @@ export default function Ir8aPage() {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-[#E5E7EB] p-4 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by name, NRIC or employee code"
-              className="h-10 pl-9"
-            />
+        <div className="flex flex-col gap-3 border-b border-[#E5E7EB] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-80 md:w-96">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by name, NRIC or employee code"
+                className="h-10 pl-9"
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={() => setLocation(`/payroll/ir8a/ais?year=${encodeURIComponent(year)}`)}
+              className="h-10 gap-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium shrink-0 shadow-sm"
+            >
+              <Send className="h-4 w-4" />
+              AIS Submission
+            </Button>
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-10 w-[150px]">
+            <SelectTrigger className="h-10 w-[150px] shrink-0">
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
             <SelectContent>

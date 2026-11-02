@@ -1,9 +1,21 @@
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { MoreHorizontal, Package } from "lucide-react";
+import {
+  MoreHorizontal,
+  Package,
+  Download,
+  ChevronDown,
+  FileSpreadsheet,
+  FileText,
+} from "lucide-react";
+import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
+import { format } from "date-fns";
 import type { Asset } from "@shared/schema";
 import { useAuth } from "@/contexts/auth-context";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -81,6 +93,7 @@ function AssetThumb({
 
 export default function AssetRegisterPage() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const { selectedCompany, isLoading: authLoading } = useAuth();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -120,17 +133,150 @@ export default function AssetRegisterPage() {
     });
   }
 
+  const handleExport = (formatType: "excel" | "pdf") => {
+    if (rows.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no assets matching the current search to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      if (formatType === "excel") {
+        const data = rows.map(({ asset, books }) => ({
+          "Asset ID": formatAssetRegisterId(asset),
+          "Asset Name": asset.type || "—",
+          Category: asset.category || "—",
+          "Purchase Date": formatAssetDateShort(asset.purchaseDate || asset.depreciationStartDate || null),
+          "Cost (SGD)": Number(books.cost || 0),
+          "Acc. Dep. (SGD)": Number(books.accDep || 0),
+          "NBV (SGD)": Number(books.nbv || 0),
+          Status: "Active",
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        worksheet["!cols"] = [
+          { wch: 15 },
+          { wch: 25 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 12 },
+        ];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Asset Register");
+        XLSX.writeFile(workbook, `asset-register-${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+        toast({
+          title: "Export successful",
+          description: "Asset Register has been downloaded as an Excel file.",
+        });
+      } else {
+        const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+        const dateLabel = format(new Date(), "dd MMM yyyy");
+
+        doc.setFontSize(16);
+        doc.setTextColor(37, 99, 235);
+        doc.text("Asset Register", 14, 15);
+        doc.setFontSize(9);
+        doc.setTextColor(107, 114, 128);
+        doc.text(`Generated: ${dateLabel}  |  Total Assets: ${rows.length}`, 14, 21);
+
+        (doc as any).autoTable({
+          startY: 25,
+          head: [[
+            "Asset ID",
+            "Asset Name",
+            "Category",
+            "Purchase Date",
+            "Cost (S$)",
+            "Acc. Dep. (S$)",
+            "NBV (S$)",
+            "Status",
+          ]],
+          body: rows.map(({ asset, books }) => [
+            formatAssetRegisterId(asset),
+            asset.type || "—",
+            asset.category || "—",
+            formatAssetDateShort(asset.purchaseDate || asset.depreciationStartDate || null),
+            formatSgd(books.cost),
+            formatSgd(books.accDep),
+            formatSgd(books.nbv),
+            "Active",
+          ]),
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: 255,
+            fontStyle: "bold",
+          },
+          styles: { fontSize: 8, cellPadding: 2 },
+          columnStyles: {
+            4: { halign: "right" },
+            5: { halign: "right" },
+            6: { halign: "right" },
+          },
+        });
+
+        doc.save(`asset-register-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+        toast({
+          title: "Export successful",
+          description: "Asset Register has been downloaded as a PDF file.",
+        });
+      }
+    } catch {
+      toast({
+        title: "Export failed",
+        description: "Unable to export Asset Register. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       <ManagementPageHeader
         title="Asset Register"
+        onBack={() => {
+          if (window.history.length > 1) {
+            window.history.back();
+          } else {
+            setLocation("/assets");
+          }
+        }}
         action={
-          <Button
-            className="bg-[#2563EB] hover:bg-[#1D4ED8]"
-            onClick={() => setLocation("/assets/new")}
-          >
-            + Add Asset
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2 border-[#E5E7EB] bg-white text-[#374151] hover:bg-[#F9FAFB] shadow-sm"
+                  disabled={rows.length === 0}
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                  <ChevronDown className="h-4 w-4 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("excel")} className="gap-2 cursor-pointer">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("pdf")} className="gap-2 cursor-pointer">
+                  <FileText className="h-4 w-4 text-red-600" />
+                  PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              className="bg-[#2563EB] hover:bg-[#1D4ED8]"
+              onClick={() => setLocation("/assets/new")}
+            >
+              + Add Asset
+            </Button>
+          </div>
         }
       />
 

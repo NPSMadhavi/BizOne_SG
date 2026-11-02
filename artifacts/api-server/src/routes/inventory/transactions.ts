@@ -280,6 +280,7 @@ router.get("/inventory/stock-transfers", async (req, res) => {
     ...r,
     fromWarehouseName: whMap.get(r.fromWarehouseId) ?? `Warehouse #${r.fromWarehouseId}`,
     toWarehouseName: whMap.get(r.toWarehouseId) ?? `Warehouse #${r.toWarehouseId}`,
+    salesPerson: r.salesPerson ?? null,
     items: (itemsByTransfer.get(r.id) ?? []).map((item) => ({
       stockItemId: item.stockItemId,
       quantity: Number(item.quantity),
@@ -309,18 +310,55 @@ router.get("/inventory/stock-activity", async (req, res) => {
     transfers.flatMap((r) => [r.fromWarehouseId, r.toWarehouseId]),
   );
 
-  const transferActivity = transfers.map((t) => ({
-    id: `transfer-${t.id}`,
-    activityType: "transfer" as const,
-    documentNumber: t.transferNumber,
-    date: t.transferDate,
-    fromWarehouse: whMap.get(t.fromWarehouseId) ?? `Warehouse #${t.fromWarehouseId}`,
-    toWarehouse: whMap.get(t.toWarehouseId) ?? `Warehouse #${t.toWarehouseId}`,
-    referenceId: t.id,
-    quantity: null as number | null,
-    stockItemCode: null as string | null,
-    stockItemName: null as string | null,
-  }));
+  const transferIds = transfers.map((t) => t.id);
+  const transferItems = transferIds.length
+    ? await db.select({
+      stockTransferId: stockTransferItemsTable.stockTransferId,
+      quantity: stockTransferItemsTable.quantity,
+      stockItemCode: stockItemsTable.code,
+      stockItemName: stockItemsTable.name,
+    })
+      .from(stockTransferItemsTable)
+      .innerJoin(stockItemsTable, eq(stockTransferItemsTable.stockItemId, stockItemsTable.id))
+      .where(inArray(stockTransferItemsTable.stockTransferId, transferIds))
+    : [];
+
+  const itemsByTransfer = new Map<number, typeof transferItems>();
+  for (const item of transferItems) {
+    const list = itemsByTransfer.get(item.stockTransferId) ?? [];
+    list.push(item);
+    itemsByTransfer.set(item.stockTransferId, list);
+  }
+
+  const transferActivity = transfers.flatMap((t) => {
+    const items = itemsByTransfer.get(t.id) ?? [];
+    if (items.length === 0) {
+      return [{
+        id: `transfer-${t.id}`,
+        activityType: "transfer" as const,
+        documentNumber: t.transferNumber,
+        date: t.transferDate,
+        fromWarehouse: whMap.get(t.fromWarehouseId) ?? `Warehouse #${t.fromWarehouseId}`,
+        toWarehouse: whMap.get(t.toWarehouseId) ?? `Warehouse #${t.toWarehouseId}`,
+        referenceId: t.id,
+        quantity: null as number | null,
+        stockItemCode: null as string | null,
+        stockItemName: null as string | null,
+      }];
+    }
+    return items.map((item, idx) => ({
+      id: `transfer-${t.id}-${idx}`,
+      activityType: "transfer" as const,
+      documentNumber: t.transferNumber,
+      date: t.transferDate,
+      fromWarehouse: whMap.get(t.fromWarehouseId) ?? `Warehouse #${t.fromWarehouseId}`,
+      toWarehouse: whMap.get(t.toWarehouseId) ?? `Warehouse #${t.toWarehouseId}`,
+      referenceId: t.id,
+      quantity: Number(item.quantity),
+      stockItemCode: item.stockItemCode,
+      stockItemName: item.stockItemName,
+    }));
+  });
 
   const docMovements = await db.select({
     id: stockMovementsTable.id,
@@ -514,6 +552,7 @@ router.post("/inventory/stock-transfers", async (req, res) => {
         toWarehouseId,
         transferDate: transferDate || new Date().toISOString().slice(0, 10),
         remarks: remarks || null,
+        salesPerson: req.body?.salesPerson || null,
         createdBy: ctx.userId,
         updatedBy: ctx.userId,
       }).returning();
@@ -657,6 +696,7 @@ router.put("/inventory/stock-transfers/:id", async (req, res) => {
           toWarehouseId,
           transferDate: transferDate || existing.transferDate,
           remarks: remarks ?? existing.remarks,
+          salesPerson: req.body?.salesPerson !== undefined ? (req.body.salesPerson || null) : existing.salesPerson,
           updatedBy: ctx.userId,
           updatedAt: new Date(),
         })

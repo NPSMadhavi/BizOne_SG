@@ -888,6 +888,21 @@ router.post("/ir8a/employers", async (req, res): Promise<void> => {
   }
 });
 
+router.put("/ir8a/employers/:id", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  const id = parseId(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
+  try {
+    const built = buildUpdate("ir8a_employers", id, req.session.companyId!, req.body, IR8A_EMPLOYER_COLUMNS);
+    if (!built) { res.status(400).json({ error: "No fields to update" }); return; }
+    const result = await pool.query(built.sql, built.values);
+    if (!result.rows[0]) { res.status(404).json({ error: "Employer not found" }); return; }
+    res.json(formatRow(result.rows[0]));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to update IR8A employer" });
+  }
+});
+
 router.delete("/ir8a/employers/:id", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   const id = parseId(req.params.id);
