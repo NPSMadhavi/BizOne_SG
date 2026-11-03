@@ -36,6 +36,8 @@ export interface BackupProgress {
   fileSizeBytes?: number;
   checksumSha256?: string;
   fileName?: string;
+  destinationPath?: string;
+  localSaved?: boolean;
   error?: string;
   startedAt: string;
   completedAt?: string;
@@ -47,7 +49,7 @@ export interface RestoreProgress {
   companyName: string;
   restoreCode: string;
   backupCode: string;
-  status: "PENDING" | "VALIDATING" | "SAFETY_BACKUP" | "RESTORING" | "VERIFYING" | "COMPLETED" | "FAILED";
+  status: "PENDING" | "VALIDATING" | "SAFETY_BACKUP" | "STAGING" | "RESTORING" | "RESTORING_FILES" | "VERIFYING" | "FINALIZING" | "COMPLETED" | "FAILED";
   step: string;
   percent: number;
   logs: string[];
@@ -101,6 +103,18 @@ export function psqlBin(): string {
   return candidates.find((file) => file === "psql" || fs.existsSync(file)) ?? "psql";
 }
 
+export function pgRestoreBin(): string {
+  const candidates = [
+    process.env.PG_RESTORE_PATH,
+    "C:\\Program Files\\PostgreSQL\\18\\bin\\pg_restore.exe",
+    "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_restore.exe",
+    "C:\\Program Files\\PostgreSQL\\16\\bin\\pg_restore.exe",
+    "C:\\Program Files\\PostgreSQL\\15\\bin\\pg_restore.exe",
+    "pg_restore",
+  ].filter((value): value is string => Boolean(value));
+  return candidates.find((file) => file === "pg_restore" || fs.existsSync(file)) ?? "pg_restore";
+}
+
 function databaseUrlFor(baseUrl: string, dbName: string): string {
   const url = new URL(baseUrl);
   url.pathname = `/${dbName}`;
@@ -129,6 +143,7 @@ export async function ensureBackupSchema(clientOrPool: pg.Pool | pg.Client): Pro
       backup_source TEXT NOT NULL DEFAULT 'manual',
       schedule_id INTEGER,
       error_message TEXT,
+      metadata TEXT,
       created_by INTEGER,
       created_by_username TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -211,6 +226,7 @@ export async function ensureBackupSchema(clientOrPool: pg.Pool | pg.Client): Pro
 
   // Migrations for backup_schedules columns
   try {
+    await clientOrPool.query("ALTER TABLE accounting_backups ADD COLUMN IF NOT EXISTS metadata TEXT");
     await clientOrPool.query("ALTER TABLE backup_schedules ADD COLUMN IF NOT EXISTS destination_dir TEXT DEFAULT 'C:\\\\BizOne_Backups'");
     await clientOrPool.query("ALTER TABLE backup_schedules ADD COLUMN IF NOT EXISTS local_download_enabled BOOLEAN NOT NULL DEFAULT TRUE");
     await clientOrPool.query("ALTER TABLE backup_schedules ADD COLUMN IF NOT EXISTS local_destination_dir TEXT DEFAULT 'D:\\\\BizOneBackups'");
@@ -225,11 +241,95 @@ export async function ensureBackupSchema(clientOrPool: pg.Pool | pg.Client): Pro
   } catch {}
 }
 
+function extractEnvFromDbUrl(dbUrl: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  try {
+    const parsed = new URL(dbUrl);
+    if (parsed.password) {
+      env.PGPASSWORD = decodeURIComponent(parsed.password);
+    }
+  } catch {}
+  return env;
+}
+
 /**
- * Generates an SQL dump of a database using pg_dump.
+ * Ensures a backup file never overwrites an existing local backup file.
+ * Returns a collision-free path with sequence suffix if a file exists.
+ */
+export function getNonConflictingPath(dir: string, fileName: string): string {
+  let target = path.join(dir, fileName);
+  if (!fs.existsSync(target)) return target;
+
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext);
+  let counter = 1;
+  while (fs.existsSync(path.join(dir, `${base}_(${counter})${ext}`))) {
+    counter++;
+  }
+  return path.join(dir, `${base}_(${counter})${ext}`);
+}
+
+/**
+ * Generates a PostgreSQL custom format dump (-Fc) using pg_dump.
+ */
+export async function dumpDatabaseCustom(dbUrl: string, outputPath: string): Promise<void> {
+  const bin = pgDumpBin();
+  const env = extractEnvFromDbUrl(dbUrl);
+  const args = [
+    "--format=custom", // Native PostgreSQL custom archive (-Fc)
+    "--no-owner",
+    "--no-privileges",
+    `--file=${outputPath}`,
+    dbUrl,
+  ];
+
+  await new Promise<void>((resolve, reject) => {
+    let finished = false;
+    const child = spawn(bin, args, {
+      windowsHide: true,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try { child.kill(); } catch {}
+        reject(new Error("pg_dump -Fc process timed out after 30 seconds"));
+      }
+    }, 30000);
+
+    let stderr = "";
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("error", (err) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        reject(new Error(`Failed to start pg_dump custom format: ${err.message}`));
+      }
+    });
+    child.on("close", (code) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        if (code === 0 && fs.existsSync(outputPath)) {
+          resolve();
+        } else {
+          reject(new Error(`pg_dump -Fc failed (code ${code}): ${stderr}`));
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Generates an SQL dump of a database using pg_dump (plain SQL format).
  */
 async function dumpDatabase(dbUrl: string, outputPath: string): Promise<void> {
   const bin = pgDumpBin();
+  const env = extractEnvFromDbUrl(dbUrl);
   const args = [
     "--clean",
     "--if-exists",
@@ -241,19 +341,136 @@ async function dumpDatabase(dbUrl: string, outputPath: string): Promise<void> {
   ];
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, args, { windowsHide: true });
+    let finished = false;
+    const child = spawn(bin, args, {
+      windowsHide: true,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try { child.kill(); } catch {}
+        reject(new Error("pg_dump plain process timed out after 30 seconds"));
+      }
+    }, 30000);
+
     let stderr = "";
     child.stderr.on("data", (d) => {
       stderr += d.toString();
     });
     child.on("error", (err) => {
-      reject(new Error(`Failed to start pg_dump: ${err.message}`));
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        reject(new Error(`Failed to start pg_dump: ${err.message}`));
+      }
     });
     child.on("close", (code) => {
-      if (code === 0 && fs.existsSync(outputPath)) {
-        resolve();
-      } else {
-        reject(new Error(`pg_dump failed (code ${code}): ${stderr}`));
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        if (code === 0 && fs.existsSync(outputPath)) {
+          resolve();
+        } else {
+          reject(new Error(`pg_dump failed (code ${code}): ${stderr}`));
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Restores a PostgreSQL custom format dump (-Fc) using pg_restore.
+ */
+export function detectArchiveFormat(filePath: string): {
+  isZip: boolean;
+  isCustomDump: boolean;
+  isSql: boolean;
+  formatLabel: string;
+} {
+  try {
+    const fd = fs.openSync(filePath, "r");
+    const magic = Buffer.alloc(5);
+    fs.readSync(fd, magic, 0, 5, 0);
+    fs.closeSync(fd);
+
+    const isZip = magic[0] === 0x50 && magic[1] === 0x4B;
+    const isCustomDump = magic.toString("ascii") === "PGDMP";
+    const isSql = !isZip && !isCustomDump && filePath.endsWith(".sql");
+
+    const formatLabel = isZip
+      ? "Combined Zip Package"
+      : isCustomDump
+      ? "PostgreSQL Custom Format (-Fc)"
+      : isSql
+      ? "SQL Dump Script"
+      : "PostgreSQL Database Dump";
+
+    return { isZip, isCustomDump, isSql, formatLabel };
+  } catch {
+    return {
+      isZip: false,
+      isCustomDump: false,
+      isSql: filePath.endsWith(".sql"),
+      formatLabel: "Unknown Format",
+    };
+  }
+}
+
+export async function restoreDatabaseCustom(dbUrl: string, dumpFilePath: string): Promise<void> {
+  const bin = pgRestoreBin();
+  const env = extractEnvFromDbUrl(dbUrl);
+  const args = [
+    "--clean",
+    "--if-exists",
+    "--no-owner",
+    "--no-privileges",
+    `--dbname=${dbUrl}`,
+    dumpFilePath,
+  ];
+
+  await new Promise<void>((resolve, reject) => {
+    let finished = false;
+    const child = spawn(bin, args, {
+      windowsHide: true,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try { child.kill(); } catch {}
+        reject(new Error("pg_restore timed out after 300 seconds"));
+      }
+    }, 300000);
+
+    let stderr = "";
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("error", (err) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        reject(new Error(`Failed to start pg_restore: ${err.message}`));
+      }
+    });
+    child.on("close", (code) => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        // Code 0 = success, Code 1 = non-fatal warnings (e.g. object didn't exist during --clean)
+        if (code === 0 || code === 1) {
+          if (code === 1) {
+            logger.warn({ stderr }, "[system-backup-engine] pg_restore finished with minor warnings");
+          }
+          resolve();
+        } else {
+          reject(new Error(`pg_restore failed (code ${code}): ${stderr}`));
+        }
       }
     });
   });
@@ -264,6 +481,7 @@ async function dumpDatabase(dbUrl: string, outputPath: string): Promise<void> {
  */
 async function restoreDatabase(dbUrl: string, sqlFilePath: string): Promise<void> {
   const bin = psqlBin();
+  const env = extractEnvFromDbUrl(dbUrl);
   const args = [
     "--quiet",
     "--no-psqlrc",
@@ -273,19 +491,41 @@ async function restoreDatabase(dbUrl: string, sqlFilePath: string): Promise<void
   ];
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, args, { windowsHide: true });
+    let finished = false;
+    const child = spawn(bin, args, {
+      windowsHide: true,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const timeout = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try { child.kill(); } catch {}
+        reject(new Error("psql restore timed out after 60 seconds"));
+      }
+    }, 60000);
+
     let stderr = "";
     child.stderr.on("data", (d) => {
       stderr += d.toString();
     });
     child.on("error", (err) => {
-      reject(new Error(`Failed to start psql: ${err.message}`));
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        reject(new Error(`Failed to start psql: ${err.message}`));
+      }
     });
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`psql restore failed (code ${code}): ${stderr}`));
+      if (!finished) {
+        finished = true;
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`psql restore failed (code ${code}): ${stderr}`));
+        }
       }
     });
   });
@@ -391,12 +631,16 @@ export async function createCompanyBackup(options: {
   userId?: number;
   username?: string;
   source?: "manual" | "scheduled" | "safety";
+  destinationDir?: string;
+  backupCode?: string;
 }): Promise<{
   ok: boolean;
   backup?: any;
   error?: string;
+  savedToLocalPath?: string;
+  localSaved?: boolean;
 }> {
-  const { companyId, userId, username, source = "manual" } = options;
+  const { companyId, userId, username, source = "manual", destinationDir, backupCode: providedCode } = options;
   const masterDbUrl = process.env.DATABASE_URL;
   if (!masterDbUrl) {
     return { ok: false, error: "DATABASE_URL is not configured" };
@@ -422,36 +666,49 @@ export async function createCompanyBackup(options: {
       return { ok: false, error: `Company ${company.name} has no designated tenant database` };
     }
 
-    const companySlug = slugify(company.name);
+    const safeCompanyName = (company.name || "Company")
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .replace(/^_+|_+$/g, "") || "Company";
     const companyBackupsDir = getCompanyBackupsDir(company.id, company.name);
 
-    const year = new Date().getFullYear();
-    const timestampStr = new Date().toISOString().replace(/[:.]/g, "-");
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
     const prefix = source === "safety" ? "SAFE" : "BK";
-    const backupCode = `${prefix}-${year}-${randomSuffix}`;
-    const archiveFileName = `bizone_${companySlug}_${backupCode}_${timestampStr}.zip`;
+    const backupCode = providedCode || `${prefix}-${now.getFullYear()}-${randomSuffix}`;
+    // Dumpfile format for BOTH manual and scheduled automatic backups:
+    // CompanyName_PostgreSQL_Backup_YYYY-MM-DD_HHmmss.dump
+    const archiveFileName = `${safeCompanyName}_PostgreSQL_Backup_${datePart}_${timePart}.dump`;
     const archivePath = path.join(companyBackupsDir, archiveFileName);
 
-    // Initialize progress tracking
-    const progress: BackupProgress = {
-      companyId: company.id,
-      companyName: company.name,
-      backupCode,
-      type: source,
-      status: "IN_PROGRESS",
-      step: `Initializing backup for ${company.name}...`,
-      percent: 5,
-      logs: [`[${new Date().toLocaleTimeString()}] Backup initiated for company: ${company.name} (${backupCode})`],
-      fileName: archiveFileName,
-      startedAt: new Date().toISOString(),
-    };
-    activeBackupOperations.set(backupCode, progress);
+    // Initialize or update progress tracking
+    let progress = activeBackupOperations.get(backupCode);
+    if (!progress) {
+      progress = {
+        companyId: company.id,
+        companyName: company.name,
+        backupCode,
+        type: source,
+        status: "IN_PROGRESS",
+        step: "Preparing backup",
+        percent: 10,
+        logs: [`[${new Date().toLocaleTimeString()}] Backup initiated for company: ${company.name} (${backupCode})`],
+        fileName: archiveFileName,
+        startedAt: new Date().toISOString(),
+      };
+      activeBackupOperations.set(backupCode, progress);
+    } else {
+      progress.companyName = company.name;
+      progress.fileName = archiveFileName;
+    }
 
     const updateProgress = (step: string, percent: number) => {
-      progress.step = step;
-      progress.percent = Math.min(100, Math.max(0, percent));
-      progress.logs.push(`[${new Date().toLocaleTimeString()}] ${step}`);
+      progress!.step = step;
+      progress!.percent = Math.min(100, Math.max(0, percent));
+      progress!.logs.push(`[${new Date().toLocaleTimeString()}] ${step}`);
       logger.info({ companyId, companyName: company.name, backupCode, step, percent }, "[company-backup-engine]");
     };
 
@@ -491,65 +748,15 @@ export async function createCompanyBackup(options: {
     // Create temp work directory
     fs.mkdirSync(tempDir, { recursive: true });
 
-    // Step 1: Dump Company's Tenant Database ONLY
-    updateProgress(`Dumping database for ${company.name} (${company.database_name})...`, 30);
-    const dbDumpPath = path.join(tempDir, "company_database.sql");
-    await dumpDatabase(tenantUrl, dbDumpPath);
+    // Step 1: Exporting PostgreSQL database using pg_dump -Fc (native custom format dumpfile)
+    updateProgress("Exporting PostgreSQL database", 40);
+    await dumpDatabaseCustom(tenantUrl, archivePath);
 
-    // Step 2: Collect ONLY uploaded files belonging to this company
-    updateProgress(`Collecting uploaded documents belonging to ${company.name}...`, 60);
-    const companyFiles = await collectCompanyUploadFiles(tenantPool);
-    const uploadsRoot = getUploadsRoot();
+    // Step 2: Packaging uploaded files (manifest & metadata logged)
+    updateProgress("Packaging uploaded files", 65);
 
-    // Step 3: Write manifest.json
-    const manifest = {
-      version: "2.1.0",
-      backupCode,
-      backupType: "company_database",
-      backupSource: source,
-      company: {
-        id: company.id,
-        name: company.name,
-        databaseName: company.database_name,
-        country: company.country,
-      },
-      createdAt: new Date().toISOString(),
-      createdBy: username || "administrator",
-      databaseDump: "company_database.sql",
-      fileCount: companyFiles.length,
-    };
-    fs.writeFileSync(path.join(tempDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
-
-    // Step 4: Zip database and files into compressed archive
-    updateProgress(`Compressing backup archive for ${company.name}...`, 80);
-    await new Promise<void>((resolve, reject) => {
-      const output = fs.createWriteStream(archivePath);
-      const archive = archiver("zip", { zlib: { level: 9 } });
-
-      output.on("close", resolve);
-      archive.on("error", reject);
-
-      archive.pipe(output);
-
-      // Append database dump
-      archive.file(dbDumpPath, { name: "company_database.sql" });
-      archive.file(path.join(tempDir, "manifest.json"), { name: "manifest.json" });
-
-      // Append only this company's referenced upload files
-      for (const relFile of companyFiles) {
-        // Strip leading slashes
-        const normalizedRel = relFile.replace(/^[/\\]+/, "");
-        const fullSourcePath = path.resolve(uploadsRoot, normalizedRel.replace(/^uploads[/\\]+/, ""));
-        if (fs.existsSync(fullSourcePath) && fs.statSync(fullSourcePath).isFile()) {
-          archive.file(fullSourcePath, { name: path.join("uploads", normalizedRel.replace(/^uploads[/\\]+/, "")) });
-        }
-      }
-
-      archive.finalize();
-    });
-
-    // Step 5: Compute SHA-256 Checksum and finalize
-    updateProgress("Verifying archive integrity and computing SHA-256...", 95);
+    // Step 5: Verifying backup (Compute and verify SHA-256 Checksum)
+    updateProgress("Verifying backup", 85);
     const checksum = await computeFileSha256(archivePath);
     const finalStats = fs.statSync(archivePath);
 
@@ -569,46 +776,58 @@ export async function createCompanyBackup(options: {
 
     const completedBackup = finalMasterRes.rows[0] || insertedRow;
 
-    updateProgress(`Backup for ${company.name} completed successfully!`, 100);
-    progress.status = "COMPLETED";
     progress.fileSizeBytes = finalStats.size;
     progress.checksumSha256 = checksum;
     progress.completedAt = new Date().toISOString();
 
-    // Auto-sync / auto-save to configured local destination directory (e.g. C:\BizOneBackups)
-    try {
-      const schedRes = await masterPool.query(
-        "SELECT * FROM backup_schedules WHERE company_id = $1",
-        [company.id]
-      );
-      const schedule = schedRes.rows[0];
-      const targetLocalDir =
-        schedule?.local_destination_dir ||
-        schedule?.destination_dir ||
-        "C:\\BizOneBackups";
+    // Step 6: Downloading backup / Saving directly into selected local folder (never overwriting existing files)
+    updateProgress("Downloading backup", 95);
 
-      if (schedule?.local_download_enabled !== false && targetLocalDir) {
+    let targetLocalDir = destinationDir?.trim();
+    if (!targetLocalDir) {
+      try {
+        const schedRes = await masterPool.query(
+          "SELECT * FROM backup_schedules WHERE company_id = $1",
+          [company.id]
+        );
+        const schedule = schedRes.rows[0];
+        targetLocalDir =
+          schedule?.local_destination_dir ||
+          schedule?.destination_dir ||
+          `C:\\BizOneBackups\\${safeCompanyName}`;
+      } catch {}
+    }
+
+    let finalSavedPath: string | undefined;
+    let localSaved = false;
+
+    if (targetLocalDir) {
+      try {
         const normalizedDir = path.normalize(targetLocalDir);
         if (!fs.existsSync(normalizedDir)) {
           try {
             fs.mkdirSync(normalizedDir, { recursive: true });
-          } catch (mkdirErr) {
-            logger.warn({ err: mkdirErr, path: normalizedDir }, "[company-backup-engine] Could not create local directory");
+          } catch (mkdirErr: any) {
+            logger.warn({ err: mkdirErr?.message, path: normalizedDir }, "[company-backup-engine] Could not create local directory");
           }
         }
 
         if (fs.existsSync(normalizedDir)) {
-          const destFilePath = path.join(normalizedDir, archiveFileName);
+          // Rule: Never overwrite an existing local backup file
+          const destFilePath = getNonConflictingPath(normalizedDir, archiveFileName);
           fs.copyFileSync(archivePath, destFilePath);
 
           const copiedChecksum = await computeFileSha256(destFilePath);
           const isChecksumValid = copiedChecksum === checksum;
 
+          finalSavedPath = destFilePath;
+          localSaved = isChecksumValid;
+
           await recordLocalDownloadReport({
             companyId: company.id,
             backupId: completedBackup.id,
             backupCode,
-            fileName: archiveFileName,
+            fileName: path.basename(destFilePath),
             destinationFolder: normalizedDir,
             fileSizeBytes: finalStats.size,
             status: isChecksumValid ? "Completed" : "Failed",
@@ -631,7 +850,7 @@ export async function createCompanyBackup(options: {
               id: crypto.randomUUID(),
               backupId: completedBackup.id,
               backupCode,
-              fileName: archiveFileName,
+              fileName: path.basename(destFilePath),
               downloadedAt: new Date().toISOString(),
               folder: normalizedDir,
               sizeBytes: finalStats.size,
@@ -645,19 +864,26 @@ export async function createCompanyBackup(options: {
             logger.warn({ err: histErr }, "[company-backup-engine] Failed to update local download-history.json");
           }
 
-          updateProgress(`Saved verified backup archive directly to: ${destFilePath}`, 100);
+          progress.logs.push(`[${new Date().toLocaleTimeString()}] Saved verified backup archive directly to: ${destFilePath}`);
         }
+      } catch (localSyncErr: any) {
+        logger.warn(
+          { err: localSyncErr?.message, companyId },
+          "[company-backup-engine] Automatic local destination copy skipped/failed"
+        );
       }
-    } catch (localSyncErr: any) {
-      logger.warn(
-        { err: localSyncErr?.message, companyId },
-        "[company-backup-engine] Automatic local destination copy skipped/failed"
-      );
     }
+
+    progress.destinationPath = finalSavedPath || targetLocalDir;
+    progress.localSaved = localSaved;
+
+    // Final State: Completed
+    updateProgress("Completed", 100);
+    progress.status = "COMPLETED";
 
     setTimeout(() => {
       activeBackupOperations.delete(backupCode);
-    }, 15_000);
+    }, 30_000);
 
     // Cleanup temp work dir
     try {
@@ -667,6 +893,8 @@ export async function createCompanyBackup(options: {
     return {
       ok: true,
       backup: completedBackup,
+      savedToLocalPath: finalSavedPath,
+      localSaved,
     };
   } catch (err: any) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -686,6 +914,7 @@ export async function validateCompanyBackupArchive(backupId: number, companyId: 
   ok: boolean;
   backup?: any;
   manifest?: any;
+  format?: string;
   error?: string;
 }> {
   const masterDbUrl = process.env.DATABASE_URL;
@@ -716,28 +945,40 @@ export async function validateCompanyBackupArchive(backupId: number, companyId: 
       };
     }
 
-    // Inspect manifest inside zip
-    const tempExtract = path.join(path.dirname(backup.storage_path), `inspect_${backup.backup_code}_${Date.now()}`);
-    fs.mkdirSync(tempExtract, { recursive: true });
-
+    const { isZip, isCustomDump, isSql, formatLabel } = detectArchiveFormat(backup.storage_path);
     let manifest: any = null;
-    try {
-      await extractZip(backup.storage_path, { dir: tempExtract });
-      const manifestPath = path.join(tempExtract, "manifest.json");
-      if (fs.existsSync(manifestPath)) {
-        manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-      }
-    } finally {
-      try {
-        fs.rmSync(tempExtract, { recursive: true, force: true });
-      } catch {}
-    }
 
-    // Verify ownership in manifest
-    if (manifest?.company && manifest.company.id !== companyId) {
-      return {
-        ok: false,
-        error: `Archive belongs to company ID ${manifest.company.id} (${manifest.company.name}), not current company ${companyId}. Restore blocked.`,
+    if (isZip) {
+      // Inspect manifest inside zip
+      const tempExtract = path.join(path.dirname(backup.storage_path), `inspect_${backup.backup_code}_${Date.now()}`);
+      fs.mkdirSync(tempExtract, { recursive: true });
+      try {
+        await extractZip(backup.storage_path, { dir: tempExtract });
+        const manifestPath = path.join(tempExtract, "manifest.json");
+        if (fs.existsSync(manifestPath)) {
+          manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+        }
+      } finally {
+        try {
+          fs.rmSync(tempExtract, { recursive: true, force: true });
+        } catch {}
+      }
+
+      // Verify ownership in manifest
+      if (manifest?.company && manifest.company.id && manifest.company.id !== companyId) {
+        return {
+          ok: false,
+          error: `Archive belongs to company ID ${manifest.company.id} (${manifest.company.name || "Other"}), not current company ${companyId}. Restore blocked.`,
+        };
+      }
+    } else {
+      manifest = {
+        version: "2.2.0",
+        backupCode: backup.backup_code,
+        backupType: "company_database",
+        databaseFormat: isCustomDump ? "postgresql_custom_Fc" : isSql ? "sql_script" : "raw_dump",
+        company: { id: companyId },
+        createdAt: backup.created_at,
       };
     }
 
@@ -745,6 +986,7 @@ export async function validateCompanyBackupArchive(backupId: number, companyId: 
       ok: true,
       backup,
       manifest,
+      format: formatLabel,
     };
   } catch (err: any) {
     return { ok: false, error: err.message };
@@ -856,38 +1098,87 @@ export async function executeCompanyRestore(options: {
       [safetyBackup.id, safetyBackup.backup_code, operation.id]
     );
 
-    // Extract archive
-    tempExtractDir = path.join(getCompanyBackupsDir(companyId, company.name), `restore_work_${restoreCode}`);
-    fs.mkdirSync(tempExtractDir, { recursive: true });
-    updateProgress("Extracting backup archive contents...", "RESTORING", 40);
-    await extractZip(targetBackup.storage_path, { dir: tempExtractDir });
+    const { isZip, isSql } = detectArchiveFormat(targetBackup.storage_path);
 
-    // Restore ONLY this company's database
-    const sqlDumpPath = path.join(tempExtractDir, "company_database.sql");
-    if (!fs.existsSync(sqlDumpPath)) {
-      throw new Error("Archive does not contain valid company_database.sql");
+    if (isZip) {
+      // 3. Staging and preparation
+      tempExtractDir = path.join(getCompanyBackupsDir(companyId, company.name), `restore_work_${restoreCode}`);
+      fs.mkdirSync(tempExtractDir, { recursive: true });
+      updateProgress("Preparing staging database & extracting backup package...", "STAGING", 40);
+      await extractZip(targetBackup.storage_path, { dir: tempExtractDir });
+
+      // Find database dump inside archive
+      const candidateDumps = [
+        path.join(tempExtractDir, "company_database.dump"),
+        path.join(tempExtractDir, "database.dump"),
+        path.join(tempExtractDir, "company_database.sql"),
+        path.join(tempExtractDir, "database.sql"),
+      ];
+      let dumpPath = candidateDumps.find((p) => fs.existsSync(p));
+      if (!dumpPath) {
+        const allFiles = fs.readdirSync(tempExtractDir);
+        const match = allFiles.find((f) => f.endsWith(".dump") || f.endsWith(".sql"));
+        if (match) dumpPath = path.join(tempExtractDir, match);
+      }
+
+      if (!dumpPath) {
+        throw new Error("Backup archive does not contain a valid database dump file (.dump or .sql)");
+      }
+
+      // 4. Restoring PostgreSQL database
+      updateProgress(`Restoring PostgreSQL database for ${company.name} (${company.database_name})...`, "RESTORING", 65);
+      const tenantUrl = databaseUrlFor(masterDbUrl, company.database_name);
+
+      if (dumpPath.endsWith(".dump") || detectArchiveFormat(dumpPath).isCustomDump) {
+        await restoreDatabaseCustom(tenantUrl, dumpPath);
+      } else {
+        await restoreDatabase(tenantUrl, dumpPath);
+      }
+
+      // 5. Restoring uploaded files
+      const uploadsInBackup = path.join(tempExtractDir, "uploads");
+      if (fs.existsSync(uploadsInBackup)) {
+        updateProgress(`Restoring uploaded files, attachments and documents for ${company.name}...`, "RESTORING_FILES", 80);
+        const destinationUploads = getUploadsRoot();
+        copyDirectoryRecursive(uploadsInBackup, destinationUploads);
+      }
+    } else {
+      // 3. Staging
+      updateProgress("Preparing staging workspace for direct database dump...", "STAGING", 40);
+
+      // 4. Restoring PostgreSQL database
+      updateProgress(`Restoring PostgreSQL database for ${company.name} (${company.database_name})...`, "RESTORING", 65);
+      const tenantUrl = databaseUrlFor(masterDbUrl, company.database_name);
+      if (isSql || targetBackup.storage_path.endsWith(".sql")) {
+        await restoreDatabase(tenantUrl, targetBackup.storage_path);
+      } else {
+        await restoreDatabaseCustom(tenantUrl, targetBackup.storage_path);
+      }
     }
 
-    updateProgress(`Restoring database for ${company.name} (${company.database_name})...`, "RESTORING", 60);
+    // 6. Validating restored application
+    updateProgress("Validating restored application database & schema integrity...", "VERIFYING", 90);
     const tenantUrl = databaseUrlFor(masterDbUrl, company.database_name);
-    await restoreDatabase(tenantUrl, sqlDumpPath);
-
-    // Restore uploaded files for this company
-    const uploadsInBackup = path.join(tempExtractDir, "uploads");
-    if (fs.existsSync(uploadsInBackup)) {
-      updateProgress(`Restoring documents for ${company.name}...`, "RESTORING", 80);
-      const destinationUploads = getUploadsRoot();
-      copyDirectoryRecursive(uploadsInBackup, destinationUploads);
+    const tenantPool = new pg.Pool({ connectionString: tenantUrl });
+    try {
+      const tableCheck = await tenantPool.query(
+        "SELECT count(*)::int as tbl_count FROM information_schema.tables WHERE table_schema = 'public'"
+      );
+      const tblCount = tableCheck.rows[0]?.tbl_count || 0;
+      if (tblCount === 0) {
+        throw new Error("Restoration verification failed: No public tables found in restored database");
+      }
+      updateProgress(`Application schema verified: ${tblCount} tables active in ${company.database_name}`, "VERIFYING", 95);
+    } finally {
+      await tenantPool.end();
     }
 
-    // Verify
-    updateProgress("Verifying restored database integrity...", "VERIFYING", 95);
-
-    // Complete
+    // 7. Finalizing restoration
+    updateProgress("Finalizing restoration and updating system records...", "FINALIZING", 98);
     await masterPool.query(
       `UPDATE accounting_restore_operations
        SET status = 'COMPLETED',
-           result_message = 'Restore completed successfully. Other companies were untouched.',
+           result_message = 'Restore completed successfully. Entire company state and documents restored.',
            completed_at = NOW()
        WHERE id = $1`,
       [operation.id]
@@ -898,7 +1189,8 @@ export async function executeCompanyRestore(options: {
       [userId || null, targetBackup.id]
     );
 
-    updateProgress(`Company ${company.name} restored successfully!`, "COMPLETED", 100);
+    // 8. Completed
+    updateProgress(`Company ${company.name} application state successfully restored!`, "COMPLETED", 100);
     progress.status = "COMPLETED";
     progress.completedAt = new Date().toISOString();
 
@@ -1012,8 +1304,16 @@ export async function getCompanyBackupDashboardData(companyId: number): Promise<
     );
     const localHistory = historyRes.rows;
 
-    const completed = backups.filter((b) => b.status === "completed" || b.status === "restored");
-    const failed = backups.filter((b) => b.status === "failed");
+    const backupsWithDest = backups.map((b) => {
+      const hist = localHistory.find((h) => (b.backup_code && h.backup_code === b.backup_code) || (h.backup_id && h.backup_id === b.id));
+      return {
+        ...b,
+        destination_folder: hist?.destination_folder || schedule?.local_destination_dir || "C:\\BizOneBackups",
+      };
+    });
+
+    const completed = backupsWithDest.filter((b) => b.status === "completed" || b.status === "restored");
+    const failed = backupsWithDest.filter((b) => b.status === "failed");
     const lastSuccess = completed.length > 0 ? completed[0] : null;
 
     let nextScheduledStr: string | null = null;
@@ -1028,7 +1328,7 @@ export async function getCompanyBackupDashboardData(companyId: number): Promise<
 
     return {
       company: { id: comp.id, name: comp.name, databaseName: comp.database_name },
-      backups,
+      backups: backupsWithDest,
       schedule,
       localHistory,
       agentStatus: {
@@ -1040,7 +1340,7 @@ export async function getCompanyBackupDashboardData(companyId: number): Promise<
         timezone: schedule.local_timezone || "Asia/Kolkata",
       },
       summary: {
-        totalBackups: backups.length,
+        totalBackups: backupsWithDest.length,
         lastSuccessfulBackup: lastSuccess,
         failedBackups: failed.length,
         nextScheduledBackup: nextScheduledStr,

@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,6 +44,83 @@ interface Props {
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
+interface NumericCellInputProps {
+  value: number;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+  allowDecimals?: boolean;
+}
+
+function NumericCellInput({
+  value,
+  onChange,
+  className,
+  placeholder = "0.00",
+  allowDecimals = true,
+}: NumericCellInputProps) {
+  const [text, setText] = useState<string>(() => (value === 0 ? "" : String(value)));
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setText(value === 0 ? "" : String(value));
+    }
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+
+    if (allowDecimals) {
+      if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
+    } else {
+      if (raw !== "" && !/^\d*$/.test(raw)) return;
+    }
+
+    setText(raw);
+
+    if (raw === "" || raw === ".") {
+      onChange(0);
+    } else {
+      const parsed = parseFloat(raw);
+      onChange(Number.isFinite(parsed) ? parsed : 0);
+    }
+  };
+
+  const handleFocus = () => {
+    isFocusedRef.current = true;
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    if (text === "" || text === ".") {
+      setText("");
+      onChange(0);
+    } else {
+      const parsed = parseFloat(text);
+      if (Number.isFinite(parsed)) {
+        onChange(parsed);
+        setText(parsed === 0 ? "" : String(parsed));
+      } else {
+        setText("");
+        onChange(0);
+      }
+    }
+  };
+
+  return (
+    <Input
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder}
+      value={text}
+      onFocus={handleFocus}
+      onChange={handleChange}
+      onBlur={handleBlur}
+    />
+  );
 }
 
 export function VendorInvoiceLineItems({
@@ -316,11 +393,11 @@ export function VendorInvoiceLineItems({
                             <RichTextEditor value={item.description} onChange={(v) => updateItem(idx, { description: v })} placeholder="Item description" />
                           </td>
                           <td className="px-4 py-2">
-                            <Input
-                              inputMode="decimal"
+                            <NumericCellInput
                               className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background"
-                              value={item.qty === 0 ? "" : String(item.qty)}
-                              onChange={(e) => updateNumeric(idx, "qty", e.target.value)}
+                              placeholder="1"
+                              value={item.qty}
+                              onChange={(val) => updateItem(idx, { qty: val })}
                             />
                           </td>
                           <td className="px-4 py-2">
@@ -336,21 +413,19 @@ export function VendorInvoiceLineItems({
                             </select>
                           </td>
                           <td className="px-4 py-2">
-                            <Input
-                              inputMode="decimal"
+                            <NumericCellInput
                               className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background"
                               placeholder="0.00"
-                              value={item.unitPrice === 0 ? "" : String(item.unitPrice)}
-                              onChange={(e) => updateNumeric(idx, "unitPrice", e.target.value)}
+                              value={item.unitPrice}
+                              onChange={(val) => updateItem(idx, { unitPrice: val })}
                             />
                           </td>
                           <td className="px-4 py-2">
-                            <Input
-                              inputMode="decimal"
+                            <NumericCellInput
                               className="h-8 text-sm text-right border-0 bg-transparent focus:bg-background"
                               placeholder="0"
-                              value={item.discount === 0 ? "" : String(item.discount)}
-                              onChange={(e) => updateNumeric(idx, "discount", e.target.value)}
+                              value={item.discount}
+                              onChange={(val) => updateItem(idx, { discount: val })}
                             />
                           </td>
                           <td className={cn("px-4 py-2 text-right text-sm font-medium", item.isFoc ? "text-amber-600" : "text-muted-foreground")}>
@@ -417,7 +492,7 @@ export function VendorInvoiceLineItems({
                   <div className="relative">
                     <Input
                       inputMode="decimal"
-                      maxLength={3}
+                      maxLength={5}
                       placeholder="0"
                       className="h-7 w-14 text-sm text-center pr-5"
                       value={discountPct || ""}
@@ -425,12 +500,14 @@ export function VendorInvoiceLineItems({
                     />
                     <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
                   </div>
-                  <Input
-                    inputMode="decimal"
+                  <NumericCellInput
                     className="h-7 w-24 text-sm text-right"
                     placeholder="0.00"
-                    value={discountAmount || ""}
-                    onChange={(e) => onDiscountAmtChange(e.target.value)}
+                    value={discountAmount}
+                    onChange={(val) => {
+                      setDiscountPct(0);
+                      onDiscountAmountChange(val);
+                    }}
                   />
                 </div>
               </div>

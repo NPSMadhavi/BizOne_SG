@@ -48,6 +48,8 @@ interface DbEmployee {
   date_of_birth: string | Date | null;
   nric_number: string | null;
   passport_number: string | null;
+  bank_account?: string | null;
+  bank_name?: string | null;
   salary?: string | number | null;
   annual_salary?: string | number | null;
 }
@@ -220,6 +222,8 @@ export async function syncPayrollConfigFromEmployee(
        cpf_amount = $4,
        employer_cpf_amount = $5,
        net_salary = $6,
+       bank_account = COALESCE($9, bank_account),
+       bank_name = COALESCE($10, bank_name),
        updated_at = NOW()
      WHERE id = $7 AND company_id = $8
      RETURNING *`,
@@ -232,6 +236,8 @@ export async function syncPayrollConfigFromEmployee(
       amounts.netPay,
       config.id,
       companyId,
+      employee.bank_account || null,
+      employee.bank_name || null,
     ],
   );
 

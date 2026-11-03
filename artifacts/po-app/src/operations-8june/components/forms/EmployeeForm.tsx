@@ -33,6 +33,7 @@ import {
 } from "@/operations-8june/components/employees/EmployeeFiles";
 import { SimpleDatePicker } from "@/components/ui/simple-date-picker";
 import { formFieldGridClass, formFieldGrid2Class } from "@/lib/form-ui";
+import { SelectBankAccountField } from "@/components/bank-account-field";
 import {
   Dialog,
 } from "@/components/ui/dialog";
@@ -102,6 +103,8 @@ const employeeFormSchema = insertEmployeeSchema.extend({
   passportScan: z.string().optional(),
   visaScan: z.string().optional(),
   nricScan: z.string().optional(),
+  bankAccount: z.string().optional().nullable(),
+  bankName: z.string().optional().nullable(),
   dependents: z.array(dependentSchema).optional(),
 }).superRefine((data, ctx) => {
   if (data.nationality === "PR" && !data.prStatus) {
@@ -184,6 +187,8 @@ export default function EmployeeForm({
     passportScan: emp?.passportScan || "",
     visaScan: emp?.visaScan || "",
     nricScan: emp?.nricScan || "",
+    bankAccount: (emp as any)?.bankAccount || (emp as any)?.bank_account || "",
+    bankName: (emp as any)?.bankName || (emp as any)?.bank_name || "",
     dependents: [],
   });
 
@@ -293,6 +298,8 @@ export default function EmployeeForm({
         passportExpiry: data.passportExpiry ? data.passportExpiry.toISOString() : null,
         visaExpiry: data.visaExpiry ? data.visaExpiry.toISOString() : null,
         nricExpiry: data.nricExpiry ? data.nricExpiry.toISOString() : null,
+        bankAccount: data.bankAccount?.trim() || null,
+        bankName: data.bankAccount ? data.bankAccount.split(" - ")[0]?.trim() || null : null,
         dependents: data.dependents?.map(dep => ({
           ...dep,
           passportExpiry: dep.passportExpiry ? dep.passportExpiry.toISOString() : null,
@@ -340,6 +347,8 @@ export default function EmployeeForm({
         passportExpiry: data.passportExpiry ? data.passportExpiry.toISOString() : null,
         visaExpiry: data.visaExpiry ? data.visaExpiry.toISOString() : null,
         nricExpiry: data.nricExpiry ? data.nricExpiry.toISOString() : null,
+        bankAccount: data.bankAccount?.trim() || null,
+        bankName: data.bankAccount ? data.bankAccount.split(" - ")[0]?.trim() || null : null,
         dependents: data.dependents?.map(dep => ({
           ...dep,
           passportExpiry: dep.passportExpiry ? dep.passportExpiry.toISOString() : null,
@@ -896,6 +905,25 @@ export default function EmployeeForm({
                           </FormItem>
                         )}
                       />
+
+              <FormField
+                control={form.control}
+                name="bankAccount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className={formLabelClass}>Bank Account</FormLabel>
+                    <FormControl>
+                      <SelectBankAccountField
+                        value={field.value || ""}
+                        onChange={(val) => field.onChange(val)}
+                        placeholder="Select Bank Account"
+                        className="h-10 border-[#E5E7EB] bg-white text-[#111827]"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
                       {isForeigner && (
                       <FormField

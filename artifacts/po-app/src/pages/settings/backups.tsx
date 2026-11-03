@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -53,6 +53,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { getTabSessionId } from "@/lib/browser-session";
 
 type BackupRecord = {
   id: number;
@@ -64,6 +65,7 @@ type BackupRecord = {
   status: string;
   storage_path?: string | null;
   storage_ref?: string | null;
+  destination_folder?: string | null;
   file_size_bytes?: number | null;
   checksum_sha256?: string | null;
   backup_source: string; // manual | scheduled | safety
@@ -315,6 +317,21 @@ export default function SettingsBackupsPage() {
   const [testingConnection, setTestingConnection] = useState(false);
   const [triggeringLocalDownload, setTriggeringLocalDownload] = useState(false);
 
+  // Manual Create Company Backup Modal State
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [localBackupPath, setLocalBackupPath] = useState("C:\\BizOneBackups");
+  const [folderHandle, setFolderHandle] = useState<any | null>(null);
+  const [isBrowsingFolder, setIsBrowsingFolder] = useState(false);
+  const [modalBackupState, setModalBackupState] = useState<"idle" | "in_progress" | "completed" | "error">("idle");
+  const [modalBackupError, setModalBackupError] = useState<string | null>(null);
+  const [lastCreatedBackup, setLastCreatedBackup] = useState<{
+    id?: number;
+    fileName: string;
+    fileSizeBytes?: number;
+    destinationPath: string;
+    checksumSha256?: string;
+  } | null>(null);
+
   // Real-time Backup Progress State
   const [backupActive, setBackupActive] = useState(false);
   const [backupProgressCode, setBackupProgressCode] = useState<string | null>(null);
@@ -326,11 +343,18 @@ export default function SettingsBackupsPage() {
     fileSizeBytes?: number;
     checksumSha256?: string;
     fileName?: string;
+    destinationPath?: string;
+    localSaved?: boolean;
     error?: string;
   } | null>(null);
 
   // Restore Modal State
   const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [restoreSource, setRestoreSource] = useState<"server" | "local">("server");
+  const [isUploadingLocal, setIsUploadingLocal] = useState(false);
+  const [localUploadPercent, setLocalUploadPercent] = useState(0);
+  const [localUploadError, setLocalUploadError] = useState<string | null>(null);
+  const localFileInputRef = useRef<HTMLInputElement>(null);
   const [restoreTarget, setRestoreTarget] = useState<BackupRecord | null>(null);
   const [restoreValidation, setRestoreValidation] = useState<any>(null);
   const [restoreValidating, setRestoreValidating] = useState(false);
@@ -385,25 +409,191 @@ export default function SettingsBackupsPage() {
     } else if (selectedCompany?.name) {
       setSchedDestDir(`C:\\BizOne_Backups\\${selectedCompany.name}`);
       setLocalDestDir("C:\\BizOneBackups");
+      setLocalBackupPath(`C:\\BizOneBackups\\${selectedCompany.name}`);
+    }
+    if (schedule?.local_destination_dir) {
+      setLocalBackupPath(schedule.local_destination_dir.replace(/\\+/g, "\\"));
     }
   }, [schedule, selectedCompany]);
 
-  // Poll active backup progress
+  const openCreateBackupModal = () => {
+    const defaultPath =
+      schedule?.local_destination_dir ||
+      (selectedCompany?.name ? `C:\\BizOneBackups\\${selectedCompany.name}` : "C:\\BizOneBackups");
+    setLocalBackupPath(defaultPath.replace(/\\+/g, "\\"));
+    setModalBackupState("idle");
+    setModalBackupError(null);
+    setCreateModalOpen(true);
+  };
+
+  const handleBrowseFolder = async () => {
+    setIsBrowsingFolder(true);
+    // 1. Try backend native Windows folder picker helper
+    try {
+      const res = await api("/api/system-backups/browse-folder", {
+        method: "POST",
+        body: JSON.stringify({ initialPath: localBackupPath }),
+      });
+      if (res.supported && res.success && res.path) {
+        setLocalBackupPath(res.path);
+        toast({ title: "Folder Selected", description: res.path });
+        setIsBrowsingFolder(false);
+        return;
+      }
+      if (res.supported && res.cancelled) {
+        setIsBrowsingFolder(false);
+        return;
+      }
+    } catch {
+      // Backend folder picker unavailable or non-Windows host
+    }
+
+    // 2. Try Browser File System Access API
+    if (typeof window !== "undefined" && "showDirectoryPicker" in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker({
+          mode: "readwrite",
+        });
+        if (handle) {
+          setFolderHandle(handle);
+          const selectedName = handle.name;
+          const driveMatch = localBackupPath.match(/^[A-Za-z]:/);
+          const drive = driveMatch ? driveMatch[0] : "C:";
+          const updatedPath = `${drive}\\BizOneBackups\\${selectedName}`;
+          setLocalBackupPath(updatedPath);
+          toast({
+            title: "Folder Connected",
+            description: `Granted write access to folder '${selectedName}'.`,
+          });
+        }
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          toast({
+            title: "Folder Selection",
+            description: "You can type or paste any valid Windows path.",
+          });
+        }
+      }
+    } else {
+      toast({
+        title: "Manual Folder Path",
+        description: "You can type or paste your desired local Windows path directly in the field.",
+      });
+    }
+    setIsBrowsingFolder(false);
+  };
+
+  const handleStartBackup = async () => {
+    if (!localBackupPath.trim()) {
+      toast({
+        title: "Path Required",
+        description: "Please specify the local download folder path.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setModalBackupState("in_progress");
+    setModalBackupError(null);
+    setBackupProgressData({
+      status: "IN_PROGRESS",
+      step: "Preparing backup",
+      percent: 10,
+      logs: [`[${new Date().toLocaleTimeString()}] Backup initiated for ${selectedCompany?.name || "Company"}`],
+    });
+
+    try {
+      const res = await api("/api/system-backups/create", {
+        method: "POST",
+        body: JSON.stringify({ destinationDir: localBackupPath.trim() }),
+      });
+
+      setBackupProgressCode(res.backupCode);
+      setBackupActive(true);
+      toast({
+        title: "Backup Initiated",
+        description: `Exporting PostgreSQL database for ${selectedCompany?.name || "Company"}...`,
+      });
+    } catch (err: any) {
+      setModalBackupState("error");
+      setModalBackupError(err.message || "Failed to initiate backup on server");
+      toast({
+        title: "Backup Error",
+        description: err.message || "Could not start backup",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Poll active backup progress (fast 600ms interval for instant real-time feedback)
   useEffect(() => {
     if (!backupActive || !backupProgressCode) return;
     const interval = setInterval(async () => {
       try {
         const prog = await api(`/api/system-backups/progress/${backupProgressCode}`);
         setBackupProgressData(prog);
+        if (prog.backupCode && prog.backupCode !== backupProgressCode && prog.backupCode !== "BK-INIT") {
+          setBackupProgressCode(prog.backupCode);
+        }
         if (prog.status === "COMPLETED" || prog.status === "FAILED") {
           setBackupActive(false);
           qc.invalidateQueries({ queryKey: ["system-backups-dashboard"] });
           if (prog.status === "COMPLETED") {
+            const destPath = prog.destinationPath || localBackupPath;
+            const finalFileName =
+              prog.fileName ||
+              `${selectedCompany?.name || "Company"}_PostgreSQL_Backup_${backupProgressCode}.dump`;
+            setLastCreatedBackup({
+              id: prog.backupId,
+              fileName: finalFileName,
+              fileSizeBytes: prog.fileSizeBytes,
+              destinationPath: destPath,
+              checksumSha256: prog.checksumSha256,
+            });
+            setModalBackupState("completed");
+
+            // Automated client-side streaming download / folder handle write
+            try {
+              const res = await fetch(
+                prog.backupId
+                  ? `/api/system-backups/${prog.backupId}/download`
+                  : `/api/system-backups/latest/download`,
+                { credentials: "include" }
+              );
+              if (res.ok) {
+                const blob = await res.blob();
+                // 1. Direct write to directory handle if acquired via showDirectoryPicker
+                if (folderHandle && typeof folderHandle.getFileHandle === "function") {
+                  try {
+                    const fileHandle = await folderHandle.getFileHandle(finalFileName, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                  } catch (fhErr) {
+                    console.warn("Direct directory handle write error:", fhErr);
+                  }
+                }
+                // 2. Standard browser stream download fallback
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = finalFileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }
+            } catch (dlErr) {
+              console.warn("Client-side download trigger failed:", dlErr);
+            }
+
             toast({
               title: "Backup Complete!",
               description: `Archive generated successfully (${formatSize(prog.fileSizeBytes)})`,
             });
           } else {
+            setModalBackupState("error");
+            setModalBackupError(prog.error || "An error occurred during system backup");
             toast({
               title: "Backup Failed",
               description: prog.error || "An error occurred during system backup",
@@ -414,9 +604,9 @@ export default function SettingsBackupsPage() {
       } catch (err: any) {
         // Continue polling or silent fail
       }
-    }, 1500);
+    }, 600);
     return () => clearInterval(interval);
-  }, [backupActive, backupProgressCode, qc, toast]);
+  }, [backupActive, backupProgressCode, localBackupPath, folderHandle, selectedCompany, qc, toast]);
 
   // Poll active restore progress
   useEffect(() => {
@@ -571,17 +761,61 @@ export default function SettingsBackupsPage() {
   });
 
   // Validate before restore
-  async function openRestoreDialog(backup: BackupRecord) {
-    setRestoreTarget(backup);
+  async function openRestoreDialog(backup?: BackupRecord | null) {
     setRestoreAck(false);
     setRestoreConfirmText("");
     setRestoreValidation(null);
     setRestoreProgressData(null);
+    setLocalUploadError(null);
+    setIsUploadingLocal(false);
+    setLocalUploadPercent(0);
     setRestoreModalOpen(true);
-    setRestoreValidating(true);
 
+    if (backup) {
+      setRestoreSource("server");
+      setRestoreTarget(backup);
+      setRestoreValidating(true);
+      try {
+        const val = await api(`/api/system-backups/${backup.id}/validate`, { method: "POST" });
+        setRestoreValidation(val);
+      } catch (err: any) {
+        toast({
+          title: "Archive Validation Warning",
+          description: err.message || "Failed to inspect archive integrity",
+          variant: "destructive",
+        });
+      } finally {
+        setRestoreValidating(false);
+      }
+    } else {
+      const latestSuccess = backups.find((b) => b.status === "completed" || b.status === "restored");
+      if (latestSuccess) {
+        setRestoreSource("server");
+        setRestoreTarget(latestSuccess);
+        setRestoreValidating(true);
+        try {
+          const val = await api(`/api/system-backups/${latestSuccess.id}/validate`, { method: "POST" });
+          setRestoreValidation(val);
+        } catch {
+          // ignore error
+        } finally {
+          setRestoreValidating(false);
+        }
+      } else {
+        setRestoreSource("local");
+        setRestoreTarget(null);
+      }
+    }
+  }
+
+  const handleSelectServerBackup = async (backupIdStr: string) => {
+    const b = backups.find((x) => String(x.id) === backupIdStr);
+    if (!b) return;
+    setRestoreTarget(b);
+    setRestoreValidation(null);
+    setRestoreValidating(true);
     try {
-      const val = await api(`/api/system-backups/${backup.id}/validate`, { method: "POST" });
+      const val = await api(`/api/system-backups/${b.id}/validate`, { method: "POST" });
       setRestoreValidation(val);
     } catch (err: any) {
       toast({
@@ -592,7 +826,58 @@ export default function SettingsBackupsPage() {
     } finally {
       setRestoreValidating(false);
     }
-  }
+  };
+
+  const handleLocalFileUpload = async (file: File) => {
+    if (!file) return;
+    setIsUploadingLocal(true);
+    setLocalUploadPercent(20);
+    setLocalUploadError(null);
+    setRestoreTarget(null);
+    setRestoreValidation(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      setLocalUploadPercent(50);
+
+      const headers: Record<string, string> = {};
+      const sid = getTabSessionId();
+      if (sid) {
+        headers["X-BizOne-Session"] = sid;
+      }
+
+      const response = await fetch("/api/system-backups/upload", {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: formData,
+      });
+
+      setLocalUploadPercent(90);
+
+      const res = await response.json().catch(() => ({}));
+
+      if (response.ok && res.ok && res.backup) {
+        setLocalUploadPercent(100);
+        setRestoreTarget(res.backup);
+        setRestoreValidation(res.validation || { valid: true });
+        setLocalUploadError(null);
+        qc.invalidateQueries({ queryKey: ["system-backups-dashboard"] });
+        toast({
+          title: "Backup Uploaded & Verified",
+          description: `${res.backup.storage_ref || file.name} is ready for restore.`,
+        });
+      } else {
+        setLocalUploadError(res.error || `Upload failed with HTTP status ${response.status}`);
+      }
+    } catch (err: any) {
+      setLocalUploadError(err.message || "Network connection error during file upload");
+    } finally {
+      setIsUploadingLocal(false);
+    }
+  };
 
   // Trigger Restore
   const triggerRestoreMut = useMutation({
@@ -670,10 +955,13 @@ export default function SettingsBackupsPage() {
   }, [backups, searchTerm, typeFilter, statusFilter]);
 
   const canExecuteRestore =
+    Boolean(restoreTarget) &&
     restoreAck &&
     restoreConfirmText.trim().toUpperCase() === "RESTORE" &&
     !triggerRestoreMut.isPending &&
-    !restoreActive;
+    !restoreActive &&
+    !isUploadingLocal &&
+    (restoreValidation ? restoreValidation.valid !== false : true);
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-300">
@@ -691,27 +979,6 @@ export default function SettingsBackupsPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Company-scoped database backups, automated scheduling, and safe data restoration for <strong>{selectedCompany?.name || "your company"}</strong>.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="gap-1.5"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin text-primary" : ""}`} />
-            Refresh
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setScheduleModalOpen(true)}
-            className="gap-1.5 bg-slate-800 hover:bg-slate-900"
-          >
-            <Settings2 className="h-4 w-4" />
-            Schedule Settings
-          </Button>
         </div>
       </div>
 
@@ -735,7 +1002,7 @@ export default function SettingsBackupsPage() {
             <Button
               className="w-full bg-[#2563EB] hover:bg-[#1d4ed8] text-white gap-2 font-medium"
               disabled={createBackupMut.isPending || backupActive}
-              onClick={() => createBackupMut.mutate()}
+              onClick={openCreateBackupModal}
             >
               {createBackupMut.isPending || backupActive ? (
                 <>
@@ -841,15 +1108,7 @@ export default function SettingsBackupsPage() {
             <Button
               variant="outline"
               className="w-full gap-2 border-amber-500 text-amber-700 hover:bg-amber-50 font-medium"
-              disabled={backups.length === 0}
-              onClick={() => {
-                const latestSuccess = backups.find((b) => b.status === "completed" || b.status === "restored");
-                if (latestSuccess) {
-                  openRestoreDialog(latestSuccess);
-                } else {
-                  toast({ title: "No backup available", description: "Create a backup first before restoring." });
-                }
-              }}
+              onClick={() => openRestoreDialog()}
             >
               <RotateCcw className="h-4 w-4 text-amber-600" />
               Restore From Backup
@@ -1068,7 +1327,7 @@ export default function SettingsBackupsPage() {
                     <th className="px-4 py-3 text-left">Backup ID</th>
                     <th className="px-4 py-3 text-left">Date & Time</th>
                     <th className="px-4 py-3 text-left">Type</th>
-                    <th className="px-4 py-3 text-left">Archive File</th>
+                    <th className="px-4 py-3 text-left">Destination Folder</th>
                     <th className="px-4 py-3 text-left">Size</th>
                     <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -1077,6 +1336,10 @@ export default function SettingsBackupsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredBackups.map((b) => {
                     const dt = formatDateTime(b.created_at);
+                    const localRec = localHistory.find(
+                      (h) => (b.backup_code && h.backup_code === b.backup_code) || (h.backup_id && h.backup_id === b.id)
+                    );
+                    const destinationFolder = b.destination_folder || localRec?.destination_folder || schedule?.local_destination_dir || "C:\\BizOneBackups";
                     return (
                       <tr key={b.id} className="hover:bg-muted/20 transition-colors">
                         {/* Backup ID */}
@@ -1093,9 +1356,12 @@ export default function SettingsBackupsPage() {
                         {/* Type */}
                         <td className="px-4 py-3">{getTypeBadge(b.backup_source)}</td>
 
-                        {/* File Name */}
-                        <td className="px-4 py-3 text-xs max-w-xs truncate text-slate-600 font-mono" title={b.storage_ref || ""}>
-                          {b.storage_ref || "bizone_backup_archive.zip"}
+                        {/* Destination Folder */}
+                        <td className="px-4 py-3 text-xs max-w-xs font-mono text-slate-700" title={destinationFolder}>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                            <span className="truncate max-w-[260px]">{destinationFolder}</span>
+                          </div>
                         </td>
 
                         {/* Size */}
@@ -1106,22 +1372,22 @@ export default function SettingsBackupsPage() {
                         {/* Status */}
                         <td className="px-4 py-3">{getStatusBadge(b.status)}</td>
 
-                        {/* Actions */}
+                        {/* Actions - Icon Only */}
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             {/* View Details */}
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 px-2 text-xs"
+                              className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900"
                               title="Inspect Details"
                               onClick={() => {
                                 setSelectedBackup(b);
                                 setDetailModalOpen(true);
                               }}
                             >
-                              <Eye className="h-3.5 w-3.5 mr-1" />
-                              Details
+                              <Eye className="h-4 w-4" />
+                              <span className="sr-only">Details</span>
                             </Button>
 
                             {/* Download Action */}
@@ -1129,26 +1395,44 @@ export default function SettingsBackupsPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-8 px-2.5 text-xs text-blue-700 hover:bg-blue-50 border-blue-200"
-                                title="Download Archive"
+                                className="h-8 w-8 p-0 text-blue-700 hover:bg-blue-50 border-blue-200"
+                                title="Download Backup"
                                 onClick={() => downloadBackupFile(b)}
                               >
-                                <Download className="h-3.5 w-3.5 mr-1" />
-                                Download
+                                <Download className="h-4 w-4" />
+                                <span className="sr-only">Download</span>
                               </Button>
                             )}
+
+                            {/* Copy Destination Path */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-800"
+                              title="Copy Destination Path"
+                              onClick={() => {
+                                const fullPath = b.storage_ref
+                                  ? `${destinationFolder}\\${b.storage_ref}`
+                                  : destinationFolder;
+                                navigator.clipboard.writeText(fullPath);
+                                toast({ title: "Copied destination path to clipboard" });
+                              }}
+                            >
+                              <Copy className="h-4 w-4" />
+                              <span className="sr-only">Copy Path</span>
+                            </Button>
 
                             {/* Restore Action */}
                             {isAdmin && (b.status === "completed" || b.status === "restored") && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-8 px-2.5 text-xs text-amber-700 hover:bg-amber-50 border-amber-300"
+                                className="h-8 w-8 p-0 text-amber-700 hover:bg-amber-50 border-amber-300"
                                 title="Restore Application State"
                                 onClick={() => openRestoreDialog(b)}
                               >
-                                <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                                Restore
+                                <RotateCcw className="h-4 w-4" />
+                                <span className="sr-only">Restore</span>
                               </Button>
                             )}
 
@@ -1165,126 +1449,8 @@ export default function SettingsBackupsPage() {
                                   }
                                 }}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 5B. Local Windows Download History Section */}
-      <Card className="border shadow-sm">
-        <CardHeader className="py-4 border-b flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Laptop className="h-5 w-5 text-blue-600" />
-              Local Windows Download History
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Archives automatically downloaded to your local Windows PC by the scheduled download agent.
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1 text-xs"
-              onClick={() => refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {localHistory.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">
-              <Laptop className="h-9 w-9 mx-auto text-slate-300 mb-2" />
-              <p className="font-medium text-slate-700">No local downloads recorded yet</p>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                Once the Windows download agent executes at the scheduled download time, records with file size, download timestamp, and SHA-256 verification status will appear here.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 border-b text-xs text-muted-foreground uppercase font-semibold">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Backup ID / Code</th>
-                    <th className="px-4 py-3 text-left">File Name</th>
-                    <th className="px-4 py-3 text-left">Downloaded At</th>
-                    <th className="px-4 py-3 text-left">Destination Folder</th>
-                    <th className="px-4 py-3 text-left">Size</th>
-                    <th className="px-4 py-3 text-left">Download Status</th>
-                    <th className="px-4 py-3 text-left">SHA-256 Integrity</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {localHistory.map((row) => {
-                    const dt = formatDateTime(row.downloaded_at);
-                    return (
-                      <tr key={row.id} className="hover:bg-muted/20 transition-colors">
-                        <td className="px-4 py-3 font-mono font-medium text-xs text-blue-700">
-                          {row.backup_code || `ID-${row.backup_id || row.id}`}
-                        </td>
-                        <td className="px-4 py-3 text-xs max-w-xs truncate font-mono text-slate-700" title={row.file_name}>
-                          {row.file_name}
-                        </td>
-                        <td className="px-4 py-3 text-xs">
-                          <div className="font-medium text-slate-800">{dt.date}</div>
-                          <div className="text-muted-foreground text-[11px]">{dt.time}</div>
-                        </td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-600 truncate max-w-[220px]" title={row.destination_folder}>
-                          {row.destination_folder}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-medium">
-                          {formatSize(row.file_size_bytes)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {getDownloadStatusBadge(row.status)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {getChecksumBadge(row.checksum_status)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
-                              title="Copy Destination Path"
-                              onClick={() => {
-                                navigator.clipboard.writeText(`${row.destination_folder}\\${row.file_name}`);
-                                toast({ title: "Copied file path to clipboard" });
-                              }}
-                            >
-                              <Copy className="h-3 w-3 mr-1" />
-                              Copy Path
-                            </Button>
-                            {(row.status === "Failed" || row.status === "Verification Failed") && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-xs text-red-700 border-red-200 hover:bg-red-50"
-                                onClick={() => {
-                                  toast({
-                                    title: "Retry Queued",
-                                    description: "Windows download agent will retry this archive on next cycle.",
-                                  });
-                                }}
-                              >
-                                <RotateCcw className="h-3 w-3 mr-1" />
-                                Retry
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Delete</span>
                               </Button>
                             )}
                           </div>
@@ -1688,6 +1854,378 @@ export default function SettingsBackupsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Create Company Backup Modal */}
+      <Dialog
+        open={createModalOpen}
+        onOpenChange={(open) => {
+          if (!open && modalBackupState !== "in_progress") {
+            setCreateModalOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-900">
+              <Database className="h-5 w-5 text-blue-600" />
+              Create Company Backup
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Generate an isolated PostgreSQL database backup dumpfile for <strong>{selectedCompany?.name || "the active company"}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* STATE A: IDLE (Form Input) */}
+          {modalBackupState === "idle" && (
+            <div className="space-y-4 py-2 text-xs">
+              {/* 1. Company Name (Read-Only) */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Company Name</Label>
+                <div className="flex items-center gap-2 bg-slate-100 border border-slate-300 rounded-md px-3 py-2 text-slate-800 font-medium">
+                  <span className="font-semibold text-sm">{selectedCompany?.name || "Company"}</span>
+                  <Badge variant="outline" className="ml-auto text-[10px] bg-slate-200 border-slate-300 text-slate-600">
+                    Read-only (Active Session)
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Automatically detected from your authenticated session. Backups are strictly isolated to this company.
+                </p>
+              </div>
+
+              {/* 2. Backup Type (Read-Only) */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Backup Type</Label>
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+                  <span className="font-semibold text-slate-900">PostgreSQL Database Backup</span>
+                  <Badge className="ml-auto text-[10px] bg-blue-600 hover:bg-blue-600 text-white font-medium">
+                    Native Dumpfile (.dump)
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  PostgreSQL native custom format (<code className="font-mono text-blue-700">-Fc</code>) database dumpfile (<code className="font-mono text-blue-700">.dump</code>), standard for both manual and scheduled backups.
+                </p>
+              </div>
+
+              {/* 3. Local Download Folder Path with Browse button */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="local-backup-path-input" className="text-xs font-semibold text-slate-700">
+                    Local Download Folder Path
+                  </Label>
+                  <span className="text-[11px] text-blue-600 font-medium">Editable for this backup</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <HardDrive className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="local-backup-path-input"
+                      value={localBackupPath}
+                      onChange={(e) => setLocalBackupPath(e.target.value)}
+                      placeholder="C:\BizOneBackups\Spsynet"
+                      className="pl-8 font-mono text-xs bg-white border-slate-300"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs whitespace-nowrap bg-white hover:bg-slate-50 border-slate-300"
+                    disabled={isBrowsingFolder}
+                    onClick={handleBrowseFolder}
+                  >
+                    {isBrowsingFolder ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                    ) : (
+                      <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
+                    )}
+                    Browse Folder
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Example: <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">C:\BizOneBackups\Spsynet</code>. The downloaded PostgreSQL backup will appear in this directory.
+                </p>
+              </div>
+
+              {/* Info Note on Folder Write & Non-overwrite guarantee */}
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg text-slate-700 space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-blue-900 text-xs">
+                  <ShieldCheck className="h-4 w-4 text-blue-600" />
+                  Local Safety & Preservation Guarantee
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  The backup will be verified with SHA-256 and saved directly into your selected local folder. Existing local backups are never overwritten.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* STATE B: IN_PROGRESS (Real progress states) */}
+          {modalBackupState === "in_progress" && (
+            <div className="space-y-4 py-2 text-xs">
+              <div className="flex items-center justify-between pb-1 border-b">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  <span className="font-semibold text-slate-900 text-sm">
+                    {backupProgressData?.step || "Processing..."}
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-blue-600 text-sm">
+                  {backupProgressData?.percent || 10}%
+                </span>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="h-2.5 rounded-full bg-blue-600 transition-all duration-500"
+                  style={{ width: `${backupProgressData?.percent || 10}%` }}
+                />
+              </div>
+
+              {/* Stepper with the 6 real progress states */}
+              <div className="space-y-2 bg-slate-50 border rounded-lg p-3">
+                {[
+                  { label: "Preparing backup", threshold: 10 },
+                  { label: "Exporting PostgreSQL database", threshold: 35 },
+                  { label: "Packaging uploaded files", threshold: 65 },
+                  { label: "Verifying backup", threshold: 85 },
+                  { label: "Downloading backup", threshold: 95 },
+                  { label: "Completed", threshold: 100 },
+                ].map((item, idx) => {
+                  const currentPercent = backupProgressData?.percent || 10;
+                  const isDone = currentPercent > item.threshold;
+                  const isCurrent =
+                    currentPercent === item.threshold ||
+                    (idx === 0 && currentPercent <= 10) ||
+                    (currentPercent >= item.threshold - 20 && currentPercent <= item.threshold);
+
+                  return (
+                    <div key={item.label} className="flex items-center gap-2.5 text-xs">
+                      {isDone ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      ) : isCurrent ? (
+                        <Loader2 className="h-4 w-4 text-blue-600 animate-spin shrink-0" />
+                      ) : (
+                        <div className="h-4 w-4 rounded-full border border-slate-300 shrink-0" />
+                      )}
+                      <span
+                        className={
+                          isDone
+                            ? "text-emerald-800 font-medium"
+                            : isCurrent
+                            ? "text-blue-700 font-semibold"
+                            : "text-slate-400"
+                        }
+                      >
+                        {item.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Live Log Window */}
+              {backupProgressData?.logs && backupProgressData.logs.length > 0 && (
+                <div className="bg-slate-900 text-slate-200 p-2.5 rounded-lg font-mono text-[11px] max-h-24 overflow-y-auto space-y-1">
+                  {backupProgressData.logs.slice(-3).map((log, i) => (
+                    <div key={i} className="text-emerald-400 leading-tight">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STATE C: COMPLETED */}
+          {modalBackupState === "completed" && lastCreatedBackup && (
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-lg flex items-center gap-2 text-emerald-900 font-semibold">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                <span>Backup Created & Downloaded Successfully!</span>
+              </div>
+
+              {/* Backup Details Card */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                <div className="flex items-start justify-between gap-2 border-b pb-2">
+                  <span className="text-muted-foreground font-medium">Backup Filename:</span>
+                  <div className="flex items-center gap-1.5 font-mono font-bold text-slate-900 text-right break-all">
+                    <span>{lastCreatedBackup.fileName}</span>
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-slate-700"
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastCreatedBackup.fileName);
+                        toast({ title: "Filename Copied" });
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="text-muted-foreground font-medium">File Size:</span>
+                  <span className="font-semibold text-slate-800">
+                    {formatSize(lastCreatedBackup.fileSizeBytes)}
+                  </span>
+                </div>
+
+                <div className="flex items-start justify-between gap-2 border-b pb-2">
+                  <span className="text-muted-foreground font-medium">Destination Path:</span>
+                  <div className="flex items-center gap-1.5 font-mono text-blue-700 font-medium text-right break-all">
+                    <span>{lastCreatedBackup.destinationPath}</span>
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-slate-700"
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastCreatedBackup.destinationPath);
+                        toast({ title: "Destination Path Copied" });
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-muted-foreground font-medium">SHA-256 Checksum:</span>
+                  <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-700 text-right break-all">
+                    <span>{lastCreatedBackup.checksumSha256 || "Verified"}</span>
+                    {lastCreatedBackup.checksumSha256 && (
+                      <button
+                        type="button"
+                        className="text-slate-400 hover:text-slate-700"
+                        onClick={() => {
+                          navigator.clipboard.writeText(lastCreatedBackup.checksumSha256 || "");
+                          toast({ title: "SHA-256 Checksum Copied" });
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 text-[11px] flex items-center gap-1.5">
+                <Check className="h-4 w-4 text-blue-600 shrink-0" />
+                <span>
+                  The downloaded company backup is saved in your local directory. Existing backups remain untouched.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* STATE D: ERROR */}
+          {modalBackupState === "error" && (
+            <div className="space-y-3 py-2 text-xs">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1.5 text-red-900">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                  <span>Backup Operation Failed</span>
+                </div>
+                <p className="text-[11px] text-red-800 font-mono break-all">
+                  {modalBackupError || "An error occurred while creating or downloading the backup."}
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-50 border rounded-lg text-slate-600 space-y-1">
+                <p className="font-semibold text-slate-800">Actionable Steps:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                  <li>Verify that the destination folder exists and has write permission.</li>
+                  <li>Ensure the PostgreSQL database server and tools are running.</li>
+                  <li>Check available disk space in the destination drive.</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Footer */}
+          <DialogFooter className="border-t pt-3 flex items-center justify-between">
+            {modalBackupState === "idle" && (
+              <>
+                <Button variant="outline" onClick={() => setCreateModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-[#2563EB] hover:bg-[#1d4ed8] text-white font-medium gap-1.5"
+                  onClick={handleStartBackup}
+                >
+                  <Archive className="h-4 w-4" />
+                  Create & Download Backup
+                </Button>
+              </>
+            )}
+
+            {modalBackupState === "in_progress" && (
+              <div className="flex items-center justify-between w-full">
+                <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                  Do not close this window while backup is exporting...
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreateModalOpen(false)}
+                >
+                  Run in Background
+                </Button>
+              </div>
+            )}
+
+            {modalBackupState === "completed" && (
+              <div className="flex items-center justify-between w-full">
+                {lastCreatedBackup?.id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-slate-700"
+                    onClick={() => {
+                      const match = backups.find((b) => b.id === lastCreatedBackup.id);
+                      if (match) downloadBackupFile(match);
+                      else refetch();
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Again
+                  </Button>
+                )}
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium ml-auto"
+                  onClick={() => {
+                    setCreateModalOpen(false);
+                    setModalBackupState("idle");
+                  }}
+                >
+                  Done
+                </Button>
+              </div>
+            )}
+
+            {modalBackupState === "error" && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCreateModalOpen(false);
+                    setModalBackupState("idle");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium gap-1.5"
+                  onClick={() => setModalBackupState("idle")}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Retry Backup
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 7. Backup Details Modal */}
       <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
         <DialogContent className="max-w-md">
@@ -1759,152 +2297,518 @@ export default function SettingsBackupsPage() {
       <Dialog
         open={restoreModalOpen}
         onOpenChange={(open) => {
-          if (!open && !restoreActive) {
+          if (!open && !restoreActive && !isUploadingLocal) {
             setRestoreModalOpen(false);
+            setRestoreProgressData(null);
           }
         }}
       >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-700">
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader className="pb-2 border-b">
+            <DialogTitle className="flex items-center gap-2 text-amber-700 text-lg">
               <RotateCcw className="h-5 w-5" />
               Restore Application State
             </DialogTitle>
-            <DialogDescription>
-              Validate archive integrity and safely restore PostgreSQL databases and uploaded documents.
+            <DialogDescription className="text-xs">
+              Safely restore PostgreSQL database schema, records, and uploaded documents from a verified backup.
             </DialogDescription>
           </DialogHeader>
 
-          {restoreTarget && (
-            <div className="space-y-4 text-xs">
-              {/* Validation Status */}
-              <div className="p-3 border rounded-lg bg-slate-50 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-800">Target Archive:</span>
-                  <span className="font-mono font-bold text-blue-700">{restoreTarget.backup_code}</span>
+          <div className="space-y-4 pt-1 text-xs">
+            {/* 1. Company Name (Read-only) */}
+            <div className="space-y-1.5 p-3 rounded-lg border bg-slate-50">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold text-slate-700">Company Name</Label>
+                <Badge variant="outline" className="text-[11px] font-normal text-slate-600 bg-white border-slate-200">
+                  Read-only (Active Session)
+                </Badge>
+              </div>
+              <Input
+                value={selectedCompany?.name || "Company"}
+                readOnly
+                disabled
+                className="bg-white text-slate-900 font-semibold cursor-not-allowed text-xs h-9"
+              />
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+                Company isolation strictly enforces that data is restored only to this company. Restoring another company&apos;s backup is rejected.
+              </p>
+            </div>
+
+            {/* 2. Backup Source Selection */}
+            {!restoreActive && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-slate-700">Backup Source Selection</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={restoreActive}
+                    onClick={() => {
+                      setRestoreSource("server");
+                      if (!restoreTarget && backups.length > 0) {
+                        const latest = backups.find((b) => b.status === "completed" || b.status === "restored") || backups[0];
+                        if (latest) handleSelectServerBackup(String(latest.id));
+                      }
+                    }}
+                    className={`flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all ${
+                      restoreSource === "server"
+                        ? "border-amber-500 bg-amber-50/50 text-amber-900 shadow-sm"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    <Server className={`h-4 w-4 mt-0.5 shrink-0 ${restoreSource === "server" ? "text-amber-600" : "text-slate-400"}`} />
+                    <div>
+                      <div className="font-semibold text-xs">Select Server Backup</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">Choose from previously saved archives on server</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={restoreActive}
+                    onClick={() => {
+                      setRestoreSource("local");
+                      if (restoreTarget && restoreTarget.backup_source !== "manual") {
+                        setRestoreTarget(null);
+                        setRestoreValidation(null);
+                      }
+                    }}
+                    className={`flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all ${
+                      restoreSource === "local"
+                        ? "border-amber-500 bg-amber-50/50 text-amber-900 shadow-sm"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    <FolderOpen className={`h-4 w-4 mt-0.5 shrink-0 ${restoreSource === "local" ? "text-amber-600" : "text-slate-400"}`} />
+                    <div>
+                      <div className="font-semibold text-xs">Upload Local Backup File</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">Select a .dump, .zip, or .sql file from your PC</div>
+                    </div>
+                  </button>
                 </div>
+              </div>
+            )}
+
+            {/* 3. Source Controls */}
+            {!restoreActive && restoreSource === "server" && (
+              <div className="space-y-2 p-3 rounded-lg border bg-slate-50/70">
+                <Label className="text-xs font-semibold text-slate-700">Available Server Backups</Label>
+                {backups.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">No server backups available yet. You can upload a local backup file from your computer.</p>
+                ) : (
+                  <Select
+                    value={restoreTarget ? String(restoreTarget.id) : ""}
+                    disabled={restoreActive}
+                    onValueChange={(val) => handleSelectServerBackup(val)}
+                  >
+                    <SelectTrigger className="w-full bg-white text-xs h-9">
+                      <SelectValue placeholder="Select an archive from history..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {backups.map((b) => (
+                        <SelectItem key={b.id} value={String(b.id)} className="text-xs">
+                          <div className="flex items-center justify-between gap-4 py-0.5 w-full">
+                            <span className="font-mono font-semibold">{b.backup_code}</span>
+                            <span className="text-muted-foreground truncate max-w-[200px]">{b.storage_ref || "archive.dump"}</span>
+                            <span className="text-slate-500 font-mono text-[11px]">{formatSize(b.file_size_bytes)}</span>
+                            <span className="text-[11px] text-slate-400">{formatDateTime(b.created_at).dateOnly}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {!restoreActive && restoreSource === "local" && (
+              <div className="space-y-2 p-3 rounded-lg border bg-slate-50/70">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Archive Timestamp:</span>
-                  <span>{formatDateTime(restoreTarget.created_at).full}</span>
+                  <Label className="text-xs font-semibold text-slate-700">Local Backup File Picker</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingLocal || restoreActive}
+                    onClick={() => localFileInputRef.current?.click()}
+                    className="h-7 text-xs bg-white hover:bg-slate-100 gap-1.5 border-slate-300 font-medium"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
+                    Browse Files
+                  </Button>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Integrity Check:</span>
+
+                <input
+                  ref={localFileInputRef}
+                  type="file"
+                  accept=".dump,.zip,.sql,.tar,.bak"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleLocalFileUpload(file);
+                    e.target.value = "";
+                  }}
+                />
+
+                <div
+                  onClick={() => !isUploadingLocal && !restoreActive && localFileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (isUploadingLocal || restoreActive) return;
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleLocalFileUpload(file);
+                  }}
+                  className={`p-4 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors ${
+                    isUploadingLocal ? "border-amber-400 bg-amber-50/30 cursor-wait" : "border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/20"
+                  }`}
+                >
+                  {isUploadingLocal ? (
+                    <div className="space-y-2 py-1">
+                      <div className="flex items-center justify-center gap-2 text-amber-900 font-semibold text-xs">
+                        <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                        Uploading backup... {localUploadPercent}%
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden max-w-sm mx-auto">
+                        <div
+                          className="bg-amber-600 h-2.5 rounded-full transition-all duration-200"
+                          style={{ width: `${localUploadPercent}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Streaming archive securely to isolated staging storage</p>
+                    </div>
+                  ) : restoreTarget?.backup_source === "manual" && restoreValidation?.fileName ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-center gap-1.5 text-emerald-700 font-semibold text-xs">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        Local Backup File Loaded & Ready
+                      </div>
+                      <p className="font-mono text-xs text-slate-800 font-bold">{restoreValidation.fileName}</p>
+                      <p className="text-[11px] text-muted-foreground">Click to browse or drop another file</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 py-1">
+                      <HardDrive className="h-6 w-6 text-slate-400 mx-auto" />
+                      <p className="text-xs text-slate-700 font-medium">
+                        Click <span className="text-blue-600 underline font-semibold">Browse Files</span> or drag and drop a backup file here
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Supports PostgreSQL custom dumps (.dump), combined archives (.zip), and SQL dumps (.sql)
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {localUploadError && (
+                  <div className="p-2.5 rounded border border-red-200 bg-red-50 text-red-800 text-xs flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="font-semibold">Archive Upload / Validation Failed</div>
+                      <div>{localUploadError}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4. Selected Backup Information Card */}
+            {restoreTarget && (
+              <div className="p-3.5 border rounded-lg bg-slate-50 space-y-2 text-xs">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                  <span className="font-semibold text-slate-800">Selected Backup File:</span>
+                  <span className="font-mono font-bold text-blue-700 text-xs">
+                    {restoreValidation?.fileName || restoreTarget.storage_ref || restoreTarget.backup_code}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-muted-foreground">Backup Code: </span>
+                    <span className="font-mono font-semibold text-slate-700">{restoreTarget.backup_code}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">File Size: </span>
+                    <span className="font-semibold text-slate-700">{formatSize(restoreTarget.file_size_bytes)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Backup Timestamp: </span>
+                    <span className="font-medium text-slate-700">
+                      {restoreValidation?.timestamp
+                        ? formatDateTime(restoreValidation.timestamp).full
+                        : formatDateTime(restoreTarget.created_at).full}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Detected Format: </span>
+                    <span className="font-medium text-slate-700">{restoreValidation?.format || "PostgreSQL Backup"}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 text-[11px]">
+                  <span className="text-muted-foreground font-medium">Backup Integrity Status:</span>
                   {restoreValidating ? (
                     <span className="flex items-center gap-1 text-slate-500">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Verifying SHA-256...
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" /> Verifying SHA-256 Checksum...
                     </span>
                   ) : restoreValidation?.valid ? (
                     <span className="flex items-center gap-1 text-emerald-700 font-semibold">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Archive Verified & Healthy
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      Passed (SHA-256 Checksum & Company Isolation Verified)
                     </span>
                   ) : (
-                    <span className="text-amber-700">Ready for inspection</span>
+                    <span className="text-amber-700 font-medium">Inspection Pending</span>
                   )}
                 </div>
-              </div>
 
-              {/* Safety Backup Guarantee */}
-              <div className="p-3 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                  Pre-Restore Safety Snapshot Guaranteed
-                </div>
-                <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Before making any changes to production, the system automatically creates a Safety Backup of your current live databases. If anything fails, changes are rejected.
-                </p>
-              </div>
-
-              {/* High Risk Warning */}
-              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-900 space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  Warning: Data Replacement
-                </div>
-                <p className="text-[11px] text-red-800 leading-relaxed">
-                  Restoring this backup will replace current database records with data from {formatDateTime(restoreTarget.created_at).full}. Transactions made after this backup was taken will be overwritten.
-                </p>
-              </div>
-
-              {/* Confirmation Checkbox */}
-              <label className="flex items-start gap-2 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 accent-amber-600 rounded"
-                  checked={restoreAck}
-                  disabled={restoreActive}
-                  onChange={(e) => setRestoreAck(e.target.checked)}
-                />
-                <span className="text-slate-700 leading-tight">
-                  I understand this is a high-risk administrative action and I authorize the restoration.
-                </span>
-              </label>
-
-              {/* Type RESTORE phrase */}
-              <div className="space-y-1.5 pt-1">
-                <Label htmlFor="restore-confirm-input" className="text-xs font-semibold text-slate-800">
-                  Type <span className="font-mono text-red-600 font-bold">RESTORE</span> to confirm
-                </Label>
-                <Input
-                  id="restore-confirm-input"
-                  value={restoreConfirmText}
-                  disabled={restoreActive}
-                  onChange={(e) => setRestoreConfirmText(e.target.value)}
-                  placeholder="RESTORE"
-                  className="font-mono text-sm uppercase"
-                />
-              </div>
-
-              {/* Live Restore Progress */}
-              {restoreActive && restoreProgressData && (
-                <div className="p-3 border rounded-lg bg-amber-50/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-amber-900 flex items-center gap-1.5">
-                      <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
-                      {restoreProgressData.status}
-                    </span>
-                    <span className="font-mono font-bold text-amber-800">{restoreProgressData.percent}%</span>
+                {restoreTarget.checksum_sha256 && (
+                  <div className="text-[10px] text-muted-foreground font-mono truncate pt-0.5">
+                    SHA-256: {restoreTarget.checksum_sha256}
                   </div>
-                  <p className="text-[11px] text-amber-800">{restoreProgressData.step}</p>
-                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-amber-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${restoreProgressData.percent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={restoreActive}
-              onClick={() => {
-                setRestoreModalOpen(false);
-                setRestoreProgressData(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={!canExecuteRestore}
-              onClick={() => triggerRestoreMut.mutate()}
-              className="bg-red-600 hover:bg-red-700 text-white font-medium gap-1.5"
-            >
-              {restoreActive ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Restoring Databases...
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="h-4 w-4" />
-                  Create Safety Backup & Restore
-                </>
-              )}
-            </Button>
+            {/* 5. Safety Backup Guarantee & Warning */}
+            {!restoreActive && (
+              <>
+                <div className="p-3 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-xs">
+                    <ShieldCheck className="h-4 w-4 text-emerald-700 shrink-0" />
+                    Pre-Restore Safety Snapshot Guaranteed
+                  </div>
+                  <p className="text-[11px] text-emerald-800 leading-relaxed">
+                    Before making any modifications to production, the system automatically creates a Safety Backup of your current live database and uploaded documents. If any stage encounters an issue, production data remains protected.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-xs">
+                    <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                    Warning: Company Data Replacement
+                  </div>
+                  <p className="text-[11px] text-red-800 leading-relaxed">
+                    Restoring this backup will replace current records and schema with data from this archive. Company documents and attachments will also be synchronized.
+                  </p>
+                </div>
+
+                {/* Confirmation Checkbox */}
+                <label className="flex items-start gap-2 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-amber-600 rounded"
+                    checked={restoreAck}
+                    disabled={restoreActive}
+                    onChange={(e) => setRestoreAck(e.target.checked)}
+                  />
+                  <span className="text-slate-700 leading-tight text-xs">
+                    I understand this is a high-risk administrative action and I authorize restoring this company&apos;s application data.
+                  </span>
+                </label>
+
+                {/* Type RESTORE phrase */}
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="restore-confirm-input" className="text-xs font-semibold text-slate-800">
+                    Type <span className="font-mono text-red-600 font-bold">RESTORE</span> to confirm
+                  </Label>
+                  <Input
+                    id="restore-confirm-input"
+                    value={restoreConfirmText}
+                    disabled={restoreActive}
+                    onChange={(e) => setRestoreConfirmText(e.target.value)}
+                    placeholder="RESTORE"
+                    className="font-mono text-sm uppercase h-9"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* 6. Real-Time 8 Progress Stages */}
+            {(restoreActive || restoreProgressData) && (
+              <div className="p-4 border rounded-lg bg-amber-50/40 space-y-3">
+                <div className="flex items-center justify-between pb-1 border-b border-amber-200">
+                  <span className="font-semibold text-amber-950 flex items-center gap-2 text-xs">
+                    {restoreProgressData?.status === "COMPLETED" ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        Application Restored Successfully
+                      </>
+                    ) : restoreProgressData?.status === "FAILED" ? (
+                      <>
+                        <XCircle className="h-4 w-4 text-red-600" />
+                        Restore Operation Failed
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+                        Restoration in Progress
+                      </>
+                    )}
+                  </span>
+                  <span className="font-mono font-bold text-amber-900 text-sm">
+                    {restoreProgressData?.percent || 0}%
+                  </span>
+                </div>
+
+                <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-2.5 rounded-full transition-all duration-300 ${
+                      restoreProgressData?.status === "COMPLETED"
+                        ? "bg-emerald-600"
+                        : restoreProgressData?.status === "FAILED"
+                        ? "bg-red-600"
+                        : "bg-amber-600"
+                    }`}
+                    style={{ width: `${restoreProgressData?.percent || 0}%` }}
+                  />
+                </div>
+
+                {/* 8 Explicit Progress Stages */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+                  {[
+                    { key: "UPLOADING", label: "Uploading backup" },
+                    { key: "VALIDATING", label: "Validating archive" },
+                    { key: "SAFETY_BACKUP", label: "Creating safety backup" },
+                    { key: "STAGING", label: "Preparing staging database" },
+                    { key: "RESTORING", label: "Restoring PostgreSQL database" },
+                    { key: "RESTORING_FILES", label: "Restoring uploaded files" },
+                    { key: "VERIFYING", label: "Validating restored application" },
+                    { key: "FINALIZING", label: "Finalizing restoration" },
+                  ].map((stage, idx) => {
+                    const status = restoreProgressData?.status || "VALIDATING";
+                    const isCompleted = status === "COMPLETED";
+                    const order = ["UPLOADING", "VALIDATING", "SAFETY_BACKUP", "STAGING", "RESTORING", "RESTORING_FILES", "VERIFYING", "FINALIZING", "COMPLETED"];
+                    const curIdx = order.indexOf(status);
+                    const stageIdx = order.indexOf(stage.key);
+
+                    let state: "done" | "active" | "pending" | "failed" = "pending";
+                    if (isCompleted) {
+                      state = "done";
+                    } else if (status === "FAILED" && curIdx === stageIdx) {
+                      state = "failed";
+                    } else if (stage.key === "UPLOADING") {
+                      state = "done";
+                    } else if (curIdx > stageIdx) {
+                      state = "done";
+                    } else if (curIdx === stageIdx) {
+                      state = "active";
+                    }
+
+                    return (
+                      <div
+                        key={stage.key}
+                        className={`flex items-center gap-2 p-1.5 rounded ${
+                          state === "active"
+                            ? "bg-amber-100/80 font-semibold text-amber-900 border border-amber-300"
+                            : state === "done"
+                            ? "text-slate-800 font-medium"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {state === "done" ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                        ) : state === "active" ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-amber-600 shrink-0" />
+                        ) : state === "failed" ? (
+                          <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border border-slate-300 flex items-center justify-center shrink-0">
+                            <div className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                          </div>
+                        )}
+                        <span className="text-[11px] truncate">
+                          {idx + 1}. {stage.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Console Log Window */}
+                {restoreProgressData?.logs && restoreProgressData.logs.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-500">Live Operation Log</span>
+                    <div className="bg-slate-950 text-emerald-400 p-2.5 rounded font-mono text-[11px] max-h-32 overflow-y-auto space-y-0.5">
+                      {restoreProgressData.logs.map((log, i) => (
+                        <div key={i} className="leading-tight">{log}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Success Card */}
+                {restoreProgressData?.status === "COMPLETED" && (
+                  <div className="p-3 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-900 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-xs">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      Restore Completed Successfully!
+                    </div>
+                    <p className="text-[11px] text-emerald-800">
+                      All company records, PostgreSQL schema, and uploaded documents have been fully restored for <strong>{selectedCompany?.name}</strong>. Caches have been refreshed across the application.
+                    </p>
+                    {restoreProgressData.safetyBackupCode && (
+                      <p className="text-[11px] text-emerald-700 font-mono">
+                        Pre-restore Safety Backup: {restoreProgressData.safetyBackupCode}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t flex items-center justify-end gap-2">
+            {restoreProgressData?.status === "COMPLETED" ? (
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                onClick={() => {
+                  setRestoreModalOpen(false);
+                  setRestoreProgressData(null);
+                  qc.invalidateQueries();
+                }}
+              >
+                <Check className="h-4 w-4 mr-1.5" />
+                Done & Refresh ERP
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  disabled={restoreActive || isUploadingLocal}
+                  onClick={() => {
+                    setRestoreModalOpen(false);
+                    setRestoreProgressData(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!canExecuteRestore}
+                  onClick={() => triggerRestoreMut.mutate()}
+                  className="bg-red-600 hover:bg-red-700 text-white font-medium gap-1.5"
+                >
+                  {restoreActive ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Restoring Databases...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="h-4 w-4" />
+                      Create Safety Backup & Restore
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

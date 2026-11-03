@@ -50,10 +50,12 @@ import reportsRouter from "./reports";
 import globalSearchRouter from "./global-search";
 import salesPersonsRouter from "./sales-persons";
 import posSalesRouter from "./pos-sales";
+import superadminRouter from "./superadmin.js";
 import { enforceAssignedModules } from "../lib/module-guard.js";
 
 const router: IRouter = Router();
 
+router.use(superadminRouter);
 router.use(enforceAssignedModules);
 router.use(healthRouter);
 router.use(authRouter);

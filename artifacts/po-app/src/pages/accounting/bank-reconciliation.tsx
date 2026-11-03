@@ -1858,200 +1858,7 @@ export default function BankReconciliation() {
     return { rows, totalCredit, totalDebit };
   }, [transactions]);
 
-  const ensureReportData = () => {
-    if (transactions.length === 0) {
-      toast({
-        title: "No transactions",
-        description: "Upload a bank statement before exporting the report.",
-        variant: "destructive",
-      });
-      return false;
-    }
-    return true;
-  };
-
-  const handlePrintReport = () => {
-    if (!ensureReportData()) return;
-    const { rows, totalCredit, totalDebit } = reportTable;
-    const { bankAccount, period, preparedBy, preparedOn } = reportMeta;
-    const tableRows = rows
-      .map(
-        (r) =>
-          `<tr>
-            <td>${r.id}</td>
-            <td>${r.date}</td>
-            <td>${r.description.replace(/</g, "&lt;")}</td>
-            <td style="text-align:right">${r.credit || ""}</td>
-            <td style="text-align:right">${r.debit || ""}</td>
-          </tr>`
-      )
-      .join("");
-    const html = `<!DOCTYPE html>
-<html><head><title>Reconciliation Report</title>
-<style>
-  body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-  h1 { font-size: 18px; margin: 0 0 12px; }
-  .meta { margin-bottom: 16px; font-size: 12px; }
-  .meta div { display: flex; justify-content: space-between; max-width: 420px; margin: 4px 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { border: 1px solid #333; padding: 6px 8px; }
-  th { background: #f3f4f6; text-align: left; }
-  tfoot td { font-weight: bold; }
-</style></head><body>
-  <h1>Reconciliation</h1>
-  <div class="meta">
-    <div><span>Bank Account</span><strong>${bankAccount}</strong></div>
-    <div><span>Period</span><strong>${period}</strong></div>
-    <div><span>Prepared By</span><strong>${preparedBy}</strong></div>
-    <div><span>Prepared On</span><strong>${preparedOn}</strong></div>
-  </div>
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Date</th><th>Description</th><th>credit</th><th>debit</th></tr>
-    </thead>
-    <tbody>${tableRows}</tbody>
-    <tfoot>
-      <tr>
-        <td></td><td></td><td>Total</td>
-        <td style="text-align:right">${totalCredit}</td>
-        <td style="text-align:right">${totalDebit}</td>
-      </tr>
-    </tfoot>
-  </table>
-</body></html>`;
-    const w = window.open("", "_blank", "width=900,height=700");
-    if (!w) {
-      toast({ title: "Popup blocked", description: "Allow popups to print the report.", variant: "destructive" });
-      return;
-    }
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 250);
-  };
-
-  const handleExportExcel = () => {
-    if (!ensureReportData()) return;
-    const { rows, totalCredit, totalDebit } = reportTable;
-    const { bankAccount, period, preparedBy, preparedOn } = reportMeta;
-
-    const sheetData: (string | number)[][] = [
-      ["Reconciliation"],
-      ["Bank Account", bankAccount],
-      ["Period", period],
-      ["Prepared By", preparedBy],
-      ["Prepared On", preparedOn],
-      [],
-      ["ID", "Date", "Description", "credit", "debit"],
-      ...rows.map((r) => [
-        r.id,
-        r.date,
-        r.description,
-        r.credit || "",
-        r.debit || "",
-      ]),
-      ["", "", "Total", totalCredit, totalDebit],
-    ];
-
-    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
-
-    // Auto-fit column widths from cell content (so Date/Description don't clip)
-    const colCount = 5;
-    const colWidths = Array.from({ length: colCount }, () => 10);
-    sheetData.forEach((row) => {
-      for (let c = 0; c < colCount; c++) {
-        const value = row[c];
-        if (value === undefined || value === null || value === "") continue;
-        const len = String(value).length + 2;
-        colWidths[c] = Math.max(colWidths[c], Math.min(len, 55));
-      }
-    });
-    // Minimums so Date / amounts never show as #####
-    colWidths[0] = Math.max(colWidths[0], 8);
-    colWidths[1] = Math.max(colWidths[1], 14);
-    colWidths[2] = Math.max(colWidths[2], 28);
-    colWidths[3] = Math.max(colWidths[3], 12);
-    colWidths[4] = Math.max(colWidths[4], 12);
-    worksheet["!cols"] = colWidths.map((wch) => ({ wch }));
-
-    // Keep Date cells as text so Excel doesn't reformat/narrow them
-    const headerRowIndex = 6; // 0-based; row with ID/Date/...
-    rows.forEach((_, i) => {
-      const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex + 1 + i, c: 1 });
-      const cell = worksheet[cellRef];
-      if (cell) {
-        cell.t = "s";
-        cell.v = String(cell.v ?? "");
-        cell.z = "@";
-      }
-    });
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Reconciliation");
-    XLSX.writeFile(workbook, "reconciliation_report.xlsx");
-
-    toast({ title: "Excel export ready", description: "Report downloaded with auto-sized columns." });
-  };
-
-  const handleDownloadPdf = () => {
-    if (!ensureReportData()) return;
-    const { rows, totalCredit, totalDebit } = reportTable;
-    const { bankAccount, period, preparedBy, preparedOn } = reportMeta;
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    doc.setFontSize(16);
-    doc.text("Reconciliation", 14, 18);
-    doc.setFontSize(10);
-    let y = 28;
-    const metaLines = [
-      ["Bank Account", bankAccount],
-      ["Period", period],
-      ["Prepared By", preparedBy],
-      ["Prepared On", preparedOn],
-    ] as const;
-    metaLines.forEach(([label, value]) => {
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100);
-      doc.text(label, 14, y);
-      doc.setTextColor(20);
-      doc.setFont("helvetica", "bold");
-      doc.text(String(value), 55, y);
-      y += 6;
-    });
-    (doc as any).autoTable({
-      startY: y + 4,
-      head: [["ID", "Date", "Description", "credit", "debit"]],
-      body: [
-        ...rows.map((r) => [
-          String(r.id),
-          r.date,
-          r.description,
-          r.credit ? String(r.credit) : "",
-          r.debit ? String(r.debit) : "",
-        ]),
-        ["", "", "Total", String(totalCredit), String(totalDebit)],
-      ],
-      theme: "grid",
-      headStyles: { fillColor: [243, 244, 246], textColor: 20, fontStyle: "bold", fontSize: 9 },
-      bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        0: { cellWidth: 14 },
-        1: { cellWidth: 28 },
-        2: { cellWidth: "auto" },
-        3: { halign: "right", cellWidth: 28 },
-        4: { halign: "right", cellWidth: 28 },
-      },
-      didParseCell: (data: any) => {
-        if (data.section === "body" && data.row.index === rows.length) {
-          data.cell.styles.fontStyle = "bold";
-        }
-      },
-      margin: { left: 14, right: 14 },
-    });
-    doc.save("reconciliation_report.pdf");
-    toast({ title: "PDF downloaded", description: "Reconciliation report PDF saved." });
-  };
-
-  // Statistics
+// Statistics
   const stats = useMemo(() => {
     const total = transactions.length;
     const matched = transactions.filter(t => t.status === "matched");
@@ -2105,6 +1912,212 @@ export default function BankReconciliation() {
       isBalanced: Math.abs(difference) < 0.005,
     };
   }, [transactions]);
+
+  const ensureReportData = () => {
+    if (transactions.length === 0) {
+      toast({
+        title: "No transactions",
+        description: "Upload a bank statement before exporting the report.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  };
+
+  const handlePrintReport = () => {
+    if (!ensureReportData()) return;
+    const { rows, totalCredit, totalDebit } = reportTable;
+    const { bankAccount, period, preparedBy, preparedOn } = reportMeta;
+    const tableRows = rows
+      .map(
+        (r) =>
+          `<tr>
+            <td>${r.id}</td>
+            <td>${r.date}</td>
+            <td>${r.description.replace(/</g, "&lt;")}</td>
+            <td style="text-align:right">${r.credit || ""}</td>
+            <td style="text-align:right">${r.debit || ""}</td>
+          </tr>`
+      )
+      .join("");
+    const html = `<!DOCTYPE html>
+<html><head><title>Reconciliation Report</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .meta { margin-bottom: 16px; font-size: 12px; }
+  .meta div { display: flex; justify-content: space-between; max-width: 420px; margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #333; padding: 6px 8px; }
+  th { background: #f3f4f6; text-align: left; }
+  tfoot td { font-weight: bold; }
+</style></head><body>
+  <h1>Reconciliation</h1>
+  <div class="meta">
+    <div><span>Bank Account</span><strong>${bankAccount}</strong></div>
+    <div><span>Period</span><strong>${period}</strong></div>
+    <div><span>Prepared By</span><strong>${preparedBy}</strong></div>
+    <div><span>Prepared On</span><strong>${preparedOn}</strong></div>
+    <div><span>Status</span><strong style="color: ${reconSummary.isBalanced ? '#16a34a' : '#dc2626'}">${reconSummary.isBalanced ? "RECONCILED" : "NOT RECONCILED"}</strong></div>
+    <div><span>Bank Balance</span><strong>${formatCurrency(reconSummary.adjustedBankBalance)}</strong></div>
+    <div><span>Book Balance</span><strong>${formatCurrency(reconSummary.booksBalance)}</strong></div>
+    <div><span>Difference</span><strong style="color: ${reconSummary.isBalanced ? '#16a34a' : '#dc2626'}">${formatCurrency(reconSummary.difference)}</strong></div>
+  </div>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Date</th><th>Description</th><th>credit</th><th>debit</th></tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+    <tfoot>
+      <tr>
+        <td></td><td></td><td>Total</td>
+        <td style="text-align:right">${totalCredit}</td>
+        <td style="text-align:right">${totalDebit}</td>
+      </tr>
+    </tfoot>
+  </table>
+</body></html>`;
+    const w = window.open("", "_blank", "width=900,height=700");
+    if (!w) {
+      toast({ title: "Popup blocked", description: "Allow popups to print the report.", variant: "destructive" });
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 250);
+  };
+
+  const handleExportExcel = () => {
+    if (!ensureReportData()) return;
+    const { rows, totalCredit, totalDebit } = reportTable;
+    const { bankAccount, period, preparedBy, preparedOn } = reportMeta;
+
+    const sheetData: (string | number)[][] = [
+      ["Reconciliation"],
+      ["Bank Account", bankAccount],
+      ["Period", period],
+      ["Prepared By", preparedBy],
+      ["Prepared On", preparedOn],
+      ["Status", reconSummary.isBalanced ? "RECONCILED" : "NOT RECONCILED"],
+      ["Bank Balance", formatCurrency(reconSummary.adjustedBankBalance)],
+      ["Book Balance", formatCurrency(reconSummary.booksBalance)],
+      ["Difference", formatCurrency(reconSummary.difference)],
+      [],
+      ["ID", "Date", "Description", "credit", "debit"],
+      ...rows.map((r) => [
+        r.id,
+        r.date,
+        r.description,
+        r.credit || "",
+        r.debit || "",
+      ]),
+      ["", "", "Total", totalCredit, totalDebit],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+    // Auto-fit column widths from cell content (so Date/Description don't clip)
+    const colCount = 5;
+    const colWidths = Array.from({ length: colCount }, () => 10);
+    sheetData.forEach((row) => {
+      for (let c = 0; c < colCount; c++) {
+        const value = row[c];
+        if (value === undefined || value === null || value === "") continue;
+        const len = String(value).length + 2;
+        colWidths[c] = Math.max(colWidths[c], Math.min(len, 55));
+      }
+    });
+    // Minimums so Date / amounts never show as #####
+    colWidths[0] = Math.max(colWidths[0], 8);
+    colWidths[1] = Math.max(colWidths[1], 14);
+    colWidths[2] = Math.max(colWidths[2], 28);
+    colWidths[3] = Math.max(colWidths[3], 12);
+    colWidths[4] = Math.max(colWidths[4], 12);
+    worksheet["!cols"] = colWidths.map((wch) => ({ wch }));
+
+    // Keep Date cells as text so Excel doesn't reformat/narrow them
+    const headerRowIndex = sheetData.findIndex((r) => r[0] === "ID"); // 0-based; row with ID/Date/...
+    rows.forEach((_, i) => {
+      const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex + 1 + i, c: 1 });
+      const cell = worksheet[cellRef];
+      if (cell) {
+        cell.t = "s";
+        cell.v = String(cell.v ?? "");
+        cell.z = "@";
+      }
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reconciliation");
+    XLSX.writeFile(workbook, "reconciliation_report.xlsx");
+
+    toast({ title: "Excel export ready", description: "Report downloaded with auto-sized columns." });
+  };
+
+  const handleDownloadPdf = () => {
+    if (!ensureReportData()) return;
+    const { rows, totalCredit, totalDebit } = reportTable;
+    const { bankAccount, period, preparedBy, preparedOn } = reportMeta;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    doc.setFontSize(16);
+    doc.text("Reconciliation", 14, 18);
+    doc.setFontSize(10);
+    let y = 28;
+    const metaLines = [
+      ["Bank Account", bankAccount],
+      ["Period", period],
+      ["Prepared By", preparedBy],
+      ["Prepared On", preparedOn],
+      ["Status", reconSummary.isBalanced ? "RECONCILED" : "NOT RECONCILED"],
+      ["Bank Balance", formatCurrency(reconSummary.adjustedBankBalance)],
+      ["Book Balance", formatCurrency(reconSummary.booksBalance)],
+      ["Difference", formatCurrency(reconSummary.difference)],
+    ] as const;
+    metaLines.forEach(([label, value]) => {
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100);
+      doc.text(label, 14, y);
+      doc.setTextColor(20);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(value), 55, y);
+      y += 6;
+    });
+    (doc as any).autoTable({
+      startY: y + 4,
+      head: [["ID", "Date", "Description", "credit", "debit"]],
+      body: [
+        ...rows.map((r) => [
+          String(r.id),
+          r.date,
+          r.description,
+          r.credit ? String(r.credit) : "",
+          r.debit ? String(r.debit) : "",
+        ]),
+        ["", "", "Total", String(totalCredit), String(totalDebit)],
+      ],
+      theme: "grid",
+      headStyles: { fillColor: [243, 244, 246], textColor: 20, fontStyle: "bold", fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      columnStyles: {
+        0: { cellWidth: 14 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: "auto" },
+        3: { halign: "right", cellWidth: 28 },
+        4: { halign: "right", cellWidth: 28 },
+      },
+      didParseCell: (data: any) => {
+        if (data.section === "body" && data.row.index === rows.length) {
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+      margin: { left: 14, right: 14 },
+    });
+    doc.save("reconciliation_report.pdf");
+    toast({ title: "PDF downloaded", description: "Reconciliation report PDF saved." });
+  };
+
 
   // Filtered transactions for Step 1
   const filteredTransactions = useMemo(() => {
@@ -2242,7 +2255,11 @@ export default function BankReconciliation() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Bank Reconciliation</h1>
-              {step === 4 && <Badge className="bg-emerald-600">Complete</Badge>}
+              {step === 4 && (
+                <Badge className={reconSummary.isBalanced ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"}>
+                  {reconSummary.isBalanced ? "Reconciled" : "Not Reconciled"}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -2869,17 +2886,17 @@ export default function BankReconciliation() {
                   </div>
                 </div>
 
-                <div className={`flex flex-col items-center justify-center border-2 rounded-xl p-6 text-center ${reconSummary.isBalanced ? "border-emerald-500 bg-emerald-50/30" : "border-amber-400 bg-amber-50/30"}`}>
-                  <div className={`p-2.5 rounded-full mb-3 ${reconSummary.isBalanced ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}>
+                <div className={`flex flex-col items-center justify-center border-2 rounded-xl p-6 text-center ${reconSummary.isBalanced ? "border-emerald-500 bg-emerald-50/30" : "border-rose-400 bg-rose-50/30"}`}>
+                  <div className={`p-2.5 rounded-full mb-3 ${reconSummary.isBalanced ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"}`}>
                     {reconSummary.isBalanced ? <Check className="h-6 w-6 stroke-[3]" /> : <AlertCircle className="h-6 w-6" />}
                   </div>
-                  <h3 className={`text-2xl font-black ${reconSummary.isBalanced ? "text-emerald-700" : "text-amber-700"}`}>
+                  <h3 className={`text-2xl font-black ${reconSummary.isBalanced ? "text-emerald-700" : "text-rose-700"}`}>
                     DIFFERENCE: {formatCurrency(reconSummary.difference)}
                   </h3>
-                  <p className={`text-xs font-bold mt-1 ${reconSummary.isBalanced ? "text-emerald-600" : "text-amber-700"}`}>
+                  <p className={`text-xs font-bold mt-1 ${reconSummary.isBalanced ? "text-emerald-600" : "text-rose-700"}`}>
                     {reconSummary.isBalanced
                       ? "Perfectly balanced! Bank and Book balances are completely reconciled."
-                      : "Balances do not match yet. Resolve pending items, then check again."}
+                      : "Balances do not match (Not Reconciled). Bank balance and book balance must be equal to reconcile."}
                   </p>
                 </div>
               </CardContent>
@@ -2890,8 +2907,23 @@ export default function BankReconciliation() {
               <Button variant="outline" onClick={() => setStep(2)} className="gap-1.5">
                 <ChevronLeft className="h-4 w-4" /> Back to Step 2
               </Button>
-              <Button onClick={() => setStep(4)} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                Complete Reconciliation <CheckCircle2 className="h-4 w-4" />
+              <Button
+                onClick={() => setStep(4)}
+                className={`gap-2 ${
+                  reconSummary.isBalanced
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    : "bg-rose-600 hover:bg-rose-700 text-white"
+                }`}
+              >
+                {reconSummary.isBalanced ? (
+                  <>
+                    Complete Reconciliation <CheckCircle2 className="h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    View Status (Not Reconciled) <AlertCircle className="h-4 w-4" />
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -2939,57 +2971,105 @@ export default function BankReconciliation() {
         </div>
       )}
 
-      {/* STEP 4: SUCCESS COMPLETED */}
+      {/* STEP 4: RECONCILIATION RESULT / STATUS */}
       {step === 4 && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Left Main Success Card */}
+          {/* Left Main Result Card */}
           <div className="xl:col-span-2 space-y-6">
-            <Card className="shadow-lg border-emerald-100 overflow-hidden relative">
-              {/* Confetti background effect */}
-              <div className="absolute top-0 right-0 h-40 w-40 bg-emerald-100/30 rounded-full blur-3xl -z-10" />
-              <div className="absolute bottom-0 left-0 h-40 w-40 bg-teal-100/20 rounded-full blur-3xl -z-10" />
+            <Card className={`shadow-lg overflow-hidden relative ${reconSummary.isBalanced ? "border-emerald-100" : "border-rose-200"}`}>
+              {/* Glow background effect */}
+              {reconSummary.isBalanced ? (
+                <>
+                  <div className="absolute top-0 right-0 h-40 w-40 bg-emerald-100/30 rounded-full blur-3xl -z-10" />
+                  <div className="absolute bottom-0 left-0 h-40 w-40 bg-teal-100/20 rounded-full blur-3xl -z-10" />
+                </>
+              ) : (
+                <>
+                  <div className="absolute top-0 right-0 h-40 w-40 bg-rose-100/30 rounded-full blur-3xl -z-10" />
+                  <div className="absolute bottom-0 left-0 h-40 w-40 bg-amber-100/20 rounded-full blur-3xl -z-10" />
+                </>
+              )}
 
               <CardContent className="p-8 flex flex-col items-center justify-center text-center space-y-6">
-                {/* Big Green Check Circle */}
-                <div className="h-24 w-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-inner animate-bounce">
-                  <Check className="h-12 w-12 stroke-[3]" />
-                </div>
+                {/* Big Circle Icon: Green Check when balanced, Red X when not */}
+                {reconSummary.isBalanced ? (
+                  <div className="h-24 w-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-inner animate-bounce">
+                    <Check className="h-12 w-12 stroke-[3]" />
+                  </div>
+                ) : (
+                  <div className="h-24 w-24 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center shadow-inner">
+                    <XCircle className="h-12 w-12 stroke-[2.5]" />
+                  </div>
+                )}
 
                 <div className="space-y-2">
-                  <h2 className="text-2xl font-black text-slate-800">Reconciliation Completed Successfully!</h2>
-                  <p className="text-sm text-muted-foreground max-w-md">Great job! Your bank and book balances are now matched.</p>
+                  <h2 className={`text-2xl font-black ${reconSummary.isBalanced ? "text-slate-800" : "text-rose-700"}`}>
+                    {reconSummary.isBalanced ? "Reconciliation Completed Successfully!" : "Reconciliation Not Reconciled!"}
+                  </h2>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    {reconSummary.isBalanced
+                      ? "Great job! Your bank and book balances are now matched."
+                      : `Your bank balance and book balance do not match. A difference of ${formatCurrency(Math.abs(reconSummary.difference))} remains.`}
+                  </p>
                 </div>
 
-                {/* Balances Match Box — icons like reference */}
+                {/* Balances Match Box — shows = when balanced, ≠ when not equal */}
                 <div className="flex items-center justify-center gap-3 w-full max-w-xl">
-                  <div className="flex items-center gap-3 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm text-left">
-                    <div className="h-11 w-11 rounded-full bg-[#1B7543] text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <div className={`flex items-center gap-3 flex-1 bg-white border rounded-xl px-4 py-3 shadow-sm text-left ${reconSummary.isBalanced ? "border-slate-200" : "border-rose-200"}`}>
+                    <div className={`h-11 w-11 rounded-full text-white flex items-center justify-center shrink-0 shadow-sm ${reconSummary.isBalanced ? "bg-[#1B7543]" : "bg-rose-600"}`}>
                       <Landmark className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-700">Bank Balance</p>
-                      <p className="text-base font-bold text-[#1B7543] truncate">
+                      <p className={`text-base font-bold truncate ${reconSummary.isBalanced ? "text-[#1B7543]" : "text-rose-700"}`}>
                         {formatCurrency(reconSummary.adjustedBankBalance)}
                       </p>
                     </div>
                   </div>
 
-                  <div className="h-8 w-8 rounded-full bg-emerald-50 border border-emerald-100 text-slate-700 flex items-center justify-center shrink-0 text-sm font-bold">
-                    =
+                  <div className={`h-9 w-9 rounded-full border flex items-center justify-center shrink-0 font-bold ${
+                    reconSummary.isBalanced
+                      ? "bg-emerald-50 border-emerald-100 text-[#1B7543] text-sm"
+                      : "bg-rose-100 border-rose-300 text-rose-700 text-lg font-black"
+                  }`} title={reconSummary.isBalanced ? "Balances match" : "Balances do not match"}>
+                    {reconSummary.isBalanced ? "=" : "≠"}
                   </div>
 
-                  <div className="flex items-center gap-3 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm text-left">
-                    <div className="h-11 w-11 rounded-full bg-[#1B7543] text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <div className={`flex items-center gap-3 flex-1 bg-white border rounded-xl px-4 py-3 shadow-sm text-left ${reconSummary.isBalanced ? "border-slate-200" : "border-rose-200"}`}>
+                    <div className={`h-11 w-11 rounded-full text-white flex items-center justify-center shrink-0 shadow-sm ${reconSummary.isBalanced ? "bg-[#1B7543]" : "bg-rose-600"}`}>
                       <BookOpen className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-700">Book Balance</p>
-                      <p className="text-base font-bold text-[#1B7543] truncate">
+                      <p className={`text-base font-bold truncate ${reconSummary.isBalanced ? "text-[#1B7543]" : "text-rose-700"}`}>
                         {formatCurrency(reconSummary.booksBalance)}
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {/* If Not Balanced, show alert banner with shortcut to Step 2 to match */}
+                {!reconSummary.isBalanced && (
+                  <div className="w-full max-w-xl bg-rose-50 border border-rose-200 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between text-left gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-rose-900">Unreconciled Difference</p>
+                        <p className="text-sm font-bold text-rose-700">
+                          {formatCurrency(reconSummary.difference)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStep(2)}
+                      className="border-rose-300 text-rose-700 hover:bg-rose-100 shrink-0 h-8 text-xs font-semibold gap-1.5"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" /> Back to Step 2 (Match)
+                    </Button>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-lg">
                   <Button variant="outline" onClick={handlePrintReport} className="h-9 text-xs flex-1 min-w-[100px]">
@@ -3017,23 +3097,33 @@ export default function BankReconciliation() {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Status</span>
-                    <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-none">RECONCILED</Badge>
+                    {reconSummary.isBalanced ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-none font-bold">RECONCILED</Badge>
+                    ) : (
+                      <Badge className="bg-rose-100 text-rose-800 border border-rose-200 shadow-none font-bold">NOT RECONCILED</Badge>
+                    )}
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Completed On</span>
-                    <span className="font-semibold text-slate-800">12 Aug 2026, 04:35 PM</span>
+                    <span className="font-semibold text-slate-800">{reportMeta.preparedOn}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Reconciled By</span>
-                    <span className="font-semibold text-slate-800">Admin</span>
+                    <span className="font-semibold text-slate-800">{reportMeta.preparedBy}</span>
                   </div>
                 </div>
 
-                {/* Stamp Effect */}
+                {/* Stamp Effect: RECONCILED (green) or NOT RECONCILED (rose) */}
                 <div className="border-t pt-4 flex justify-center">
-                  <div className="border-4 border-emerald-500/30 text-emerald-600/60 font-black text-xl uppercase tracking-widest px-6 py-2 rounded-lg rotate-12 border-double">
-                    RECONCILED
-                  </div>
+                  {reconSummary.isBalanced ? (
+                    <div className="border-4 border-emerald-500/30 text-emerald-600/70 font-black text-xl uppercase tracking-widest px-6 py-2 rounded-lg rotate-12 border-double">
+                      RECONCILED
+                    </div>
+                  ) : (
+                    <div className="border-4 border-rose-500/40 text-rose-600/80 font-black text-xl uppercase tracking-widest px-6 py-2 rounded-lg -rotate-12 border-double">
+                      NOT RECONCILED
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

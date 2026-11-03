@@ -54,10 +54,19 @@ function freePort(port) {
       const pid = parts[parts.length - 1];
       if (pid && /^\d+$/.test(pid) && pid !== "0") pids.add(pid);
     }
+    let killedAny = false;
     for (const pid of pids) {
       try {
-        execSync(`taskkill /PID ${pid} /F`, { stdio: "ignore" });
+        execSync(`taskkill /PID ${pid} /F /T`, { stdio: "ignore" });
         console.log(`Freed port ${port} (killed PID ${pid})`);
+        killedAny = true;
+      } catch {
+        // ignore
+      }
+    }
+    if (killedAny) {
+      try {
+        execSync("powershell -Command Start-Sleep -Milliseconds 600", { stdio: "ignore" });
       } catch {
         // ignore
       }
@@ -150,14 +159,80 @@ console.log("Building API...");
 await runSync([path.join(apiDir, "build.mjs")], apiEnv, apiDir);
 
 console.log(`Starting API on http://localhost:${API_PORT} ...`);
-children.push(
-  run(
-    "api",
+let apiProcess = null;
+let isRestartingApi = false;
+
+function startApi() {
+  apiProcess = spawn(
+    nodeBin,
     ["--enable-source-maps", path.join(apiDir, "dist", "index.mjs")],
-    apiEnv,
-    apiDir,
-  ),
-);
+    {
+      cwd: apiDir,
+      env: apiEnv,
+      stdio: "inherit",
+      shell: false,
+      windowsHide: true,
+    }
+  );
+
+  apiProcess.on("exit", (code, signal) => {
+    if (isRestartingApi) return;
+    if (signal) {
+      console.error(`[api] stopped (${signal})`);
+      shutdown(1);
+      return;
+    }
+    if (code && code !== 0) {
+      console.error(`[api] exited with code ${code}`);
+      shutdown(code);
+    }
+  });
+
+  children.push(apiProcess);
+}
+
+startApi();
+
+// Auto-rebuild API server when files change
+let buildTimeout = null;
+let isBuilding = false;
+try {
+  fs.watch(path.join(apiDir, "src"), { recursive: true }, (eventType, filename) => {
+    if (!filename || filename.endsWith("~") || filename.includes(".git") || filename.includes("node_modules")) return;
+    clearTimeout(buildTimeout);
+    buildTimeout = setTimeout(async () => {
+      if (isBuilding) return;
+      isBuilding = true;
+      console.log(`\n[api-server] File changed: ${filename}. Rebuilding...`);
+      try {
+        await runSync([path.join(apiDir, "build.mjs")], apiEnv, apiDir);
+        const indexPath = path.join(apiDir, "dist", "index.mjs");
+        if (fs.existsSync(indexPath)) {
+          console.log("[api-server] Rebuild complete. Reloading server...");
+          isRestartingApi = true;
+          if (apiProcess && !apiProcess.killed) {
+            try {
+              apiProcess.kill();
+            } catch {
+              // ignore
+            }
+          }
+          setTimeout(() => {
+            freePort(API_PORT);
+            isRestartingApi = false;
+            startApi();
+          }, 800);
+        }
+      } catch (e) {
+        console.error("[api-server] Rebuild error:", e.message);
+      } finally {
+        isBuilding = false;
+      }
+    }, 800);
+  });
+} catch (e) {
+  // Watcher optional
+}
 
 const viteCandidates = [
   path.join(webDir, "node_modules", "vite", "bin", "vite.js"),

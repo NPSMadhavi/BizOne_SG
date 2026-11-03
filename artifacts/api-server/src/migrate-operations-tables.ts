@@ -62,6 +62,8 @@ export const OPERATIONS_TABLE_MIGRATIONS = [
     passport_scan TEXT,
     visa_scan TEXT,
     nric_scan TEXT,
+    bank_account TEXT,
+    bank_name TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`,
   `CREATE TABLE IF NOT EXISTS dependents (
@@ -238,6 +240,8 @@ export const OPERATIONS_COLUMN_MIGRATIONS = [
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS nric_scan TEXT`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INTEGER`,
   `ALTER TABLE employees ADD COLUMN IF NOT EXISTS gender TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_account TEXT`,
+  `ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_name TEXT`,
 
   // assets
   `ALTER TABLE assets ADD COLUMN IF NOT EXISTS vendor_id INTEGER`,

@@ -18,6 +18,7 @@ import SelectCompany from "@/pages/select-company/index";
 // import WebsiteLanding from "@/Website";
 
 // ── Route-level lazy bundles ───────────────────────────────────────────────
+const SuperAdminPage = lazy(() => import("@/pages/superadmin"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 
 const PurchaseOrderList = lazy(() => import("@/pages/purchase-orders/list"));
@@ -393,6 +394,8 @@ function Router() {
           <Route path="/login" component={Login} />
           <Route path="/register" component={Register} />
           <Route path="/select-company" component={SelectCompany} />
+          <Route path="/superadmin/:sub*">{() => <SuperAdminPage />}</Route>
+          <Route path="/superadmin">{() => <SuperAdminPage />}</Route>
           <Route path="/">{() => <SmartHomeRedirect />}</Route>
 
           <Route path="/dashboard">{() => <ProtectedRoute component={Dashboard} module="dashboard" />}</Route>

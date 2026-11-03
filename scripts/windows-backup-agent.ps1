@@ -293,7 +293,7 @@ try {
     $expectedChecksum = $latestBackup.checksumSha256
     $serverFileName = $latestBackup.fileName
     if (-not $serverFileName) {
-        $serverFileName = "bizone_${activeCompanyId}_${lastBackupCode}.zip"
+        $serverFileName = "bizone_${activeCompanyId}_${lastBackupCode}.dump"
     }
 
     $finalLocalPath = Join-Path $DestinationDir $serverFileName
@@ -357,7 +357,13 @@ try {
 
     # Step 6: Atomic Move to Final Destination (Never overwrite older distinct backups)
     if (Test-Path $finalLocalPath) {
-        Remove-Item $finalLocalPath -Force
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($serverFileName)
+        $ext = [System.IO.Path]::GetExtension($serverFileName)
+        $counter = 1
+        while (Test-Path (Join-Path $DestinationDir "${baseName}_($counter)${ext}")) {
+            $counter++
+        }
+        $finalLocalPath = Join-Path $DestinationDir "${baseName}_($counter)${ext}"
     }
     Move-Item -Path $tempFile -Destination $finalLocalPath -Force
     Write-AgentLog "SUCCESS: Verified backup saved to $finalLocalPath"

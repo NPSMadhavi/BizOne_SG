@@ -128,21 +128,21 @@ export function saveNewBankAccount(item: Omit<BankAccountItem, "id" | "label">):
   return newItem;
 }
 
-interface BankAccountFieldProps {
-  paymentMethod: string;
-  onPaymentMethodChange: (val: string) => void;
-  selectedBankAccount: string;
-  onBankAccountChange: (val: string) => void;
-  paymentMethods: { value: string; label: string }[];
+export interface SelectBankAccountFieldProps {
+  value?: string | null;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
 }
 
-export function BankAccountField({
-  paymentMethod,
-  onPaymentMethodChange,
-  selectedBankAccount,
-  onBankAccountChange,
-  paymentMethods,
-}: BankAccountFieldProps) {
+export function SelectBankAccountField({
+  value,
+  onChange,
+  placeholder = "Select Bank Account",
+  disabled = false,
+  className = "",
+}: SelectBankAccountFieldProps) {
   const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
   const [createBankOpen, setCreateBankOpen] = useState(false);
   const [newBankName, setNewBankName] = useState("");
@@ -151,14 +151,23 @@ export function BankAccountField({
   const [newAccountNum, setNewAccountNum] = useState("");
   const [newSwiftBic, setNewSwiftBic] = useState("");
 
-  useEffect(() => {
+  const refreshAccounts = () => {
     setBankAccounts(getStoredBankAccounts());
+  };
+
+  useEffect(() => {
+    refreshAccounts();
   }, [createBankOpen]);
 
-  const isBankTransfer =
-    paymentMethod === "bank_transfer" ||
-    paymentMethod === "Bank Transfer" ||
-    paymentMethod?.toLowerCase().includes("bank");
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "custom-bank-accounts-v1") {
+        refreshAccounts();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   const resetCreateForm = () => {
     setNewBankName("");
@@ -178,71 +187,67 @@ export function BankAccountField({
       swiftBic: newSwiftBic.trim() || undefined,
     });
     setBankAccounts(getStoredBankAccounts());
-    onBankAccountChange(created.label);
+    onChange(created.label);
     resetCreateForm();
     setCreateBankOpen(false);
     void syncStoredBanksToChartOfAccounts();
   };
 
+  const safeVal = value || "";
+
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-        <div className="space-y-1.5">
-          <Label>Payment Method</Label>
-          <Select value={paymentMethod} onValueChange={onPaymentMethodChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select Payment Method" />
-            </SelectTrigger>
-            <SelectContent>
-              {paymentMethods.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5 min-w-0">
-          <Label>Select Bank Account</Label>
-          <Select
-            disabled={!isBankTransfer}
-            value={isBankTransfer ? selectedBankAccount : ""}
-            onValueChange={(val) => {
-              if (val === "CREATE_NEW_BANK_ACCOUNT") {
-                setCreateBankOpen(true);
-              } else {
-                onBankAccountChange(val);
-              }
-            }}
+      <Select
+        disabled={disabled}
+        value={safeVal}
+        onValueChange={(val) => {
+          if (val === "CREATE_NEW_BANK_ACCOUNT") {
+            setCreateBankOpen(true);
+          } else if (val === "__CLEAR_BANK_ACCOUNT__") {
+            onChange("");
+          } else {
+            onChange(val);
+          }
+        }}
+      >
+        <SelectTrigger className={className || "w-full"}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent
+          position="popper"
+          className="w-[var(--radix-select-trigger-width)] max-w-[var(--radix-select-trigger-width)]"
+        >
+          <SelectItem
+            value="CREATE_NEW_BANK_ACCOUNT"
+            className="text-xs font-medium text-[#2563EB] cursor-pointer border-b pb-1.5 mb-1 truncate"
           >
-            <SelectTrigger className={`w-full ${isBankTransfer ? "border-[#2563EB]/40 bg-blue-50/20 focus:ring-2 focus:ring-[#2563EB]" : "bg-muted/50 text-muted-foreground opacity-70"}`}>
-              <SelectValue placeholder={isBankTransfer ? "Select bank account..." : "Select Bank Account"} />
-            </SelectTrigger>
-            <SelectContent
-              position="popper"
-              className="w-[var(--radix-select-trigger-width)] max-w-[var(--radix-select-trigger-width)]"
+            + Create Bank Account
+          </SelectItem>
+          {safeVal && (
+            <SelectItem
+              value="__CLEAR_BANK_ACCOUNT__"
+              className="text-xs text-muted-foreground cursor-pointer border-b pb-1 mb-1 truncate italic"
             >
-              <SelectItem
-                value="CREATE_NEW_BANK_ACCOUNT"
-                className="text-xs font-medium text-[#2563EB] cursor-pointer border-b pb-1.5 mb-1 truncate"
-              >
-                + Create Bank Account
-              </SelectItem>
-              {bankAccounts.length === 0 && (
-                <div className="px-3 py-2 text-xs text-muted-foreground italic leading-tight">
-                  No bank accounts created yet.
-                </div>
-              )}
-              {bankAccounts.map((acc) => (
-                <SelectItem key={acc.id} value={acc.label} className="truncate">
-                  {acc.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+              Clear Bank Account
+            </SelectItem>
+          )}
+          {bankAccounts.length === 0 && !safeVal && (
+            <div className="px-3 py-2 text-xs text-muted-foreground italic leading-tight">
+              No bank accounts created yet.
+            </div>
+          )}
+          {safeVal && !bankAccounts.some((acc) => acc.label === safeVal) && (
+            <SelectItem value={safeVal} className="truncate">
+              {safeVal}
+            </SelectItem>
+          )}
+          {bankAccounts.map((acc) => (
+            <SelectItem key={acc.id} value={acc.label} className="truncate">
+              {acc.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       <Dialog
         open={createBankOpen}
@@ -319,5 +324,60 @@ export function BankAccountField({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+interface BankAccountFieldProps {
+  paymentMethod: string;
+  onPaymentMethodChange: (val: string) => void;
+  selectedBankAccount: string;
+  onBankAccountChange: (val: string) => void;
+  paymentMethods: { value: string; label: string }[];
+}
+
+export function BankAccountField({
+  paymentMethod,
+  onPaymentMethodChange,
+  selectedBankAccount,
+  onBankAccountChange,
+  paymentMethods,
+}: BankAccountFieldProps) {
+  const isBankTransfer =
+    paymentMethod === "bank_transfer" ||
+    paymentMethod === "Bank Transfer" ||
+    paymentMethod?.toLowerCase().includes("bank");
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+      <div className="space-y-1.5">
+        <Label>Payment Method</Label>
+        <Select value={paymentMethod} onValueChange={onPaymentMethodChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select Payment Method" />
+          </SelectTrigger>
+          <SelectContent>
+            {paymentMethods.map((m) => (
+              <SelectItem key={m.value} value={m.value}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5 min-w-0">
+        <Label>Select Bank Account</Label>
+        <SelectBankAccountField
+          disabled={!isBankTransfer}
+          value={isBankTransfer ? selectedBankAccount : ""}
+          onChange={onBankAccountChange}
+          placeholder={isBankTransfer ? "Select bank account..." : "Select Bank Account"}
+          className={`w-full ${isBankTransfer
+              ? "border-[#2563EB]/40 bg-blue-50/20 focus:ring-2 focus:ring-[#2563EB]"
+              : "bg-muted/50 text-muted-foreground opacity-70"
+            }`}
+        />
+      </div>
+    </div>
   );
 }

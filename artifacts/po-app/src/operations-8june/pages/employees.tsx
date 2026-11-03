@@ -496,6 +496,9 @@ function EmployeeViewDetails({ employeeId }: { employeeId: number }) {
           }
         />
       ) : null}
+      {employee.bankAccount ? (
+        <EntityViewField label="Bank Account" value={employee.bankAccount} />
+      ) : null}
       {employee.visaScan ? (
         <EntityViewField
           label="Visa scan"

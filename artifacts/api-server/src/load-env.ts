@@ -62,6 +62,9 @@ const PREFER_FILE_KEYS = new Set([
   "SMTP_PASS",
   "SMTP_FROM",
   "SMTP_SECURE",
+  "SUPERADMIN_USERNAME",
+  "SUPERADMIN_EMAIL",
+  "SUPERADMIN_PASSWORD",
 ]);
 
 function looksLikeSecretPlaceholder(v: string | undefined): boolean {

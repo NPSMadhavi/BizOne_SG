@@ -45,6 +45,7 @@ function isAppApiRequest(input: RequestInfo | URL): boolean {
 }
 
 let fetchPatched = false;
+let xhrPatched = false;
 
 /** Attach this tab's session id to API calls so tabs do not share the cookie session. */
 export function installTabSessionFetch() {
@@ -69,7 +70,38 @@ export function installTabSessionFetch() {
   };
 }
 
+/** Attach this tab's session id to XMLHttpRequest calls so uploads / XHR do not drop the session. */
+export function installTabSessionXhr() {
+  if (xhrPatched || typeof window === "undefined" || !window.XMLHttpRequest) return;
+  xhrPatched = true;
+  const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, ...args: any[]) {
+    try {
+      (this as any).__reqUrl = args[1];
+    } catch {}
+    return (originalOpen as any).apply(this, args);
+  };
+
+  XMLHttpRequest.prototype.send = function (this: XMLHttpRequest, body?: any) {
+    try {
+      const url = (this as any).__reqUrl;
+      if (url && isAppApiRequest(url)) {
+        const sid = getTabSessionId();
+        if (sid) {
+          try {
+            this.setRequestHeader("X-BizOne-Session", sid);
+          } catch {}
+        }
+      }
+    } catch {}
+    return originalSend.call(this, body);
+  };
+}
+
 /** Call once before React mounts. */
 export function bootstrapBrowserSession(): void {
   installTabSessionFetch();
+  installTabSessionXhr();
 }

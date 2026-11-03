@@ -142,6 +142,10 @@ async function runCoordinatedStartupBootstrap(): Promise<void> {
   await withStartupBootstrapLock(async () => {
     try {
       await runStartupMigrations();
+      await runBootstrapStep("ensureSuperAdminSchema", async () => {
+        const { ensureSuperAdminSchema } = await import("./lib/superadmin-engine.js");
+        await ensureSuperAdminSchema();
+      });
     } catch (err) {
       printMigrationFailure(err);
       throw err;

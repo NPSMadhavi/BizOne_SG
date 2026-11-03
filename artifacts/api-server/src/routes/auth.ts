@@ -137,7 +137,8 @@ function formatUser(
 ) {
   const roleRaw = String(user.role || "user").toLowerCase();
   const role =
-    roleRaw === "administrator" || roleRaw === "admin" ? "admin"
+    roleRaw === "super_admin" || roleRaw === "superadmin" ? "super_admin"
+    : roleRaw === "administrator" || roleRaw === "admin" ? "admin"
     : roleRaw === "accountant" ? "accountant"
     : roleRaw === "external" ? "external"
     : roleRaw === "employee" ? "user"
@@ -374,6 +375,14 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     req.session.permissions = await getUserPermissions(adminRole.id);
 
     const companies = await getUserCompanies(user.id);
+
+    try {
+      const { autoAssignSignupLicense } = await import("../lib/superadmin-engine.js");
+      await autoAssignSignupLicense(company.id, user.id, company.name);
+    } catch (licErr) {
+      console.error("[signup] Failed to auto-assign license on signup:", licErr);
+    }
+
     res.status(201).json({
       message: "Registration Successful",
       user: formatUser(user, companies, company.id, req.session.permissions),

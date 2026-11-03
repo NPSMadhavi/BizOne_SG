@@ -525,7 +525,7 @@ const EMPLOYEE_COLUMNS = [
   "designation", "join_date", "status", "salary", "annual_salary", "nationality",
   "pr_status", "date_of_birth", "passport_number", "passport_expiry", "visa_number",
   "visa_expiry", "visa_type", "visa_remarks", "nric_number", "nric_expiry",
-  "passport_scan", "visa_scan", "nric_scan",
+  "passport_scan", "visa_scan", "nric_scan", "bank_account", "bank_name",
 ];
 
 const DEPENDENT_COLUMNS = [
@@ -1284,12 +1284,12 @@ async function savePayrollConfig(companyId: number, body: Record<string, unknown
   const employeeId = Number(body.employeeId);
   const existing = Number.isFinite(employeeId)
     ? await pool.query<{ id: number }>(
-        `SELECT id FROM employee_payroll
+      `SELECT id FROM employee_payroll
          WHERE company_id = $1 AND employee_id = $2
          ORDER BY is_active DESC, id DESC
          LIMIT 1`,
-        [companyId, employeeId],
-      )
+      [companyId, employeeId],
+    )
     : { rows: [] as { id: number }[] };
 
   let row: Record<string, unknown>;

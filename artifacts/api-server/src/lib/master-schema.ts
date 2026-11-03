@@ -21,6 +21,10 @@ export const MASTER_TABLES = new Set([
   "backup_retention_settings",
   "backup_schedules",
   "local_backup_download_history",
+  "superadmin_plans",
+  "superadmin_licenses",
+  "superadmin_license_renewals",
+  "superadmin_audit_logs",
 ]);
 
 export function isMasterTable(name: string): boolean {

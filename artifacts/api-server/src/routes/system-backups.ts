@@ -1,8 +1,12 @@
 import { Router, type IRouter } from "express";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import pg from "pg";
+import multer from "multer";
+import extractZip from "extract-zip";
+import { getUploadsRoot } from "../lib/ensure-uploads.js";
 import {
   createCompanyBackup,
   getCompanyBackupDashboardData,
@@ -15,28 +19,51 @@ import {
   ensureBackupSchema,
   activeBackupOperations,
   activeRestoreOperations,
+  computeFileSha256,
+  detectArchiveFormat,
+  getCompanyBackupsDir,
 } from "../lib/system-backup-engine.js";
 import { logAudit } from "../lib/audit.js";
 
 const router: IRouter = Router();
+
+const tempUploadDir = path.join(getUploadsRoot(), "temp_restore_uploads");
+if (!fs.existsSync(tempUploadDir)) {
+  fs.mkdirSync(tempUploadDir, { recursive: true });
+}
+
+const restoreArchiveUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, tempUploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".dump";
+      const unique = `${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
+      cb(null, `restore_upload_${unique}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024, // 2GB limit
+  },
+});
 
 async function requireCompanyAuth(req: any, res: any): Promise<number | null> {
   if (!req.session?.userId) {
     res.status(401).json({ error: "Authentication required" });
     return null;
   }
+  const role = String(req.session.userRole || "").toLowerCase();
   const isAdm =
-    req.session.isAdmin ||
-    req.session.userRole === "admin" ||
-    req.session.userRole === "Administrator" ||
-    req.session.userRole === "accountant";
+    Boolean(req.session.isAdmin) ||
+    role === "admin" ||
+    role === "administrator" ||
+    role === "accountant";
   if (!isAdm) {
     res.status(403).json({ error: "Administrator authorization required for Backup & Restore operations" });
     return null;
   }
 
   // Strictly use session companyId. Never trust companyId from request body or query params!
-  const companyId = req.session.companyId;
+  let companyId = req.session.companyId;
   if (!companyId) {
     res.status(400).json({ error: "No authorized company active in session. Please select a company." });
     return null;
@@ -154,15 +181,15 @@ router.get("/system-backups/agent/status", async (req, res): Promise<void> => {
       },
       latestBackup: latest
         ? {
-            id: latest.id,
-            backupCode: latest.backup_code,
-            status: inProgressOp ? "IN_PROGRESS" : latest.status,
-            fileName: latest.storage_ref || (latest.storage_path ? path.basename(latest.storage_path) : null),
-            fileSizeBytes: latest.file_size_bytes,
-            checksumSha256: latest.checksum_sha256,
-            createdAt: latest.created_at,
-            completedAt: latest.completed_at,
-          }
+          id: latest.id,
+          backupCode: latest.backup_code,
+          status: inProgressOp ? "IN_PROGRESS" : latest.status,
+          fileName: latest.storage_ref || (latest.storage_path ? path.basename(latest.storage_path) : null),
+          fileSizeBytes: latest.file_size_bytes,
+          checksumSha256: latest.checksum_sha256,
+          createdAt: latest.created_at,
+          completedAt: latest.completed_at,
+        }
         : null,
       serverTime: new Date().toISOString(),
     });
@@ -395,8 +422,10 @@ router.get("/system-backups/latest/download", async (req, res): Promise<void> =>
     res.setHeader("X-Backup-Code", b.backup_code);
     res.setHeader("X-Checksum-Sha256", b.checksum_sha256 || "");
     res.setHeader("X-File-Size", String(b.file_size_bytes || 0));
-    res.setHeader("Content-Disposition", `attachment; filename="${b.storage_ref || path.basename(b.storage_path)}"`);
-    res.setHeader("Content-Type", "application/zip");
+    const filename = b.storage_ref || path.basename(b.storage_path);
+    const contentType = filename.endsWith(".dump") ? "application/octet-stream" : "application/zip";
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", contentType);
     fs.createReadStream(b.storage_path).pipe(res);
   } finally {
     await pool.end();
@@ -416,6 +445,72 @@ router.get("/system-backups", async (req, res): Promise<void> => {
   }
 });
 
+// POST /system-backups/browse-folder - open native Windows folder picker helper
+router.post("/system-backups/browse-folder", async (req, res): Promise<void> => {
+  const companyId = await requireCompanyAuth(req, res);
+  if (!companyId) return;
+
+  if (process.platform !== "win32") {
+    res.json({
+      supported: false,
+      message: "Native Windows folder browser helper is only available on Windows hosts.",
+    });
+    return;
+  }
+
+  const rawPath = typeof req.body?.initialPath === "string" ? req.body.initialPath.trim() : "";
+  const initialPath = rawPath || "C:\\BizOneBackups";
+
+  const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "Select Local Backup Destination Folder"
+$dialog.SelectedPath = "${initialPath.replace(/["`$]/g, "")}"
+$dialog.ShowNewFolderButton = $true
+$result = $dialog.ShowDialog()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.SelectedPath) {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    Write-Output $dialog.SelectedPath
+}
+`;
+
+  try {
+    const ps = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: false }
+    );
+
+    let output = "";
+    ps.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    const timeout = setTimeout(() => {
+      try {
+        ps.kill();
+      } catch {}
+    }, 45000);
+
+    ps.on("close", (code) => {
+      clearTimeout(timeout);
+      const selectedPath = output.trim();
+      if (selectedPath) {
+        res.json({ supported: true, success: true, path: selectedPath });
+      } else {
+        res.json({ supported: true, success: true, path: null, cancelled: true });
+      }
+    });
+
+    ps.on("error", (err) => {
+      clearTimeout(timeout);
+      res.json({ supported: false, error: err.message });
+    });
+  } catch (err: any) {
+    res.json({ supported: false, error: err.message });
+  }
+});
+
 // POST /system-backups/create - trigger immediate company-scoped backup
 router.post("/system-backups/create", async (req, res): Promise<void> => {
   const companyId = await requireCompanyAuth(req, res);
@@ -423,20 +518,41 @@ router.post("/system-backups/create", async (req, res): Promise<void> => {
 
   const userId = req.session.userId;
   const username = req.session.username || "admin";
+  const destinationDir = typeof req.body?.destinationDir === "string" ? req.body.destinationDir.trim() : undefined;
+
+  // Generate real backupCode upfront synchronously
+  const now = new Date();
+  const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
+  const backupCode = `BK-${now.getFullYear()}-${randomSuffix}`;
+
+  // Register in memory immediately so frontend gets instant real-time progress
+  activeBackupOperations.set(backupCode, {
+    companyId,
+    companyName: req.session.companyName || "Company",
+    backupCode,
+    type: "manual",
+    status: "IN_PROGRESS",
+    step: "Preparing backup",
+    percent: 10,
+    logs: [`[${new Date().toLocaleTimeString()}] Backup initiated for company (${backupCode})`],
+    startedAt: new Date().toISOString(),
+  });
 
   logAudit({
     req,
     action: "company_backup_started",
     entityType: "system_backup",
-    details: { companyId, initiatedBy: username },
+    details: { companyId, backupCode, initiatedBy: username, destinationDir },
   });
 
-  // Start backup in background
+  // Start backup in background with the registered backupCode
   createCompanyBackup({
     companyId,
     userId,
     username,
     source: "manual",
+    destinationDir,
+    backupCode,
   }).then((result) => {
     if (result.ok) {
       logAudit({
@@ -445,7 +561,7 @@ router.post("/system-backups/create", async (req, res): Promise<void> => {
         entityType: "system_backup",
         entityId: result.backup?.id,
         entityLabel: result.backup?.backup_code,
-        details: { companyId, backupCode: result.backup?.backup_code, fileSize: result.backup?.file_size_bytes },
+        details: { companyId, backupCode: result.backup?.backup_code, fileSize: result.backup?.file_size_bytes, savedToLocalPath: result.savedToLocalPath },
       });
     } else {
       logAudit({
@@ -455,12 +571,11 @@ router.post("/system-backups/create", async (req, res): Promise<void> => {
         details: { companyId, error: result.error },
       });
     }
-  }).catch(() => {});
+  }).catch(() => { });
 
-  const lastOp = Array.from(activeBackupOperations.values()).reverse().find((op) => op.companyId === companyId);
   res.status(202).json({
     message: "Company backup started",
-    backupCode: lastOp?.backupCode || "BK-INIT",
+    backupCode,
     status: "IN_PROGRESS",
   });
 });
@@ -471,7 +586,13 @@ router.get("/system-backups/progress/:code", async (req, res): Promise<void> => 
   if (!companyId) return;
 
   const code = req.params.code;
-  const active = activeBackupOperations.get(code);
+  let active = activeBackupOperations.get(code);
+
+  // If code is BK-INIT or not found, check if an active operation for this company exists
+  if (!active && (code === "BK-INIT" || !code || code.includes("INIT"))) {
+    active = Array.from(activeBackupOperations.values()).reverse().find((op) => op.companyId === companyId);
+  }
+
   if (active) {
     if (active.companyId !== companyId) {
       res.status(403).json({ error: "Access denied to this backup progress" });
@@ -490,25 +611,45 @@ router.get("/system-backups/progress/:code", async (req, res): Promise<void> => 
 
   const pool = new pg.Pool({ connectionString: masterDbUrl });
   try {
-    const r = await pool.query(
+    let r = await pool.query(
       "SELECT * FROM accounting_backups WHERE backup_code = $1 AND company_id = $2 LIMIT 1",
       [code, companyId]
     );
+
+    // If code was BK-INIT or not found directly, fall back to latest backup for this company
+    if (r.rows.length === 0 && (code === "BK-INIT" || !code || code.includes("INIT"))) {
+      r = await pool.query(
+        "SELECT * FROM accounting_backups WHERE company_id = $1 ORDER BY created_at DESC LIMIT 1",
+        [companyId]
+      );
+    }
+
     if (r.rows.length === 0) {
       res.status(404).json({ error: "Backup not found for this company" });
       return;
     }
     const b = r.rows[0];
+
+    // Check local download history
+    const localHistRes = await pool.query(
+      "SELECT destination_folder, status FROM local_backup_download_history WHERE backup_code = $1 ORDER BY downloaded_at DESC LIMIT 1",
+      [b.backup_code]
+    );
+    const localHist = localHistRes.rows[0];
+
     res.json({
       companyId: b.company_id,
+      backupId: b.id,
       backupCode: b.backup_code,
       status: b.status === "completed" ? "COMPLETED" : b.status === "failed" ? "FAILED" : "IN_PROGRESS",
-      step: b.status === "completed" ? "Company backup finished successfully!" : b.error_message || "Processing...",
+      step: b.status === "completed" ? "Completed" : b.error_message || "Processing...",
       percent: b.status === "completed" ? 100 : b.status === "failed" ? 0 : 50,
       logs: [`Status: ${b.status}`],
       fileSizeBytes: b.file_size_bytes,
       checksumSha256: b.checksum_sha256,
       fileName: b.storage_ref,
+      destinationPath: localHist?.destination_folder || b.storage_path,
+      localSaved: localHist?.status === "Completed",
       error: b.error_message,
     });
   } finally {
@@ -546,8 +687,9 @@ router.get("/system-backups/:id/download", async (req, res): Promise<void> => {
     }
 
     const filename = b.storage_ref || path.basename(b.storage_path);
+    const contentType = filename.endsWith(".dump") ? "application/octet-stream" : "application/zip";
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Type", contentType);
     const stream = fs.createReadStream(b.storage_path);
     stream.pipe(res);
 
@@ -558,6 +700,180 @@ router.get("/system-backups/:id/download", async (req, res): Promise<void> => {
       entityId: b.id,
       entityLabel: b.backup_code,
       details: { companyId },
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+// POST /system-backups/upload - upload a local backup file from computer and register for restore
+router.post("/system-backups/upload", restoreArchiveUpload.single("file"), async (req, res): Promise<void> => {
+  const companyId = await requireCompanyAuth(req, res);
+  if (!companyId) return;
+
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file || !file.path || !fs.existsSync(file.path)) {
+    res.status(400).json({ error: "No backup file uploaded" });
+    return;
+  }
+
+  const masterDbUrl = process.env.DATABASE_URL;
+  if (!masterDbUrl) {
+    try { fs.unlinkSync(file.path); } catch {}
+    res.status(500).json({ error: "Database not configured" });
+    return;
+  }
+
+  const pool = new pg.Pool({ connectionString: masterDbUrl });
+  try {
+    await ensureBackupSchema(pool);
+    const compRes = await pool.query("SELECT * FROM companies WHERE id = $1", [companyId]);
+    const company = compRes.rows[0];
+    if (!company) {
+      try { fs.unlinkSync(file.path); } catch {}
+      res.status(404).json({ error: "Active company not found" });
+      return;
+    }
+
+    const checksumSha256 = await computeFileSha256(file.path);
+    const { isZip, isCustomDump, isSql, formatLabel } = detectArchiveFormat(file.path);
+
+    let manifest: any = null;
+
+    if (isZip) {
+      const inspectDir = path.join(tempUploadDir, `inspect_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`);
+      fs.mkdirSync(inspectDir, { recursive: true });
+      try {
+        await extractZip(file.path, { dir: inspectDir });
+        const manifestPath = path.join(inspectDir, "manifest.json");
+        if (fs.existsSync(manifestPath)) {
+          try {
+            manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          } catch {}
+        }
+        // Verify that archive has a database dump
+        const candidateDumps = [
+          path.join(inspectDir, "company_database.dump"),
+          path.join(inspectDir, "database.dump"),
+          path.join(inspectDir, "company_database.sql"),
+          path.join(inspectDir, "database.sql"),
+        ];
+        let hasDump = candidateDumps.some((p) => fs.existsSync(p));
+        if (!hasDump) {
+          const allF = fs.readdirSync(inspectDir);
+          hasDump = allF.some((f) => f.endsWith(".dump") || f.endsWith(".sql"));
+        }
+        if (!hasDump) {
+          try { fs.unlinkSync(file.path); } catch {}
+          res.status(400).json({ error: "The uploaded archive does not contain a PostgreSQL database dump (.dump or .sql)" });
+          return;
+        }
+      } catch (err: any) {
+        try { fs.unlinkSync(file.path); } catch {}
+        res.status(400).json({ error: `Failed to inspect uploaded archive: ${err.message}` });
+        return;
+      } finally {
+        try { fs.rmSync(inspectDir, { recursive: true, force: true }); } catch {}
+      }
+
+      // Strict Company Isolation Check:
+      if (manifest?.company) {
+        const mId = manifest.company.id ? Number(manifest.company.id) : null;
+        const mDb = (manifest.company.databaseName || "").toLowerCase();
+        const cDb = (company.database_name || "").toLowerCase();
+        if (mId && mId !== companyId && mDb && mDb !== cDb) {
+          try { fs.unlinkSync(file.path); } catch {}
+          res.status(400).json({
+            error: `Company Isolation Safeguard: This backup belongs to '${manifest.company.name || "Company ID " + mId}', but your active session is '${company.name}'. You cannot restore data from another company.`,
+          });
+          return;
+        }
+      }
+    } else if (!isCustomDump && !isSql) {
+      try { fs.unlinkSync(file.path); } catch {}
+      res.status(400).json({
+        error: "Unsupported backup file format. Please upload a PostgreSQL backup file (.dump, .zip, or .sql).",
+      });
+      return;
+    }
+
+    // Store file in the company's dedicated backups directory
+    const companyDir = getCompanyBackupsDir(company.id, company.name);
+    const originalName = file.originalname || `upload_${Date.now()}.dump`;
+    const safeName = path.basename(originalName).replace(/[^a-zA-Z0-9._\-]/g, "_");
+    let finalPath = path.join(companyDir, safeName);
+    if (fs.existsSync(finalPath)) {
+      const parsed = path.parse(safeName);
+      finalPath = path.join(companyDir, `${parsed.name}_${Date.now()}${parsed.ext}`);
+    }
+    fs.renameSync(file.path, finalPath);
+
+    const backupCode = `BK-UPL-${new Date().getFullYear()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    const stat = fs.statSync(finalPath);
+    const insertRes = await pool.query(
+      `INSERT INTO accounting_backups (
+        company_id, backup_code, backup_type, backup_source, status,
+        storage_path, storage_ref, file_size_bytes, checksum_sha256,
+        created_at, metadata
+      ) VALUES (
+        $1, $2, 'company_database', 'manual', 'completed',
+        $3, $4, $5, $6,
+        $7, $8
+      ) RETURNING *`,
+      [
+        companyId,
+        backupCode,
+        finalPath,
+        path.basename(finalPath),
+        stat.size,
+        checksumSha256,
+        manifest?.createdAt ? new Date(manifest.createdAt) : new Date(),
+        JSON.stringify({
+          uploadedBy: req.session.username || "admin",
+          originalFileName: originalName,
+          format: formatLabel,
+          manifest: manifest || null,
+        }),
+      ]
+    );
+    const newBackup = insertRes.rows[0];
+
+    logAudit({
+      req,
+      action: "company_backup_uploaded",
+      entityType: "system_backup",
+      entityId: newBackup.id,
+      entityLabel: backupCode,
+      details: { companyId, fileName: path.basename(finalPath), fileSize: stat.size },
+    });
+
+    res.json({
+      ok: true,
+      backup: {
+        id: newBackup.id,
+        company_id: newBackup.company_id,
+        backup_code: newBackup.backup_code,
+        backup_type: newBackup.backup_type,
+        backup_source: newBackup.backup_source,
+        status: newBackup.status,
+        storage_ref: newBackup.storage_ref,
+        storage_path: newBackup.storage_path,
+        file_size_bytes: newBackup.file_size_bytes,
+        checksum_sha256: newBackup.checksum_sha256,
+        created_at: newBackup.created_at,
+        created_by_username: req.session.username || "admin",
+      },
+      validation: {
+        valid: true,
+        format: formatLabel,
+        fileName: newBackup.storage_ref,
+        fileSizeBytes: newBackup.file_size_bytes,
+        checksumSha256: newBackup.checksum_sha256,
+        timestamp: manifest?.createdAt || newBackup.created_at,
+        companyName: company.name,
+        databaseName: company.database_name,
+        manifest: manifest || null,
+      },
     });
   } finally {
     await pool.end();
@@ -629,7 +945,7 @@ router.post("/system-backups/:id/restore", async (req, res): Promise<void> => {
         details: { companyId, error: result.error },
       });
     }
-  }).catch(() => {});
+  }).catch(() => { });
 
   const lastRestoreOp = Array.from(activeRestoreOperations.values()).reverse().find((op) => op.companyId === companyId);
   res.status(202).json({
@@ -729,7 +1045,7 @@ router.delete("/system-backups/:id", async (req, res): Promise<void> => {
     if (b.storage_path && fs.existsSync(b.storage_path)) {
       try {
         fs.unlinkSync(b.storage_path);
-      } catch {}
+      } catch { }
     }
 
     await pool.query("DELETE FROM accounting_backups WHERE id = $1 AND company_id = $2", [id, companyId]);

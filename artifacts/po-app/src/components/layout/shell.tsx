@@ -484,7 +484,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setOpenGroup(prev => (prev === id ? null : id));
   };
 
-  if (!user || location === "/select-company") {
+  if (!user || location === "/select-company" || location.startsWith("/superadmin")) {
     return <>{children}</>;
   }
 

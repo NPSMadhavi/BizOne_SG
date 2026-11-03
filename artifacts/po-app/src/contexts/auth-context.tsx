@@ -9,6 +9,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   logout: () => void;
+  isSuperAdmin: boolean;
   isAdmin: boolean;
   isAccountant: boolean;
   isExternal: boolean;

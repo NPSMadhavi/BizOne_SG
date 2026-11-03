@@ -184,6 +184,8 @@ app.use((req, _res, next) => {
     req.headers.cookie = rest
       ? `${SESSION_COOKIE_NAME}=${signed}; ${rest}`
       : `${SESSION_COOKIE_NAME}=${signed}`;
+  } else if (existing) {
+    req.headers.cookie = existing;
   } else if (rest) {
     req.headers.cookie = rest;
   } else {
@@ -223,7 +225,8 @@ app.use(async (req, res, next) => {
     !req.path.startsWith("/api") ||
     req.path.startsWith("/api/auth") ||
     req.path.startsWith("/api/health") ||
-    req.path.startsWith("/api/maintenance")
+    req.path.startsWith("/api/maintenance") ||
+    req.path.startsWith("/api/superadmin")
   ) {
     next();
     return;

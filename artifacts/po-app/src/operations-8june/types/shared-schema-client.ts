@@ -83,6 +83,8 @@ export type Employee = {
   passportScan?: string | null;
   visaScan?: string | null;
   nricScan?: string | null;
+  bankAccount?: string | null;
+  bankName?: string | null;
   createdAt?: string | Date | null;
 };
 
@@ -222,6 +224,8 @@ export const insertEmployeeSchema = z.object({
   visaExpiry: z.coerce.date().optional().nullable(),
   nric: z.string().optional().nullable(),
   nricExpiry: z.coerce.date().optional().nullable(),
+  bankAccount: z.string().optional().nullable(),
+  bankName: z.string().optional().nullable(),
   companyId: z.number().optional().nullable(),
 });
 

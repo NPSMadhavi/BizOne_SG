@@ -859,7 +859,7 @@ function tokenOr(col: any, raw: string): SQL {
 function periodStartDate(period: string): Date {
   const now = new Date();
   switch (period) {
-    case "this-week": { const d = new Date(now); d.setDate(now.getDate() - now.getDay()); d.setHours(0,0,0,0); return d; }
+    case "this-week": { const d = new Date(now); d.setDate(now.getDate() - now.getDay()); d.setHours(0, 0, 0, 0); return d; }
     case "this-month": return new Date(now.getFullYear(), now.getMonth(), 1);
     case "last-month": return new Date(now.getFullYear(), now.getMonth() - 1, 1);
     case "this-quarter": { const q = Math.floor(now.getMonth() / 3); return new Date(now.getFullYear(), q * 3, 1); }
@@ -1810,7 +1810,7 @@ async function executeTool(
         salary: "salary", annualSalary: "annual_salary", nationality: "nationality", prStatus: "pr_status",
         dateOfBirth: "date_of_birth", passportNumber: "passport_number", passportExpiry: "passport_expiry",
         visaNumber: "visa_number", visaExpiry: "visa_expiry", visaType: "visa_type", visaRemarks: "visa_remarks",
-        nricNumber: "nric_number", nricExpiry: "nric_expiry",
+        nricNumber: "nric_number", nricExpiry: "nric_expiry", bankAccount: "bank_account", bankName: "bank_name",
       };
       const cols: string[] = ["company_id"];
       const vals: any[] = [companyId];
@@ -1855,7 +1855,7 @@ async function executeTool(
         salary: "salary", annualSalary: "annual_salary", nationality: "nationality", prStatus: "pr_status",
         dateOfBirth: "date_of_birth", passportNumber: "passport_number", passportExpiry: "passport_expiry",
         visaNumber: "visa_number", visaExpiry: "visa_expiry", visaType: "visa_type", visaRemarks: "visa_remarks",
-        nricNumber: "nric_number", nricExpiry: "nric_expiry",
+        nricNumber: "nric_number", nricExpiry: "nric_expiry", bankAccount: "bank_account", bankName: "bank_name",
       };
       const sets: string[] = [];
       const vals: any[] = [];
@@ -2070,8 +2070,10 @@ async function executeTool(
         issueDate: issueDate ?? today,
         ...rest,
       }).returning();
-      return { success: true, _navigate: true, path: `/purchase-orders/${po.id}`, prefill: null, reason: `Created ${po.poNumber}`,
-        purchaseOrder: { id: po.id, poNumber: po.poNumber, vendorName: po.vendorName, totalAmount: po.totalAmount, currency: po.currency, status: po.status } };
+      return {
+        success: true, _navigate: true, path: `/purchase-orders/${po.id}`, prefill: null, reason: `Created ${po.poNumber}`,
+        purchaseOrder: { id: po.id, poNumber: po.poNumber, vendorName: po.vendorName, totalAmount: po.totalAmount, currency: po.currency, status: po.status }
+      };
     }
 
     case "createDeliveryOrder": {
@@ -2085,8 +2087,10 @@ async function executeTool(
         ...(invNumber ? { invNumber } : {}),
         ...rest,
       }).returning();
-      return { success: true, _navigate: true, path: `/delivery-orders/${doc.id}`, prefill: null, reason: `Created ${doc.doNumber}`,
-        deliveryOrder: { id: doc.id, doNumber: doc.doNumber, customerName: doc.customerName, status: doc.status } };
+      return {
+        success: true, _navigate: true, path: `/delivery-orders/${doc.id}`, prefill: null, reason: `Created ${doc.doNumber}`,
+        deliveryOrder: { id: doc.id, doNumber: doc.doNumber, customerName: doc.customerName, status: doc.status }
+      };
     }
 
     case "sendDocumentEmail": {
