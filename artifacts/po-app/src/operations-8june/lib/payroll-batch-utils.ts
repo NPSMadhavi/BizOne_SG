@@ -533,7 +533,7 @@ export async function processIndividualPayrollForConfig(
   payPeriodEnd: string,
   overtimeHours = 0,
   notes = "",
-  options?: { forceOverwrite?: boolean }
+  options?: { forceOverwrite?: boolean; expenseAccountId?: number | null }
 ) {
   const res = await fetch("/api/payroll/process/individual", {
     method: "POST",
@@ -546,6 +546,7 @@ export async function processIndividualPayrollForConfig(
       overtimeHours,
       notes,
       forceOverwrite: options?.forceOverwrite === true,
+      expenseAccountId: options?.expenseAccountId,
     }),
   });
 
@@ -594,7 +595,7 @@ export async function batchProcessPayrollForPeriod(
   payPeriodStart: string,
   payPeriodEnd: string,
   payrollConfigIds?: number[],
-  options?: { forceOverwrite?: boolean; processScope?: "pending" | "changed" }
+  options?: { forceOverwrite?: boolean; processScope?: "pending" | "changed"; expenseAccountId?: number | null }
 ) {
   const res = await fetch("/api/payroll/process/batch", {
     method: "POST",
@@ -606,6 +607,7 @@ export async function batchProcessPayrollForPeriod(
       payrollConfigIds,
       forceOverwrite: options?.forceOverwrite === true,
       processScope: options?.processScope,
+      expenseAccountId: options?.expenseAccountId,
     }),
   });
 

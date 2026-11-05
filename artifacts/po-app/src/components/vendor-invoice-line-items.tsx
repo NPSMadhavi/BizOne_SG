@@ -140,6 +140,24 @@ export function VendorInvoiceLineItems({
   const [stockPickerIndex, setStockPickerIndex] = useState<number | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
 
+  useEffect(() => {
+    const reopen = sessionStorage.getItem("bizone_stock_picker_reopen");
+    const params = new URLSearchParams(window.location.search);
+    const createdCode = params.get("createdStockCode");
+    if (reopen === "true" || createdCode) {
+      sessionStorage.removeItem("bizone_stock_picker_reopen");
+      const savedIndex = sessionStorage.getItem("bizone_stock_picker_index");
+      setStockPickerIndex(savedIndex != null ? Number(savedIndex) : 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (stockPickerIndex !== null) {
+      sessionStorage.setItem("bizone_stock_picker_index", String(stockPickerIndex));
+    }
+  }, [stockPickerIndex]);
+
+
   const itemsRef = useRef(items);
   itemsRef.current = items;
 

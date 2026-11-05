@@ -259,7 +259,12 @@ export default function StockList() {
 
   const stockParams = { search: search || undefined } as any;
   const { data: items = [], refetch } = useListStockItems(stockParams, {
-    query: { queryKey: getListStockItemsQueryKey(stockParams), refetchOnWindowFocus: false },
+    query: {
+      queryKey: getListStockItemsQueryKey(stockParams),
+      refetchOnWindowFocus: true,
+      refetchOnMount: "always",
+      staleTime: 0,
+    },
   });
 
   const deleteMutation = useDeleteStockItem();

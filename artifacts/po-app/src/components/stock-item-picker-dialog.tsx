@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -6,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Package, ArrowLeft, Loader2, Lock } from "lucide-react";
+import { Search, Package, ArrowLeft, Loader2, Lock, Plus, ExternalLink, PackagePlus } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SyncBridgeDatePicker } from "@/components/ui/sync-bridge-date-picker";
 import { Label } from "@/components/ui/label";
@@ -218,8 +221,57 @@ export function StockItemPickerDialog({
   const showWarehouse = showWarehouseProp ?? true;
   const requireWarehouse =
     showWarehouse && (requireWarehouseProp ?? (!ignoreStockLimit || mode === "receive"));
+  const queryClient = useQueryClient();
   const [step, setStep] = useState<"items" | "qty" | "serials">("items");
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [highlightCode, setHighlightCode] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<number | null>(null);
+
+  const handleNavigateToItemMaster = () => {
+    const currentUrl = window.location.pathname + window.location.search;
+    sessionStorage.setItem("bizone_stock_picker_return_url", currentUrl);
+    sessionStorage.setItem("bizone_stock_picker_reopen", "true");
+    setLocation(`/stock/new?returnTo=${encodeURIComponent(currentUrl)}`);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const justCreatedStr = sessionStorage.getItem("bizone_just_created_stock_item");
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get("createdStockCode");
+    const idParam = params.get("createdStockId");
+
+    let targetCode: string | null = codeParam || null;
+    let targetId: number | null = idParam ? Number(idParam) : null;
+
+    if (justCreatedStr) {
+      try {
+        const item = JSON.parse(justCreatedStr);
+        if (item?.code) targetCode = item.code;
+        if (item?.id) targetId = item.id;
+      } catch {}
+      sessionStorage.removeItem("bizone_just_created_stock_item");
+    }
+
+    if (targetCode || targetId) {
+      setHighlightCode(targetCode);
+      setHighlightId(targetId);
+      try {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("createdStockCode");
+        cleanUrl.searchParams.delete("createdStockId");
+        window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search || ""));
+      } catch {}
+    }
+
+    // Always keep search input empty so ALL stock items from Item Master are loaded and visible!
+    setSearch("");
+
+    void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
+    void queryClient.invalidateQueries({ queryKey: ["/api/stock-items"] });
+  }, [open, queryClient]);
+
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
   const [serials, setSerials] = useState<Serial[]>([]);
   const [serialsLoading, setSerialsLoading] = useState(false);
@@ -239,12 +291,13 @@ export function StockItemPickerDialog({
   const [batchSaving, setBatchSaving] = useState(false);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const warehouseTriggerRef = useRef<HTMLButtonElement>(null);
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!open) {
       setStep("items");
       setSearch("");
+      setHighlightCode(null);
+      setHighlightId(null);
       setSelectedItem(null);
       setSerials([]);
       setSerialSearch("");
@@ -267,6 +320,18 @@ export function StockItemPickerDialog({
     queryClient.removeQueries({ queryKey: ["invoice-warehouses"] });
     queryClient.removeQueries({ queryKey: ["invoice-warehouse-stock"] });
   }, [open, queryClient]);
+
+  // If user opens Item Master in another tab and returns, auto-refresh stock items
+  useEffect(() => {
+    if (!open) return;
+    const onFocus = () => {
+      void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
+      void queryClient.invalidateQueries({ queryKey: ["stock-items"] });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [open, queryClient]);
+
 
   useEffect(() => {
     if (step !== "qty") return;
@@ -294,7 +359,25 @@ export function StockItemPickerDialog({
     refetchOnMount: "always",
   });
 
-  const displayItems = useMemo(() => expandPickerPriceRows(items), [items]);
+  const displayItems = useMemo(() => {
+    const expanded = expandPickerPriceRows(items);
+    if (!highlightCode && !highlightId) return expanded;
+
+    const matches: StockItem[] = [];
+    const others: StockItem[] = [];
+
+    for (const item of expanded) {
+      const isMatch =
+        (highlightId != null && item.id === highlightId) ||
+        (highlightCode != null && item.code?.toLowerCase() === highlightCode.toLowerCase());
+      if (isMatch) {
+        matches.push(item);
+      } else {
+        others.push(item);
+      }
+    }
+    return [...matches, ...others];
+  }, [items, highlightCode, highlightId]);
 
   const { data: warehouses = [], isFetching: warehousesFetching } = useQuery<Warehouse[]>({
     queryKey: ["invoice-warehouses"],
@@ -604,15 +687,29 @@ export function StockItemPickerDialog({
               </DialogTitle>
             </DialogHeader>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Search by code or name..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                autoFocus
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search by code or name..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    if (highlightCode) setHighlightCode(null);
+                    if (highlightId) setHighlightId(null);
+                  }}
+                  autoFocus
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={handleNavigateToItemMaster}
+                className="shrink-0 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm h-9 px-3.5 shadow-2xs cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                Create Item
+              </Button>
             </div>
 
             <div className="border rounded-md overflow-hidden">
@@ -645,13 +742,29 @@ export function StockItemPickerDialog({
                       ? String(avail)
                       : avail.toFixed(3).replace(/\.?0+$/, "");
                     const dateLabel = formatPriceDate(item.priceDate);
+                    const isNewlyCreated =
+                      (highlightId != null && item.id === highlightId) ||
+                      (highlightCode != null && item.code?.toLowerCase() === highlightCode.toLowerCase());
                     return (
                       <TableRow
                         key={item.rowKey || String(item.id)}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        className={`cursor-pointer transition-colors ${
+                          isNewlyCreated
+                            ? "bg-blue-50/70 dark:bg-blue-950/30 hover:bg-blue-100/70 dark:hover:bg-blue-900/40"
+                            : "hover:bg-muted/50"
+                        }`}
                         onClick={() => handleItemClick(item)}
                       >
-                        <TableCell className="font-mono text-xs">{item.code}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          <span className="inline-flex items-center gap-1.5">
+                            {item.code}
+                            {isNewlyCreated && (
+                              <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] px-1.5 py-0 h-4">
+                                New
+                              </Badge>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <div className="font-medium text-sm">{item.name}</div>
                           {item.isHistoryRow ? (

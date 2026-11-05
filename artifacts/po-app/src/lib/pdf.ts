@@ -2584,8 +2584,16 @@ export async function generateBalanceSheet_PDF(
     tableBody.push(["", isGrand ? subtotalLabel.toUpperCase() : subtotalLabel, fmtBsAmt(subtotal)]);
   };
 
-  const ncAssets = assets.filter(a => a.subType === "non_current_asset");
-  const curAssets = assets.filter(a => a.subType !== "non_current_asset");
+  const isNonCurrentOrFixedAsset = (a: any) =>
+    a.subType === "non_current_asset" ||
+    a.subType === "fixed_asset" ||
+    String(a.code || "").startsWith("15") ||
+    String(a.code || "").startsWith("16") ||
+    String(a.code || "").startsWith("17") ||
+    /fixed asset|equipment|furniture|renovation/i.test(a.name || "");
+
+  const ncAssets = assets.filter(isNonCurrentOrFixedAsset);
+  const curAssets = assets.filter(a => !isNonCurrentOrFixedAsset(a));
   const curLiab = liabilities.filter(a => a.subType !== "non_current_liability");
   const ncLiab = liabilities.filter(a => a.subType === "non_current_liability");
 

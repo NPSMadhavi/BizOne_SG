@@ -7,7 +7,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter,
 } from "@/components/ui/table";
 import {
   ManagementEmptyState,
@@ -65,6 +65,17 @@ export default function AssetDepreciationPage() {
     if (year === "all") return schedule;
     return schedule.filter((r) => r.year === year);
   }, [schedule, year]);
+
+  const totals = useMemo(() => {
+    return filtered.reduce(
+      (acc, r) => ({
+        openingNbv: acc.openingNbv + (Number(r.openingNbv) || 0),
+        depreciation: acc.depreciation + (Number(r.depreciation) || 0),
+        closingNbv: acc.closingNbv + (Number(r.closingNbv) || 0),
+      }),
+      { openingNbv: 0, depreciation: 0, closingNbv: 0 }
+    );
+  }, [filtered]);
 
   function updateUrl(nextAssetId: number, nextYear: number | "all") {
     const qs = new URLSearchParams();
@@ -191,6 +202,23 @@ export default function AssetDepreciationPage() {
                   </TableRow>
                 ))}
               </TableBody>
+              <TableFooter>
+                <TableRow className="bg-[#EFF6FF] hover:bg-[#EFF6FF] border-t-2 border-[#93C5FD]">
+                  <TableCell className="font-bold text-[#1E3A8A]">Total</TableCell>
+                  <TableCell className="text-right tabular-nums font-bold text-[#1E3A8A] text-sm">
+                    {formatSgd(totals.openingNbv)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-bold text-[#1E3A8A] text-sm">
+                    {formatSgd(totals.depreciation)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-bold text-[#1E3A8A] text-sm">
+                    {formatSgd(totals.closingNbv)}
+                  </TableCell>
+                  <TableCell className="text-xs font-semibold text-[#1E3A8A]">
+                    {filtered.length} {filtered.length === 1 ? "Period" : "Periods"}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
             </Table>
           )}
         </ManagementTableContainer>

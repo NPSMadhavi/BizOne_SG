@@ -124,9 +124,6 @@ export async function postExpenseJE(
     ))
     .limit(1);
   if (existing) {
-    if (isPayrollPayment(expense)) {
-      await alignPayrollPaymentCredit(expense.companyId, existing.id);
-    }
     return existing.id;
   }
 
@@ -141,9 +138,7 @@ export async function postExpenseJE(
     CATEGORY_ACCOUNT[expense.category] ??
     (/^\d+$/.test(String(expense.category || "")) ? String(expense.category) : null) ??
     "7200";
-  const creditAcct = payrollPayment
-    ? await payableAccount(expense.companyId)
-    : await getAccountByCode(expense.companyId, "1010");
+  const creditAcct = await getAccountByCode(expense.companyId, "1010");
   const linkedAcct = expense.accountId
     ? await getAccountById(expense.companyId, Number(expense.accountId))
     : null;

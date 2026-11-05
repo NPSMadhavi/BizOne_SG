@@ -238,13 +238,6 @@ export default function AssetRegisterPage() {
     <div className="space-y-4 animate-in fade-in duration-300">
       <ManagementPageHeader
         title="Asset Register"
-        onBack={() => {
-          if (window.history.length > 1) {
-            window.history.back();
-          } else {
-            setLocation("/assets");
-          }
-        }}
         action={
           <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu>
@@ -272,7 +265,7 @@ export default function AssetRegisterPage() {
             </DropdownMenu>
             <Button
               className="bg-[#2563EB] hover:bg-[#1D4ED8]"
-              onClick={() => setLocation("/assets/new")}
+              onClick={() => setLocation("/assets/register/new")}
             >
               + Add Asset
             </Button>
@@ -287,7 +280,18 @@ export default function AssetRegisterPage() {
           {isLoading ? (
             <p className="p-8 text-center text-sm text-[#6B7280]">Loading...</p>
           ) : rows.length === 0 ? (
-            <ManagementEmptyState title="No assets" description="Create an asset to populate the register." />
+            <ManagementEmptyState
+              title="No assets"
+              description="Create an asset to populate the register."
+              action={
+                <Button
+                  className="bg-[#2563EB] hover:bg-[#1D4ED8]"
+                  onClick={() => setLocation("/assets/register/new")}
+                >
+                  + Add Asset
+                </Button>
+              }
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -358,7 +362,9 @@ export default function AssetRegisterPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setLocation(`/assets/${asset.id}/edit`)}>
+                          <DropdownMenuItem
+                            onClick={() => setLocation(`/assets/register/${asset.id}/edit`)}
+                          >
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem

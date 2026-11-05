@@ -98,6 +98,35 @@ export default function PurchaseQuotationNew() {
   });
   useVedaFormFill(form);
 
+  // Restore draft when returning from Item Master
+  useEffect(() => {
+    const draft = sessionStorage.getItem("bizone_pq_form_draft");
+    if (draft) {
+      try {
+        form.reset(JSON.parse(draft));
+      } catch {}
+      sessionStorage.removeItem("bizone_pq_form_draft");
+    }
+
+    const reopen = sessionStorage.getItem("bizone_stock_picker_reopen");
+    const params = new URLSearchParams(window.location.search);
+    const createdCode = params.get("createdStockCode");
+    if (reopen === "true" || createdCode) {
+      sessionStorage.removeItem("bizone_stock_picker_reopen");
+      const savedIndex = sessionStorage.getItem("bizone_stock_picker_index");
+      setStockPickerIndex(savedIndex != null ? Number(savedIndex) : 0);
+    }
+  }, []);
+
+  // Save draft whenever stockPickerIndex is selected
+  useEffect(() => {
+    if (stockPickerIndex !== null) {
+      sessionStorage.setItem("bizone_pq_form_draft", JSON.stringify(form.getValues()));
+      sessionStorage.setItem("bizone_stock_picker_index", String(stockPickerIndex));
+    }
+  }, [stockPickerIndex]);
+
+
   useEffect(() => {
     if (settings) form.setValue("tax", settings.gstRate);
   }, [settings]);

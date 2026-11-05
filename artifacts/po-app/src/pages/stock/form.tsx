@@ -430,6 +430,8 @@ export default function StockItemFormPage() {
   const queryClient = useQueryClient();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { canManage } = useAuth();
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const returnTo = searchParams?.get("returnTo") || (typeof window !== "undefined" ? sessionStorage.getItem("bizone_stock_picker_return_url") : null);
 
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [customUoms, setCustomUoms] = useState<string[]>(() => loadCustomUoms());
@@ -1010,6 +1012,7 @@ export default function StockItemFormPage() {
 
   function invalidateStockViews() {
     void queryClient.invalidateQueries({ queryKey: ["/api/stock-items"] });
+    void queryClient.invalidateQueries({ queryKey: ["stock-items"] });
     void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
     void queryClient.invalidateQueries({ queryKey: ["invoice-warehouse-stock"] });
     void queryClient.invalidateQueries({ queryKey: ["inventory"] });
@@ -1095,6 +1098,21 @@ export default function StockItemFormPage() {
         void queryClient.invalidateQueries({ queryKey: ["stock-item-purchase-prices"] });
         void queryClient.invalidateQueries({ queryKey: ["stock-item-detail"] });
         void queryClient.invalidateQueries({ queryKey: ["stock-items-picker"] });
+
+        // If returned from document picker (Purchase Quotations, PO, Vendor Invoice)
+        const searchParams = new URLSearchParams(window.location.search);
+        const returnTo = searchParams.get("returnTo") || sessionStorage.getItem("bizone_stock_picker_return_url");
+        if (returnTo) {
+          sessionStorage.removeItem("bizone_stock_picker_return_url");
+          const createdItem = created ?? { id: itemId, code: form.code, name: form.name, unitPrice: resolvedUnitPrice, uom: form.uom };
+          sessionStorage.setItem("bizone_just_created_stock_item", JSON.stringify(createdItem));
+          sessionStorage.setItem("bizone_stock_picker_reopen", "true");
+          const sep = returnTo.includes("?") ? "&" : "?";
+          const code = createdItem.code || form.code || "";
+          setLocation(`${returnTo}${sep}createdStockCode=${encodeURIComponent(code)}&createdStockId=${itemId || ""}`);
+          return;
+        }
+
         setLocation("/stock");
       },
       onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1127,7 +1145,7 @@ export default function StockItemFormPage() {
     return (
       <div className="space-y-4 py-10 text-center">
         <p className="text-muted-foreground">Item not found.</p>
-        <Button variant="outline" onClick={() => setLocation("/stock")}>Back to Item Master</Button>
+        <Button variant="outline" onClick={() => setLocation(returnTo || "/stock")}>Back to Item Master</Button>
       </div>
     );
   }
@@ -1135,7 +1153,7 @@ export default function StockItemFormPage() {
   return (
     <FormPageShell
       title={isEdit ? "Edit Stock Item" : "Create Stock Item"}
-      backHref="/stock"
+      backHref={returnTo || "/stock"}
       footer={
         <div className="flex w-full items-center justify-between gap-3">
           <div>

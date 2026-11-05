@@ -5,6 +5,7 @@ import { CreditCard, Trash2 } from "lucide-react";
 import { FormPageShell } from "@/operations-8june/components/layout/FormPageShell";
 import { ModalCancelButton, ModalSaveButton } from "@/operations-8june/components/forms/FormModalShell";
 import AssetForm from "@/operations-8june/components/forms/AssetForm";
+import { AssetPaymentRecordDialog } from "@/operations-8june/components/forms/AssetPaymentRecordDialog";
 import type { Asset } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ export default function AssetEditPage() {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [paymentRecordOpen, setPaymentRecordOpen] = useState(false);
   const assetId = params?.id ? Number(params.id) : undefined;
   const goBack = () => setLocation("/assets");
   const invalid = !assetId || Number.isNaN(assetId);
@@ -41,17 +43,7 @@ export default function AssetEditPage() {
     enabled: !invalid,
   });
 
-  const recordPayment = () => {
-    const params = new URLSearchParams();
-    params.set("category", "fixed_assets");
-    const vendor = String(asset?.vendor ?? "").trim();
-    const tag = String(asset?.tag ?? "").trim();
-    const invoiceNumber = String(asset?.invoiceNumber ?? asset?.invoice_number ?? "").trim();
-    if (vendor) params.set("vendor", vendor);
-    if (tag) params.set("description", `Asset payment - ${tag}`);
-    if (invoiceNumber) params.set("reference", invoiceNumber);
-    setLocation(`/accounting/expenses/new?${params.toString()}`);
-  };
+  const recordPayment = () => setPaymentRecordOpen(true);
 
   const deleteAssetMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -158,6 +150,12 @@ export default function AssetEditPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AssetPaymentRecordDialog
+        open={paymentRecordOpen}
+        onOpenChange={setPaymentRecordOpen}
+        preSelectedAssetId={assetId}
+      />
     </>
   );
 }

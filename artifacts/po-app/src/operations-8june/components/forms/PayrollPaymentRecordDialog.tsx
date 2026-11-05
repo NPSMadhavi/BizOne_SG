@@ -240,8 +240,22 @@ export function PayrollPaymentRecordDialog({
     setBankAccount("");
     setBankReference("");
     setNotes("");
-    setLedgerId("");
-  }, [open]);
+    const def =
+      ledgerOptions.find((a) => a.code === "2040") ||
+      ledgerOptions.find((a) => a.code === "2000") ||
+      ledgerOptions.find((a) => a.code === "6000");
+    setLedgerId(def ? String(def.id) : "");
+  }, [open, ledgerOptions]);
+
+  useEffect(() => {
+    if (!ledgerId && ledgerOptions.length > 0) {
+      const def =
+        ledgerOptions.find((a) => a.code === "2040") ||
+        ledgerOptions.find((a) => a.code === "2000") ||
+        ledgerOptions.find((a) => a.code === "6000");
+      if (def) setLedgerId(String(def.id));
+    }
+  }, [ledgerId, ledgerOptions]);
 
   useEffect(() => {
     if (!open || amountEdited) return;
@@ -376,6 +390,8 @@ export function PayrollPaymentRecordDialog({
 
       await queryClient.invalidateQueries({ queryKey: ["expenses"] });
       await queryClient.invalidateQueries({ queryKey: ["journal-entries"] });
+      await queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/balance-sheet"] });
       toast({
         title: "Payment recorded",
         description: isAllEmployees

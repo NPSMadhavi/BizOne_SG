@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import AssetViewDialog from "@/operations-8june/components/forms/AssetViewDialog";
 import {
   Plus,
+  CreditCard,
   Edit2,
   Eye,
   UserPlus,
@@ -37,6 +38,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import AssignAssetModal from "@/operations-8june/components/modals/AssignAssetModal";
+import { AssetPaymentRecordDialog } from "@/operations-8june/components/forms/AssetPaymentRecordDialog";
 import { usePagination } from "@/hooks/use-pagination";
 
 function formatAssetDate(value?: string | Date | null): string {
@@ -93,6 +95,7 @@ export default function AssetsPage() {
   const [, setLocation] = useLocation();
   const { selectedCompany, isLoading: authLoading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [paymentRecordOpen, setPaymentRecordOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
@@ -458,6 +461,12 @@ export default function AssetsPage() {
             </DropdownMenu>
 
             <Button
+              className="border border-[#E2E1FE] bg-[#E9E7FC] text-[#5539A1] hover:bg-[#DDD8FA] hover:border-[#D4D0FA] shadow-sm font-medium gap-2"
+              onClick={() => setPaymentRecordOpen(true)}
+            >
+              <CreditCard className="h-4 w-4" /> Payment Record
+            </Button>
+            <Button
               className="bg-[#2563EB] text-white shadow-sm hover:bg-[#2563EB]"
               onClick={() => setLocation("/assets/new")}
             >
@@ -606,6 +615,12 @@ export default function AssetsPage() {
           setSelectedAssetId(null);
         }}
         preSelectedAssetId={selectedAssetId}
+      />
+
+      <AssetPaymentRecordDialog
+        open={paymentRecordOpen}
+        onOpenChange={setPaymentRecordOpen}
+        assets={assets}
       />
     </>
   );

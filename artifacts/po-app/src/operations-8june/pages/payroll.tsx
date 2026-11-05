@@ -1282,8 +1282,7 @@ export default function PayrollPage() {
         action={
           <div className="flex shrink-0 flex-nowrap items-center gap-2">
             <Button
-              variant="outline"
-              className="border-[#E5E7EB]"
+              className="border border-[#E2E1FE] bg-[#E9E7FC] text-[#5539A1] hover:bg-[#DDD8FA] hover:border-[#D4D0FA] shadow-sm font-medium"
               onClick={() => setPaymentRecordOpen(true)}
             >
               <CreditCard className="mr-2 h-4 w-4" /> Payment Record
@@ -1460,9 +1459,13 @@ export default function PayrollPage() {
                   return (
                     <TableRow
                       key={config.id}
-                      className={processed ? processedRowClass : undefined}
+                      className={cn(
+                        "cursor-pointer transition-colors hover:bg-[#F8FAFC]",
+                        processed ? `${processedRowClass} hover:bg-[#BBDEFB]/60` : undefined
+                      )}
+                      onClick={() => openConfigForm(config)}
                     >
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selectedIds.includes(config.id)}
                           onCheckedChange={(checked) =>
@@ -1499,7 +1502,7 @@ export default function PayrollPage() {
                       <TableCell className="text-[#444651]">
                         {preview ? formatCurrency(preview.employerCpf) : "—"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           title={
@@ -1514,7 +1517,7 @@ export default function PayrollPage() {
                           <Download className="h-4 w-4" />
                         </button>
                       </TableCell>
-                      <TableCell className="w-px whitespace-nowrap">
+                      <TableCell className="w-px whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
                           <button
                             type="button"

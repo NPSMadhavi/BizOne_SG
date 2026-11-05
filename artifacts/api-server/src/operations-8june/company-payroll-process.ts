@@ -1,3 +1,4 @@
+import { postPayrollCreatedJE } from "../lib/payroll-auto-post.js";
 import type { Request, Response } from "express";
 import type { Pool } from "pg";
 import {
@@ -573,6 +574,23 @@ export async function processIndividualPayrollCompany(
       return;
     }
 
+    if (req.body.expenseAccountId && Number(req.body.expenseAccountId) > 0) {
+      const userId = (req.session as any)?.userId ?? 1;
+      await postPayrollCreatedJE({
+        id: result.record.id,
+        companyId,
+        employeeId: employee.id,
+        employeeName: employee.name,
+        payPeriodStart: normalizedPayPeriodStart,
+        payPeriodEnd: normalizedPayPeriodEnd,
+        grossPay: result.record.gross_pay,
+        netPay: result.record.net_pay,
+        cpfEmployee: result.record.cpf_employee,
+        cpfEmployer: result.record.cpf_employer,
+        expenseAccountId: Number(req.body.expenseAccountId),
+      }, userId);
+    }
+
     // Persist payroll only — payslips are generated on demand via download/view.
     res.json({
       ok: true,
@@ -788,6 +806,23 @@ export async function batchProcessPayrollCompany(
         if (result.action === "created") summary.processedNew++;
         else if (result.action === "updated") summary.updated++;
         processedConfigIds.add(config.id);
+
+        if (req.body.expenseAccountId && Number(req.body.expenseAccountId) > 0) {
+          const userId = (req.session as any)?.userId ?? 1;
+          await postPayrollCreatedJE({
+            id: result.record.id,
+            companyId,
+            employeeId: employee.id,
+            employeeName: employeeName,
+            payPeriodStart: resolvedPayPeriodStart,
+            payPeriodEnd: resolvedPayPeriodEnd,
+            grossPay: result.record.gross_pay,
+            netPay: result.record.net_pay,
+            cpfEmployee: result.record.cpf_employee,
+            cpfEmployer: result.record.cpf_employer,
+            expenseAccountId: Number(req.body.expenseAccountId),
+          }, userId);
+        }
       } catch (error) {
         summary.failures.push({
           employeeName,

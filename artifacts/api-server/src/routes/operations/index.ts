@@ -312,15 +312,17 @@ function buildUpdate(
 
 function calculateSingaporeCpf(params: {
   grossSalary: number;
+  basicSalary?: number;
   age?: number;
   citizenshipStatus?: string;
   employeeRate?: number;
   employerRate?: number;
 }) {
   const gross = Number(params.grossSalary) || 0;
+  const basic = Number(params.basicSalary ?? params.grossSalary) || 0;
   const age = params.age ?? 30;
-  const cpfCeiling = 7400;
-  const ordinaryWages = Math.min(gross, cpfCeiling);
+  const cpfCeiling = 8000;
+  const ordinaryWages = Math.min(basic, cpfCeiling);
 
   let employeeRate = params.employeeRate;
   let employerRate = params.employerRate;
@@ -1532,6 +1534,7 @@ async function createPayrollRecordFromBody(companyId: number, body: Record<strin
   );
   const calc = calculateSingaporeCpf({
     grossSalary: baseSalary + allowanceSum,
+    basicSalary: baseSalary,
     employeeRate: config?.cpf_employee_rate ? Number(config.cpf_employee_rate) / 100 : undefined,
     employerRate: config?.cpf_employer_rate ? Number(config.cpf_employer_rate) / 100 : undefined,
   });
@@ -1667,6 +1670,7 @@ router.post("/payroll/calculate", async (req, res): Promise<void> => {
   try {
     const result = calculateSingaporeCpf({
       grossSalary: Number(req.body.grossSalary ?? req.body.baseSalary ?? 0),
+      basicSalary: Number(req.body.baseSalary ?? req.body.grossSalary ?? 0),
       age: Number(req.body.age ?? 30),
       citizenshipStatus: req.body.citizenshipStatus,
       employeeRate: req.body.employeeRate != null ? Number(req.body.employeeRate) / 100 : undefined,

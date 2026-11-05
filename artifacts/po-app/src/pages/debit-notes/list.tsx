@@ -4,6 +4,8 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { Plus, Search, Eye, Pencil, Calendar, ChevronLeft, ChevronRight, MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,6 +14,11 @@ import { ListPagination } from "@/components/list-pagination";
 import { useBulkPartyEmail } from "@/hooks/use-bulk-party-email";
 import { BulkEmailBar, BulkSelectHeader, BulkSelectCell, ListBulkEmailDialog, markDocsSent, fetchDocJson } from "@/components/bulk-email-bar";
 import { generateDebitNote_PDF } from "@/lib/pdf";
+import { formatCurrency as formatCurrencySafe } from "@/lib/currencies";
+
+function fmt(amount: number, currency = "SGD") {
+  return formatCurrencySafe(amount, currency);
+}
 
 const QUARTERS = [
   { label: "Q1", months: [0,1,2] }, { label: "Q2", months: [3,4,5] },
@@ -117,6 +124,29 @@ export default function DebitNoteList() {
   const { sendable, allSelected, someSelected } = bulk.selectionState(filtered);
   const companyName = (selectedCompany as any)?.name || "RSV Infotech";
 
+  // Multi-currency stats from the currently visible list (search + party + date)
+  const stats = useMemo(() => {
+    const byCurrency: Record<string, { total: number; confirmed: number; count: number }> = {};
+    for (const note of filtered) {
+      if (note.status === "void") continue;
+      const c = note.currency || "SGD";
+      if (!byCurrency[c]) byCurrency[c] = { total: 0, confirmed: 0, count: 0 };
+      const amt = Number(note.totalAmount) || 0;
+      byCurrency[c].total += amt;
+      if (note.status === "confirmed") {
+        byCurrency[c].confirmed += amt;
+      }
+      byCurrency[c].count += 1;
+    }
+    return Object.entries(byCurrency).sort((a, b) => b[1].total - a[1].total);
+  }, [filtered]);
+
+  const statusCounts = useMemo(() => ({
+    confirmed: filtered.filter((n) => n.status === "confirmed").length,
+    draft:     filtered.filter((n) => n.status === "draft").length,
+    void:      filtered.filter((n) => n.status === "void").length,
+  }), [filtered]);
+
   return (
     <div className="space-y-5 pb-20 animate-in fade-in duration-300">
       <div className="flex items-end justify-between flex-wrap gap-4 pb-4">
@@ -162,6 +192,84 @@ export default function DebitNoteList() {
             {filterMode!=="custom"?` in ${filterMode.toUpperCase()} ${filterYear}`:""}
           </span>
         )}
+      </div>
+
+      {/* Dashboard cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {/* Status summary */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Debit Note Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-end justify-between">
+              <span className="text-3xl font-bold">{filtered.length}</span>
+              <span className="text-sm text-muted-foreground mb-1">total DNs</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-1 border-t">
+              <div className="text-center">
+                <div className="text-lg font-semibold text-emerald-600">{statusCounts.confirmed}</div>
+                <div className="text-xs text-muted-foreground">Confirmed</div>
+              </div>
+              <div className="text-center border-x">
+                <div className="text-lg font-semibold text-amber-500">{statusCounts.draft}</div>
+                <div className="text-xs text-muted-foreground">Draft</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-gray-500">{statusCounts.void}</div>
+                <div className="text-xs text-muted-foreground">Void</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total DN Amount by currency */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total DN Amount</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-32" />
+            ) : stats.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No debit notes</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stats.map(([currency, s]) => (
+                  <div key={currency} className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{currency}</span>
+                    <span className="font-semibold text-base font-mono">{fmt(s.total, currency)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Outstanding Balance by currency */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Outstanding Balance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-32" />
+            ) : stats.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No debit notes</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stats.map(([currency, s]) => (
+                  <div key={currency} className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{currency}</span>
+                    <span className={`font-semibold text-base font-mono ${s.confirmed > 0 ? "text-orange-600" : "text-emerald-600"}`}>
+                      {fmt(s.confirmed, currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <BulkEmailBar

@@ -190,7 +190,8 @@ export function calculateSingaporePayrollSnapshot(
   const grossSalary = round2(
     Math.max(0, monthlySalary + allowances + overtimePay)
   );
-  const cpfApplicableSalary = round2(Math.min(grossSalary, CPF_WAGE_CEILING));
+  // CPF is calculated on Basic Salary (Ordinary Wages) up to CPF Wage Ceiling
+  const cpfApplicableSalary = round2(Math.min(monthlySalary, CPF_WAGE_CEILING));
 
   const { employerRate, employeeRate } = getCpfRates(
     params.age,

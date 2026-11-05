@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, Package, Users, ChevronDown, ChevronUp, ChevronRight, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateBalanceSheet_PDF } from "@/lib/pdf";
+import type { Asset } from "@shared/schema";
+
 
 interface AcctLine { code: string; name: string; subType: string | null; amount: number }
 interface BSData {
@@ -44,22 +46,79 @@ function GroupLabel({ label }: { label: string }) {
   );
 }
 
-interface SectionProps { groupLabel?: string; rows: AcctLine[]; subtotalLabel: string; subtotal: number; isGrandTotal?: boolean }
+interface SectionProps {
+  groupLabel?: string;
+  rows: AcctLine[];
+  subtotalLabel: string;
+  subtotal: number;
+  isGrandTotal?: boolean;
+  expandedRows?: Record<string, boolean>;
+  onToggleRow?: (row: AcctLine) => void;
+  isRowClickable?: (row: AcctLine) => boolean;
+  renderExpandedRow?: (row: AcctLine) => React.ReactNode;
+  groupAction?: React.ReactNode;
+}
 
-function Section({ groupLabel, rows, subtotalLabel, subtotal, isGrandTotal }: SectionProps) {
+function Section({
+  groupLabel,
+  rows,
+  subtotalLabel,
+  subtotal,
+  isGrandTotal,
+  expandedRows = {},
+  onToggleRow,
+  isRowClickable,
+  renderExpandedRow,
+  groupAction,
+}: SectionProps) {
   const active = rows.filter(r => Math.abs(r.amount) > 0.005);
   return (
     <>
-      {groupLabel && <GroupLabel label={groupLabel} />}
-      {active.map(r => (
-        <div key={r.code} className="flex items-baseline justify-between px-5 py-2 border-b border-gray-100 hover:bg-gray-50/60">
-          <span className="flex items-baseline gap-3 text-sm text-gray-600">
-            <span className="font-mono text-xs text-gray-400 w-10 shrink-0">{r.code}</span>
-            {r.name}
-          </span>
-          <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", r.amount < 0 ? "text-red-600" : "text-gray-800")}>{fmtAmt(r.amount)}</span>
+      {groupLabel && (
+        <div className="flex items-center justify-between px-5 py-2.5 bg-gray-50 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-0.5 h-4 bg-gray-300 rounded-full" />
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{groupLabel}</span>
+          </div>
+          {groupAction}
         </div>
-      ))}
+      )}
+      {active.map(r => {
+        const isClickable = Boolean(isRowClickable && isRowClickable(r));
+        const isExpanded = Boolean(expandedRows[r.code]);
+        return (
+          <div key={r.code} className="border-b border-gray-100 transition-all">
+            <div
+              onClick={() => {
+                if (isClickable && onToggleRow) onToggleRow(r);
+              }}
+              className={cn(
+                "flex items-baseline justify-between px-5 py-2",
+                isClickable ? "cursor-pointer hover:bg-blue-50/70 transition-colors group" : "hover:bg-gray-50/60"
+              )}
+            >
+              <span className="flex items-baseline gap-3 text-sm text-gray-600">
+                <span className="font-mono text-xs text-gray-400 w-10 shrink-0">{r.code}</span>
+                <span className={cn(isClickable && "group-hover:text-blue-700 font-medium")}>{r.name}</span>
+                {isClickable && (
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 text-gray-400 group-hover:text-blue-600 transition-transform duration-200",
+                      isExpanded && "rotate-180 text-blue-600"
+                    )}
+                  />
+                )}
+              </span>
+              <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", r.amount < 0 ? "text-red-600" : "text-gray-800")}>{fmtAmt(r.amount)}</span>
+            </div>
+            {isExpanded && renderExpandedRow && (
+              <div className="bg-slate-50/80 p-3 border-t border-gray-200 animate-in fade-in duration-200">
+                {renderExpandedRow(r)}
+              </div>
+            )}
+          </div>
+        );
+      })}
       {active.length === 0 && <div className="px-5 py-3 text-xs text-gray-300 italic pl-[4.5rem]">No entries</div>}
       <div className={cn("flex items-baseline justify-between px-5 py-3", isGrandTotal ? "bg-gray-900 text-white" : "bg-gray-50 border-t border-gray-200")}>
         <span className={cn("text-xs font-bold uppercase tracking-wider", isGrandTotal ? "text-gray-300" : "text-gray-500")}>{subtotalLabel}</span>
@@ -113,8 +172,96 @@ export default function BalanceSheetPage() {
     staleTime: 30_000,
   });
 
-  const ncAssets  = data?.assets.filter(a => a.subType === "non_current_asset") ?? [];
-  const curAssets = data?.assets.filter(a => a.subType !== "non_current_asset") ?? [];
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const toggleRow = (code: string) => {
+    setExpandedRows(prev => ({
+      ...prev,
+      [code]: !prev[code],
+    }));
+  };
+
+  const { data: assets = [] } = useQuery<Asset[]>({
+    queryKey: ["/api/assets"],
+  });
+
+  const { data: payrollRecords = [] } = useQuery<any[]>({
+    queryKey: ["/api/payroll/records"],
+  });
+
+  const { data: employees = [] } = useQuery<any[]>({
+    queryKey: ["/api/employees"],
+  });
+
+  const { data: vendorInvoices = [] } = useQuery<any[]>({
+    queryKey: ["/api/vendor-invoices"],
+    queryFn: async () => {
+      const res = await fetch("/api/vendor-invoices", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: expenses = [] } = useQuery<any[]>({
+    queryKey: ["expenses"],
+    queryFn: async () => {
+      const res = await fetch("/api/expenses", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const assetBreakdown = useMemo(() => {
+    return assets.map((a) => {
+      const cost = parseFloat(String((a as any).cost || 0)) || 0;
+      const marker = `asset-payment:${a.id}`;
+      const paid = expenses.reduce((sum, exp) => {
+        if (exp.notes?.includes(marker)) {
+          return sum + (Number(exp.amount) || 0);
+        }
+        return sum;
+      }, 0);
+      return {
+        asset: a,
+        cost,
+        paid,
+        balance: Math.max(0, cost - paid),
+      };
+    });
+  }, [assets, expenses]);
+
+  const payrollBreakdown = useMemo(() => {
+    return payrollRecords.map((rec: any) => {
+      const emp = employees.find((e: any) => Number(e.id) === Number(rec.employee_id));
+      const gross = parseFloat(String(rec.gross_pay || 0)) || 0;
+      const net = parseFloat(String(rec.net_pay || 0)) || 0;
+      const marker = `payroll-payment:${rec.employee_id}:`;
+      const paid = expenses.reduce((sum, exp) => {
+        if (exp.notes?.includes(marker)) {
+          return sum + (Number(exp.amount) || 0);
+        }
+        return sum;
+      }, 0);
+      return {
+        record: rec,
+        employee: emp,
+        gross,
+        net,
+        paid,
+        balance: Math.max(0, Math.round((net - paid) * 100) / 100),
+      };
+    });
+  }, [payrollRecords, employees, expenses]);
+
+  const isNonCurrentOrFixed = (a: AcctLine) =>
+    a.subType === "non_current_asset" ||
+    a.subType === "fixed_asset" ||
+    a.code.startsWith("15") ||
+    a.code.startsWith("16") ||
+    a.code.startsWith("17") ||
+    /fixed asset|equipment|furniture|renovation/i.test(a.name);
+
+  const ncAssets  = data?.assets.filter(isNonCurrentOrFixed) ?? [];
+  const curAssets = data?.assets.filter(a => !isNonCurrentOrFixed(a)) ?? [];
   const curLiab   = data?.liabilities.filter(a => a.subType !== "non_current_liability") ?? [];
   const ncLiab    = data?.liabilities.filter(a => a.subType === "non_current_liability") ?? [];
 
@@ -224,7 +371,95 @@ export default function BalanceSheetPage() {
               <div className="px-5 py-3 border-b border-gray-200 bg-white">
                 <h2 className="text-sm font-bold uppercase tracking-widest text-gray-800">Assets</h2>
               </div>
-              <Section groupLabel="Non-Current Assets" rows={ncAssets} subtotalLabel="Total Non-Current Assets" subtotal={ncAssets.reduce((s, a) => s + a.amount, 0)} />
+              <Section
+                groupLabel="Non-Current Assets (Fixed Assets)"
+                rows={ncAssets}
+                subtotalLabel="Total Non-Current Assets"
+                subtotal={ncAssets.reduce((s, a) => s + a.amount, 0)}
+                expandedRows={expandedRows}
+                onToggleRow={(r) => toggleRow(r.code)}
+                isRowClickable={(r) => r.subType === "fixed_asset" || r.code.startsWith("15") || r.code.startsWith("16") || r.code.startsWith("17") || /fixed asset/i.test(r.name)}
+                renderExpandedRow={(r) => (
+                  <div className="rounded-lg border border-blue-200 bg-white overflow-hidden shadow-sm">
+                    <div className="flex items-center justify-between px-3 py-2 bg-blue-50/60 border-b border-blue-100 text-xs">
+                      <span className="font-semibold text-blue-900 flex items-center gap-1.5">
+                        <Package className="h-3.5 w-3.5 text-blue-600" />
+                        Fixed Assets Register &amp; Capitalized Assets — {assetBreakdown.length} asset{assetBreakdown.length !== 1 ? "s" : ""}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        Total Cost: <strong className="text-gray-900">{fmtAmt(assetBreakdown.reduce((s, a) => s + a.cost, 0))}</strong>
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-100 border-b border-slate-200 uppercase font-semibold text-slate-700">
+                          <tr>
+                            <th className="py-2.5 px-3 text-left whitespace-nowrap">Asset Tag</th>
+                            <th className="py-2.5 px-3 text-left whitespace-nowrap">Asset Name</th>
+                            <th className="py-2.5 px-3 text-left whitespace-nowrap">Category</th>
+                            <th className="py-2.5 px-3 text-right whitespace-nowrap">Purchase Cost (S$)</th>
+                            <th className="py-2.5 px-3 text-right whitespace-nowrap">Amount Paid (S$)</th>
+                            <th className="py-2.5 px-3 text-right whitespace-nowrap">Balance Due (S$)</th>
+                            <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                          {assetBreakdown.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-4 text-center text-gray-400 italic">No fixed assets registered.</td>
+                            </tr>
+                          ) : (
+                            assetBreakdown.map(({ asset, cost, paid, balance }) => (
+                              <tr key={asset.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="py-2 px-3 font-mono font-medium text-gray-800 whitespace-nowrap">{(asset as any).tag || (asset as any).assetTag || `FA-${asset.id}`}</td>
+                                <td className="py-2 px-3 font-medium text-gray-900 whitespace-nowrap">{(asset as any).name || (asset as any).type || (asset as any).model || (asset as any).description || "—"}</td>
+                                <td className="py-2 px-3 text-gray-600 capitalize whitespace-nowrap">{asset.category || "—"}</td>
+                                <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(cost)}</td>
+                                <td className="py-2 px-3 text-right font-mono text-emerald-600 whitespace-nowrap">{fmtAmt(paid)}</td>
+                                <td className="py-2 px-3 text-right font-mono font-semibold text-gray-900 whitespace-nowrap">{fmtAmt(balance)}</td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  <span className={cn(
+                                    "text-[10px] px-2 py-0.5 rounded-full font-medium uppercase",
+                                    balance <= 0.01 ? "bg-emerald-100 text-emerald-700" : paid > 0 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                                  )}>
+                                    {balance <= 0.01 ? "Fully Paid" : paid > 0 ? "Partially Paid" : "Unpaid"}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                        {assetBreakdown.length > 0 && (
+                          <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
+                            <tr>
+                              <td colSpan={3} className="py-2.5 px-3 uppercase text-gray-600">Total Fixed Assets ({assetBreakdown.length})</td>
+                              <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(assetBreakdown.reduce((s, a) => s + a.cost, 0))}</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-emerald-700">{fmtAmt(assetBreakdown.reduce((s, a) => s + a.paid, 0))}</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-blue-700">{fmtAmt(assetBreakdown.reduce((s, a) => s + a.balance, 0))}</td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+                  </div>
+                )}
+                groupAction={
+                  assetBreakdown.length > 0 && ncAssets.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const code = ncAssets[0]?.code;
+                        if (code) toggleRow(code);
+                      }}
+                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                    >
+                      <Package className="h-3.5 w-3.5" />
+                      {ncAssets.some(r => expandedRows[r.code]) ? "Hide Fixed Assets" : `View All Fixed Assets (${assetBreakdown.length})`}
+                    </button>
+                  ) : undefined
+                }
+              />
               <Section groupLabel="Current Assets" rows={curAssets} subtotalLabel="Total Current Assets" subtotal={curAssets.reduce((s, a) => s + a.amount, 0)} />
               <Section rows={[]} subtotalLabel="Total Assets" subtotal={data.totalAssets} isGrandTotal />
             </div>
@@ -233,7 +468,191 @@ export default function BalanceSheetPage() {
               <div className="px-5 py-3 border-b border-gray-200 bg-white">
                 <h2 className="text-sm font-bold uppercase tracking-widest text-gray-800">Liabilities &amp; Equity</h2>
               </div>
-              <Section groupLabel="Current Liabilities" rows={curLiab} subtotalLabel="Total Current Liabilities" subtotal={curLiab.reduce((s, a) => s + a.amount, 0)} />
+              <Section
+                groupLabel="Current Liabilities"
+                rows={curLiab}
+                subtotalLabel="Total Current Liabilities"
+                subtotal={curLiab.reduce((s, a) => s + a.amount, 0)}
+                expandedRows={expandedRows}
+                onToggleRow={(r) => toggleRow(r.code)}
+                isRowClickable={(r) => {
+                  const isAp = r.code === "2000" || /accounts payable|trade creditors/i.test(r.name);
+                  const isPayroll = r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name);
+                  return isAp || isPayroll;
+                }}
+                renderExpandedRow={(r) => {
+                  const isAp = r.code === "2000" || /accounts payable|trade creditors/i.test(r.name);
+                  if (isAp) {
+                    return (
+                      <div className="rounded-lg border border-amber-200 bg-white overflow-hidden shadow-sm">
+                        <div className="flex items-center justify-between px-3 py-2 bg-amber-50/60 border-b border-amber-100 text-xs">
+                          <span className="font-semibold text-amber-900 flex items-center gap-1.5">
+                            <FileText className="h-3.5 w-3.5 text-amber-600" />
+                            Accounts Payable (Trade Creditors) — {vendorInvoices.length} invoice{vendorInvoices.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-mono text-muted-foreground">
+                            Total AP: <strong className="text-gray-900">{fmtAmt(vendorInvoices.reduce((s: number, vi: any) => s + (parseFloat(String(vi.totalAmount || 0)) || 0), 0))}</strong>
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-slate-100 border-b border-slate-200 uppercase font-semibold text-slate-700">
+                              <tr>
+                                <th className="py-2.5 px-3 text-left whitespace-nowrap">Invoice No.</th>
+                                <th className="py-2.5 px-3 text-left whitespace-nowrap">Vendor Name</th>
+                                <th className="py-2.5 px-3 text-left whitespace-nowrap">Invoice Date</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Total Amount (S$)</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Paid Amount (S$)</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Balance Due (S$)</th>
+                                <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 bg-white">
+                              {vendorInvoices.length === 0 ? (
+                                <tr>
+                                  <td colSpan={7} className="py-4 text-center text-gray-400 italic">No vendor invoices found.</td>
+                                </tr>
+                              ) : (
+                                vendorInvoices.map((vi: any) => {
+                                  const tot = parseFloat(String(vi.totalAmount || 0)) || 0;
+                                  const paid = parseFloat(String(vi.paidAmount || vi.amountPaid || 0)) || 0;
+                                  const bal = Math.max(0, tot - paid);
+                                  return (
+                                    <tr key={vi.id} className="hover:bg-slate-50 transition-colors">
+                                      <td className="py-2 px-3 font-mono font-medium text-gray-800 whitespace-nowrap">{vi.piNumber || `PI-${vi.id}`}</td>
+                                      <td className="py-2 px-3 font-medium text-gray-900 whitespace-nowrap">{vi.vendorName || "—"}</td>
+                                      <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{vi.piDate ? fmtDate(vi.piDate) : "—"}</td>
+                                      <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(tot)}</td>
+                                      <td className="py-2 px-3 text-right font-mono text-emerald-600 whitespace-nowrap">{fmtAmt(paid)}</td>
+                                      <td className="py-2 px-3 text-right font-mono font-semibold text-gray-900 whitespace-nowrap">{fmtAmt(bal)}</td>
+                                      <td className="py-2 px-3 text-center whitespace-nowrap">
+                                        <span className={cn(
+                                          "text-[10px] px-2 py-0.5 rounded-full font-medium uppercase",
+                                          bal <= 0.01 ? "bg-emerald-100 text-emerald-700" : paid > 0 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                                        )}>
+                                          {vi.status || (bal <= 0.01 ? "Paid" : "Pending")}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                            {vendorInvoices.length > 0 && (
+                              <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
+                                <tr>
+                                  <td colSpan={3} className="py-2.5 px-3 uppercase text-gray-600">Total Vendor Invoices ({vendorInvoices.length})</td>
+                                  <td className="py-2.5 px-3 text-right font-mono">
+                                    {fmtAmt(vendorInvoices.reduce((s: number, vi: any) => s + (parseFloat(String(vi.totalAmount || 0)) || 0), 0))}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-emerald-700">
+                                    {fmtAmt(vendorInvoices.reduce((s: number, vi: any) => s + (parseFloat(String(vi.paidAmount || vi.amountPaid || 0)) || 0), 0))}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-blue-700">
+                                    {fmtAmt(vendorInvoices.reduce((s: number, vi: any) => {
+                                      const t = parseFloat(String(vi.totalAmount || 0)) || 0;
+                                      const p = parseFloat(String(vi.paidAmount || vi.amountPaid || 0)) || 0;
+                                      return s + Math.max(0, t - p);
+                                    }, 0))}
+                                  </td>
+                                  <td></td>
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="rounded-lg border border-blue-200 bg-white overflow-hidden shadow-sm">
+                      <div className="flex items-center justify-between px-3 py-2 bg-blue-50/60 border-b border-blue-100 text-xs">
+                        <span className="font-semibold text-blue-900 flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-blue-600" />
+                          Staff Salaries &amp; Payroll Liabilities — {payrollBreakdown.length} record{payrollBreakdown.length !== 1 ? "s" : ""}
+                        </span>
+                        <span className="font-mono text-muted-foreground">
+                          Balance Due: <strong className="text-gray-900">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.balance, 0))}</strong>
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-100 border-b border-slate-200 uppercase font-semibold text-slate-700">
+                            <tr>
+                              <th className="py-2.5 px-3 text-left whitespace-nowrap">Employee</th>
+                              <th className="py-2.5 px-3 text-left whitespace-nowrap">Period</th>
+                              <th className="py-2.5 px-3 text-right whitespace-nowrap">Gross Pay (S$)</th>
+                              <th className="py-2.5 px-3 text-right whitespace-nowrap">Net Pay (S$)</th>
+                              <th className="py-2.5 px-3 text-right whitespace-nowrap">Paid (S$)</th>
+                              <th className="py-2.5 px-3 text-right whitespace-nowrap">Balance Due (S$)</th>
+                              <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 bg-white">
+                            {payrollBreakdown.length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="py-4 text-center text-gray-400 italic">No payroll records found.</td>
+                              </tr>
+                            ) : (
+                              payrollBreakdown.map(({ record, employee, gross, net, paid, balance }) => (
+                                <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="py-2 px-3 whitespace-nowrap">
+                                    <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
+                                    <div className="text-[10px] text-gray-500 font-mono">{employee?.employeeId || employee?.designation || ""}</div>
+                                  </td>
+                                  <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
+                                    {record.pay_period_start ? `${new Date(record.pay_period_start).toLocaleDateString("en-SG", { month: "short", year: "numeric" })}` : "—"}
+                                  </td>
+                                  <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(gross)}</td>
+                                  <td className="py-2 px-3 text-right font-mono font-medium text-gray-900 whitespace-nowrap">{fmtAmt(net)}</td>
+                                  <td className="py-2 px-3 text-right font-mono text-emerald-600 whitespace-nowrap">{fmtAmt(paid)}</td>
+                                  <td className="py-2 px-3 text-right font-mono font-semibold text-blue-700 whitespace-nowrap">{fmtAmt(balance)}</td>
+                                  <td className="py-2 px-3 text-center whitespace-nowrap">
+                                    <span className={cn(
+                                      "text-[10px] px-2 py-0.5 rounded-full font-medium uppercase",
+                                      balance <= 0.01 ? "bg-emerald-100 text-emerald-700" : paid > 0 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                                    )}>
+                                      {balance <= 0.01 ? "Settled" : paid > 0 ? "Partially Paid" : "Payable"}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                          {payrollBreakdown.length > 0 && (
+                            <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
+                              <tr>
+                                <td colSpan={2} className="py-2.5 px-3 uppercase text-gray-600">Total Payroll Records ({payrollBreakdown.length})</td>
+                                <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.gross, 0))}</td>
+                                <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.net, 0))}</td>
+                                <td className="py-2.5 px-3 text-right font-mono text-emerald-700">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.paid, 0))}</td>
+                                <td className="py-2.5 px-3 text-right font-mono text-blue-700">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.balance, 0))}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
+                      </div>
+                    </div>
+                  );
+                }}
+                groupAction={
+                  payrollBreakdown.length > 0 && curLiab.some(r => r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name)) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prRow = curLiab.find(r => r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name));
+                        if (prRow) toggleRow(prRow.code);
+                      }}
+                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      {curLiab.some(r => (r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name)) && expandedRows[r.code]) ? "Hide Payroll Details" : `View Payroll Details (${payrollBreakdown.length})`}
+                    </button>
+                  ) : undefined
+                }
+              />
               <Section groupLabel="Non-Current Liabilities" rows={ncLiab} subtotalLabel="Total Non-Current Liabilities" subtotal={ncLiab.reduce((s, a) => s + a.amount, 0)} />
               <SubtotalBar label="Total Liabilities" amount={data.totalLiabilities} />
 

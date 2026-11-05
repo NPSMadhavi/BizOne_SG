@@ -152,6 +152,8 @@ const AssetsPage         = lazy(() => import("@/operations-8june/pages/assets"))
 const AssetNewPage       = lazy(() => import("@/operations-8june/pages/asset-new"));
 const AssetEditPage      = lazy(() => import("@/operations-8june/pages/asset-edit"));
 const AssetRegisterPage  = lazy(() => import("@/operations-8june/pages/asset-register"));
+const AssetRegisterNewPage  = lazy(() => import("@/operations-8june/pages/asset-register-new"));
+const AssetRegisterEditPage = lazy(() => import("@/operations-8june/pages/asset-register-edit"));
 const AssetDepreciationPage = lazy(() => import("@/operations-8june/pages/asset-depreciation"));
 const LicensesPage       = lazy(() => import("@/operations-8june/pages/licenses"));
 const LicenseNewPage     = lazy(() => import("@/operations-8june/pages/license-new"));
@@ -211,6 +213,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/assets": "Assets",
   "/assets/new": "Create Asset",
   "/assets/register": "Asset Register",
+  "/assets/register/new": "Create Asset",
+  "/assets/register/:id/edit": "Edit Asset",
   "/assets/depreciation": "Depreciation Schedule",
   "/licenses": "Licenses",
   "/licenses/new": "Create License",
@@ -402,6 +406,8 @@ function Router() {
 
           {/* Operations */}
           <Route path="/assets/new">{() => <ProtectedRoute component={AssetNewPage} module="assets" />}</Route>
+          <Route path="/assets/register/new">{() => <ProtectedRoute component={AssetRegisterNewPage} module="assets" />}</Route>
+          <Route path="/assets/register/:id/edit">{() => <ProtectedRoute component={AssetRegisterEditPage} module="assets" />}</Route>
           <Route path="/assets/register">{() => <ProtectedRoute component={AssetRegisterPage} module="assets" />}</Route>
           <Route path="/assets/depreciation">{() => <ProtectedRoute component={AssetDepreciationPage} module="assets" />}</Route>
           <Route path="/assets/:id/edit">{() => <ProtectedRoute component={AssetEditPage} module="assets" />}</Route>

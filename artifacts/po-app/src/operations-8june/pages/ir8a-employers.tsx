@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Info, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -233,99 +233,65 @@ export default function Ir8aEmployersPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#111827]">Employer's (IR8A)</h1>
-          <p className="mt-1 text-sm text-[#6B7280]">Employer particulars and declaration for Form IR8A</p>
-        </div>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Employer's (IR8A)</h1>
         {!showForm ? (
           <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={openForm}>
-            <Plus className="h-4 w-4" /> Add Employer
+            <Plus className="h-4 w-4" /> Create Employee
           </Button>
         ) : null}
       </div>
 
       {showForm ? (
         <div className="space-y-4">
-          <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_300px]">
-            <div className="rounded-2xl border border-[#E8EEF8] bg-white p-6">
-              <div className="mb-5">
-                <h2 className="text-xl font-bold text-[#1E3A5F]">
-                  {editingId ? "Edit Employer Details" : "Employer Details"}
-                </h2>
-                <p className="text-sm text-[#64748B]">Provide your company details as registered with IRAS.</p>
-              </div>
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <FieldLabel>Employer Name</FieldLabel>
-                    <input className={inputClass} value={form.employerName} onChange={(event) => update("employerName", event.target.value)} />
-                  </div>
-                  <div>
-                    <FieldLabel>UEN / Tax Reference No.</FieldLabel>
-                    <input className={inputClass} value={form.uen} onChange={(event) => update("uen", event.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <FieldLabel>Address</FieldLabel>
-                  <textarea className={`${inputClass} min-h-24 resize-y`} value={form.address} onChange={(event) => update("address", event.target.value)} />
-                </div>
-              </div>
+          <section className="rounded-2xl border border-[#E8EEF8] bg-white p-6">
+            <div className="mb-5">
+              <h2 className="text-xl font-bold text-[#1E3A5F]">
+                {editingId ? "Edit Employer Details" : "Employer Details"}
+              </h2>
+              <p className="text-sm text-[#64748B]">Provide your company details as registered with IRAS.</p>
             </div>
-            <aside className="h-fit rounded-2xl border border-[#D6E6FA] bg-[#F3F8FF] p-5">
-              <div className="mb-4 flex items-center gap-2 text-[#1E3A5F]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2563EB] text-white">
-                  <Info className="h-3.5 w-3.5" />
-                </span>
-                <h3 className="font-semibold">Field Explanations</h3>
-              </div>
-              <div className="space-y-4">
-                <Explain title="Employer Name" text="Registered company name." />
-                <Explain title="UEN / Tax Reference No." text="Unique Entity Number (UEN) or Tax Reference Number." />
-                <Explain title="Address" text="Registered address of the company as per ACRA/IRAS." />
-              </div>
-            </aside>
-          </section>
-
-          <section className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_300px]">
-            <div className="rounded-2xl border border-[#E8EEF8] bg-white p-6">
-              <div className="mb-5">
-                <h2 className="text-xl font-bold text-[#1E3A5F]">Employer's Declaration</h2>
-                <p className="text-sm text-[#64748B]">This section is to be signed/confirmed by the employer.</p>
-              </div>
+            <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <FieldLabel>Name</FieldLabel>
-                  <input className={inputClass} value={form.signatoryName} onChange={(event) => update("signatoryName", event.target.value)} />
+                  <FieldLabel>Employer Name</FieldLabel>
+                  <input className={inputClass} value={form.employerName} onChange={(event) => update("employerName", event.target.value)} />
                 </div>
                 <div>
-                  <FieldLabel>Date</FieldLabel>
-                  <input type="date" className={inputClass} value={form.declarationDate} onChange={(event) => update("declarationDate", event.target.value)} />
+                  <FieldLabel>UEN / Tax Reference No.</FieldLabel>
+                  <input className={inputClass} value={form.uen} onChange={(event) => update("uen", event.target.value)} />
                 </div>
-                <div>
-                  <FieldLabel>Designation</FieldLabel>
-                  <input className={inputClass} value={form.designation} onChange={(event) => update("designation", event.target.value)} />
-                </div>
-                <div>
-                  <FieldLabel>Signature</FieldLabel>
-                  <SignatureUpload value={form.signature} onChange={(value) => update("signature", value)} />
-                </div>
+              </div>
+              <div>
+                <FieldLabel>Address</FieldLabel>
+                <textarea className={`${inputClass} min-h-24 resize-y`} value={form.address} onChange={(event) => update("address", event.target.value)} />
               </div>
             </div>
-            <aside className="h-fit rounded-2xl border border-[#D6E6FA] bg-[#F3F8FF] p-5">
-              <div className="mb-4 flex items-center gap-2 text-[#1E3A5F]">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2563EB] text-white">
-                  <Info className="h-3.5 w-3.5" />
-                </span>
-                <h3 className="font-semibold">Field Explanations</h3>
+          </section>
+
+          <section className="rounded-2xl border border-[#E8EEF8] bg-white p-6">
+            <div className="mb-5">
+              <h2 className="text-xl font-bold text-[#1E3A5F]">Employer's Declaration</h2>
+              <p className="text-sm text-[#64748B]">This section is to be signed/confirmed by the employer.</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <FieldLabel>Name</FieldLabel>
+                <input className={inputClass} value={form.signatoryName} onChange={(event) => update("signatoryName", event.target.value)} />
               </div>
-              <div className="space-y-4">
-                <Explain title="Name" text="Authorised person's name." />
-                <Explain title="Designation" text="Position in the company." />
-                <Explain title="Signature" text="Digital or scanned signature." />
-                <Explain title="Date" text="Date of declaration." />
+              <div>
+                <FieldLabel>Date</FieldLabel>
+                <input type="date" className={inputClass} value={form.declarationDate} onChange={(event) => update("declarationDate", event.target.value)} />
               </div>
-            </aside>
+              <div>
+                <FieldLabel>Designation</FieldLabel>
+                <input className={inputClass} value={form.designation} onChange={(event) => update("designation", event.target.value)} />
+              </div>
+              <div>
+                <FieldLabel>Signature</FieldLabel>
+                <SignatureUpload value={form.signature} onChange={(value) => update("signature", value)} />
+              </div>
+            </div>
           </section>
 
           <div className="flex justify-end gap-2">
@@ -368,7 +334,7 @@ export default function Ir8aEmployersPage() {
                   </tr>
                 ) : employers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-[#6B7280]">No employers yet. Use Add Employer to create one.</td>
+                    <td colSpan={7} className="px-4 py-12 text-center text-[#6B7280]">No employers yet. Use Create Employee to create one.</td>
                   </tr>
                 ) : (
                   employers.map((employer) => (

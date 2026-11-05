@@ -39,7 +39,10 @@ import {
 } from "@/operations-8june/lib/payroll-ui";
 import { ModalSectionHeader } from "@/operations-8june/components/forms/FormModalShell";
 import { EmployeeCombobox } from "@/operations-8june/components/forms/EmployeeCombobox";
-import { Calculator, User } from "lucide-react";
+import { Calculator, User, BookOpen, Check } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -165,6 +168,32 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
   const { data: payrollRecords = [] } = useQuery<any[]>({
     queryKey: ["/api/payroll/records"],
   });
+
+  const { data: allAccounts = [] } = useQuery<any[]>({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const expenseAccounts = useMemo(
+    () => allAccounts.filter((a: any) => a.type === "expense" && a.isActive !== false),
+    [allAccounts]
+  );
+
+  const [expenseAccountId, setExpenseAccountId] = useState<string>("");
+  const [expenseAccountPickerOpen, setExpenseAccountPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (expenseAccounts.length > 0 && expenseAccountId === "") {
+      const defAcct = expenseAccounts.find((a: any) => a.code === "6000") || expenseAccounts[0];
+      if (defAcct) {
+        setExpenseAccountId(String(defAcct.id));
+      }
+    }
+  }, [expenseAccounts, expenseAccountId]);
 
   const form = useForm<ProcessPayrollFormData>({
     resolver: zodResolver(processPayrollSchema),
@@ -296,6 +325,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         if (activeConfigs.length === 0) {
           throw new Error("No active payroll configurations found");
         }
+        const chosenExpId = (expenseAccountId && expenseAccountId !== "none") ? Number(expenseAccountId) : null;
         const result = await batchProcessPayrollForPeriod(
           data.payPeriodStart,
           data.payPeriodEnd,
@@ -303,6 +333,7 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
           {
             forceOverwrite: data.forceOverwrite === true,
             processScope: data.processScope,
+            expenseAccountId: chosenExpId,
           }
         );
         return { kind: "batch" as const, result };
@@ -312,13 +343,17 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         throw new Error("Please select an employee with active payroll");
       }
 
+      const chosenExpId = (expenseAccountId && expenseAccountId !== "none") ? Number(expenseAccountId) : null;
       const result = await processIndividualPayrollForConfig(
         payrollConfig,
         data.payPeriodStart,
         data.payPeriodEnd,
         0,
         undefined,
-        { forceOverwrite: data.forceOverwrite === true }
+        {
+          forceOverwrite: data.forceOverwrite === true,
+          expenseAccountId: chosenExpId,
+        }
       );
 
       if ("alreadyProcessed" in result && result.alreadyProcessed) {
@@ -366,6 +401,14 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
         queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
         queryClient.invalidateQueries({ queryKey: ["/api/payroll/configs"] });
         queryClient.invalidateQueries({ queryKey: ["/api/payroll/summary"] });
+        queryClient.invalidateQueries({ queryKey: ["journal-entries"] });
+        queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/balance-sheet"] });
+        queryClient.invalidateQueries({ queryKey: ["expenses"] });
+        queryClient.invalidateQueries({ queryKey: ["journal-entries"] });
+        queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/balance-sheet"] });
+        queryClient.invalidateQueries({ queryKey: ["expenses"] });
         closeProcessedDialog();
         toast({
           title: variables.forceOverwrite ? "Payroll overwritten" : "Payroll processed",
@@ -558,24 +601,111 @@ export default function ProcessPayrollForm({ onSuccess, onCancel }: ProcessPayro
               <section className="space-y-4">
                 <ModalSectionHeader icon={User} title="Employee & Pay Period" />
                 <div className="space-y-4 max-w-2xl">
-                  <FormField
-                    control={form.control}
-                    name="employeeId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={payrollFormLabelClass}>Employee *</FormLabel>
-                        <FormControl>
-                          <EmployeeCombobox
-                            employees={processEmployeeOptions}
-                            value={field.value}
-                            onChange={(id) => field.onChange(id)}
-                            placeholder="Select employee or All Employees"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="employeeId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className={payrollFormLabelClass}>Employee *</FormLabel>
+                          <FormControl>
+                            <EmployeeCombobox
+                              employees={processEmployeeOptions}
+                              value={field.value}
+                              onChange={(id) => field.onChange(id)}
+                              placeholder="Select employee or All Employees"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="space-y-1.5">
+                      <FormLabel className={cn(payrollFormLabelClass, "flex items-center gap-1.5")}>
+                        <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                        Expense Account (GL)
+                      </FormLabel>
+                      {(() => {
+                        const selectedAccount = expenseAccounts.find((a: any) => String(a.id) === expenseAccountId);
+                        return (
+                          <>
+                            <Popover modal={false} open={expenseAccountPickerOpen} onOpenChange={setExpenseAccountPickerOpen}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={expenseAccountPickerOpen}
+                                  className={cn(
+                                    "w-full justify-between font-normal text-left h-9 px-3",
+                                    !selectedAccount && "text-muted-foreground"
+                                  )}
+                                >
+                                  <span className="truncate">
+                                    {selectedAccount ? (
+                                      <>
+                                        <span className="font-mono text-xs mr-2 opacity-60">{selectedAccount.code}</span>
+                                        {selectedAccount.name}
+                                      </>
+                                    ) : (
+                                      "— None (no journal entry) —"
+                                    )}
+                                  </span>
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[380px] p-0" align="start">
+                                <Command>
+                                  <CommandInput placeholder="Search expense accounts..." className="h-9" />
+                                  <CommandList>
+                                    <CommandEmpty>No account found.</CommandEmpty>
+                                    <CommandGroup>
+                                      <CommandItem
+                                        value="__none__"
+                                        onSelect={() => {
+                                          setExpenseAccountId("none");
+                                          setExpenseAccountPickerOpen(false);
+                                        }}
+                                        className="italic text-muted-foreground"
+                                      >
+                                        — None (no journal entry) —
+                                        {expenseAccountId === "none" && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
+                                      </CommandItem>
+                                    </CommandGroup>
+                                    <CommandGroup heading="Expense Accounts">
+                                      {expenseAccounts.map((a: any) => (
+                                        <CommandItem
+                                          key={a.id}
+                                          value={`${a.code} ${a.name}`}
+                                          onSelect={() => {
+                                            setExpenseAccountId(String(a.id));
+                                            setExpenseAccountPickerOpen(false);
+                                          }}
+                                          className="gap-2"
+                                        >
+                                          <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">{a.code}</span>
+                                          <span className="flex-1">{a.name}</span>
+                                          {String(a.id) === expenseAccountId && <Check className="h-3.5 w-3.5 shrink-0" />}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                            {selectedAccount ? (
+                              <p className="text-xs text-emerald-700 flex items-center gap-1">
+                                ✓ Will auto-post: DR {selectedAccount.name} / CR Staff Salaries Payable
+                              </p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                — None (no journal entry will be posted)
+                              </p>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
                     <FormField
