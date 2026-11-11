@@ -20,6 +20,10 @@ import {
   syncPayrollConfigFromEmployee,
   viewPayslipCompany,
 } from "../../operations-8june/company-payroll-process";
+import {
+  postAssetDisposalJE,
+  reverseAssetDisposalJE,
+} from "../../lib/asset-disposal-auto-post.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -520,6 +524,7 @@ const ASSET_COLUMNS = [
   "warranty_expiry", "cost", "depreciation_start_date", "useful_life_years",
   "useful_life_unit", "depreciation_method", "residual_value", "depreciation_frequency",
   "depreciation_book", "asset_image", "description", "has_license",
+  "disposal_date", "disposal_type", "disposal_journal_id",
 ];
 
 const EMPLOYEE_COLUMNS = [
@@ -587,7 +592,7 @@ async function insertDependents(
 
 // ── ASSETS ────────────────────────────────────────────────────────────────────
 
-/** Heal newer Fixed Asset columns (image / depreciation settings) on tenant DBs. */
+/** Heal newer Fixed Asset columns (image / depreciation / disposal settings) on tenant DBs. */
 async function ensureAssetsSchema(): Promise<void> {
   for (const stmt of [
     `ALTER TABLE assets ADD COLUMN IF NOT EXISTS useful_life_unit TEXT`,
@@ -595,6 +600,9 @@ async function ensureAssetsSchema(): Promise<void> {
     `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_frequency TEXT`,
     `ALTER TABLE assets ADD COLUMN IF NOT EXISTS depreciation_book TEXT`,
     `ALTER TABLE assets ADD COLUMN IF NOT EXISTS asset_image TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_date TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_type TEXT`,
+    `ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_journal_id INTEGER`,
   ]) {
     await pool.query(stmt).catch(() => undefined);
   }
@@ -668,6 +676,10 @@ router.put("/assets/:id", async (req, res): Promise<void> => {
     if ("serial" in updateBody && (updateBody.serial === null || updateBody.serial === undefined)) {
       updateBody.serial = "";
     }
+    // Explicit empty/null clears the stored primary image.
+    if ("assetImage" in updateBody && (updateBody.assetImage == null || updateBody.assetImage === "")) {
+      updateBody.assetImage = null;
+    }
     const built = buildUpdate("assets", id, req.session.companyId!, updateBody, ASSET_COLUMNS);
     if (!built) { res.status(400).json({ error: "No fields to update" }); return; }
     const result = await pool.query(built.sql, built.values);
@@ -676,6 +688,197 @@ router.put("/assets/:id", async (req, res): Promise<void> => {
   } catch (err: any) {
     console.error("Asset update error:", err);
     res.status(500).json({ error: err?.message ?? "Failed to update asset" });
+  }
+});
+
+/** Dispose a fixed asset: validate dates, post disposal JE, set status=disposed, stop future dep. */
+router.post("/assets/:id/dispose", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  const id = parseId(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
+  const {
+    disposalDate,
+    disposalType,
+    saleAmount,
+    remarks,
+  } = req.body as {
+    disposalDate?: string;
+    disposalType?: string;
+    saleAmount?: number | string;
+    remarks?: string;
+  };
+
+  if (!disposalDate || !/^\d{4}-\d{2}-\d{2}$/.test(disposalDate)) {
+    res.status(400).json({ error: "Disposal date is required (YYYY-MM-DD)." });
+    return;
+  }
+  if (!disposalType || !String(disposalType).trim()) {
+    res.status(400).json({ error: "Disposal type is required." });
+    return;
+  }
+
+  try {
+    await ensureAssetsSchema();
+    const existing = await pool.query(
+      `SELECT * FROM assets WHERE id = $1 AND company_id = $2`,
+      [id, companyId],
+    );
+    const row = existing.rows[0];
+    if (!row) { res.status(404).json({ error: "Asset not found" }); return; }
+
+    const status = String(row.status || "").toLowerCase();
+    if (status === "disposed" || status === "retired") {
+      res.status(409).json({ error: "This asset is already disposed. Reverse the disposal before disposing again." });
+      return;
+    }
+
+    const purchaseRaw = row.purchase_date || row.purchaseDate || null;
+    const startRaw = row.depreciation_start_date || row.depreciationStartDate || null;
+    const disposalDt = new Date(`${disposalDate}T00:00:00`);
+    if (Number.isNaN(disposalDt.getTime())) {
+      res.status(400).json({ error: "Invalid disposal date." });
+      return;
+    }
+
+    const dateChecks: { label: string; value: string }[] = [];
+    if (purchaseRaw) dateChecks.push({ label: "Purchase Date", value: String(purchaseRaw).slice(0, 10) });
+    if (startRaw) dateChecks.push({ label: "Available-for-use Date", value: String(startRaw).slice(0, 10) });
+    for (const check of dateChecks) {
+      const base = new Date(`${check.value}T00:00:00`);
+      if (!Number.isNaN(base.getTime()) && disposalDt.getTime() <= base.getTime()) {
+        res.status(400).json({
+          error: `Disposal Date must be after the ${check.label} (${check.value}).`,
+        });
+        return;
+      }
+    }
+    if (dateChecks.length === 0) {
+      res.status(400).json({
+        error: "Asset is missing Purchase Date / Available-for-use Date. Update the asset before disposing.",
+      });
+      return;
+    }
+
+    const sale = Math.max(0, Number(saleAmount) || 0);
+    if (String(disposalType) === "sale" && sale <= 0) {
+      res.status(400).json({ error: "Sale amount is required for a sale disposal." });
+      return;
+    }
+
+    const posted = await postAssetDisposalJE({
+      companyId,
+      userId,
+      asset: row,
+      assetId: id,
+      disposalDate,
+      disposalType: String(disposalType),
+      saleAmount: sale,
+      remarks: remarks ? String(remarks) : undefined,
+    });
+
+    const noteParts = [
+      `Disposed on ${disposalDate}`,
+      `Type: ${String(disposalType).replace(/_/g, " ")}`,
+      sale > 0 ? `Sale amount: S$ ${sale.toFixed(2)}` : null,
+      `NBV: S$ ${posted.books.nbv.toFixed(2)}`,
+      `Acc. Dep: S$ ${posted.books.accDep.toFixed(2)}`,
+      `${posted.gainLoss >= 0 ? "Gain" : "Loss"}: S$ ${Math.abs(posted.gainLoss).toFixed(2)}`,
+      remarks?.trim() ? `Remarks: ${String(remarks).trim()}` : null,
+      posted.journalEntryId ? `JE#${posted.journalEntryId}` : null,
+    ].filter(Boolean);
+
+    const updated = await pool.query(
+      `UPDATE assets SET
+         status = 'disposed',
+         disposal_date = $1,
+         disposal_type = $2,
+         disposal_journal_id = $3,
+         description = $4,
+         assigned_to = NULL
+       WHERE id = $5 AND company_id = $6
+       RETURNING *`,
+      [
+        disposalDate,
+        String(disposalType),
+        posted.journalEntryId || null,
+        noteParts.join(" · "),
+        id,
+        companyId,
+      ],
+    );
+
+    res.json({
+      asset: formatRow(updated.rows[0]),
+      journalEntryId: posted.journalEntryId || null,
+      books: posted.books,
+      gainLoss: posted.gainLoss,
+    });
+  } catch (err: any) {
+    console.error("Asset dispose error:", err);
+    res.status(500).json({ error: err?.message ?? "Failed to dispose asset" });
+  }
+});
+
+/** Reverse a disposal (authorized users only) — restores Active status + reverses JE. */
+router.post("/assets/:id/reverse-disposal", async (req, res): Promise<void> => {
+  if (!requireAuth(req, res) || !requireCompany(req, res)) return;
+  const id = parseId(req.params.id);
+  if (id == null) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const role = String((req.session as any).userRole || "").toLowerCase();
+  const canReverse =
+    req.session.isAdmin === true || role === "admin" || role === "administrator" || role === "accountant";
+  if (!canReverse) {
+    res.status(403).json({ error: "Only authorized administrators or accountants can reverse an asset disposal." });
+    return;
+  }
+
+  const companyId = req.session.companyId!;
+  const userId = req.session.userId!;
+  const reversalDate =
+    (typeof req.body?.reversalDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.reversalDate)
+      ? req.body.reversalDate
+      : new Date().toISOString().slice(0, 10));
+
+  try {
+    await ensureAssetsSchema();
+    const existing = await pool.query(
+      `SELECT * FROM assets WHERE id = $1 AND company_id = $2`,
+      [id, companyId],
+    );
+    const row = existing.rows[0];
+    if (!row) { res.status(404).json({ error: "Asset not found" }); return; }
+
+    const status = String(row.status || "").toLowerCase();
+    if (status !== "disposed" && status !== "retired") {
+      res.status(400).json({ error: "Asset is not disposed." });
+      return;
+    }
+
+    await reverseAssetDisposalJE({ companyId, userId, assetId: id, reversalDate });
+
+    const updated = await pool.query(
+      `UPDATE assets SET
+         status = 'available',
+         disposal_date = NULL,
+         disposal_type = NULL,
+         disposal_journal_id = NULL,
+         description = CASE
+           WHEN description IS NULL OR description = '' THEN 'Disposal reversed'
+           ELSE description || ' · Disposal reversed on ' || $1
+         END
+       WHERE id = $2 AND company_id = $3
+       RETURNING *`,
+      [reversalDate, id, companyId],
+    );
+
+    res.json({ asset: formatRow(updated.rows[0]), reversed: true });
+  } catch (err: any) {
+    console.error("Asset reverse-disposal error:", err);
+    res.status(500).json({ error: err?.message ?? "Failed to reverse disposal" });
   }
 });
 

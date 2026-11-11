@@ -155,6 +155,8 @@ const AssetRegisterPage  = lazy(() => import("@/operations-8june/pages/asset-reg
 const AssetRegisterNewPage  = lazy(() => import("@/operations-8june/pages/asset-register-new"));
 const AssetRegisterEditPage = lazy(() => import("@/operations-8june/pages/asset-register-edit"));
 const AssetDepreciationPage = lazy(() => import("@/operations-8june/pages/asset-depreciation"));
+const AssetDisposalPage  = lazy(() => import("@/operations-8june/pages/asset-disposal"));
+const AssetDisposalReportPage = lazy(() => import("@/operations-8june/pages/asset-disposal-report"));
 const LicensesPage       = lazy(() => import("@/operations-8june/pages/licenses"));
 const LicenseNewPage     = lazy(() => import("@/operations-8june/pages/license-new"));
 const LicenseEditPage    = lazy(() => import("@/operations-8june/pages/license-edit"));
@@ -216,6 +218,8 @@ const ROUTE_TITLES: Record<string, string> = {
   "/assets/register/new": "Create Asset",
   "/assets/register/:id/edit": "Edit Asset",
   "/assets/depreciation": "Depreciation Schedule",
+  "/assets/disposal": "Fixed Asset Disposal",
+  "/assets/disposal-report": "Fixed Asset Disposal Report",
   "/licenses": "Licenses",
   "/licenses/new": "Create License",
   "/employees": "Employees",
@@ -410,6 +414,8 @@ function Router() {
           <Route path="/assets/register/:id/edit">{() => <ProtectedRoute component={AssetRegisterEditPage} module="assets" />}</Route>
           <Route path="/assets/register">{() => <ProtectedRoute component={AssetRegisterPage} module="assets" />}</Route>
           <Route path="/assets/depreciation">{() => <ProtectedRoute component={AssetDepreciationPage} module="assets" />}</Route>
+          <Route path="/assets/disposal-report">{() => <ProtectedRoute component={AssetDisposalReportPage} module="assets" />}</Route>
+          <Route path="/assets/disposal">{() => <ProtectedRoute component={AssetDisposalPage} module="assets" />}</Route>
           <Route path="/assets/:id/edit">{() => <ProtectedRoute component={AssetEditPage} module="assets" />}</Route>
           <Route path="/assets">{() => <ProtectedRoute component={AssetsPage} module="assets" />}</Route>
           <Route path="/assets/">{() => <ProtectedRoute component={AssetsPage} module="assets" />}</Route>

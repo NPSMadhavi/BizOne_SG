@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, Pencil, Eye, Lock, Ban, CheckCircle2, Trash2, Plus, DollarSign, Loader2, Mail, Copy, AlertTriangle } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
+import { readReturnTo, withReturnTo } from "@/lib/return-to";
 import { generateInvoice_PDF } from "@/lib/pdf";
 import { generateInvoicePdfSmart, listInvoiceReportTemplates } from "@/lib/report-designer/api";
 import { deliveryOrderAttachmentNames, deliveryOrderPdfAttachments, invoiceEmailBody, markDeliveryOrdersSent, useInvoiceDeliveryOrders } from "@/lib/invoice-delivery-order-email";
@@ -160,7 +161,7 @@ export default function InvoiceView() {
   useVedaFormActions({
     onSave: () => {
       if (!id) return;
-      setLocation(`/invoices/${id}/edit`);
+      setLocation(withReturnTo(`/invoices/${id}/edit`));
     },
     onPreview: () => {
       if (!doc) {
@@ -371,7 +372,7 @@ export default function InvoiceView() {
     <>
       <StickyPageHeader className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => setLocation(readReturnTo() || "/invoices")}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{doc.invNumber}</h1>
@@ -418,7 +419,7 @@ export default function InvoiceView() {
             <Eye className="h-4 w-4" />Preview
           </Button>
           {!isVoided && !isPaid && !isPartial && (
-            <Button variant="outline" className="gap-2" onClick={() => setLocation(`/invoices/${id}/edit`)}>
+            <Button variant="outline" className="gap-2" onClick={() => setLocation(withReturnTo(`/invoices/${id}/edit`))}>
               <Pencil className="h-4 w-4" />Edit
             </Button>
           )}
@@ -791,7 +792,7 @@ export default function InvoiceView() {
           currency: (doc as any).currency || "SGD",
           totalAmount: Number(doc.totalAmount) || 0,
         }}
-        onEdit={() => { setPreviewOpen(false); setLocation(`/invoices/${id}/edit`); }}
+        onEdit={() => { setPreviewOpen(false); setLocation(withReturnTo(`/invoices/${id}/edit`)); }}
         askMarkSentOnClose
         onMarkAsSentExternal={async () => {
           await fetch(`/api/invoices/${id}/mark-sent`, {

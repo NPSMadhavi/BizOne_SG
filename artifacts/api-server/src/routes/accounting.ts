@@ -6,6 +6,7 @@ import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js"
 import { getExchangeRateToSGD, getExchangeRateInfo } from "../lib/exchange-rate.js";
 import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
 import { backfillVendorInvoiceJEs } from "../lib/vendor-invoice-auto-post.js";
+import { backfillPayrollJEs, toIsoDate } from "../lib/payroll-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
 import { assertPeriodWritable } from "../lib/financial-year.js";
 import { ensureIncomeSchema } from "./income.js";
@@ -81,14 +82,17 @@ router.post("/accounts", async (req, res): Promise<void> => {
   if (!code?.trim()) { res.status(400).json({ error: "Account code is required" }); return; }
   if (!name?.trim()) { res.status(400).json({ error: "Account name is required" }); return; }
 
-  const VALID_TYPES = ["asset", "liability", "equity", "revenue", "expense"];
-  if (!VALID_TYPES.includes(type)) { res.status(400).json({ error: "Invalid account type" }); return; }
+  const typeKey = String(type || "").trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_]{0,63}$/.test(typeKey)) {
+    res.status(400).json({ error: "Invalid account type" });
+    return;
+  }
 
   try {
     await ensureAccountsSeeded(companyId);
     const [account] = await db.insert(accountsTable).values({
       companyId, code: code.trim(), name: name.trim(),
-      type, subType: subType || type, description: description || null,
+      type: typeKey, subType: subType || typeKey, description: description || null,
     }).returning();
     logAudit({ req, action: "create", entityType: "account", entityId: account.id, entityLabel: `${account.code} ${account.name}` });
     res.status(201).json(account);
@@ -168,13 +172,61 @@ router.get("/journal-entries", async (req, res): Promise<void> => {
   const companyId = req.session.companyId!;
   try {
     await backfillVendorInvoiceJEs(companyId, req.session.userId!);
+    await backfillExpenseJEs(companyId, req.session.userId!);
+    await backfillPayrollJEs(companyId, req.session.userId!);
   } catch (err) {
-    req.log?.warn?.({ err }, "vendor invoice journal backfill failed");
+    req.log?.warn?.({ err }, "accounting journal backfill failed");
   }
+
+  try {
+    // Heal legacy raw text dates like "Wed Sep 30" or "Sat Oct 31"
+    await db.execute(sql`
+      UPDATE journal_entries
+      SET entry_date = '2026-09-30',
+          description = REPLACE(description, 'Tue Sep 01 to Wed Sep 30', '2026-09-01 to 2026-09-30')
+      WHERE company_id = ${companyId} AND entry_date ILIKE '%Sep 30%'
+    `).catch(() => {});
+
+    await db.execute(sql`
+      UPDATE journal_entries
+      SET entry_date = '2026-10-31',
+          description = REPLACE(description, 'Thu Oct 01 to Sat Oct 31', '2026-10-01 to 2026-10-31')
+      WHERE company_id = ${companyId} AND entry_date ILIKE '%Oct 31%'
+    `).catch(() => {});
+
+    await db.execute(sql`
+      UPDATE journal_entries
+      SET entry_date = '2026-08-31',
+          description = REPLACE(description, 'Sat Aug 01 to Mon Aug 31', '2026-08-01 to 2026-08-31')
+      WHERE company_id = ${companyId} AND entry_date ILIKE '%Aug 31%'
+    `).catch(() => {});
+  } catch (err) {
+    req.log?.warn?.({ err }, "cleanup malformed entry_date failed");
+  }
+
   const entries = await db.select()
     .from(journalEntriesTable)
     .where(eq(journalEntriesTable.companyId, companyId))
     .orderBy(desc(journalEntriesTable.entryDate), desc(journalEntriesTable.id));
+
+  for (const entry of entries) {
+    const norm = toIsoDate(entry.entryDate);
+    if (norm !== entry.entryDate) {
+      entry.entryDate = norm;
+      await db.update(journalEntriesTable)
+        .set({ entryDate: norm })
+        .where(eq(journalEntriesTable.id, entry.id))
+        .catch(() => {});
+    }
+  }
+
+  // Ensure most recent entries are strictly at the beginning (newest date first, then highest ID)
+  entries.sort((a, b) => {
+    const dA = toIsoDate(a.entryDate);
+    const dB = toIsoDate(b.entryDate);
+    if (dA !== dB) return dB.localeCompare(dA);
+    return (b.id ?? 0) - (a.id ?? 0);
+  });
 
   res.json(entries);
 });
@@ -850,6 +902,14 @@ router.get("/balance-sheet", async (req, res): Promise<void> => {
 
   const companyId = req.session.companyId!;
   const asOf = (req.query.asOf as string) || new Date().toISOString().split("T")[0];
+
+  try {
+    await backfillVendorInvoiceJEs(companyId, req.session.userId!);
+    await backfillExpenseJEs(companyId, req.session.userId!);
+    await backfillPayrollJEs(companyId, req.session.userId!);
+  } catch (err) {
+    req.log?.warn?.({ err }, "balance sheet journal backfill failed");
+  }
 
   await ensureAccountsSeeded(companyId);
 

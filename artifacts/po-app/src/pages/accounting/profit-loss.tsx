@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,48 @@ interface PnlData {
 function currentYear() {
   const y = new Date().getFullYear();
   return { from: `${y}-01-01`, to: `${y}-12-31` };
+}
+
+function initialPlState() {
+  const year = currentYear();
+  const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const from = p.get("from") || year.from;
+  const to = p.get("to") || year.to;
+  return { from, to, expand: p.get("expand") || "" };
+}
+
+function money(v: unknown): number {
+  const n = parseFloat(String(v ?? ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Sales invoices store GST dollars in `tax`. Vendor invoices store them in `gstAmount`. */
+function docGst(doc: any): number {
+  if (doc?.gstAmount != null && String(doc.gstAmount) !== "") return money(doc.gstAmount);
+  return money(doc?.tax);
+}
+
+function docAmounts(doc: any) {
+  const tot = money(doc?.totalAmount);
+  const gst = docGst(doc);
+  return { tot, gst, taxable: tot - gst };
+}
+
+function inPeriod(dateValue: unknown, from: string, to: string) {
+  if (!dateValue) return true;
+  const d = String(dateValue).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return true;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+}
+
+function plReturnPath(from: string, to: string, expand: string) {
+  const q = new URLSearchParams();
+  if (from) q.set("from", from);
+  if (to) q.set("to", to);
+  if (expand) q.set("expand", expand);
+  return `/accounting/profit-loss?${q.toString()}`;
 }
 
 function fmtSGD(n: number) {
@@ -104,10 +147,11 @@ function SubtotalRow({ label, amount, highlight }: { label: string; amount: numb
 
 export default function ProfitLoss() {
   const { selectedCompany } = useAuth();
-  const defaults = currentYear();
-  const [from, setFrom] = useState(defaults.from);
-  const [to, setTo]     = useState(defaults.to);
-  const [applied, setApplied] = useState(defaults);
+  const [, setLocation] = useLocation();
+  const [boot] = useState(initialPlState);
+  const [from, setFrom] = useState(boot.from);
+  const [to, setTo]     = useState(boot.to);
+  const [applied, setApplied] = useState({ from: boot.from, to: boot.to });
   const [pdfLoading, setPdfLoading] = useState(false);
 
   const { data, isLoading, isFetching, error } = useQuery<PnlData>({
@@ -122,7 +166,9 @@ export default function ProfitLoss() {
     },
   });
 
-  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>(
+    boot.expand ? { [boot.expand]: true } : {},
+  );
   const toggleRow = (code: string) => {
     setExpandedRows(prev => ({
       ...prev,
@@ -175,6 +221,22 @@ export default function ProfitLoss() {
     } finally {
       setPdfLoading(false);
     }
+  }
+
+  const salesInvoices = invoices.filter((inv: any) => {
+    const status = String(inv.status || "").toLowerCase();
+    if (status === "draft" || status === "void") return false;
+    return inPeriod(inv.issueDate || inv.createdAt, applied.from, applied.to);
+  });
+  const purchaseInvoices = vendorInvoices.filter((vi: any) => {
+    const status = String(vi.status || "").toLowerCase();
+    if (status === "draft" || status === "void") return false;
+    return inPeriod(vi.piDate || vi.createdAt, applied.from, applied.to);
+  });
+
+  function openDoc(path: string, expandCode: string) {
+    const returnTo = encodeURIComponent(plReturnPath(applied.from, applied.to, expandCode));
+    setLocation(`${path}?returnTo=${returnTo}`);
   }
 
   const loading = isLoading || isFetching;
@@ -258,10 +320,10 @@ export default function ProfitLoss() {
                       <div className="flex items-center justify-between px-3 py-2 bg-blue-50/60 border-b border-blue-100 text-xs">
                         <span className="font-semibold text-blue-900 flex items-center gap-1.5">
                           <FileText className="h-3.5 w-3.5 text-blue-600" />
-                          Sales Invoices (Revenue Breakdown) — {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
+                          Sales Invoices (Revenue Breakdown) — {salesInvoices.length} invoice{salesInvoices.length !== 1 ? "s" : ""}
                         </span>
                         <span className="font-mono text-muted-foreground">
-                          Total Sales: <strong className="text-gray-900">{fmtSGD(invoices.reduce((s, i) => s + (parseFloat(String(i.totalAmount || 0)) || 0), 0))}</strong>
+                          Total Sales: <strong className="text-gray-900">{fmtSGD(salesInvoices.reduce((s, i) => s + docAmounts(i).tot, 0))}</strong>
                         </span>
                       </div>
                       <div className="overflow-x-auto">
@@ -271,28 +333,30 @@ export default function ProfitLoss() {
                               <th className="py-2.5 px-3 text-left whitespace-nowrap">Invoice No.</th>
                               <th className="py-2.5 px-3 text-left whitespace-nowrap">Customer</th>
                               <th className="py-2.5 px-3 text-left whitespace-nowrap">Issue Date</th>
-                              <th className="py-2.5 px-3 text-right whitespace-nowrap">Net Amount (S$)</th>
+                              <th className="py-2.5 px-3 text-right whitespace-nowrap">Taxable Amount (S$)</th>
                               <th className="py-2.5 px-3 text-right whitespace-nowrap">GST (S$)</th>
                               <th className="py-2.5 px-3 text-right whitespace-nowrap">Total Amount (S$)</th>
                               <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100 bg-white">
-                            {invoices.length === 0 ? (
+                            {salesInvoices.length === 0 ? (
                               <tr>
                                 <td colSpan={7} className="py-4 text-center text-gray-400 italic">No sales invoices recorded.</td>
                               </tr>
                             ) : (
-                              invoices.map((inv: any) => {
-                                const tot = parseFloat(String(inv.totalAmount || 0)) || 0;
-                                const gst = parseFloat(String(inv.gstAmount || 0)) || 0;
-                                const net = tot - gst;
+                              salesInvoices.map((inv: any) => {
+                                const { tot, gst, taxable } = docAmounts(inv);
                                 return (
-                                  <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="py-2 px-3 font-mono font-medium text-gray-800 whitespace-nowrap">{inv.invoiceNumber || `INV-${inv.id}`}</td>
+                                  <tr
+                                    key={inv.id}
+                                    className="hover:bg-blue-50 transition-colors cursor-pointer"
+                                    onClick={() => openDoc(`/invoices/${inv.id}`, a.code)}
+                                  >
+                                    <td className="py-2 px-3 font-mono font-medium text-blue-700 whitespace-nowrap">{inv.invNumber || inv.invoiceNumber || `INV-${inv.id}`}</td>
                                     <td className="py-2 px-3 font-medium text-gray-900 whitespace-nowrap">{inv.customerName || "—"}</td>
                                     <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{inv.issueDate ? fmtDate(inv.issueDate) : "—"}</td>
-                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtSGD(net)}</td>
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtSGD(taxable)}</td>
                                     <td className="py-2 px-3 text-right font-mono text-gray-600 whitespace-nowrap">{fmtSGD(gst)}</td>
                                     <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-700 whitespace-nowrap">{fmtSGD(tot)}</td>
                                     <td className="py-2 px-3 text-center whitespace-nowrap">
@@ -305,18 +369,18 @@ export default function ProfitLoss() {
                               })
                             )}
                           </tbody>
-                          {invoices.length > 0 && (
+                          {salesInvoices.length > 0 && (
                             <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
                               <tr>
-                                <td colSpan={3} className="py-2.5 px-3 uppercase text-gray-600">Total Sales Invoices ({invoices.length})</td>
+                                <td colSpan={3} className="py-2.5 px-3 uppercase text-gray-600">Total Sales Invoices ({salesInvoices.length})</td>
                                 <td className="py-2.5 px-3 text-right font-mono">
-                                  {fmtSGD(invoices.reduce((s, i) => s + ((parseFloat(String(i.totalAmount || 0)) || 0) - (parseFloat(String(i.gstAmount || 0)) || 0)), 0))}
+                                  {fmtSGD(salesInvoices.reduce((s, i) => s + docAmounts(i).taxable, 0))}
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-mono text-gray-600">
-                                  {fmtSGD(invoices.reduce((s, i) => s + (parseFloat(String(i.gstAmount || 0)) || 0), 0))}
+                                  {fmtSGD(salesInvoices.reduce((s, i) => s + docAmounts(i).gst, 0))}
                                 </td>
                                 <td className="py-2.5 px-3 text-right font-mono text-emerald-700">
-                                  {fmtSGD(invoices.reduce((s, i) => s + (parseFloat(String(i.totalAmount || 0)) || 0), 0))}
+                                  {fmtSGD(salesInvoices.reduce((s, i) => s + docAmounts(i).tot, 0))}
                                 </td>
                                 <td></td>
                               </tr>
@@ -354,10 +418,10 @@ export default function ProfitLoss() {
                               <div className="flex items-center justify-between px-3 py-2 bg-amber-50/60 border-b border-amber-100 text-xs">
                                 <span className="font-semibold text-amber-900 flex items-center gap-1.5">
                                   <ShoppingCart className="h-3.5 w-3.5 text-amber-600" />
-                                  Cost of Sales &amp; Vendor Invoices — {vendorInvoices.length} invoice{vendorInvoices.length !== 1 ? "s" : ""}
+                                  Cost of Sales &amp; Vendor Invoices — {purchaseInvoices.length} invoice{purchaseInvoices.length !== 1 ? "s" : ""}
                                 </span>
                                 <span className="font-mono text-muted-foreground">
-                                  Total: <strong className="text-gray-900">{fmtSGD(vendorInvoices.reduce((s, vi) => s + (parseFloat(String(vi.totalAmount || 0)) || 0), 0))}</strong>
+                                  Total: <strong className="text-gray-900">{fmtSGD(purchaseInvoices.reduce((s, vi) => s + docAmounts(vi).tot, 0))}</strong>
                                 </span>
                               </div>
                               <div className="overflow-x-auto">
@@ -367,28 +431,30 @@ export default function ProfitLoss() {
                                       <th className="py-2.5 px-3 text-left whitespace-nowrap">Invoice No.</th>
                                       <th className="py-2.5 px-3 text-left whitespace-nowrap">Vendor</th>
                                       <th className="py-2.5 px-3 text-left whitespace-nowrap">Date</th>
-                                      <th className="py-2.5 px-3 text-right whitespace-nowrap">Net (S$)</th>
+                                      <th className="py-2.5 px-3 text-right whitespace-nowrap">Taxable Amount (S$)</th>
                                       <th className="py-2.5 px-3 text-right whitespace-nowrap">GST (S$)</th>
                                       <th className="py-2.5 px-3 text-right whitespace-nowrap">Total Amount (S$)</th>
                                       <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100 bg-white">
-                                    {vendorInvoices.length === 0 ? (
+                                    {purchaseInvoices.length === 0 ? (
                                       <tr>
                                         <td colSpan={7} className="py-4 text-center text-gray-400 italic">No vendor invoices recorded.</td>
                                       </tr>
                                     ) : (
-                                      vendorInvoices.map((vi: any) => {
-                                        const tot = parseFloat(String(vi.totalAmount || 0)) || 0;
-                                        const gst = parseFloat(String(vi.gstAmount || 0)) || 0;
-                                        const net = tot - gst;
+                                      purchaseInvoices.map((vi: any) => {
+                                        const { tot, gst, taxable } = docAmounts(vi);
                                         return (
-                                          <tr key={vi.id} className="hover:bg-slate-50 transition-colors">
-                                            <td className="py-2 px-3 font-mono font-medium text-gray-800 whitespace-nowrap">{vi.piNumber || `PI-${vi.id}`}</td>
+                                          <tr
+                                            key={vi.id}
+                                            className="hover:bg-amber-50 transition-colors cursor-pointer"
+                                            onClick={() => openDoc(`/vendor-invoices/${vi.id}`, a.code)}
+                                          >
+                                            <td className="py-2 px-3 font-mono font-medium text-blue-700 whitespace-nowrap">{vi.piNumber || `PI-${vi.id}`}</td>
                                             <td className="py-2 px-3 font-medium text-gray-900 whitespace-nowrap">{vi.vendorName || "—"}</td>
                                             <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{vi.piDate ? fmtDate(vi.piDate) : "—"}</td>
-                                            <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtSGD(net)}</td>
+                                            <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtSGD(taxable)}</td>
                                             <td className="py-2 px-3 text-right font-mono text-gray-600 whitespace-nowrap">{fmtSGD(gst)}</td>
                                             <td className="py-2 px-3 text-right font-mono font-semibold text-gray-900 whitespace-nowrap">{fmtSGD(tot)}</td>
                                             <td className="py-2 px-3 text-center whitespace-nowrap">
@@ -401,18 +467,18 @@ export default function ProfitLoss() {
                                       })
                                     )}
                                   </tbody>
-                                  {vendorInvoices.length > 0 && (
+                                  {purchaseInvoices.length > 0 && (
                                     <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
                                       <tr>
-                                        <td colSpan={3} className="py-2.5 px-3 uppercase text-gray-600">Total Purchases ({vendorInvoices.length})</td>
+                                        <td colSpan={3} className="py-2.5 px-3 uppercase text-gray-600">Total Purchases ({purchaseInvoices.length})</td>
                                         <td className="py-2.5 px-3 text-right font-mono">
-                                          {fmtSGD(vendorInvoices.reduce((s, vi) => s + ((parseFloat(String(vi.totalAmount || 0)) || 0) - (parseFloat(String(vi.gstAmount || 0)) || 0)), 0))}
+                                          {fmtSGD(purchaseInvoices.reduce((s, vi) => s + docAmounts(vi).taxable, 0))}
                                         </td>
                                         <td className="py-2.5 px-3 text-right font-mono text-gray-600">
-                                          {fmtSGD(vendorInvoices.reduce((s, vi) => s + (parseFloat(String(vi.gstAmount || 0)) || 0), 0))}
+                                          {fmtSGD(purchaseInvoices.reduce((s, vi) => s + docAmounts(vi).gst, 0))}
                                         </td>
                                         <td className="py-2.5 px-3 text-right font-mono text-gray-900">
-                                          {fmtSGD(vendorInvoices.reduce((s, vi) => s + (parseFloat(String(vi.totalAmount || 0)) || 0), 0))}
+                                          {fmtSGD(purchaseInvoices.reduce((s, vi) => s + docAmounts(vi).tot, 0))}
                                         </td>
                                         <td></td>
                                       </tr>

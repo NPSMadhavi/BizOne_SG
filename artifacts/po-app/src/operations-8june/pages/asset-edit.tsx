@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CreditCard, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { FormPageShell } from "@/operations-8june/components/layout/FormPageShell";
 import { ModalCancelButton, ModalSaveButton } from "@/operations-8june/components/forms/FormModalShell";
 import AssetForm from "@/operations-8june/components/forms/AssetForm";
-import { AssetPaymentRecordDialog } from "@/operations-8june/components/forms/AssetPaymentRecordDialog";
 import type { Asset } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +27,6 @@ export default function AssetEditPage() {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [paymentRecordOpen, setPaymentRecordOpen] = useState(false);
   const assetId = params?.id ? Number(params.id) : undefined;
   const goBack = () => setLocation("/assets");
   const invalid = !assetId || Number.isNaN(assetId);
@@ -42,8 +40,6 @@ export default function AssetEditPage() {
     },
     enabled: !invalid,
   });
-
-  const recordPayment = () => setPaymentRecordOpen(true);
 
   const deleteAssetMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -79,18 +75,7 @@ export default function AssetEditPage() {
     <>
       <FormPageShell
         title="Edit Asset"
-        description="Update asset details."
         backHref="/assets"
-        headerAction={
-          <Button
-            type="button"
-            className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-            onClick={recordPayment}
-          >
-            <CreditCard className="h-4 w-4" />
-            Record Payment
-          </Button>
-        }
         footer={
           <div className="flex w-full items-center justify-between gap-3">
             <Button
@@ -150,12 +135,6 @@ export default function AssetEditPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <AssetPaymentRecordDialog
-        open={paymentRecordOpen}
-        onOpenChange={setPaymentRecordOpen}
-        preSelectedAssetId={assetId}
-      />
     </>
   );
 }

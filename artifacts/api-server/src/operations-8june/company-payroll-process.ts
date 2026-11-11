@@ -574,22 +574,22 @@ export async function processIndividualPayrollCompany(
       return;
     }
 
-    if (req.body.expenseAccountId && Number(req.body.expenseAccountId) > 0) {
-      const userId = (req.session as any)?.userId ?? 1;
-      await postPayrollCreatedJE({
-        id: result.record.id,
-        companyId,
-        employeeId: employee.id,
-        employeeName: employee.name,
-        payPeriodStart: normalizedPayPeriodStart,
-        payPeriodEnd: normalizedPayPeriodEnd,
-        grossPay: result.record.gross_pay,
-        netPay: result.record.net_pay,
-        cpfEmployee: result.record.cpf_employee,
-        cpfEmployer: result.record.cpf_employer,
-        expenseAccountId: Number(req.body.expenseAccountId),
-      }, userId);
-    }
+    const userId = (req.session as any)?.userId ?? 1;
+    await postPayrollCreatedJE({
+      id: result.record.id,
+      companyId,
+      employeeId: employee.id,
+      employeeName: employee.name,
+      payPeriodStart: normalizedPayPeriodStart,
+      payPeriodEnd: normalizedPayPeriodEnd,
+      grossPay: result.record.gross_pay,
+      netPay: result.record.net_pay,
+      cpfEmployee: result.record.cpf_employee,
+      cpfEmployer: result.record.cpf_employer,
+      expenseAccountId: req.body.expenseAccountId && Number(req.body.expenseAccountId) > 0 ? Number(req.body.expenseAccountId) : null,
+    }, userId).catch((jeErr) => {
+      console.warn("Payroll auto-post JE error (non-fatal):", jeErr);
+    });
 
     // Persist payroll only — payslips are generated on demand via download/view.
     res.json({
@@ -807,22 +807,22 @@ export async function batchProcessPayrollCompany(
         else if (result.action === "updated") summary.updated++;
         processedConfigIds.add(config.id);
 
-        if (req.body.expenseAccountId && Number(req.body.expenseAccountId) > 0) {
-          const userId = (req.session as any)?.userId ?? 1;
-          await postPayrollCreatedJE({
-            id: result.record.id,
-            companyId,
-            employeeId: employee.id,
-            employeeName: employeeName,
-            payPeriodStart: resolvedPayPeriodStart,
-            payPeriodEnd: resolvedPayPeriodEnd,
-            grossPay: result.record.gross_pay,
-            netPay: result.record.net_pay,
-            cpfEmployee: result.record.cpf_employee,
-            cpfEmployer: result.record.cpf_employer,
-            expenseAccountId: Number(req.body.expenseAccountId),
-          }, userId);
-        }
+        const userId = (req.session as any)?.userId ?? 1;
+        await postPayrollCreatedJE({
+          id: result.record.id,
+          companyId,
+          employeeId: employee.id,
+          employeeName: employeeName,
+          payPeriodStart: resolvedPayPeriodStart,
+          payPeriodEnd: resolvedPayPeriodEnd,
+          grossPay: result.record.gross_pay,
+          netPay: result.record.net_pay,
+          cpfEmployee: result.record.cpf_employee,
+          cpfEmployer: result.record.cpf_employer,
+          expenseAccountId: req.body.expenseAccountId && Number(req.body.expenseAccountId) > 0 ? Number(req.body.expenseAccountId) : null,
+        }, userId).catch((jeErr) => {
+          console.warn("Payroll batch auto-post JE error (non-fatal):", jeErr);
+        });
       } catch (error) {
         summary.failures.push({
           employeeName,

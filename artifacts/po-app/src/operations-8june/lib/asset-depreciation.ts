@@ -125,12 +125,13 @@ export function buildDepreciationSchedule(
   const asOfMonth = startOfMonth(asOf);
 
   const rows: DepreciationRow[] = [];
-  let opening = round2(cost);
+  // Opening NBV is cost less residual value (depreciable base).
+  let opening = round2(depreciable);
   for (let i = 0; i < periodsTotal; i++) {
     const periodStart = addMonths(start, Math.round(i * monthStep));
-    const remaining = Math.max(0, round2(opening - residual));
+    const remaining = Math.max(0, opening);
     const dep = round2(Math.min(perPeriod, remaining));
-    const closing = round2(Math.max(residual, opening - dep));
+    const closing = round2(Math.max(0, opening - dep));
     const posted = periodStart.getTime() <= asOfMonth.getTime();
     rows.push({
       periodKey: `${periodStart.getFullYear()}-${periodStart.getMonth() + 1}`,
@@ -142,7 +143,7 @@ export function buildDepreciationSchedule(
       status: posted ? "posted" : "calculated",
     });
     opening = closing;
-    if (opening <= residual + 0.001) break;
+    if (opening <= 0.001) break;
   }
   return rows;
 }

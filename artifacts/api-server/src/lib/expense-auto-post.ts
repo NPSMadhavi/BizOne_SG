@@ -138,7 +138,10 @@ export async function postExpenseJE(
     CATEGORY_ACCOUNT[expense.category] ??
     (/^\d+$/.test(String(expense.category || "")) ? String(expense.category) : null) ??
     "7200";
-  const creditAcct = await getAccountByCode(expense.companyId, "1010");
+  const creditAcct =
+    (await getAccountByCode(expense.companyId, "1010")) ??
+    (await getAccountByCode(expense.companyId, "1000")) ??
+    (await getAccountByCode(expense.companyId, "1020"));
   const linkedAcct = expense.accountId
     ? await getAccountById(expense.companyId, Number(expense.accountId))
     : null;

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { Download, Loader2, Package, Users, ChevronDown, ChevronUp, ChevronRight, FileText } from "lucide-react";
+import { Download, Loader2, Package, Users, ChevronDown, ChevronUp, ChevronRight, FileText, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateBalanceSheet_PDF } from "@/lib/pdf";
 import type { Asset } from "@shared/schema";
@@ -229,14 +229,21 @@ export default function BalanceSheetPage() {
     });
   }, [assets, expenses]);
 
-  const payrollBreakdown = useMemo(() => {
+  const salariesBreakdown = useMemo(() => {
     return payrollRecords.map((rec: any) => {
       const emp = employees.find((e: any) => Number(e.id) === Number(rec.employee_id));
       const gross = parseFloat(String(rec.gross_pay || 0)) || 0;
       const net = parseFloat(String(rec.net_pay || 0)) || 0;
-      const marker = `payroll-payment:${rec.employee_id}:`;
+      const empId = rec.employee_id;
       const paid = expenses.reduce((sum, exp) => {
-        if (exp.notes?.includes(marker)) {
+        const isSalaryMarker = exp.notes?.includes(`payroll-payment:salary:${empId}:`);
+        const isLegacySalary =
+          exp.notes?.includes(`payroll-payment:${empId}:`) &&
+          !exp.notes?.includes("payroll-payment:cpf:") &&
+          !exp.notes?.includes("Type: CPF") &&
+          !exp.notes?.includes("payment-type:cpf") &&
+          !exp.description?.toLowerCase().includes("cpf");
+        if (isSalaryMarker || isLegacySalary) {
           return sum + (Number(exp.amount) || 0);
         }
         return sum;
@@ -251,6 +258,39 @@ export default function BalanceSheetPage() {
       };
     });
   }, [payrollRecords, employees, expenses]);
+
+  const cpfBreakdown = useMemo(() => {
+    return payrollRecords.map((rec: any) => {
+      const emp = employees.find((e: any) => Number(e.id) === Number(rec.employee_id));
+      const employeeCpf = parseFloat(String(rec.cpf_employee || rec.cpfDeduction || 0)) || 0;
+      const employerCpf = parseFloat(String(rec.cpf_employer || rec.cpfEmployer || 0)) || 0;
+      const totalCpf = Math.round((employeeCpf + employerCpf) * 100) / 100 || employeeCpf;
+      const empId = rec.employee_id;
+      const paid = expenses.reduce((sum, exp) => {
+        const isCpfMarker = exp.notes?.includes(`payroll-payment:cpf:${empId}:`);
+        const isLegacyCpf =
+          exp.notes?.includes(`payroll-payment:${empId}:`) &&
+          (exp.notes?.includes("Type: CPF") ||
+            exp.notes?.includes("payment-type:cpf") ||
+            exp.description?.toLowerCase().includes("cpf"));
+        if (isCpfMarker || isLegacyCpf) {
+          return sum + (Number(exp.amount) || 0);
+        }
+        return sum;
+      }, 0);
+      return {
+        record: rec,
+        employee: emp,
+        employeeCpf,
+        employerCpf,
+        totalCpf,
+        paid,
+        balance: Math.max(0, Math.round((totalCpf - paid) * 100) / 100),
+      };
+    });
+  }, [payrollRecords, employees, expenses]);
+
+  const payrollBreakdown = salariesBreakdown;
 
   const isNonCurrentOrFixed = (a: AcctLine) =>
     a.subType === "non_current_asset" ||
@@ -477,11 +517,14 @@ export default function BalanceSheetPage() {
                 onToggleRow={(r) => toggleRow(r.code)}
                 isRowClickable={(r) => {
                   const isAp = r.code === "2000" || /accounts payable|trade creditors/i.test(r.name);
-                  const isPayroll = r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name);
-                  return isAp || isPayroll;
+                  const isSalaries = r.code === "2040" || /salaries payable|staff salaries/i.test(r.name);
+                  const isCpf = r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name);
+                  return isAp || isSalaries || isCpf;
                 }}
                 renderExpandedRow={(r) => {
                   const isAp = r.code === "2000" || /accounts payable|trade creditors/i.test(r.name);
+                  const isCpf = r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name);
+
                   if (isAp) {
                     return (
                       <div className="rounded-lg border border-amber-200 bg-white overflow-hidden shadow-sm">
@@ -565,15 +608,92 @@ export default function BalanceSheetPage() {
                     );
                   }
 
+                  if (isCpf) {
+                    return (
+                      <div className="rounded-lg border border-emerald-200 bg-white overflow-hidden shadow-sm">
+                        <div className="flex items-center justify-between px-3 py-2 bg-emerald-50/60 border-b border-emerald-100 text-xs">
+                          <span className="font-semibold text-emerald-900 flex items-center gap-1.5">
+                            <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+                            CPF Contributions Payable — {cpfBreakdown.length} record{cpfBreakdown.length !== 1 ? "s" : ""}
+                          </span>
+                          <span className="font-mono text-muted-foreground">
+                            Balance Due: <strong className="text-gray-900">{fmtAmt(cpfBreakdown.reduce((s, p) => s + p.balance, 0))}</strong>
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-slate-100 border-b border-slate-200 uppercase font-semibold text-slate-700">
+                              <tr>
+                                <th className="py-2.5 px-3 text-left whitespace-nowrap">Employee</th>
+                                <th className="py-2.5 px-3 text-left whitespace-nowrap">Period</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Employee CPF (S$)</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Employer CPF (S$)</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Total CPF (S$)</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Paid (S$)</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Balance Due (S$)</th>
+                                <th className="py-2.5 px-3 text-center whitespace-nowrap">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 bg-white">
+                              {cpfBreakdown.length === 0 ? (
+                                <tr>
+                                  <td colSpan={8} className="py-4 text-center text-gray-400 italic">No CPF records found.</td>
+                                </tr>
+                              ) : (
+                                cpfBreakdown.map(({ record, employee, employeeCpf, employerCpf, totalCpf, paid, balance }) => (
+                                  <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="py-2 px-3 whitespace-nowrap">
+                                      <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
+                                      <div className="text-[10px] text-gray-500 font-mono">{employee?.employeeId || employee?.designation || ""}</div>
+                                    </td>
+                                    <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
+                                      {record.pay_period_start ? `${new Date(record.pay_period_start).toLocaleDateString("en-SG", { month: "short", year: "numeric" })}` : "—"}
+                                    </td>
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(employeeCpf)}</td>
+                                    <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(employerCpf)}</td>
+                                    <td className="py-2 px-3 text-right font-mono font-medium text-gray-900 whitespace-nowrap">{fmtAmt(totalCpf)}</td>
+                                    <td className="py-2 px-3 text-right font-mono text-emerald-600 whitespace-nowrap">{fmtAmt(paid)}</td>
+                                    <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-700 whitespace-nowrap">{fmtAmt(balance)}</td>
+                                    <td className="py-2 px-3 text-center whitespace-nowrap">
+                                      <span className={cn(
+                                        "text-[10px] px-2 py-0.5 rounded-full font-medium uppercase",
+                                        balance <= 0.01 ? "bg-emerald-100 text-emerald-700" : paid > 0 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                                      )}>
+                                        {balance <= 0.01 ? "Settled" : paid > 0 ? "Partially Paid" : "Payable"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                            {cpfBreakdown.length > 0 && (
+                              <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
+                                <tr>
+                                  <td colSpan={2} className="py-2.5 px-3 uppercase text-gray-600">Total CPF Records ({cpfBreakdown.length})</td>
+                                  <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(cpfBreakdown.reduce((s, p) => s + p.employeeCpf, 0))}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(cpfBreakdown.reduce((s, p) => s + p.employerCpf, 0))}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(cpfBreakdown.reduce((s, p) => s + p.totalCpf, 0))}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-emerald-700">{fmtAmt(cpfBreakdown.reduce((s, p) => s + p.paid, 0))}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-emerald-700">{fmtAmt(cpfBreakdown.reduce((s, p) => s + p.balance, 0))}</td>
+                                  <td></td>
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div className="rounded-lg border border-blue-200 bg-white overflow-hidden shadow-sm">
                       <div className="flex items-center justify-between px-3 py-2 bg-blue-50/60 border-b border-blue-100 text-xs">
                         <span className="font-semibold text-blue-900 flex items-center gap-1.5">
                           <Users className="h-3.5 w-3.5 text-blue-600" />
-                          Staff Salaries &amp; Payroll Liabilities — {payrollBreakdown.length} record{payrollBreakdown.length !== 1 ? "s" : ""}
+                          Staff Salaries Payable — {salariesBreakdown.length} record{salariesBreakdown.length !== 1 ? "s" : ""}
                         </span>
                         <span className="font-mono text-muted-foreground">
-                          Balance Due: <strong className="text-gray-900">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.balance, 0))}</strong>
+                          Balance Due: <strong className="text-gray-900">{fmtAmt(salariesBreakdown.reduce((s, p) => s + p.balance, 0))}</strong>
                         </span>
                       </div>
                       <div className="overflow-x-auto">
@@ -590,12 +710,12 @@ export default function BalanceSheetPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100 bg-white">
-                            {payrollBreakdown.length === 0 ? (
+                            {salariesBreakdown.length === 0 ? (
                               <tr>
                                 <td colSpan={7} className="py-4 text-center text-gray-400 italic">No payroll records found.</td>
                               </tr>
                             ) : (
-                              payrollBreakdown.map(({ record, employee, gross, net, paid, balance }) => (
+                              salariesBreakdown.map(({ record, employee, gross, net, paid, balance }) => (
                                 <tr key={record.id} className="hover:bg-slate-50 transition-colors">
                                   <td className="py-2 px-3 whitespace-nowrap">
                                     <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
@@ -620,14 +740,14 @@ export default function BalanceSheetPage() {
                               ))
                             )}
                           </tbody>
-                          {payrollBreakdown.length > 0 && (
+                          {salariesBreakdown.length > 0 && (
                             <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-gray-900">
                               <tr>
-                                <td colSpan={2} className="py-2.5 px-3 uppercase text-gray-600">Total Payroll Records ({payrollBreakdown.length})</td>
-                                <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.gross, 0))}</td>
-                                <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.net, 0))}</td>
-                                <td className="py-2.5 px-3 text-right font-mono text-emerald-700">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.paid, 0))}</td>
-                                <td className="py-2.5 px-3 text-right font-mono text-blue-700">{fmtAmt(payrollBreakdown.reduce((s, p) => s + p.balance, 0))}</td>
+                                <td colSpan={2} className="py-2.5 px-3 uppercase text-gray-600">Total Payroll Records ({salariesBreakdown.length})</td>
+                                <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(salariesBreakdown.reduce((s, p) => s + p.gross, 0))}</td>
+                                <td className="py-2.5 px-3 text-right font-mono">{fmtAmt(salariesBreakdown.reduce((s, p) => s + p.net, 0))}</td>
+                                <td className="py-2.5 px-3 text-right font-mono text-emerald-700">{fmtAmt(salariesBreakdown.reduce((s, p) => s + p.paid, 0))}</td>
+                                <td className="py-2.5 px-3 text-right font-mono text-blue-700">{fmtAmt(salariesBreakdown.reduce((s, p) => s + p.balance, 0))}</td>
                                 <td></td>
                               </tr>
                             </tfoot>
@@ -638,19 +758,38 @@ export default function BalanceSheetPage() {
                   );
                 }}
                 groupAction={
-                  payrollBreakdown.length > 0 && curLiab.some(r => r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name)) ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const prRow = curLiab.find(r => r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name));
-                        if (prRow) toggleRow(prRow.code);
-                      }}
-                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                    >
-                      <Users className="h-3.5 w-3.5" />
-                      {curLiab.some(r => (r.code === "2040" || r.code === "2050" || /salaries payable|payroll payable/i.test(r.name)) && expandedRows[r.code]) ? "Hide Payroll Details" : `View Payroll Details (${payrollBreakdown.length})`}
-                    </button>
-                  ) : undefined
+                  <div className="flex items-center gap-2">
+                    {salariesBreakdown.length > 0 && curLiab.some(r => r.code === "2040" || /salaries payable|staff salaries/i.test(r.name)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const prRow = curLiab.find(r => r.code === "2040" || /salaries payable|staff salaries/i.test(r.name));
+                          if (prRow) toggleRow(prRow.code);
+                        }}
+                        className="text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        {curLiab.some(r => (r.code === "2040" || /salaries payable|staff salaries/i.test(r.name)) && expandedRows[r.code])
+                          ? "Hide Salaries"
+                          : `View Salaries (${salariesBreakdown.length})`}
+                      </button>
+                    )}
+                    {cpfBreakdown.length > 0 && curLiab.some(r => r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cpfRow = curLiab.find(r => r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name));
+                          if (cpfRow) toggleRow(cpfRow.code);
+                        }}
+                        className="text-[11px] font-medium text-emerald-600 hover:text-emerald-800 hover:underline flex items-center gap-1"
+                      >
+                        <Building2 className="h-3.5 w-3.5" />
+                        {curLiab.some(r => (r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name)) && expandedRows[r.code])
+                          ? "Hide CPF"
+                          : `View CPF (${cpfBreakdown.length})`}
+                      </button>
+                    )}
+                  </div>
                 }
               />
               <Section groupLabel="Non-Current Liabilities" rows={ncLiab} subtotalLabel="Total Non-Current Liabilities" subtotal={ncLiab.reduce((s, a) => s + a.amount, 0)} />

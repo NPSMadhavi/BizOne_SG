@@ -37,33 +37,9 @@ import {
   formatAssetRegisterId,
   formatSgd,
 } from "@/operations-8june/lib/asset-depreciation";
-import {
-  loadAssetAttachments,
-  loadAssetPrimaryImage,
-} from "@/operations-8june/lib/asset-attachments";
+import { resolveAssetImageSrc } from "@/operations-8june/lib/asset-attachments";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
-
-function resolveAssetImageSrc(assetId: number, assetImage?: string | null): string {
-  const fromApi = String(assetImage || "").trim();
-  if (
-    fromApi.startsWith("data:image") ||
-    fromApi.startsWith("http://") ||
-    fromApi.startsWith("https://") ||
-    fromApi.startsWith("/")
-  ) {
-    return fromApi;
-  }
-  const local = loadAssetPrimaryImage(assetId);
-  if (local) return local;
-  const attachments = loadAssetAttachments(assetId);
-  const img = attachments.find(
-    (a) =>
-      String(a.type || "").startsWith("image/") ||
-      /\.(png|jpe?g|webp|gif)$/i.test(a.name || ""),
-  );
-  return img?.dataUrl || "";
-}
 
 function AssetThumb({
   assetId,
@@ -108,12 +84,24 @@ export default function AssetRegisterPage() {
     const q = search.trim().toLowerCase();
     return list
       .filter((a) => {
+        // Disposed assets stay on the register with status Disposed (BS reduced by disposal JE)
         if (!q) return true;
-        const hay = `${a.tag} ${a.type} ${a.category} ${a.serial || ""}`.toLowerCase();
+        const hay = `${a.tag} ${a.type} ${a.category} ${a.serial || ""} ${a.status || ""}`.toLowerCase();
         return hay.includes(q);
       })
       .map((a) => {
-        const books = calcAssetBookValues(a);
+        const status = String(a.status || "").toLowerCase();
+        const disposalDate =
+          (a as any).disposalDate || (a as any).disposal_date || null;
+        const asOf =
+          (status === "disposed" || status === "retired") && disposalDate
+            ? new Date(`${String(disposalDate).slice(0, 10)}T00:00:00`)
+            : new Date();
+        const books = calcAssetBookValues(a, Number.isNaN(asOf.getTime()) ? new Date() : asOf);
+        // Disposed: keep cost / acc. dep. at disposal date; NBV is off the Balance Sheet
+        if (status === "disposed" || status === "retired") {
+          return { asset: a, books: { ...books, nbv: 0 } };
+        }
         return { asset: a, books };
       });
   }, [assets, search]);
@@ -153,7 +141,7 @@ export default function AssetRegisterPage() {
           "Cost (SGD)": Number(books.cost || 0),
           "Acc. Dep. (SGD)": Number(books.accDep || 0),
           "NBV (SGD)": Number(books.nbv || 0),
-          Status: "Active",
+          Status: String(asset.status || "available").replace(/\b\w/g, (c) => c.toUpperCase()),
         }));
         const worksheet = XLSX.utils.json_to_sheet(data);
         worksheet["!cols"] = [
@@ -204,7 +192,7 @@ export default function AssetRegisterPage() {
             formatSgd(books.cost),
             formatSgd(books.accDep),
             formatSgd(books.nbv),
-            "Active",
+            String(asset.status || "available").replace(/\b\w/g, (c) => c.toUpperCase()),
           ]),
           headStyles: {
             fillColor: [37, 99, 235],
@@ -350,9 +338,22 @@ export default function AssetRegisterPage() {
                     <TableCell className="text-right tabular-nums">{formatSgd(books.accDep)}</TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{formatSgd(books.nbv)}</TableCell>
                     <TableCell>
-                      <span className="inline-flex rounded-full bg-[#DEF7EC] px-2.5 py-0.5 text-xs font-medium text-[#057A55]">
-                        Active
-                      </span>
+                      {(() => {
+                        const status = String(asset.status || "available").toLowerCase();
+                        const label = status.replace(/\b\w/g, (c) => c.toUpperCase());
+                        const isDisposed = status === "disposed" || status === "retired";
+                        return (
+                          <span
+                            className={
+                              isDisposed
+                                ? "inline-flex rounded-full bg-[#FDE8E8] px-2.5 py-0.5 text-xs font-medium text-[#E02424]"
+                                : "inline-flex rounded-full bg-[#DEF7EC] px-2.5 py-0.5 text-xs font-medium text-[#057A55]"
+                            }
+                          >
+                            {isDisposed ? label : status === "available" || status === "assigned" ? "Active" : label}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>

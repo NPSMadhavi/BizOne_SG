@@ -9,8 +9,18 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
 import { Check, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  STANDARD_ACCOUNT_TYPES,
+  STANDARD_TYPE_LABELS,
+  type CustomAccountType,
+  loadCustomAccountTypes,
+  saveCustomAccountTypes,
+  slugifyAccountType,
+  mergeAccountTypes,
+} from "@/lib/account-types";
 
 export interface LedgerAccount {
   id: number;
@@ -20,16 +30,10 @@ export interface LedgerAccount {
   isActive: boolean;
 }
 
-const TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense"] as const;
-type AccountType = typeof TYPE_ORDER[number];
+const TYPE_ORDER = STANDARD_ACCOUNT_TYPES;
+type AccountType = (typeof TYPE_ORDER)[number];
 
-const TYPE_LABELS: Record<string, string> = {
-  asset: "Assets",
-  liability: "Liabilities",
-  equity: "Equity",
-  revenue: "Revenue",
-  expense: "Expenses",
-};
+const TYPE_LABELS: Record<string, string> = { ...STANDARD_TYPE_LABELS };
 
 const SUB_TYPES: Record<AccountType, { value: string; label: string }[]> = {
   asset:     [{ value: "current_asset", label: "Current Asset" }, { value: "fixed_asset", label: "Fixed Asset" }],
@@ -39,32 +43,73 @@ const SUB_TYPES: Record<AccountType, { value: string; label: string }[]> = {
   expense:   [{ value: "cost_of_sales", label: "Cost of Sales" }, { value: "operating_expense", label: "Operating Expense" }],
 };
 
+function getSubTypes(type: string): { value: string; label: string }[] {
+  if ((TYPE_ORDER as readonly string[]).includes(type)) {
+    return SUB_TYPES[type as AccountType];
+  }
+  return [{ value: type, label: "General" }];
+}
+
 interface AccountCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (account: LedgerAccount) => void;
-  defaultType?: AccountType;
+  defaultType?: string;
 }
 
 function AccountCreateDialog({ open, onOpenChange, onCreated, defaultType = "expense" }: AccountCreateDialogProps) {
   const { toast } = useToast();
+  const { selectedCompany } = useAuth();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [type, setType] = useState<AccountType>(defaultType);
-  const [subType, setSubType] = useState(SUB_TYPES[defaultType][0].value);
+  const [type, setType] = useState<string>(defaultType);
+  const [subType, setSubType] = useState(getSubTypes(defaultType)[0].value);
   const [description, setDescription] = useState("");
+  const [customTypes, setCustomTypes] = useState<CustomAccountType[]>([]);
+  const [createTypeOpen, setCreateTypeOpen] = useState(false);
+  const [newTypeLabel, setNewTypeLabel] = useState("");
+
+  useEffect(() => {
+    setCustomTypes(loadCustomAccountTypes(selectedCompany?.id));
+  }, [selectedCompany?.id, open]);
+
+  const availableTypes = useMemo(
+    () => mergeAccountTypes(customTypes),
+    [customTypes],
+  );
 
   useEffect(() => {
     if (open) {
       setCode("");
       setName("");
       setType(defaultType);
-      setSubType(SUB_TYPES[defaultType][0].value);
+      setSubType(getSubTypes(defaultType)[0].value);
       setDescription("");
     }
   }, [open, defaultType]);
+
+  function handleCreateAccountType() {
+    const label = newTypeLabel.trim();
+    const value = slugifyAccountType(label);
+    if (!label || !value) {
+      toast({ title: "Account type name is required", variant: "destructive" });
+      return;
+    }
+    if (availableTypes.some((t) => t.value === value)) {
+      toast({ title: "That account type already exists", variant: "destructive" });
+      return;
+    }
+    const next = [...customTypes, { value, label }];
+    setCustomTypes(next);
+    saveCustomAccountTypes(selectedCompany?.id, next);
+    setType(value);
+    setSubType(value);
+    setNewTypeLabel("");
+    setCreateTypeOpen(false);
+    toast({ title: "Account type created." });
+  }
 
   async function handleSave() {
     if (!code.trim() || !name.trim()) {
@@ -103,66 +148,106 @@ function AccountCreateDialog({ open, onOpenChange, onCreated, defaultType = "exp
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create Ledger</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Account Code <span className="text-destructive">*</span></Label>
-            <Input placeholder="" value={code} onChange={e => setCode(e.target.value)} />
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Ledger</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Account Code <span className="text-destructive">*</span></Label>
+              <Input placeholder="" value={code} onChange={e => setCode(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Account Name <span className="text-destructive">*</span></Label>
+              <Input placeholder="" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Account Type <span className="text-destructive">*</span></Label>
+              <Select
+                value={type}
+                onValueChange={(v) => {
+                  if (v === "__create_type__") {
+                    setNewTypeLabel("");
+                    setCreateTypeOpen(true);
+                    return;
+                  }
+                  setType(v);
+                  setSubType(getSubTypes(v)[0]?.value || v);
+                }}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__create_type__" className="text-primary font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <Plus className="h-3.5 w-3.5" />
+                      Create
+                    </span>
+                  </SelectItem>
+                  {availableTypes.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Sub-type</Label>
+              <Select value={subType} onValueChange={setSubType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {getSubTypes(type).map(s => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+              <Textarea
+                rows={2}
+                placeholder=""
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="resize-none"
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Account Name <span className="text-destructive">*</span></Label>
-            <Input placeholder="" value={name} onChange={e => setName(e.target.value)} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Create Ledger"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createTypeOpen} onOpenChange={setCreateTypeOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create Account Type</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Type Name <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="e.g. Other Assets"
+                value={newTypeLabel}
+                onChange={(e) => setNewTypeLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleCreateAccountType();
+                  }
+                }}
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Account Type <span className="text-destructive">*</span></Label>
-            <Select
-              value={type}
-              onValueChange={v => {
-                const t = v as AccountType;
-                setType(t);
-                setSubType(SUB_TYPES[t][0].value);
-              }}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {TYPE_ORDER.map(t => (
-                  <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Sub-type</Label>
-            <Select value={subType} onValueChange={setSubType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(SUB_TYPES[type] || []).map(s => (
-                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Description <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
-            <Textarea
-              rows={2}
-              placeholder=""
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              className="resize-none"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Create Ledger"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateTypeOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateAccountType}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -170,7 +255,7 @@ interface LedgerComboboxProps {
   accounts: LedgerAccount[];
   value: number | null;
   onChange: (account: LedgerAccount) => void;
-  defaultType?: AccountType;
+  defaultType?: string;
 }
 
 export function LedgerCombobox({ accounts, value, onChange, defaultType = "expense" }: LedgerComboboxProps) {
@@ -194,11 +279,17 @@ export function LedgerCombobox({ accounts, value, onChange, defaultType = "expen
     );
   }, [accounts, query]);
 
-  const grouped = useMemo(() =>
-    TYPE_ORDER
-      .map(type => ({ type, accs: filtered.filter(a => a.type === type) }))
-      .filter(g => g.accs.length > 0),
-  [filtered]);
+  const grouped = useMemo(() => {
+    const typeOrder = [
+      ...TYPE_ORDER,
+      ...Array.from(new Set(filtered.map((a) => a.type))).filter(
+        (t) => !(TYPE_ORDER as readonly string[]).includes(t),
+      ),
+    ];
+    return typeOrder
+      .map((type) => ({ type, accs: filtered.filter((a) => a.type === type) }))
+      .filter((g) => g.accs.length > 0);
+  }, [filtered]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

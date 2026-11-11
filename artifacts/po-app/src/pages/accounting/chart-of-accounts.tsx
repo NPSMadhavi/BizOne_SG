@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,14 @@ import { Plus, Search, Edit2, Trash2, BookOpen, ShieldCheck } from "lucide-react
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/hooks/use-pagination";
 import { ListPagination } from "@/components/list-pagination";
+import {
+  STANDARD_ACCOUNT_TYPES,
+  type CustomAccountType,
+  loadCustomAccountTypes,
+  saveCustomAccountTypes,
+  slugifyAccountType,
+  mergeAccountTypes,
+} from "@/lib/account-types";
 
 interface Account {
   id: number;
@@ -37,8 +45,8 @@ interface Account {
   createdAt: string;
 }
 
-const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"] as const;
-type AccountType = typeof ACCOUNT_TYPES[number];
+const ACCOUNT_TYPES = STANDARD_ACCOUNT_TYPES;
+type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 const SUB_TYPES: Record<AccountType, { value: string; label: string }[]> = {
   asset:     [{ value: "current_asset", label: "Current Asset" }, { value: "fixed_asset", label: "Fixed Asset" }],
@@ -55,6 +63,19 @@ const TYPE_META: Record<AccountType, { label: string; color: string; bg: string;
   revenue:   { label: "Revenue",      color: "text-emerald-700",bg: "bg-emerald-100 text-emerald-700", headerBg: "bg-emerald-50 border-emerald-200" },
   expense:   { label: "Expenses",     color: "text-amber-700",  bg: "bg-amber-100 text-amber-700",   headerBg: "bg-amber-50 border-amber-200" },
 };
+
+const CUSTOM_TYPE_META = {
+  color: "text-slate-700",
+  bg: "bg-slate-100 text-slate-700",
+  headerBg: "bg-slate-50 border-slate-200",
+};
+
+function getSubTypes(type: string): { value: string; label: string }[] {
+  if ((ACCOUNT_TYPES as readonly string[]).includes(type)) {
+    return SUB_TYPES[type as AccountType];
+  }
+  return [{ value: type, label: "General" }];
+}
 
 function subTypeLabel(subType: string): string {
   for (const arr of Object.values(SUB_TYPES)) {
@@ -92,7 +113,7 @@ const blankForm = (): Partial<Account> => ({
 });
 
 export default function ChartOfAccounts() {
-  const { canManage } = useAuth();
+  const { canManage, selectedCompany } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -104,11 +125,54 @@ export default function ChartOfAccounts() {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [customTypes, setCustomTypes] = useState<CustomAccountType[]>([]);
+  const [createTypeOpen, setCreateTypeOpen] = useState(false);
+  const [newTypeLabel, setNewTypeLabel] = useState("");
 
   const { data: accounts = [], isLoading, error } = useQuery({
     queryKey: ["accounts"],
     queryFn: fetchAccounts,
   });
+
+  useEffect(() => {
+    setCustomTypes(loadCustomAccountTypes(selectedCompany?.id));
+  }, [selectedCompany?.id]);
+
+  const availableTypes = useMemo(
+    () => mergeAccountTypes(customTypes, accounts.map((a) => a.type)),
+    [customTypes, accounts],
+  );
+
+  function typeMeta(type: string) {
+    if ((ACCOUNT_TYPES as readonly string[]).includes(type)) {
+      return TYPE_META[type as AccountType];
+    }
+    const custom = availableTypes.find((t) => t.value === type);
+    return {
+      label: custom?.label || type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      ...CUSTOM_TYPE_META,
+    };
+  }
+
+  function handleCreateAccountType() {
+    const label = newTypeLabel.trim();
+    const value = slugifyAccountType(label);
+    if (!label || !value) {
+      toast({ title: "Account type name is required", variant: "destructive" });
+      return;
+    }
+    if (availableTypes.some((t) => t.value === value)) {
+      toast({ title: "That account type already exists", variant: "destructive" });
+      return;
+    }
+    const next = [...customTypes, { value, label }];
+    setCustomTypes(next);
+    saveCustomAccountTypes(selectedCompany?.id, next);
+    setForm((f) => ({ ...f, type: value, subType: value }));
+    setNewTypeLabel("");
+    setCreateTypeOpen(false);
+    toast({ title: "Account type created." });
+  }
 
   const saveMutation = useMutation({
     mutationFn: (payload: { data: Partial<Account>; id?: number }) => saveAccount(payload.data, payload.id),
@@ -174,7 +238,7 @@ export default function ChartOfAccounts() {
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
-  const byType = ACCOUNT_TYPES.map(type => ({
+  const byType = availableTypes.map(({ value: type }) => ({
     type,
     accounts: paginatedItems.filter(a => a.type === type),
   })).filter(g => g.accounts.length > 0);
@@ -218,18 +282,29 @@ export default function ChartOfAccounts() {
               />
             </div>
             <div className="flex gap-1.5 flex-wrap">
-              {(["all", ...ACCOUNT_TYPES] as const).map(t => (
+              <button
+                onClick={() => setFilterType("all")}
+                className={cn(
+                  "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+                  filterType === "all"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border hover:bg-muted"
+                )}
+              >
+                All
+              </button>
+              {availableTypes.map((t) => (
                 <button
-                  key={t}
-                  onClick={() => setFilterType(t)}
+                  key={t.value}
+                  onClick={() => setFilterType(t.value)}
                   className={cn(
                     "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-                    filterType === t
+                    filterType === t.value
                       ? "bg-primary text-primary-foreground border-primary"
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  {t === "all" ? "All" : TYPE_META[t].label}
+                  {t.label}
                 </button>
               ))}
             </div>
@@ -255,7 +330,7 @@ export default function ChartOfAccounts() {
       ) : (
         <div className="space-y-4">
           {byType.map(({ type, accounts: group }) => {
-            const meta = TYPE_META[type as AccountType];
+            const meta = typeMeta(type);
             return (
               <Card key={type} className="overflow-hidden">
                 <div className={cn("flex items-center justify-between px-6 py-3 border-b", meta.headerBg)}>
@@ -399,15 +474,26 @@ export default function ChartOfAccounts() {
                 <Label>Account Type <span className="text-destructive">*</span></Label>
                 <Select
                   value={form.type || "asset"}
-                  onValueChange={v => {
-                    const firstSub = SUB_TYPES[v as AccountType][0].value;
-                    setForm(f => ({ ...f, type: v, subType: firstSub }));
+                  onValueChange={(v) => {
+                    if (v === "__create_type__") {
+                      setNewTypeLabel("");
+                      setCreateTypeOpen(true);
+                      return;
+                    }
+                    const firstSub = getSubTypes(v)[0]?.value || v;
+                    setForm((f) => ({ ...f, type: v, subType: firstSub }));
                   }}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {ACCOUNT_TYPES.map(t => (
-                      <SelectItem key={t} value={t}>{TYPE_META[t].label}</SelectItem>
+                    <SelectItem value="__create_type__" className="text-primary font-medium">
+                      <span className="inline-flex items-center gap-2">
+                        <Plus className="h-3.5 w-3.5" />
+                        Create
+                      </span>
+                    </SelectItem>
+                    {availableTypes.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -421,7 +507,7 @@ export default function ChartOfAccounts() {
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(SUB_TYPES[(form.type as AccountType) || "asset"] || []).map(s => (
+                  {getSubTypes(form.type || "asset").map(s => (
                     <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                   ))}
                 </SelectContent>
@@ -444,6 +530,35 @@ export default function ChartOfAccounts() {
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : editingId ? "Save Changes" : "Create Account"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Account Type */}
+      <Dialog open={createTypeOpen} onOpenChange={setCreateTypeOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create Account Type</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Type Name <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="e.g. Other Assets"
+                value={newTypeLabel}
+                onChange={(e) => setNewTypeLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleCreateAccountType();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateTypeOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateAccountType}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

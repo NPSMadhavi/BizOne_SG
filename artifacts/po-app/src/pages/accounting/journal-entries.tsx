@@ -29,6 +29,36 @@ interface JournalEntry {
   createdAt: string;
 }
 
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+function normalizeEntryDate(val: unknown, fallbackYear = 2026): string {
+  if (!val) return "";
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const d = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof val === "string") {
+    const s = val.trim();
+    const mIso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (mIso) return `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+    const mDmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+    if (mDmy) return `${mDmy[3]}-${mDmy[2]}-${mDmy[1]}`;
+    const mNamed = s.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:[^\d]+(\d{4}))?/i);
+    if (mNamed) {
+      const mon = MONTH_MAP[mNamed[1].toLowerCase().slice(0, 3)] || "01";
+      const day = mNamed[2].padStart(2, "0");
+      const yr = mNamed[3] || fallbackYear;
+      return `${yr}-${mon}-${day}`;
+    }
+  }
+  return String(val);
+}
+
 async function fetchJournalEntries(): Promise<JournalEntry[]> {
   const res = await fetch("/api/journal-entries", { credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch journal entries");
@@ -69,15 +99,27 @@ export default function JournalEntriesList() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const filtered = useMemo(() => entries.filter(e => {
-    if (fromDate && e.entryDate < fromDate) return false;
-    if (toDate && e.entryDate > toDate) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return e.description.toLowerCase().includes(q) || String(e.id).includes(q);
-    }
-    return true;
-  }), [entries, fromDate, toDate, search]);
+  const filtered = useMemo(() => {
+    const list = entries.filter(e => {
+      const normalizedDate = normalizeEntryDate(e.entryDate);
+      if (fromDate && normalizedDate && normalizedDate < fromDate) return false;
+      if (toDate && normalizedDate && normalizedDate > toDate) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return e.description.toLowerCase().includes(q) || String(e.id).includes(q);
+      }
+      return true;
+    });
+
+    // Strictly sort newest / most recent at the starting:
+    // First by date descending (newest date first), then by ID descending (newest ID first)
+    return list.slice().sort((a, b) => {
+      const dA = normalizeEntryDate(a.entryDate);
+      const dB = normalizeEntryDate(b.entryDate);
+      if (dA !== dB) return dB.localeCompare(dA);
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
+  }, [entries, fromDate, toDate, search]);
 
   const { page, setPage, totalPages, paginatedItems } = usePagination(filtered);
 
@@ -165,7 +207,7 @@ export default function JournalEntriesList() {
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                       JE-{String(entry.id).padStart(4, "0")}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{fmtDate(entry.entryDate)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{fmtDate(normalizeEntryDate(entry.entryDate))}</td>
                     <td className="px-4 py-3 font-medium max-w-xs truncate">{entry.description}</td>
                     <td className="px-4 py-3">
                       {entry.refType === "manual" || !entry.refType

@@ -44,6 +44,7 @@ import {
   FolderKanban,
   ReceiptText,
   Monitor,
+  Trash2,
   KeyRound,
   DollarSign,
   Warehouse,
@@ -612,6 +613,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
             inGroup
           >
             Depreciation Schedule
+          </NavItem>
+          <NavItem
+            href="/assets/disposal"
+            icon={Trash2}
+            active={location === "/assets/disposal" || location.startsWith("/assets/disposal?")}
+            inGroup
+          >
+            Asset Disposal
+          </NavItem>
+          <NavItem
+            href="/assets/disposal-report"
+            icon={BarChart3}
+            active={location.startsWith("/assets/disposal-report")}
+            inGroup
+          >
+            Asset Disposal Report
           </NavItem>
         </NavGroup>
       )}

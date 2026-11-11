@@ -34,6 +34,7 @@ function statusVariant(status?: string | null): "valid" | "warning" | "danger" |
     case "maintenance":
       return "warning";
     case "retired":
+    case "disposed":
       return "danger";
     default:
       return "neutral";

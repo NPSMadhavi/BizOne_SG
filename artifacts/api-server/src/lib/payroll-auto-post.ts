@@ -13,7 +13,7 @@
  *   Reverse the original payroll JE to keep the General Ledger & Balance Sheet clean.
  */
 
-import { db, accountsTable, journalEntriesTable, journalLinesTable } from "@workspace/db";
+import { db, pool, accountsTable, journalEntriesTable, journalLinesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { ensureAccountsSeeded } from "./accounts-seed.js";
 import { assertPeriodWritable } from "./financial-year.js";
@@ -29,6 +29,36 @@ async function getAccountByCode(companyId: number, code: string) {
 async function getAccountById(id: number) {
   const [acct] = await db.select().from(accountsTable).where(eq(accountsTable.id, id)).limit(1);
   return acct ?? null;
+}
+
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+export function toIsoDate(val: unknown, fallbackYear = 2026): string {
+  if (!val) return new Date().toISOString().slice(0, 10);
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const d = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof val === "string") {
+    const s = val.trim();
+    const mIso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (mIso) return `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+    const mDmy = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+    if (mDmy) return `${mDmy[3]}-${mDmy[2]}-${mDmy[1]}`;
+    const mNamed = s.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:[^\d]+(\d{4}))?/i);
+    if (mNamed) {
+      const mon = MONTH_MAP[mNamed[1].toLowerCase().slice(0, 3)] || "01";
+      const day = mNamed[2].padStart(2, "0");
+      const yr = mNamed[3] || fallbackYear;
+      return `${yr}-${mon}-${day}`;
+    }
+  }
+  return new Date().toISOString().slice(0, 10);
 }
 
 export async function postPayrollCreatedJE(
@@ -48,13 +78,11 @@ export async function postPayrollCreatedJE(
   userId: number,
   log?: any,
 ): Promise<void> {
-  if (!payroll.expenseAccountId || Number(payroll.expenseAccountId) <= 0) {
-    return;
-  }
-
   await ensureAccountsSeeded(payroll.companyId);
 
-  const entryDate = payroll.payPeriodEnd || new Date().toISOString().split("T")[0];
+  const startStr = toIsoDate(payroll.payPeriodStart);
+  const endStr = toIsoDate(payroll.payPeriodEnd);
+  const entryDate = endStr;
   const periodCheck = await assertPeriodWritable(payroll.companyId, entryDate);
   if (!periodCheck.ok) throw new Error(periodCheck.error);
 
@@ -74,7 +102,16 @@ export async function postPayrollCreatedJE(
     return;
   }
 
-  const expAcct = await getAccountById(Number(payroll.expenseAccountId));
+  let expAcct =
+    payroll.expenseAccountId && Number(payroll.expenseAccountId) > 0
+      ? await getAccountById(Number(payroll.expenseAccountId))
+      : null;
+  if (!expAcct) {
+    expAcct =
+      (await getAccountByCode(payroll.companyId, "6000")) ??
+      (await getAccountByCode(payroll.companyId, "6020"));
+  }
+
   if (!expAcct) {
     if (log) log.warn({ companyId: payroll.companyId, payrollId: payroll.id }, "payroll-auto-post: expense account not found");
     return;
@@ -98,7 +135,7 @@ export async function postPayrollCreatedJE(
   const cpfEmpr = parseFloat(String(payroll.cpfEmployer || 0));
   const totalCpf = Math.round((cpfEmp + cpfEmpr) * 100) / 100;
 
-  const desc = `Payroll — ${payroll.employeeName || "Employee"} — ${payroll.payPeriodStart} to ${payroll.payPeriodEnd}`;
+  const desc = `Payroll — ${payroll.employeeName || "Employee"} — ${startStr} to ${endStr}`;
   const refNumber = `PR-${payroll.id}`;
 
   try {
@@ -228,4 +265,57 @@ export async function reversePayrollJE(
     if (log) log.warn({ err, payrollId }, "payroll-auto-post: reversal failed (non-fatal)");
   }
 }
+
+// ── Backfill: post JEs for processed payroll records that don't have one yet ───
+
+export async function backfillPayrollJEs(
+  companyId: number,
+  fallbackUserId: number,
+  log?: any,
+): Promise<number> {
+  await ensureAccountsSeeded(companyId);
+
+  const result = await pool.query(
+    `SELECT pr.*, e.name as employee_name
+     FROM payroll_records pr
+     LEFT JOIN employees e ON e.id = pr.employee_id
+     WHERE pr.company_id = $1
+       AND NOT EXISTS (
+         SELECT 1 FROM journal_entries je
+         WHERE je.company_id = pr.company_id
+           AND je.ref_type = 'payroll'
+           AND je.ref_id = pr.id
+           AND je.status = 'posted'
+       )`,
+    [companyId],
+  ).catch(() => ({ rows: [] }));
+
+  let posted = 0;
+  for (const row of result.rows) {
+    try {
+      await postPayrollCreatedJE({
+        id: row.id,
+        companyId,
+        employeeId: row.employee_id,
+        employeeName: row.employee_name || "Employee",
+        payPeriodStart: toIsoDate(row.pay_period_start),
+        payPeriodEnd: toIsoDate(row.pay_period_end),
+        grossPay: row.gross_pay,
+        netPay: row.net_pay,
+        cpfEmployee: row.cpf_employee,
+        cpfEmployer: row.cpf_employer,
+        expenseAccountId: row.expense_account_id ? Number(row.expense_account_id) : null,
+      }, fallbackUserId, log);
+      posted++;
+    } catch (e) {
+      if (log) log.warn({ err: e, recordId: row.id }, "backfillPayrollJEs: failed to post JE");
+    }
+  }
+
+  if (posted > 0 && log) {
+    log.info({ companyId, posted }, "payroll-auto-post: backfilled JEs for payroll records");
+  }
+  return posted;
+}
+
 

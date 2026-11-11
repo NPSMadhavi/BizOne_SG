@@ -51,6 +51,8 @@ const PAGES: PageEntry[] = [
   { label: "AIS Submission", href: "/payroll/ir8a/ais", keywords: ["ais", "iras", "auto inclusion", "submission"], category: "Payroll", path: ["IR8A / AIS", "AIS Submission"], module: "payroll" },
   { label: "Employer's (IR8A)", href: "/payroll/ir8a/employers", keywords: ["ir8a", "employer", "uen", "declaration"], category: "Payroll", path: ["Employer's (IR8A)"], module: "payroll" },
   { label: "Fixed Assets", href: "/assets", keywords: ["assets", "fixed asset"], category: "Fixed Assets", path: ["Fixed Assets"], module: "assets" },
+  { label: "Asset Disposal", href: "/assets/disposal", keywords: ["dispose", "disposal", "scrap", "write off"], category: "Fixed Assets", path: ["Fixed Assets", "Asset Disposal"], module: "assets" },
+  { label: "Asset Disposal Report", href: "/assets/disposal-report", keywords: ["disposal report", "disposed assets", "gain loss", "scrap report"], category: "Fixed Assets", path: ["Fixed Assets", "Asset Disposal Report"], module: "assets" },
   { label: "Licenses", href: "/licenses", keywords: ["licence"], category: "Licenses", path: ["Licenses"], module: "licenses" },
 
   { label: "Purchase Quotations", href: "/purchase-quotations", keywords: ["pq", "rfq"], category: "Transactions", path: ["Purchases", "Purchase Quotations"], module: "purchase_quotations" },

@@ -42,7 +42,6 @@ import {
   downloadAssetAttachment,
   formatFileSize,
   loadAssetAttachments,
-  loadAssetPrimaryImage,
   mimeFromFileName,
   readFileAsDataUrl,
   saveAssetAttachments,
@@ -324,7 +323,7 @@ function mapAssetToFormValues(data: AssetRecord): AssetFormData {
     model: String(normalized.model ?? ""),
     manufacturer: matchSelectValue(normalized.manufacturer, manufacturers),
     status:
-      matchSelectValue(normalized.status, ["available", "assigned", "maintenance", "retired"]) ||
+      matchSelectValue(normalized.status, ["available", "assigned", "maintenance", "retired", "disposed"]) ||
       "available",
     condition:
       matchSelectValue(normalized.condition, ["new", "used", "refurbished", "damaged"]) || "new",
@@ -601,11 +600,11 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
   const editFormValues = useMemo(() => {
     if (!assetId || !resolvedAsset) return undefined;
     const base = mapAssetToFormValues(resolvedAsset);
-    const localImage = loadAssetPrimaryImage(assetId);
+    const apiImage = String(base.assetImage || "").trim();
     return {
       ...base,
       purchaseDate: base.purchaseDate || toDateValue(resolvedAsset.depreciationStartDate),
-      assetImage: base.assetImage || localImage || "",
+      assetImage: apiImage,
       type: matchSelectValue(resolvedAsset.type, typeOptions, optionRenames.type),
       category: matchSelectValue(resolvedAsset.category, categoryOptions, optionRenames.category),
       manufacturer: matchSelectValue(
@@ -631,6 +630,15 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
     optionRenames.manufacturer,
     optionRenames.location,
   ]);
+
+  useEffect(() => {
+    if (!assetId || !resolvedAsset) return;
+    const apiImage = String(
+      (resolvedAsset as any).assetImage ?? (resolvedAsset as any).asset_image ?? "",
+    ).trim();
+    // Keep local cache in sync with API so a removed image does not reappear in tables.
+    saveAssetPrimaryImage(assetId, apiImage || "");
+  }, [assetId, resolvedAsset]);
 
   const employeeSelectOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -1052,7 +1060,8 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
       usefulLifeUnit: data.usefulLifeUnit || "Years",
       // Keep the entered number; unit is stored separately for schedule math.
       usefulLifeYears: data.usefulLifeYears == null ? undefined : Number(data.usefulLifeYears),
-      assetImage: data.assetImage?.trim() ? data.assetImage.trim() : undefined,
+      // Send null (not undefined) so the API clears a removed image.
+      assetImage: data.assetImage?.trim() ? data.assetImage.trim() : null,
     };
     
     if (isEditMode) {
@@ -1319,6 +1328,7 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
                               <SelectItem value="assigned">Assigned</SelectItem>
                               <SelectItem value="maintenance">Under Repair</SelectItem>
                               <SelectItem value="retired">Retired</SelectItem>
+                              <SelectItem value="disposed">Disposed</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -1579,7 +1589,10 @@ export default function AssetForm({ assetId, initialAsset, onSuccess, formId, hi
               <button
                 type="button"
                 className="text-xs font-medium text-red-600 hover:underline"
-                onClick={() => form.setValue("assetImage", "", { shouldDirty: true })}
+                onClick={() => {
+                  form.setValue("assetImage", "", { shouldDirty: true });
+                  if (assetId != null) saveAssetPrimaryImage(assetId, "");
+                }}
               >
                 Remove
               </button>

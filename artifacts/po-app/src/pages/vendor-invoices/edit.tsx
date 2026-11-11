@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { withReturnTo } from "@/lib/return-to";
 import { CURRENCIES, formatExchangeRate } from "@/lib/currencies";
 import { CurrencySelect } from "@/components/currency-select";
 import { PaymentTermsSelect } from "@/components/payment-terms-select";
@@ -98,7 +99,7 @@ export default function VendorInvoiceEdit() {
   const vendorInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleCancel = () => setLocation(`/vendor-invoices/${id}`);
+  const handleCancel = () => setLocation(withReturnTo(`/vendor-invoices/${id}`));
 
   const { data: pi, isLoading, isError } = useQuery<any>({
     queryKey: ["vendor-invoice", id],

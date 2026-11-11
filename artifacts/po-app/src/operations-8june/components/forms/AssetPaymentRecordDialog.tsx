@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { BankAccountField } from "@/components/bank-account-field";
+import { LedgerCombobox, type LedgerAccount } from "@/components/ledger-combobox";
 import { useToast } from "@/hooks/use-toast";
 import {
   payrollCancelButtonClass,
@@ -109,7 +110,7 @@ export function AssetPaymentRecordDialog({
 
   // Load chart of accounts
   const { data: accounts = [] } = useQuery<AccountOption[]>({
-    queryKey: ["/api/accounts"],
+    queryKey: ["accounts"],
     enabled: open,
     queryFn: async () => {
       const res = await fetch("/api/accounts", { credentials: "include" });
@@ -135,6 +136,18 @@ export function AssetPaymentRecordDialog({
         .filter((account) => account.isActive !== false)
         .slice()
         .sort((a, b) => a.code.localeCompare(b.code)),
+    [accounts]
+  );
+
+  const ledgerAccounts = useMemo<LedgerAccount[]>(
+    () =>
+      accounts.map((account) => ({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        type: account.type || "asset",
+        isActive: account.isActive !== false,
+      })),
     [accounts]
   );
 
@@ -524,22 +537,15 @@ export function AssetPaymentRecordDialog({
 
           {/* Ledger Account */}
           <div className="space-y-1.5">
-            <Label className={payrollFormLabelClass}>Ledger (Balance Sheet Account) *</Label>
-            <Select value={ledgerId} onValueChange={setLedgerId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select fixed asset ledger..." />
-              </SelectTrigger>
-              <SelectContent className="max-h-64 [&_[data-radix-select-viewport]]:[-ms-overflow-style:none] [&_[data-radix-select-viewport]]:[scrollbar-width:none] [&_[data-radix-select-viewport]::-webkit-scrollbar]:hidden">
-                {ledgerOptions.map((account) => (
-                  <SelectItem key={account.id} value={String(account.id)}>
-                    {account.code} — {account.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-[11px] text-[#64748B]">
-              Debited to Fixed Assets on the Balance Sheet and credited to Bank.
-            </p>
+            <Label className={payrollFormLabelClass}>
+              Ledger <span className="text-destructive">*</span>
+            </Label>
+            <LedgerCombobox
+              accounts={ledgerAccounts}
+              value={ledgerId ? Number(ledgerId) : null}
+              onChange={(account) => setLedgerId(String(account.id))}
+              defaultType="asset"
+            />
           </div>
 
           {/* Notes */}

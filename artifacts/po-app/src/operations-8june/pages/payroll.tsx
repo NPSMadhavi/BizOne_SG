@@ -1602,6 +1602,18 @@ export default function PayrollPage() {
           };
         })}
         payrollRecords={payrollRecords}
+        salaryConfigs={activeConfigs.map((config) => {
+          const preview = configPreviews.get(config.id);
+          const monthlySalary = parseFloat(config.baseSalary) || 0;
+          return {
+            employeeId: Number(config.employeeId),
+            baseSalary: monthlySalary,
+            netPay: preview?.netPay ?? monthlySalary,
+            employeeCpf: preview?.employeeCpf ?? 0,
+            employerCpf: preview?.employerCpf ?? 0,
+            totalCpf: preview?.totalCpf ?? (preview?.employeeCpf ?? 0),
+          };
+        })}
       />
 
       {/* Batch Process Pay Period Selection */}

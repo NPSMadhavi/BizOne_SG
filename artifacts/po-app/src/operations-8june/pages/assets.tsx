@@ -29,6 +29,7 @@ import {
   UserPlus,
   ChevronDown,
   Printer,
+  Package,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -39,7 +40,34 @@ import {
 } from "@/components/ui/dropdown-menu";
 import AssignAssetModal from "@/operations-8june/components/modals/AssignAssetModal";
 import { AssetPaymentRecordDialog } from "@/operations-8june/components/forms/AssetPaymentRecordDialog";
+import { resolveAssetImageSrc } from "@/operations-8june/lib/asset-attachments";
 import { usePagination } from "@/hooks/use-pagination";
+
+function AssetThumb({
+  assetId,
+  name,
+  assetImage,
+}: {
+  assetId: number;
+  name: string;
+  assetImage?: string | null;
+}) {
+  const src = resolveAssetImageSrc(assetId, assetImage);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className="h-9 w-9 rounded-md object-cover border border-[#E5E7EB] shrink-0"
+      />
+    );
+  }
+  return (
+    <div className="h-9 w-9 rounded-md bg-[#EFF6FF] border border-[#DBEAFE] flex items-center justify-center shrink-0">
+      <Package className="h-4 w-4 text-[#2563EB]" />
+    </div>
+  );
+}
 
 function formatAssetDate(value?: string | Date | null): string {
   if (!value) return "—";
@@ -355,6 +383,7 @@ export default function AssetsPage() {
   };
 
   const filteredAssets = useMemo(() => assetList.filter((asset) => {
+    // Keep disposed assets visible — status shows as Disposed; Balance Sheet drops via disposal JE
     // 1. Filter by selected location
     if (selectedLocation !== "all") {
       const assetLoc = (asset.location || "").trim().toLowerCase();
@@ -387,6 +416,7 @@ export default function AssetsPage() {
       case "maintenance":
         return { background: "#FDF6B2", color: "#C27803" };
       case "retired":
+      case "disposed":
         return { background: "#FDE8E8", color: "#E02424" };
       default:
         return { background: "#F3F4F6", color: "#6B7280" };
@@ -461,7 +491,7 @@ export default function AssetsPage() {
             </DropdownMenu>
 
             <Button
-              className="border border-[#E2E1FE] bg-[#E9E7FC] text-[#5539A1] hover:bg-[#DDD8FA] hover:border-[#D4D0FA] shadow-sm font-medium gap-2"
+              className="border border-[#E8D8DA] bg-[#F5EEEE] text-[#805B62] hover:bg-[#F0E7E8] hover:border-[#E8D8DA] hover:text-[#805B62] shadow-[0_4px_5.5px_#F0E7E8] font-medium gap-2"
               onClick={() => setPaymentRecordOpen(true)}
             >
               <CreditCard className="h-4 w-4" /> Payment Record
@@ -510,6 +540,7 @@ export default function AssetsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Asset Tag</TableHead>
+                    <TableHead className="w-14">Image</TableHead>
                     <TableHead>Asset Type</TableHead>
                     <TableHead>Asset Category</TableHead>
                     <TableHead>Assignment Status</TableHead>
@@ -523,6 +554,13 @@ export default function AssetsPage() {
                   {paginatedItems.map((asset) => (
                     <TableRow key={asset.id}>
                       <TableCell className="font-medium text-[#111827]">{asset.tag}</TableCell>
+                      <TableCell>
+                        <AssetThumb
+                          assetId={asset.id}
+                          name={asset.type || asset.tag || "Asset"}
+                          assetImage={(asset as any).assetImage ?? (asset as any).asset_image}
+                        />
+                      </TableCell>
                       <TableCell className="text-[#111827]">
                         {formatCapital(asset.type)}
                       </TableCell>

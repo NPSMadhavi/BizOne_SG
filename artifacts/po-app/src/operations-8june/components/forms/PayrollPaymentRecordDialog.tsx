@@ -30,6 +30,8 @@ import {
   payrollFormLabelClass,
   payrollPrimaryButtonClass,
 } from "@/operations-8june/lib/payroll-ui";
+import { cn } from "@/lib/utils";
+import { Banknote, Building2 } from "lucide-react";
 
 const ALL_EMPLOYEES_ID = 0;
 
@@ -52,6 +54,16 @@ type AccountOption = {
 type ExpenseRow = {
   amount: string;
   notes: string | null;
+  description?: string | null;
+};
+
+export type SalaryConfigPreview = {
+  employeeId: number;
+  baseSalary: number;
+  netPay: number;
+  employeeCpf: number;
+  employerCpf: number;
+  totalCpf: number;
 };
 
 type PayrollPaymentRecordDialogProps = {
@@ -73,8 +85,10 @@ type PayrollPaymentRecordDialogProps = {
     grossPay?: string | number | null;
     netPay?: string | number | null;
     cpfDeduction?: string | number | null;
+    cpfEmployer?: string | number | null;
     deductions?: Record<string, number> | null;
   }>;
+  salaryConfigs?: SalaryConfigPreview[];
 };
 
 function money(amount: number) {
@@ -83,10 +97,6 @@ function money(amount: number) {
 
 function today() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function paymentMarker(employeeId: number, month: string) {
-  return `payroll-payment:${employeeId}:${month}`;
 }
 
 function monthLabel(month: string) {
@@ -100,9 +110,11 @@ export function PayrollPaymentRecordDialog({
   onOpenChange,
   employees,
   payrollRecords,
+  salaryConfigs = [],
 }: PayrollPaymentRecordDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [paymentType, setPaymentType] = useState<"salaries" | "cpf">("salaries");
   const [employeeId, setEmployeeId] = useState<number | null>(null);
   const [month, setMonth] = useState("");
   const [paymentDate, setPaymentDate] = useState(today);
@@ -167,20 +179,85 @@ export function PayrollPaymentRecordDialog({
       const period = recordPayrollMonthYear(record);
       return period.year === year && period.month === monthNumber;
     });
-    if (matched.length === 0) return 0;
-    const latest = matched.reduce((best, record) =>
-      Number(record.id) >= Number(best.id) ? record : best,
-    );
-    return recordNet(latest);
+    if (matched.length > 0) {
+      const latest = matched.reduce((best, record) =>
+        Number(record.id) >= Number(best.id) ? record : best,
+      );
+      return recordNet(latest);
+    }
+    const fallback = salaryConfigs.find((c) => Number(c.employeeId) === id);
+    if (fallback) {
+      return fallback.netPay > 0 ? fallback.netPay : fallback.baseSalary;
+    }
+    return 0;
+  };
+
+  const cpfDetailsForEmployee = (id: number) => {
+    if (!month) return { employeeCpf: 0, employerCpf: 0, totalCpf: 0 };
+    const [year, monthNumber] = month.split("-").map((part) => Number(part));
+    const matched = payrollRecords.filter((record) => {
+      if (Number(record.employeeId) !== id) return false;
+      const period = recordPayrollMonthYear(record);
+      return period.year === year && period.month === monthNumber;
+    });
+    if (matched.length > 0) {
+      const latest = matched.reduce((best, record) =>
+        Number(record.id) >= Number(best.id) ? record : best,
+      );
+      const employeeCpf = Number(latest.cpfDeduction) || 0;
+      const employerCpf = Number((latest as any).cpfEmployer) || 0;
+      const totalCpf = Math.round((employeeCpf + employerCpf) * 100) / 100 || employeeCpf;
+      return { employeeCpf, employerCpf, totalCpf };
+    }
+    const fallback = salaryConfigs.find((c) => Number(c.employeeId) === id);
+    if (fallback) {
+      return {
+        employeeCpf: fallback.employeeCpf,
+        employerCpf: fallback.employerCpf,
+        totalCpf: fallback.totalCpf > 0 ? fallback.totalCpf : fallback.employeeCpf,
+      };
+    }
+    return { employeeCpf: 0, employerCpf: 0, totalCpf: 0 };
+  };
+
+  const cpfForEmployee = (id: number) => {
+    const details = cpfDetailsForEmployee(id);
+    return details.totalCpf;
   };
 
   const paidForEmployee = (id: number) => {
     if (!month) return 0;
-    const marker = paymentMarker(id, month);
-    return expenses.reduce((sum, expense) => {
-      if (!expense.notes?.includes(marker)) return sum;
-      return sum + (Number(expense.amount) || 0);
-    }, 0);
+    if (paymentType === "cpf") {
+      const cpfMarker = `payroll-payment:cpf:${id}:${month}`;
+      return expenses.reduce((sum, expense) => {
+        const hasCpfMarker = expense.notes?.includes(cpfMarker);
+        const hasLegacyCpf =
+          expense.notes?.includes(`payroll-payment:${id}:${month}`) &&
+          (expense.notes?.includes("Type: CPF") ||
+            expense.notes?.includes("payment-type:cpf") ||
+            expense.description?.toLowerCase().includes("cpf"));
+        if (hasCpfMarker || hasLegacyCpf) {
+          return sum + (Number(expense.amount) || 0);
+        }
+        return sum;
+      }, 0);
+    } else {
+      const salaryMarker = `payroll-payment:salary:${id}:${month}`;
+      const legacyMarker = `payroll-payment:${id}:${month}`;
+      return expenses.reduce((sum, expense) => {
+        const isSalaryMarker = expense.notes?.includes(salaryMarker);
+        const isLegacySalary =
+          expense.notes?.includes(legacyMarker) &&
+          !expense.notes?.includes("payroll-payment:cpf:") &&
+          !expense.notes?.includes("Type: CPF") &&
+          !expense.notes?.includes("payment-type:cpf") &&
+          !expense.description?.toLowerCase().includes("cpf");
+        if (isSalaryMarker || isLegacySalary) {
+          return sum + (Number(expense.amount) || 0);
+        }
+        return sum;
+      }, 0);
+    }
   };
 
   const ledgerOptions = useMemo(
@@ -213,24 +290,77 @@ export function PayrollPaymentRecordDialog({
       );
   }, [payrollRecords]);
 
+  const targetEmployeeIds = useMemo(() => {
+    if (employeeId === null || employeeId === undefined) return [];
+    return isAllEmployees ? employees.map((e) => e.id) : [employeeId];
+  }, [employeeId, employees, isAllEmployees]);
+
+  const computedCpfTotals = useMemo(() => {
+    if (!month || targetEmployeeIds.length === 0) {
+      return { employeeSum: 0, employerSum: 0, totalSum: 0 };
+    }
+    return targetEmployeeIds.reduce(
+      (acc, id) => {
+        const d = cpfDetailsForEmployee(id);
+        return {
+          employeeSum: acc.employeeSum + d.employeeCpf,
+          employerSum: acc.employerSum + d.employerCpf,
+          totalSum: acc.totalSum + d.totalCpf,
+        };
+      },
+      { employeeSum: 0, employerSum: 0, totalSum: 0 }
+    );
+  }, [month, targetEmployeeIds, payrollRecords, salaryConfigs]);
+
   const computedTotal = useMemo(() => {
     if (employeeId === null || employeeId === undefined || !month) return 0;
-    const ids = isAllEmployees ? employees.map((employee) => employee.id) : [employeeId];
-    return ids.reduce((sum, id) => sum + netForEmployee(id), 0);
-  }, [employeeId, employees, expenses, isAllEmployees, month, payrollRecords]);
+    const ids = targetEmployeeIds;
+    return ids.reduce(
+      (sum, id) => sum + (paymentType === "cpf" ? cpfForEmployee(id) : netForEmployee(id)),
+      0
+    );
+  }, [employeeId, month, targetEmployeeIds, paymentType, payrollRecords, salaryConfigs]);
 
   const totalValue = computedTotal;
 
   const alreadyPaid = useMemo(() => {
     if (employeeId === null || employeeId === undefined || !month) return 0;
-    const ids = isAllEmployees ? employees.map((employee) => employee.id) : [employeeId];
+    const ids = targetEmployeeIds;
     return ids.reduce((sum, id) => sum + paidForEmployee(id), 0);
-  }, [employeeId, employees, expenses, isAllEmployees, month]);
+  }, [employeeId, expenses, month, targetEmployeeIds, paymentType]);
 
-  const balanceDue = Math.max(0, Math.round((totalValue - alreadyPaid) * 100) / 100);
+  const initialDue = Math.max(0, Math.round((totalValue - alreadyPaid) * 100) / 100);
+  const enteredAmount = parseFloat(amount) || 0;
+  const remainingDue = Math.max(0, Math.round((initialDue - enteredAmount) * 100) / 100);
+  const balanceDue = amountEdited && enteredAmount > 0 ? remainingDue : initialDue;
+
+  const getDefaultLedgerId = (type: "salaries" | "cpf") => {
+    if (type === "cpf") {
+      const def =
+        ledgerOptions.find((a) => a.code === "2050") ||
+        ledgerOptions.find((a) => a.code === "6010") ||
+        ledgerOptions.find((a) => a.code === "6000");
+      return def ? String(def.id) : "";
+    } else {
+      const def =
+        ledgerOptions.find((a) => a.code === "2040") ||
+        ledgerOptions.find((a) => a.code === "2000") ||
+        ledgerOptions.find((a) => a.code === "6000");
+      return def ? String(def.id) : "";
+    }
+  };
+
+  const handlePaymentTypeChange = (next: "salaries" | "cpf") => {
+    if (next === paymentType) return;
+    setPaymentType(next);
+    setAmountEdited(false);
+    const nextLedgerId = getDefaultLedgerId(next);
+    if (nextLedgerId) setLedgerId(nextLedgerId);
+  };
 
   useEffect(() => {
     if (!open) return;
+    setPaymentType("salaries");
     setEmployeeId(null);
     setMonth("");
     setPaymentDate(today());
@@ -240,22 +370,16 @@ export function PayrollPaymentRecordDialog({
     setBankAccount("");
     setBankReference("");
     setNotes("");
-    const def =
-      ledgerOptions.find((a) => a.code === "2040") ||
-      ledgerOptions.find((a) => a.code === "2000") ||
-      ledgerOptions.find((a) => a.code === "6000");
-    setLedgerId(def ? String(def.id) : "");
+    const defId = getDefaultLedgerId("salaries");
+    setLedgerId(defId);
   }, [open, ledgerOptions]);
 
   useEffect(() => {
     if (!ledgerId && ledgerOptions.length > 0) {
-      const def =
-        ledgerOptions.find((a) => a.code === "2040") ||
-        ledgerOptions.find((a) => a.code === "2000") ||
-        ledgerOptions.find((a) => a.code === "6000");
-      if (def) setLedgerId(String(def.id));
+      const defId = getDefaultLedgerId(paymentType);
+      if (defId) setLedgerId(defId);
     }
-  }, [ledgerId, ledgerOptions]);
+  }, [ledgerId, ledgerOptions, paymentType]);
 
   useEffect(() => {
     if (!open || amountEdited) return;
@@ -263,8 +387,8 @@ export function PayrollPaymentRecordDialog({
       setAmount("");
       return;
     }
-    setAmount(balanceDue.toFixed(2));
-  }, [open, amountEdited, balanceDue, employeeId, month]);
+    setAmount(initialDue.toFixed(2));
+  }, [open, amountEdited, initialDue, employeeId, month, paymentType]);
 
   const selectedEmployee = isAllEmployees
     ? employeeOptions[0]
@@ -302,7 +426,7 @@ export function PayrollPaymentRecordDialog({
     const ledgerLabel = `${selectedLedger.code} — ${selectedLedger.name}`;
     const payees = isAllEmployees ? employees : [selectedEmployee];
     const shares = payees.map((employee) => {
-      const employeeTotal = netForEmployee(employee.id);
+      const employeeTotal = paymentType === "cpf" ? cpfForEmployee(employee.id) : netForEmployee(employee.id);
       const employeePaid = paidForEmployee(employee.id);
       return {
         employee,
@@ -331,27 +455,45 @@ export function PayrollPaymentRecordDialog({
     if (allocations.length === 0) {
       toast({
         title: "Nothing to pay",
-        description: "This month has no balance left for the selected employees.",
+        description: `This month has no ${paymentType === "cpf" ? "CPF" : "salaries"} balance left for the selected employees.`,
         variant: "destructive",
       });
       return;
     }
 
     setSaving(true);
+    const isCpf = paymentType === "cpf";
+    const typeLabel = isCpf ? "CPF" : "Salaries";
+
     try {
       for (const share of allocations) {
+        const remainingAfterPayment = Math.max(0, Math.round((share.balance - share.portion) * 100) / 100);
         const noteLines = [
           `Employee: ${share.employee.name || "Employee"}${share.employee.employeeId ? ` (${share.employee.employeeId})` : ""}`,
           `Month: ${periodLabel}`,
+          `Payment type: ${typeLabel}`,
           `Total value: ${money(isAllEmployees ? share.total : totalValue)}`,
           `Already paid: ${money(isAllEmployees ? share.paid : alreadyPaid)}`,
-          `Balance due: ${money(isAllEmployees ? share.balance : balanceDue)}`,
+          `Balance due: ${money(isAllEmployees ? share.balance : initialDue)}`,
+          `Payment amount: ${money(share.portion)}`,
+          `Remaining balance: ${money(remainingAfterPayment)}`,
           `Ledger: ${ledgerLabel}`,
           bankAccount ? `Bank account: ${bankAccount}` : "",
           bankReference.trim() ? `Bank reference: ${bankReference.trim()}` : "",
           notes.trim() ? `Notes: ${notes.trim()}` : "",
-          paymentMarker(share.employee.id, month),
+          isCpf
+            ? `payroll-payment:cpf:${share.employee.id}:${month}`
+            : `payroll-payment:salary:${share.employee.id}:${month}`,
+          `payroll-payment:${share.employee.id}:${month}`,
         ].filter(Boolean);
+
+        const vendorName = isCpf
+          ? "Central Provident Fund Board (CPF)"
+          : (share.employee.name || "Employee");
+
+        const description = isCpf
+          ? `Payroll payment (CPF) — ${share.employee.name || "Employee"} — ${periodLabel}`
+          : `Payroll payment (Salaries) — ${share.employee.name || "Employee"} — ${periodLabel}`;
 
         const res = await fetch("/api/expenses", {
           method: "POST",
@@ -359,9 +501,10 @@ export function PayrollPaymentRecordDialog({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             expenseDate: paymentDate,
-            vendorName: share.employee.name || "Employee",
-            description: `Payroll payment — ${periodLabel} — ${ledgerLabel}`,
+            vendorName,
+            description,
             category: "staff_costs",
+            accountId: Number(selectedLedger.id),
             amount: share.portion.toFixed(2),
             gstAmount: "0",
             gstClaimable: false,
@@ -390,13 +533,17 @@ export function PayrollPaymentRecordDialog({
 
       await queryClient.invalidateQueries({ queryKey: ["expenses"] });
       await queryClient.invalidateQueries({ queryKey: ["journal-entries"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/journal-entries"] });
       await queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/balance-sheet"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/payroll/records"] });
+      await queryClient.invalidateQueries({ queryKey: ["payroll-records"] });
+
       toast({
-        title: "Payment recorded",
+        title: `${typeLabel} payment recorded`,
         description: isAllEmployees
-          ? "Payments for all employees are saved and now show in Expenses."
-          : "The payment is saved and now shows in Expenses.",
+          ? `${typeLabel} payments for all employees are saved and posted to General Ledger & Balance Sheet.`
+          : `${typeLabel} payment is saved and posted to General Ledger & Balance Sheet.`,
       });
       onOpenChange(false);
     } catch (error) {
@@ -413,10 +560,41 @@ export function PayrollPaymentRecordDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-visible">
-        <DialogHeader>
+        <DialogHeader className="pb-1">
           <DialogTitle>Payment Record</DialogTitle>
         </DialogHeader>
-        <div className="max-h-[70vh] space-y-4 overflow-y-auto overscroll-contain py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
+
+        {/* Tab Selector: Salaries vs CPF */}
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200">
+          <button
+            type="button"
+            onClick={() => handlePaymentTypeChange("salaries")}
+            className={cn(
+              "flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-md transition-all",
+              paymentType === "salaries"
+                ? "bg-white text-blue-600 font-semibold shadow-sm border border-slate-200"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            )}
+          >
+            <Banknote className="h-4 w-4" />
+            Salaries
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePaymentTypeChange("cpf")}
+            className={cn(
+              "flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-md transition-all",
+              paymentType === "cpf"
+                ? "bg-white text-blue-600 font-semibold shadow-sm border border-slate-200"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            )}
+          >
+            <Building2 className="h-4 w-4" />
+            CPF
+          </button>
+        </div>
+
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto overscroll-contain py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className={payrollFormLabelClass}>Employee *</Label>
@@ -454,19 +632,64 @@ export function PayrollPaymentRecordDialog({
             </div>
           </div>
 
-          <div className="space-y-1 rounded-lg bg-muted/50 p-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Total</span>
-              <span className="font-medium">{money(totalValue)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Already Paid</span>
-              <span className="font-medium text-emerald-600">{money(alreadyPaid)}</span>
-            </div>
-            <div className="flex justify-between border-t pt-1 font-semibold">
-              <span>Balance Due</span>
-              <span className="text-orange-600">{money(balanceDue)}</span>
-            </div>
+          <div className="space-y-1.5 rounded-lg bg-muted/50 p-3 text-sm">
+            {paymentType === "cpf" ? (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Employee CPF</span>
+                  <span className="font-medium text-slate-800">{money(computedCpfTotals.employeeSum)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Employer CPF</span>
+                  <span className="font-medium text-slate-800">{money(computedCpfTotals.employerSum)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200/80 pt-1 font-semibold text-slate-900">
+                  <span>Total CPF</span>
+                  <span className="font-semibold text-blue-700">{money(computedCpfTotals.totalSum)}</span>
+                </div>
+                <div className="flex justify-between pt-0.5">
+                  <span className="text-muted-foreground">Already Paid</span>
+                  <span className="font-medium text-emerald-600">{money(alreadyPaid)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-1 font-semibold">
+                  <span>
+                    Balance Due
+                    {amountEdited && enteredAmount > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        (Remaining)
+                      </span>
+                    )}
+                  </span>
+                  <span className={cn(balanceDue > 0 ? "text-orange-600" : "text-emerald-600 font-semibold")}>
+                    {money(balanceDue)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Salary</span>
+                  <span className="font-medium">{money(totalValue)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Already Paid</span>
+                  <span className="font-medium text-emerald-600">{money(alreadyPaid)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-1 font-semibold">
+                  <span>
+                    Balance Due
+                    {amountEdited && enteredAmount > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        (Remaining)
+                      </span>
+                    )}
+                  </span>
+                  <span className={cn(balanceDue > 0 ? "text-orange-600" : "text-emerald-600 font-semibold")}>
+                    {money(balanceDue)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -544,7 +767,7 @@ export function PayrollPaymentRecordDialog({
             Cancel
           </Button>
           <Button type="button" className={payrollPrimaryButtonClass} onClick={() => void handleSave()} disabled={saving}>
-            {saving ? "Saving..." : "Record Payment"}
+            {saving ? "Saving..." : `Record ${paymentType === "cpf" ? "CPF" : "Salary"} Payment`}
           </Button>
         </DialogFooter>
       </DialogContent>

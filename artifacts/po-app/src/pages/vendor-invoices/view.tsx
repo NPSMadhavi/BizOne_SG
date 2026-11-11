@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Plus, Trash2, Building, Calendar, CreditCard, FileText, Pencil } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { readReturnTo, withReturnTo } from "@/lib/return-to";
 import { useToast } from "@/hooks/use-toast";
 import { useVedaFormActions } from "@/hooks/useVedaFormActions";
 import { useAuth } from "@/contexts/auth-context";
@@ -60,7 +61,7 @@ export default function VendorInvoiceView() {
   useVedaFormActions({
     onSave: () => {
       if (!id) return;
-      setLocation(`/vendor-invoices/${id}/edit`);
+      setLocation(withReturnTo(`/vendor-invoices/${id}/edit`));
     },
   });
 
@@ -220,7 +221,7 @@ export default function VendorInvoiceView() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <StickyPageHeader className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/vendor-invoices")}>
+        <Button variant="ghost" size="icon" onClick={() => setLocation(readReturnTo() || "/vendor-invoices")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -231,7 +232,7 @@ export default function VendorInvoiceView() {
           <p className="text-muted-foreground mt-1">Recorded on {fmtDate(pi.createdAt)}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setLocation(`/vendor-invoices/${id}/edit`)} className="gap-2">
+          <Button variant="outline" onClick={() => setLocation(withReturnTo(`/vendor-invoices/${id}/edit`))} className="gap-2">
             <Pencil className="h-4 w-4" />
             Edit
           </Button>

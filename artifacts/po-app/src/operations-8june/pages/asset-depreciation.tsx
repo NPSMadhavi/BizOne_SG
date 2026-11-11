@@ -36,7 +36,14 @@ export default function AssetDepreciationPage() {
     enabled: !authLoading && !!selectedCompany,
   });
 
-  const list = Array.isArray(assets) ? assets : [];
+  const list = useMemo(() => {
+    const all = Array.isArray(assets) ? assets : [];
+    // Active schedule only — disposed assets stop future depreciation
+    return all.filter((a) => {
+      const s = String(a.status || "").toLowerCase();
+      return s !== "disposed" && s !== "retired";
+    });
+  }, [assets]);
   const selected = list.find((a) => a.id === assetId) || list[0] || null;
 
   const schedule = useMemo(

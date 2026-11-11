@@ -26,6 +26,7 @@ import { Trash2, Save, Eye, Lock, Package, Plus, Layers, AlignLeft, AlignCenter,
 import { ImportFromPODialog } from "@/components/import-from-po-dialog";
 import type { InvoiceImportItem } from "@/components/import-from-po-dialog";
 import { cn, plainText } from "@/lib/utils";
+import { withReturnTo } from "@/lib/return-to";
 import { processSignatureFile, SIGNATURE_FILE_ACCEPT } from "@/lib/signature-upload";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SerialPickerDialog } from "@/components/serial-picker-dialog";
@@ -558,7 +559,7 @@ export default function InvoiceEdit() {
     onSave: () => { void form.handleSubmit((v) => onSubmit(v, false), onFormInvalid)(); },
     onPreview: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
     onDownload: () => { void form.handleSubmit((v) => onSubmit(v, true), onFormInvalid)(); },
-    onClose: () => { setLocation(id ? `/invoices/${id}` : "/invoices"); },
+    onClose: () => { setLocation(id ? withReturnTo(`/invoices/${id}`) : "/invoices"); },
   });
 
   if (!doc) return <div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
@@ -566,7 +567,7 @@ export default function InvoiceEdit() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(`/invoices/${id}`)}><ArrowLeft className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => setLocation(withReturnTo(`/invoices/${id}`))}><ArrowLeft className="h-4 w-4" /></Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Invoice</h1>
           <p className="text-muted-foreground mt-1">{doc.invNumber}</p>
@@ -1367,7 +1368,7 @@ export default function InvoiceEdit() {
                 Converted into Delivery Order
               </label>
               <div className="flex justify-end gap-3">
-                <Button type="button" variant="outline" onClick={() => setLocation(`/invoices/${id}`)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setLocation(withReturnTo(`/invoices/${id}`))}>Cancel</Button>
                 <Button
  type="button"
  variant="outline"

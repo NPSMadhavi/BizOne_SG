@@ -43,6 +43,23 @@ export function loadAssetPrimaryImage(assetId?: number | string | null): string 
   }
 }
 
+/** Resolve the primary asset image for table thumbnails (API first, then local cache). */
+export function resolveAssetImageSrc(
+  assetId?: number | string | null,
+  assetImage?: string | null,
+): string {
+  const fromApi = String(assetImage || "").trim();
+  if (
+    fromApi.startsWith("data:image") ||
+    fromApi.startsWith("http://") ||
+    fromApi.startsWith("https://") ||
+    fromApi.startsWith("/")
+  ) {
+    return fromApi;
+  }
+  return loadAssetPrimaryImage(assetId);
+}
+
 export function loadAssetAttachments(assetId?: number | string | null): AssetAttachment[] {
   if (assetId == null || assetId === "") return [];
   try {

@@ -75,7 +75,6 @@ export default function AssetRegisterEditPage() {
     <>
       <FormPageShell
         title="Edit Asset"
-        description="Update asset details in Asset Register."
         backHref="/assets/register"
         footer={
           <div className="flex w-full items-center justify-between gap-3">
