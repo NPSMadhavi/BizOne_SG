@@ -194,7 +194,7 @@ export default function DeliveryOrderNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">New Delivery Order</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">New Delivery Order</h1>
           </div>
         </div>
         {nextDoNumber && (

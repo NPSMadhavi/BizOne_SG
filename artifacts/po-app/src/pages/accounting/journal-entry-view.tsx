@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { ArrowLeft, Trash2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { fmtDate, cn } from "@/lib/utils";
+import { readReturnTo } from "@/lib/return-to";
 
 interface JournalLine {
   id: number;
@@ -75,7 +76,7 @@ export default function JournalEntryView() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["journal-entries"] });
       toast({ title: "Journal entry deleted." });
-      setLocation("/accounting/journal-entries");
+      setLocation(readReturnTo() || "/accounting/journal-entries");
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -100,7 +101,7 @@ export default function JournalEntryView() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/accounting/journal-entries")}>
+          <Button variant="ghost" size="icon" onClick={() => setLocation(readReturnTo() || "/accounting/journal-entries")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>

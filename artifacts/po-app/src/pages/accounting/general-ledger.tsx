@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +28,27 @@ interface GLTransaction {
   debit: number;
   credit: number;
   balance: number;
+  sourcePath?: string;
+}
+
+function initialLedgerFilters() {
+  const params = new URLSearchParams(window.location.search);
+  const today = new Date().toISOString().split("T")[0];
+  const accountRaw = Number(params.get("accountId"));
+  return {
+    accountId: Number.isFinite(accountRaw) && accountRaw > 0 ? accountRaw : null,
+    from: params.get("from") || today.slice(0, 7) + "-01",
+    to: params.get("to") || today,
+  };
+}
+
+function ledgerReturnPath(accountId: number | null, from: string, to: string) {
+  const params = new URLSearchParams();
+  if (accountId) params.set("accountId", String(accountId));
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const query = params.toString();
+  return query ? `/accounting/general-ledger?${query}` : "/accounting/general-ledger";
 }
 interface GLData {
   account: { id: number; code: string; name: string; type: string; subType: string | null } | null;
@@ -70,10 +92,12 @@ function matchRank(account: GLAccount, q: string): number {
 
 export default function GeneralLedgerPage() {
   const { selectedCompany } = useAuth();
+  const [, setLocation] = useLocation();
   const today = new Date().toISOString().split("T")[0];
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [from, setFrom] = useState(today.slice(0, 7) + "-01");
-  const [to, setTo]     = useState(today);
+  const boot = useState(initialLedgerFilters)[0];
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(boot.accountId);
+  const [from, setFrom] = useState(boot.from);
+  const [to, setTo] = useState(boot.to);
   const [search, setSearch] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [cachedAccounts, setCachedAccounts] = useState<GLAccount[]>([]);
@@ -137,6 +161,13 @@ export default function GeneralLedgerPage() {
   function selectAccount(id: number) {
     setSelectedAccountId(id);
     setSearch("");
+  }
+
+  function openTransaction(tx: GLTransaction) {
+    const path = tx.sourcePath || `/accounting/journal-entries/${tx.journalEntryId}`;
+    const returnTo = encodeURIComponent(ledgerReturnPath(selectedAccountId, from, to));
+    const join = path.includes("?") ? "&" : "?";
+    setLocation(`${path}${join}returnTo=${returnTo}`);
   }
 
   async function handleDownloadPDF() {
@@ -315,7 +346,11 @@ export default function GeneralLedgerPage() {
                     )}
 
                     {data.transactions.map((tx, i) => (
-                      <tr key={`${tx.journalEntryId}-${i}`} className="border-b border-border hover:bg-muted/20 transition-colors">
+                      <tr
+                        key={`${tx.journalEntryId}-${i}`}
+                        className="border-b border-border hover:bg-muted/20 transition-colors cursor-pointer"
+                        onClick={() => openTransaction(tx)}
+                      >
                         <td className="px-4 py-2.5 text-sm text-muted-foreground">{fmtDate(tx.date)}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{tx.reference || "—"}</td>
                         <td className="px-4 py-2.5 text-sm text-foreground max-w-xs truncate">{tx.description || "—"}</td>

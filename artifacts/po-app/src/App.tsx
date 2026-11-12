@@ -368,20 +368,7 @@ function ProtectedRoute({ component: Component, adminOnly = false, module, anyOf
 }
 
 function PointOfSaleRoute() {
-  const [location] = useLocation();
-  const { hasModuleAccess } = useAuth();
-  const kind = location.split("?")[0].split("/").filter(Boolean)[1];
-  const channelModule: (typeof POS_CHANNEL_MODULES)[number] | null =
-    kind === "retail" ? "pos_retail"
-    : kind === "supermarket" ? "pos_supermarket"
-    : kind === "restaurants" ? "pos_restaurants"
-    : kind === "pharmacy" ? "pos_pharmacy"
-    : kind === "electronics" ? "pos_electronics"
-    : null;
-  const anyOf: AppModule[] = channelModule
-    ? (hasPosChannelAccess(hasModuleAccess, channelModule) ? [channelModule, "point_of_sale"] : [channelModule])
-    : POS_CHANNEL_MODULES.filter((channel) => hasPosChannelAccess(hasModuleAccess, channel));
-  return <ProtectedRoute component={PointOfSalePage} anyOf={anyOf.length ? anyOf : ["pos_retail"]} />;
+  return <ProtectedRoute component={PointOfSalePage} />;
 }
 
 function SmartHomeRedirect() {
@@ -497,10 +484,10 @@ function Router() {
           <Route path="/delivery-orders/:id">{() => <ProtectedRoute component={DeliveryOrderView} module="delivery_orders" />}</Route>
 
           {/* Point of Sale */}
-          <Route path="/point-of-sale/reports/closing">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
-          <Route path="/point-of-sale/reports/collections">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
-          <Route path="/point-of-sale/reports/salesperson">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
-          <Route path="/point-of-sale/reports">{() => <ProtectedRoute component={PosSalesReportPage} anyOf={["pos_reports", "point_of_sale", "pos_retail", "pos_supermarket", "pos_restaurants", "pos_pharmacy", "pos_electronics"]} />}</Route>
+          <Route path="/point-of-sale/reports/closing">{() => <ProtectedRoute component={PosSalesReportPage} />}</Route>
+          <Route path="/point-of-sale/reports/collections">{() => <ProtectedRoute component={PosSalesReportPage} />}</Route>
+          <Route path="/point-of-sale/reports/salesperson">{() => <ProtectedRoute component={PosSalesReportPage} />}</Route>
+          <Route path="/point-of-sale/reports">{() => <ProtectedRoute component={PosSalesReportPage} />}</Route>
           <Route path="/point-of-sale/:kind">{() => <PointOfSaleRoute />}</Route>
           <Route path="/point-of-sale">{() => <PointOfSaleRoute />}</Route>
           <Route path="/bill-of-materials">{() => <ProtectedRoute component={BillOfMaterialsPage} module="bill_of_materials" />}</Route>

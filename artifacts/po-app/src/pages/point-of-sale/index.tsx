@@ -1530,7 +1530,7 @@ export default function PointOfSalePage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">
               {invoicePos ? "Transaction History" : "Point of Sale"}
             </h1>
           </div>
@@ -1670,7 +1670,7 @@ export default function PointOfSalePage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="truncate text-2xl font-bold tracking-tight text-[#2563EB] sm:text-3xl">
+            <h1 className="truncate text-2xl font-bold tracking-tight text-[#2563EB]">
               {editingSale ? `Edit ${editingSale.posNumber}` : "Create New POS"}
             </h1>
           </div>

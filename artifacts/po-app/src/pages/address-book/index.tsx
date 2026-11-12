@@ -109,7 +109,7 @@ export default function AddressBookPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Address Book</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Address Book</h1>
         </div>
         <Button className="gap-2" onClick={() => { setAddName(""); setAddEmail(""); setAddOpen(true); }}>
           <Plus className="h-4 w-4" />

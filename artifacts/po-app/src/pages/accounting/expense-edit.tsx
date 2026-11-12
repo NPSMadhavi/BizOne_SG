@@ -18,8 +18,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Upload, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { readReturnTo, withReturnTo } from "@/lib/return-to";
 import { BankAccountField } from "@/components/bank-account-field";
 import { LedgerCombobox, type LedgerAccount } from "@/components/ledger-combobox";
+import { VendorPayeeField } from "@/components/vendor-payee-field";
 
 interface ExpenseForm {
   expenseDate: string;
@@ -65,6 +67,9 @@ export default function ExpenseEdit() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [showIncludingTax, setShowIncludingTax] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
+  const [grossText, setGrossText] = useState("");
   const [receiptFileName, setReceiptFileName] = useState<string | null>(null);
   const [selectedBank, setSelectedBank] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -78,7 +83,7 @@ export default function ExpenseEdit() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       toast({ title: "Expense deleted." });
-      setLocation("/accounting/expenses");
+      setLocation(readReturnTo() || "/accounting/expenses");
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
@@ -130,6 +135,7 @@ export default function ExpenseEdit() {
 
   const { register, handleSubmit, watch, setValue, reset } = form;
   const expenseDate = watch("expenseDate");
+  const vendorName = watch("vendorName");
 
   useEffect(() => {
     if (!expense || loaded) return;
@@ -170,14 +176,32 @@ export default function ExpenseEdit() {
   const gstAmount = watch("gstAmount");
   const currency = watch("currency");
 
-  function autoCalcGst(netAmount: string, claimable: boolean) {
+  function round2(n: number) {
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+  }
+
+  function splitInclusive(grossRaw: string) {
+    const gross = parseFloat(grossRaw);
+    if (!Number.isFinite(gross) || gross <= 0) return { gross: 0, gst: 0, net: 0 };
+    const rate = Number(gstRate) || 0;
+    const grossCents = Math.round(gross * 100);
+    const gstCents = Math.round((grossCents * rate) / (100 + rate));
+    const netCents = grossCents - gstCents;
+    return { gross: grossCents / 100, gst: gstCents / 100, net: netCents / 100 };
+  }
+
+  function syncGst(netAmount: string, claimable: boolean) {
     const net = parseFloat(netAmount);
-    if (!claimable || isNaN(net) || net <= 0) {
-      setValue("gstAmount", "");
+    if (claimable && !isNaN(net) && net > 0) {
+      setValue("gstAmount", ((net * gstRate) / 100).toFixed(2));
       return;
     }
-    const gst = net * gstRate / 100;
-    setValue("gstAmount", gst.toFixed(2));
+    setValue("gstAmount", "");
+  }
+
+  function applyInclusive(grossRaw: string) {
+    const split = splitInclusive(grossRaw);
+    setValue("gstAmount", split.gross > 0 ? split.gst.toFixed(2) : "");
   }
 
   function onLedgerChange(account: LedgerAccount) {
@@ -187,14 +211,38 @@ export default function ExpenseEdit() {
 
   function onAmountChange(raw: string) {
     const cleaned = numericOnly(raw);
+    if (showIncludingTax) {
+      setGrossText(cleaned);
+      setValue("amount", cleaned);
+      applyInclusive(cleaned);
+      return;
+    }
     setValue("amount", cleaned);
-    autoCalcGst(cleaned, gstClaimable);
+    syncGst(cleaned, gstClaimable);
+  }
+
+  function onIncludingTaxChange(checked: boolean) {
+    if (checked) {
+      const gross = amount;
+      setGrossText(gross);
+      setShowIncludingTax(true);
+      applyInclusive(gross);
+      return;
+    }
+    const gross = grossText || amount;
+    setShowIncludingTax(false);
+    setGrossText("");
+    setValue("amount", gross);
+    syncGst(gross, gstClaimable);
   }
 
   function onGstClaimableChange(checked: boolean) {
     setValue("gstClaimable", checked);
-    if (!checked) { setValue("gstAmount", ""); return; }
-    autoCalcGst(amount, checked);
+    if (showIncludingTax) {
+      applyInclusive(grossText || amount);
+      return;
+    }
+    syncGst(amount, checked);
   }
 
   const onReceiptChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,21 +258,28 @@ export default function ExpenseEdit() {
     reader.readAsDataURL(file);
   }, [setValue]);
 
-  function calcTotal() {
-    return (parseFloat(amount) || 0) + (parseFloat(gstAmount) || 0);
-  }
+  const inclusiveSplit = showIncludingTax ? splitInclusive(grossText || amount) : null;
+  const netValue = inclusiveSplit ? inclusiveSplit.net : (parseFloat(amount) || 0);
+  const gstValue = inclusiveSplit ? inclusiveSplit.gst : (parseFloat(gstAmount) || 0);
+  const totalValue = inclusiveSplit ? inclusiveSplit.gross : netValue + gstValue;
+  const amountShown = showIncludingTax
+    ? (amountFocused ? grossText : (inclusiveSplit && inclusiveSplit.gross > 0 ? inclusiveSplit.net.toFixed(2) : ""))
+    : amount;
 
   function calcDeductibleAmount() {
     if (!isDeductible) return 0;
-    return (parseFloat(amount) || 0) * deductiblePct / 100;
+    return round2((netValue * deductiblePct) / 100);
   }
 
   async function onSubmit(data: ExpenseForm, statusOverride?: string) {
+    if (!data.vendorName?.trim()) { toast({ title: "Vendor / Payee Name is required", variant: "destructive" }); return; }
     if (!data.accountId) { toast({ title: "Please select a ledger", variant: "destructive" }); return; }
     setSaving(true);
     try {
       const payload: any = {
         ...data,
+        amount: netValue.toFixed(2),
+        gstAmount: gstValue ? gstValue.toFixed(2) : "",
         accountId: data.accountId,
         category: data.category || String(data.accountId),
         status: statusOverride ?? data.status,
@@ -240,7 +295,7 @@ export default function ExpenseEdit() {
       queryClient.invalidateQueries({ queryKey: ["expense", id] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       toast({ title: "Expense updated." });
-      setLocation(`/accounting/expenses/${id}`);
+      setLocation(withReturnTo(`/accounting/expenses/${id}`));
     } catch (e: any) {
       toast({ title: e.message, variant: "destructive" });
     } finally {
@@ -254,7 +309,7 @@ export default function ExpenseEdit() {
     <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" type="button" onClick={() => setLocation(`/accounting/expenses/${id}`)}>
+          <Button variant="ghost" size="icon" type="button" onClick={() => setLocation(withReturnTo(`/accounting/expenses/${id}`))}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-2xl font-bold text-[#2563EB]">Edit Expense</h1>
@@ -297,8 +352,12 @@ export default function ExpenseEdit() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Vendor / Payee Name <span className="text-destructive">*</span></Label>
-                  <Input {...register("vendorName", { required: true })} />
+                  <Label htmlFor="vendorName">Vendor / Payee Name <span className="text-destructive">*</span></Label>
+                  <VendorPayeeField
+                    id="vendorName"
+                    value={vendorName || ""}
+                    onChange={(value) => setValue("vendorName", value, { shouldDirty: true, shouldValidate: true })}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -327,20 +386,31 @@ export default function ExpenseEdit() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="amount">Taxable Amount <span className="text-destructive">*</span></Label>
+                  <div className="flex min-h-6 items-center justify-between gap-2">
+                    <Label htmlFor="amount" className="leading-none">Taxable Amount <span className="text-destructive">*</span></Label>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      Including Tax
+                      <Switch checked={showIncludingTax} onCheckedChange={onIncludingTaxChange} />
+                    </label>
+                  </div>
                   <Input
                     id="amount"
                     inputMode="decimal"
                     placeholder=""
-                    value={amount}
+                    value={amountShown}
+                    onFocus={() => {
+                      setAmountFocused(true);
+                      if (showIncludingTax) setGrossText(grossText || amount);
+                    }}
+                    onBlur={() => setAmountFocused(false)}
                     onChange={e => onAmountChange(e.target.value)}
                     className="[appearance:textfield]"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="gstAmount">
+                  <Label htmlFor="gstAmount" className="flex min-h-6 items-center leading-none">
                     GST Amount
-                    {gstClaimable && <span className="ml-1 text-xs text-muted-foreground font-normal">(auto @ {gstRate}%)</span>}
+                    {(gstClaimable || showIncludingTax) && <span className="ml-1 text-xs text-muted-foreground font-normal">(auto @ {gstRate}%)</span>}
                   </Label>
                   <Input
                     id="gstAmount"
@@ -348,8 +418,8 @@ export default function ExpenseEdit() {
                     placeholder="0.00"
                     value={gstAmount}
                     onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
-                    className={cn("[appearance:textfield]", gstClaimable && "bg-muted/50 text-muted-foreground")}
-                    readOnly={gstClaimable}
+                    className={cn("[appearance:textfield]", (gstClaimable || showIncludingTax) && "bg-muted/50 text-muted-foreground")}
+                    readOnly={gstClaimable || showIncludingTax}
                   />
                 </div>
               </div>
@@ -418,15 +488,15 @@ export default function ExpenseEdit() {
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Net Amount</span>
-                <span className="font-mono font-medium">{currency} {(parseFloat(amount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                <span className="font-mono font-medium">{currency} {netValue.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">GST ({gstRate}%)</span>
-                <span className="font-mono text-blue-600">{currency} {(parseFloat(gstAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                <span className="font-mono text-blue-600">{currency} {gstValue.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between border-t pt-2 font-medium">
                 <span>Total (incl. GST)</span>
-                <span className="font-mono">{currency} {calcTotal().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                <span className="font-mono">{currency} {totalValue.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">GST Input Tax</span>
@@ -444,7 +514,7 @@ export default function ExpenseEdit() {
               </div>
               <div className="flex justify-between border-t pt-2">
                 <span className="font-medium">Allowable Deduction</span>
-                <span className="font-mono font-bold text-green-700">{currency} {calcDeductibleAmount().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                <span className="font-mono font-bold text-green-700">{currency} {calcDeductibleAmount().toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </CardContent>
           </Card>

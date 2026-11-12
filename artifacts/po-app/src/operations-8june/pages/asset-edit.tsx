@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, parseApiResponse } from "@/operations-8june/lib/queryClient";
+import { readReturnTo } from "@/lib/return-to";
 
 export default function AssetEditPage() {
   const [, params] = useRoute("/assets/:id/edit");
@@ -28,7 +29,7 @@ export default function AssetEditPage() {
   const [pending, setPending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const assetId = params?.id ? Number(params.id) : undefined;
-  const goBack = () => setLocation("/assets");
+  const goBack = () => setLocation(readReturnTo() || "/assets");
   const invalid = !assetId || Number.isNaN(assetId);
 
   const { data: asset } = useQuery({
@@ -75,7 +76,7 @@ export default function AssetEditPage() {
     <>
       <FormPageShell
         title="Edit Asset"
-        backHref="/assets"
+        backHref={readReturnTo() || "/assets"}
         footer={
           <div className="flex w-full items-center justify-between gap-3">
             <Button

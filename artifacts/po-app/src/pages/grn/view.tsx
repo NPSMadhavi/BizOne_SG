@@ -367,7 +367,7 @@ export default function GrnView() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">{grn.grnNumber}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{grn.grnNumber}</h1>
             {getStatusBadge(grn.status)}
           </div>
           <p className="text-muted-foreground mt-1">

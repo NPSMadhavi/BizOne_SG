@@ -918,8 +918,15 @@ function buildDocHeader(
   const { w: lw, h: lh } = fitInBox(logo.natW, logo.natH, 65, 18);
   doc.addImage(logo.dataUrl, logo.format, marginLeft, 12, lw, lh, undefined, "FAST");
 
-  doc.setFontSize(26);
+  const titleGap = 8;
+  const maxTitleWidth = Math.max(70, marginRight - (marginLeft + lw + titleGap));
+  let titleSize = 26;
   doc.setFont(PDF_FONT, "bold");
+  doc.setFontSize(titleSize);
+  while (titleSize > 14 && doc.getTextWidth(title) > maxTitleWidth) {
+    titleSize -= 0.5;
+    doc.setFontSize(titleSize);
+  }
   doc.setTextColor(24, 33, 47);
   doc.text(title, marginRight, 22, { align: "right" });
 
@@ -2453,7 +2460,9 @@ export async function generateAPAgingReport_PDF(
 // ── TRIAL BALANCE PDF ─────────────────────────────────────────────────────────
 
 export interface TBPDFRow {
-  code: string; name: string; type: string; totalDebit: number; totalCredit: number; balance: number;
+  code: string; name: string; type: string;
+  totalDebit: number; totalCredit: number;
+  openingBalance?: number; closingBalance?: number; balance: number;
 }
 const TB_TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense"];
 const TB_TYPE_LABEL: Record<string, string> = {
@@ -2467,7 +2476,7 @@ export async function generateTrialBalance_PDF(
   options?: { returnBase64?: boolean }
 ): Promise<string | void> {
   await ensurePdfFonts();
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   attachPdfFonts(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
   const mL = 14; const mR = pageWidth - 14;
@@ -2477,31 +2486,39 @@ export async function generateTrialBalance_PDF(
 
   drawAccountingHeader(doc, logo, "TRIAL BALANCE", `Period: ${periodStr}`, balanced ? "Status: Balanced ✓" : "Status: Out of balance", info);
 
+  const fmtSigned = (n: number) => Math.abs(n) < 0.005 ? "—" : n < 0 ? `(${fmtNum(Math.abs(n))})` : fmtNum(n);
+  const rowActive = (r: TBPDFRow) =>
+    r.totalDebit > 0.005 || r.totalCredit > 0.005
+    || Math.abs(r.openingBalance || 0) > 0.005
+    || Math.abs(r.closingBalance ?? r.balance) > 0.005;
+
   // Build table with section header rows
-  const tableHeaders = ["Code", "Account Name", "Debit (SGD)", "Credit (SGD)", "Balance (SGD)"];
+  const tableHeaders = ["Code", "Account Name", "Opening Balance (SGD)", "Debit (SGD)", "Credit (SGD)", "Closing Balance (SGD)"];
   const tableBody: any[][] = [];
 
   TB_TYPE_ORDER.forEach(type => {
-    const typeRows = rows.filter(r => r.type === type && (r.totalDebit > 0.005 || r.totalCredit > 0.005));
+    const typeRows = rows.filter(r => r.type === type && rowActive(r));
     if (typeRows.length === 0) return;
     // Section header row (full width via colSpan trick — we'll style it)
-    tableBody.push([`— ${TB_TYPE_LABEL[type].toUpperCase()} —`, "", "", "", ""]);
+    tableBody.push([`— ${TB_TYPE_LABEL[type].toUpperCase()} —`, "", "", "", "", ""]);
     typeRows.forEach(r => {
-      const bal = r.balance;
-      const balStr = Math.abs(bal) < 0.005 ? "—" : bal < 0 ? `(${fmtNum(Math.abs(bal))})` : fmtNum(bal);
       tableBody.push([
         r.code, r.name,
+        fmtSigned(r.openingBalance || 0),
         r.totalDebit > 0.005 ? fmtNum(r.totalDebit) : "—",
         r.totalCredit > 0.005 ? fmtNum(r.totalCredit) : "—",
-        balStr,
+        fmtSigned(r.closingBalance ?? r.balance),
       ]);
     });
   });
+  const grandOpening = rows.reduce((s, r) => s + (r.openingBalance || 0), 0);
+  const grandClosing = rows.reduce((s, r) => s + (r.closingBalance ?? r.balance), 0);
   // Grand total row
   tableBody.push([
     "GRAND TOTAL", "",
+    fmtSigned(grandOpening),
     fmtNum(grandDebit), fmtNum(grandCredit),
-    !balanced ? `(${fmtNum(Math.abs(grandDebit - grandCredit))})` : "—",
+    fmtSigned(grandClosing),
   ]);
   const totalIdx = tableBody.length - 1;
 
@@ -2516,9 +2533,10 @@ export async function generateTrialBalance_PDF(
     styles: { cellPadding: 3, font: PDF_FONT },
     columnStyles: {
       0: { cellWidth: 22 }, 1: { cellWidth: "auto" as const },
-      2: { halign: "right" as const, cellWidth: 38 },
-      3: { halign: "right" as const, cellWidth: 38 },
-      4: { halign: "right" as const, cellWidth: 38 },
+      2: { halign: "right" as const, cellWidth: 42 },
+      3: { halign: "right" as const, cellWidth: 36 },
+      4: { halign: "right" as const, cellWidth: 36 },
+      5: { halign: "right" as const, cellWidth: 42 },
     },
     didParseCell: (data: any) => {
       if (data.section !== "body") return;

@@ -609,7 +609,7 @@ export default function Admin() {
             >
               <ArrowLeft className="h-4 w-4" /> Back to users
             </button>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">
               {mode === "create" ? "Add User" : "Edit User"}
             </h1>
           </div>
@@ -850,7 +850,7 @@ export default function Admin() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">User Management</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">User Management</h1>
         </div>
 
         {canCreate && (

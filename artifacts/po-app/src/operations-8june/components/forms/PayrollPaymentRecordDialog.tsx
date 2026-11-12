@@ -559,13 +559,13 @@ export function PayrollPaymentRecordDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-visible">
-        <DialogHeader className="pb-1">
+      <DialogContent className="flex w-[calc(100%-1.5rem)] max-w-lg max-h-[min(42rem,calc(100dvh-2.5rem))] flex-col gap-3 overflow-hidden p-4 sm:p-5">
+        <DialogHeader className="shrink-0 pb-1 pr-6">
           <DialogTitle>Payment Record</DialogTitle>
         </DialogHeader>
 
         {/* Tab Selector: Salaries vs CPF */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200">
+        <div className="grid shrink-0 grid-cols-2 gap-1.5 rounded-lg border border-slate-200 bg-slate-100 p-1">
           <button
             type="button"
             onClick={() => handlePaymentTypeChange("salaries")}
@@ -594,8 +594,8 @@ export function PayrollPaymentRecordDialog({
           </button>
         </div>
 
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto overscroll-contain py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&_input:not([type=checkbox]):not([type=radio])]:min-w-0 [&_input:not([type=checkbox]):not([type=radio])]:w-full [&_input:not([type=checkbox]):not([type=radio])]:rounded-lg [&_input:not([type=checkbox]):not([type=radio])]:border-[#E5E7EB] [&_input:not([type=checkbox]):not([type=radio])]:bg-[#F8FAFC] [&_input:not([type=checkbox]):not([type=radio])]:shadow-none [&_textarea]:rounded-lg [&_textarea]:border-[#E5E7EB] [&_textarea]:bg-[#F8FAFC] [&_textarea]:shadow-none [&_[role=combobox]]:min-w-0 [&_[role=combobox]]:rounded-lg [&_[role=combobox]]:border-[#E5E7EB] [&_[role=combobox]]:bg-[#F8FAFC] [&_[role=combobox]]:shadow-none">
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className={payrollFormLabelClass}>Employee *</Label>
               <EmployeeCombobox
@@ -692,7 +692,7 @@ export function PayrollPaymentRecordDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className={payrollFormLabelClass}>Payment Date</Label>
               <Input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
@@ -756,17 +756,17 @@ export function PayrollPaymentRecordDialog({
             />
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="relative z-10 shrink-0 gap-2 bg-background pt-1 sm:flex-wrap sm:space-x-0">
           <Button
             type="button"
             variant="outline"
-            className={payrollCancelButtonClass}
+            className={cn(payrollCancelButtonClass, "min-w-0")}
             onClick={() => onOpenChange(false)}
             disabled={saving}
           >
             Cancel
           </Button>
-          <Button type="button" className={payrollPrimaryButtonClass} onClick={() => void handleSave()} disabled={saving}>
+          <Button type="button" className={cn(payrollPrimaryButtonClass, "min-w-0 whitespace-normal")} onClick={() => void handleSave()} disabled={saving}>
             {saving ? "Saving..." : `Record ${paymentType === "cpf" ? "CPF" : "Salary"} Payment`}
           </Button>
         </DialogFooter>

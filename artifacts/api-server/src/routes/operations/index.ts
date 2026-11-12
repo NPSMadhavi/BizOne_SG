@@ -24,6 +24,7 @@ import {
   postAssetDisposalJE,
   reverseAssetDisposalJE,
 } from "../../lib/asset-disposal-auto-post.js";
+import { backfillAssetDepreciationJEs } from "../../lib/asset-depreciation-auto-post.js";
 
 declare module "express-session" {
   interface SessionData {
@@ -612,6 +613,13 @@ router.get("/assets", async (req, res): Promise<void> => {
   if (!requireAuth(req, res) || !requireCompany(req, res)) return;
   try {
     await ensureAssetsSchema();
+    try {
+      if (req.session.userId) {
+        await backfillAssetDepreciationJEs(req.session.companyId!, req.session.userId);
+      }
+    } catch (err) {
+      console.warn("asset depreciation journal backfill failed", err);
+    }
     const result = await pool.query(
       `SELECT * FROM assets WHERE company_id = $1 ORDER BY id DESC`,
       [req.session.companyId],

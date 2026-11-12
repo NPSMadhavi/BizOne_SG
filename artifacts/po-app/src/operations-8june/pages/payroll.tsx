@@ -78,8 +78,10 @@ import {
 import { exportPayrollTableToExcel, exportPayrollTableToPdf } from "@/operations-8june/lib/excel-utils";
 import { PayrollPaymentRecordDialog } from "@/operations-8june/components/forms/PayrollPaymentRecordDialog";
 import { useToast } from "@/hooks/use-toast";
+import { readReturnTo } from "@/lib/return-to";
 import { useAuth } from "@/contexts/auth-context";
 import {
+  ArrowLeft,
   Plus,
   Users,
   DollarSign,
@@ -420,6 +422,7 @@ export default function PayrollPage() {
   const { toast } = useToast();
   const { selectedCompany } = useAuth();
   const [, setLocation] = useLocation();
+  const returnTo = readReturnTo();
   const queryClient = useQueryClient();
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<PayrollConfig | null>(null);
@@ -1277,6 +1280,11 @@ export default function PayrollPage() {
 
   return (
     <>
+      {returnTo && (
+        <Button variant="ghost" size="sm" className="-ml-2 mb-1 text-[#2563EB]" onClick={() => setLocation(returnTo)}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+        </Button>
+      )}
       <ManagementPageHeader
         title="Payroll Management"
         action={

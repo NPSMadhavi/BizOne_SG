@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { ArrowLeft, Edit, Trash2, CheckCircle2, ReceiptText, Image, FileText, AlertTriangle } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { readReturnTo, withReturnTo } from "@/lib/return-to";
 
 interface Expense {
   id: number;
@@ -138,7 +139,7 @@ export default function ExpenseView() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       toast({ title: "Expense deleted." });
-      setLocation("/accounting/expenses");
+      setLocation(readReturnTo() || "/accounting/expenses");
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
@@ -153,7 +154,7 @@ export default function ExpenseView() {
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/accounting/expenses")}>
+          <Button variant="ghost" size="icon" onClick={() => setLocation(readReturnTo() || "/accounting/expenses")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -167,7 +168,7 @@ export default function ExpenseView() {
         <div className="flex items-center gap-2">
           {expense.status === "draft" && (
             <>
-              <Button variant="outline" onClick={() => setLocation(`/accounting/expenses/${id}/edit`)}>
+              <Button variant="outline" onClick={() => setLocation(withReturnTo(`/accounting/expenses/${id}/edit`))}>
                 <Edit className="h-4 w-4 mr-2" /> Edit
               </Button>
               <Button onClick={() => setConfirmOpen(true)}>
@@ -181,7 +182,7 @@ export default function ExpenseView() {
             </>
           )}
           {expense.status === "confirmed" && canManage && (
-            <Button variant="outline" onClick={() => setLocation(`/accounting/expenses/${id}/edit`)}>
+            <Button variant="outline" onClick={() => setLocation(withReturnTo(`/accounting/expenses/${id}/edit`))}>
               <Edit className="h-4 w-4 mr-2" /> Edit (Admin)
             </Button>
           )}

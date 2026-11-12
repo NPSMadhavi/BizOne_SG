@@ -135,7 +135,7 @@ export default function JournalEntriesList() {
       <ClosedYearBanner />
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Journal Entries</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Journal Entries</h1>
         </div>
         {!readOnly && (
           <Button className="gap-2" onClick={() => setLocation("/accounting/journal-entries/new")}>

@@ -461,7 +461,7 @@ export default function Settings() {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Settings</h1>
       </div>
 
       {selectedCompany && (

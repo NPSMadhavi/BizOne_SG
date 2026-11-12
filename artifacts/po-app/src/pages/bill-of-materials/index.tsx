@@ -854,7 +854,7 @@ export default function BillOfMaterialsPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Bill of Materials (BOM)</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Bill of Materials (BOM)</h1>
           </div>
           <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={() => { resetForm(); setMode("form"); }}>
             <Plus className="h-4 w-4" /> Create BOM
@@ -936,7 +936,7 @@ export default function BillOfMaterialsPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">
               {editingId ? "Edit BOM" : "New BOM"}
             </h1>
           </div>

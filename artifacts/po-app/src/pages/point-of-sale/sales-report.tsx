@@ -306,7 +306,7 @@ function ReportHeader({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <h1 className="text-[28px] font-bold leading-tight tracking-tight text-[#3B82F6]">{titles[report]}</h1>
+      <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#2563EB]">{titles[report]}</h1>
       <div className="flex flex-wrap items-center gap-2">
         <select
           id="pos-report-switch"
@@ -465,7 +465,7 @@ function Overview({
           </div>
           <div className="border-l border-[#D7E8F8] px-6">
             <p className="text-xs text-[#64748B]">Total Sales (Incl. GST)</p>
-            <p className="mt-1 text-xl font-bold text-[#2563EB]">{money(gst.total, 0)}</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-[#2563EB]">{money(gst.total, 0)}</p>
           </div>
         </div>
       </section>
@@ -599,7 +599,7 @@ function ClosingReport({
               </div>
               <div>
                 <p className="text-xs text-[#64748B]">Total Sales (Incl. GST)</p>
-                <p className="mt-1 text-xl font-bold text-[#2563EB]">{money(gst.total, 0)}</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight text-[#2563EB]">{money(gst.total, 0)}</p>
               </div>
             </div>
           </section>

@@ -512,7 +512,7 @@ export default function GrnNew() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">
               {grn?.grnNumber || "Create Goods Receipt Note"}
             </h1>
             {statusBadge}

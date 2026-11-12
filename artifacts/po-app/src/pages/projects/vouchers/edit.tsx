@@ -266,7 +266,7 @@ export default function VoucherEdit() {
         </Button>
         <div className="flex items-center gap-2">
           <Receipt className="h-5 w-5 text-primary" />
-          <h1 className="text-xl font-bold text-[#2563EB]">Edit Voucher</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Edit Voucher</h1>
           {voucher && <span className="text-muted-foreground text-sm">— {voucher.voucherNumber}</span>}
         </div>
       </div>

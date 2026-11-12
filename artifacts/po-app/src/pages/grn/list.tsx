@@ -96,7 +96,7 @@ export default function GrnList() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Goods Receipt Notes</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Goods Receipt Notes</h1>
         </div>
         <Button
           onClick={() => setLocation("/grn/new")}

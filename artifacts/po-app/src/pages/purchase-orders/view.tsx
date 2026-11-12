@@ -300,7 +300,7 @@ export default function PurchaseOrderView() {
             </Button>
             <div className="flex flex-col gap-0.5 min-w-0">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <h1 className="text-lg font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
                 {getStatusBadge(po.status, true)}
                 {convertedToViBadge(true)}
                 {(po as any).isPrivate && (
@@ -339,7 +339,7 @@ export default function PurchaseOrderView() {
           </Button>
           <div className="flex flex-col gap-1 min-w-0 shrink-0">
             <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-[#2563EB] leading-tight shrink-0">{po.poNumber}</h1>
               {getStatusBadge(po.status)}
               {convertedToViBadge()}
               {(po as any).isPrivate && (

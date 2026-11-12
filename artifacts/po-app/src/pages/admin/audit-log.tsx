@@ -173,7 +173,7 @@ export default function AuditLogPage() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] flex items-center gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-[#2563EB] flex items-center gap-2">
           <ShieldCheck className="h-8 w-8 text-primary" />
           Audit Log
         </h1>

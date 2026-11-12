@@ -969,7 +969,7 @@ export default function SettingsBackupsPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Backup & Restore</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Backup & Restore</h1>
             {selectedCompany && (
               <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700 font-semibold px-2.5 py-0.5">
                 {selectedCompany.name}

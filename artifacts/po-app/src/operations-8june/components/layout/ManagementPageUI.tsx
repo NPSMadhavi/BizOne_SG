@@ -30,7 +30,7 @@ export function ManagementPageHeader({
           </button>
         ) : null}
         <div className="min-w-0">
-          <h2 className="text-[36px] font-bold leading-tight text-[#2563EB]">{title}</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-[#2563EB]">{title}</h2>
           {description ? <p className="mt-1 text-sm text-[#6B7280]">{description}</p> : null}
         </div>
       </div>
@@ -75,7 +75,7 @@ export function SuperAdminPageHeading({
       >
         <ChevronLeft className="h-7 w-7" strokeWidth={2.25} />
       </button>
-      <h2 className="text-[36px] font-bold leading-tight text-[#2563EB]">{title}</h2>
+      <h2 className="text-2xl font-bold tracking-tight text-[#2563EB]">{title}</h2>
     </div>
   );
 }

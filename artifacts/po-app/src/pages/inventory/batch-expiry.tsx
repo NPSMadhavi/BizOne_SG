@@ -419,7 +419,7 @@ export default function BatchExpiryPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Batch & Expiry</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Batch & Expiry</h1>
         </div>
         <Button type="button" className="gap-2 bg-[#2563EB] hover:bg-[#1D4ED8]" onClick={openAdd}>
           <Plus className="h-4 w-4" /> Create Batch

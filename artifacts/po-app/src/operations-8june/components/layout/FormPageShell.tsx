@@ -32,7 +32,7 @@ export function FormPageShell({
             <ArrowLeft className="h-6 w-6" />
           </Link>
           <div className="min-w-0">
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">{title}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">{title}</h1>
             {description ? (
               <p className="mt-1 text-sm text-[#6B7280]">{description}</p>
             ) : null}

@@ -180,7 +180,7 @@ export default function InvoiceList() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Invoices</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Invoices</h1>
         </div>
         <Link href="/invoices/new">
           <Button className="gap-2"><Plus className="h-4 w-4" />Create Invoice</Button>

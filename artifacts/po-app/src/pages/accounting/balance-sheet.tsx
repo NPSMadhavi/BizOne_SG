@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,6 +9,7 @@ import { Download, Loader2, Package, Users, ChevronDown, ChevronUp, ChevronRight
 import { cn } from "@/lib/utils";
 import { generateBalanceSheet_PDF } from "@/lib/pdf";
 import type { Asset } from "@shared/schema";
+import { AccountActivityPanel } from "@/pages/accounting/account-activity";
 
 
 interface AcctLine { code: string; name: string; subType: string | null; amount: number }
@@ -27,6 +29,31 @@ function fmtAmt(n: number) {
 }
 function fmtDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-SG", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function initialBsState() {
+  const today = new Date().toISOString().split("T")[0];
+  const currentYear = new Date().getFullYear();
+  const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const asOf = params.get("asOf") || today;
+  const year = Number(params.get("year") || asOf.slice(0, 4)) || currentYear;
+  const quarterRaw = params.get("quarter");
+  const quarter = quarterRaw === null || quarterRaw === "" ? null : Number(quarterRaw);
+  return {
+    asOf,
+    year: Number.isFinite(year) ? year : currentYear,
+    quarter: quarter !== null && quarter >= 0 && quarter <= 3 ? quarter : null,
+    expand: params.get("expand") || "",
+  };
+}
+
+function bsReturnPath(asOf: string, year: number, quarter: number | null, expand: string) {
+  const q = new URLSearchParams();
+  if (asOf) q.set("asOf", asOf);
+  if (year) q.set("year", String(year));
+  if (quarter !== null) q.set("quarter", String(quarter));
+  if (expand) q.set("expand", expand);
+  return `/accounting/balance-sheet?${q.toString()}`;
 }
 
 // Quarter end dates (calendar year)
@@ -141,13 +168,24 @@ function SubtotalBar({ label, amount }: { label: string; amount: number }) {
 
 export default function BalanceSheetPage() {
   const { selectedCompany } = useAuth();
+  const [, setLocation] = useLocation();
   const today = new Date().toISOString().split("T")[0];
   const currentYear = new Date().getFullYear();
+  const [boot] = useState(initialBsState);
 
-  const [asOf, setAsOf] = useState(today);
-  const [selYear, setSelYear] = useState(currentYear);
-  const [selQuarter, setSelQuarter] = useState<number | null>(null); // null = custom
+  const [asOf, setAsOf] = useState(boot.asOf);
+  const [selYear, setSelYear] = useState(boot.year);
+  const [selQuarter, setSelQuarter] = useState<number | null>(boot.quarter);
   const [pdfLoading, setPdfLoading] = useState(false);
+
+  function sheetReturn(expand: string) {
+    return bsReturnPath(asOf, selYear, selQuarter, expand);
+  }
+
+  function openFromSheet(path: string, expand: string) {
+    const join = path.includes("?") ? "&" : "?";
+    setLocation(`${path}${join}returnTo=${encodeURIComponent(sheetReturn(expand))}`);
+  }
 
   function selectQuarter(qi: number, year: number) {
     const q = QUARTER_ENDS[qi];
@@ -172,7 +210,9 @@ export default function BalanceSheetPage() {
     staleTime: 30_000,
   });
 
-  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>(
+    boot.expand ? { [boot.expand]: true } : {},
+  );
   const toggleRow = (code: string) => {
     setExpandedRows(prev => ({
       ...prev,
@@ -419,7 +459,9 @@ export default function BalanceSheetPage() {
                 expandedRows={expandedRows}
                 onToggleRow={(r) => toggleRow(r.code)}
                 isRowClickable={(r) => r.subType === "fixed_asset" || r.code.startsWith("15") || r.code.startsWith("16") || r.code.startsWith("17") || /fixed asset/i.test(r.name)}
-                renderExpandedRow={(r) => (
+                renderExpandedRow={(r) => /accumulated depreciation/i.test(r.name) ? (
+                  <AccountActivityPanel accountCode={r.code} to={asOf} returnTo={sheetReturn(r.code)} />
+                ) : (
                   <div className="rounded-lg border border-blue-200 bg-white overflow-hidden shadow-sm">
                     <div className="flex items-center justify-between px-3 py-2 bg-blue-50/60 border-b border-blue-100 text-xs">
                       <span className="font-semibold text-blue-900 flex items-center gap-1.5">
@@ -450,8 +492,12 @@ export default function BalanceSheetPage() {
                             </tr>
                           ) : (
                             assetBreakdown.map(({ asset, cost, paid, balance }) => (
-                              <tr key={asset.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="py-2 px-3 font-mono font-medium text-gray-800 whitespace-nowrap">{(asset as any).tag || (asset as any).assetTag || `FA-${asset.id}`}</td>
+                              <tr
+                                key={asset.id}
+                                className="hover:bg-blue-50 transition-colors cursor-pointer"
+                                onClick={() => openFromSheet(`/assets/${asset.id}/edit`, r.code)}
+                              >
+                                <td className="py-2 px-3 font-mono font-medium text-blue-700 whitespace-nowrap">{(asset as any).tag || (asset as any).assetTag || `FA-${asset.id}`}</td>
                                 <td className="py-2 px-3 font-medium text-gray-900 whitespace-nowrap">{(asset as any).name || (asset as any).type || (asset as any).model || (asset as any).description || "—"}</td>
                                 <td className="py-2 px-3 text-gray-600 capitalize whitespace-nowrap">{asset.category || "—"}</td>
                                 <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(cost)}</td>
@@ -500,7 +546,16 @@ export default function BalanceSheetPage() {
                   ) : undefined
                 }
               />
-              <Section groupLabel="Current Assets" rows={curAssets} subtotalLabel="Total Current Assets" subtotal={curAssets.reduce((s, a) => s + a.amount, 0)} />
+              <Section
+                groupLabel="Current Assets"
+                rows={curAssets}
+                subtotalLabel="Total Current Assets"
+                subtotal={curAssets.reduce((s, a) => s + a.amount, 0)}
+                expandedRows={expandedRows}
+                onToggleRow={(r) => toggleRow(r.code)}
+                isRowClickable={() => true}
+                renderExpandedRow={(r) => <AccountActivityPanel accountCode={r.code} to={asOf} returnTo={sheetReturn(r.code)} />}
+              />
               <Section rows={[]} subtotalLabel="Total Assets" subtotal={data.totalAssets} isGrandTotal />
             </div>
 
@@ -515,15 +570,14 @@ export default function BalanceSheetPage() {
                 subtotal={curLiab.reduce((s, a) => s + a.amount, 0)}
                 expandedRows={expandedRows}
                 onToggleRow={(r) => toggleRow(r.code)}
-                isRowClickable={(r) => {
-                  const isAp = r.code === "2000" || /accounts payable|trade creditors/i.test(r.name);
-                  const isSalaries = r.code === "2040" || /salaries payable|staff salaries/i.test(r.name);
-                  const isCpf = r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name);
-                  return isAp || isSalaries || isCpf;
-                }}
+                isRowClickable={() => true}
                 renderExpandedRow={(r) => {
                   const isAp = r.code === "2000" || /accounts payable|trade creditors/i.test(r.name);
                   const isCpf = r.code === "2050" || /cpf contributions payable|cpf payable/i.test(r.name);
+                  const isSalaries = r.code === "2040" || /salaries payable|staff salaries/i.test(r.name);
+                  if (!isAp && !isCpf && !isSalaries) {
+                    return <AccountActivityPanel accountCode={r.code} to={asOf} returnTo={sheetReturn(r.code)} />;
+                  }
 
                   if (isAp) {
                     return (
@@ -561,8 +615,12 @@ export default function BalanceSheetPage() {
                                   const paid = parseFloat(String(vi.paidAmount || vi.amountPaid || 0)) || 0;
                                   const bal = Math.max(0, tot - paid);
                                   return (
-                                    <tr key={vi.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="py-2 px-3 font-mono font-medium text-gray-800 whitespace-nowrap">{vi.piNumber || `PI-${vi.id}`}</td>
+                                    <tr
+                                      key={vi.id}
+                                      className="hover:bg-amber-50 transition-colors cursor-pointer"
+                                      onClick={() => openFromSheet(`/vendor-invoices/${vi.id}`, r.code)}
+                                    >
+                                      <td className="py-2 px-3 font-mono font-medium text-blue-700 whitespace-nowrap">{vi.piNumber || `PI-${vi.id}`}</td>
                                       <td className="py-2 px-3 font-medium text-gray-900 whitespace-nowrap">{vi.vendorName || "—"}</td>
                                       <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{vi.piDate ? fmtDate(vi.piDate) : "—"}</td>
                                       <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(tot)}</td>
@@ -641,7 +699,11 @@ export default function BalanceSheetPage() {
                                 </tr>
                               ) : (
                                 cpfBreakdown.map(({ record, employee, employeeCpf, employerCpf, totalCpf, paid, balance }) => (
-                                  <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                                  <tr
+                                    key={record.id}
+                                    className="hover:bg-emerald-50 transition-colors cursor-pointer"
+                                    onClick={() => openFromSheet("/payroll", r.code)}
+                                  >
                                     <td className="py-2 px-3 whitespace-nowrap">
                                       <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
                                       <div className="text-[10px] text-gray-500 font-mono">{employee?.employeeId || employee?.designation || ""}</div>
@@ -716,7 +778,11 @@ export default function BalanceSheetPage() {
                               </tr>
                             ) : (
                               salariesBreakdown.map(({ record, employee, gross, net, paid, balance }) => (
-                                <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                                <tr
+                                  key={record.id}
+                                  className="hover:bg-blue-50 transition-colors cursor-pointer"
+                                  onClick={() => openFromSheet("/payroll", r.code)}
+                                >
                                   <td className="py-2 px-3 whitespace-nowrap">
                                     <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
                                     <div className="text-[10px] text-gray-500 font-mono">{employee?.employeeId || employee?.designation || ""}</div>
@@ -792,19 +858,42 @@ export default function BalanceSheetPage() {
                   </div>
                 }
               />
-              <Section groupLabel="Non-Current Liabilities" rows={ncLiab} subtotalLabel="Total Non-Current Liabilities" subtotal={ncLiab.reduce((s, a) => s + a.amount, 0)} />
+              <Section
+                groupLabel="Non-Current Liabilities"
+                rows={ncLiab}
+                subtotalLabel="Total Non-Current Liabilities"
+                subtotal={ncLiab.reduce((s, a) => s + a.amount, 0)}
+                expandedRows={expandedRows}
+                onToggleRow={(r) => toggleRow(r.code)}
+                isRowClickable={() => true}
+                renderExpandedRow={(r) => <AccountActivityPanel accountCode={r.code} to={asOf} returnTo={sheetReturn(r.code)} />}
+              />
               <SubtotalBar label="Total Liabilities" amount={data.totalLiabilities} />
 
               <GroupLabel label="Equity" />
-              {data.equity.filter(e => Math.abs(e.amount) > 0.005).map(e => (
-                <div key={e.code} className="flex items-baseline justify-between px-5 py-2 border-b border-gray-100 hover:bg-gray-50/60">
-                  <span className="flex items-baseline gap-3 text-sm text-gray-600">
-                    <span className="font-mono text-xs text-gray-400 w-10 shrink-0">{e.code}</span>
-                    {e.name}
-                  </span>
-                  <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", e.amount < 0 ? "text-red-600" : "text-gray-800")}>{fmtAmt(e.amount)}</span>
-                </div>
-              ))}
+              {data.equity.filter(e => Math.abs(e.amount) > 0.005).map(e => {
+                const open = Boolean(expandedRows[e.code]);
+                return (
+                  <div key={e.code} className="border-b border-gray-100">
+                    <div
+                      className={cn("flex items-baseline justify-between px-5 py-2 cursor-pointer hover:bg-blue-50/70", open && "bg-blue-50/40")}
+                      onClick={() => toggleRow(e.code)}
+                    >
+                      <span className="flex items-baseline gap-3 text-sm text-gray-600">
+                        <span className="font-mono text-xs text-gray-400 w-10 shrink-0">{e.code}</span>
+                        <span className={cn(open && "text-blue-700 font-medium")}>{e.name}</span>
+                        <ChevronDown className={cn("h-3.5 w-3.5 text-gray-400 transition-transform", open && "rotate-180 text-blue-600")} />
+                      </span>
+                      <span className={cn("font-mono text-sm tabular-nums ml-6 shrink-0", e.amount < 0 ? "text-red-600" : "text-gray-800")}>{fmtAmt(e.amount)}</span>
+                    </div>
+                    {open && (
+                      <div className="bg-slate-50/80 border-t border-gray-200">
+                        <AccountActivityPanel accountCode={e.code} to={asOf} returnTo={sheetReturn(e.code)} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               <div className="flex items-baseline justify-between px-5 py-2 border-b border-gray-100 hover:bg-gray-50/60">
                 <span className="flex items-baseline gap-3 text-sm text-gray-500 italic">
                   <span className="w-10 shrink-0" />Retained Earnings

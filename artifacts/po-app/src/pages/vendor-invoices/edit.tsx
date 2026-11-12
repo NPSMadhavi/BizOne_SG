@@ -462,7 +462,7 @@ export default function VendorInvoiceEdit() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Edit Vendor Invoice</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Edit Vendor Invoice</h1>
           <p className="text-muted-foreground mt-1 font-mono">{pi.piNumber}</p>
         </div>
       </div>

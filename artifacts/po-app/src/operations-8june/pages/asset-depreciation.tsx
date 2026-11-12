@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { Asset } from "@shared/schema";
@@ -52,21 +52,12 @@ export default function AssetDepreciationPage() {
   );
 
   const yearOptions = useMemo(() => {
-    const years = Array.from(new Set(schedule.map((r) => r.year))).sort((a, b) => a - b);
+    const years = Array.from(new Set(schedule.map((r) => r.year)));
+    // Keep the year the user already chose, even if this asset has no schedule yet.
+    if (typeof year === "number" && !years.includes(year)) years.push(year);
+    years.sort((a, b) => a - b);
     return years;
-  }, [schedule]);
-
-  // When asset/schedule changes, keep year valid (or default to first year / all).
-  useEffect(() => {
-    if (year === "all") return;
-    if (yearOptions.length === 0) {
-      setYear("all");
-      return;
-    }
-    if (!yearOptions.includes(year)) {
-      setYear(yearOptions[0]);
-    }
-  }, [year, yearOptions]);
+  }, [schedule, year]);
 
   const filtered = useMemo(() => {
     if (year === "all") return schedule;
@@ -104,8 +95,7 @@ export default function AssetDepreciationPage() {
               onValueChange={(v) => {
                 const id = Number(v);
                 setAssetId(id);
-                setYear("all");
-                updateUrl(id, "all");
+                updateUrl(id, year);
               }}
             >
               <SelectTrigger className="w-full max-w-md bg-white">
@@ -130,7 +120,7 @@ export default function AssetDepreciationPage() {
                 setYear(next);
                 if (selected) updateUrl(selected.id, next);
               }}
-              disabled={!selected || schedule.length === 0}
+              disabled={!selected}
             >
               <SelectTrigger className="w-full bg-white">
                 <SelectValue placeholder="Select year" />
@@ -221,9 +211,7 @@ export default function AssetDepreciationPage() {
                   <TableCell className="text-right tabular-nums font-bold text-[#1E3A8A] text-sm">
                     {formatSgd(totals.closingNbv)}
                   </TableCell>
-                  <TableCell className="text-xs font-semibold text-[#1E3A8A]">
-                    {filtered.length} {filtered.length === 1 ? "Period" : "Periods"}
-                  </TableCell>
+                  <TableCell />
                 </TableRow>
               </TableFooter>
             </Table>

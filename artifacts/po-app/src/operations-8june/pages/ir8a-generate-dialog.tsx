@@ -94,7 +94,7 @@ export function Ir8aGenerateDialog({
         {phase === "running" ? (
           <div className="space-y-6">
             <div className="flex items-center justify-between gap-4 pr-10">
-              <h2 className="text-[28px] font-bold tracking-tight text-[#1E3A5F]">Generate IR8A</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-[#2563EB]">Generate IR8A</h2>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-[#64748B]">Year of Assessment</span>
                 <Select value={year} onValueChange={onYearChange}>

@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/auth-context";
-import { type AppModule, MODULE_GROUPS, hasPosChannelAccess } from "@/contexts/auth-modules";
+import { type AppModule, MODULE_GROUPS } from "@/contexts/auth-modules";
 import {
   LayoutDashboard,
   FileText,
@@ -759,47 +759,27 @@ export function Shell({ children }: { children: React.ReactNode }) {
   icon={Store}
   isOpen={openGroup === "point_of_sale"}
   onToggle={toggleGroup}
-  visible={false}
+  visible
   hasActive={location.startsWith("/point-of-sale")}
 >
-  {hasPosChannelAccess(hasModuleAccess, "pos_retail") && (
   <NavItem href="/point-of-sale/retail" icon={Store} active={location.startsWith("/point-of-sale/retail")} inGroup>
     Retail
   </NavItem>
-  )}
-  {hasPosChannelAccess(hasModuleAccess, "pos_supermarket") && (
   <NavItem href="/point-of-sale/supermarket" icon={ShoppingBag} active={location.startsWith("/point-of-sale/supermarket")} inGroup>
     Supermarket
   </NavItem>
-  )}
-  {hasPosChannelAccess(hasModuleAccess, "pos_restaurants") && (
   <NavItem href="/point-of-sale/restaurants" icon={UtensilsCrossed} active={location.startsWith("/point-of-sale/restaurants")} inGroup>
     Restaurants
   </NavItem>
-  )}
-  {hasPosChannelAccess(hasModuleAccess, "pos_pharmacy") && (
   <NavItem href="/point-of-sale/pharmacy" icon={Pill} active={location.startsWith("/point-of-sale/pharmacy")} inGroup>
     Pharmacy
   </NavItem>
-  )}
-  {hasPosChannelAccess(hasModuleAccess, "pos_electronics") && (
   <NavItem href="/point-of-sale/electronics" icon={Monitor} active={location.startsWith("/point-of-sale/electronics")} inGroup>
     Electronics
   </NavItem>
-  )}
-  {!isAdmin && (
-    hasModuleAccess("pos_reports") ||
-    hasModuleAccess("point_of_sale") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_retail") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_supermarket") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_restaurants") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_pharmacy") ||
-    hasPosChannelAccess(hasModuleAccess, "pos_electronics")
-  ) && (
   <NavItem href="/point-of-sale/reports" icon={BarChart3} active={location.startsWith("/point-of-sale/reports")} inGroup>
     Reports
   </NavItem>
-  )}
 </NavGroup>
       {hasModuleAccess("bill_of_materials") && (
         <NavItem href="/bill-of-materials" icon={Boxes} active={location.startsWith("/bill-of-materials")}>

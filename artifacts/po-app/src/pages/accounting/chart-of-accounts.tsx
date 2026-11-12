@@ -259,7 +259,7 @@ export default function ChartOfAccounts() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Chart of Accounts</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Chart of Accounts</h1>
         </div>
         {canManage && (
           <Button className="gap-2" onClick={openAdd}>

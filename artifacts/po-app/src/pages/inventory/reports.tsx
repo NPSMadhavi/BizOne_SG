@@ -682,7 +682,7 @@ ${styles}
     <div className="space-y-6 pb-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">Stock Reports</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">Stock Reports</h1>
       </div>
 
       {/* Filters */}

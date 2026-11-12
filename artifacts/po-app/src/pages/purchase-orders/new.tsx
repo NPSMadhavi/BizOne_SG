@@ -518,7 +518,7 @@ export default function PurchaseOrderNew() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">
               {copiedFromPo ? "Copy to New Purchase Order" : "Create Purchase Order"}
             </h1>
           </div>

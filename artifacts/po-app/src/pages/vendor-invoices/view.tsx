@@ -226,7 +226,7 @@ export default function VendorInvoiceView() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight text-[#2563EB] font-mono">{pi.piNumber}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB] font-mono">{pi.piNumber}</h1>
             {statusBadge(pi.status)}
           </div>
           <p className="text-muted-foreground mt-1">Recorded on {fmtDate(pi.createdAt)}</p>

@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db, accountsTable, journalEntriesTable, journalLinesTable, companiesTable, invoicesTable, vendorInvoicesTable, vendorsTable, settingsTable, invoicePaymentsTable, vendorPaymentsTable, customerDepositsTable, expensesTable, incomeRecordsTable } from "@workspace/db";
-import { eq, and, desc, sql, asc } from "drizzle-orm";
+import { eq, and, desc, sql, asc, inArray } from "drizzle-orm";
 import { logAudit } from "../lib/audit.js";
 import { DEFAULT_ACCOUNTS, ensureAccountsSeeded } from "../lib/accounts-seed.js";
 import { getExchangeRateToSGD, getExchangeRateInfo } from "../lib/exchange-rate.js";
 import { backfillExpenseJEs } from "../lib/expense-auto-post.js";
+import { backfillAssetDepreciationJEs } from "../lib/asset-depreciation-auto-post.js";
 import { backfillVendorInvoiceJEs } from "../lib/vendor-invoice-auto-post.js";
 import { backfillPayrollJEs, toIsoDate } from "../lib/payroll-auto-post.js";
 import { isSingaporeCountry } from "../lib/singapore.js";
@@ -174,6 +175,7 @@ router.get("/journal-entries", async (req, res): Promise<void> => {
     await backfillVendorInvoiceJEs(companyId, req.session.userId!);
     await backfillExpenseJEs(companyId, req.session.userId!);
     await backfillPayrollJEs(companyId, req.session.userId!);
+    await backfillAssetDepreciationJEs(companyId, req.session.userId!);
   } catch (err) {
     req.log?.warn?.({ err }, "accounting journal backfill failed");
   }
@@ -361,6 +363,11 @@ router.get("/trial-balance", async (req, res): Promise<void> => {
   const toDate    = (req.query.to   as string) || null;
 
   await ensureAccountsSeeded(companyId);
+  try {
+    await backfillAssetDepreciationJEs(companyId, req.session.userId!);
+  } catch (err) {
+    req.log?.warn?.({ err }, "trial balance depreciation backfill failed");
+  }
 
   const accounts = await db.select()
     .from(accountsTable)
@@ -382,36 +389,58 @@ router.get("/trial-balance", async (req, res): Promise<void> => {
   const entries = await entriesQuery;
   const entryIds = entries.map(e => e.entryId);
 
-  let linesByAccount: Record<number, { debit: number; credit: number }> = {};
-
-  if (entryIds.length > 0) {
+  async function sumLinesByAccount(ids: number[]) {
+    const map: Record<number, { debit: number; credit: number }> = {};
+    if (ids.length === 0) return map;
     const lines = await db.select()
       .from(journalLinesTable)
-      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${entryIds.join(",")}]::int[]`)})`);
-
+      .where(sql`${journalLinesTable.journalEntryId} = ANY(${sql.raw(`ARRAY[${ids.join(",")}]::int[]`)})`);
     for (const line of lines) {
-      if (!linesByAccount[line.accountId]) linesByAccount[line.accountId] = { debit: 0, credit: 0 };
-      linesByAccount[line.accountId].debit  += parseFloat(line.debit  ?? "0");
-      linesByAccount[line.accountId].credit += parseFloat(line.credit ?? "0");
+      if (!map[line.accountId]) map[line.accountId] = { debit: 0, credit: 0 };
+      map[line.accountId].debit  += parseFloat(line.debit  ?? "0");
+      map[line.accountId].credit += parseFloat(line.credit ?? "0");
     }
+    return map;
+  }
+
+  const linesByAccount = await sumLinesByAccount(entryIds);
+
+  // Opening balance = posted activity before the From date (same basis as General Ledger).
+  let openingByAccount: Record<number, { debit: number; credit: number }> = {};
+  if (fromDate) {
+    const obEntries = await db.select({ entryId: journalEntriesTable.id })
+      .from(journalEntriesTable)
+      .where(and(
+        eq(journalEntriesTable.companyId, companyId),
+        sql`${journalEntriesTable.status} IN ('posted','reversed')`,
+        sql`${journalEntriesTable.entryDate} < ${fromDate}`,
+      ));
+    openingByAccount = await sumLinesByAccount(obEntries.map(e => e.entryId));
   }
 
   const rows = accounts.map(a => {
     const totals = linesByAccount[a.id] ?? { debit: 0, credit: 0 };
+    const ob = openingByAccount[a.id] ?? { debit: 0, credit: 0 };
+    const openingBalance = ob.debit - ob.credit;
+    const closingBalance = openingBalance + totals.debit - totals.credit;
     return {
-      id:           a.id,
-      code:         a.code,
-      name:         a.name,
-      type:         a.type,
-      subType:      a.subType,
-      totalDebit:   totals.debit,
-      totalCredit:  totals.credit,
-      balance:      totals.debit - totals.credit,
+      id:              a.id,
+      code:            a.code,
+      name:            a.name,
+      type:            a.type,
+      subType:         a.subType,
+      totalDebit:      totals.debit,
+      totalCredit:     totals.credit,
+      openingBalance:  +openingBalance.toFixed(2),
+      closingBalance:  +closingBalance.toFixed(2),
+      balance:         +closingBalance.toFixed(2),
     };
   });
 
-  const grandDebit  = rows.reduce((s, r) => s + r.totalDebit,  0);
-  const grandCredit = rows.reduce((s, r) => s + r.totalCredit, 0);
+  const grandDebit   = rows.reduce((s, r) => s + r.totalDebit,  0);
+  const grandCredit  = rows.reduce((s, r) => s + r.totalCredit, 0);
+  const grandOpening = rows.reduce((s, r) => s + r.openingBalance, 0);
+  const grandClosing = rows.reduce((s, r) => s + r.closingBalance, 0);
 
   res.json({
     fromDate: fromDate || null,
@@ -419,6 +448,8 @@ router.get("/trial-balance", async (req, res): Promise<void> => {
     rows,
     grandDebit,
     grandCredit,
+    grandOpening: +grandOpening.toFixed(2),
+    grandClosing: +grandClosing.toFixed(2),
     balanced: Math.abs(grandDebit - grandCredit) < 0.01,
   });
 });
@@ -907,6 +938,7 @@ router.get("/balance-sheet", async (req, res): Promise<void> => {
     await backfillVendorInvoiceJEs(companyId, req.session.userId!);
     await backfillExpenseJEs(companyId, req.session.userId!);
     await backfillPayrollJEs(companyId, req.session.userId!);
+    await backfillAssetDepreciationJEs(companyId, req.session.userId!);
   } catch (err) {
     req.log?.warn?.({ err }, "balance sheet journal backfill failed");
   }
@@ -1271,6 +1303,38 @@ router.get("/vendor-statement", async (req, res): Promise<void> => {
   });
 });
 
+function ledgerSourcePath(
+  refType: string | null | undefined,
+  refId: number | null | undefined,
+  journalEntryId: number,
+  linkedDocId: number | null,
+): string {
+  const docId = linkedDocId || refId || null;
+  switch (refType) {
+    case "invoice":
+      return docId ? `/invoices/${docId}` : `/accounting/journal-entries/${journalEntryId}`;
+    case "invoice_payment":
+      return linkedDocId ? `/invoices/${linkedDocId}` : `/accounting/journal-entries/${journalEntryId}`;
+    case "vendor_invoice":
+      return docId ? `/vendor-invoices/${docId}` : `/accounting/journal-entries/${journalEntryId}`;
+    case "vendor_payment":
+      return linkedDocId ? `/vendor-invoices/${linkedDocId}` : `/accounting/journal-entries/${journalEntryId}`;
+    case "expense":
+      return docId ? `/accounting/expenses/${docId}` : `/accounting/journal-entries/${journalEntryId}`;
+    case "income_record":
+      return docId ? `/accounting/income/${docId}` : `/accounting/journal-entries/${journalEntryId}`;
+    case "payroll":
+      return "/payroll";
+    case "asset_disposal":
+    case "asset_disposal_reversal":
+      return docId ? `/assets/${docId}/edit` : "/assets/disposal";
+    case "asset_depreciation":
+      return docId ? `/assets/depreciation?assetId=${docId}` : `/accounting/journal-entries/${journalEntryId}`;
+    default:
+      return `/accounting/journal-entries/${journalEntryId}`;
+  }
+}
+
 // ─── General Ledger ───────────────────────────────────────────────────────────
 
 router.get("/general-ledger", async (req, res): Promise<void> => {
@@ -1279,7 +1343,14 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
   if (!(await requireSingapore(req, res))) return;
 
   const companyId = req.session.companyId!;
-  const accountId = req.query.accountId ? parseInt(req.query.accountId as string, 10) : null;
+  try {
+    await backfillAssetDepreciationJEs(companyId, req.session.userId!);
+  } catch (err) {
+    req.log?.warn?.({ err }, "general ledger depreciation backfill failed");
+  }
+  const parsedAccountId = req.query.accountId ? parseInt(req.query.accountId as string, 10) : NaN;
+  const accountCode = String(req.query.accountCode || "").trim();
+  let accountId = Number.isFinite(parsedAccountId) ? parsedAccountId : null;
   const fromDate  = (req.query.from as string) || null;
   const toDate    = (req.query.to   as string) || null;
 
@@ -1290,13 +1361,16 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
     .where(and(eq(accountsTable.companyId, companyId), eq(accountsTable.isActive, true)))
     .orderBy(asc(accountsTable.code));
 
-  if (!accountId) {
+  if (!accountId && !accountCode) {
     res.json({ accounts: accounts.map(a => ({ id: a.id, code: a.code, name: a.name, type: a.type })), transactions: [], openingBalance: 0, closingBalance: 0 });
     return;
   }
 
-  const [account] = accounts.filter(a => a.id === accountId);
+  const account = accountId
+    ? accounts.find(a => a.id === accountId)
+    : accounts.find(a => a.code === accountCode);
   if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+  accountId = account.id;
 
   // Opening balance: all posted/reversed entries BEFORE fromDate
   let openingDebit = 0, openingCredit = 0;
@@ -1315,7 +1389,14 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
   const openingBalance = openingDebit - openingCredit;
 
   // Period entries
-  const entries = await db.select({ entryId: journalEntriesTable.id, entryDate: journalEntriesTable.entryDate, reference: journalEntriesTable.refNumber, description: journalEntriesTable.description })
+  const entries = await db.select({
+    entryId: journalEntriesTable.id,
+    entryDate: journalEntriesTable.entryDate,
+    reference: journalEntriesTable.refNumber,
+    description: journalEntriesTable.description,
+    refType: journalEntriesTable.refType,
+    refId: journalEntriesTable.refId,
+  })
     .from(journalEntriesTable)
     .where(and(
       eq(journalEntriesTable.companyId, companyId),
@@ -1335,6 +1416,23 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
   const linesByEntry: Record<number, typeof lines[0]> = {};
   for (const l of lines) linesByEntry[l.journalEntryId] = l;
 
+  const invoicePaymentIds = [...new Set(entries.filter(e => e.refType === "invoice_payment" && e.refId).map(e => e.refId as number))];
+  const vendorPaymentIds = [...new Set(entries.filter(e => e.refType === "vendor_payment" && e.refId).map(e => e.refId as number))];
+  const [invoicePayments, vendorPayments] = await Promise.all([
+    invoicePaymentIds.length
+      ? db.select({ id: invoicePaymentsTable.id, invoiceId: invoicePaymentsTable.invoiceId })
+          .from(invoicePaymentsTable)
+          .where(inArray(invoicePaymentsTable.id, invoicePaymentIds))
+      : Promise.resolve([] as { id: number; invoiceId: number }[]),
+    vendorPaymentIds.length
+      ? db.select({ id: vendorPaymentsTable.id, vendorInvoiceId: vendorPaymentsTable.vendorInvoiceId })
+          .from(vendorPaymentsTable)
+          .where(inArray(vendorPaymentsTable.id, vendorPaymentIds))
+      : Promise.resolve([] as { id: number; vendorInvoiceId: number }[]),
+  ]);
+  const invoiceIdByPayment = new Map(invoicePayments.map(p => [p.id, p.invoiceId]));
+  const vendorInvoiceIdByPayment = new Map(vendorPayments.map(p => [p.id, p.vendorInvoiceId]));
+
   let running = openingBalance;
   const transactions = entries
     .filter(e => linesByEntry[e.entryId])
@@ -1343,7 +1441,23 @@ router.get("/general-ledger", async (req, res): Promise<void> => {
       const debit  = parseFloat(l.debit  ?? "0");
       const credit = parseFloat(l.credit ?? "0");
       running += debit - credit;
-      return { journalEntryId: e.entryId, date: e.entryDate, reference: e.reference, description: e.description || l.description, debit: +debit.toFixed(2), credit: +credit.toFixed(2), balance: +running.toFixed(2) };
+      const linkedDocId = e.refType === "invoice_payment"
+        ? invoiceIdByPayment.get(e.refId as number) ?? null
+        : e.refType === "vendor_payment"
+          ? vendorInvoiceIdByPayment.get(e.refId as number) ?? null
+          : null;
+      return {
+        journalEntryId: e.entryId,
+        date: e.entryDate,
+        reference: e.reference,
+        description: e.description || l.description,
+        debit: +debit.toFixed(2),
+        credit: +credit.toFixed(2),
+        balance: +running.toFixed(2),
+        refType: e.refType,
+        refId: e.refId,
+        sourcePath: ledgerSourcePath(e.refType, e.refId, e.entryId, linkedDocId),
+      };
     });
 
   res.json({

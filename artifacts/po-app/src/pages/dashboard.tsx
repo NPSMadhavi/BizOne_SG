@@ -621,7 +621,7 @@ export default function Dashboard() {
       {/* Page Header — matches India_BizOne */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="m-0 text-[1.75rem] font-bold tracking-tight text-[#2563EB]">
+          <h1 className="m-0 text-2xl font-bold tracking-tight text-[#2563EB]">
             Dashboard
           </h1>
           <p className="mt-1 text-[14px] text-[#64748b]">

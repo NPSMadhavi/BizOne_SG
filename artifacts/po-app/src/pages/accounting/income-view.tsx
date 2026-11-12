@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import { ArrowLeft, Edit, Trash2, CheckCircle2, TrendingUp, Ban, Paperclip, FileText, FileImage, Download, Eye, X } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { readReturnTo, withReturnTo } from "@/lib/return-to";
 
 interface IncomeRecord {
   id: number;
@@ -168,7 +169,7 @@ export default function IncomeView() {
       const res = await fetch(`/api/income/${id}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["income"] }); toast({ title: "Income record deleted." }); setLocation("/accounting/income"); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["income"] }); toast({ title: "Income record deleted." }); setLocation(readReturnTo() || "/accounting/income"); },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
@@ -234,7 +235,7 @@ export default function IncomeView() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/accounting/income")}>
+          <Button variant="ghost" size="icon" onClick={() => setLocation(readReturnTo() || "/accounting/income")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -250,7 +251,7 @@ export default function IncomeView() {
           {statusBadge()}
           {record.status === "draft" && (
             <>
-              <Button variant="outline" size="sm" onClick={() => setLocation(`/accounting/income/${id}/edit`)}>
+              <Button variant="outline" size="sm" onClick={() => setLocation(withReturnTo(`/accounting/income/${id}/edit`))}>
                 <Edit className="h-4 w-4 mr-1.5" />Edit
               </Button>
               <Button size="sm" onClick={() => setConfirmOpen(true)}>
@@ -266,7 +267,7 @@ export default function IncomeView() {
           {record.status === "confirmed" && (
             <>
               {canManage && (
-                <Button variant="outline" size="sm" onClick={() => setLocation(`/accounting/income/${id}/edit`)}>
+                <Button variant="outline" size="sm" onClick={() => setLocation(withReturnTo(`/accounting/income/${id}/edit`))}>
                   <Edit className="h-4 w-4 mr-1.5" />Edit (Admin)
                 </Button>
               )}
@@ -294,7 +295,7 @@ export default function IncomeView() {
             <CardHeader><CardTitle className="text-base">Income Details</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <Row label="Date" value={fmtDate(record.incomeDate)} />
-              <Row label="Payer" value={record.payerName} />
+              <Row label="Customer / Payer" value={record.payerName} />
               <Row label="Description" value={record.description} />
               <Row label="Ledger" value={record.accountName || CATEGORY_LABELS[record.category] || record.category} />
               {record.reference && <Row label="Reference" value={record.reference} />}
@@ -319,7 +320,7 @@ export default function IncomeView() {
               } />
               {record.journalEntryId && (
                 <Row label="Journal Entry" value={
-                  <button className="text-primary text-sm underline" onClick={() => setLocation(`/accounting/journal-entries/${record.journalEntryId}`)}>
+                  <button className="text-primary text-sm underline" onClick={() => setLocation(withReturnTo(`/accounting/journal-entries/${record.journalEntryId}`))}>
                     JE #{record.journalEntryId}
                   </button>
                 } />
@@ -347,7 +348,7 @@ export default function IncomeView() {
                   No attachments
                   {record.status === "draft" && (
                     <p className="text-xs mt-1">
-                      <button className="text-primary underline" onClick={() => setLocation(`/accounting/income/${id}/edit`)}>
+                      <button className="text-primary underline" onClick={() => setLocation(withReturnTo(`/accounting/income/${id}/edit`))}>
                         Edit this record
                       </button>{" "}
                       to add receipts or bills.

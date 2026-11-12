@@ -17,9 +17,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Info, RefreshCw, Paperclip, X, FileText, FileImage, Upload, Trash2 } from "lucide-react";
+import { readReturnTo, withReturnTo } from "@/lib/return-to";
 import { cn } from "@/lib/utils";
 import { BankAccountField } from "@/components/bank-account-field";
 import { LedgerCombobox, type LedgerAccount } from "@/components/ledger-combobox";
+import { VendorPayeeField } from "@/components/vendor-payee-field";
 import { formatExchangeRate } from "@/lib/currencies";
 
 interface IncomeForm {
@@ -93,6 +95,9 @@ export default function IncomeEdit() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [showIncludingTax, setShowIncludingTax] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
+  const [grossText, setGrossText] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
   const [exchangeRate, setExchangeRate] = useState("1.00");
   const [fetchingRate, setFetchingRate] = useState(false);
@@ -110,7 +115,7 @@ export default function IncomeEdit() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["income"] });
       toast({ title: "Income record deleted." });
-      setLocation("/accounting/income");
+      setLocation(readReturnTo() || "/accounting/income");
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
@@ -216,6 +221,16 @@ export default function IncomeEdit() {
     } finally { setFetchingRate(false); }
   };
 
+  function splitInclusive(grossRaw: string) {
+    const gross = parseFloat(grossRaw);
+    if (!Number.isFinite(gross) || gross <= 0) return { gross: 0, gst: 0, net: 0 };
+    const rate = Number(gstRate) || 0;
+    const grossCents = Math.round(gross * 100);
+    const gstCents = Math.round((grossCents * rate) / (100 + rate));
+    const netCents = grossCents - gstCents;
+    return { gross: grossCents / 100, gst: gstCents / 100, net: netCents / 100 };
+  }
+
   function autoCalcGst(netAmount: string, claimable: boolean, treatment: string) {
     const net = parseFloat(netAmount);
     if (!claimable || treatment !== "standard_rated" || isNaN(net) || net <= 0) {
@@ -225,6 +240,12 @@ export default function IncomeEdit() {
     setValue("gstAmount", (net * gstRate / 100).toFixed(2));
   }
 
+  function applyInclusive(grossRaw: string) {
+    const split = splitInclusive(grossRaw);
+    setValue("gstAmount", split.gross > 0 ? split.gst.toFixed(2) : "");
+    if (split.gross > 0) setValue("gstTreatment", "standard_rated");
+  }
+
   function onLedgerChange(account: LedgerAccount) {
     setValue("accountId", account.id);
     setValue("category", account.code);
@@ -232,12 +253,37 @@ export default function IncomeEdit() {
 
   function onAmountChange(raw: string) {
     const cleaned = numericOnly(raw);
+    if (showIncludingTax) {
+      setGrossText(cleaned);
+      setValue("amount", cleaned);
+      applyInclusive(cleaned);
+      return;
+    }
     setValue("amount", cleaned);
     autoCalcGst(cleaned, gstClaimable, watchedGstTreatment);
   }
 
+  function onIncludingTaxChange(checked: boolean) {
+    if (checked) {
+      const gross = watchedAmount;
+      setGrossText(gross);
+      setShowIncludingTax(true);
+      applyInclusive(gross);
+      return;
+    }
+    const gross = grossText || watchedAmount;
+    setShowIncludingTax(false);
+    setGrossText("");
+    setValue("amount", gross);
+    autoCalcGst(gross, gstClaimable, watchedGstTreatment);
+  }
+
   function onGstClaimableChange(checked: boolean) {
     setValue("gstClaimable", checked);
+    if (showIncludingTax) {
+      applyInclusive(grossText || watchedAmount);
+      return;
+    }
     const treatment = checked && watchedGstTreatment !== "standard_rated" ? "standard_rated" : watchedGstTreatment;
     if (checked && watchedGstTreatment !== "standard_rated") setValue("gstTreatment", "standard_rated");
     if (!checked) { setValue("gstAmount", ""); return; }
@@ -247,20 +293,30 @@ export default function IncomeEdit() {
   function onGstTreatmentChange(v: string) {
     setValue("gstTreatment", v);
     if (v !== "standard_rated") {
+      setShowIncludingTax(false);
+      setGrossText("");
       setValue("gstClaimable", false);
       setValue("gstAmount", "");
+      return;
+    }
+    if (showIncludingTax) {
+      applyInclusive(grossText || watchedAmount);
       return;
     }
     autoCalcGst(watchedAmount, gstClaimable, v);
   }
 
-  function calcTotal() {
-    return (parseFloat(watchedAmount) || 0) + (parseFloat(watchedGstAmount) || 0);
-  }
+  const inclusiveSplit = showIncludingTax ? splitInclusive(grossText || watchedAmount) : null;
+  const netValue = inclusiveSplit ? inclusiveSplit.net : (parseFloat(watchedAmount) || 0);
+  const gstValue = inclusiveSplit ? inclusiveSplit.gst : (parseFloat(watchedGstAmount) || 0);
+  const totalValue = inclusiveSplit ? inclusiveSplit.gross : netValue + gstValue;
+  const amountShown = showIncludingTax
+    ? (amountFocused ? grossText : (inclusiveSplit && inclusiveSplit.gross > 0 ? inclusiveSplit.net.toFixed(2) : ""))
+    : watchedAmount;
 
   function calcDeductibleAmount() {
     if (!isDeductible) return 0;
-    return (parseFloat(watchedAmount) || 0) * deductiblePct / 100;
+    return Math.round(((netValue * deductiblePct) / 100) * 100) / 100;
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -319,6 +375,8 @@ export default function IncomeEdit() {
         credentials: "include",
         body: JSON.stringify({
           ...data,
+          amount: netValue.toFixed(2),
+          gstAmount: gstValue ? gstValue.toFixed(2) : "",
           category: data.category || String(data.accountId),
           exchangeRate: watchedCurrency !== "SGD" ? parseFloat(exchangeRate) || 1 : 1,
         }),
@@ -338,7 +396,7 @@ export default function IncomeEdit() {
       toast({ title: "Income record updated." });
       await qc.invalidateQueries({ queryKey: ["income"] });
       await qc.invalidateQueries({ queryKey: ["income", id] });
-      setLocation(`/accounting/income/${id}`);
+      setLocation(withReturnTo(`/accounting/income/${id}`));
     } catch (e: any) {
       toast({ title: e.message, variant: "destructive" });
     } finally {
@@ -356,7 +414,7 @@ export default function IncomeEdit() {
     <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" type="button" onClick={() => setLocation(`/accounting/income/${id}`)}>
+          <Button variant="ghost" size="icon" type="button" onClick={() => setLocation(withReturnTo(`/accounting/income/${id}`))}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -430,10 +488,12 @@ export default function IncomeEdit() {
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>Payer Name</Label>
-                    <Input
-                      value={payerName}
-                      onChange={(e) => setValue("payerName", e.target.value, { shouldDirty: true })}
+                    <Label htmlFor="payerName">Customer / Payer Name</Label>
+                    <VendorPayeeField
+                      id="payerName"
+                      kind="customer"
+                      value={payerName || ""}
+                      onChange={(value) => setValue("payerName", value, { shouldDirty: true })}
                     />
                   </div>
 
@@ -458,11 +518,23 @@ export default function IncomeEdit() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
+                    <div className="flex min-h-6 items-center justify-between gap-2">
+                      <Label htmlFor="amount" className="leading-none">Net Amount (excl. GST) <span className="text-destructive">*</span></Label>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        Including Tax
+                        <Switch checked={showIncludingTax} onCheckedChange={onIncludingTaxChange} />
+                      </label>
+                    </div>
                     <Input
+                      id="amount"
                       inputMode="decimal"
                       placeholder="0.00"
-                      value={watchedAmount}
+                      value={amountShown}
+                      onFocus={() => {
+                        setAmountFocused(true);
+                        if (showIncludingTax) setGrossText(grossText || watchedAmount);
+                      }}
+                      onBlur={() => setAmountFocused(false)}
                       onChange={e => onAmountChange(e.target.value)}
                       className="[appearance:textfield]"
                     />
@@ -471,17 +543,17 @@ export default function IncomeEdit() {
                   <div className="space-y-1.5">
                     <Label>
                       GST Amount
-                      {gstClaimable && watchedGstTreatment === "standard_rated" && (
+                      {(showIncludingTax || (gstClaimable && watchedGstTreatment === "standard_rated")) && (
                         <span className="ml-1 text-xs text-muted-foreground font-normal">(auto @ {gstRate}%)</span>
                       )}
                     </Label>
                     <Input
                       inputMode="decimal"
                       placeholder="0.00"
-                      value={watchedGstAmount}
+                      value={showIncludingTax ? (gstValue ? gstValue.toFixed(2) : "") : watchedGstAmount}
                       onChange={e => setValue("gstAmount", numericOnly(e.target.value))}
-                      className={cn("[appearance:textfield]", gstClaimable && watchedGstTreatment === "standard_rated" && "bg-muted/50 text-muted-foreground")}
-                      readOnly={gstClaimable && watchedGstTreatment === "standard_rated"}
+                      className={cn("[appearance:textfield]", (showIncludingTax || (gstClaimable && watchedGstTreatment === "standard_rated")) && "bg-muted/50 text-muted-foreground")}
+                      readOnly={showIncludingTax || (gstClaimable && watchedGstTreatment === "standard_rated")}
                     />
                   </div>
                 </div>
@@ -646,15 +718,15 @@ export default function IncomeEdit() {
               <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Net Amount</span>
-                  <span className="font-mono font-medium">{watchedCurrency} {(parseFloat(watchedAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono font-medium">{watchedCurrency} {netValue.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">GST ({gstRate}%)</span>
-                  <span className="font-mono text-blue-600">{watchedCurrency} {(parseFloat(watchedGstAmount) || 0).toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono text-blue-600">{watchedCurrency} {gstValue.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2 font-medium">
                   <span>Total (incl. GST)</span>
-                  <span className="font-mono">{watchedCurrency} {calcTotal().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono">{watchedCurrency} {totalValue.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">GST Input Tax</span>
@@ -672,14 +744,14 @@ export default function IncomeEdit() {
                 </div>
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">Allowable Deduction</span>
-                  <span className="font-mono font-bold text-green-700">{watchedCurrency} {calcDeductibleAmount().toLocaleString("en-SG", { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono font-bold text-green-700">{watchedCurrency} {calcDeductibleAmount().toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </CardContent>
             </Card>
 
             <div className="flex flex-col gap-3">
               <Button type="submit" className="w-full" disabled={saving}>Save Changes</Button>
-              <Button type="button" variant="outline" className="w-full" disabled={saving} onClick={() => setLocation(`/accounting/income/${id}`)}>Cancel</Button>
+              <Button type="button" variant="outline" className="w-full" disabled={saving} onClick={() => setLocation(withReturnTo(`/accounting/income/${id}`))}>Cancel</Button>
             </div>
           </div>
         </div>

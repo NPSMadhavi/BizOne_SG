@@ -222,7 +222,7 @@ export default function VoucherNew() {
         <div className="flex items-center gap-2">
           <Receipt className="h-5 w-5 text-primary" />
           <div>
-            <h1 className="text-xl font-bold text-[#2563EB]">New Voucher</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#2563EB]">New Voucher</h1>
             {project && <p className="text-xs text-muted-foreground">{project.name}</p>}
           </div>
         </div>
