@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Download, Loader2, TrendingUp, TrendingDown, RefreshCw, ChevronDown, ChevronUp, ChevronRight, Users, FileText, Receipt, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateProfitLoss_PDF } from "@/lib/pdf";
+import { payrollAmount, payrollEmployeeName, payrollEmployeeSubtitle, payrollPeriodLabel } from "@/pages/accounting/payroll-record-fields";
 
 interface PnlAccount { code: string; name: string; amount: number; }
 interface PnlData {
@@ -533,7 +534,7 @@ export default function ProfitLoss() {
                               Staff Costs &amp; Payroll Breakdown (Salaries &amp; Employer CPF) — {payrollRecords.length} record{payrollRecords.length !== 1 ? "s" : ""}
                             </span>
                             <span className="font-mono text-muted-foreground">
-                              Total Gross: <strong className="text-gray-900">{fmtSGD(payrollRecords.reduce((s, r) => s + (parseFloat(String(r.gross_pay || 0)) || 0), 0))}</strong>
+                              Total Gross: <strong className="text-gray-900">{fmtSGD(payrollRecords.reduce((s, r) => s + payrollAmount(r, "grossPay", "gross_pay"), 0))}</strong>
                             </span>
                           </div>
                           <div className="overflow-x-auto">
@@ -556,19 +557,18 @@ export default function ProfitLoss() {
                                   </tr>
                                 ) : (
                                   payrollRecords.map((r: any) => {
-                                    const emp = employees.find((e: any) => Number(e.id) === Number(r.employee_id));
-                                    const gross = parseFloat(String(r.gross_pay || 0)) || 0;
-                                    const net = parseFloat(String(r.net_pay || 0)) || 0;
-                                    const emprCpf = parseFloat(String(r.cpf_employer || 0)) || 0;
+                                    const gross = payrollAmount(r, "grossPay", "gross_pay");
+                                    const net = payrollAmount(r, "netPay", "net_pay");
+                                    const emprCpf = payrollAmount(r, "cpfEmployer", "cpf_employer");
                                     const totalCost = gross + emprCpf;
                                     return (
                                       <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                                         <td className="py-2 px-3 whitespace-nowrap">
-                                          <div className="font-medium text-gray-900">{emp?.name || `Employee ${r.employee_id}`}</div>
-                                          <div className="text-[10px] text-gray-500 font-mono">{emp?.employeeId || emp?.designation || ""}</div>
+                                          <div className="font-medium text-gray-900">{payrollEmployeeName(r, employees)}</div>
+                                          <div className="text-[10px] text-gray-500 font-mono">{payrollEmployeeSubtitle(r, employees)}</div>
                                         </td>
                                         <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
-                                          {r.pay_period_start ? new Date(r.pay_period_start).toLocaleDateString("en-SG", { month: "short", year: "numeric" }) : "—"}
+                                          {payrollPeriodLabel(r)}
                                         </td>
                                         <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtSGD(gross)}</td>
                                         <td className="py-2 px-3 text-right font-mono text-amber-700 whitespace-nowrap">{fmtSGD(emprCpf)}</td>
@@ -589,16 +589,16 @@ export default function ProfitLoss() {
                                   <tr>
                                     <td colSpan={2} className="py-2.5 px-3 uppercase text-gray-600">Total Staff Costs ({payrollRecords.length})</td>
                                     <td className="py-2.5 px-3 text-right font-mono">
-                                      {fmtSGD(payrollRecords.reduce((s, r) => s + (parseFloat(String(r.gross_pay || 0)) || 0), 0))}
+                                      {fmtSGD(payrollRecords.reduce((s, r) => s + payrollAmount(r, "grossPay", "gross_pay"), 0))}
                                     </td>
                                     <td className="py-2.5 px-3 text-right font-mono text-amber-700">
-                                      {fmtSGD(payrollRecords.reduce((s, r) => s + (parseFloat(String(r.cpf_employer || 0)) || 0), 0))}
+                                      {fmtSGD(payrollRecords.reduce((s, r) => s + payrollAmount(r, "cpfEmployer", "cpf_employer"), 0))}
                                     </td>
                                     <td className="py-2.5 px-3 text-right font-mono">
-                                      {fmtSGD(payrollRecords.reduce((s, r) => s + (parseFloat(String(r.net_pay || 0)) || 0), 0))}
+                                      {fmtSGD(payrollRecords.reduce((s, r) => s + payrollAmount(r, "netPay", "net_pay"), 0))}
                                     </td>
                                     <td className="py-2.5 px-3 text-right font-mono text-blue-700">
-                                      {fmtSGD(payrollRecords.reduce((s, r) => s + (parseFloat(String(r.gross_pay || 0)) || 0) + (parseFloat(String(r.cpf_employer || 0)) || 0), 0))}
+                                      {fmtSGD(payrollRecords.reduce((s, r) => s + payrollAmount(r, "grossPay", "gross_pay") + payrollAmount(r, "cpfEmployer", "cpf_employer"), 0))}
                                     </td>
                                     <td></td>
                                   </tr>

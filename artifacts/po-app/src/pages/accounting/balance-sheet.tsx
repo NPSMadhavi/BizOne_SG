@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { generateBalanceSheet_PDF } from "@/lib/pdf";
 import type { Asset } from "@shared/schema";
 import { AccountActivityPanel } from "@/pages/accounting/account-activity";
+import { payrollAmount, payrollEmployeeId, payrollEmployeeName, payrollEmployeeSubtitle, payrollPeriodLabel } from "@/pages/accounting/payroll-record-fields";
 
 
 interface AcctLine { code: string; name: string; subType: string | null; amount: number }
@@ -271,10 +272,10 @@ export default function BalanceSheetPage() {
 
   const salariesBreakdown = useMemo(() => {
     return payrollRecords.map((rec: any) => {
-      const emp = employees.find((e: any) => Number(e.id) === Number(rec.employee_id));
-      const gross = parseFloat(String(rec.gross_pay || 0)) || 0;
-      const net = parseFloat(String(rec.net_pay || 0)) || 0;
-      const empId = rec.employee_id;
+      const emp = employees.find((e: any) => Number(e.id) === Number(payrollEmployeeId(rec)));
+      const gross = payrollAmount(rec, "grossPay", "gross_pay");
+      const net = payrollAmount(rec, "netPay", "net_pay");
+      const empId = payrollEmployeeId(rec);
       const paid = expenses.reduce((sum, exp) => {
         const isSalaryMarker = exp.notes?.includes(`payroll-payment:salary:${empId}:`);
         const isLegacySalary =
@@ -301,11 +302,11 @@ export default function BalanceSheetPage() {
 
   const cpfBreakdown = useMemo(() => {
     return payrollRecords.map((rec: any) => {
-      const emp = employees.find((e: any) => Number(e.id) === Number(rec.employee_id));
-      const employeeCpf = parseFloat(String(rec.cpf_employee || rec.cpfDeduction || 0)) || 0;
-      const employerCpf = parseFloat(String(rec.cpf_employer || rec.cpfEmployer || 0)) || 0;
+      const emp = employees.find((e: any) => Number(e.id) === Number(payrollEmployeeId(rec)));
+      const employeeCpf = payrollAmount(rec, "cpfDeduction", "cpfEmployee", "cpf_employee");
+      const employerCpf = payrollAmount(rec, "cpfEmployer", "cpf_employer");
       const totalCpf = Math.round((employeeCpf + employerCpf) * 100) / 100 || employeeCpf;
-      const empId = rec.employee_id;
+      const empId = payrollEmployeeId(rec);
       const paid = expenses.reduce((sum, exp) => {
         const isCpfMarker = exp.notes?.includes(`payroll-payment:cpf:${empId}:`);
         const isLegacyCpf =
@@ -698,18 +699,18 @@ export default function BalanceSheetPage() {
                                   <td colSpan={8} className="py-4 text-center text-gray-400 italic">No CPF records found.</td>
                                 </tr>
                               ) : (
-                                cpfBreakdown.map(({ record, employee, employeeCpf, employerCpf, totalCpf, paid, balance }) => (
+                                cpfBreakdown.map(({ record, employeeCpf, employerCpf, totalCpf, paid, balance }) => (
                                   <tr
                                     key={record.id}
                                     className="hover:bg-emerald-50 transition-colors cursor-pointer"
                                     onClick={() => openFromSheet("/payroll", r.code)}
                                   >
                                     <td className="py-2 px-3 whitespace-nowrap">
-                                      <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
-                                      <div className="text-[10px] text-gray-500 font-mono">{employee?.employeeId || employee?.designation || ""}</div>
+                                      <div className="font-medium text-gray-900">{payrollEmployeeName(record, employees)}</div>
+                                      <div className="text-[10px] text-gray-500 font-mono">{payrollEmployeeSubtitle(record, employees)}</div>
                                     </td>
                                     <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
-                                      {record.pay_period_start ? `${new Date(record.pay_period_start).toLocaleDateString("en-SG", { month: "short", year: "numeric" })}` : "—"}
+                                      {payrollPeriodLabel(record)}
                                     </td>
                                     <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(employeeCpf)}</td>
                                     <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(employerCpf)}</td>
@@ -777,18 +778,18 @@ export default function BalanceSheetPage() {
                                 <td colSpan={7} className="py-4 text-center text-gray-400 italic">No payroll records found.</td>
                               </tr>
                             ) : (
-                              salariesBreakdown.map(({ record, employee, gross, net, paid, balance }) => (
+                              salariesBreakdown.map(({ record, gross, net, paid, balance }) => (
                                 <tr
                                   key={record.id}
                                   className="hover:bg-blue-50 transition-colors cursor-pointer"
                                   onClick={() => openFromSheet("/payroll", r.code)}
                                 >
                                   <td className="py-2 px-3 whitespace-nowrap">
-                                    <div className="font-medium text-gray-900">{employee?.name || `Employee ${record.employee_id}`}</div>
-                                    <div className="text-[10px] text-gray-500 font-mono">{employee?.employeeId || employee?.designation || ""}</div>
+                                    <div className="font-medium text-gray-900">{payrollEmployeeName(record, employees)}</div>
+                                    <div className="text-[10px] text-gray-500 font-mono">{payrollEmployeeSubtitle(record, employees)}</div>
                                   </td>
                                   <td className="py-2 px-3 text-gray-600 whitespace-nowrap">
-                                    {record.pay_period_start ? `${new Date(record.pay_period_start).toLocaleDateString("en-SG", { month: "short", year: "numeric" })}` : "—"}
+                                    {payrollPeriodLabel(record)}
                                   </td>
                                   <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{fmtAmt(gross)}</td>
                                   <td className="py-2 px-3 text-right font-mono font-medium text-gray-900 whitespace-nowrap">{fmtAmt(net)}</td>
